@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const userId = session.type === "admin" ? session.id : null;
+    const userId = (session.type === "admin" || session.type === "superadmin") ? session.id : null;
     const teamId = session.type === "team" ? session.id : null;
 
     if (!currentPassword || !newPassword) {
