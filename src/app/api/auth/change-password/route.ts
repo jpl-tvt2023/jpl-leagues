@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "Password changed successfully",
-        redirectTo: "/admin",
+        redirectTo: user.role === "superadmin" ? "/superadmin" : "/admin",
       });
     }
 

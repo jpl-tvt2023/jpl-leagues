@@ -34,8 +34,8 @@ export default function SignInPage() {
       
       // Redirect based on role and status
       if (data.user) {
-        // Admin login
-        window.location.href = "/admin";
+        // Admin login — respect mustChangePassword redirect
+        window.location.href = data.redirectTo || "/admin";
       } else if (data.team) {
         // Team login
         if (data.team.mustChangePassword) {

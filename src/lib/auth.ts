@@ -86,6 +86,10 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
   }
 }
 
+export function isSuperAdmin(request: import("next/server").NextRequest): boolean {
+  return request.headers.get("x-session-type") === "superadmin";
+}
+
 export const SESSION_COOKIE_NAME = "session";
 export const SESSION_COOKIE_OPTIONS = {
   httpOnly: true,
