@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
 
     // Look up admin user for password verification
     const admin = await db.query.users.findFirst({ where: eq(users.id, sessionId) });
-    if (!admin?.isAdmin) {
+    if (admin?.role !== "admin" && admin?.role !== "superadmin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
