@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 
 interface League {
@@ -12,6 +12,8 @@ interface League {
   season: string;
   isActive: boolean;
   createdAt: string;
+  teamCount: number;
+  currentGameweek: number | null;
 }
 
 interface Admin {
@@ -21,9 +23,25 @@ interface Admin {
   role: string;
   mustChangePassword: boolean;
   createdAt: string;
+  assignedLeagueIds: string[];
 }
 
-type TabType = "leagues" | "admins" | "settings";
+type TabType = "leagues" | "admins";
+
+// ──────────────────────────────────────────────
+// Create-league wizard steps
+type WizardStep = "sport" | "format" | "details";
+const SPORT_OPTIONS = [
+  { value: "fpl", label: "Football (FPL)", icon: "⚽" },
+  { value: "cricket", label: "Cricket", icon: "🏏", comingSoon: true },
+];
+const FORMAT_OPTIONS: Record<string, { value: string; label: string; description: string; comingSoon?: boolean }[]> = {
+  fpl: [
+    { value: "tvt", label: "TVT", description: "Head-to-head, chips, captaincy, playoffs" },
+    { value: "classic", label: "Classic", description: "Round-robin / points-based", comingSoon: true },
+  ],
+};
+// ──────────────────────────────────────────────
 
 export default function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>("leagues");
@@ -32,29 +50,23 @@ export default function SuperAdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Create league form
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [leagueForm, setLeagueForm] = useState({
-    slug: "", name: "", sport: "fpl", format: "tvt", season: "",
-  });
+  // ── Create-league wizard ──
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState<WizardStep>("sport");
+  const [leagueForm, setLeagueForm] = useState({ slug: "", name: "", sport: "", format: "", season: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Settings
-  type SettingsKey = "captainAnnouncementEnabled" | "chipAnnouncementEnabled";
-  const [platformSettings, setPlatformSettings] = useState<Record<SettingsKey, boolean>>({
-    captainAnnouncementEnabled: true,
-    chipAnnouncementEnabled: true,
-  });
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [settingsLoading, setSettingsLoading] = useState(false);
+  // ── Admin CRUD modals ──
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false);
+  const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "" });
+  const [editingAdmin, setEditingAdmin] = useState<Admin | null>(null);
+  const [editAdminForm, setEditAdminForm] = useState({ name: "", email: "", password: "" });
+  const [deletingAdmin, setDeletingAdmin] = useState<Admin | null>(null);
+  const [assigningAdmin, setAssigningAdmin] = useState<Admin | null>(null);
+  const [assignedLeagueIds, setAssignedLeagueIds] = useState<string[]>([]);
+  const [adminActionLoading, setAdminActionLoading] = useState(false);
 
-  useEffect(() => {
-    if (activeTab === "leagues") fetchLeagues();
-    else if (activeTab === "admins") fetchAdmins();
-    else if (activeTab === "settings" && !settingsLoaded) fetchSettings();
-  }, [activeTab]);
-
-  const fetchLeagues = async () => {
+  const fetchLeagues = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch("/api/superadmin/leagues");
@@ -62,9 +74,9 @@ export default function SuperAdminDashboard() {
       const data = await res.json();
       setLeagues(data.leagues || []);
     } catch { /* silent */ } finally { setIsLoading(false); }
-  };
+  }, []);
 
-  const fetchAdmins = async () => {
+  const fetchAdmins = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch("/api/superadmin/admins");
@@ -72,20 +84,14 @@ export default function SuperAdminDashboard() {
       const data = await res.json();
       setAdmins(data.admins || []);
     } catch { /* silent */ } finally { setIsLoading(false); }
-  };
+  }, []);
 
-  const fetchSettings = async () => {
-    setSettingsLoading(true);
-    try {
-      const res = await fetch("/api/admin/settings");
-      const data = await res.json();
-      setPlatformSettings({
-        captainAnnouncementEnabled: data.captainAnnouncementEnabled ?? true,
-        chipAnnouncementEnabled: data.chipAnnouncementEnabled ?? true,
-      });
-      setSettingsLoaded(true);
-    } catch { /* silent */ } finally { setSettingsLoading(false); }
-  };
+  useEffect(() => {
+    if (activeTab === "leagues") fetchLeagues();
+    else if (activeTab === "admins") { fetchAdmins(); fetchLeagues(); }
+  }, [activeTab, fetchLeagues, fetchAdmins]);
+
+  // ── League actions ──
 
   const handleCreateLeague = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,10 +105,11 @@ export default function SuperAdminDashboard() {
       });
       const data = await res.json();
       if (!res.ok) { setMessage({ type: "error", text: data.error || "Failed to create league" }); return; }
-      setMessage({ type: "success", text: "League created successfully!" });
-      setShowCreateForm(false);
-      setLeagueForm({ slug: "", name: "", sport: "fpl", format: "tvt", season: "" });
-      setLeagues(prev => [...prev, { ...data, createdAt: new Date().toISOString() }]);
+      setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
+      setShowWizard(false);
+      setWizardStep("sport");
+      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "" });
+      setLeagues(prev => [...prev, data]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
     finally { setIsSubmitting(false); }
   };
@@ -119,18 +126,102 @@ export default function SuperAdminDashboard() {
     } catch { setMessage({ type: "error", text: "Network error" }); }
   };
 
-  const toggleSetting = async (key: SettingsKey, value: boolean) => {
-    setSettingsLoading(true);
+  // ── Admin actions ──
+
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminActionLoading(true);
+    setMessage(null);
     try {
-      const res = await fetch("/api/admin/settings", {
+      const res = await fetch("/api/superadmin/admins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, value }),
+        body: JSON.stringify(adminForm),
       });
-      if (res.ok) setPlatformSettings(prev => ({ ...prev, [key]: value }));
-      else setMessage({ type: "error", text: "Failed to update setting" });
+      const data = await res.json();
+      if (!res.ok) { setMessage({ type: "error", text: data.error || "Failed to create admin" }); return; }
+      setAdmins(prev => [...prev, data]);
+      setShowCreateAdmin(false);
+      setAdminForm({ name: "", email: "", password: "" });
+      setMessage({ type: "success", text: `Admin "${adminForm.name}" created. They must change their password on first login.` });
     } catch { setMessage({ type: "error", text: "Network error" }); }
-    finally { setSettingsLoading(false); }
+    finally { setAdminActionLoading(false); }
+  };
+
+  const handleEditAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAdmin) return;
+    setAdminActionLoading(true);
+    setMessage(null);
+    try {
+      const body: Record<string, string> = {};
+      if (editAdminForm.name) body.name = editAdminForm.name;
+      if (editAdminForm.email) body.email = editAdminForm.email;
+      if (editAdminForm.password) body.password = editAdminForm.password;
+      const res = await fetch(`/api/superadmin/admins/${editingAdmin.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMessage({ type: "error", text: data.error || "Failed to update admin" }); return; }
+      setAdmins(prev => prev.map(a =>
+        a.id === editingAdmin.id
+          ? {
+              ...a,
+              name: editAdminForm.name || a.name,
+              email: editAdminForm.email || a.email,
+              mustChangePassword: editAdminForm.password ? true : a.mustChangePassword,
+            }
+          : a
+      ));
+      setEditingAdmin(null);
+      setMessage({ type: "success", text: "Admin updated." });
+    } catch { setMessage({ type: "error", text: "Network error" }); }
+    finally { setAdminActionLoading(false); }
+  };
+
+  const handleDeleteAdmin = async () => {
+    if (!deletingAdmin) return;
+    setAdminActionLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/superadmin/admins/${deletingAdmin.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) { setMessage({ type: "error", text: data.error || "Failed to delete admin" }); return; }
+      setAdmins(prev => prev.filter(a => a.id !== deletingAdmin.id));
+      setDeletingAdmin(null);
+      setMessage({ type: "success", text: "Admin deleted." });
+    } catch { setMessage({ type: "error", text: "Network error" }); }
+    finally { setAdminActionLoading(false); }
+  };
+
+  const openAssignModal = (admin: Admin) => {
+    setAssigningAdmin(admin);
+    setAssignedLeagueIds([...admin.assignedLeagueIds]);
+  };
+
+  const toggleLeagueAssignment = async (leagueId: string, currently: boolean) => {
+    if (!assigningAdmin) return;
+    try {
+      const res = await fetch("/api/superadmin/league-assignments", {
+        method: currently ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: assigningAdmin.id, leagueId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setMessage({ type: "error", text: data.error || "Failed to update assignment" });
+        return;
+      }
+      const newIds = currently
+        ? assignedLeagueIds.filter(id => id !== leagueId)
+        : [...assignedLeagueIds, leagueId];
+      setAssignedLeagueIds(newIds);
+      setAdmins(prev => prev.map(a =>
+        a.id === assigningAdmin.id ? { ...a, assignedLeagueIds: newIds } : a
+      ));
+    } catch { setMessage({ type: "error", text: "Network error" }); }
   };
 
   const handleSignOut = async () => {
@@ -141,11 +232,169 @@ export default function SuperAdminDashboard() {
   const tabs: { id: TabType; label: string }[] = [
     { id: "leagues", label: "Leagues" },
     { id: "admins", label: "Admins" },
-    { id: "settings", label: "Settings" },
   ];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+
+      {/* ── Delete Admin Confirmation Modal ── */}
+      {deletingAdmin && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+            <h2 className="text-xl font-bold text-white mb-3">Delete Admin</h2>
+            <p className="text-gray-400 mb-6">
+              Are you sure you want to delete <span className="text-white font-semibold">{deletingAdmin.name}</span>?
+              This will remove all their league assignments too.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeletingAdmin(null)} className="flex-1 rounded-lg border border-white/10 px-4 py-2.5 text-gray-300 hover:bg-white/5 transition">Cancel</button>
+              <button onClick={handleDeleteAdmin} disabled={adminActionLoading} className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 font-semibold text-white hover:bg-red-700 transition disabled:opacity-50">
+                {adminActionLoading ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Admin Modal ── */}
+      {editingAdmin && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Edit Admin</h2>
+              <button onClick={() => setEditingAdmin(null)} className="text-gray-400 hover:text-white text-2xl">×</button>
+            </div>
+            <form onSubmit={handleEditAdmin} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Name</label>
+                <input
+                  value={editAdminForm.name}
+                  onChange={e => setEditAdminForm({ ...editAdminForm, name: e.target.value })}
+                  placeholder={editingAdmin.name}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={editAdminForm.email}
+                  onChange={e => setEditAdminForm({ ...editAdminForm, email: e.target.value })}
+                  placeholder={editingAdmin.email}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">New Password <span className="text-gray-500">(leave blank to keep current)</span></label>
+                <input
+                  type="password"
+                  value={editAdminForm.password}
+                  onChange={e => setEditAdminForm({ ...editAdminForm, password: e.target.value })}
+                  placeholder="••••••••"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                />
+                {editAdminForm.password && (
+                  <p className="text-xs text-orange-400 mt-1">Admin will be required to change password on next login.</p>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setEditingAdmin(null)} className="flex-1 rounded-lg border border-white/10 px-4 py-2.5 text-gray-300 hover:bg-white/5 transition">Cancel</button>
+                <button type="submit" disabled={adminActionLoading} className="flex-1 rounded-lg bg-yellow-500 px-4 py-2.5 font-semibold text-slate-900 hover:bg-yellow-400 transition disabled:opacity-50">
+                  {adminActionLoading ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Assign Leagues Modal ── */}
+      {assigningAdmin && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Assign Leagues</h2>
+              <button onClick={() => setAssigningAdmin(null)} className="text-gray-400 hover:text-white text-2xl">×</button>
+            </div>
+            <p className="text-gray-400 text-sm mb-4">Toggle leagues for <span className="text-white font-medium">{assigningAdmin.name}</span>. Changes save immediately.</p>
+            {leagues.length === 0 ? (
+              <p className="text-gray-500 text-sm">No leagues available.</p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {leagues.map(league => {
+                  const assigned = assignedLeagueIds.includes(league.id);
+                  return (
+                    <label key={league.id} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3 cursor-pointer hover:bg-white/10 transition">
+                      <input
+                        type="checkbox"
+                        checked={assigned}
+                        onChange={() => toggleLeagueAssignment(league.id, assigned)}
+                        className="w-4 h-4 accent-yellow-400"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-white font-medium text-sm">{league.name}</p>
+                        <p className="text-gray-500 text-xs">{league.season} · {league.sport.toUpperCase()} {league.format.toUpperCase()}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <button onClick={() => setAssigningAdmin(null)} className="mt-5 w-full rounded-lg border border-white/10 px-4 py-2.5 text-gray-300 hover:bg-white/5 transition">
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Create Admin Modal ── */}
+      {showCreateAdmin && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Create Admin</h2>
+              <button onClick={() => setShowCreateAdmin(false)} className="text-gray-400 hover:text-white text-2xl">×</button>
+            </div>
+            <form onSubmit={handleCreateAdmin} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Name</label>
+                <input
+                  required value={adminForm.name}
+                  onChange={e => setAdminForm({ ...adminForm, name: e.target.value })}
+                  placeholder="Admin Name"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Email</label>
+                <input
+                  required type="email" value={adminForm.email}
+                  onChange={e => setAdminForm({ ...adminForm, email: e.target.value })}
+                  placeholder="admin@example.com"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Initial Password</label>
+                <input
+                  required type="password" value={adminForm.password}
+                  onChange={e => setAdminForm({ ...adminForm, password: e.target.value })}
+                  placeholder="••••••••"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                />
+                <p className="text-xs text-gray-500 mt-1">Admin will be asked to change this on first login.</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowCreateAdmin(false)} className="flex-1 rounded-lg border border-white/10 px-4 py-2.5 text-gray-300 hover:bg-white/5 transition">Cancel</button>
+                <button type="submit" disabled={adminActionLoading} className="flex-1 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-4 py-2.5 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50">
+                  {adminActionLoading ? "Creating..." : "Create Admin"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Nav */}
       <nav className="flex items-center justify-between px-6 py-4 lg:px-12 border-b border-white/10">
         <div className="flex items-center gap-3">
@@ -202,84 +451,134 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400 text-sm mt-1">Manage all leagues on the platform</p>
               </div>
               <button
-                onClick={() => { setShowCreateForm(!showCreateForm); setMessage(null); }}
+                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "" }); setMessage(null); }}
                 className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
               >
                 + Create League
               </button>
             </div>
 
-            {/* Create league form */}
-            {showCreateForm && (
+            {/* Create League Wizard */}
+            {showWizard && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 mb-6">
-                <h3 className="text-white font-semibold mb-4">New League</h3>
-                <form onSubmit={handleCreateLeague} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                {/* Step: Sport */}
+                {wizardStep === "sport" && (
                   <div>
-                    <label className="block text-sm text-gray-300 mb-1">Slug <span className="text-gray-500">(unique ID, e.g. tvt-fpl)</span></label>
-                    <input
-                      required value={leagueForm.slug}
-                      onChange={e => setLeagueForm({ ...leagueForm, slug: e.target.value.toLowerCase().replace(/\s+/g, "-") })}
-                      placeholder="tvt-fpl"
-                      className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
-                    />
+                    <h3 className="text-white font-semibold text-lg mb-1">Select Sport</h3>
+                    <p className="text-gray-400 text-sm mb-5">Choose the sport for this league.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {SPORT_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          disabled={opt.comingSoon}
+                          onClick={() => {
+                            if (!opt.comingSoon) {
+                              setLeagueForm({ ...leagueForm, sport: opt.value, format: "" });
+                              setWizardStep("format");
+                            }
+                          }}
+                          className={`relative rounded-xl border p-5 text-left transition ${
+                            opt.comingSoon
+                              ? "border-white/5 bg-white/2 opacity-50 cursor-not-allowed"
+                              : "border-white/10 bg-white/5 hover:border-yellow-500/50 hover:bg-white/10 cursor-pointer"
+                          }`}
+                        >
+                          <div className="text-3xl mb-2">{opt.icon}</div>
+                          <div className="text-white font-semibold">{opt.label}</div>
+                          {opt.comingSoon && (
+                            <span className="absolute top-3 right-3 text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Coming soon</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setShowWizard(false)} className="mt-4 text-gray-500 hover:text-gray-300 text-sm transition">Cancel</button>
                   </div>
+                )}
+
+                {/* Step: Format */}
+                {wizardStep === "format" && (
                   <div>
-                    <label className="block text-sm text-gray-300 mb-1">Name</label>
-                    <input
-                      required value={leagueForm.name}
-                      onChange={e => setLeagueForm({ ...leagueForm, name: e.target.value })}
-                      placeholder="JPL TVT FPL"
-                      className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
-                    />
+                    <button onClick={() => setWizardStep("sport")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
+                    <h3 className="text-white font-semibold text-lg mb-1">Select Format</h3>
+                    <p className="text-gray-400 text-sm mb-5">Choose the format for this {leagueForm.sport.toUpperCase()} league.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {(FORMAT_OPTIONS[leagueForm.sport] ?? []).map(opt => (
+                        <button
+                          key={opt.value}
+                          disabled={opt.comingSoon}
+                          onClick={() => {
+                            if (!opt.comingSoon) {
+                              setLeagueForm({ ...leagueForm, format: opt.value });
+                              setWizardStep("details");
+                            }
+                          }}
+                          className={`relative rounded-xl border p-5 text-left transition ${
+                            opt.comingSoon
+                              ? "border-white/5 bg-white/2 opacity-50 cursor-not-allowed"
+                              : "border-white/10 bg-white/5 hover:border-yellow-500/50 hover:bg-white/10 cursor-pointer"
+                          }`}
+                        >
+                          <div className="text-white font-semibold mb-1">{opt.label}</div>
+                          <div className="text-gray-400 text-sm">{opt.description}</div>
+                          {opt.comingSoon && (
+                            <span className="absolute top-3 right-3 text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Coming soon</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setShowWizard(false)} className="mt-4 text-gray-500 hover:text-gray-300 text-sm transition">Cancel</button>
                   </div>
+                )}
+
+                {/* Step: Details form */}
+                {wizardStep === "details" && (
                   <div>
-                    <label className="block text-sm text-gray-300 mb-1">Sport</label>
-                    <select
-                      value={leagueForm.sport}
-                      onChange={e => setLeagueForm({ ...leagueForm, sport: e.target.value })}
-                      className="w-full rounded-lg border border-white/10 bg-slate-800 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
-                    >
-                      <option value="fpl">FPL</option>
-                      <option value="cricket">Cricket</option>
-                    </select>
+                    <button onClick={() => setWizardStep("format")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
+                    <h3 className="text-white font-semibold text-lg mb-1">League Details</h3>
+                    <p className="text-gray-400 text-sm mb-5">
+                      {leagueForm.sport.toUpperCase()} · {leagueForm.format.toUpperCase()}
+                    </p>
+                    <form onSubmit={handleCreateLeague} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm text-gray-300 mb-1">Slug <span className="text-gray-500">(unique ID, e.g. tvt-fpl-2526)</span></label>
+                        <input
+                          required value={leagueForm.slug}
+                          onChange={e => setLeagueForm({ ...leagueForm, slug: e.target.value.toLowerCase().replace(/\s+/g, "-") })}
+                          placeholder="tvt-fpl-2526"
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-300 mb-1">Name</label>
+                        <input
+                          required value={leagueForm.name}
+                          onChange={e => setLeagueForm({ ...leagueForm, name: e.target.value })}
+                          placeholder="JPL TVT FPL"
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm text-gray-300 mb-1">Season</label>
+                        <input
+                          required value={leagueForm.season}
+                          onChange={e => setLeagueForm({ ...leagueForm, season: e.target.value })}
+                          placeholder="2025-26"
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="sm:col-span-2 flex gap-3">
+                        <button
+                          type="submit" disabled={isSubmitting}
+                          className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
+                        >
+                          {isSubmitting ? "Creating..." : "Create League"}
+                        </button>
+                        <button type="button" onClick={() => setShowWizard(false)} className="text-gray-400 hover:text-white px-4 py-2.5 transition">Cancel</button>
+                      </div>
+                    </form>
                   </div>
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-1">Format</label>
-                    <select
-                      value={leagueForm.format}
-                      onChange={e => setLeagueForm({ ...leagueForm, format: e.target.value })}
-                      className="w-full rounded-lg border border-white/10 bg-slate-800 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
-                    >
-                      <option value="tvt">TVT</option>
-                      <option value="classic">Classic</option>
-                      <option value="grand-prix">Grand Prix</option>
-                      <option value="auction">Auction</option>
-                    </select>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm text-gray-300 mb-1">Season</label>
-                    <input
-                      required value={leagueForm.season}
-                      onChange={e => setLeagueForm({ ...leagueForm, season: e.target.value })}
-                      placeholder="2025-26"
-                      className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="sm:col-span-2 flex gap-3">
-                    <button
-                      type="submit" disabled={isSubmitting}
-                      className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
-                    >
-                      {isSubmitting ? "Creating..." : "Create League"}
-                    </button>
-                    <button
-                      type="button" onClick={() => setShowCreateForm(false)}
-                      className="text-gray-400 hover:text-white px-4 py-2.5 transition"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
+                )}
               </div>
             )}
 
@@ -291,45 +590,57 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400">No leagues yet. Create your first league above.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {leagues.map(league => (
-                  <div key={league.id} className="rounded-xl border border-white/10 bg-white/5 p-5 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${league.isActive ? "bg-green-400" : "bg-gray-500"}`} />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-white font-semibold">{league.name}</span>
-                          <span className="text-xs text-gray-500 font-mono">{league.slug}</span>
-                        </div>
-                        <div className="flex gap-3 mt-1 text-xs text-gray-400">
-                          <span className="capitalize">{league.sport}</span>
-                          <span>·</span>
-                          <span className="capitalize">{league.format}</span>
-                          <span>·</span>
-                          <span>{league.season}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <Link
-                        href="/admin"
-                        className="text-xs text-yellow-400 hover:text-yellow-300 transition border border-yellow-400/30 px-3 py-1.5 rounded-lg"
-                      >
-                        Manage
-                      </Link>
-                      <button
-                        onClick={() => toggleLeagueActive(league)}
-                        className={`text-xs px-3 py-1.5 rounded-lg transition border ${
-                          league.isActive
-                            ? "border-red-400/30 text-red-400 hover:bg-red-400/10"
-                            : "border-green-400/30 text-green-400 hover:bg-green-400/10"
-                        }`}
-                      >
-                        {league.isActive ? "Deactivate" : "Activate"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
+              <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10 text-gray-400 text-left">
+                      <th className="px-5 py-3 font-medium">League</th>
+                      <th className="px-5 py-3 font-medium">Teams</th>
+                      <th className="px-5 py-3 font-medium">Current GW</th>
+                      <th className="px-5 py-3 font-medium">Status</th>
+                      <th className="px-5 py-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leagues.map((league, i) => (
+                      <tr key={league.id} className={`border-b border-white/5 ${i % 2 === 0 ? "" : "bg-white/[0.02]"}`}>
+                        <td className="px-5 py-4">
+                          <div className="text-white font-medium">{league.name}</div>
+                          <div className="text-gray-500 text-xs font-mono mt-0.5">{league.slug} · {league.sport} · {league.format} · {league.season}</div>
+                        </td>
+                        <td className="px-5 py-4 text-gray-300">{league.teamCount}</td>
+                        <td className="px-5 py-4 text-gray-300">{league.currentGameweek ? `GW${league.currentGameweek}` : "—"}</td>
+                        <td className="px-5 py-4">
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            league.isActive ? "bg-green-500/20 text-green-400" : "bg-gray-500/20 text-gray-400"
+                          }`}>
+                            {league.isActive ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-2">
+                            <Link
+                              href={`/admin/${league.id}`}
+                              className="text-xs text-yellow-400 hover:text-yellow-300 transition border border-yellow-400/30 px-3 py-1.5 rounded-lg whitespace-nowrap"
+                            >
+                              Manage
+                            </Link>
+                            <button
+                              onClick={() => toggleLeagueActive(league)}
+                              className={`text-xs px-3 py-1.5 rounded-lg transition border whitespace-nowrap ${
+                                league.isActive
+                                  ? "border-red-400/30 text-red-400 hover:bg-red-400/10"
+                                  : "border-green-400/30 text-green-400 hover:bg-green-400/10"
+                              }`}
+                            >
+                              {league.isActive ? "Deactivate" : "Activate"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -338,13 +649,25 @@ export default function SuperAdminDashboard() {
         {/* ── Admins Tab ── */}
         {activeTab === "admins" && (
           <div>
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white">Admin Users</h2>
-              <p className="text-gray-400 text-sm mt-1">All admin accounts on the platform</p>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-white">Admin Users</h2>
+                <p className="text-gray-400 text-sm mt-1">Create and manage admin accounts</p>
+              </div>
+              <button
+                onClick={() => { setShowCreateAdmin(true); setAdminForm({ name: "", email: "", password: "" }); setMessage(null); }}
+                className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
+              >
+                + Create Admin
+              </button>
             </div>
 
             {isLoading ? (
               <p className="text-gray-400 text-center py-12">Loading admins...</p>
+            ) : admins.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-12 text-center">
+                <p className="text-gray-400">No admin users yet.</p>
+              </div>
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
                 <table className="w-full text-sm">
@@ -354,6 +677,8 @@ export default function SuperAdminDashboard() {
                       <th className="px-5 py-3 font-medium">Email</th>
                       <th className="px-5 py-3 font-medium">Role</th>
                       <th className="px-5 py-3 font-medium">Password</th>
+                      <th className="px-5 py-3 font-medium">Leagues</th>
+                      <th className="px-5 py-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -377,55 +702,52 @@ export default function SuperAdminDashboard() {
                             <span className="text-xs text-green-400">Set</span>
                           )}
                         </td>
+                        <td className="px-5 py-3">
+                          {admin.role === "superadmin" ? (
+                            <span className="text-xs text-gray-500">All leagues</span>
+                          ) : (
+                            <span className="text-xs text-gray-300">
+                              {admin.assignedLeagueIds.length === 0
+                                ? <span className="text-gray-500">None</span>
+                                : admin.assignedLeagueIds.length === 1
+                                  ? `${admin.assignedLeagueIds.length} league`
+                                  : `${admin.assignedLeagueIds.length} leagues`
+                              }
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => { setEditingAdmin(admin); setEditAdminForm({ name: "", email: "", password: "" }); }}
+                              className="text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-400/30 px-2.5 py-1.5 rounded-lg transition"
+                            >
+                              Edit
+                            </button>
+                            {admin.role !== "superadmin" && (
+                              <>
+                                <button
+                                  onClick={() => openAssignModal(admin)}
+                                  className="text-xs text-blue-400 hover:text-blue-300 border border-blue-400/30 px-2.5 py-1.5 rounded-lg transition"
+                                >
+                                  Leagues
+                                </button>
+                                <button
+                                  onClick={() => setDeletingAdmin(admin)}
+                                  className="text-xs text-red-400 hover:text-red-300 border border-red-400/30 px-2.5 py-1.5 rounded-lg transition"
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-          </div>
-        )}
-
-        {/* ── Settings Tab ── */}
-        {activeTab === "settings" && (
-          <div>
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white">Platform Settings</h2>
-              <p className="text-gray-400 text-sm mt-1">Toggle announcement features and other platform-wide settings</p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 divide-y divide-white/10">
-              {([
-                {
-                  key: "captainAnnouncementEnabled" as SettingsKey,
-                  label: "Captain Announcements",
-                  description: "Allow teams to announce captains via WhatsApp bot",
-                },
-                {
-                  key: "chipAnnouncementEnabled" as SettingsKey,
-                  label: "Chip Announcements",
-                  description: "Allow teams to announce chip usage via WhatsApp bot",
-                },
-              ] as const).map(setting => (
-                <div key={setting.key} className="flex items-center justify-between px-6 py-5">
-                  <div>
-                    <p className="text-white font-medium">{setting.label}</p>
-                    <p className="text-gray-400 text-sm">{setting.description}</p>
-                  </div>
-                  <button
-                    disabled={settingsLoading}
-                    onClick={() => toggleSetting(setting.key, !platformSettings[setting.key])}
-                    className={`relative w-12 h-6 rounded-full transition-colors duration-200 ${
-                      platformSettings[setting.key] ? "bg-yellow-400" : "bg-gray-600"
-                    } disabled:opacity-50`}
-                  >
-                    <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${
-                      platformSettings[setting.key] ? "translate-x-7" : "translate-x-1"
-                    }`} />
-                  </button>
-                </div>
-              ))}
-            </div>
           </div>
         )}
       </div>

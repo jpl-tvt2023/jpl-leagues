@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
 // ============================================
@@ -38,18 +38,24 @@ export const leagueAdmins = sqliteTable("league_admins", {
   id: text("id").primaryKey(),
   leagueId: text("league_id").notNull().references(() => leagues.id),
   userId: text("user_id").notNull().references(() => users.id),
-});
+}, (table) => ({
+  leagueUserUnique: uniqueIndex("league_admins_league_user_unique").on(table.leagueId, table.userId),
+}));
 
 // Group (A or B)
 export const groups = sqliteTable("groups", {
   id: text("id").primaryKey(),
-  name: text("name").notNull().unique(), // "A" or "B"
-});
+  name: text("name").notNull(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+}, (table) => ({
+  leagueNameUnique: uniqueIndex("groups_league_name_unique").on(table.leagueId, table.name),
+}));
 
 // Team (2 players per team) - also acts as login account
 export const teams = sqliteTable("teams", {
   id: text("id").primaryKey(),
-  name: text("name").notNull().unique(), // Team name used as login ID
+  name: text("name").notNull(), // Team name used as login ID
+  leagueId: text("league_id").notNull().references(() => leagues.id),
   abbreviation: text("abbreviation").notNull(), // e.g., "DM"
   password: text("password").notNull(), // Hashed password for team login
   mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
@@ -69,7 +75,9 @@ export const teams = sqliteTable("teams", {
   
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  leagueNameUnique: uniqueIndex("teams_league_name_unique").on(table.leagueId, table.name),
+}));
 
 // Player (each team has exactly 2 players)
 export const players = sqliteTable("players", {
@@ -88,7 +96,8 @@ export const players = sqliteTable("players", {
 // Gameweek (GW1 - GW38)
 export const gameweeks = sqliteTable("gameweeks", {
   id: text("id").primaryKey(),
-  number: integer("number").notNull().unique(), // 1-38
+  number: integer("number").notNull(), // 1-38, unique per league
+  leagueId: text("league_id").notNull().references(() => leagues.id),
   deadline: integer("deadline", { mode: "timestamp" }).notNull(),
   
   // Phase classification
@@ -96,7 +105,9 @@ export const gameweeks = sqliteTable("gameweeks", {
   
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  leagueNumberUnique: uniqueIndex("gameweeks_league_number_unique").on(table.leagueId, table.number),
+}));
 
 // Fixture (match between two teams)
 export const fixtures = sqliteTable("fixtures", {
@@ -233,12 +244,15 @@ export const challengerSurvivalEntries = sqliteTable("challenger_survival_entrie
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
-// Admin-configurable settings (key-value store)
+// Admin-configurable settings (key-value store, scoped per league)
 export const settings = sqliteTable("settings", {
-  key: text("key").primaryKey(),
+  key: text("key").notNull(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
   value: text("value").notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.key, table.leagueId] }),
+}));
 
 // Audit log for penalties and special events
 export const auditLogs = sqliteTable("audit_logs", {
@@ -257,6 +271,9 @@ export const auditLogs = sqliteTable("audit_logs", {
 
 export const leaguesRelations = relations(leagues, ({ many }) => ({
   admins: many(leagueAdmins),
+  groups: many(groups),
+  teams: many(teams),
+  gameweeks: many(gameweeks),
 }));
 
 export const leagueAdminsRelations = relations(leagueAdmins, ({ one }) => ({
@@ -272,12 +289,20 @@ export const leagueAdminsRelations = relations(leagueAdmins, ({ one }) => ({
 
 // Users are now admin-only, no team relation needed
 
-export const groupsRelations = relations(groups, ({ many }) => ({
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  league: one(leagues, {
+    fields: [groups.leagueId],
+    references: [leagues.id],
+  }),
   teams: many(teams),
   fixtures: many(fixtures),
 }));
 
 export const teamsRelations = relations(teams, ({ one, many }) => ({
+  league: one(leagues, {
+    fields: [teams.leagueId],
+    references: [leagues.id],
+  }),
   group: one(groups, {
     fields: [teams.groupId],
     references: [groups.id],
@@ -298,7 +323,11 @@ export const playersRelations = relations(players, ({ one, many }) => ({
   captainedIn: many(gameweekCaptains),
 }));
 
-export const gameweeksRelations = relations(gameweeks, ({ many }) => ({
+export const gameweeksRelations = relations(gameweeks, ({ one, many }) => ({
+  league: one(leagues, {
+    fields: [gameweeks.leagueId],
+    references: [leagues.id],
+  }),
   fixtures: many(fixtures),
   captains: many(gameweekCaptains),
   chips: many(gameweekChips),
@@ -434,6 +463,7 @@ export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
 
 export type Setting = typeof settings.$inferSelect;
+export type NewSetting = typeof settings.$inferInsert;
 
 export type League = typeof leagues.$inferSelect;
 export type NewLeague = typeof leagues.$inferInsert;
