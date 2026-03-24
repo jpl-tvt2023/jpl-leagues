@@ -34,7 +34,7 @@ const C31_SEEDING: [string, string, number, string, number][] = [
  */
 export async function GET(request: NextRequest) {
   const sessionType = request.headers.get("x-session-type");
-  if (sessionType !== "admin") {
+  if (sessionType !== "admin" && sessionType !== "superadmin") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   const sessionType = request.headers.get("x-session-type");
-  if (sessionType !== "admin") {
+  if (sessionType !== "admin" && sessionType !== "superadmin") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -83,7 +83,7 @@ export async function DELETE(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   const sessionType = request.headers.get("x-session-type");
-  if (sessionType !== "admin") {
+  if (sessionType !== "admin" && sessionType !== "superadmin") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
