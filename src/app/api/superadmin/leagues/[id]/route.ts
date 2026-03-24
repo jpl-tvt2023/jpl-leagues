@@ -4,10 +4,6 @@ import { leagues } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 
-const ALLOWED_KEYS = ["isActive", "name", "season"] as const;
-type AllowedKey = typeof ALLOWED_KEYS[number];
-type LeagueUpdate = Partial<Record<AllowedKey, string | boolean>>;
-
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -19,10 +15,10 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  const updates: LeagueUpdate = {};
-  for (const key of ALLOWED_KEYS) {
-    if (key in body) updates[key] = body[key];
-  }
+  const updates: { name?: string; season?: string; isActive?: boolean } = {};
+  if (typeof body.name === "string") updates.name = body.name;
+  if (typeof body.season === "string") updates.season = body.season;
+  if (typeof body.isActive === "boolean") updates.isActive = body.isActive;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
