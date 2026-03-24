@@ -187,6 +187,7 @@ export async function POST(request: NextRequest) {
         await db.insert(gameweeks).values({
           id: gameweekId,
           number: gwNum,
+          leagueId,
           deadline,
           isPlayoffs: gwNum > 30,
         });
