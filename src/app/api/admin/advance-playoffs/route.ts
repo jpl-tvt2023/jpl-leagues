@@ -217,7 +217,7 @@ async function markLeg1Done(tieId: string) {
  */
 export async function POST(request: NextRequest) {
   const sessionType = request.headers.get("x-session-type");
-  if (sessionType !== "admin") {
+  if (sessionType !== "admin" && sessionType !== "superadmin") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

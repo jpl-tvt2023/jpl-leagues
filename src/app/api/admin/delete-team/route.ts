@@ -10,7 +10,7 @@ export async function DELETE(request: NextRequest) {
   try {
     // Admin verified by middleware; defense-in-depth check
     const sessionType = request.headers.get("x-session-type");
-    if (sessionType !== "admin") {
+    if (sessionType !== "admin" && sessionType !== "superadmin") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 

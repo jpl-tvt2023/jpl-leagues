@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     // Verify admin (defense-in-depth — middleware also checks)
     const adminId = request.headers.get("x-session-id");
     const sessionType = request.headers.get("x-session-type");
-    if (!adminId || sessionType !== "admin") {
+    if (!adminId || sessionType !== "admin" && sessionType !== "superadmin") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
     // Check if fixtures already exist

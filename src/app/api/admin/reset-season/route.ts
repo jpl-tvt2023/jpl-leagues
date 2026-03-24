@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const sessionType = request.headers.get("x-session-type");
     const sessionId = request.headers.get("x-session-id");
-    if (sessionType !== "admin" || !sessionId) {
+    if (sessionType !== "admin" && sessionType !== "superadmin" || !sessionId) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
