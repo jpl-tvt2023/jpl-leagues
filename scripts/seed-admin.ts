@@ -4,6 +4,9 @@
  * Seeds: 4 admin users, 2 leagues, league_admin assignments
  *
  * Usage: ADMIN_PASSWORD=yourpass npm run seed:admin
+ *
+ * All admins are seeded with the same temporary password and will be
+ * prompted to set their own password on first login.
  */
 
 import { createClient } from "@libsql/client";
@@ -38,16 +41,16 @@ async function seed() {
 
   // ---- 1. Admin users ----
   const adminUsers = [
-    { id: randomUUID(), email: "rahul@jplsports.com",    name: "Rahul",    role: "superadmin" },
-    { id: randomUUID(), email: "sushank@jplsports.com",  name: "Sushank",  role: "admin" },
-    { id: randomUUID(), email: "yashasva@jplsports.com", name: "Yashasva", role: "admin" },
-    { id: randomUUID(), email: "aadi@jplsports.com",     name: "Aadi",     role: "admin" },
+    { id: randomUUID(), email: "rahul@jplindia.com",    name: "Rahul",    role: "superadmin" },
+    { id: randomUUID(), email: "sushank@jplindia.com",  name: "Sushank",  role: "admin" },
+    { id: randomUUID(), email: "yashasva@jplindia.com", name: "Yashasva", role: "admin" },
+    { id: randomUUID(), email: "aadi@jplindia.com",     name: "Aadi",     role: "admin" },
   ];
 
   const insertedUsers: { id: string; role: string; name: string }[] = [];
   for (const u of adminUsers) {
     try {
-      await db.insert(users).values({ ...u, password: hashed });
+      await db.insert(users).values({ ...u, password: hashed, mustChangePassword: true });
       insertedUsers.push(u);
       console.log(`  ✓ User: ${u.name} <${u.email}> (${u.role})`);
     } catch {
@@ -106,10 +109,10 @@ async function seed() {
   }
 
   console.log("\n✅  Seed complete!");
-  console.log("   Admins sign in at /signin with their email + the password provided.");
+  console.log("   Admins sign in at /signin with their email + the shared password.");
+  console.log("   Each admin will be prompted to set their own password on first login.");
   console.log("   Superadmin (Rahul): full platform access.");
   console.log("   Admins (Sushank, Yashasva, Aadi): scoped to assigned leagues.\n");
 }
 
 seed().catch(console.error);
-
