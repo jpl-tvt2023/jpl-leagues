@@ -48,9 +48,9 @@ export async function POST(request: NextRequest) {
           name: user.name,
           role: user.role,
           isAdmin: true, // backward compat
-          mustChangePassword: false,
+          mustChangePassword: user.mustChangePassword,
         },
-        redirectTo: "/admin",
+        redirectTo: user.mustChangePassword ? "/change-password" : "/admin",
       });
 
       // Session type matches the user's role ("superadmin" or "admin")

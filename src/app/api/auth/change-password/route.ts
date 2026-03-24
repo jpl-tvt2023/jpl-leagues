@@ -106,10 +106,11 @@ export async function POST(request: NextRequest) {
       // Hash new password
       const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-      // Update password
+      // Update password and clear mustChangePassword flag
       await db.update(users)
-        .set({ 
-          password: hashedPassword, 
+        .set({
+          password: hashedPassword,
+          mustChangePassword: false,
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
@@ -117,6 +118,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "Password changed successfully",
+        redirectTo: "/admin",
       });
     }
 

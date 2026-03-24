@@ -13,6 +13,7 @@ export const users = sqliteTable("users", {
   name: text("name").notNull(),
   // "superadmin" = platform owner (full access); "admin" = league-scoped admin
   role: text("role").notNull().default("admin"),
+  mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
