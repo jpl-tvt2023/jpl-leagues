@@ -8,6 +8,13 @@
       "when": 1774287500376,
       "tag": "0000_first_killraven",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1774365946674,
+      "tag": "0001_slippery_dreadnoughts",
+      "breakpoints": true
     }
   ]
 }
