@@ -30,7 +30,7 @@ type TabType = "leagues" | "admins";
 
 // ──────────────────────────────────────────────
 // Create-league wizard steps
-type WizardStep = "sport" | "format" | "details";
+type WizardStep = "sport" | "format" | "details" | "assign";
 const SPORT_OPTIONS = [
   { value: "fpl", label: "Football (FPL)", icon: "⚽" },
   { value: "cricket", label: "Cricket", icon: "🏏", comingSoon: true },
@@ -54,7 +54,13 @@ export default function SuperAdminDashboard() {
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>("sport");
   const [leagueForm, setLeagueForm] = useState({ slug: "", name: "", sport: "", format: "", season: "" });
+  const [wizardSelectedAdminIds, setWizardSelectedAdminIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ── Edit League modal ──
+  const [editingLeague, setEditingLeague] = useState<League | null>(null);
+  const [editLeagueForm, setEditLeagueForm] = useState({ name: "", season: "" });
+  const [editLeagueAdminIds, setEditLeagueAdminIds] = useState<string[]>([]);
 
   // ── Admin CRUD modals ──
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
@@ -87,14 +93,20 @@ export default function SuperAdminDashboard() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === "leagues") fetchLeagues();
-    else if (activeTab === "admins") { fetchAdmins(); fetchLeagues(); }
+    fetchLeagues();
+    fetchAdmins();
   }, [activeTab, fetchLeagues, fetchAdmins]);
 
   // ── League actions ──
 
-  const handleCreateLeague = async (e: React.FormEvent) => {
+  const handleCreateLeague = (e: React.FormEvent) => {
     e.preventDefault();
+    // Move to admin assignment step — actual API call happens in handleWizardFinish
+    setWizardSelectedAdminIds([]);
+    setWizardStep("assign");
+  };
+
+  const handleWizardFinish = async (skipAssignment = false) => {
     setIsSubmitting(true);
     setMessage(null);
     try {
@@ -105,11 +117,27 @@ export default function SuperAdminDashboard() {
       });
       const data = await res.json();
       if (!res.ok) { setMessage({ type: "error", text: data.error || "Failed to create league" }); return; }
+
+      const newLeagueId: string = data.id;
+
+      if (!skipAssignment && wizardSelectedAdminIds.length > 0) {
+        await Promise.all(wizardSelectedAdminIds.map(userId =>
+          fetch("/api/superadmin/league-assignments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, leagueId: newLeagueId }),
+          })
+        ));
+        // Refresh admins so assigned league counts are up to date
+        fetchAdmins();
+      }
+
       setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
       setShowWizard(false);
       setWizardStep("sport");
       setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "" });
-      setLeagues(prev => [...prev, data]);
+      setWizardSelectedAdminIds([]);
+      setLeagues(prev => [...prev, { ...data, teamCount: 0, currentGameweek: null }]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
     finally { setIsSubmitting(false); }
   };
@@ -124,6 +152,60 @@ export default function SuperAdminDashboard() {
       if (!res.ok) { setMessage({ type: "error", text: "Failed to update league" }); return; }
       setLeagues(prev => prev.map(l => l.id === league.id ? { ...l, isActive: !l.isActive } : l));
     } catch { setMessage({ type: "error", text: "Network error" }); }
+  };
+
+  const openEditLeague = (league: League) => {
+    setEditingLeague(league);
+    setEditLeagueForm({ name: league.name, season: league.season });
+    const currentAdminIds = admins.filter(a => a.assignedLeagueIds.includes(league.id)).map(a => a.id);
+    setEditLeagueAdminIds(currentAdminIds);
+  };
+
+  const handleEditLeague = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLeague) return;
+    setIsSubmitting(true);
+    setMessage(null);
+    try {
+      if (editLeagueForm.name !== editingLeague.name || editLeagueForm.season !== editingLeague.season) {
+        const res = await fetch(`/api/superadmin/leagues/${editingLeague.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: editLeagueForm.name, season: editLeagueForm.season }),
+        });
+        if (!res.ok) { setMessage({ type: "error", text: "Failed to update league details" }); return; }
+      }
+
+      const originalAdminIds = admins.filter(a => a.assignedLeagueIds.includes(editingLeague.id)).map(a => a.id);
+      const toAdd = editLeagueAdminIds.filter(id => !originalAdminIds.includes(id));
+      const toRemove = originalAdminIds.filter(id => !editLeagueAdminIds.includes(id));
+
+      await Promise.all([
+        ...toAdd.map(userId => fetch("/api/superadmin/league-assignments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, leagueId: editingLeague.id }),
+        })),
+        ...toRemove.map(userId => fetch("/api/superadmin/league-assignments", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, leagueId: editingLeague.id }),
+        })),
+      ]);
+
+      setLeagues(prev => prev.map(l =>
+        l.id === editingLeague.id ? { ...l, name: editLeagueForm.name, season: editLeagueForm.season } : l
+      ));
+      setAdmins(prev => prev.map(a => {
+        if (toAdd.includes(a.id)) return { ...a, assignedLeagueIds: [...a.assignedLeagueIds, editingLeague.id] };
+        if (toRemove.includes(a.id)) return { ...a, assignedLeagueIds: a.assignedLeagueIds.filter(id => id !== editingLeague.id) };
+        return a;
+      }));
+
+      setEditingLeague(null);
+      setMessage({ type: "success", text: "League updated." });
+    } catch { setMessage({ type: "error", text: "Network error" }); }
+    finally { setIsSubmitting(false); }
   };
 
   // ── Admin actions ──
@@ -236,6 +318,69 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+
+      {/* ── Edit League Modal ── */}
+      {editingLeague && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-lg">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Edit League</h2>
+              <button onClick={() => setEditingLeague(null)} className="text-gray-400 hover:text-white text-2xl">×</button>
+            </div>
+            <form onSubmit={handleEditLeague} className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-sm text-gray-300 mb-1">Name</label>
+                  <input
+                    required value={editLeagueForm.name}
+                    onChange={e => setEditLeagueForm({ ...editLeagueForm, name: e.target.value })}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-sm text-gray-300 mb-1">Season</label>
+                  <input
+                    required value={editLeagueForm.season}
+                    onChange={e => setEditLeagueForm({ ...editLeagueForm, season: e.target.value })}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-2">Assigned Admins</label>
+                {admins.filter(a => a.role !== "superadmin").length === 0 ? (
+                  <p className="text-gray-500 text-sm">No admin users yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-52 overflow-y-auto">
+                    {admins.filter(a => a.role !== "superadmin").map(admin => (
+                      <label key={admin.id} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 cursor-pointer hover:bg-white/10 transition">
+                        <input
+                          type="checkbox"
+                          checked={editLeagueAdminIds.includes(admin.id)}
+                          onChange={() => setEditLeagueAdminIds(prev =>
+                            prev.includes(admin.id) ? prev.filter(id => id !== admin.id) : [...prev, admin.id]
+                          )}
+                          className="w-4 h-4 accent-yellow-400"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-white text-sm font-medium">{admin.name}</p>
+                          <p className="text-gray-500 text-xs">{admin.email}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setEditingLeague(null)} className="flex-1 rounded-lg border border-white/10 px-4 py-2.5 text-gray-300 hover:bg-white/5 transition">Cancel</button>
+                <button type="submit" disabled={isSubmitting} className="flex-1 rounded-lg bg-yellow-500 px-4 py-2.5 font-semibold text-slate-900 hover:bg-yellow-400 transition disabled:opacity-50">
+                  {isSubmitting ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ── Delete Admin Confirmation Modal ── */}
       {deletingAdmin && (
@@ -569,14 +714,62 @@ export default function SuperAdminDashboard() {
                       </div>
                       <div className="sm:col-span-2 flex gap-3">
                         <button
-                          type="submit" disabled={isSubmitting}
-                          className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
+                          type="submit"
+                          className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
                         >
-                          {isSubmitting ? "Creating..." : "Create League"}
+                          Next →
                         </button>
                         <button type="button" onClick={() => setShowWizard(false)} className="text-gray-400 hover:text-white px-4 py-2.5 transition">Cancel</button>
                       </div>
                     </form>
+                  </div>
+                )}
+
+                {/* Step: Assign Admins */}
+                {wizardStep === "assign" && (
+                  <div>
+                    <button onClick={() => setWizardStep("details")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
+                    <h3 className="text-white font-semibold text-lg mb-1">Assign Admins</h3>
+                    <p className="text-gray-400 text-sm mb-5">Choose which admins can manage this league. You can change this later.</p>
+                    {admins.filter(a => a.role !== "superadmin").length === 0 ? (
+                      <p className="text-gray-500 text-sm mb-5">No admin users yet. You can assign admins after creating them.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-52 overflow-y-auto mb-5">
+                        {admins.filter(a => a.role !== "superadmin").map(admin => (
+                          <label key={admin.id} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 cursor-pointer hover:bg-white/10 transition">
+                            <input
+                              type="checkbox"
+                              checked={wizardSelectedAdminIds.includes(admin.id)}
+                              onChange={() => setWizardSelectedAdminIds(prev =>
+                                prev.includes(admin.id) ? prev.filter(id => id !== admin.id) : [...prev, admin.id]
+                              )}
+                              className="w-4 h-4 accent-yellow-400"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-white text-sm font-medium">{admin.name}</p>
+                              <p className="text-gray-500 text-xs">{admin.email}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => handleWizardFinish(false)}
+                        disabled={isSubmitting}
+                        className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
+                      >
+                        {isSubmitting ? "Creating..." : "Create League"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleWizardFinish(true)}
+                        disabled={isSubmitting}
+                        className="text-gray-400 hover:text-white text-sm transition disabled:opacity-50"
+                      >
+                        Skip
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -618,13 +811,19 @@ export default function SuperAdminDashboard() {
                           </span>
                         </td>
                         <td className="px-5 py-4">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Link
                               href={`/admin/${league.id}`}
                               className="text-xs text-yellow-400 hover:text-yellow-300 transition border border-yellow-400/30 px-3 py-1.5 rounded-lg whitespace-nowrap"
                             >
                               Manage
                             </Link>
+                            <button
+                              onClick={() => openEditLeague(league)}
+                              className="text-xs text-blue-400 hover:text-blue-300 transition border border-blue-400/30 px-3 py-1.5 rounded-lg whitespace-nowrap"
+                            >
+                              Edit
+                            </button>
                             <button
                               onClick={() => toggleLeagueActive(league)}
                               className={`text-xs px-3 py-1.5 rounded-lg transition border whitespace-nowrap ${

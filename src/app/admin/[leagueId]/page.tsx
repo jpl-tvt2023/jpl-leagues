@@ -204,6 +204,14 @@ export default function AdminDashboard() {
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Superadmin detection — show "← Platform Admin" link if superadmin is viewing
+  const [isSuperadminViewer, setIsSuperadminViewer] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/me").then(r => r.json()).then(d => {
+      if (d.type === "superadmin") setIsSuperadminViewer(true);
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (leagueId) fetchTeams();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1141,6 +1149,11 @@ export default function AdminDashboard() {
           <span className="text-xl font-bold text-white hidden sm:inline">Admin Dashboard</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
+          {isSuperadminViewer && (
+            <Link href="/superadmin" className="text-orange-400 font-semibold transition">
+              ← Platform Admin
+            </Link>
+          )}
           <Link href="/admin" className="text-yellow-400 font-semibold transition">
             ← Leagues
           </Link>

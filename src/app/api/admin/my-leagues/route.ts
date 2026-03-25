@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
     leagueIds = assignments.map((a) => a.leagueId);
   }
 
-  // Fetch all leagues (filtered if needed)
+  // Fetch leagues (superadmin gets all; admins get only active assigned leagues)
   const allLeagues = await db.select().from(leagues).orderBy(leagues.createdAt);
   const accessibleLeagues = leagueIds === null
     ? allLeagues
-    : allLeagues.filter((l) => leagueIds!.includes(l.id));
+    : allLeagues.filter((l) => leagueIds!.includes(l.id) && l.isActive);
 
   // For each league, fetch quick stats
   const leaguesWithStats = await Promise.all(
