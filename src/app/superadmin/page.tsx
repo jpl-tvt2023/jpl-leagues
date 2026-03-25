@@ -79,7 +79,7 @@ export default function SuperAdminDashboard() {
       if (res.status === 401 || res.status === 403) { window.location.href = "/signin"; return; }
       const data = await res.json();
       setLeagues(data.leagues || []);
-    } catch { /* silent */ } finally { setIsLoading(false); }
+    } catch (err) { console.error("fetchLeagues failed:", err); } finally { setIsLoading(false); }
   }, []);
 
   const fetchAdmins = useCallback(async () => {
@@ -89,7 +89,7 @@ export default function SuperAdminDashboard() {
       if (res.status === 401 || res.status === 403) { window.location.href = "/signin"; return; }
       const data = await res.json();
       setAdmins(data.admins || []);
-    } catch { /* silent */ } finally { setIsLoading(false); }
+    } catch (err) { console.error("fetchAdmins failed:", err); } finally { setIsLoading(false); }
   }, []);
 
   useEffect(() => {
