@@ -43,23 +43,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    // --- FPL API: Sync deadlines for all gameweeks ---
-    try {
-      const fplData = await fetchBootstrapData();
-      if (fplData && Array.isArray(fplData.events)) {
-        for (const event of fplData.events) {
-          const gwId = String(event.id);
-          const deadline = event.deadline_time ? new Date(event.deadline_time) : new Date('2099-12-31T23:59:59Z');
-          await db.insert(gameweeks)
-            .values({ id: gwId, number: event.id, deadline })
-            .onConflictDoUpdate({
-              target: [gameweeks.number],
-              set: { deadline },
-            });
+    // --- FPL API: Sync deadlines for this team's league gameweeks ---
+    // Get team's leagueId for scoped deadline sync
+    const teamBasic = await db.select({ leagueId: teams.leagueId }).from(teams).where(eq(teams.id, teamId)).limit(1);
+    const teamLeagueId = teamBasic[0]?.leagueId;
+
+    if (teamLeagueId) {
+      try {
+        const fplData = await fetchBootstrapData();
+        if (fplData && Array.isArray(fplData.events)) {
+          for (const event of fplData.events) {
+            const deadline = event.deadline_time ? new Date(event.deadline_time) : new Date('2099-12-31T23:59:59Z');
+            await db.update(gameweeks)
+              .set({ deadline })
+              .where(and(eq(gameweeks.leagueId, teamLeagueId), eq(gameweeks.number, event.id)));
+          }
         }
+      } catch (err) {
+        console.error("Failed to sync FPL deadlines:", err);
       }
-    } catch (err) {
-      console.error("Failed to sync FPL deadlines:", err);
     }
 
     // Get team with all relations

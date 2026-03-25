@@ -71,6 +71,12 @@ function isAdminRoute(pathname: string, method: string): boolean {
   return false;
 }
 
+// Extract leagueId from /api/admin/[leagueId]/... paths
+function extractLeagueId(pathname: string): string | null {
+  const match = pathname.match(/^\/api\/admin\/([^/]+)\//);
+  return match ? match[1] : null;
+}
+
 function isTeamRoute(pathname: string): boolean {
   return pathname.startsWith("/api/team/");
 }
@@ -80,8 +86,12 @@ function isTeamRoute(pathname: string): boolean {
 const RATE_LIMITED_ROUTES: Record<string, { max: number; windowMs: number }> = {
   "/api/auth/signin": { max: 5, windowMs: 60_000 },
   "/api/auth/change-password": { max: 5, windowMs: 60_000 },
-  "/api/admin/reset-season": { max: 1, windowMs: 60_000 },
 };
+
+// Rate limit reset-season regardless of leagueId in path
+function isResetSeasonRoute(pathname: string): boolean {
+  return /^\/api\/admin\/[^/]+\/reset-season$/.test(pathname);
+}
 
 // ---------- Middleware ----------
 
@@ -102,6 +112,16 @@ export async function middleware(request: NextRequest) {
           { status: 429 }
         );
       }
+    }
+  }
+  // Rate limit reset-season (dynamic path)
+  if (isResetSeasonRoute(pathname) && method === "POST") {
+    const ip = getClientIp(request);
+    if (!(await rateLimit(`reset-season:${ip}`, 1, 60_000))) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 }
+      );
     }
   }
 
@@ -146,10 +166,12 @@ export async function middleware(request: NextRequest) {
     if (session.type !== "admin" && session.type !== "superadmin") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
-    // Forward verified session info as headers for route handlers
+    // Forward verified session info + leagueId as headers for route handlers
     const response = NextResponse.next();
     response.headers.set("x-session-id", session.id);
     response.headers.set("x-session-type", session.type);
+    const leagueId = extractLeagueId(pathname);
+    if (leagueId) response.headers.set("x-league-id", leagueId);
     return response;
   }
 

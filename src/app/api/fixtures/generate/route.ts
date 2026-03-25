@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
         await db.insert(gameweeks).values({
           id: generateId(),
           number: gw.number,
+          leagueId: groupA.leagueId,
           isPlayoffs: gw.isPlayoffs,
           deadline: new Date(), // Will be updated with actual FPL deadlines
         });
