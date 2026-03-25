@@ -31,10 +31,13 @@ export default function AdminLeaguePicker() {
         window.location.href = "/signin";
         return;
       }
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
       setLeagues(data.leagues || []);
-    } catch {
-      setError("Failed to load leagues");
+    } catch (err) {
+      setError(`Failed to load leagues${err instanceof Error ? `: ${err.message}` : ""}`);
     } finally {
       setIsLoading(false);
     }
