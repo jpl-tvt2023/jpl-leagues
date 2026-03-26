@@ -157,7 +157,7 @@ function FixtureCard({
               {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
             </button>
             {expanded && (
-              <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-4 text-xs">
+              <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
                 <div>
                   <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
                   {homePlayers.map((p, i) => (

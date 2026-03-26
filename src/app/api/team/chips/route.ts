@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, teams, gameweeks, gameweekChips, settings, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { getChipSet } from "@/lib/scoring";
 
 const ALL_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"] as const;
 type ChipCode = typeof ALL_CHIP_CODES[number];
@@ -20,12 +21,6 @@ const CHIP_SET_COL: Record<ChipCode, [keyof typeof teams.$inferSelect, keyof typ
   CB: ["comebackSet1Used",      "comebackSet2Used"],
   UD: ["underdogSet1Used",      "underdogSet2Used"],
 };
-
-function getChipSet(gwNumber: number, playoffStartGw: number): 1 | 2 | "playoffs" {
-  if (gwNumber >= playoffStartGw) return "playoffs";
-  const midpoint = Math.ceil((playoffStartGw - 1) / 2);
-  return gwNumber <= midpoint ? 1 : 2;
-}
 
 /**
  * POST /api/team/chips

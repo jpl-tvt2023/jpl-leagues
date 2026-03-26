@@ -3,6 +3,7 @@ import { db, teams, players, groups, fixtures, results, gameweeks, gameweekCapta
 import { eq, and, gt, asc, desc, or } from "drizzle-orm";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { getTop2FromGroup } from "@/lib/chip-validation";
+import { getChipSet } from "@/lib/scoring";
 
 // ⚠️ TEST OVERRIDE: set to null to use live GW detection
 const TEST_GW_OVERRIDE: number | null = null;
@@ -13,13 +14,6 @@ function getFplTeamUrl(fplId: string, gameweek?: number): string {
     return `https://fantasy.premierleague.com/entry/${fplId}/event/${gameweek}`;
   }
   return `https://fantasy.premierleague.com/entry/${fplId}/history`;
-}
-
-// Determine chip set based on gameweek
-function getChipSet(gwNumber: number): 1 | 2 | "playoffs" {
-  if (gwNumber <= 15) return 1;
-  if (gwNumber <= 30) return 2;
-  return "playoffs";
 }
 
 async function getAnnouncementSettings() {

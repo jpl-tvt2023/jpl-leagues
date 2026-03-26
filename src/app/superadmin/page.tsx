@@ -989,7 +989,8 @@ export default function SuperAdminDashboard() {
               </div>
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[600px]">
                   <thead>
                     <tr className="border-b border-white/10 text-gray-400 text-left">
                       <th className="px-5 py-3 font-medium">League</th>
@@ -1051,6 +1052,7 @@ export default function SuperAdminDashboard() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </div>
@@ -1080,7 +1082,8 @@ export default function SuperAdminDashboard() {
               </div>
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[650px]">
                   <thead>
                     <tr className="border-b border-white/10 text-gray-400 text-left">
                       <th className="px-5 py-3 font-medium">Name</th>
@@ -1156,6 +1159,7 @@ export default function SuperAdminDashboard() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </div>
