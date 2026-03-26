@@ -30,7 +30,7 @@ type TabType = "leagues" | "admins";
 
 // ──────────────────────────────────────────────
 // Create-league wizard steps
-type WizardStep = "sport" | "format" | "details" | "assign";
+type WizardStep = "sport" | "format" | "team_size" | "chips" | "details" | "assign";
 const SPORT_OPTIONS = [
   { value: "fpl", label: "Football (FPL)", icon: "⚽" },
   { value: "cricket", label: "Cricket", icon: "🏏", comingSoon: true },
@@ -41,6 +41,28 @@ const FORMAT_OPTIONS: Record<string, { value: string; label: string; description
     { value: "classic", label: "Classic", description: "Round-robin / points-based", comingSoon: true },
   ],
 };
+const CHIP_OPTIONS: { code: string; name: string; description: string }[] = [
+  { code: "W", name: "Win-Win", description: "If both players in your team finish with positive scores this GW, earn an extra league point." },
+  { code: "D", name: "Double Pointer", description: "Your match points (W/D/L) are doubled this GW. Eligibility restrictions apply." },
+  { code: "C", name: "Challenge Chip", description: "Replace your scheduled fixture with a match against a top-2 team from the opposite group." },
+  { code: "SL", name: "Score Lock", description: "Your GW score is guaranteed at least your season average. Low scores are floored at your average." },
+  { code: "CB", name: "Comeback", description: "If you lost the previous GW and win this one, earn +1 extra league point." },
+  { code: "UD", name: "Underdog", description: "If you are ranked 3+ places below your opponent and you win, earn +1 extra league point." },
+];
+const TEAM_SIZE_OPTIONS = [
+  {
+    teamSize: 32, groupCount: 2, label: "32 Teams", sublabel: "2 groups of 16",
+    description: "Full league — 30 GW group stage, RO16 → QF → SF → Final playoffs (GW31-38)",
+  },
+  {
+    teamSize: 16, groupCount: 1, label: "16 Teams", sublabel: "1 group of 16",
+    description: "Mid-size — 30 GW group stage, QF → SF → Final playoffs (GW31-36)",
+  },
+  {
+    teamSize: 8, groupCount: 1, label: "8 Teams", sublabel: "1 group of 8",
+    description: "Compact — 35 GW group stage (5× round-robin), SF + Final playoffs (GW36-38)",
+  },
+];
 // ──────────────────────────────────────────────
 
 export default function SuperAdminDashboard() {
@@ -53,7 +75,11 @@ export default function SuperAdminDashboard() {
   // ── Create-league wizard ──
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>("sport");
-  const [leagueForm, setLeagueForm] = useState({ slug: "", name: "", sport: "", format: "", season: "" });
+  const [leagueForm, setLeagueForm] = useState({
+    slug: "", name: "", sport: "", format: "", season: "",
+    teamSize: 32, groupCount: 2, playoffStartGw: 31,
+    enabledChips: ["D", "W", "C"] as string[],
+  });
   const [wizardSelectedAdminIds, setWizardSelectedAdminIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -61,6 +87,12 @@ export default function SuperAdminDashboard() {
   const [editingLeague, setEditingLeague] = useState<League | null>(null);
   const [editLeagueForm, setEditLeagueForm] = useState({ name: "", season: "" });
   const [editLeagueAdminIds, setEditLeagueAdminIds] = useState<string[]>([]);
+
+  // ── Delete League modal ──
+  const [deletingLeague, setDeletingLeague] = useState<League | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // ── Admin CRUD modals ──
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
@@ -113,7 +145,17 @@ export default function SuperAdminDashboard() {
       const res = await fetch("/api/superadmin/leagues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(leagueForm),
+        body: JSON.stringify({
+          slug: leagueForm.slug,
+          name: leagueForm.name,
+          sport: leagueForm.sport,
+          format: leagueForm.format,
+          season: leagueForm.season,
+          teamSize: leagueForm.teamSize,
+          groupCount: leagueForm.groupCount,
+          playoffStartGw: leagueForm.playoffStartGw,
+          enabledChips: leagueForm.enabledChips,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setMessage({ type: "error", text: data.error || "Failed to create league" }); return; }
@@ -135,7 +177,7 @@ export default function SuperAdminDashboard() {
       setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
       setShowWizard(false);
       setWizardStep("sport");
-      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "" });
+      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"] });
       setWizardSelectedAdminIds([]);
       setLeagues(prev => [...prev, { ...data, teamCount: 0, currentGameweek: null }]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
@@ -152,6 +194,32 @@ export default function SuperAdminDashboard() {
       if (!res.ok) { setMessage({ type: "error", text: "Failed to update league" }); return; }
       setLeagues(prev => prev.map(l => l.id === league.id ? { ...l, isActive: !l.isActive } : l));
     } catch { setMessage({ type: "error", text: "Network error" }); }
+  };
+
+  const handleDeleteLeague = async () => {
+    if (!deletingLeague || !deletePassword) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/superadmin/leagues/${deletingLeague.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deletePassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data.error || "Failed to delete league");
+        return;
+      }
+      setLeagues(prev => prev.filter(l => l.id !== deletingLeague.id));
+      setDeletingLeague(null);
+      setDeletePassword("");
+      setMessage({ type: "success", text: data.message });
+    } catch {
+      setDeleteError("Network error");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const openEditLeague = (league: League) => {
@@ -382,6 +450,50 @@ export default function SuperAdminDashboard() {
         </div>
       )}
 
+      {/* ── Delete League Confirmation Modal ── */}
+      {deletingLeague && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+            <h2 className="text-xl font-bold text-white mb-2">Delete League</h2>
+            <p className="text-gray-400 mb-1">
+              You are about to permanently delete{" "}
+              <span className="text-white font-semibold">{deletingLeague.name}</span>.
+            </p>
+            <p className="text-red-400 text-sm mb-5">
+              This will delete ALL teams, players, fixtures, results, chips, and playoff data. This cannot be undone.
+            </p>
+            <div className="mb-5">
+              <label className="block text-sm text-gray-300 mb-1">Confirm your password to proceed</label>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={e => { setDeletePassword(e.target.value); setDeleteError(null); }}
+                placeholder="Your superadmin password"
+                className="w-full rounded-lg bg-slate-700 border border-white/10 px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                autoFocus
+              />
+              {deleteError && <p className="text-red-400 text-sm mt-2">{deleteError}</p>}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setDeletingLeague(null); setDeletePassword(""); setDeleteError(null); }}
+                disabled={deleteLoading}
+                className="flex-1 rounded-lg border border-white/10 px-4 py-2.5 text-gray-300 hover:bg-white/5 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteLeague}
+                disabled={deleteLoading || !deletePassword}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 font-semibold text-white hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {deleteLoading ? "Deleting..." : "Delete League"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Delete Admin Confirmation Modal ── */}
       {deletingAdmin && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -595,7 +707,7 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400 text-sm mt-1">Manage all leagues on the platform</p>
               </div>
               <button
-                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "" }); setMessage(null); }}
+                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"] }); setMessage(null); }}
                 className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
               >
                 + Create League
@@ -654,7 +766,8 @@ export default function SuperAdminDashboard() {
                           onClick={() => {
                             if (!opt.comingSoon) {
                               setLeagueForm({ ...leagueForm, format: opt.value });
-                              setWizardStep("details");
+                              // TVT has team-size variants; other formats go straight to details
+                              setWizardStep(opt.value === "tvt" ? "team_size" : "details");
                             }
                           }}
                           className={`relative rounded-xl border p-5 text-left transition ${
@@ -675,13 +788,99 @@ export default function SuperAdminDashboard() {
                   </div>
                 )}
 
+                {/* Step: Team Size (TVT only) */}
+                {wizardStep === "team_size" && (
+                  <div>
+                    <button onClick={() => setWizardStep("format")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
+                    <h3 className="text-white font-semibold text-lg mb-1">Team Size</h3>
+                    <p className="text-gray-400 text-sm mb-5">Choose how many teams will compete in this league.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {TEAM_SIZE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.teamSize}
+                          onClick={() => {
+                            const playoffStartGw = opt.teamSize === 8 ? 36 : 31;
+                            setLeagueForm({ ...leagueForm, teamSize: opt.teamSize, groupCount: opt.groupCount, playoffStartGw });
+                            setWizardStep("chips");
+                          }}
+                          className={`rounded-xl border p-5 text-left transition ${
+                            leagueForm.teamSize === opt.teamSize
+                              ? "border-yellow-500 bg-yellow-500/10"
+                              : "border-white/10 bg-white/5 hover:border-yellow-500/50 hover:bg-white/10"
+                          } cursor-pointer`}
+                        >
+                          <div className="text-white font-bold text-xl mb-0.5">{opt.label}</div>
+                          <div className="text-yellow-400 text-xs font-medium mb-2">{opt.sublabel}</div>
+                          <div className="text-gray-400 text-xs leading-relaxed">{opt.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setShowWizard(false)} className="mt-4 text-gray-500 hover:text-gray-300 text-sm transition">Cancel</button>
+                  </div>
+                )}
+
+                {/* Step: Chip Selection (TVT only) */}
+                {wizardStep === "chips" && (
+                  <div>
+                    <button onClick={() => setWizardStep("team_size")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
+                    <h3 className="text-white font-semibold text-lg mb-1">Select Chips</h3>
+                    <p className="text-gray-400 text-sm mb-5">
+                      Choose exactly <span className="text-yellow-400 font-semibold">3 chips</span> for this league. These cannot be changed after creation.
+                      Each team gets one of each chip per set.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                      {CHIP_OPTIONS.map(chip => {
+                        const selected = leagueForm.enabledChips.includes(chip.code);
+                        const atMax = leagueForm.enabledChips.length >= 3 && !selected;
+                        return (
+                          <button
+                            key={chip.code}
+                            disabled={atMax}
+                            onClick={() => {
+                              if (selected) {
+                                setLeagueForm({ ...leagueForm, enabledChips: leagueForm.enabledChips.filter(c => c !== chip.code) });
+                              } else if (!atMax) {
+                                setLeagueForm({ ...leagueForm, enabledChips: [...leagueForm.enabledChips, chip.code] });
+                              }
+                            }}
+                            className={`rounded-xl border p-4 text-left transition ${
+                              selected
+                                ? "border-yellow-500 bg-yellow-500/10"
+                                : atMax
+                                  ? "border-white/5 bg-white/2 opacity-40 cursor-not-allowed"
+                                  : "border-white/10 bg-white/5 hover:border-yellow-500/50 hover:bg-white/10 cursor-pointer"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${selected ? "bg-yellow-500 text-slate-900" : "bg-white/10 text-gray-400"}`}>{chip.code}</span>
+                              <span className="text-white font-semibold text-sm">{chip.name}</span>
+                              {selected && <span className="ml-auto text-yellow-400 text-xs">✓ Selected</span>}
+                            </div>
+                            <p className="text-gray-400 text-xs leading-relaxed">{chip.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <button
+                        disabled={leagueForm.enabledChips.length !== 3}
+                        onClick={() => setWizardStep("details")}
+                        className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Next → {leagueForm.enabledChips.length < 3 && `(${leagueForm.enabledChips.length}/3 selected)`}
+                      </button>
+                      <button type="button" onClick={() => setShowWizard(false)} className="text-gray-400 hover:text-white px-4 py-2.5 transition">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Step: Details form */}
                 {wizardStep === "details" && (
                   <div>
-                    <button onClick={() => setWizardStep("format")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
+                    <button onClick={() => setWizardStep(leagueForm.format === "tvt" ? "chips" : "format")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
                     <h3 className="text-white font-semibold text-lg mb-1">League Details</h3>
                     <p className="text-gray-400 text-sm mb-5">
-                      {leagueForm.sport.toUpperCase()} · {leagueForm.format.toUpperCase()}
+                      {leagueForm.sport.toUpperCase()} · {leagueForm.format.toUpperCase()} · {leagueForm.teamSize} Teams
                     </p>
                     <form onSubmit={handleCreateLeague} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
@@ -702,13 +901,24 @@ export default function SuperAdminDashboard() {
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                         />
                       </div>
-                      <div className="sm:col-span-2">
+                      <div>
                         <label className="block text-sm text-gray-300 mb-1">Season</label>
                         <input
                           required value={leagueForm.season}
                           onChange={e => setLeagueForm({ ...leagueForm, season: e.target.value })}
                           placeholder="2025-26"
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-300 mb-1">
+                          Playoff Start GW <span className="text-gray-500">(31–36)</span>
+                        </label>
+                        <input
+                          type="number" min={31} max={36} required
+                          value={leagueForm.playoffStartGw}
+                          onChange={e => setLeagueForm({ ...leagueForm, playoffStartGw: parseInt(e.target.value) || leagueForm.playoffStartGw })}
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
                         />
                       </div>
                       <div className="sm:col-span-2 flex gap-3">
@@ -832,6 +1042,12 @@ export default function SuperAdminDashboard() {
                               }`}
                             >
                               {league.isActive ? "Deactivate" : "Activate"}
+                            </button>
+                            <button
+                              onClick={() => { setDeletingLeague(league); setDeletePassword(""); setDeleteError(null); }}
+                              className="text-xs px-3 py-1.5 rounded-lg transition border border-red-600/40 text-red-500 hover:bg-red-600/10 whitespace-nowrap"
+                            >
+                              Delete
                             </button>
                           </div>
                         </td>

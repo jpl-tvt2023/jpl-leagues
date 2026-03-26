@@ -159,50 +159,55 @@ export function checkNegativeHitCap(hits: number): {
 
 /**
  * Calculate chip eligibility
- * - Double Pointer: Rank 1-8 use only against Top 8, Rank 9-16 only against higher-ranked
- * - Chips reset between Set 1 (GW1-15) and Set 2 (GW16-30)
+ * - Double Pointer: Rank 1-8 use only against Top 8, Rank 9+ only against higher-ranked
+ * - Chips reset between Set 1 and Set 2 (boundaries depend on playoffStartGw)
  */
 export function canUseDoublePointer(
   teamRank: number,
   opponentRank: number,
-  gameweek: number
+  gameweek: number,
+  playoffStartGw: number = 31
 ): boolean {
-  // Playoffs (GW31+) have no chip restrictions
-  if (gameweek >= 31) return true;
+  // Playoffs have no chip restrictions
+  if (gameweek >= playoffStartGw) return true;
 
   if (teamRank <= 8) {
     // Top 8 can only use against other Top 8 teams
     return opponentRank <= 8;
   } else {
-    // Rank 9-16 can only use against higher-ranked teams (lower rank number)
+    // Rank 9+ can only use against higher-ranked teams (lower rank number)
     return opponentRank < teamRank;
   }
 }
 
 /**
- * Get chip set based on gameweek
- * Set 1: GW1-15, Set 2: GW16-30
+ * Get chip set based on gameweek and league config.
+ * Set boundaries:
+ *   Set 1: GW1 to midpoint (ceil((playoffStartGw-1)/2))
+ *   Set 2: GW(midpoint+1) to playoffStartGw-1
+ * Examples:
+ *   32/16-team (playoffStartGw=31): Set1 GW1-15, Set2 GW16-30
+ *   8-team     (playoffStartGw=36): Set1 GW1-17, Set2 GW18-35
  */
-export function getChipSet(gameweek: number): 1 | 2 | "playoffs" {
-  if (gameweek <= 15) return 1;
-  if (gameweek <= 30) return 2;
-  return "playoffs";
+export function getChipSet(gameweek: number, playoffStartGw: number = 31): 1 | 2 | "playoffs" {
+  if (gameweek >= playoffStartGw) return "playoffs";
+  const midpoint = Math.ceil((playoffStartGw - 1) / 2);
+  return gameweek <= midpoint ? 1 : 2;
 }
 
 /**
  * Check captaincy chip availability
- * Each player has 15 chips in League Stage (GW1-30)
- * No limit in Playoffs (GW31-38)
+ * Each player has 15 chips in League Stage
+ * No limit in Playoffs
  */
 export function canBeCaptain(
   chipsUsed: number,
-  gameweek: number
+  gameweek: number,
+  playoffStartGw: number = 31
 ): boolean {
   const MAX_CAPTAINCY_CHIPS = 15;
-  
   // No limit in playoffs
-  if (gameweek >= 31) return true;
-  
+  if (gameweek >= playoffStartGw) return true;
   return chipsUsed < MAX_CAPTAINCY_CHIPS;
 }
 

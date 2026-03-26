@@ -30,6 +30,20 @@ export const leagues = sqliteTable("leagues", {
   format: text("format").notNull(), // "tvt" | "classic" | "grand-prix" | "auction"
   season: text("season").notNull(), // e.g. "2025-26"
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+
+  // Variant config (TVT Football)
+  // teamSize: total teams in the league (8 | 16 | 32)
+  // groupCount: number of groups (1 | 2); teamsPerGroup = teamSize / groupCount
+  // playoffStartGw: first playoff gameweek (31–36); league stage = GW1 to playoffStartGw-1
+  // enabledChips: JSON array of exactly 3 chip codes chosen at creation time
+  //   Available codes: "W" (Win-Win), "D" (Double Pointer), "C" (Challenge Chip),
+  //                    "SL" (Score Lock), "CB" (Comeback), "UD" (Underdog)
+  //   Example: '["D","W","C"]' (default = classic three)
+  teamSize: integer("team_size").notNull().default(32),
+  groupCount: integer("group_count").notNull().default(2),
+  playoffStartGw: integer("playoff_start_gw").notNull().default(31),
+  enabledChips: text("enabled_chips").notNull().default('["D","W","C"]'),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -65,13 +79,21 @@ export const teams = sqliteTable("teams", {
   leaguePoints: integer("league_points").notNull().default(0),
   bonusPoints: integer("bonus_points").notNull().default(0),
   
-  // Chip tracking for Set 1 (GW1-15) and Set 2 (GW16-30)
+  // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)
+  // Existing chips: WW = Win-Win, DP = Double Pointer, CC = Challenge Chip
+  // New chips:      SL = Score Lock, CB = Comeback, UD = Underdog
   doublePointerSet1Used: integer("double_pointer_set1_used", { mode: "boolean" }).notNull().default(false),
   challengeChipSet1Used: integer("challenge_chip_set1_used", { mode: "boolean" }).notNull().default(false),
   winWinSet1Used: integer("win_win_set1_used", { mode: "boolean" }).notNull().default(false),
+  scoreLockSet1Used: integer("score_lock_set1_used", { mode: "boolean" }).notNull().default(false),
+  comebackSet1Used: integer("comeback_set1_used", { mode: "boolean" }).notNull().default(false),
+  underdogSet1Used: integer("underdog_set1_used", { mode: "boolean" }).notNull().default(false),
   doublePointerSet2Used: integer("double_pointer_set2_used", { mode: "boolean" }).notNull().default(false),
   challengeChipSet2Used: integer("challenge_chip_set2_used", { mode: "boolean" }).notNull().default(false),
   winWinSet2Used: integer("win_win_set2_used", { mode: "boolean" }).notNull().default(false),
+  scoreLockSet2Used: integer("score_lock_set2_used", { mode: "boolean" }).notNull().default(false),
+  comebackSet2Used: integer("comeback_set2_used", { mode: "boolean" }).notNull().default(false),
+  underdogSet2Used: integer("underdog_set2_used", { mode: "boolean" }).notNull().default(false),
   
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
@@ -187,8 +209,9 @@ export const gameweekChips = sqliteTable("gameweek_chips", {
   teamId: text("team_id").notNull().references(() => teams.id),
   gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
   
-  // Chip type: "W" = Win-Win, "D" = Double Pointer, "C" = Challenge
-  chipType: text("chip_type").notNull(), // "W", "D", "C"
+  // Chip type: "W" = Win-Win, "D" = Double Pointer, "C" = Challenge,
+  //            "SL" = Score Lock, "CB" = Comeback, "UD" = Underdog
+  chipType: text("chip_type").notNull(), // "W" | "D" | "C" | "SL" | "CB" | "UD"
   
   // For Challenge Chip: the team being challenged (top-2 from opposite group)
   challengedTeamId: text("challenged_team_id").references(() => teams.id),
@@ -204,9 +227,12 @@ export const gameweekChips = sqliteTable("gameweek_chips", {
   // For Win-Win: track if team had negative hits (chip wasted)
   hadNegativeHits: integer("had_negative_hits", { mode: "boolean" }).notNull().default(false),
   
-  // For Double Pointer: team's rank and opponent's rank at time of validation
+  // For Double Pointer / Underdog: team's rank and opponent's rank at time of validation
   teamRankAtValidation: integer("team_rank_at_validation"),
   opponentRankAtValidation: integer("opponent_rank_at_validation"),
+
+  // For Score Lock: the team's season average score at time of chip use (used as the floor)
+  averageScoreAtUse: integer("average_score_at_use"),
   
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
@@ -219,6 +245,7 @@ export const gameweekChips = sqliteTable("gameweek_chips", {
 // Playoff ties — one row per matchup (links 2-legged or single-leg encounters)
 export const playoffTies = sqliteTable("playoff_ties", {
   tieId: text("tie_id").primaryKey(), // e.g. "RO16-A", "C-31-A", "QF-B"
+  leagueId: text("league_id").notNull().references(() => leagues.id),
   roundName: text("round_name").notNull(), // Display label: "RO16", "QF", "SF", "Final", "C-31", etc.
   roundType: text("round_type").notNull(), // "tvt" | "challenger-ko" | "challenger-survival"
   homeTeamId: text("home_team_id").references(() => teams.id),
@@ -274,6 +301,7 @@ export const leaguesRelations = relations(leagues, ({ many }) => ({
   groups: many(groups),
   teams: many(teams),
   gameweeks: many(gameweeks),
+  playoffTies: many(playoffTies),
 }));
 
 export const leagueAdminsRelations = relations(leagueAdmins, ({ one }) => ({
@@ -378,6 +406,10 @@ export const gameweekCaptainsRelations = relations(gameweekCaptains, ({ one }) =
 }));
 
 export const playoffTiesRelations = relations(playoffTies, ({ one }) => ({
+  league: one(leagues, {
+    fields: [playoffTies.leagueId],
+    references: [leagues.id],
+  }),
   homeTeam: one(teams, {
     fields: [playoffTies.homeTeamId],
     references: [teams.id],

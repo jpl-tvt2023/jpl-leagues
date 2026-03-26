@@ -61,12 +61,22 @@ export async function GET(request: NextRequest) {
     const group = searchParams.get("group");
     const leagueSlug = searchParams.get("leagueSlug");
 
-    // Resolve leagueId from slug if provided
+    // Resolve leagueId and config from slug if provided
     let leagueId: string | null = null;
+    let playoffStartGw = 31;
+    let leagueTeamSize = 32;
+    let leagueEnabledChips: string[] = ["D", "W", "C"];
     if (leagueSlug) {
-      const league = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
-      if (league.length > 0) leagueId = league[0].id;
+      const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips })
+        .from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+      if (league.length > 0) {
+        leagueId = league[0].id;
+        playoffStartGw = league[0].playoffStartGw ?? 31;
+        leagueTeamSize = league[0].teamSize ?? 32;
+        try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
+      }
     }
+    const leagueStageEnd = playoffStartGw - 1; // last GW of the group stage
 
     // Get all teams with their relations using relational query
     const allTeamsUnfiltered = await db.query.teams.findMany({
@@ -103,11 +113,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Determine which GWs (1-30) have been processed (have at least one result)
+    // Determine which league-stage GWs have been processed (have at least one result)
     const processedGws = new Set<number>();
     for (const t of allTeamsUnfiltered) {
       for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-        if (f.result && f.gameweek.number <= 30) {
+        if (f.result && f.gameweek.number <= leagueStageEnd) {
           processedGws.add(f.gameweek.number);
         }
       }
@@ -167,10 +177,10 @@ export async function GET(request: NextRequest) {
     const teamChipsRawMap = new Map<string, (typeof allChipsRaw)[number][]>();
 
     for (const chip of allChipsRaw) {
-      // Only count chips from GW 1-30 (league stage)
+      // Only count chips from the league stage (not playoffs)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chipGw = (chip as any).gameweek?.number;
-      if (chipGw && chipGw > 30) continue;
+      if (chipGw && chipGw > leagueStageEnd) continue;
 
       // Accumulate processed extra points for cbpPoints total
       if (chip.isProcessed) {
@@ -195,9 +205,9 @@ export async function GET(request: NextRequest) {
       let bonusPtsTotal = 0;
       const bpsEntries: { gameweek: number; points: number }[] = [];
 
-      // Process home fixtures (league stage only — GW 1-30)
+      // Process home fixtures (league stage only)
       for (const fixture of team.homeFixtures) {
-        if (fixture.gameweek.number > 30) continue;
+        if (fixture.gameweek.number > leagueStageEnd) continue;
         if (fixture.result) {
           pointsFor += fixture.result.homeScore;
           pointsAgainst += fixture.result.awayScore;
@@ -215,9 +225,9 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Process away fixtures (league stage only — GW 1-30)
+      // Process away fixtures (league stage only)
       for (const fixture of team.awayFixtures) {
-        if (fixture.gameweek.number > 30) continue;
+        if (fixture.gameweek.number > leagueStageEnd) continue;
         if (fixture.result) {
           pointsFor += fixture.result.awayScore;
           pointsAgainst += fixture.result.homeScore;
@@ -257,10 +267,19 @@ export async function GET(request: NextRequest) {
       const leaguePoints = (wins * 2) + (draws * 1) + cbpPts - hitPenaltyTotal;
       const teamRawChips = teamChipsRawMap.get(team.id) || [];
 
-      // Build tooltip entries for all 6 chips (WW1/DP1/CC1/WW2/DP2/CC2)
+      // Build tooltip entries for only the 3 enabled chips (2 sets = 6 entries)
+      // Set boundaries are dynamic: midpoint = ceil(leagueStageEnd / 2)
+      const chipSetMid = Math.ceil(leagueStageEnd / 2);
+      const chipSets: [number, number, number][] = [
+        [1, 1, chipSetMid],
+        [2, chipSetMid + 1, leagueStageEnd],
+      ];
+      // Map from chip code → display name
+      const CHIP_DISPLAY_NAMES: Record<string, string> = { W: "WW", D: "DP", C: "CC", SL: "SL", CB: "CB", UD: "UD" };
       const chipTooltipEntries: ChipTooltipEntry[] = [];
-      for (const [set, gwMin, gwMax] of [[1, 1, 15], [2, 16, 30]] as [number, number, number][]) {
-        for (const [type, name] of [["W", "WW"], ["D", "DP"], ["C", "CC"]] as [string, string][]) {
+      for (const [set, gwMin, gwMax] of chipSets) {
+        for (const type of leagueEnabledChips) {
+          const name = CHIP_DISPLAY_NAMES[type] ?? type;
           const label = `${name}${set}`;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const chip = teamRawChips.find((c) => c.chipType === type && (c as any).gameweek.number >= gwMin && (c as any).gameweek.number <= gwMax);
@@ -325,31 +344,28 @@ export async function GET(request: NextRequest) {
       return b.cbpPoints - a.cbpPoints;
     });
 
-    // Add rank to each team
-    const rankedStandings = standings.map((team: TeamStanding, index: number) => ({
-      ...team,
-      rank: index + 1,
-      zone: getQualificationZone(index + 1),
-    }));
-
     type RankedStanding = TeamStanding & { rank: number; zone: string };
-    
-    // Group standings by group
-    const groupA = rankedStandings.filter((t: RankedStanding) => t.group === "A");
-    const groupB = rankedStandings.filter((t: RankedStanding) => t.group === "B");
 
-    // Re-rank within groups
-    const reRankGroup = (teams: RankedStanding[]) => 
-      teams.map((team: RankedStanding, index: number) => ({
+    // Group standings by group name
+    const groupNames = [...new Set(standings.map(t => t.group))].sort();
+    const groupMap: Record<string, RankedStanding[]> = {};
+    for (const gName of groupNames) {
+      const groupTeams = standings.filter(t => t.group === gName);
+      groupMap[gName] = groupTeams.map((team, index) => ({
         ...team,
+        rank: index + 1,
         groupRank: index + 1,
-        zone: getQualificationZone(index + 1),
+        zone: getQualificationZone(index + 1, leagueTeamSize),
       }));
+    }
 
     return NextResponse.json({
-      groupA: reRankGroup(groupA),
-      groupB: reRankGroup(groupB),
+      groupA: groupMap["A"] ?? [],
+      groupB: groupMap["B"] ?? [],
       totalTeams: standings.length,
+      enabledChips: leagueEnabledChips,
+      leagueStageEnd,
+      teamSize: leagueTeamSize,
       legend: {
         top8: "TVT Title Play-offs",
         rank9to14: "Challenger Series",
@@ -366,9 +382,14 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Get qualification zone based on rank
+ * Get qualification zone based on rank within a group and total league team size.
+ * 8-team: top 4 playoffs, 5-8 eliminated (no challenger)
+ * 16 or 32-team: top 8 playoffs, 9-14 challenger, 15-16 eliminated
  */
-function getQualificationZone(rank: number): "playoffs" | "challenger" | "eliminated" {
+function getQualificationZone(rank: number, teamSize: number): "playoffs" | "challenger" | "eliminated" {
+  if (teamSize === 8) {
+    return rank <= 4 ? "playoffs" : "eliminated";
+  }
   if (rank <= 8) return "playoffs";
   if (rank <= 14) return "challenger";
   return "eliminated";

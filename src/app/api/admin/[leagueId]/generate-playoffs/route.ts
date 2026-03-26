@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { fixtures, playoffTies, gameweeks, results, groups, teams } from "@/lib/db/schema";
-import { eq, and, sql, or, like, inArray } from "drizzle-orm";
+import { fixtures, playoffTies, gameweeks, results, groups, teams, leagues } from "@/lib/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { getAllCachedScores } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+
+// ============================================
+// Seeding tables — 32-team (cross-group)
+// ============================================
 
 // RO16 seeding: [tieId, homeGroupLetter, homeRank, awayGroupLetter, awayRank]
 const RO16_SEEDING: [string, string, number, string, number][] = [
@@ -18,9 +22,8 @@ const RO16_SEEDING: [string, string, number, string, number][] = [
   ["RO16-H", "B", 4, "A", 5],
 ];
 
-// C-31 seeding: [tieId, homeGroupLetter, homeRank, awayGroupLetter, awayRank]
-// Cross-group: Group A rank vs Group B mirror rank (9v14, 10v13, ..., 14v9)
-const C31_SEEDING: [string, string, number, string, number][] = [
+// C-31 seeding (32-team): cross-group 9v14, 10v13, ... 14v9
+const C31_SEEDING_32: [string, string, number, string, number][] = [
   ["C-31-A", "A", 9,  "B", 14],
   ["C-31-B", "A", 10, "B", 13],
   ["C-31-C", "A", 11, "B", 12],
@@ -29,15 +32,46 @@ const C31_SEEDING: [string, string, number, string, number][] = [
   ["C-31-F", "A", 14, "B", 9],
 ];
 
+// ============================================
+// Seeding tables — 16-team (single group A)
+// ============================================
+
+// QF seeding (16-team): 1v8, 2v7, 3v6, 4v5 all from group A
+const QF_SEEDING_16: [string, string, number, string, number][] = [
+  ["QF-A", "A", 1, "A", 8],
+  ["QF-B", "A", 2, "A", 7],
+  ["QF-C", "A", 3, "A", 6],
+  ["QF-D", "A", 4, "A", 5],
+];
+
+// C-31 seeding (16-team): 9v14, 10v13, 11v12 within group A
+const C31_SEEDING_16: [string, string, number, string, number][] = [
+  ["C-31-A", "A", 9,  "A", 14],
+  ["C-31-B", "A", 10, "A", 13],
+  ["C-31-C", "A", 11, "A", 12],
+];
+
+// ============================================
+// Seeding tables — 8-team (single group A)
+// ============================================
+
+// SF seeding (8-team): 1v4, 2v3 within group A
+const SF_SEEDING_8: [string, string, number, string, number][] = [
+  ["SF-A", "A", 1, "A", 4],
+  ["SF-B", "A", 2, "A", 3],
+];
+
 /**
  * GET /api/admin/[leagueId]/generate-playoffs
- * Check if playoffs have already been generated
+ * Check if playoffs have already been generated for this league
  */
 export async function GET(request: NextRequest) {
   const leagueId = await getAuthorizedLeagueId(request);
   if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const existingTies = await db.select().from(playoffTies).limit(1);
+  const existingTies = await db.select().from(playoffTies)
+    .where(eq(playoffTies.leagueId, leagueId))
+    .limit(1);
   return NextResponse.json({
     generated: existingTies.length > 0,
   });
@@ -45,65 +79,103 @@ export async function GET(request: NextRequest) {
 
 /**
  * DELETE /api/admin/[leagueId]/generate-playoffs
- * Delete existing RO16 + C-31 playoff ties, fixtures, and results so they can be regenerated
+ * Delete initial playoff ties, fixtures, and results for this league so they can be regenerated.
+ * Only removes the first-round ties (RO16/QF/SF) and their C-31 companion, not later rounds.
  */
 export async function DELETE(request: NextRequest) {
   const leagueId = await getAuthorizedLeagueId(request);
   if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  // Find all RO16 and C-31 fixture IDs to delete their results first
-  const initialFixtures = await db.select({ id: fixtures.id }).from(fixtures)
-    .where(or(like(fixtures.tieId, "RO16-%"), like(fixtures.tieId, "C-31-%")));
-  const fixtureIds = initialFixtures.map(f => f.id);
+  // Fetch league config to know which initial rounds to delete
+  const leagueRow = await db.select({ teamSize: leagues.teamSize })
+    .from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+  const teamSize = leagueRow[0]?.teamSize ?? 32;
+
+  // Initial round names to delete depend on variant
+  const initialRounds =
+    teamSize === 8  ? ["SF"] :
+    teamSize === 16 ? ["QF", "C-31"] :
+                     ["RO16", "C-31"];
+
+  // Get tie IDs for this league's initial rounds
+  const tiesToDelete = await db.select({ tieId: playoffTies.tieId })
+    .from(playoffTies)
+    .where(and(
+      eq(playoffTies.leagueId, leagueId),
+      inArray(playoffTies.roundName, initialRounds)
+    ));
+  const tieIdList = tiesToDelete.map(t => t.tieId);
+
+  if (tieIdList.length === 0) {
+    return NextResponse.json({ success: true, message: "No initial ties to delete", deletedFixtures: 0 });
+  }
+
+  // Get fixture IDs for these ties
+  const fixturesToDelete = await db.select({ id: fixtures.id })
+    .from(fixtures)
+    .where(inArray(fixtures.tieId, tieIdList));
+  const fixtureIds = fixturesToDelete.map(f => f.id);
 
   await db.transaction(async (tx) => {
-    // Delete results for these fixtures
     if (fixtureIds.length > 0) {
       await tx.delete(results).where(inArray(results.fixtureId, fixtureIds));
+      await tx.delete(fixtures).where(inArray(fixtures.id, fixtureIds));
     }
-    // Delete the fixtures themselves
-    await tx.run(sql`DELETE FROM fixtures WHERE tie_id LIKE 'RO16-%' OR tie_id LIKE 'C-31-%'`);
-    // Delete the playoff ties
-    await tx.run(sql`DELETE FROM playoff_ties WHERE tie_id LIKE 'RO16-%' OR tie_id LIKE 'C-31-%'`);
+    await tx.delete(playoffTies).where(inArray(playoffTies.tieId, tieIdList));
   });
 
   return NextResponse.json({
     success: true,
-    message: `Deleted ${fixtureIds.length} fixtures and their associated ties/results`,
+    message: `Deleted ${tieIdList.length} ties and ${fixtureIds.length} fixtures`,
     deletedFixtures: fixtureIds.length,
   });
 }
 
 /**
  * POST /api/admin/[leagueId]/generate-playoffs
- * Generate RO16 + C-31 fixtures from GW30 group standings
+ * Generate initial playoff ties + fixtures from final group standings.
+ * Branches by league teamSize: 32-team (RO16+C31), 16-team (QF+C31), 8-team (SF only).
  */
 export async function POST(request: NextRequest) {
   const leagueId = await getAuthorizedLeagueId(request);
   if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  // Check if RO16/C-31 already exist (allow regeneration after DELETE)
+  // Fetch league config
+  const leagueRow = await db.select({
+    teamSize: leagues.teamSize,
+    playoffStartGw: leagues.playoffStartGw,
+  }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+  if (leagueRow.length === 0) {
+    return NextResponse.json({ error: "League not found" }, { status: 404 });
+  }
+  const teamSize = leagueRow[0].teamSize ?? 32;
+  const playoffStartGw = leagueRow[0].playoffStartGw ?? 31;
+  const leagueStageEnd = playoffStartGw - 1;
+
+  // Check if initial ties for THIS league already exist
+  const initialRounds =
+    teamSize === 8  ? ["SF"] :
+    teamSize === 16 ? ["QF", "C-31"] :
+                     ["RO16", "C-31"];
+
   const existingInitialTies = await db.select().from(playoffTies)
-    .where(or(like(playoffTies.tieId, "RO16-%"), like(playoffTies.tieId, "C-31-%")))
+    .where(and(
+      eq(playoffTies.leagueId, leagueId),
+      inArray(playoffTies.roundName, initialRounds)
+    ))
     .limit(1);
   if (existingInitialTies.length > 0) {
-    return NextResponse.json({ error: "RO16/C-31 playoffs already exist. Delete them first to regenerate." }, { status: 400 });
+    return NextResponse.json({
+      error: `Initial playoff ties already exist for this league. Delete them first to regenerate.`,
+    }, { status: 400 });
   }
 
-  // Fetch group standings (reuse same logic as standings route)
-  const groupStandings = await getGroupStandings(leagueId);
+  // Fetch group standings
+  const groupStandings = await getGroupStandings(leagueId, leagueStageEnd);
   if (!groupStandings) {
     return NextResponse.json({ error: "Failed to compute standings" }, { status: 500 });
   }
-
   const { groupA, groupB } = groupStandings;
-
-  // Need GW31 and GW32 gameweek IDs for this league
-  const gw31 = await db.query.gameweeks.findFirst({ where: and(eq(gameweeks.number, 31), eq(gameweeks.leagueId, leagueId)) });
-  const gw32 = await db.query.gameweeks.findFirst({ where: and(eq(gameweeks.number, 32), eq(gameweeks.leagueId, leagueId)) });
-  if (!gw31 || !gw32) {
-    return NextResponse.json({ error: "GW31 and GW32 must exist" }, { status: 400 });
-  }
 
   // Get playoffs group ID
   const playoffsGroup = await db.query.groups.findFirst({ where: eq(groups.name, "Playoffs") });
@@ -112,6 +184,7 @@ export async function POST(request: NextRequest) {
   }
   const playoffsGroupId = playoffsGroup.id;
 
+  // Build rank maps
   const rankMap: Record<string, Record<number, { teamId: string; name: string; abbreviation: string }>> = {
     A: {},
     B: {},
@@ -126,92 +199,252 @@ export async function POST(request: NextRequest) {
   const createdTies: string[] = [];
   const createdFixtures: string[] = [];
 
-  // Create RO16 ties + fixtures (2 legs: GW31 + GW32)
-  for (const [tieId, homeGroup, homeRank, awayGroup, awayRank] of RO16_SEEDING) {
-    const home = rankMap[homeGroup][homeRank];
-    const away = rankMap[awayGroup][awayRank];
-    if (!home || !away) continue;
-
-    await db.insert(playoffTies).values({
-      tieId,
-      roundName: "RO16",
-      roundType: "tvt",
-      homeTeamId: home.teamId,
-      awayTeamId: away.teamId,
-      gw1: 31,
-      gw2: 32,
-      status: "pending",
+  // ============================================================
+  // Branch by variant
+  // ============================================================
+  if (teamSize === 8) {
+    // 8-team: SF (single-leg at playoffStartGw) — no challenger
+    const gwSf = await db.query.gameweeks.findFirst({
+      where: and(eq(gameweeks.number, playoffStartGw), eq(gameweeks.leagueId, leagueId)),
     });
-    createdTies.push(tieId);
+    if (!gwSf) {
+      return NextResponse.json({ error: `GW${playoffStartGw} must exist for SF leg` }, { status: 400 });
+    }
 
-    // Leg 1 (GW31): higher-ranked team = home
-    const leg1Id = `playoff-${tieId}-leg1`;
-    await db.insert(fixtures).values({
-      id: leg1Id,
-      gameweekId: gw31.id,
-      homeTeamId: home.teamId,
-      awayTeamId: away.teamId,
-      groupId: playoffsGroupId,
-      isChallenge: false,
-      isPlayoff: true,
-      roundName: "RO16",
-      leg: 1,
-      tieId,
-      roundType: "tvt",
+    for (const [tieId, homeGroup, homeRank, awayGroup, awayRank] of SF_SEEDING_8) {
+      const home = rankMap[homeGroup][homeRank];
+      const away = rankMap[awayGroup][awayRank];
+      if (!home || !away) continue;
+
+      await db.insert(playoffTies).values({
+        tieId,
+        leagueId,
+        roundName: "SF",
+        roundType: "tvt",
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        gw1: playoffStartGw,
+        gw2: null,
+        status: "pending",
+      });
+      createdTies.push(tieId);
+
+      const fixtureId = `playoff-${tieId}`;
+      await db.insert(fixtures).values({
+        id: fixtureId,
+        gameweekId: gwSf.id,
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        groupId: playoffsGroupId,
+        isChallenge: false,
+        isPlayoff: true,
+        roundName: "SF",
+        leg: null,
+        tieId,
+        roundType: "tvt",
+      });
+      createdFixtures.push(fixtureId);
+    }
+
+  } else if (teamSize === 16) {
+    // 16-team: QF (2-legged, GW31+32) + C-31 (single-leg, GW31)
+    const gwQf1 = await db.query.gameweeks.findFirst({
+      where: and(eq(gameweeks.number, playoffStartGw), eq(gameweeks.leagueId, leagueId)),
     });
-    createdFixtures.push(leg1Id);
-
-    // Leg 2 (GW32): swap home/away
-    const leg2Id = `playoff-${tieId}-leg2`;
-    await db.insert(fixtures).values({
-      id: leg2Id,
-      gameweekId: gw32.id,
-      homeTeamId: away.teamId,
-      awayTeamId: home.teamId,
-      groupId: playoffsGroupId,
-      isChallenge: false,
-      isPlayoff: true,
-      roundName: "RO16",
-      leg: 2,
-      tieId,
-      roundType: "tvt",
+    const gwQf2 = await db.query.gameweeks.findFirst({
+      where: and(eq(gameweeks.number, playoffStartGw + 1), eq(gameweeks.leagueId, leagueId)),
     });
-    createdFixtures.push(leg2Id);
-  }
+    if (!gwQf1 || !gwQf2) {
+      return NextResponse.json({ error: `GW${playoffStartGw} and GW${playoffStartGw + 1} must exist for QF legs` }, { status: 400 });
+    }
 
-  // Create C-31 ties + fixtures (single leg: GW31)
-  for (const [tieId, homeGroup, homeRank, awayGroup, awayRank] of C31_SEEDING) {
-    const home = rankMap[homeGroup][homeRank];
-    const away = rankMap[awayGroup][awayRank];
-    if (!home || !away) continue;
+    // QF ties (2-legged)
+    for (const [tieId, homeGroup, homeRank, awayGroup, awayRank] of QF_SEEDING_16) {
+      const home = rankMap[homeGroup][homeRank];
+      const away = rankMap[awayGroup][awayRank];
+      if (!home || !away) continue;
 
-    await db.insert(playoffTies).values({
-      tieId,
-      roundName: "C-31",
-      roundType: "challenger-ko",
-      homeTeamId: home.teamId,
-      awayTeamId: away.teamId,
-      gw1: 31,
-      gw2: null,
-      status: "pending",
+      await db.insert(playoffTies).values({
+        tieId,
+        leagueId,
+        roundName: "QF",
+        roundType: "tvt",
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        gw1: playoffStartGw,
+        gw2: playoffStartGw + 1,
+        status: "pending",
+      });
+      createdTies.push(tieId);
+
+      const leg1Id = `playoff-${tieId}-leg1`;
+      await db.insert(fixtures).values({
+        id: leg1Id,
+        gameweekId: gwQf1.id,
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        groupId: playoffsGroupId,
+        isChallenge: false,
+        isPlayoff: true,
+        roundName: "QF",
+        leg: 1,
+        tieId,
+        roundType: "tvt",
+      });
+      createdFixtures.push(leg1Id);
+
+      const leg2Id = `playoff-${tieId}-leg2`;
+      await db.insert(fixtures).values({
+        id: leg2Id,
+        gameweekId: gwQf2.id,
+        homeTeamId: away.teamId,
+        awayTeamId: home.teamId,
+        groupId: playoffsGroupId,
+        isChallenge: false,
+        isPlayoff: true,
+        roundName: "QF",
+        leg: 2,
+        tieId,
+        roundType: "tvt",
+      });
+      createdFixtures.push(leg2Id);
+    }
+
+    // C-31 ties (single-leg, GW31) — ranks 9-14 within group A
+    for (const [tieId, homeGroup, homeRank, awayGroup, awayRank] of C31_SEEDING_16) {
+      const home = rankMap[homeGroup][homeRank];
+      const away = rankMap[awayGroup][awayRank];
+      if (!home || !away) continue;
+
+      await db.insert(playoffTies).values({
+        tieId,
+        leagueId,
+        roundName: "C-31",
+        roundType: "challenger-ko",
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        gw1: playoffStartGw,
+        gw2: null,
+        status: "pending",
+      });
+      createdTies.push(tieId);
+
+      const fixtureId = `playoff-${tieId}`;
+      await db.insert(fixtures).values({
+        id: fixtureId,
+        gameweekId: gwQf1.id,
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        groupId: playoffsGroupId,
+        isChallenge: false,
+        isPlayoff: true,
+        roundName: "C-31",
+        leg: null,
+        tieId,
+        roundType: "challenger-ko",
+      });
+      createdFixtures.push(fixtureId);
+    }
+
+  } else {
+    // 32-team (default): RO16 (2-legged, GW31+32) + C-31 (single-leg, GW31)
+    const gw1 = await db.query.gameweeks.findFirst({
+      where: and(eq(gameweeks.number, playoffStartGw), eq(gameweeks.leagueId, leagueId)),
     });
-    createdTies.push(tieId);
-
-    const fixtureId = `playoff-${tieId}`;
-    await db.insert(fixtures).values({
-      id: fixtureId,
-      gameweekId: gw31.id,
-      homeTeamId: home.teamId,
-      awayTeamId: away.teamId,
-      groupId: playoffsGroupId,
-      isChallenge: false,
-      isPlayoff: true,
-      roundName: "C-31",
-      leg: null,
-      tieId,
-      roundType: "challenger-ko",
+    const gw2 = await db.query.gameweeks.findFirst({
+      where: and(eq(gameweeks.number, playoffStartGw + 1), eq(gameweeks.leagueId, leagueId)),
     });
-    createdFixtures.push(fixtureId);
+    if (!gw1 || !gw2) {
+      return NextResponse.json({ error: `GW${playoffStartGw} and GW${playoffStartGw + 1} must exist` }, { status: 400 });
+    }
+
+    // RO16 ties (2-legged)
+    for (const [tieId, homeGroup, homeRank, awayGroup, awayRank] of RO16_SEEDING) {
+      const home = rankMap[homeGroup][homeRank];
+      const away = rankMap[awayGroup][awayRank];
+      if (!home || !away) continue;
+
+      await db.insert(playoffTies).values({
+        tieId,
+        leagueId,
+        roundName: "RO16",
+        roundType: "tvt",
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        gw1: playoffStartGw,
+        gw2: playoffStartGw + 1,
+        status: "pending",
+      });
+      createdTies.push(tieId);
+
+      const leg1Id = `playoff-${tieId}-leg1`;
+      await db.insert(fixtures).values({
+        id: leg1Id,
+        gameweekId: gw1.id,
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        groupId: playoffsGroupId,
+        isChallenge: false,
+        isPlayoff: true,
+        roundName: "RO16",
+        leg: 1,
+        tieId,
+        roundType: "tvt",
+      });
+      createdFixtures.push(leg1Id);
+
+      const leg2Id = `playoff-${tieId}-leg2`;
+      await db.insert(fixtures).values({
+        id: leg2Id,
+        gameweekId: gw2.id,
+        homeTeamId: away.teamId,
+        awayTeamId: home.teamId,
+        groupId: playoffsGroupId,
+        isChallenge: false,
+        isPlayoff: true,
+        roundName: "RO16",
+        leg: 2,
+        tieId,
+        roundType: "tvt",
+      });
+      createdFixtures.push(leg2Id);
+    }
+
+    // C-31 ties (single-leg, GW31) — cross-group challenger
+    for (const [tieId, homeGroup, homeRank, awayGroup, awayRank] of C31_SEEDING_32) {
+      const home = rankMap[homeGroup][homeRank];
+      const away = rankMap[awayGroup][awayRank];
+      if (!home || !away) continue;
+
+      await db.insert(playoffTies).values({
+        tieId,
+        leagueId,
+        roundName: "C-31",
+        roundType: "challenger-ko",
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        gw1: playoffStartGw,
+        gw2: null,
+        status: "pending",
+      });
+      createdTies.push(tieId);
+
+      const fixtureId = `playoff-${tieId}`;
+      await db.insert(fixtures).values({
+        id: fixtureId,
+        gameweekId: gw1.id,
+        homeTeamId: home.teamId,
+        awayTeamId: away.teamId,
+        groupId: playoffsGroupId,
+        isChallenge: false,
+        isPlayoff: true,
+        roundName: "C-31",
+        leg: null,
+        tieId,
+        roundType: "challenger-ko",
+      });
+      createdFixtures.push(fixtureId);
+    }
   }
 
   return NextResponse.json({
@@ -223,7 +456,7 @@ export async function POST(request: NextRequest) {
 }
 
 // ============================================
-// Reusable standings computation (same as /api/standings)
+// Reusable standings computation
 // ============================================
 interface RankedTeam {
   teamId: string;
@@ -236,7 +469,7 @@ interface RankedTeam {
   cbpPoints: number;
 }
 
-async function getGroupStandings(leagueId: string): Promise<{ groupA: RankedTeam[]; groupB: RankedTeam[] } | null> {
+async function getGroupStandings(leagueId: string, leagueStageEnd: number): Promise<{ groupA: RankedTeam[]; groupB: RankedTeam[] } | null> {
   try {
     const allTeams = await db.query.teams.findMany({
       where: eq(teams.leagueId, leagueId),
@@ -248,7 +481,7 @@ async function getGroupStandings(leagueId: string): Promise<{ groupA: RankedTeam
       },
     });
 
-    // Build per-GW, per-player hits map for hit penalty (-1 league pt per GW a player exceeds 12 hits)
+    // Build per-GW, per-player hits map for hit penalty
     const playerGwHitsMap = new Map<string, Map<number, number>>();
     const allFplIds = new Set<string>();
     for (const t of allTeams) {
@@ -257,11 +490,11 @@ async function getGroupStandings(leagueId: string): Promise<{ groupA: RankedTeam
       }
     }
 
-    // Determine which GWs (1-30) have been processed
+    // Determine which league-stage GWs have been processed
     const processedGws = new Set<number>();
     for (const t of allTeams) {
       for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-        if (f.result && f.gameweek.number <= 30) {
+        if (f.result && f.gameweek.number <= leagueStageEnd) {
           processedGws.add(f.gameweek.number);
         }
       }
@@ -297,10 +530,9 @@ async function getGroupStandings(leagueId: string): Promise<{ groupA: RankedTeam
 
     const chipPointsByTeam = new Map<string, number>();
     for (const chip of allChipsRaw) {
-      // Only count chips from league stage (GW 1-30)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chipGw = (chip as any).gameweek?.number;
-      if (chipGw && chipGw > 30) continue;
+      if (chipGw && chipGw > leagueStageEnd) continue;
       if (chip.isProcessed) {
         const pts = chip.pointsAwarded || 0;
         if (chip.chipType === "C" || pts > 0) {
@@ -312,9 +544,8 @@ async function getGroupStandings(leagueId: string): Promise<{ groupA: RankedTeam
     const standings = allTeams.map((team) => {
       let wins = 0, draws = 0, losses = 0, pointsFor = 0, pointsAgainst = 0, bonusPtsTotal = 0;
 
-      // Process home fixtures (league stage only — GW 1-30)
       for (const fixture of team.homeFixtures) {
-        if (fixture.gameweek.number > 30) continue;
+        if (fixture.gameweek.number > leagueStageEnd) continue;
         if (fixture.result) {
           pointsFor += fixture.result.homeScore;
           pointsAgainst += fixture.result.awayScore;
@@ -327,9 +558,8 @@ async function getGroupStandings(leagueId: string): Promise<{ groupA: RankedTeam
         }
       }
 
-      // Process away fixtures (league stage only — GW 1-30)
       for (const fixture of team.awayFixtures) {
-        if (fixture.gameweek.number > 30) continue;
+        if (fixture.gameweek.number > leagueStageEnd) continue;
         if (fixture.result) {
           pointsFor += fixture.result.awayScore;
           pointsAgainst += fixture.result.homeScore;
@@ -345,7 +575,6 @@ async function getGroupStandings(leagueId: string): Promise<{ groupA: RankedTeam
       const chipPts = chipPointsByTeam.get(team.id) || 0;
       const cbpPts = chipPts + bonusPtsTotal;
 
-      // Compute hit penalty: -1 league point per GW where any player on this team took >12 hits
       let hitPenaltyTotal = 0;
       for (const player of team.players) {
         const gwHits = playerGwHitsMap.get(player.fplId);
@@ -370,7 +599,6 @@ async function getGroupStandings(leagueId: string): Promise<{ groupA: RankedTeam
       };
     });
 
-    // Sort within each group
     const sortFn = (a: typeof standings[0], b: typeof standings[0]) => {
       if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
       if (a.pointsFor !== b.pointsFor) return b.pointsFor - a.pointsFor;

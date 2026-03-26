@@ -41,24 +41,53 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { slug, name, sport, format, season } = body;
+  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips } = body;
 
   if (!slug || !name || !sport || !format || !season) {
     return NextResponse.json({ error: "slug, name, sport, format, and season are required" }, { status: 400 });
   }
 
+  // Derive groupCount from teamSize if not explicitly provided
+  const resolvedTeamSize: number = teamSize ?? 32;
+  const resolvedGroupCount: number = groupCount ?? (resolvedTeamSize === 32 ? 2 : 1);
+  const resolvedPlayoffStartGw: number = playoffStartGw ?? (resolvedTeamSize === 8 ? 36 : 31);
+
+  if (![8, 16, 32].includes(resolvedTeamSize)) {
+    return NextResponse.json({ error: "teamSize must be 8, 16, or 32" }, { status: 400 });
+  }
+  if (resolvedPlayoffStartGw < 31 || resolvedPlayoffStartGw > 36) {
+    return NextResponse.json({ error: "playoffStartGw must be between 31 and 36" }, { status: 400 });
+  }
+
+  // Validate enabledChips: must be array of exactly 3 valid chip codes
+  const VALID_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"];
+  const resolvedEnabledChips: string[] = enabledChips ?? ["D", "W", "C"];
+  if (
+    !Array.isArray(resolvedEnabledChips) ||
+    resolvedEnabledChips.length !== 3 ||
+    !resolvedEnabledChips.every((c) => VALID_CHIP_CODES.includes(c)) ||
+    new Set(resolvedEnabledChips).size !== 3
+  ) {
+    return NextResponse.json({ error: "enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)" }, { status: 400 });
+  }
+
   try {
     const id = generateId();
-    await db.insert(leagues).values({ id, slug, name, sport, format, season, isActive: true });
+    await db.insert(leagues).values({
+      id, slug, name, sport, format, season, isActive: true,
+      teamSize: resolvedTeamSize,
+      groupCount: resolvedGroupCount,
+      playoffStartGw: resolvedPlayoffStartGw,
+      enabledChips: JSON.stringify(resolvedEnabledChips),
+    });
     return NextResponse.json({
       success: true,
-      id,
-      slug,
-      name,
-      sport,
-      format,
-      season,
+      id, slug, name, sport, format, season,
       isActive: true,
+      teamSize: resolvedTeamSize,
+      groupCount: resolvedGroupCount,
+      playoffStartGw: resolvedPlayoffStartGw,
+      enabledChips: resolvedEnabledChips,
       teamCount: 0,
       currentGameweek: null,
     });

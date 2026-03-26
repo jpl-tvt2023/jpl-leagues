@@ -219,6 +219,8 @@ export default function LeagueStandingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [latestGameweek, setLatestGameweek] = useState<number>(0);
+  const [leagueStageEnd, setLeagueStageEnd] = useState<number>(30);
+  const [teamSize, setTeamSize] = useState<number>(32);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [leagueName, setLeagueName] = useState<string>("");
 
@@ -259,13 +261,16 @@ export default function LeagueStandingsPage() {
         const data = await response.json();
         setGroupA(data.groupA || []);
         setGroupB(data.groupB || []);
+        if (data.leagueStageEnd) setLeagueStageEnd(data.leagueStageEnd);
+        if (data.teamSize) setTeamSize(data.teamSize);
+        const stageEnd: number = data.leagueStageEnd ?? 30;
         const maxPlayed = Math.min(
           Math.max(
             ...data.groupA.map((t: TeamStanding) => t.played),
             ...data.groupB.map((t: TeamStanding) => t.played),
             0
           ),
-          30
+          stageEnd
         );
         setLatestGameweek(maxPlayed);
       } catch (err) {
@@ -336,15 +341,17 @@ export default function LeagueStandingsPage() {
         <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full bg-green-500"></span>
-            <span className="text-gray-400">Title Play-offs (1-8)</span>
+            <span className="text-gray-400">Title Play-offs (1-{teamSize === 8 ? 4 : 8})</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-yellow-500"></span>
-            <span className="text-gray-400">Challenger Series (9-14)</span>
-          </div>
+          {teamSize !== 8 && (
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-yellow-500"></span>
+              <span className="text-gray-400">Challenger Series (9-14)</span>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full bg-red-500"></span>
-            <span className="text-gray-400">Eliminated (15-16)</span>
+            <span className="text-gray-400">Eliminated ({teamSize === 8 ? "5-8" : "15-16"})</span>
           </div>
         </div>
 
@@ -360,9 +367,9 @@ export default function LeagueStandingsPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-2">
+          <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
             <StandingsTable teams={groupA} group="A" />
-            <StandingsTable teams={groupB} group="B" />
+            {groupB.length > 0 && <StandingsTable teams={groupB} group="B" />}
           </div>
         )}
 
