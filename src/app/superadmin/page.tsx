@@ -911,15 +911,11 @@ export default function SuperAdminDashboard() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm text-gray-300 mb-1">
-                          Playoff Start GW <span className="text-gray-500">(31–36)</span>
-                        </label>
-                        <input
-                          type="number" min={31} max={36} required
-                          value={leagueForm.playoffStartGw}
-                          onChange={e => setLeagueForm({ ...leagueForm, playoffStartGw: parseInt(e.target.value) || leagueForm.playoffStartGw })}
-                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
-                        />
+                        <label className="block text-sm text-gray-300 mb-1">Playoff Start GW</label>
+                        <div className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white text-sm flex items-center gap-2">
+                          GW{leagueForm.playoffStartGw}
+                          <span className="text-gray-500 text-xs">(determined by team size)</span>
+                        </div>
                       </div>
                       <div className="sm:col-span-2 flex gap-3">
                         <button
