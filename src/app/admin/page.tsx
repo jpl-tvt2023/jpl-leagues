@@ -19,9 +19,14 @@ export default function AdminLeaguePicker() {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
 
   useEffect(() => {
     fetchLeagues();
+    fetch("/api/auth/me")
+      .then(r => r.json())
+      .then(data => { if (data.role === "superadmin") setIsSuperadmin(true); })
+      .catch(() => {});
   }, []);
 
   const fetchLeagues = async () => {
@@ -64,11 +69,18 @@ export default function AdminLeaguePicker() {
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
       <nav className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            TVT
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
+              TVT
+            </div>
+            <span className="text-xl font-bold text-white hidden sm:inline">Admin</span>
           </div>
-          <span className="text-xl font-bold text-white hidden sm:inline">Admin</span>
+          {isSuperadmin && (
+            <Link href="/superadmin" className="text-gray-400 hover:text-white transition text-sm">
+              ← Superadmin
+            </Link>
+          )}
         </div>
         <button
           onClick={handleSignOut}
