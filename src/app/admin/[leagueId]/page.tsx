@@ -107,8 +107,8 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<TabType>("teams");
   const [teams, setTeams] = useState<Team[]>([]);
-  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number }>({
-    teamSize: 32, groupCount: 2, playoffStartGw: 31,
+  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[] }>({
+    teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"],
   });
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -259,10 +259,13 @@ export default function AdminDashboard() {
       .then(data => {
         const league = (data.leagues || []).find((l: { id: string }) => l.id === leagueId);
         if (league) {
+          let enabledChips: string[] = ["D", "W", "C"];
+          try { enabledChips = JSON.parse(league.enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
           setLeagueConfig({
             teamSize: league.teamSize ?? 32,
             groupCount: league.groupCount ?? 2,
             playoffStartGw: league.playoffStartGw ?? 31,
+            enabledChips,
           });
         }
       })
@@ -1793,20 +1796,32 @@ export default function AdminDashboard() {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-300 mb-2">Select Chip</label>
-                        <select
-                          required
-                          value={chipOverride.chipType}
-                          onChange={(e) => setChipOverride({ ...chipOverride, chipType: e.target.value })}
-                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
-                        >
-                          <option value="" className="bg-slate-800">Select a chip...</option>
-                          <option value="doublePointerSet1" className="bg-slate-800">Double Pointer (Set 1, GW1-15)</option>
-                          <option value="challengeChipSet1" className="bg-slate-800">Challenge Chip (Set 1, GW1-15)</option>
-                          <option value="winWinSet1" className="bg-slate-800">Win-Win (Set 1, GW1-15)</option>
-                          <option value="doublePointerSet2" className="bg-slate-800">Double Pointer (Set 2, GW16-30)</option>
-                          <option value="challengeChipSet2" className="bg-slate-800">Challenge Chip (Set 2, GW16-30)</option>
-                          <option value="winWinSet2" className="bg-slate-800">Win-Win (Set 2, GW16-30)</option>
-                        </select>
+                        {(() => {
+                          const CHIP_KEY: Record<string, string> = { W: "winWin", D: "doublePointer", C: "challengeChip", SL: "scoreLock", CB: "comeback", UD: "underdog" };
+                          const CHIP_NAME: Record<string, string> = { W: "Win-Win", D: "Double Pointer", C: "Challenge Chip", SL: "Score Lock", CB: "Comeback", UD: "Underdog" };
+                          const mid = Math.ceil((leagueConfig.playoffStartGw - 1) / 2);
+                          const stageEnd = leagueConfig.playoffStartGw - 1;
+                          return (
+                            <select
+                              required
+                              value={chipOverride.chipType}
+                              onChange={(e) => setChipOverride({ ...chipOverride, chipType: e.target.value })}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
+                            >
+                              <option value="" className="bg-slate-800">Select a chip...</option>
+                              {leagueConfig.enabledChips.map(code => (
+                                <option key={`${code}Set1`} value={`${CHIP_KEY[code]}Set1`} className="bg-slate-800">
+                                  {CHIP_NAME[code]} (Set 1, GW1-{mid})
+                                </option>
+                              ))}
+                              {leagueConfig.enabledChips.map(code => (
+                                <option key={`${code}Set2`} value={`${CHIP_KEY[code]}Set2`} className="bg-slate-800">
+                                  {CHIP_NAME[code]} (Set 2, GW{mid + 1}-{stageEnd})
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -1853,11 +1868,11 @@ export default function AdminDashboard() {
                           <input
                             type="number"
                             required
-                            min={chipOverride.chipType.includes("Set1") ? 1 : 16}
-                            max={chipOverride.chipType.includes("Set1") ? 15 : 30}
+                            min={1}
+                            max={leagueConfig.playoffStartGw - 1}
                             value={chipOverride.gameweek}
                             onChange={(e) => setChipOverride({ ...chipOverride, gameweek: e.target.value })}
-                            placeholder={chipOverride.chipType.includes("Set1") ? "1-15" : "16-30"}
+                            placeholder={chipOverride.chipType.includes("Set1") ? `1-${Math.ceil((leagueConfig.playoffStartGw - 1) / 2)}` : `${Math.ceil((leagueConfig.playoffStartGw - 1) / 2) + 1}-${leagueConfig.playoffStartGw - 1}`}
                             className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                           />
                         </div>
