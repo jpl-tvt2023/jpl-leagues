@@ -105,39 +105,49 @@ export async function POST(request: NextRequest) {
           ).toUpperCase();
 
           // Parse chip markers:
-          // W = Win-Win
-          // D = Double Pointer
-          // C = Challenge Chip (plain, no opponent)
+          // W = Win-Win, D = Double Pointer, C = Challenge Chip (plain)
           // C:OPP = Challenge Chip with opponent abbreviation e.g. C:TAD
-          // DW = Wasted Double Pointer
-          // WW = Wasted Win-Win
-          // CW = Wasted Challenge
-          let chipEntries: { type: "W" | "D" | "C"; wasted: boolean; opponentName?: string }[] = [];
+          // SL = Score Lock, CB = Comeback, UD = Underdog
+          // DW = Wasted Double Pointer, WW = Wasted Win-Win, CW = Wasted Challenge
+          // SLW = Wasted Score Lock, CBW = Wasted Comeback, UDW = Wasted Underdog
+          let chipEntries: { type: "W" | "D" | "C" | "SL" | "CB" | "UD"; wasted: boolean; opponentName?: string }[] = [];
 
-          // Check for wasted chips first (DW, CW)
+          // Check for wasted chips first
           if (gwValue === "DW") {
             chipEntries.push({ type: "D", wasted: true });
-            chipEntries.push({ type: "W", wasted: false });
           } else if (gwValue === "CW") {
             chipEntries.push({ type: "C", wasted: true });
           } else if (gwValue === "WW") {
             chipEntries.push({ type: "W", wasted: true });
+          } else if (gwValue === "SLW") {
+            chipEntries.push({ type: "SL", wasted: true });
+          } else if (gwValue === "CBW") {
+            chipEntries.push({ type: "CB", wasted: true });
+          } else if (gwValue === "UDW") {
+            chipEntries.push({ type: "UD", wasted: true });
           } else {
             // CC with opponent abbreviation: C:TAD
             const ccWithOpp = gwValue.match(/^C:(.+)$/);
             if (ccWithOpp) {
               chipEntries.push({ type: "C", wasted: false, opponentName: ccWithOpp[1].trim() });
             } else {
-              if (gwValue.includes("W")) chipEntries.push({ type: "W", wasted: false });
-              if (gwValue.includes("D")) chipEntries.push({ type: "D", wasted: false });
-              if (gwValue.includes("C")) chipEntries.push({ type: "C", wasted: false });
+              if (gwValue === "W") chipEntries.push({ type: "W", wasted: false });
+              if (gwValue === "D") chipEntries.push({ type: "D", wasted: false });
+              if (gwValue === "C") chipEntries.push({ type: "C", wasted: false });
+              if (gwValue === "SL") chipEntries.push({ type: "SL", wasted: false });
+              if (gwValue === "CB") chipEntries.push({ type: "CB", wasted: false });
+              if (gwValue === "UD") chipEntries.push({ type: "UD", wasted: false });
             }
           }
 
           for (const chipEntry of chipEntries) {
             const chipType = chipEntry.type;
             const isWasted = chipEntry.wasted;
-            const chipName = chipType === "W" ? "Win-Win" : chipType === "D" ? "Double Pointer" : "Challenge";
+            const chipNameMap: Record<string, string> = {
+              W: "Win-Win", D: "Double Pointer", C: "Challenge",
+              SL: "Score Lock", CB: "Comeback", UD: "Underdog",
+            };
+            const chipName = chipNameMap[chipType] ?? chipType;
 
             // Resolve CC opponent team ID if provided (C:OPP format)
             let challengedTeamId: string | null = null;
@@ -213,19 +223,21 @@ export async function POST(request: NextRequest) {
             // Update team's chip usage flags
             const chipSet = getChipSet(gw);
             if (chipSet !== "playoffs") {
-              const updateData: Record<string, boolean> = {};
-
-              if (chipType === "W") {
-                updateData[chipSet === 1 ? "winWinSet1Used" : "winWinSet2Used"] = true;
-              } else if (chipType === "D") {
-                updateData[chipSet === 1 ? "doublePointerSet1Used" : "doublePointerSet2Used"] = true;
-              } else if (chipType === "C") {
-                updateData[chipSet === 1 ? "challengeChipSet1Used" : "challengeChipSet2Used"] = true;
+              const s = chipSet === 1 ? "Set1" : "Set2";
+              const colMap: Record<string, string> = {
+                W: `winWin${s}Used`,
+                D: `doublePointer${s}Used`,
+                C: `challengeChip${s}Used`,
+                SL: `scoreLock${s}Used`,
+                CB: `comeback${s}Used`,
+                UD: `underdog${s}Used`,
+              };
+              const col = colMap[chipType];
+              if (col) {
+                await db.update(teams)
+                  .set({ [col]: true, updatedAt: new Date() })
+                  .where(eq(teams.id, team.id));
               }
-
-              await db.update(teams)
-                .set(updateData)
-                .where(eq(teams.id, team.id));
             }
           } // end for chipEntries
         }

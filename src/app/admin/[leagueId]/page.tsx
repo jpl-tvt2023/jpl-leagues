@@ -107,6 +107,9 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<TabType>("teams");
   const [teams, setTeams] = useState<Team[]>([]);
+  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number }>({
+    teamSize: 32, groupCount: 2, playoffStartGw: 31,
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -247,6 +250,24 @@ export default function AdminDashboard() {
       setIsLoading(false);
     }
   };
+
+  // Fetch league config for dynamic capacity display
+  useEffect(() => {
+    if (!leagueId) return;
+    fetch("/api/admin/my-leagues")
+      .then(r => r.json())
+      .then(data => {
+        const league = (data.leagues || []).find((l: { id: string }) => l.id === leagueId);
+        if (league) {
+          setLeagueConfig({
+            teamSize: league.teamSize ?? 32,
+            groupCount: league.groupCount ?? 2,
+            playoffStartGw: league.playoffStartGw ?? 31,
+          });
+        }
+      })
+      .catch(() => {});
+  }, [leagueId]);
 
   const fetchCaptainData = async () => {
     setCaptainLoading(true);
@@ -967,6 +988,7 @@ export default function AdminDashboard() {
 
   const groupATeams = teams.filter(t => t.group === "A");
   const groupBTeams = teams.filter(t => t.group === "B");
+  const teamsPerGroup = Math.round(leagueConfig.teamSize / leagueConfig.groupCount);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -1345,8 +1367,8 @@ export default function AdminDashboard() {
                     onChange={(e) => setFormData({ ...formData, group: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
                   >
-                    <option value="A" className="bg-slate-800">Group A ({groupATeams.length}/16)</option>
-                    <option value="B" className="bg-slate-800">Group B ({groupBTeams.length}/16)</option>
+                    <option value="A" className="bg-slate-800">Group A ({groupATeams.length}/{teamsPerGroup})</option>
+                    <option value="B" className="bg-slate-800">Group B ({groupBTeams.length}/{teamsPerGroup})</option>
                   </select>
                 </div>
               </div>
@@ -1421,15 +1443,15 @@ export default function AdminDashboard() {
             <div className="text-sm text-gray-400">Total Teams</div>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-blue-400">{groupATeams.length}/16</div>
+            <div className="text-3xl font-bold text-blue-400">{groupATeams.length}/{teamsPerGroup}</div>
             <div className="text-sm text-gray-400">Group A</div>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/16</div>
+            <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
             <div className="text-sm text-gray-400">Group B</div>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-green-400">{32 - teams.length}</div>
+            <div className="text-3xl font-bold text-green-400">{leagueConfig.teamSize - teams.length}</div>
             <div className="text-sm text-gray-400">Spots Left</div>
           </div>
         </div>
@@ -1441,7 +1463,7 @@ export default function AdminDashboard() {
           <div className="grid md:grid-cols-2 gap-8">
             {/* Group A */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-blue-400 mb-4">Group A ({groupATeams.length}/16)</h3>
+              <h3 className="text-xl font-bold text-blue-400 mb-4">Group A ({groupATeams.length}/{teamsPerGroup})</h3>
               {groupATeams.length === 0 ? (
                 <p className="text-gray-500">No teams yet</p>
               ) : (
@@ -1482,7 +1504,7 @@ export default function AdminDashboard() {
 
             {/* Group B */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-purple-400 mb-4">Group B ({groupBTeams.length}/16)</h3>
+              <h3 className="text-xl font-bold text-purple-400 mb-4">Group B ({groupBTeams.length}/{teamsPerGroup})</h3>
               {groupBTeams.length === 0 ? (
                 <p className="text-gray-500">No teams yet</p>
               ) : (

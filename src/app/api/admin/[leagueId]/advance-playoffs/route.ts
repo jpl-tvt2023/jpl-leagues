@@ -53,6 +53,7 @@ async function createFixture(params: {
 // Create a 2-legged tie + both fixtures
 async function create2LegTie(params: {
   tieId: string;
+  leagueId: string;
   roundName: string;
   roundType: string;
   homeTeamId: string;
@@ -65,6 +66,7 @@ async function create2LegTie(params: {
 }) {
   await db.insert(playoffTies).values({
     tieId: params.tieId,
+    leagueId: params.leagueId,
     roundName: params.roundName,
     roundType: params.roundType,
     homeTeamId: params.homeTeamId,
@@ -102,6 +104,7 @@ async function create2LegTie(params: {
 // Create a single-leg KO tie + fixture
 async function create1LegTie(params: {
   tieId: string;
+  leagueId: string;
   roundName: string;
   roundType: string;
   homeTeamId: string;
@@ -112,6 +115,7 @@ async function create1LegTie(params: {
 }) {
   await db.insert(playoffTies).values({
     tieId: params.tieId,
+    leagueId: params.leagueId,
     roundName: params.roundName,
     roundType: params.roundType,
     homeTeamId: params.homeTeamId,
@@ -306,6 +310,7 @@ async function advanceGW31(groupId: string, leagueId: string, actions: string[])
 
     await create1LegTie({
       tieId,
+      leagueId,
       roundName: "C-32",
       roundType: "challenger-ko",
       homeTeamId: homeTie.winnerId,
@@ -358,6 +363,7 @@ async function advanceGW32(groupId: string, leagueId: string, actions: string[])
 
     await create2LegTie({
       tieId,
+      leagueId,
       roundName: "QF",
       roundType: "tvt",
       homeTeamId: homeTie.winnerId,
@@ -485,6 +491,7 @@ async function advanceGW34(groupId: string, leagueId: string, actions: string[])
 
     await create2LegTie({
       tieId,
+      leagueId,
       roundName: "SF",
       roundType: "tvt",
       homeTeamId: homeTie.winnerId,
@@ -513,6 +520,7 @@ async function advanceGW34(groupId: string, leagueId: string, actions: string[])
 
     await create1LegTie({
       tieId,
+      leagueId,
       roundName: "C-35",
       roundType: "challenger-ko",
       homeTeamId: qfTie.loserId,
@@ -554,6 +562,7 @@ async function advanceGW35(groupId: string, leagueId: string, actions: string[])
 
     await create1LegTie({
       tieId,
+      leagueId,
       roundName: "C-36",
       roundType: "challenger-ko",
       homeTeamId: homeTie.winnerId,
@@ -589,6 +598,7 @@ async function advanceGW36(groupId: string, leagueId: string, actions: string[])
   if (sfA?.winnerId && sfB?.winnerId) {
     await create2LegTie({
       tieId: "Final",
+      leagueId,
       roundName: "Final",
       roundType: "tvt",
       homeTeamId: sfA.winnerId,
@@ -609,6 +619,7 @@ async function advanceGW36(groupId: string, leagueId: string, actions: string[])
   if (sfA?.loserId && c36B?.winnerId) {
     await create1LegTie({
       tieId: "C-37-A",
+      leagueId,
       roundName: "C-37",
       roundType: "challenger-ko",
       homeTeamId: sfA.loserId,
@@ -623,6 +634,7 @@ async function advanceGW36(groupId: string, leagueId: string, actions: string[])
   if (sfB?.loserId && c36A?.winnerId) {
     await create1LegTie({
       tieId: "C-37-B",
+      leagueId,
       roundName: "C-37",
       roundType: "challenger-ko",
       homeTeamId: sfB.loserId,
@@ -656,6 +668,7 @@ async function advanceGW37(groupId: string, leagueId: string, actions: string[])
   if (c37A?.winnerId && c37B?.winnerId) {
     await create1LegTie({
       tieId: "C-38-A",
+      leagueId,
       roundName: "C-38",
       roundType: "challenger-ko",
       homeTeamId: c37A.winnerId,
@@ -706,6 +719,7 @@ async function generateC34AfterSurvival(groupId: string, leagueId: string, actio
   for (const [tieId, homeIdx, awayIdx] of c34Pairs) {
     await create1LegTie({
       tieId,
+      leagueId,
       roundName: "C-34",
       roundType: "challenger-ko",
       homeTeamId: ranked[homeIdx].teamId,

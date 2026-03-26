@@ -1,13 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, gameweeks, gameweekChips, groups, fixtures, settings } from "@/lib/db";
-import { eq, and, desc } from "drizzle-orm";
+import { db, teams, gameweeks, gameweekChips, settings, leagues } from "@/lib/db";
+import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 
-// Determine chip set based on gameweek
-function getChipSet(gwNumber: number): 1 | 2 | "playoffs" {
-  if (gwNumber <= 15) return 1;
-  if (gwNumber <= 30) return 2;
-  return "playoffs";
+const ALL_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"] as const;
+type ChipCode = typeof ALL_CHIP_CODES[number];
+
+const CHIP_NAMES: Record<ChipCode, string> = {
+  W: "Win-Win", D: "Double Pointer", C: "Challenge Chip",
+  SL: "Score Lock", CB: "Comeback", UD: "Underdog",
+};
+
+// Column name for the set-used flag on the teams table
+const CHIP_SET_COL: Record<ChipCode, [keyof typeof teams.$inferSelect, keyof typeof teams.$inferSelect]> = {
+  W:  ["winWinSet1Used",        "winWinSet2Used"],
+  D:  ["doublePointerSet1Used", "doublePointerSet2Used"],
+  C:  ["challengeChipSet1Used", "challengeChipSet2Used"],
+  SL: ["scoreLockSet1Used",     "scoreLockSet2Used"],
+  CB: ["comebackSet1Used",      "comebackSet2Used"],
+  UD: ["underdogSet1Used",      "underdogSet2Used"],
+};
+
+function getChipSet(gwNumber: number, playoffStartGw: number): 1 | 2 | "playoffs" {
+  if (gwNumber >= playoffStartGw) return "playoffs";
+  const midpoint = Math.ceil((playoffStartGw - 1) / 2);
+  return gwNumber <= midpoint ? 1 : 2;
 }
 
 /**
@@ -41,29 +58,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate chip type
-    if (!["W", "D", "C"].includes(chipType)) {
+    // Validate chip type is one of the 6 known codes
+    if (!ALL_CHIP_CODES.includes(chipType as ChipCode)) {
       return NextResponse.json(
-        { error: "Invalid chipType. Must be W (Win-Win), D (Double Pointer), or C (Challenge)" },
+        { error: "Invalid chipType. Must be one of: W, D, C, SL, CB, UD" },
         { status: 400 }
       );
     }
 
-    // Get team
+    // Get team with league
     const team = await db.query.teams.findFirst({
       where: eq(teams.id, teamId),
-      with: {
-        group: true,
-      },
+      with: { group: true },
     });
 
     if (!team) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Get gameweek
+    // Get league config (enabledChips + playoffStartGw)
+    const leagueRow = await db.select({ enabledChips: leagues.enabledChips, playoffStartGw: leagues.playoffStartGw })
+      .from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
+    if (leagueRow.length === 0) {
+      return NextResponse.json({ error: "League not found" }, { status: 404 });
+    }
+    let enabledChips: string[] = ["D", "W", "C"];
+    try { enabledChips = JSON.parse(leagueRow[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
+    const playoffStartGw = leagueRow[0].playoffStartGw ?? 31;
+
+    // Check chip is enabled for this league
+    if (!enabledChips.includes(chipType)) {
+      return NextResponse.json(
+        { error: `${CHIP_NAMES[chipType as ChipCode]} is not enabled for this league` },
+        { status: 400 }
+      );
+    }
+
+    // Get gameweek (must be in this team's league)
     const gw = await db.query.gameweeks.findFirst({
-      where: eq(gameweeks.number, gameweekNumber),
+      where: and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, team.leagueId)),
     });
 
     if (!gw) {
@@ -88,32 +121,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check chip set
-    const chipSet = getChipSet(gameweekNumber);
+    // Check chip set (dynamic boundaries from league config)
+    const chipSet = getChipSet(gameweekNumber, playoffStartGw);
     if (chipSet === "playoffs") {
       return NextResponse.json(
-        { error: "TVT chips cannot be used in playoffs (GW31+)" },
+        { error: `TVT chips cannot be used in playoffs (GW${playoffStartGw}+)` },
         { status: 400 }
       );
     }
 
-    // Check if chip is already used for this set
-    const chipName = chipType === "D" ? "Double Pointer" : chipType === "C" ? "Challenge Chip" : "Win-Win";
-    let alreadyUsed = false;
+    const chipName = CHIP_NAMES[chipType as ChipCode];
+    const midpoint = Math.ceil((playoffStartGw - 1) / 2);
+    const set1Range = `GW1-${midpoint}`;
+    const set2Range = `GW${midpoint + 1}-${playoffStartGw - 1}`;
+    const setRange = chipSet === 1 ? set1Range : set2Range;
 
-    if (chipSet === 1) {
-      if (chipType === "D" && team.doublePointerSet1Used) alreadyUsed = true;
-      if (chipType === "C" && team.challengeChipSet1Used) alreadyUsed = true;
-      if (chipType === "W" && team.winWinSet1Used) alreadyUsed = true;
-    } else {
-      if (chipType === "D" && team.doublePointerSet2Used) alreadyUsed = true;
-      if (chipType === "C" && team.challengeChipSet2Used) alreadyUsed = true;
-      if (chipType === "W" && team.winWinSet2Used) alreadyUsed = true;
-    }
+    // Check if chip is already used for this set using the column map
+    const [col1, col2] = CHIP_SET_COL[chipType as ChipCode];
+    const alreadyUsed = chipSet === 1
+      ? !!team[col1 as keyof typeof team]
+      : !!team[col2 as keyof typeof team];
 
     if (alreadyUsed) {
       return NextResponse.json(
-        { error: `${chipName} has already been used for Set ${chipSet} (GW${chipSet === 1 ? "1-15" : "16-30"})` },
+        { error: `${chipName} has already been used for Set ${chipSet} (${setRange})` },
         { status: 400 }
       );
     }
@@ -137,20 +168,13 @@ export async function POST(request: NextRequest) {
     // If switching chip types, check the NEW type isn't already used in the set
     // (the old type doesn't count since we're replacing it)
     if (existingChip && existingChip.chipType !== chipType) {
-      // Re-check only the NEW chip type against the set (old one is being freed)
-      let newChipAlreadyUsedInSet = false;
-      if (chipSet === 1) {
-        if (chipType === "D" && team.doublePointerSet1Used) newChipAlreadyUsedInSet = true;
-        if (chipType === "C" && team.challengeChipSet1Used) newChipAlreadyUsedInSet = true;
-        if (chipType === "W" && team.winWinSet1Used) newChipAlreadyUsedInSet = true;
-      } else {
-        if (chipType === "D" && team.doublePointerSet2Used) newChipAlreadyUsedInSet = true;
-        if (chipType === "C" && team.challengeChipSet2Used) newChipAlreadyUsedInSet = true;
-        if (chipType === "W" && team.winWinSet2Used) newChipAlreadyUsedInSet = true;
-      }
-      if (newChipAlreadyUsedInSet) {
+      const [newCol1, newCol2] = CHIP_SET_COL[chipType as ChipCode];
+      const newAlreadyUsed = chipSet === 1
+        ? !!team[newCol1 as keyof typeof team]
+        : !!team[newCol2 as keyof typeof team];
+      if (newAlreadyUsed) {
         return NextResponse.json(
-          { error: `${chipName} has already been used for Set ${chipSet} (GW${chipSet === 1 ? "1-15" : "16-30"})` },
+          { error: `${chipName} has already been used for Set ${chipSet} (${setRange})` },
           { status: 400 }
         );
       }

@@ -4,14 +4,20 @@ import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
-// Valid chip types
+// Valid chip types (existing + 3 new chips)
 const VALID_CHIPS = [
   "doublePointerSet1",
   "challengeChipSet1",
   "winWinSet1",
+  "scoreLockSet1",
+  "comebackSet1",
+  "underdogSet1",
   "doublePointerSet2",
   "challengeChipSet2",
   "winWinSet2",
+  "scoreLockSet2",
+  "comebackSet2",
+  "underdogSet2",
 ] as const;
 
 type ChipType = typeof VALID_CHIPS[number];
@@ -21,19 +27,39 @@ const chipToColumn: Record<ChipType, keyof typeof teams.$inferSelect> = {
   doublePointerSet1: "doublePointerSet1Used",
   challengeChipSet1: "challengeChipSet1Used",
   winWinSet1: "winWinSet1Used",
+  scoreLockSet1: "scoreLockSet1Used",
+  comebackSet1: "comebackSet1Used",
+  underdogSet1: "underdogSet1Used",
   doublePointerSet2: "doublePointerSet2Used",
   challengeChipSet2: "challengeChipSet2Used",
   winWinSet2: "winWinSet2Used",
+  scoreLockSet2: "scoreLockSet2Used",
+  comebackSet2: "comebackSet2Used",
+  underdogSet2: "underdogSet2Used",
+};
+
+// Map chip column key to gameweekChips chipType code
+const chipToTypeCode: Record<ChipType, string> = {
+  doublePointerSet1: "D", challengeChipSet1: "C", winWinSet1: "W",
+  scoreLockSet1: "SL", comebackSet1: "CB", underdogSet1: "UD",
+  doublePointerSet2: "D", challengeChipSet2: "C", winWinSet2: "W",
+  scoreLockSet2: "SL", comebackSet2: "CB", underdogSet2: "UD",
 };
 
 // Chip display names for UI
 const chipDisplayNames: Record<ChipType, string> = {
-  doublePointerSet1: "Double Pointer (Set 1, GW1-15)",
-  challengeChipSet1: "Challenge Chip (Set 1, GW1-15)",
-  winWinSet1: "Win-Win (Set 1, GW1-15)",
-  doublePointerSet2: "Double Pointer (Set 2, GW16-30)",
-  challengeChipSet2: "Challenge Chip (Set 2, GW16-30)",
-  winWinSet2: "Win-Win (Set 2, GW16-30)",
+  doublePointerSet1: "Double Pointer (Set 1)",
+  challengeChipSet1: "Challenge Chip (Set 1)",
+  winWinSet1: "Win-Win (Set 1)",
+  scoreLockSet1: "Score Lock (Set 1)",
+  comebackSet1: "Comeback (Set 1)",
+  underdogSet1: "Underdog (Set 1)",
+  doublePointerSet2: "Double Pointer (Set 2)",
+  challengeChipSet2: "Challenge Chip (Set 2)",
+  winWinSet2: "Win-Win (Set 2)",
+  scoreLockSet2: "Score Lock (Set 2)",
+  comebackSet2: "Comeback (Set 2)",
+  underdogSet2: "Underdog (Set 2)",
 };
 
 /**
@@ -77,21 +103,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate gameweek is in valid range for the chip set
+    // Validate gameweek is a positive integer (admin overrides don't enforce strict GW windows)
     if (chipStatus !== "available" && gameweek) {
       const gwNum = parseInt(gameweek);
-      const isSet1 = chipType.includes("Set1");
-      if (isSet1 && (gwNum < 1 || gwNum > 15)) {
-        return NextResponse.json(
-          { error: "Set 1 chips must be used in GW1-15" },
-          { status: 400 }
-        );
-      }
-      if (!isSet1 && (gwNum < 16 || gwNum > 30)) {
-        return NextResponse.json(
-          { error: "Set 2 chips must be used in GW16-30" },
-          { status: 400 }
-        );
+      if (isNaN(gwNum) || gwNum < 1) {
+        return NextResponse.json({ error: "Invalid gameweek" }, { status: 400 });
       }
     }
 
@@ -143,9 +159,7 @@ export async function POST(request: NextRequest) {
     // Extract set number and chip type code from chipType
     const setMatch = chipType.match(/Set(\d)$/);
     const setNumber = setMatch ? parseInt(setMatch[1]) : 1;
-    const chipCode = chipType.startsWith("doublePointer") ? "D"
-      : chipType.startsWith("challengeChip") ? "C"
-      : "W";
+    const chipCode = chipToTypeCode[chipType as ChipType];
 
     // Find existing chip record for this team and chip type in this set
     const existingChips = await db.select()
