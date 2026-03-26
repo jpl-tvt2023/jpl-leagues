@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains } from "@/lib/db/schema";
+import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, leagues } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { fetchTeamGameweekPicks, detectLiveGameweek } from "@/lib/fpl";
 import { getLiveCachedScores } from "@/lib/fpl-cache";
@@ -72,14 +72,24 @@ interface SurvivalDisplay {
  * projected = GW30+ completed, bracket from final standings (not yet admin-generated)
  * live = playoff ties exist in DB
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const leagueSlug = searchParams.get("leagueSlug");
+
+    // Resolve leagueId from slug if provided
+    let leagueId: string | null = null;
+    if (leagueSlug) {
+      const league = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+      if (league.length > 0) leagueId = league[0].id;
+    }
+
     const existingTies = await db.select().from(playoffTies).limit(1);
     const isLive = existingTies.length > 0;
-    const latestCompletedGw = await getLatestCompletedGw();
+    const latestCompletedGw = await getLatestCompletedGw(leagueId);
 
     if (isLive) {
-      const bracket = await buildLiveBracket(latestCompletedGw);
+      const bracket = await buildLiveBracket(latestCompletedGw, leagueId);
       // Always fetch fresh live scores from FPL API for GW31-38
       const liveScores = await fetchLiveScoresForAllPlayoffGws();
       return NextResponse.json({ ...bracket, liveScores });
@@ -87,20 +97,23 @@ export async function GET() {
 
     // Not yet generated — show from standings
     const mode = latestCompletedGw >= 30 ? "projected" : "tentative";
-    return NextResponse.json(await buildTentativeBracket(latestCompletedGw, mode));
+    return NextResponse.json(await buildTentativeBracket(latestCompletedGw, mode, leagueId));
   } catch (error) {
     console.error("Error fetching bracket:", error);
     return NextResponse.json({ error: "Failed to fetch bracket" }, { status: 500 });
   }
 }
 
-async function getLatestCompletedGw(): Promise<number> {
-  const latestResult = await db.select({ gwNumber: gameweeks.number })
+async function getLatestCompletedGw(leagueId?: string | null): Promise<number> {
+  let query = db.select({ gwNumber: gameweeks.number })
     .from(results)
     .innerJoin(fixtures, eq(results.fixtureId, fixtures.id))
-    .innerJoin(gameweeks, eq(fixtures.gameweekId, gameweeks.id))
-    .orderBy(desc(gameweeks.number))
-    .limit(1);
+    .innerJoin(gameweeks, eq(fixtures.gameweekId, gameweeks.id));
+
+  const latestResult = leagueId
+    ? await query.where(eq(gameweeks.leagueId, leagueId)).orderBy(desc(gameweeks.number)).limit(1)
+    : await query.orderBy(desc(gameweeks.number)).limit(1);
+
   return latestResult.length > 0 ? latestResult[0].gwNumber : 0;
 }
 
@@ -420,8 +433,8 @@ function placeholder(label: string): { teamId: null; name: string; abbr: string;
   return { teamId: null, name: label, abbr: label, leg1Score: null, leg2Score: null, aggregate: null };
 }
 
-async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative" | "projected") {
-  const standings = await getGroupStandings();
+async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null) {
+  const standings = await getGroupStandings(leagueId);
   if (!standings) {
     return { mode, latestCompletedGw, error: "Failed to compute standings", tvt: {}, challenger: {} };
   }
@@ -546,7 +559,7 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
 // ============================================
 // LIVE MODE
 // ============================================
-async function buildLiveBracket(latestCompletedGw: number) {
+async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | null) {
   // Fetch all playoff ties
   const allTies = await db.query.playoffTies.findMany({
     with: { homeTeam: true, awayTeam: true, winner: true, loser: true },
@@ -771,9 +784,9 @@ async function buildLiveBracket(latestCompletedGw: number) {
 // ============================================
 // Standings computation (copy from generate-playoffs)
 // ============================================
-async function getGroupStandings() {
+async function getGroupStandings(leagueId?: string | null) {
   try {
-    const allTeams = await db.query.teams.findMany({
+    const allTeamsRaw = await db.query.teams.findMany({
       with: {
         group: true,
         players: true,
@@ -781,6 +794,7 @@ async function getGroupStandings() {
         awayFixtures: { with: { result: true, gameweek: true } },
       },
     });
+    const allTeams = leagueId ? allTeamsRaw.filter(t => t.leagueId === leagueId) : allTeamsRaw;
 
     const allChipsRaw = await db.query.gameweekChips.findMany({ with: { gameweek: true } });
     const chipPointsByTeam = new Map<string, number>();

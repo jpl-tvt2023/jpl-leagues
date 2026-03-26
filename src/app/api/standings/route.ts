@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
+import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
+import { eq } from "drizzle-orm";
 import { getAllCachedScores } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 
@@ -58,6 +59,14 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const group = searchParams.get("group");
+    const leagueSlug = searchParams.get("leagueSlug");
+
+    // Resolve leagueId from slug if provided
+    let leagueId: string | null = null;
+    if (leagueSlug) {
+      const league = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+      if (league.length > 0) leagueId = league[0].id;
+    }
 
     // Get all teams with their relations using relational query
     const allTeamsUnfiltered = await db.query.teams.findMany({
@@ -137,6 +146,11 @@ export async function GET(request: NextRequest) {
     }
 
     let allTeams = allTeamsUnfiltered;
+
+    // Filter by league if leagueSlug provided
+    if (leagueId) {
+      allTeams = allTeams.filter(t => t.leagueId === leagueId);
+    }
 
     // Filter by group if provided
     if (group) {
