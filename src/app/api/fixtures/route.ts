@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, fixtures, teams, gameweeks, groups, results } from "@/lib/db";
+import { db, fixtures, teams, gameweeks, groups, results, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 
 /**
@@ -11,6 +11,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const gameweekParam = searchParams.get("gameweek");
     const groupParam = searchParams.get("group");
+    const leagueSlug = searchParams.get("leagueSlug");
+
+    // Resolve leagueId from slug if provided
+    let leagueId: string | null = null;
+    if (leagueSlug) {
+      const league = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+      if (league.length > 0) leagueId = league[0].id;
+    }
 
     // Use relational queries for cleaner joins
     let allFixtures = await db.query.fixtures.findMany({
@@ -22,6 +30,11 @@ export async function GET(request: NextRequest) {
         result: true,
       },
     });
+
+    // Filter by league if leagueSlug provided
+    if (leagueId) {
+      allFixtures = allFixtures.filter(f => f.gameweek.leagueId === leagueId);
+    }
 
     // Filter by gameweek if provided
     if (gameweekParam) {

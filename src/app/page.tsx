@@ -1,6 +1,50 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 
+interface League {
+  id: string;
+  slug: string;
+  name: string;
+  sport: string;
+  format: string;
+  season: string;
+  isActive: boolean;
+}
+
+const SPORT_ICONS: Record<string, string> = {
+  fpl: "⚽",
+  cricket: "🏏",
+};
+
+const SPORT_GRADIENTS: Record<string, string> = {
+  fpl: "from-purple-900/60 via-blue-900/40 to-slate-900/60",
+  cricket: "from-emerald-900/40 via-teal-900/30 to-slate-900/60",
+};
+
+const SPORT_GLOW: Record<string, string> = {
+  fpl: "bg-purple-600/10",
+  cricket: "bg-emerald-600/10",
+};
+
+const STANDINGS_BTN: Record<string, string> = {
+  fpl: "bg-purple-600 hover:bg-purple-500 text-white",
+  cricket: "bg-emerald-700/40 text-emerald-300",
+};
+
 export default function Home() {
+  const [leagues, setLeagues] = useState<League[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/leagues")
+      .then((r) => r.json())
+      .then((data) => setLeagues(data.leagues || []))
+      .catch(console.error)
+      .finally(() => setIsLoading(false));
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
       {/* Nav */}
@@ -36,83 +80,93 @@ export default function Home() {
 
       {/* League Cards */}
       <section className="mx-auto max-w-5xl px-4 pb-24 sm:px-6">
-        <div className="grid gap-6 sm:grid-cols-2">
-          {/* FPL TVT Card */}
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/60 via-blue-900/40 to-slate-900/60 p-8 shadow-xl">
-            <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-purple-600/10 blur-2xl" />
-            <div className="relative">
-              <div className="mb-5 flex items-center gap-3">
-                <span className="text-4xl">⚽</span>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-2xl font-extrabold text-white">FPL TVT</h2>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-semibold text-green-400">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
-                      </span>
-                      Live
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-400">Season 2025-26</p>
-                </div>
-              </div>
-              <p className="mb-6 text-sm text-gray-300">
-                Team-based Fantasy Premier League. Pair up, play head-to-head, and fight through playoffs to claim the title.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/standings"
-                  className="rounded-full bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500"
-                >
-                  Standings
-                </Link>
-                <Link
-                  href="/fixtures"
-                  className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-                >
-                  Fixtures
-                </Link>
-                <Link
-                  href="/playoffs"
-                  className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-                >
-                  Playoffs
-                </Link>
-              </div>
-            </div>
+        {isLoading ? (
+          <div className="grid gap-6 sm:grid-cols-2">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-64 animate-pulse rounded-2xl border border-white/10 bg-white/5" />
+            ))}
           </div>
+        ) : leagues.length === 0 ? (
+          <p className="text-center text-gray-500">No leagues available yet.</p>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2">
+            {leagues.map((league) => {
+              const icon = SPORT_ICONS[league.sport] ?? "🏆";
+              const gradient = SPORT_GRADIENTS[league.sport] ?? "from-slate-800/60 to-slate-900/60";
+              const glow = SPORT_GLOW[league.sport] ?? "bg-white/5";
+              const standingsBtn = STANDINGS_BTN[league.sport] ?? "bg-white/10 text-white";
 
-          {/* Cricket TVT Card */}
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-900/40 via-teal-900/30 to-slate-900/60 p-8 shadow-xl">
-            <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-emerald-600/10 blur-2xl" />
-            <div className="relative">
-              <div className="mb-5 flex items-center gap-3">
-                <span className="text-4xl">🏏</span>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-2xl font-extrabold text-white">Cricket TVT</h2>
-                    <span className="rounded-full bg-yellow-500/20 px-2.5 py-0.5 text-xs font-semibold text-yellow-400">
-                      Coming Soon
-                    </span>
+              return (
+                <div
+                  key={league.id}
+                  className={`relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br ${gradient} p-8 shadow-xl`}
+                >
+                  <div className={`absolute -right-8 -top-8 h-40 w-40 rounded-full ${glow} blur-2xl`} />
+                  <div className="relative">
+                    <div className="mb-5 flex items-center gap-3">
+                      <span className="text-4xl">{icon}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-2xl font-extrabold text-white">{league.name}</h2>
+                          {league.isActive ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-semibold text-green-400">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+                              </span>
+                              Live
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-yellow-500/20 px-2.5 py-0.5 text-xs font-semibold text-yellow-400">
+                              Coming Soon
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-400">
+                          {league.sport.toUpperCase()} · {league.format.toUpperCase()} · {league.season}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      {league.isActive ? (
+                        <>
+                          <Link
+                            href={`/${league.slug}/standings`}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}
+                          >
+                            Standings
+                          </Link>
+                          <Link
+                            href={`/${league.slug}/fixtures`}
+                            className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                          >
+                            Fixtures
+                          </Link>
+                          <Link
+                            href={`/${league.slug}/playoffs`}
+                            className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                          >
+                            Playoffs
+                          </Link>
+                        </>
+                      ) : (
+                        <>
+                          <span className={`cursor-not-allowed rounded-full px-4 py-2 text-sm font-semibold opacity-40 ${standingsBtn}`}>
+                            Standings
+                          </span>
+                          <span className="cursor-not-allowed rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/30">
+                            Fixtures
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-400">IPL 2026</p>
                 </div>
-              </div>
-              <p className="mb-6 text-sm text-gray-300">
-                Fantasy cricket in the same head-to-head TVT format. Draft your IPL squad and battle for cricket bragging rights.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <span className="cursor-not-allowed rounded-full bg-emerald-700/40 px-4 py-2 text-sm font-semibold text-emerald-300/50">
-                  Standings
-                </span>
-                <span className="cursor-not-allowed rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/30">
-                  Fixtures
-                </span>
-              </div>
-            </div>
+              );
+            })}
           </div>
-        </div>
+        )}
       </section>
 
       {/* Footer */}
@@ -122,4 +176,3 @@ export default function Home() {
     </div>
   );
 }
-
