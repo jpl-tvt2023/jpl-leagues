@@ -322,7 +322,7 @@ export default function AdminDashboard() {
       const statuses: GameweekStatus[] = [];
       // Fetch status for GW1-38 (or until we find gameweeks with no fixtures)
       for (let gw = 1; gw <= 38; gw++) {
-        const response = await fetch(`/api/gameweeks/${gw}`);
+        const response = await fetch(`/api/gameweeks/${gw}?leagueId=${leagueId}`);
         if (response.ok) {
           const data = await response.json();
           if (data.gameweek && data.gameweek.fixturesCount > 0) {
@@ -379,8 +379,8 @@ export default function AdminDashboard() {
 
     try {
       const url = force 
-        ? `/api/gameweeks/${gwNumber}?force=true`
-        : `/api/gameweeks/${gwNumber}`;
+        ? `/api/gameweeks/${gwNumber}?leagueId=${leagueId}&force=true`
+        : `/api/gameweeks/${gwNumber}?leagueId=${leagueId}`;
       const response = await fetch(url, {
         method: "POST",
       });
@@ -826,7 +826,6 @@ export default function AdminDashboard() {
           setChipsData(jsonData);
           setChipsFileName(file.name);
         }
-        setMessage({ type: "success", text: `Loaded ${jsonData.length} rows from ${file.name}` });
       } catch {
         setMessage({ type: "error", text: "Failed to parse Excel file. Please check the format." });
       }
@@ -1656,9 +1655,9 @@ export default function AdminDashboard() {
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
                         >
                           <option value="" className="bg-slate-800">Select gameweek...</option>
-                          {gameweeks.map((gw) => (
-                            <option key={gw.id} value={gw.number} className="bg-slate-800">
-                              GW{gw.number}
+                          {Array.from({ length: 38 }, (_, i) => i + 1).map((gw) => (
+                            <option key={gw} value={gw} className="bg-slate-800">
+                              GW{gw}
                             </option>
                           ))}
                         </select>
@@ -1700,14 +1699,11 @@ export default function AdminDashboard() {
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none"
                       >
                         <option value="" className="bg-slate-800">All GWs</option>
-                        {gameweeks
-                          .slice()
-                          .sort((a, b) => a.number - b.number)
-                          .map((gw) => (
-                            <option key={gw.id} value={String(gw.number)} className="bg-slate-800">
-                              GW{gw.number}
-                            </option>
-                          ))}
+                        {Array.from({ length: 38 }, (_, i) => i + 1).map((gw) => (
+                          <option key={gw} value={String(gw)} className="bg-slate-800">
+                            GW{gw}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="min-w-[180px]">

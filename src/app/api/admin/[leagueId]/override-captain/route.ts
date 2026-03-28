@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, gameweeks, gameweekCaptains, auditLogs } from "@/lib/db";
+import { leagues } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -32,15 +33,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the gameweek
-    const gwList = await db.select().from(gameweeks).where(eq(gameweeks.number, gwNumber));
-    const gw = gwList[0];
+    // Get the gameweek, creating it if it doesn't exist yet (e.g. playoff GWs)
+    const gwList = await db.select().from(gameweeks).where(and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId)));
+    let gw = gwList[0];
 
     if (!gw) {
-      return NextResponse.json(
-        { error: "Gameweek not found" },
-        { status: 404 }
-      );
+      const leagueRecord = await db.select({ playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+      const playoffStartGw = leagueRecord[0]?.playoffStartGw ?? 31;
+      const gwId = generateId();
+      const deadline = new Date();
+      deadline.setDate(deadline.getDate() + 7 * gwNumber);
+      deadline.setHours(11, 0, 0, 0);
+      await db.insert(gameweeks).values({ id: gwId, number: gwNumber, deadline, isPlayoffs: gwNumber >= playoffStartGw, leagueId });
+      gw = { id: gwId, number: gwNumber, deadline, isPlayoffs: gwNumber >= playoffStartGw, leagueId, createdAt: new Date(), updatedAt: new Date() };
     }
 
     // Get the team and verify it exists

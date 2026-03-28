@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, gameweeks, gameweekCaptains, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
@@ -126,21 +126,27 @@ export async function POST(request: NextRequest) {
               gameweekMap.set(gw, gameweek);
             }
 
-            // Check if captain entry already exists
+            // Check if any captain entry already exists for this team in this GW
+            const teamPlayerIds = team.players.map(p => p.id);
             const existing = await db.select().from(gameweekCaptains).where(
               and(
                 eq(gameweekCaptains.gameweekId, gameweek.id),
-                eq(gameweekCaptains.playerId, player.id)
+                inArray(gameweekCaptains.playerId, teamPlayerIds)
               )
             );
 
-            if (existing.length === 0) {
+            if (existing.length > 0) {
+              // Update the existing record to point to the new player (last write wins)
+              await db.update(gameweekCaptains)
+                .set({ playerId: player.id, isValid: true, updatedAt: new Date() })
+                .where(eq(gameweekCaptains.id, existing[0].id));
+            } else {
               // Create captain entry
               await db.insert(gameweekCaptains).values({
                 id: generateId(),
                 gameweekId: gameweek.id,
                 playerId: player.id,
-                fplScore: 0, // Will be filled when processing scores
+                fplScore: 0,
                 transferHits: 0,
                 doubledScore: 0,
                 isValid: true,

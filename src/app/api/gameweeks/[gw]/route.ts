@@ -51,9 +51,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const { searchParams: getSearchParams } = new URL(request.url);
+    const getLeagueId = getSearchParams.get("leagueId");
+    const getGwWhere = getLeagueId
+      ? and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, getLeagueId))
+      : eq(gameweeks.number, gameweekNumber);
+
     // Find the gameweek with relations
     const gwList = await db.query.gameweeks.findMany({
-      where: eq(gameweeks.number, gameweekNumber),
+      where: getGwWhere,
       with: {
         fixtures: {
           with: {
@@ -240,9 +246,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Find the gameweek
+    // Find the gameweek — filter by leagueId if provided (prevents wrong-league match in multi-league setups)
+    const leagueId = searchParams.get("leagueId");
+    const gwWhere = leagueId
+      ? and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, leagueId))
+      : eq(gameweeks.number, gameweekNumber);
+
     const gwList = await db.query.gameweeks.findMany({
-      where: eq(gameweeks.number, gameweekNumber),
+      where: gwWhere,
       with: {
         fixtures: {
           with: {
@@ -336,7 +347,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       
       // Re-fetch gameweek with cleared results
       const updatedGwList = await db.query.gameweeks.findMany({
-        where: eq(gameweeks.number, gameweekNumber),
+        where: gwWhere,
         with: {
           fixtures: {
             with: {
@@ -394,11 +405,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Process each fixture
     for (const fixture of unprocessedFixtures) {
       try {
-        // Get captain info for each team
-        let homeCaptain = gameweek.captains.find(
+        // Get captain info for each team — sort newest first so last-set captain wins
+        const sortedCaptains = [...gameweek.captains].sort(
+          (a: GameweekCaptain, b: GameweekCaptain) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        let homeCaptain = sortedCaptains.find(
           (c: GameweekCaptain) => fixture.homeTeam.players.some((p: Player) => p.id === c.playerId)
         );
-        let awayCaptain = gameweek.captains.find(
+        let awayCaptain = sortedCaptains.find(
           (c: GameweekCaptain) => fixture.awayTeam.players.some((p: Player) => p.id === c.playerId)
         );
 
