@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, gameweeks, gameweekCaptains, leagues } from "@/lib/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
@@ -67,6 +67,35 @@ export async function POST(request: NextRequest) {
     const allGameweeks = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
     const gameweekMap = new Map(allGameweeks.map(gw => [gw.number, gw]));
 
+    // Pre-load ALL existing captain records for this league's gameweeks in one query.
+    // Key: `${gameweekId}|${playerId}` → record id
+    const existingCaptainsMap = new Map<string, { id: string; gameweekId: string; playerId: string }>();
+    const allGwIds = allGameweeks.map(gw => gw.id);
+    if (allGwIds.length > 0) {
+      const allExisting = await db
+        .select({ id: gameweekCaptains.id, gameweekId: gameweekCaptains.gameweekId, playerId: gameweekCaptains.playerId })
+        .from(gameweekCaptains)
+        .where(inArray(gameweekCaptains.gameweekId, allGwIds));
+      for (const c of allExisting) {
+        existingCaptainsMap.set(`${c.gameweekId}|${c.playerId}`, c);
+      }
+    }
+
+    // Collect records to insert and update in memory, then execute in bulk
+    const toInsert: Array<{
+      id: string;
+      gameweekId: string;
+      playerId: string;
+      fplScore: number;
+      transferHits: number;
+      doubledScore: number;
+      isValid: boolean;
+      announcedAt: Date;
+    }> = [];
+    const toUpdate: Array<{ id: string; newPlayerId: string }> = [];
+    // Track chips increments: playerId → count of new captain entries
+    const chipsIncrement = new Map<string, number>();
+
     // Process each captain row
     for (let i = 0; i < captainRows.length; i++) {
       const row = captainRows[i];
@@ -99,65 +128,62 @@ export async function POST(request: NextRequest) {
 
         // Process each gameweek column
         for (let gw = 1; gw <= 38; gw++) {
-          // Check various column name formats
           const gwValue = row[String(gw)] || row[`GW${gw}`] || row[`gw${gw}`] || row[`Gameweek ${gw}`];
 
-          if (toStr(gwValue).toUpperCase() === "C") {
-            // This player was captain for this gameweek
+          if (toStr(gwValue).toUpperCase() !== "C") continue;
 
-            // Ensure gameweek exists for this league
-            let gameweek = gameweekMap.get(gw);
-            if (!gameweek) {
-              // Create gameweek if it doesn't exist
-              const gwId = generateId();
-              const deadline = new Date();
-              deadline.setDate(deadline.getDate() + (7 * gw));
-              deadline.setHours(11, 0, 0, 0);
+          // Ensure gameweek exists for this league
+          let gameweek = gameweekMap.get(gw);
+          if (!gameweek) {
+            const gwId = generateId();
+            const deadline = new Date();
+            deadline.setDate(deadline.getDate() + (7 * gw));
+            deadline.setHours(11, 0, 0, 0);
 
-              await db.insert(gameweeks).values({
-                id: gwId,
-                number: gw,
-                deadline,
-                isPlayoffs: gw >= playoffStartGw,
-                leagueId,
-              });
+            await db.insert(gameweeks).values({
+              id: gwId,
+              number: gw,
+              deadline,
+              isPlayoffs: gw >= playoffStartGw,
+              leagueId,
+            });
 
-              gameweek = { id: gwId, number: gw, deadline, isPlayoffs: gw >= playoffStartGw, leagueId, createdAt: new Date(), updatedAt: new Date() };
-              gameweekMap.set(gw, gameweek);
+            gameweek = { id: gwId, number: gw, deadline, isPlayoffs: gw >= playoffStartGw, leagueId, createdAt: new Date(), updatedAt: new Date() };
+            gameweekMap.set(gw, gameweek);
+          }
+
+          // Check in-memory map: any existing captain for this team in this GW?
+          const teamPlayerIds = team.players.map(p => p.id);
+          const existingEntry = teamPlayerIds
+            .map(pid => existingCaptainsMap.get(`${gameweek!.id}|${pid}`))
+            .find(Boolean);
+
+          if (existingEntry) {
+            if (existingEntry.playerId !== player.id) {
+              // Need to update to point to the new player
+              toUpdate.push({ id: existingEntry.id, newPlayerId: player.id });
+              // Update in-memory map: remove old key, add new key
+              existingCaptainsMap.delete(`${gameweek.id}|${existingEntry.playerId}`);
+              existingCaptainsMap.set(`${gameweek.id}|${player.id}`, { ...existingEntry, playerId: player.id });
             }
-
-            // Check if any captain entry already exists for this team in this GW
-            const teamPlayerIds = team.players.map(p => p.id);
-            const existing = await db.select().from(gameweekCaptains).where(
-              and(
-                eq(gameweekCaptains.gameweekId, gameweek.id),
-                inArray(gameweekCaptains.playerId, teamPlayerIds)
-              )
-            );
-
-            if (existing.length > 0) {
-              // Update the existing record to point to the new player (last write wins)
-              await db.update(gameweekCaptains)
-                .set({ playerId: player.id, isValid: true, updatedAt: new Date() })
-                .where(eq(gameweekCaptains.id, existing[0].id));
-            } else {
-              // Create captain entry
-              await db.insert(gameweekCaptains).values({
-                id: generateId(),
-                gameweekId: gameweek.id,
-                playerId: player.id,
-                fplScore: 0,
-                transferHits: 0,
-                doubledScore: 0,
-                isValid: true,
-                announcedAt: new Date(),
-              });
-
-              // Update player's captaincy chips used count
-              await db.update(players)
-                .set({ captaincyChipsUsed: player.captaincyChipsUsed + 1 })
-                .where(eq(players.id, player.id));
-            }
+            // else: same player, no change needed
+          } else {
+            // New entry
+            const newId = generateId();
+            toInsert.push({
+              id: newId,
+              gameweekId: gameweek.id,
+              playerId: player.id,
+              fplScore: 0,
+              transferHits: 0,
+              doubledScore: 0,
+              isValid: true,
+              announcedAt: new Date(),
+            });
+            // Register in map so duplicate rows in same upload don't double-insert
+            existingCaptainsMap.set(`${gameweek.id}|${player.id}`, { id: newId, gameweekId: gameweek.id, playerId: player.id });
+            // Track chips increment
+            chipsIncrement.set(player.id, (chipsIncrement.get(player.id) ?? 0) + 1);
           }
         }
 
@@ -166,6 +192,25 @@ export async function POST(request: NextRequest) {
         console.error(`Error processing row ${rowNum}:`, error);
         results.errors.push(`Row ${rowNum}: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
+    }
+
+    // Execute bulk insert (one query for all new records)
+    if (toInsert.length > 0) {
+      await db.insert(gameweekCaptains).values(toInsert);
+    }
+
+    // Execute updates (only for records where the player actually changed)
+    for (const upd of toUpdate) {
+      await db.update(gameweekCaptains)
+        .set({ playerId: upd.newPlayerId, isValid: true, updatedAt: new Date() })
+        .where(eq(gameweekCaptains.id, upd.id));
+    }
+
+    // Increment captaincy chips used (one query per unique player with new entries)
+    for (const [playerId, increment] of chipsIncrement) {
+      await db.update(players)
+        .set({ captaincyChipsUsed: sql`${players.captaincyChipsUsed} + ${increment}` })
+        .where(eq(players.id, playerId));
     }
 
     return NextResponse.json({
