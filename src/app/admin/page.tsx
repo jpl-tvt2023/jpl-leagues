@@ -120,7 +120,7 @@ export default function AdminLeaguePicker() {
             {leagues.map((league) => (
               <Link
                 key={league.id}
-                href={`/admin/${league.id}`}
+                href={`/admin/${league.slug}`}
                 className="group block rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur hover:border-yellow-500/50 hover:bg-white/10 transition-all duration-200"
               >
                 {/* League name + status badge */}

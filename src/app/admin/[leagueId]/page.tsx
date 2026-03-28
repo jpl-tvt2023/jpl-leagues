@@ -257,7 +257,7 @@ export default function AdminDashboard() {
     fetch("/api/admin/my-leagues")
       .then(r => r.json())
       .then(data => {
-        const league = (data.leagues || []).find((l: { id: string }) => l.id === leagueId);
+        const league = (data.leagues || []).find((l: { slug: string }) => l.slug === leagueId);
         if (league) {
           let enabledChips: string[] = ["D", "W", "C"];
           try { enabledChips = JSON.parse(league.enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
