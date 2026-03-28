@@ -1191,6 +1191,9 @@ export default function AdminDashboard() {
           <Link href="/playoffs" className="text-gray-300 hover:text-white transition">
             Playoffs
           </Link>
+          <Link href={`/admin/${leagueId}/help`} className="text-gray-300 hover:text-white transition">
+            Help
+          </Link>
           <button
             onClick={handleSignOut}
             className="text-gray-300 hover:text-white transition"
