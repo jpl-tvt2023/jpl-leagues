@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, groups, gameweeks, fixtures } from "@/lib/db";
+import { db, teams, groups, gameweeks, fixtures, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -43,6 +43,15 @@ export async function POST(request: NextRequest) {
       success: [],
       errors: [],
     };
+
+    // Fetch league config
+    const leagueRecord = await db
+      .select({ playoffStartGw: leagues.playoffStartGw })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    if (!leagueRecord.length) return NextResponse.json({ error: "League not found" }, { status: 404 });
+    const { playoffStartGw } = leagueRecord[0];
 
     // Get all teams for this league for lookup
     const allTeams = await db.query.teams.findMany({
@@ -111,10 +120,10 @@ export async function POST(request: NextRequest) {
             id: gwId,
             number: gwNumber,
             deadline: deadline,
-            isPlayoffs: gwNumber > 30,
+            isPlayoffs: gwNumber >= playoffStartGw,
             leagueId,
           });
-          gw = { id: gwId, number: gwNumber, deadline, isPlayoffs: gwNumber > 30, leagueId, createdAt: new Date(), updatedAt: new Date() };
+          gw = { id: gwId, number: gwNumber, deadline, isPlayoffs: gwNumber >= playoffStartGw, leagueId, createdAt: new Date(), updatedAt: new Date() };
           gameweekMap.set(gwNumber, gw);
         }
 

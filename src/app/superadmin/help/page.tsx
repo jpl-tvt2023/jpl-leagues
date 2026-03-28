@@ -125,12 +125,12 @@ export default function SuperadminHelpPage() {
           <ul className="list-disc list-inside space-y-1 mt-2">
             <li><strong className="text-white">Win-Win (WW)</strong> — rewards teams whose two FPL players both score positively in the same GW.</li>
             <li><strong className="text-white">Double Pointer (DP)</strong> — doubles a team&apos;s league points for a gameweek.</li>
-            <li><strong className="text-white">Challenge Chip (CC)</strong> — replaces a team&apos;s fixture with a top-2 opponent. Only meaningful in the 32-team format with 2 groups.</li>
+            <li><strong className="text-white">Challenge Chip (CC)</strong> — replaces a team&apos;s fixture with a top-2 opponent from the <em>opposite group</em>. <span className="text-red-400 font-medium">Not available for 8-team or 16-team formats</span> — the wizard will disable it automatically when you select those sizes.</li>
             <li><strong className="text-white">Score Lock (SL)</strong> — floors a team&apos;s GW score at their season average.</li>
             <li><strong className="text-white">Comeback (CB)</strong> — rewards a win following a loss with +1 extra league point.</li>
             <li><strong className="text-white">Underdog (UD)</strong> — rewards a win against a 3+ higher-ranked opponent with +1 extra league point.</li>
           </ul>
-          <p className="mt-2">For standard TVT, enabling all 6 is recommended. The Challenge Chip is less effective in 8 or 16-team formats (single group).</p>
+          <p className="mt-2">For a 32-team TVT league, enabling all 6 is recommended. For 16-team or 8-team formats, choose any 3 from the remaining 5 (CC is unavailable).</p>
         </div>
       ),
     },

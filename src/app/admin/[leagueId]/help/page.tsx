@@ -196,14 +196,19 @@ export default function AdminHelpPage() {
     {
       question: "How do I override a chip?",
       answer: (
-        <ol className="list-decimal list-inside space-y-1.5">
-          <li>Go to the <strong className="text-white">Chips</strong> tab.</li>
-          <li>Use the filter to find the team and the relevant set (Set 1 or Set 2).</li>
-          <li>Use the override form to select the chip type, set status (available / used / wasted), and GW number.</li>
-          <li>Enter a reason for the override.</li>
-          <li>Submit.</li>
-          <li>If the affected GW has already been scored, go to the <strong className="text-white">Scoring</strong> tab and Force Reprocess it.</li>
-        </ol>
+        <div>
+          <ol className="list-decimal list-inside space-y-1.5">
+            <li>Go to the <strong className="text-white">Chips</strong> tab.</li>
+            <li>Use the filter to find the team and the relevant set (Set 1 or Set 2).</li>
+            <li>Use the override form to select the chip type, set status (available / used / wasted), and GW number.</li>
+            <li>Enter a reason for the override.</li>
+            <li>Submit.</li>
+            <li>If the affected GW has already been scored, go to the <strong className="text-white">Scoring</strong> tab and Force Reprocess it.</li>
+          </ol>
+          {teamSize !== 32 && (
+            <p className="text-red-400 text-xs mt-3">Note: The Challenge Chip (CC) is not available in {teamSize}-team leagues (requires 2 groups). Do not assign CC overrides in this league.</p>
+          )}
+        </div>
       ),
     },
     {

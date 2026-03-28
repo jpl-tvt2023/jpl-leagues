@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, gameweeks, gameweekChips, groups } from "@/lib/db";
+import { db, teams, gameweeks, gameweekChips, groups, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { getChipSet } from "@/lib/chip-validation";
 import { generateId } from "@/lib/id";
@@ -60,6 +60,15 @@ export async function POST(request: NextRequest) {
       errors: [],
       warnings: [],
     };
+
+    // Fetch league config
+    const leagueRecord = await db
+      .select({ playoffStartGw: leagues.playoffStartGw })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    if (!leagueRecord.length) return NextResponse.json({ error: "League not found" }, { status: 404 });
+    const { playoffStartGw } = leagueRecord[0];
 
     // Get all teams for this league — index by both full name and abbreviation for flexible matching
     const allTeams = await db.select().from(teams).where(eq(teams.leagueId, leagueId));
@@ -173,11 +182,11 @@ export async function POST(request: NextRequest) {
                 id: gwId,
                 number: gw,
                 deadline,
-                isPlayoffs: gw > 30,
+                isPlayoffs: gw >= playoffStartGw,
                 leagueId,
               });
 
-              gameweek = { id: gwId, number: gw, deadline, isPlayoffs: gw > 30, leagueId, createdAt: new Date(), updatedAt: new Date() };
+              gameweek = { id: gwId, number: gw, deadline, isPlayoffs: gw >= playoffStartGw, leagueId, createdAt: new Date(), updatedAt: new Date() };
               gameweekMap.set(gw, gameweek);
             }
 
@@ -221,7 +230,7 @@ export async function POST(request: NextRequest) {
             }
 
             // Update team's chip usage flags
-            const chipSet = getChipSet(gw);
+            const chipSet = getChipSet(gw, playoffStartGw);
             if (chipSet !== "playoffs") {
               const s = chipSet === 1 ? "Set1" : "Set2";
               const colMap: Record<string, string> = {
