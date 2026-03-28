@@ -257,7 +257,7 @@ export default function AdminDashboard() {
     fetch("/api/admin/my-leagues")
       .then(r => r.json())
       .then(data => {
-        const league = (data.leagues || []).find((l: { id: string }) => l.id === leagueId);
+        const league = (data.leagues || []).find((l: { slug: string }) => l.slug === leagueId);
         if (league) {
           let enabledChips: string[] = ["D", "W", "C"];
           try { enabledChips = JSON.parse(league.enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
@@ -1083,6 +1083,7 @@ export default function AdminDashboard() {
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                   />
                 </div>
+                {leagueConfig.groupCount === 2 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Group</label>
                   <select
@@ -1094,6 +1095,7 @@ export default function AdminDashboard() {
                     <option value="B" className="bg-slate-800">Group B</option>
                   </select>
                 </div>
+                )}
               </div>
 
               {/* Player 1 */}
@@ -1366,6 +1368,7 @@ export default function AdminDashboard() {
                   />
                   <p className="text-xs text-gray-500 mt-1">Team must change this on first login</p>
                 </div>
+                {leagueConfig.groupCount === 2 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Group</label>
                   <select
@@ -1377,6 +1380,7 @@ export default function AdminDashboard() {
                     <option value="B" className="bg-slate-800">Group B ({groupBTeams.length}/{teamsPerGroup})</option>
                   </select>
                 </div>
+                )}
               </div>
 
               {/* Player 1 */}
@@ -1443,19 +1447,21 @@ export default function AdminDashboard() {
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className={`grid grid-cols-2 ${leagueConfig.groupCount === 2 ? "md:grid-cols-4" : "md:grid-cols-3"} gap-4 mb-8`}>
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
             <div className="text-3xl font-bold text-yellow-400">{teams.length}</div>
             <div className="text-sm text-gray-400">Total Teams</div>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
             <div className="text-3xl font-bold text-blue-400">{groupATeams.length}/{teamsPerGroup}</div>
-            <div className="text-sm text-gray-400">Group A</div>
+            <div className="text-sm text-gray-400">{leagueConfig.groupCount === 2 ? "Group A" : "Group"}</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
-            <div className="text-sm text-gray-400">Group B</div>
-          </div>
+          {leagueConfig.groupCount === 2 && (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
+              <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
+              <div className="text-sm text-gray-400">Group B</div>
+            </div>
+          )}
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
             <div className="text-3xl font-bold text-green-400">{leagueConfig.teamSize - teams.length}</div>
             <div className="text-sm text-gray-400">Spots Left</div>
@@ -1466,10 +1472,10 @@ export default function AdminDashboard() {
         {isLoading ? (
           <div className="text-center text-gray-400 py-12">Loading teams...</div>
         ) : (
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className={`grid ${leagueConfig.groupCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1"} gap-8`}>
             {/* Group A */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-blue-400 mb-4">Group A ({groupATeams.length}/{teamsPerGroup})</h3>
+              <h3 className="text-xl font-bold text-blue-400 mb-4">{leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{teamsPerGroup})</h3>
               {groupATeams.length === 0 ? (
                 <p className="text-gray-500">No teams yet</p>
               ) : (
@@ -1508,7 +1514,8 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            {/* Group B */}
+            {/* Group B — only shown for 2-group leagues */}
+            {leagueConfig.groupCount === 2 && (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h3 className="text-xl font-bold text-purple-400 mb-4">Group B ({groupBTeams.length}/{teamsPerGroup})</h3>
               {groupBTeams.length === 0 ? (
@@ -1548,6 +1555,7 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
+            )}
           </div>
         )}
 

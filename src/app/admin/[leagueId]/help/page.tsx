@@ -90,7 +90,7 @@ export default function AdminHelpPage() {
       .then((data) => {
         if (!data) return;
         const leagues = data.leagues || [];
-        const league = leagues.find((l: { id: string }) => l.id === leagueId);
+        const league = leagues.find((l: { slug: string }) => l.slug === leagueId);
         if (!league) return;
         if (league.name) setLeagueName(league.name);
         if (league.teamSize) setTeamSize(league.teamSize);

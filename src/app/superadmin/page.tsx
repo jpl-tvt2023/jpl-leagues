@@ -1028,7 +1028,7 @@ export default function SuperAdminDashboard() {
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-2 flex-wrap">
                             <Link
-                              href={`/admin/${league.id}`}
+                              href={`/admin/${league.slug}`}
                               className="text-xs text-yellow-400 hover:text-yellow-300 transition border border-yellow-400/30 px-3 py-1.5 rounded-lg whitespace-nowrap"
                             >
                               Manage
