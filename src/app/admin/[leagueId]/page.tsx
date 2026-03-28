@@ -2266,9 +2266,9 @@ export default function AdminDashboard() {
 
               <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
                 <p className="text-yellow-400 text-sm">
-                  <strong>Note:</strong> Chips will be validated during import. Win-Win cannot have transfer hits, 
-                  Double Pointer blocked in GW1, Challenge must target top-2 from opposite group. 
-                  Chip sets: Set 1 (GW1-15), Set 2 (GW16-30).
+                  <strong>Note:</strong> Chips will be validated during import. Win-Win cannot have transfer hits,
+                  Double Pointer blocked in GW1, Challenge must target top-2 from opposite group.
+                  Chip sets: Set 1 (GW1–{Math.ceil((leagueConfig.playoffStartGw - 1) / 2)}), Set 2 (GW{Math.ceil((leagueConfig.playoffStartGw - 1) / 2) + 1}–{leagueConfig.playoffStartGw - 1}).
                 </p>
               </div>
             </div>

@@ -50,13 +50,15 @@ export { getChipSet };
 export async function isChipUsedInSet(
   teamId: string,
   chipType: "W" | "D" | "C",
-  gameweekNumber: number
+  gameweekNumber: number,
+  playoffStartGw: number = 31
 ): Promise<boolean> {
-  const chipSet = getChipSet(gameweekNumber);
+  const chipSet = getChipSet(gameweekNumber, playoffStartGw);
   if (chipSet === "playoffs") return false; // No chip restrictions in playoffs
-  
-  const setStart = chipSet === 1 ? 1 : 16;
-  const setEnd = chipSet === 1 ? 15 : 30;
+
+  const midpoint = Math.ceil((playoffStartGw - 1) / 2);
+  const setStart = chipSet === 1 ? 1 : midpoint + 1;
+  const setEnd = chipSet === 1 ? midpoint : playoffStartGw - 1;
   
   // Query chips used by this team of this type in this set's gameweeks
   const usedChips = await db.query.gameweekChips.findMany({
@@ -199,15 +201,16 @@ export async function getTop2FromGroup(
  */
 export async function validateWinWin(
   teamId: string,
-  gameweekNumber: number
+  gameweekNumber: number,
+  playoffStartGw: number = 31
 ): Promise<ChipValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   // Check if chip already used in this set
-  const alreadyUsed = await isChipUsedInSet(teamId, "W", gameweekNumber);
+  const alreadyUsed = await isChipUsedInSet(teamId, "W", gameweekNumber, playoffStartGw);
   if (alreadyUsed) {
-    errors.push(`Win-Win chip already used in Set ${getChipSet(gameweekNumber)}`);
+    errors.push(`Win-Win chip already used in Set ${getChipSet(gameweekNumber, playoffStartGw)}`);
   }
   
   return {
@@ -226,15 +229,16 @@ export async function validateWinWin(
 export async function validateDoublePointer(
   teamId: string,
   gameweekNumber: number,
-  _gameweekId?: string
+  _gameweekId?: string,
+  playoffStartGw: number = 31
 ): Promise<ChipValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   // Check if chip already used in this set
-  const alreadyUsed = await isChipUsedInSet(teamId, "D", gameweekNumber);
+  const alreadyUsed = await isChipUsedInSet(teamId, "D", gameweekNumber, playoffStartGw);
   if (alreadyUsed) {
-    errors.push(`Double Pointer chip already used in Set ${getChipSet(gameweekNumber)}`);
+    errors.push(`Double Pointer chip already used in Set ${getChipSet(gameweekNumber, playoffStartGw)}`);
   }
   
   return {
@@ -254,15 +258,16 @@ export async function validateDoublePointer(
 export async function validateChallengeChip(
   teamId: string,
   gameweekNumber: number,
-  _challengedTeamId?: string
+  _challengedTeamId?: string,
+  playoffStartGw: number = 31
 ): Promise<ChipValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   // Check if chip already used in this set
-  const alreadyUsed = await isChipUsedInSet(teamId, "C", gameweekNumber);
+  const alreadyUsed = await isChipUsedInSet(teamId, "C", gameweekNumber, playoffStartGw);
   if (alreadyUsed) {
-    errors.push(`Challenge Chip already used in Set ${getChipSet(gameweekNumber)}`);
+    errors.push(`Challenge Chip already used in Set ${getChipSet(gameweekNumber, playoffStartGw)}`);
   }
   
   return {
@@ -280,15 +285,16 @@ export async function validateChip(
   chipType: "W" | "D" | "C",
   gameweekNumber: number,
   gameweekId?: string,
-  challengedTeamId?: string
+  challengedTeamId?: string,
+  playoffStartGw: number = 31
 ): Promise<ChipValidationResult> {
   switch (chipType) {
     case "W":
-      return validateWinWin(teamId, gameweekNumber);
+      return validateWinWin(teamId, gameweekNumber, playoffStartGw);
     case "D":
-      return validateDoublePointer(teamId, gameweekNumber, gameweekId);
+      return validateDoublePointer(teamId, gameweekNumber, gameweekId, playoffStartGw);
     case "C":
-      return validateChallengeChip(teamId, gameweekNumber, challengedTeamId);
+      return validateChallengeChip(teamId, gameweekNumber, challengedTeamId, playoffStartGw);
     default:
       return {
         isValid: false,

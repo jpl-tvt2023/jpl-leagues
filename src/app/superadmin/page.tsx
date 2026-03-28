@@ -801,7 +801,10 @@ export default function SuperAdminDashboard() {
                           key={opt.teamSize}
                           onClick={() => {
                             const playoffStartGw = opt.teamSize === 8 ? 36 : 31;
-                            setLeagueForm({ ...leagueForm, teamSize: opt.teamSize, groupCount: opt.groupCount, playoffStartGw });
+                            const chips = opt.teamSize !== 32
+                              ? leagueForm.enabledChips.filter(c => c !== "C")
+                              : leagueForm.enabledChips;
+                            setLeagueForm({ ...leagueForm, teamSize: opt.teamSize, groupCount: opt.groupCount, playoffStartGw, enabledChips: chips });
                             setWizardStep("chips");
                           }}
                           className={`rounded-xl border p-5 text-left transition ${
@@ -832,22 +835,24 @@ export default function SuperAdminDashboard() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
                       {CHIP_OPTIONS.map(chip => {
                         const selected = leagueForm.enabledChips.includes(chip.code);
+                        const isCcUnavailable = chip.code === "C" && leagueForm.teamSize !== 32;
                         const atMax = leagueForm.enabledChips.length >= 3 && !selected;
+                        const disabled = isCcUnavailable || atMax;
                         return (
                           <button
                             key={chip.code}
-                            disabled={atMax}
+                            disabled={disabled}
                             onClick={() => {
                               if (selected) {
                                 setLeagueForm({ ...leagueForm, enabledChips: leagueForm.enabledChips.filter(c => c !== chip.code) });
-                              } else if (!atMax) {
+                              } else if (!disabled) {
                                 setLeagueForm({ ...leagueForm, enabledChips: [...leagueForm.enabledChips, chip.code] });
                               }
                             }}
                             className={`rounded-xl border p-4 text-left transition ${
                               selected
                                 ? "border-yellow-500 bg-yellow-500/10"
-                                : atMax
+                                : disabled
                                   ? "border-white/5 bg-white/2 opacity-40 cursor-not-allowed"
                                   : "border-white/10 bg-white/5 hover:border-yellow-500/50 hover:bg-white/10 cursor-pointer"
                             }`}
@@ -858,6 +863,9 @@ export default function SuperAdminDashboard() {
                               {selected && <span className="ml-auto text-yellow-400 text-xs">✓ Selected</span>}
                             </div>
                             <p className="text-gray-400 text-xs leading-relaxed">{chip.description}</p>
+                            {isCcUnavailable && (
+                              <p className="text-red-400 text-xs mt-1">32-team only — requires 2 groups</p>
+                            )}
                           </button>
                         );
                       })}

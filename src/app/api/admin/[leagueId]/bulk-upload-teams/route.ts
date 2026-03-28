@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, players, groups } from "@/lib/db";
+import { db, teams, players, groups, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/id";
@@ -53,8 +53,18 @@ export async function POST(request: NextRequest) {
       errors: [],
     };
 
+    // Fetch league config
+    const leagueRecord = await db
+      .select({ groupCount: leagues.groupCount })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    if (!leagueRecord.length) return NextResponse.json({ error: "League not found" }, { status: 404 });
+    const { groupCount } = leagueRecord[0];
+
     // Ensure groups exist for this league
-    for (const groupName of ["A", "B"]) {
+    const groupNames = groupCount === 1 ? ["A"] : ["A", "B"];
+    for (const groupName of groupNames) {
       const existingGroup = await db.select().from(groups).where(
         and(eq(groups.name, groupName), eq(groups.leagueId, leagueId))
       );
@@ -79,18 +89,26 @@ export async function POST(request: NextRequest) {
         const player2Name = toStr(row.player2Name);
         const player2FplId = toStr(row.player2FplId);
 
-        // Validate required fields
-        if (!teamName || !abbreviation || !password || !group ||
+        // Validate required fields (group column optional for single-group leagues)
+        if (!teamName || !abbreviation || !password ||
+            (groupCount !== 1 && !group) ||
             !player1Name || !player1FplId || !player2Name || !player2FplId) {
           results.errors.push(`Row ${rowNum}: Missing required fields`);
           continue;
         }
 
-        // Validate group
-        const groupName = group.toUpperCase();
-        if (groupName !== "A" && groupName !== "B") {
-          results.errors.push(`Row ${rowNum}: Group must be A or B`);
-          continue;
+        // Resolve group assignment
+        let groupName: string;
+        if (groupCount === 1) {
+          // Single group — ignore Group column, auto-assign to "A"
+          groupName = "A";
+        } else {
+          // Multi-group — validate Group column
+          groupName = group.toUpperCase();
+          if (groupName !== "A" && groupName !== "B") {
+            results.errors.push(`Row ${rowNum}: Group must be A or B`);
+            continue;
+          }
         }
 
         // Check if team name already exists in this league
