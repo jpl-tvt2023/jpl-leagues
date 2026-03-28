@@ -407,6 +407,12 @@ export default function LeagueFixturesPage() {
           <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
             Playoffs
           </Link>
+          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">
+            Rules
+          </Link>
+          <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">
+            Help
+          </Link>
           {isLoggedIn ? (
             <button
               onClick={handleSignOut}
