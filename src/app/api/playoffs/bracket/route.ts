@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
 
     if (isLive) {
       const bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
-      const liveScores = await fetchLiveScoresForAllPlayoffGws();
+      const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, playoffStartGw);
       return NextResponse.json({ ...bracket, liveScores });
     }
 
@@ -134,15 +134,15 @@ async function getLatestCompletedGw(leagueId?: string | null): Promise<number> {
  * - Finished GWs: From DB results table (locked by cron)
  * - Upcoming GWs: Empty (scores = 0)
  */
-async function fetchLiveScoresForAllPlayoffGws(): Promise<Record<number, any[]>> {
+async function fetchLiveScoresForAllPlayoffGws(leagueId: string | null, playoffStartGw: number): Promise<Record<number, any[]>> {
   const liveScoresByGw: Record<number, any[]> = {};
 
   try {
     // Detect which GW is actually live
     const { liveGw, gwStatus } = await detectLiveGameweek();
 
-    // Process each playoff GW
-    for (let gwNumber = 31; gwNumber <= 38; gwNumber++) {
+    // Process each playoff GW from the league's playoffStartGw
+    for (let gwNumber = playoffStartGw; gwNumber <= 38; gwNumber++) {
       const status = gwStatus[gwNumber];
 
       if (status === "notStarted") {
@@ -162,7 +162,7 @@ async function fetchLiveScoresForAllPlayoffGws(): Promise<Record<number, any[]>>
           } else {
             console.warn(`Bracket: No cached data for live GW${gwNumber}, falling back to FPL API`);
             // Cache miss - fetch from FPL API as fallback
-            await fetchAndCacheLiveScoresForGw(gwNumber);
+            await fetchAndCacheLiveScoresForGw(gwNumber, leagueId);
             const retryData = await getLiveCachedScores(gwNumber);
             if (retryData && retryData.fixtures) {
               liveScoresByGw[gwNumber] = retryData.fixtures;
@@ -178,7 +178,7 @@ async function fetchLiveScoresForAllPlayoffGws(): Promise<Record<number, any[]>>
       if (status === "finished") {
         // Finished GW - fetch from DB results table
         try {
-          const dbScores = await getFinishedGwScoresFromDb(gwNumber);
+          const dbScores = await getFinishedGwScoresFromDb(gwNumber, leagueId);
           if (dbScores.length > 0) {
             liveScoresByGw[gwNumber] = dbScores;
             console.log(`Bracket: Using DB scores for finished GW${gwNumber}`);
@@ -202,9 +202,11 @@ async function fetchLiveScoresForAllPlayoffGws(): Promise<Record<number, any[]>>
 /**
  * Fetch finished GW scores from database (locked scores)
  */
-async function getFinishedGwScoresFromDb(gameweek: number): Promise<any[]> {
+async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | null): Promise<any[]> {
   const gwRecord = await db.query.gameweeks.findFirst({
-    where: eq(gameweeks.number, gameweek),
+    where: leagueId
+      ? and(eq(gameweeks.number, gameweek), eq(gameweeks.leagueId, leagueId))
+      : eq(gameweeks.number, gameweek),
   });
 
   if (!gwRecord) return [];
@@ -306,10 +308,12 @@ async function getFinishedGwScoresFromDb(gameweek: number): Promise<any[]> {
  * Fetch live scores from FPL API for a specific GW and cache in Redis
  * Used as fallback if Redis cache miss for live GW
  */
-async function fetchAndCacheLiveScoresForGw(gameweek: number): Promise<void> {
+async function fetchAndCacheLiveScoresForGw(gameweek: number, leagueId: string | null): Promise<void> {
   try {
     const gwRecord = await db.query.gameweeks.findFirst({
-      where: eq(gameweeks.number, gameweek),
+      where: leagueId
+        ? and(eq(gameweeks.number, gameweek), eq(gameweeks.leagueId, leagueId))
+        : eq(gameweeks.number, gameweek),
     });
 
     if (!gwRecord) return;

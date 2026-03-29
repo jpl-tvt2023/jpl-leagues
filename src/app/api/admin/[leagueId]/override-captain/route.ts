@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, gameweeks, gameweekCaptains, auditLogs } from "@/lib/db";
 import { leagues } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
@@ -180,15 +180,17 @@ export async function GET(request: NextRequest) {
     // Get all gameweeks
     const allGameweeks = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
 
-    // Get all captain announcements
-    const allCaptains = await db.query.gameweekCaptains.findMany({
-      with: {
-        player: {
-          with: { team: true },
-        },
-        gameweek: true,
-      },
-    });
+    // Get all captain announcements for this league's gameweeks only
+    const gwIds = allGameweeks.map(gw => gw.id);
+    const allCaptains = gwIds.length > 0
+      ? await db.query.gameweekCaptains.findMany({
+          where: inArray(gameweekCaptains.gameweekId, gwIds),
+          with: {
+            player: { with: { team: true } },
+            gameweek: true,
+          },
+        })
+      : [];
 
     return NextResponse.json({
       teams: teamsWithPlayers.map(t => ({

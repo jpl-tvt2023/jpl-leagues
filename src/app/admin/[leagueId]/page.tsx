@@ -283,11 +283,14 @@ export default function AdminDashboard() {
         setCaptainTeams(sortedTeams);
         const gws = data.gameweeks || [];
         setGameweeks(gws);
-        setCurrentCaptains(data.currentCaptains || []);
-        // Default GW filter to the latest gameweek
+        const captains: CaptainData[] = data.currentCaptains || [];
+        setCurrentCaptains(captains);
+        // Default GW filter to the latest GW that has captain entries (not just any existing GW)
         if (gws.length > 0 && !captainFilterGw) {
-          const maxGw = Math.max(...gws.map((g: Gameweek) => g.number));
-          setCaptainFilterGw(String(maxGw));
+          const maxGwWithCaptains = captains.length
+            ? Math.max(...captains.map((c: CaptainData) => c.gameweek))
+            : Math.max(...gws.map((g: Gameweek) => g.number));
+          setCaptainFilterGw(String(maxGwWithCaptains));
         }
       }
     } catch (error) {
