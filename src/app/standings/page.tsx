@@ -2,12 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { StandingsTable } from "@/components/StandingsTable";
 import type { TeamStanding } from "@/types/standings";
 
 export default function StandingsPage() {
-  const searchParams = useSearchParams();
   const [groupA, setGroupA] = useState<TeamStanding[]>([]);
   const [groupB, setGroupB] = useState<TeamStanding[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -15,9 +13,12 @@ export default function StandingsPage() {
   const [latestGameweek, setLatestGameweek] = useState<number>(0);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(searchParams.get("adminLeague"));
+  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(null);
 
   useEffect(() => {
+    const urlParam = new URLSearchParams(window.location.search).get("adminLeague");
+    if (urlParam) setAdminLeagueId(urlParam);
+
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
@@ -26,7 +27,7 @@ export default function StandingsPage() {
           setIsLoggedIn(true);
           if (data.type === "admin" || data.type === "superadmin") {
             setIsAdmin(true);
-            if (!searchParams.get("adminLeague") && data.adminLeagueId) {
+            if (!urlParam && data.adminLeagueId) {
               setAdminLeagueId(data.adminLeagueId);
             }
           }
@@ -40,7 +41,7 @@ export default function StandingsPage() {
       }
     };
     checkAuth();
-  }, [searchParams]);
+  }, []);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });

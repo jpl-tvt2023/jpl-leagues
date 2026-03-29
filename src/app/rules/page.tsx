@@ -2,17 +2,19 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export default function RulesPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(searchParams.get("adminLeague"));
+  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
+    const urlParam = new URLSearchParams(window.location.search).get("adminLeague");
+    if (urlParam) setAdminLeagueId(urlParam);
+
     // Check auth status — redirect to signin if not authenticated
     const checkAuth = async () => {
       try {
@@ -22,7 +24,7 @@ export default function RulesPage() {
           setIsLoggedIn(true);
           if (data.type === "admin" || data.type === "superadmin") {
             setIsAdmin(true);
-            if (!searchParams.get("adminLeague") && data.adminLeagueId) {
+            if (!urlParam && data.adminLeagueId) {
               setAdminLeagueId(data.adminLeagueId);
             }
           }
@@ -37,7 +39,7 @@ export default function RulesPage() {
       setIsChecking(false);
     };
     checkAuth();
-  }, [router, searchParams]);
+  }, [router]);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });

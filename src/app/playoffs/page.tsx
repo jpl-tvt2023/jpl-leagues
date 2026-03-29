@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
 interface LiveFixtureScore {
   fixtureId: string;
@@ -417,13 +416,12 @@ function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
 }
 
 export default function PlayoffsPage() {
-  const searchParams = useSearchParams();
   const [data, setData] = useState<BracketData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("tvt");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(searchParams.get("adminLeague"));
+  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(null);
   const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
   const [refreshing, setRefreshing] = useState<number | null>(null);  // GW number being refreshed
   const [tempLiveScores, setTempLiveScores] = useState<Record<number, LiveFixtureScore[]>>({});  // Temp fresh scores
@@ -467,6 +465,9 @@ export default function PlayoffsPage() {
       }
     };
 
+    const urlParam = new URLSearchParams(window.location.search).get("adminLeague");
+    if (urlParam) setAdminLeagueId(urlParam);
+
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
@@ -475,7 +476,7 @@ export default function PlayoffsPage() {
           setIsLoggedIn(true);
           if (me.type === "admin" || me.type === "superadmin") {
             setIsAdmin(true);
-            if (!searchParams.get("adminLeague") && me.adminLeagueId) {
+            if (!urlParam && me.adminLeagueId) {
               setAdminLeagueId(me.adminLeagueId);
             }
           }

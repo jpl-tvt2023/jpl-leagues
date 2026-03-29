@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
 interface LivePlayerScore {
   name: string;
@@ -236,13 +235,12 @@ function FixtureCard({
 }
 
 export default function FixturesPage() {
-  const searchParams = useSearchParams();
   const [fixtures, setFixtures] = useState<GameweekFixtures>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(searchParams.get("adminLeague"));
+  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(null);
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
   const [availableGWs, setAvailableGWs] = useState<number[]>([]);
   const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
@@ -305,6 +303,9 @@ export default function FixturesPage() {
 
   useEffect(() => {
     // Check auth status
+    const urlParam = new URLSearchParams(window.location.search).get("adminLeague");
+    if (urlParam) setAdminLeagueId(urlParam);
+
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
@@ -313,7 +314,7 @@ export default function FixturesPage() {
           setIsLoggedIn(true);
           if (data.type === "admin" || data.type === "superadmin") {
             setIsAdmin(true);
-            if (!searchParams.get("adminLeague") && data.adminLeagueId) {
+            if (!urlParam && data.adminLeagueId) {
               setAdminLeagueId(data.adminLeagueId);
             }
           }
@@ -327,7 +328,7 @@ export default function FixturesPage() {
       }
     };
     checkAuth();
-  }, [searchParams]);
+  }, []);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
