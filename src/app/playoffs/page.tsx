@@ -449,7 +449,9 @@ export default function PlayoffsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch("/api/playoffs/bracket");
+        const adminLeague = new URLSearchParams(window.location.search).get("adminLeague");
+        const bracketUrl = adminLeague ? `/api/playoffs/bracket?leagueSlug=${encodeURIComponent(adminLeague)}` : "/api/playoffs/bracket";
+        const res = await fetch(bracketUrl);
         if (res.ok) {
           const bracket = await res.json();
           setData(bracket);
@@ -545,9 +547,9 @@ export default function PlayoffsPage() {
           ) : (
             <Link href="/" className="text-gray-300 hover:text-white transition">Home</Link>
           )}
-          <Link href="/standings" className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href="/fixtures" className="text-gray-300 hover:text-white transition">Fixtures</Link>
-          <Link href="/playoffs" className="text-yellow-400 font-semibold transition">Playoffs</Link>
+          <Link href={adminLeagueId ? `/standings?adminLeague=${adminLeagueId}` : "/standings"} className="text-gray-300 hover:text-white transition">Standings</Link>
+          <Link href={adminLeagueId ? `/fixtures?adminLeague=${adminLeagueId}` : "/fixtures"} className="text-gray-300 hover:text-white transition">Fixtures</Link>
+          <Link href={adminLeagueId ? `/playoffs?adminLeague=${adminLeagueId}` : "/playoffs"} className="text-yellow-400 font-semibold transition">Playoffs</Link>
           {isLoggedIn && <Link href="/rules" className="text-gray-300 hover:text-white transition">Rules</Link>}
           {isLoggedIn ? (
             <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">

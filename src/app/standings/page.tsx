@@ -51,7 +51,9 @@ export default function StandingsPage() {
   useEffect(() => {
     const fetchStandings = async () => {
       try {
-        const response = await fetch("/api/standings");
+        const adminLeague = new URLSearchParams(window.location.search).get("adminLeague");
+        const url = adminLeague ? `/api/standings?leagueSlug=${encodeURIComponent(adminLeague)}` : "/api/standings";
+        const response = await fetch(url);
         if (!response.ok) {
           throw new Error("Failed to fetch standings");
         }
@@ -99,13 +101,13 @@ export default function StandingsPage() {
           ) : (
             <Link href="/" className="text-gray-300 hover:text-white transition">Home</Link>
           )}
-          <Link href="/standings" className="text-yellow-400 font-semibold transition">
+          <Link href={adminLeagueId ? `/standings?adminLeague=${adminLeagueId}` : "/standings"} className="text-yellow-400 font-semibold transition">
             Standings
           </Link>
-          <Link href="/fixtures" className="text-gray-300 hover:text-white transition">
+          <Link href={adminLeagueId ? `/fixtures?adminLeague=${adminLeagueId}` : "/fixtures"} className="text-gray-300 hover:text-white transition">
             Fixtures
           </Link>
-          <Link href="/playoffs" className="text-gray-300 hover:text-white transition">
+          <Link href={adminLeagueId ? `/playoffs?adminLeague=${adminLeagueId}` : "/playoffs"} className="text-gray-300 hover:text-white transition">
             Playoffs
           </Link>
           {isLoggedIn && (
