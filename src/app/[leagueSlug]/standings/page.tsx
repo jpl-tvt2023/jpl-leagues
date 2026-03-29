@@ -169,7 +169,7 @@ export default function LeagueStandingsPage() {
           </div>
         ) : (
           <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
-            <StandingsTable teams={groupA} group="A" />
+            <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} />
             {groupB.length > 0 && <StandingsTable teams={groupB} group="B" />}
           </div>
         )}
