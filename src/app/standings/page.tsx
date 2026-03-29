@@ -21,7 +21,7 @@ export default function StandingsPage() {
         const data = await res.json();
         if (res.ok && data.authenticated) {
           setIsLoggedIn(true);
-          setIsAdmin(data.type === "admin");
+          setIsAdmin(data.type === "admin" || data.type === "superadmin");
         } else {
           setIsLoggedIn(false);
           setIsAdmin(false);

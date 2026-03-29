@@ -18,7 +18,7 @@ export default function RulesPage() {
         const data = await res.json();
         if (res.ok && data.authenticated) {
           setIsLoggedIn(true);
-          setIsAdmin(data.type === "admin");
+          setIsAdmin(data.type === "admin" || data.type === "superadmin");
         } else {
           router.replace("/signin");
           return;

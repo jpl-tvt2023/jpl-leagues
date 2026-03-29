@@ -470,7 +470,7 @@ export default function PlayoffsPage() {
         const me = await res.json();
         if (res.ok && me.authenticated) {
           setIsLoggedIn(true);
-          setIsAdmin(me.type === "admin");
+          setIsAdmin(me.type === "admin" || me.type === "superadmin");
         }
       } catch {}
     };
