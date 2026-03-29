@@ -1183,13 +1183,13 @@ export default function AdminDashboard() {
           <Link href="/admin" className="text-yellow-400 font-semibold transition">
             ← Leagues
           </Link>
-          <Link href="/standings" className="text-gray-300 hover:text-white transition">
+          <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
             Standings
           </Link>
-          <Link href="/fixtures" className="text-gray-300 hover:text-white transition">
+          <Link href={`/fixtures?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
             Fixtures
           </Link>
-          <Link href="/playoffs" className="text-gray-300 hover:text-white transition">
+          <Link href={`/playoffs?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
             Playoffs
           </Link>
           <Link href={`/admin/${leagueId}/help`} className="text-gray-300 hover:text-white transition">

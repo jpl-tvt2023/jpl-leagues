@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 interface LiveFixtureScore {
   fixtureId: string;
@@ -416,11 +417,13 @@ function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
 }
 
 export default function PlayoffsPage() {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<BracketData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("tvt");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(searchParams.get("adminLeague"));
   const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
   const [refreshing, setRefreshing] = useState<number | null>(null);  // GW number being refreshed
   const [tempLiveScores, setTempLiveScores] = useState<Record<number, LiveFixtureScore[]>>({});  // Temp fresh scores
@@ -470,7 +473,12 @@ export default function PlayoffsPage() {
         const me = await res.json();
         if (res.ok && me.authenticated) {
           setIsLoggedIn(true);
-          setIsAdmin(me.type === "admin" || me.type === "superadmin");
+          if (me.type === "admin" || me.type === "superadmin") {
+            setIsAdmin(true);
+            if (!searchParams.get("adminLeague") && me.adminLeagueId) {
+              setAdminLeagueId(me.adminLeagueId);
+            }
+          }
         }
       } catch {}
     };
@@ -522,7 +530,7 @@ export default function PlayoffsPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href={isAdmin ? "/admin" : isLoggedIn ? "/dashboard" : "/"} className="flex items-center gap-2">
+        <Link href={isAdmin ? (adminLeagueId ? `/admin/${adminLeagueId}` : "/admin") : isLoggedIn ? "/dashboard" : "/"} className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             TVT
           </div>
@@ -530,7 +538,7 @@ export default function PlayoffsPage() {
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           {isAdmin ? (
-            <Link href="/admin" className="text-gray-300 hover:text-white transition">Home</Link>
+            <Link href={adminLeagueId ? `/admin/${adminLeagueId}` : "/admin"} className="text-gray-300 hover:text-white transition">← Admin</Link>
           ) : isLoggedIn ? (
             <Link href="/dashboard" className="text-gray-300 hover:text-white transition">Dashboard</Link>
           ) : (
