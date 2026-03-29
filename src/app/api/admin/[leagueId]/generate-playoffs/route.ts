@@ -5,6 +5,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { getAllCachedScores } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { generateId } from "@/lib/id";
 
 // ============================================
 // Seeding tables — 32-team (cross-group)
@@ -177,12 +178,17 @@ export async function POST(request: NextRequest) {
   }
   const { groupA, groupB } = groupStandings;
 
-  // Get playoffs group ID
-  const playoffsGroup = await db.query.groups.findFirst({ where: eq(groups.name, "Playoffs") });
-  if (!playoffsGroup) {
-    return NextResponse.json({ error: "Playoffs group not found. Run migration first." }, { status: 500 });
+  // Get or create playoffs group for this league
+  let playoffsGroupId: string;
+  const existingPlayoffsGroup = await db.query.groups.findFirst({
+    where: and(eq(groups.name, "Playoffs"), eq(groups.leagueId, leagueId)),
+  });
+  if (existingPlayoffsGroup) {
+    playoffsGroupId = existingPlayoffsGroup.id;
+  } else {
+    playoffsGroupId = generateId();
+    await db.insert(groups).values({ id: playoffsGroupId, name: "Playoffs", leagueId });
   }
-  const playoffsGroupId = playoffsGroup.id;
 
   // Build rank maps
   const rankMap: Record<string, Record<number, { teamId: string; name: string; abbreviation: string }>> = {

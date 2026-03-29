@@ -4,8 +4,8 @@ import { fixtures, playoffTies, gameweeks, results, groups, challengerSurvivalEn
 import { eq, and, inArray } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
-function getPlayoffsGroupId(): Promise<string | null> {
-  return db.query.groups.findFirst({ where: eq(groups.name, "Playoffs") })
+function getPlayoffsGroupId(leagueId: string): Promise<string | null> {
+  return db.query.groups.findFirst({ where: and(eq(groups.name, "Playoffs"), eq(groups.leagueId, leagueId)) })
     .then(g => g?.id ?? null);
 }
 
@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Gameweek must be between 31 and 38" }, { status: 400 });
   }
 
-  const playoffsGroupId = await getPlayoffsGroupId();
+  const playoffsGroupId = await getPlayoffsGroupId(leagueId);
   if (!playoffsGroupId) {
     return NextResponse.json({ error: "Playoffs group not found" }, { status: 500 });
   }
