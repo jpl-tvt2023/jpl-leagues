@@ -250,7 +250,7 @@ export default function LeagueFixturesPage() {
 
   const fetchLiveScores = useCallback(async (gw: number) => {
     try {
-      const res = await fetch(`/api/fixtures/live?gameweek=${gw}`);
+      const res = await fetch(`/api/fixtures/live?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.isLive) {
@@ -274,7 +274,7 @@ export default function LeagueFixturesPage() {
     if (!selectedGW || isRefreshing) return;
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}`);
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.fixtures?.length) {

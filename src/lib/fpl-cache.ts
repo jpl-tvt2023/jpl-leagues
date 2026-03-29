@@ -188,19 +188,20 @@ export interface LiveGameweekData {
   cachedAt: string;
 }
 
-function getLiveKey(gameweek: number): string {
-  return `live:gw${gameweek}:all`;
+function getLiveKey(gameweek: number, leagueId?: string | null): string {
+  return `live:gw${gameweek}:${leagueId ?? "all"}`;
 }
 
 /**
  * Get cached live scores for a gameweek
  */
 export async function getLiveCachedScores(
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<LiveGameweekData | null> {
   const r = getRedis();
   if (!r) return null;
-  const data = await r.get<LiveGameweekData>(getLiveKey(gameweek));
+  const data = await r.get<LiveGameweekData>(getLiveKey(gameweek, leagueId));
   return data || null;
 }
 
@@ -209,18 +210,19 @@ export async function getLiveCachedScores(
  */
 export async function setLiveCachedScores(
   gameweek: number,
-  data: LiveGameweekData
+  data: LiveGameweekData,
+  leagueId?: string | null
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getLiveKey(gameweek), data, { ex: LIVE_CACHE_TTL });
+  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_TTL });
 }
 
 /**
  * Clear live cache for a specific gameweek
  */
-export async function clearLiveCache(gameweek: number): Promise<void> {
+export async function clearLiveCache(gameweek: number, leagueId?: string | null): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.del(getLiveKey(gameweek));
+  await r.del(getLiveKey(gameweek, leagueId));
 }
