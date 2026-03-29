@@ -6,6 +6,7 @@ import { getTop2FromGroup } from "@/lib/chip-validation";
 import { getAllCachedScores } from "@/lib/fpl-cache";
 import { eq, and, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { leagues } from "@/lib/db/schema";
 
 interface RouteParams {
   params: Promise<{ gw: string }>;
@@ -52,7 +53,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { searchParams: getSearchParams } = new URL(request.url);
-    const getLeagueId = getSearchParams.get("leagueId");
+    let getLeagueId = getSearchParams.get("leagueId");
+    // Resolve slug → UUID if needed
+    if (getLeagueId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(getLeagueId)) {
+      const row = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, getLeagueId)).limit(1);
+      getLeagueId = row[0]?.id ?? null;
+    }
     const getGwWhere = getLeagueId
       ? and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, getLeagueId))
       : eq(gameweeks.number, gameweekNumber);
@@ -247,7 +253,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Find the gameweek — filter by leagueId if provided (prevents wrong-league match in multi-league setups)
-    const leagueId = searchParams.get("leagueId");
+    let leagueId = searchParams.get("leagueId");
+    // Resolve slug → UUID if needed
+    if (leagueId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leagueId)) {
+      const row = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueId)).limit(1);
+      leagueId = row[0]?.id ?? null;
+    }
     const gwWhere = leagueId
       ? and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, leagueId))
       : eq(gameweeks.number, gameweekNumber);
