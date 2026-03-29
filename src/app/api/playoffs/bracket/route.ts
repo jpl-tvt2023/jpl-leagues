@@ -472,7 +472,7 @@ function buildTentative8Team(
     tieId: "Final", roundName: "Final", status: "projected", gw1: gw1 + 1, gw2: gw1 + 2,
     home: placeholder("W SF-A"), away: placeholder("W SF-B"), winnerId: null, loserId: null,
   };
-  return { mode, latestCompletedGw, tvt: { sf, thirdPlace: [thirdPlace], final: [finalTie] }, challenger: {} };
+  return { mode, latestCompletedGw, teamSize: 8, tvt: { sf, thirdPlace: [thirdPlace], final: [finalTie] }, challenger: {} };
 }
 
 /** 16-team bracket: QF (GW31-32) → SF (GW33-34) → Final (GW35-36). Challenger C-31 to C-36. */
@@ -526,7 +526,7 @@ function buildTentative16Team(
     { tieId: "C-36-A", roundName: "C-36", status: "projected", gw1: gw1 + 5, gw2: null, home: placeholder("W C-35-A"), away: placeholder("Surv #5+"), winnerId: null, loserId: null },
   ];
   return {
-    mode, latestCompletedGw,
+    mode, latestCompletedGw, teamSize: 16,
     tvt: { qf, sf, final: [finalTie] },
     challenger: { c31, c33: c33Placeholder, c34, c35, c36 },
   };
@@ -535,7 +535,7 @@ function buildTentative16Team(
 async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null, teamSize = 32, playoffStartGw = 31) {
   const standings = await getGroupStandings(leagueId);
   if (!standings) {
-    return { mode, latestCompletedGw, error: "Failed to compute standings", tvt: {}, challenger: {} };
+    return { mode, latestCompletedGw, teamSize, error: "Failed to compute standings", tvt: {}, challenger: {} };
   }
 
   // Branch by variant
@@ -652,8 +652,7 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
   ];
 
   return {
-    mode,
-    latestCompletedGw,
+    mode, latestCompletedGw, teamSize: 32,
     tvt: { ro16, qf, sf, final: [finalTie] },
     challenger: { c31, c32, c33: c33Placeholder, c34, c35, c36, c37, c38 },
   };
@@ -876,7 +875,7 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     const thirdPlaceLive = tiesByRound("3rd Place");
     const finalLive = tiesByRound("Final");
     return {
-      mode: "live", latestCompletedGw,
+      mode: "live", latestCompletedGw, teamSize: 8,
       tvt: {
         sf: sfLive.length > 0 ? sfLive : [
           { tieId: "SF-A", roundName: "SF", status: "projected", gw1: playoffStartGw, gw2: null, home: placeholder("1st"), away: placeholder("4th"), winnerId: null, loserId: null },
@@ -909,7 +908,7 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       c33Live.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
     }
     return {
-      mode: "live", latestCompletedGw,
+      mode: "live", latestCompletedGw, teamSize: 16,
       tvt: {
         qf: qfLive.length > 0 ? qfLive : [
           { tieId: "QF-A", roundName: "QF", status: "projected", gw1: playoffStartGw, gw2: playoffStartGw + 1, home: placeholder("1st"), away: placeholder("8th"), winnerId: null, loserId: null },
@@ -932,6 +931,7 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
   return {
     mode: "live",
     latestCompletedGw,
+    teamSize: 32,
     tvt: {
       ro16: ro16Ordered,
       qf,

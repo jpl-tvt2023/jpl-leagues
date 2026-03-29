@@ -50,21 +50,23 @@ interface SurvivalDisplay {
 interface BracketData {
   mode: "tentative" | "projected" | "live";
   latestCompletedGw: number;
+  teamSize?: number;
   tvt: {
-    ro16: TieDisplay[];
-    qf: TieDisplay[];
-    sf: TieDisplay[];
-    final: TieDisplay[];
+    ro16?: TieDisplay[];
+    qf?: TieDisplay[];
+    sf?: TieDisplay[];
+    thirdPlace?: TieDisplay[];
+    final?: TieDisplay[];
   };
   challenger: {
-    c31: TieDisplay[];
-    c32: TieDisplay[];
-    c33: SurvivalDisplay[];
-    c34: TieDisplay[];
-    c35: TieDisplay[];
-    c36: TieDisplay[];
-    c37: TieDisplay[];
-    c38: TieDisplay[];
+    c31?: TieDisplay[];
+    c32?: TieDisplay[];
+    c33?: SurvivalDisplay[];
+    c34?: TieDisplay[];
+    c35?: TieDisplay[];
+    c36?: TieDisplay[];
+    c37?: TieDisplay[];
+    c38?: TieDisplay[];
   };
   liveScores?: Record<number, LiveFixtureScore[]>;
 }
@@ -556,68 +558,129 @@ export default function LeaguePlayoffsPage() {
           )}
         </div>
 
-        {/* Tab toggle */}
-        <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit">
-          <button
-            onClick={() => setActiveTab("tvt")}
-            className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-              activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-            }`}
-          >
-            TVT Main Draw
-          </button>
-          <button
-            onClick={() => setActiveTab("challenger")}
-            className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-              activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-            }`}
-          >
-            Challenger Series
-          </button>
-        </div>
-
-        {/* TVT Main Draw Bracket */}
-        {activeTab === "tvt" && (
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="grid grid-cols-4 gap-3 sm:gap-4 min-w-[700px] min-h-[600px]">
-              <RoundColumn
-                title="Round of 16"
-                ties={data.tvt.ro16}
-                liveScores={data.liveScores}
-                refreshingGw={refreshing}
-                tempLiveScores={tempLiveScores}
-                onRefreshRound={handleRefreshRound}
-              />
-              <RoundColumn
-                title="Quarter-Finals"
-                ties={data.tvt.qf}
-                liveScores={data.liveScores}
-                refreshingGw={refreshing}
-                tempLiveScores={tempLiveScores}
-                onRefreshRound={handleRefreshRound}
-              />
-              <RoundColumn
-                title="Semi-Finals"
-                ties={data.tvt.sf}
-                liveScores={data.liveScores}
-                refreshingGw={refreshing}
-                tempLiveScores={tempLiveScores}
-                onRefreshRound={handleRefreshRound}
-              />
-              <RoundColumn
-                title="Grand Finale"
-                ties={data.tvt.final}
-                liveScores={data.liveScores}
-                refreshingGw={refreshing}
-                tempLiveScores={tempLiveScores}
-                onRefreshRound={handleRefreshRound}
-              />
-            </div>
+        {/* Tab toggle — Challenger tab only for 16/32-team */}
+        {data.teamSize !== 8 && (
+          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit">
+            <button
+              onClick={() => setActiveTab("tvt")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              TVT Main Draw
+            </button>
+            <button
+              onClick={() => setActiveTab("challenger")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Challenger Series
+            </button>
           </div>
         )}
 
-        {/* Challenger Series */}
-        {activeTab === "challenger" && (
+        {/* TVT Main Draw Bracket */}
+        {(activeTab === "tvt" || data.teamSize === 8) && (
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            {data.teamSize === 8 ? (
+              /* 8-team: SF → 3rd Place + Final */
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
+                <RoundColumn
+                  title="Semi-Finals"
+                  ties={data.tvt.sf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="3rd Place"
+                  ties={data.tvt.thirdPlace ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Final"
+                  ties={data.tvt.final ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+              </div>
+            ) : data.teamSize === 16 ? (
+              /* 16-team: QF → SF → Final */
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[600px] min-h-[500px]">
+                <RoundColumn
+                  title="Quarter-Finals"
+                  ties={data.tvt.qf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Semi-Finals"
+                  ties={data.tvt.sf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Grand Finale"
+                  ties={data.tvt.final ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+              </div>
+            ) : (
+              /* 32-team: RO16 → QF → SF → Final */
+              <div className="grid grid-cols-4 gap-3 sm:gap-4 min-w-[700px] min-h-[600px]">
+                <RoundColumn
+                  title="Round of 16"
+                  ties={data.tvt.ro16 ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Quarter-Finals"
+                  ties={data.tvt.qf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Semi-Finals"
+                  ties={data.tvt.sf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Grand Finale"
+                  ties={data.tvt.final ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Challenger Series — 16/32-team only */}
+        {activeTab === "challenger" && data.teamSize !== 8 && (
           <div className="space-y-6">
             {(() => {
               const allLiveScores = data.liveScores ? Object.values(data.liveScores).flat() : [];
@@ -657,7 +720,7 @@ export default function LeaguePlayoffsPage() {
                     );
                   })}
 
-                  {data.challenger.c33.length > 0 && (
+                  {(data.challenger.c33?.length ?? 0) > 0 && (
                     <SurvivalTable entries={data.challenger.c33 as SurvivalDisplay[]} />
                   )}
 

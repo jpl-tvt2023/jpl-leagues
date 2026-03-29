@@ -174,9 +174,9 @@ export default function StandingsPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-2">
+          <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
             <StandingsTable teams={groupA} group="A" />
-            <StandingsTable teams={groupB} group="B" />
+            {groupB.length > 0 && <StandingsTable teams={groupB} group="B" />}
           </div>
         )}
 
