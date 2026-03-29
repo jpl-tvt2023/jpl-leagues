@@ -390,7 +390,8 @@ export default function FixturesPage() {
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
   const groupAFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "A");
   const groupBFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "B");
-  
+  const hasGroupB = Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
+
   const hasResults = selectedFixtures.some((f: Fixture) => f.result);
   const deadline = selectedFixtures[0]?.gameweek?.deadline;
 
@@ -557,52 +558,70 @@ export default function FixturesPage() {
               )}
             </div>
 
-            {/* Two-Column Layout: Group A | Group B */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Group A */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-blue-500"></span>
-                  Group A
-                </h2>
-                <div className="space-y-3">
-                  {groupAFixtures.length > 0 ? (
-                    groupAFixtures.map((fixture: Fixture) => (
-                      <FixtureCard
-                        key={fixture.id}
-                        fixture={fixture}
-                        liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
-                        isFreshlyRefreshed={isManuallyRefreshed}
-                      />
-                    ))
-                  ) : (
-                    <div className="text-center text-gray-400 py-8">No fixtures</div>
-                  )}
+            {hasGroupB ? (
+              /* Two-Column Layout: Group A | Group B */
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Group A */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-blue-500"></span>
+                    Group A
+                  </h2>
+                  <div className="space-y-3">
+                    {groupAFixtures.length > 0 ? (
+                      groupAFixtures.map((fixture: Fixture) => (
+                        <FixtureCard
+                          key={fixture.id}
+                          fixture={fixture}
+                          liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                          isFreshlyRefreshed={isManuallyRefreshed}
+                        />
+                      ))
+                    ) : (
+                      <div className="text-center text-gray-400 py-8">No fixtures</div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Group B */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-purple-500"></span>
-                  Group B
-                </h2>
-                <div className="space-y-3">
-                  {groupBFixtures.length > 0 ? (
-                    groupBFixtures.map((fixture: Fixture) => (
-                      <FixtureCard
-                        key={fixture.id}
-                        fixture={fixture}
-                        liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
-                        isFreshlyRefreshed={isManuallyRefreshed}
-                      />
-                    ))
-                  ) : (
-                    <div className="text-center text-gray-400 py-8">No fixtures</div>
-                  )}
+                {/* Group B */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-purple-500"></span>
+                    Group B
+                  </h2>
+                  <div className="space-y-3">
+                    {groupBFixtures.length > 0 ? (
+                      groupBFixtures.map((fixture: Fixture) => (
+                        <FixtureCard
+                          key={fixture.id}
+                          fixture={fixture}
+                          liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                          isFreshlyRefreshed={isManuallyRefreshed}
+                        />
+                      ))
+                    ) : (
+                      <div className="text-center text-gray-400 py-8">No fixtures</div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Single-Group Layout: no group label, centred */
+              <div className="max-w-2xl mx-auto space-y-3">
+                {groupAFixtures.length > 0 ? (
+                  groupAFixtures.map((fixture: Fixture) => (
+                    <FixtureCard
+                      key={fixture.id}
+                      fixture={fixture}
+                      liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                      isFreshlyRefreshed={isManuallyRefreshed}
+                    />
+                  ))
+                ) : (
+                  <div className="text-center text-gray-400 py-8">No fixtures</div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
