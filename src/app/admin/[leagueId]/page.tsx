@@ -1655,9 +1655,9 @@ export default function AdminDashboard() {
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
                         >
                           <option value="" className="bg-slate-800">Select gameweek...</option>
-                          {Array.from({ length: 38 }, (_, i) => i + 1).map((gw) => (
-                            <option key={gw} value={gw} className="bg-slate-800">
-                              GW{gw}
+                          {gameweeks.map((gw) => (
+                            <option key={gw.id} value={gw.number} className="bg-slate-800">
+                              GW{gw.number}
                             </option>
                           ))}
                         </select>
@@ -1699,9 +1699,9 @@ export default function AdminDashboard() {
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none"
                       >
                         <option value="" className="bg-slate-800">All GWs</option>
-                        {Array.from({ length: 38 }, (_, i) => i + 1).map((gw) => (
-                          <option key={gw} value={String(gw)} className="bg-slate-800">
-                            GW{gw}
+                        {gameweeks.map((gw) => (
+                          <option key={gw.id} value={String(gw.number)} className="bg-slate-800">
+                            GW{gw.number}
                           </option>
                         ))}
                       </select>
