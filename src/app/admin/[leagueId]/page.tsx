@@ -1566,18 +1566,14 @@ export default function AdminDashboard() {
           <h3 className="text-lg font-bold text-white mb-4">Quick Actions</h3>
           <div className="flex flex-wrap gap-4">
             <Link
-              href="/api/fixtures/generate"
+              href={`/api/admin/${leagueId}/generate-fixtures`}
               className="px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition"
             >
               Check Fixture Status
             </Link>
             <button
               onClick={async () => {
-                if (teams.length < 4) {
-                  alert("Need at least 2 teams per group to generate fixtures");
-                  return;
-                }
-                const res = await fetch("/api/fixtures/generate", { method: "POST" });
+                const res = await fetch(`/api/admin/${leagueId}/generate-fixtures`, { method: "POST" });
                 const data = await res.json();
                 alert(data.message || data.error);
               }}
