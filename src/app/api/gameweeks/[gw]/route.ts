@@ -162,7 +162,8 @@ async function autoAssignDefaultCaptain(
   team: Team & { players: Player[] },
   scores: { playerId: string; playerName: string; points: number; transferHits: number; netScore: number }[],
   gameweekId: string,
-  gameweekNumber: number
+  gameweekNumber: number,
+  leagueId?: string | null
 ): Promise<GameweekCaptain | undefined> {
   if (team.players.length === 0) return undefined;
 
@@ -175,7 +176,9 @@ async function autoAssignDefaultCaptain(
     let prevCaptainPlayerId: string | null = null;
     if (gameweekNumber > 1) {
       const prevGw = await db.query.gameweeks.findFirst({
-        where: eq(gameweeks.number, gameweekNumber - 1),
+        where: leagueId
+          ? and(eq(gameweeks.number, gameweekNumber - 1), eq(gameweeks.leagueId, leagueId))
+          : eq(gameweeks.number, gameweekNumber - 1),
       });
       if (prevGw) {
         const prevCaptains = await db.query.gameweekCaptains.findMany({
@@ -446,12 +449,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Penalty: the LOWEST scoring player becomes captain (doubling the lower score)
         if (!homeCaptain) {
           homeCaptain = await autoAssignDefaultCaptain(
-            fixture.homeTeam, homeScoresRaw, gameweek.id, gameweekNumber
+            fixture.homeTeam, homeScoresRaw, gameweek.id, gameweekNumber, leagueId
           );
         }
         if (!awayCaptain) {
           awayCaptain = await autoAssignDefaultCaptain(
-            fixture.awayTeam, awayScoresRaw, gameweek.id, gameweekNumber
+            fixture.awayTeam, awayScoresRaw, gameweek.id, gameweekNumber, leagueId
           );
         }
 

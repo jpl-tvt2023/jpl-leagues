@@ -470,7 +470,10 @@ export default function AdminDashboard() {
   };
 
   const generatePlayoffs = async () => {
-    if (!window.confirm("Generate initial playoff fixtures (RO16 + Challenger-31) from current GW30 standings?")) return;
+    const { teamSize, playoffStartGw } = leagueConfig;
+    const bracketLabel = teamSize === 8 ? "SF" : teamSize === 16 ? "Group Stage" : "RO16 + C-31";
+    const standingsGw = playoffStartGw - 1;
+    if (!window.confirm(`Generate initial playoff bracket (${bracketLabel}) from current GW${standingsGw} standings?`)) return;
     setPlayoffsLoading(true);
     setMessage(null);
     try {
@@ -2498,57 +2501,65 @@ export default function AdminDashboard() {
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h3 className="text-lg font-bold text-white mb-4">Playoff Management</h3>
 
-              {playoffsLoading ? (
-                <p className="text-gray-400 text-sm">Loading…</p>
-              ) : !playoffsGenerated ? (
-                <div>
-                  <p className="text-gray-400 text-sm mb-4">
-                    Generate the initial playoff bracket (RO16 + Challenger-31) from GW30 standings. This can only be done once.
-                  </p>
-                  <button
-                    onClick={generatePlayoffs}
-                    className="px-6 py-3 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 transition"
-                  >
-                    Generate Playoffs (RO16 + C-31)
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-green-400 text-sm mb-6">✓ Playoffs generated. Use the buttons below to advance each gameweek after scoring is complete.</p>
-
-                  <div className="mb-6">
+              {(() => {
+                const { teamSize, playoffStartGw } = leagueConfig;
+                const bracketLabel = teamSize === 8 ? "SF" : teamSize === 16 ? "Group Stage" : "RO16 + C-31";
+                const standingsGw = playoffStartGw - 1;
+                const playoffGws = Array.from({ length: 38 - playoffStartGw + 1 }, (_, i) => playoffStartGw + i);
+                const firstGw = playoffGws[0];
+                const lastGw = playoffGws[playoffGws.length - 1];
+                return playoffsLoading ? (
+                  <p className="text-gray-400 text-sm">Loading…</p>
+                ) : !playoffsGenerated ? (
+                  <div>
+                    <p className="text-gray-400 text-sm mb-4">
+                      Generate the initial playoff bracket ({bracketLabel}) from GW{standingsGw} standings. This can only be done once.
+                    </p>
                     <button
-                      onClick={regeneratePlayoffs}
-                      disabled={playoffsLoading}
-                      className="px-6 py-3 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold hover:from-red-400 hover:to-orange-400 disabled:opacity-50 transition"
+                      onClick={generatePlayoffs}
+                      className="px-6 py-3 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 transition"
                     >
-                      {playoffsLoading ? "Regenerating…" : "Regenerate Playoff Fixtures (RO16 + C-31)"}
+                      Generate Playoffs ({bracketLabel})
                     </button>
-                    <p className="text-gray-500 text-xs mt-2">
-                      Deletes existing RO16 &amp; C-31 fixtures/results and regenerates from current standings.
-                      Use this if the initial standings were incorrect.
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-green-400 text-sm mb-6">✓ Playoffs generated. Use the buttons below to advance each gameweek after scoring is complete.</p>
+
+                    <div className="mb-6">
+                      <button
+                        onClick={regeneratePlayoffs}
+                        disabled={playoffsLoading}
+                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold hover:from-red-400 hover:to-orange-400 disabled:opacity-50 transition"
+                      >
+                        {playoffsLoading ? "Regenerating…" : `Regenerate Playoff Fixtures (${bracketLabel})`}
+                      </button>
+                      <p className="text-gray-500 text-xs mt-2">
+                        Deletes existing {bracketLabel} fixtures/results and regenerates from GW{standingsGw} standings.
+                        Use this if the initial standings were incorrect.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {playoffGws.map((gw) => (
+                        <button
+                          key={gw}
+                          onClick={() => advancePlayoffs(gw)}
+                          disabled={advancingGW !== null}
+                          className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 disabled:opacity-50 transition text-sm"
+                        >
+                          {advancingGW === gw ? "Advancing…" : `Advance GW${gw}`}
+                        </button>
+                      ))}
+                    </div>
+
+                    <p className="text-gray-500 text-xs mt-4">
+                      Each button resolves the current round&apos;s results and generates fixtures for the next round.
+                      Run them in order (GW{firstGw} → … → GW{lastGw}) after processing each gameweek&apos;s scores.
                     </p>
                   </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[31, 32, 33, 34, 35, 36, 37, 38].map((gw) => (
-                      <button
-                        key={gw}
-                        onClick={() => advancePlayoffs(gw)}
-                        disabled={advancingGW !== null}
-                        className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 disabled:opacity-50 transition text-sm"
-                      >
-                        {advancingGW === gw ? "Advancing…" : `Advance GW${gw}`}
-                      </button>
-                    ))}
-                  </div>
-
-                  <p className="text-gray-500 text-xs mt-4">
-                    Each button resolves the current round&apos;s results and generates fixtures for the next round.
-                    Run them in order (GW31 → GW32 → … → GW38) after processing each gameweek&apos;s scores.
-                  </p>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
         )}
