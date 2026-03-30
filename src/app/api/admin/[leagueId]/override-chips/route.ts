@@ -3,6 +3,7 @@ import { db, teams, auditLogs, gameweekChips, gameweeks } from "@/lib/db";
 import { leagues } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 // Valid chip types (existing + 3 new chips)
@@ -240,6 +241,7 @@ export async function POST(request: NextRequest) {
       pointsAffected: 0,
     });
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       success: true,
       message: `${chipDisplayNames[chipType as ChipType]} status updated to ${statusText}`,

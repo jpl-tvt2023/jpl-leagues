@@ -167,7 +167,16 @@ export default function StandingsPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center text-gray-400 py-12">Loading standings...</div>
+          <div className="animate-pulse flex gap-6">
+            <div className="flex-1 space-y-3">
+              <div className="h-6 bg-slate-800 rounded w-20 mb-4" />
+              {[...Array(8)].map((_, i) => <div key={i} className="h-10 bg-slate-800 rounded" />)}
+            </div>
+            <div className="flex-1 space-y-3">
+              <div className="h-6 bg-slate-800 rounded w-20 mb-4" />
+              {[...Array(8)].map((_, i) => <div key={i} className="h-10 bg-slate-800 rounded" />)}
+            </div>
+          </div>
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : totalTeams === 0 ? (

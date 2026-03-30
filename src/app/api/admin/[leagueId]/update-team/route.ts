@@ -3,6 +3,7 @@ import { db, teams, players, groups } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 /**
  * PUT /api/admin/[leagueId]/update-team
@@ -106,6 +107,7 @@ export async function PUT(request: NextRequest) {
       }).where(eq(players.id, player2Id));
     }
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       success: true,
       message: "Team updated successfully",

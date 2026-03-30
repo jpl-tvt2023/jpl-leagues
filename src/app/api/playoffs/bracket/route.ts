@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, leagues } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { fetchTeamGameweekPicks, detectLiveGameweek } from "@/lib/fpl";
-import { getLiveCachedScores } from "@/lib/fpl-cache";
+import { getLiveCachedScores, getCachedPlayoffBracket, setCachedPlayoffBracket } from "@/lib/fpl-cache";
 
 // Seeding tables (same as generate-playoffs)
 const RO16_SEEDING: [string, string, number, string, number][] = [
@@ -91,6 +91,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Return cached bracket if available (liveScores excluded from cache; page polls those separately)
+    if (leagueId) {
+      const cached = await getCachedPlayoffBracket(leagueId);
+      if (cached) return NextResponse.json(cached);
+    }
+
     const tiesQuery = leagueId
       ? db.select().from(playoffTies).where(eq(playoffTies.leagueId, leagueId)).limit(1)
       : db.select().from(playoffTies).limit(1);
@@ -102,12 +108,20 @@ export async function GET(request: NextRequest) {
     if (isLive) {
       const bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
       const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, playoffStartGw);
+      // Cache bracket structure only (liveScores are fetched fresh by the page's polling mechanism)
+      if (leagueId) {
+        await setCachedPlayoffBracket(leagueId, bracket);
+      }
       return NextResponse.json({ ...bracket, liveScores });
     }
 
     // Not yet generated — show from standings
     const mode = latestCompletedGw >= leagueStageEnd ? "projected" : "tentative";
-    return NextResponse.json(await buildTentativeBracket(latestCompletedGw, mode, leagueId, teamSize, playoffStartGw));
+    const tentativeBracket = await buildTentativeBracket(latestCompletedGw, mode, leagueId, teamSize, playoffStartGw);
+    if (leagueId) {
+      await setCachedPlayoffBracket(leagueId, tentativeBracket);
+    }
+    return NextResponse.json(tentativeBracket);
   } catch (error) {
     console.error("Error fetching bracket:", error);
     return NextResponse.json({ error: "Failed to fetch bracket" }, { status: 500 });

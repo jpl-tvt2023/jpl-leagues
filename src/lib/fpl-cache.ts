@@ -17,6 +17,7 @@ function getRedis(): Redis | null {
 
 const CACHE_TTL = 60 * 60 * 24; // 24 hours
 const LIVE_CACHE_TTL = 60 * 10; // 10 minutes
+const PAGE_CACHE_TTL = 60 * 60 * 25; // 25 hours (slightly longer than daily cron interval)
 
 interface CachedScore {
   points: number;
@@ -287,4 +288,57 @@ export async function clearLiveCache(gameweek: number, leagueId?: string | null)
   const r = getRedis();
   if (!r) return;
   await r.del(getLiveKey(gameweek, leagueId));
+}
+
+// ============================================
+// Page Data Cache (25-hour TTL, league-scoped by leagueId UUID)
+// Written by: cron (pre-warm) and API routes (on cache miss)
+// Invalidated by: any admin write that affects displayed data
+// ============================================
+
+export async function getCachedStandings(leagueId: string): Promise<unknown | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return await r.get(`standings:${leagueId}`);
+}
+
+export async function setCachedStandings(leagueId: string, data: unknown): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(`standings:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+}
+
+export async function getCachedFixtures(leagueId: string): Promise<unknown | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return await r.get(`fixtures:${leagueId}`);
+}
+
+export async function setCachedFixtures(leagueId: string, data: unknown): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(`fixtures:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+}
+
+export async function getCachedPlayoffBracket(leagueId: string): Promise<unknown | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return await r.get(`playoffs:${leagueId}`);
+}
+
+export async function setCachedPlayoffBracket(leagueId: string, data: unknown): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(`playoffs:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+}
+
+/**
+ * Delete standings, fixtures, and playoffs cache keys for a league.
+ * Call this after any admin write that changes displayed data.
+ * The next page request will fall back to DB and repopulate the cache.
+ */
+export async function invalidateLeaguePageCache(leagueId: string): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.del(`standings:${leagueId}`, `fixtures:${leagueId}`, `playoffs:${leagueId}`);
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, gameweeks, fixtures, results, teams, gameweekCaptains, players } from "@/lib/db";
+import { db, gameweeks, fixtures, results, teams, gameweekCaptains, players, leagues } from "@/lib/db";
 import { eq, asc, and } from "drizzle-orm";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { detectLiveGameweek, fetchTeamGameweekPicks } from "@/lib/fpl";
@@ -102,6 +102,32 @@ export async function GET(request: NextRequest) {
       processed: result.processed,
       failed: result.failed,
     });
+
+    // Pre-warm page caches for all active leagues so users get instant loads
+    try {
+      const activeLeagues = await db
+        .select({ slug: leagues.slug })
+        .from(leagues)
+        .where(eq(leagues.isActive, true));
+
+      const authHeader = request.headers.get("Authorization") || "";
+
+      for (const league of activeLeagues) {
+        const slug = league.slug;
+        try {
+          await Promise.all([
+            fetch(`${baseUrl}/api/standings?leagueSlug=${encodeURIComponent(slug)}`, { headers: { Authorization: authHeader } }),
+            fetch(`${baseUrl}/api/fixtures?leagueSlug=${encodeURIComponent(slug)}`, { headers: { Authorization: authHeader } }),
+            fetch(`${baseUrl}/api/playoffs/bracket?leagueSlug=${encodeURIComponent(slug)}`, { headers: { Authorization: authHeader } }),
+          ]);
+          console.log(`Cron: Pre-warmed page cache for league "${slug}"`);
+        } catch (e) {
+          console.error(`Cron: Failed to pre-warm cache for league "${slug}":`, e);
+        }
+      }
+    } catch (e) {
+      console.error("Cron: Failed to pre-warm page caches:", e);
+    }
 
     return NextResponse.json({
       success: true,

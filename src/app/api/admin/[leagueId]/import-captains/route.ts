@@ -3,6 +3,7 @@ import { db, teams, players, gameweeks, gameweekCaptains, leagues } from "@/lib/
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 // Safely convert any value to a trimmed string
 function toStr(value: unknown): string {
@@ -213,6 +214,7 @@ export async function POST(request: NextRequest) {
         .where(eq(players.id, playerId));
     }
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       message: `Processed ${captainRows.length} rows`,
       created: results.success.length,

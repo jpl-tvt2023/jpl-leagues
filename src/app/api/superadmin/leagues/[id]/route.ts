@@ -7,6 +7,7 @@ import {
 import { eq, inArray } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import bcrypt from "bcryptjs";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 export async function PATCH(
   request: NextRequest,
@@ -29,6 +30,7 @@ export async function PATCH(
   }
 
   await db.update(leagues).set(updates).where(eq(leagues.id, id));
+  await invalidateLeaguePageCache(id);
   return NextResponse.json({ success: true });
 }
 

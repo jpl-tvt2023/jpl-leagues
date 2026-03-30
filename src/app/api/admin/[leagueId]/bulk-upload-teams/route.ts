@@ -3,6 +3,7 @@ import { db, teams, players, groups, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/id";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 // Safely convert any value to a trimmed string (handles numbers from Excel)
@@ -164,6 +165,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       message: `Processed ${teamRows.length} rows`,
       created: results.success.length,

@@ -3,7 +3,7 @@ import { db, gameweeks, fixtures, teams, players, groups, results, gameweekCapta
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { calculateTVTTeamScore, determineMatchResult } from "@/lib/scoring";
 import { getTop2FromGroup } from "@/lib/chip-validation";
-import { getAllCachedScores } from "@/lib/fpl-cache";
+import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { eq, and, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { leagues } from "@/lib/db/schema";
@@ -1063,6 +1063,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           error: challengeError instanceof Error ? challengeError.message : "Unknown error",
         });
       }
+    }
+
+    // Invalidate page cache so standings/fixtures/playoffs reflect new results
+    if (gameweek.leagueId) {
+      await invalidateLeaguePageCache(gameweek.leagueId);
     }
 
     return NextResponse.json({

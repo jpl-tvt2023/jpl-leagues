@@ -3,6 +3,7 @@ import { db, gameweeks, fixtures, groups, leagues } from "@/lib/db";
 import { generateRoundRobinFixtures, generateGameweeks } from "@/lib/fixtures";
 import { eq, and, asc, count } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 /**
@@ -151,6 +152,7 @@ export async function POST(request: NextRequest) {
       await db.insert(fixtures).values(fixture);
     }
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       success: true,
       message: `Fixtures generated successfully for ${teamSize}-team league`,

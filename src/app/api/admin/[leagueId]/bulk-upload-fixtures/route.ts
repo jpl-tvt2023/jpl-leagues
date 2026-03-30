@@ -3,6 +3,7 @@ import { db, teams, groups, gameweeks, fixtures, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 interface FixtureRow {
   gameweek: string | number;
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       message: `Processed ${fixtureRows.length} rows`,
       created: results.success.length,

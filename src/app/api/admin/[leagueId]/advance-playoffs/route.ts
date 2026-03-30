@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { fixtures, playoffTies, gameweeks, results, groups, challengerSurvivalEntries, leagues } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -314,6 +315,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({ success: true, gameweek: gwNumber, actions });
   } catch (error) {
     console.error("Error advancing playoffs:", error);

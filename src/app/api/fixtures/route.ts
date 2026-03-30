@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, fixtures, teams, gameweeks, groups, results, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
+import { getCachedFixtures, setCachedFixtures } from "@/lib/fpl-cache";
 
 /**
  * GET /api/fixtures
@@ -22,6 +23,13 @@ export async function GET(request: NextRequest) {
         leagueId = league[0].id;
         playoffStartGw = league[0].playoffStartGw ?? null;
       }
+    }
+
+    // Return cached fixtures if available — only for unfiltered league requests
+    // (filtered requests by gameweek/group are less common and can hit DB directly)
+    if (leagueId && !gameweekParam && !groupParam) {
+      const cached = await getCachedFixtures(leagueId);
+      if (cached) return NextResponse.json(cached);
     }
 
     // Use relational queries for cleaner joins
@@ -69,11 +77,18 @@ export async function GET(request: NextRequest) {
       fixturesByGameweek[gw].push(fixture);
     }
 
-    return NextResponse.json({
+    const responseData = {
       totalFixtures: allFixtures.length,
       fixtures: fixturesByGameweek,
       playoffStartGw,
-    });
+    };
+
+    // Write to cache for future unfiltered requests
+    if (leagueId && !gameweekParam && !groupParam) {
+      await setCachedFixtures(leagueId, responseData);
+    }
+
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error("Error fetching fixtures:", error);
     return NextResponse.json(

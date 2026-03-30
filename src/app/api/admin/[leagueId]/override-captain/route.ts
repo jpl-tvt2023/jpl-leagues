@@ -3,6 +3,7 @@ import { db, teams, players, gameweeks, gameweekCaptains, auditLogs } from "@/li
 import { leagues } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 /**
@@ -108,6 +109,7 @@ export async function POST(request: NextRequest) {
         pointsAffected: 0,
       });
 
+      await invalidateLeaguePageCache(leagueId);
       return NextResponse.json({
         success: true,
         message: `Captain changed from ${existingCaptain.player.name} to ${player.name}`,
@@ -139,6 +141,7 @@ export async function POST(request: NextRequest) {
         pointsAffected: 0,
       });
 
+      await invalidateLeaguePageCache(leagueId);
       return NextResponse.json({
         success: true,
         message: `Captain set to ${player.name}`,

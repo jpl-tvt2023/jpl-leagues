@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, fixtures, results, gameweekCaptains, auditLogs } from "@/lib/db";
 import { eq, or } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 /**
  * DELETE /api/admin/[leagueId]/delete-team
@@ -65,6 +66,7 @@ export async function DELETE(request: NextRequest) {
       await tx.delete(teams).where(eq(teams.id, teamId));
     });
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       success: true,
       message: `Team "${teamName}" and all related data deleted successfully`,

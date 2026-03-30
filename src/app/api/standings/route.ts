@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { getAllCachedScores } from "@/lib/fpl-cache";
+import { getAllCachedScores, getCachedStandings, setCachedStandings } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
@@ -77,6 +77,12 @@ export async function GET(request: NextRequest) {
       }
     }
     const leagueStageEnd = playoffStartGw - 1; // last GW of the group stage
+
+    // Return cached standings if available (populated by cron or previous request)
+    if (leagueId) {
+      const cached = await getCachedStandings(leagueId);
+      if (cached) return NextResponse.json(cached);
+    }
 
     // Get all teams with their relations using relational query
     const allTeamsUnfiltered = await db.query.teams.findMany({
@@ -359,7 +365,7 @@ export async function GET(request: NextRequest) {
       }));
     }
 
-    return NextResponse.json({
+    const responseData = {
       groupA: groupMap["A"] ?? [],
       groupB: groupMap["B"] ?? [],
       totalTeams: standings.length,
@@ -371,7 +377,14 @@ export async function GET(request: NextRequest) {
         rank9to14: "Challenger Series",
         rank15to16: "Eliminated",
       },
-    });
+    };
+
+    // Write to cache for future requests (only when league-scoped)
+    if (leagueId) {
+      await setCachedStandings(leagueId, responseData);
+    }
+
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error("Error fetching standings:", error);
     return NextResponse.json(

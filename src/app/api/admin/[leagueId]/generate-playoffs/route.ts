@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { fixtures, playoffTies, gameweeks, results, groups, teams, leagues } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { getAllCachedScores } from "@/lib/fpl-cache";
+import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore, fetchBootstrapData } from "@/lib/fpl";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { generateId } from "@/lib/id";
@@ -168,6 +168,7 @@ export async function DELETE(request: NextRequest) {
   const tieIdList = tiesToDelete.map(t => t.tieId);
 
   if (tieIdList.length === 0) {
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({ success: true, message: "No initial ties to delete", deletedFixtures: 0 });
   }
 
@@ -184,6 +185,7 @@ export async function DELETE(request: NextRequest) {
     await tx.delete(playoffTies).where(inArray(playoffTies.tieId, tieIdList));
   });
 
+  await invalidateLeaguePageCache(leagueId);
   return NextResponse.json({
     success: true,
     message: `Deleted ${tieIdList.length} ties and ${fixtureIds.length} fixtures`,
@@ -480,6 +482,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  await invalidateLeaguePageCache(leagueId);
   return NextResponse.json({
     success: true,
     message: `Generated ${createdTies.length} playoff ties and ${createdFixtures.length} fixtures`,
