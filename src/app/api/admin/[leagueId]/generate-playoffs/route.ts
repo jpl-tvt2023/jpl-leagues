@@ -532,7 +532,7 @@ async function getGroupStandings(leagueId: string, leagueStageEnd: number): Prom
     }
 
     for (const gw of processedGws) {
-      const gwCache = await getAllCachedScores(gw);
+      const gwCache = await getAllCachedScores(gw, leagueId);
       const suffix = `_gw${gw}`;
       if (Object.keys(gwCache).length > 0) {
         for (const [key, data] of Object.entries(gwCache)) {
@@ -545,7 +545,7 @@ async function getGroupStandings(leagueId: string, leagueStageEnd: number): Prom
       } else {
         for (const fplId of allFplIds) {
           try {
-            const score = await calculateTeamGameweekScore(fplId, gw);
+            const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
             if (!playerGwHitsMap.has(fplId)) playerGwHitsMap.set(fplId, new Map());
             playerGwHitsMap.get(fplId)!.set(gw, score.transferHits);
           } catch {

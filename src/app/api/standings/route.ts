@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
 
     for (const gw of processedGws) {
       // Try cache first
-      const gwCache = await getAllCachedScores(gw);
+      const gwCache = await getAllCachedScores(gw, leagueId);
       const suffix = `_gw${gw}`;
 
       if (Object.keys(gwCache).length > 0) {
@@ -143,7 +143,7 @@ export async function GET(request: NextRequest) {
         // Cache empty — fetch from FPL API (also populates cache for next time)
         for (const fplId of allFplIds) {
           try {
-            const score = await calculateTeamGameweekScore(fplId, gw);
+            const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
             if (!playerGwHitsMap.has(fplId)) {
               playerGwHitsMap.set(fplId, new Map());
             }

@@ -823,7 +823,7 @@ async function advanceGW33(groupId: string, leagueId: string, actions: string[])
   const { getAllCachedScores } = await import("@/lib/fpl-cache");
   const { players: playersTable } = await import("@/lib/db/schema");
 
-  const gw33Cache = await getAllCachedScores(33);
+  const gw33Cache = await getAllCachedScores(33, leagueId);
 
   for (const entry of survivalEntries) {
     const teamPlayers = await db.select().from(playersTable)

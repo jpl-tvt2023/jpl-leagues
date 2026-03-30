@@ -403,7 +403,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // FULL hit value deducted from their team's match score in GW N.
     const carryForwardMap = new Map<string, number>(); // fplId → transferHits to carry forward
     if (gameweekNumber > 1) {
-      const prevGwCache = await getAllCachedScores(gameweekNumber - 1);
+      const prevGwCache = await getAllCachedScores(gameweekNumber - 1, leagueId);
       const prevGwSuffix = `_gw${gameweekNumber - 1}`;
       for (const [key, data] of Object.entries(prevGwCache)) {
         if (key.endsWith(prevGwSuffix) && data.transferHits > 12) {
@@ -434,14 +434,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Fetch FPL scores for all players (captain flag set after default assignment)
         const homeScoresRaw = await Promise.all(
           fixture.homeTeam.players.map(async (player: Player) => {
-            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber);
+            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber, leagueId);
             return { playerId: player.id, playerName: player.name, ...score };
           })
         );
 
         const awayScoresRaw = await Promise.all(
           fixture.awayTeam.players.map(async (player: Player) => {
-            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber);
+            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber, leagueId);
             return { playerId: player.id, playerName: player.name, ...score };
           })
         );
@@ -947,7 +947,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Fetch FPL scores for challenger team
         const challengerScores = await Promise.all(
           challengerTeam.players.map(async (player: Player) => {
-            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber);
+            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber, leagueId);
             return {
               playerId: player.id,
               isCaptain: challengerCaptain?.playerId === player.id,
@@ -959,7 +959,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Fetch FPL scores for challenged team
         const challengedScores = await Promise.all(
           challengedTeam.players.map(async (player: Player) => {
-            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber);
+            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber, leagueId);
             return {
               playerId: player.id,
               isCaptain: challengedCaptain?.playerId === player.id,

@@ -26,10 +26,10 @@ interface CachedScore {
 }
 
 /**
- * Get Redis key for a team's gameweek score
+ * Get Redis key for a team's gameweek score (league-namespaced)
  */
-function getKey(fplId: string, gameweek: number): string {
-  return `fpl:gw${gameweek}:${fplId}`;
+function getKey(fplId: string, gameweek: number, leagueId?: string | null): string {
+  return `fpl:${leagueId ?? "global"}:gw${gameweek}:${fplId}`;
 }
 
 /**
@@ -37,11 +37,12 @@ function getKey(fplId: string, gameweek: number): string {
  */
 export async function getCachedScore(
   fplId: string,
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<CachedScore | null> {
   const r = getRedis();
   if (!r) return null;
-  const data = await r.get<CachedScore>(getKey(fplId, gameweek));
+  const data = await r.get<CachedScore>(getKey(fplId, gameweek, leagueId));
   return data || null;
 }
 
@@ -51,7 +52,8 @@ export async function getCachedScore(
 export async function setCachedScore(
   fplId: string,
   gameweek: number,
-  score: { points: number; transferHits: number; netScore: number }
+  score: { points: number; transferHits: number; netScore: number },
+  leagueId?: string | null
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
@@ -59,7 +61,7 @@ export async function setCachedScore(
     ...score,
     cachedAt: new Date().toISOString(),
   };
-  await r.set(getKey(fplId, gameweek), value, { ex: CACHE_TTL });
+  await r.set(getKey(fplId, gameweek, leagueId), value, { ex: CACHE_TTL });
 }
 
 /**
@@ -67,12 +69,13 @@ export async function setCachedScore(
  */
 export async function isGameweekFullyCached(
   fplIds: string[],
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<boolean> {
   const r = getRedis();
   if (!r) return false;
   if (fplIds.length === 0) return true;
-  const keys = fplIds.map((id) => getKey(id, gameweek));
+  const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
   const pipeline = r.pipeline();
   for (const key of keys) {
     pipeline.exists(key);
@@ -82,15 +85,16 @@ export async function isGameweekFullyCached(
 }
 
 /**
- * Get all cached scores for a gameweek
- * Returns object with keys like "fplId_gwN" for backwards compatibility
+ * Get all cached scores for a gameweek (league-scoped)
+ * Returns object with keys like "fplId_gwN"
  */
 export async function getAllCachedScores(
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<Record<string, CachedScore>> {
   const r = getRedis();
   if (!r) return {};
-  const prefix = `fpl:gw${gameweek}:`;
+  const prefix = `fpl:${leagueId ?? "global"}:gw${gameweek}:`;
   const result: Record<string, CachedScore> = {};
 
   let cursor = "0";
@@ -118,12 +122,12 @@ export async function getAllCachedScores(
 }
 
 /**
- * Clear cache for a specific gameweek (for re-fetching)
+ * Clear cache for a specific gameweek (league-scoped)
  */
-export async function clearGameweekCache(gameweek: number): Promise<void> {
+export async function clearGameweekCache(gameweek: number, leagueId?: string | null): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  const prefix = `fpl:gw${gameweek}:`;
+  const prefix = `fpl:${leagueId ?? "global"}:gw${gameweek}:`;
   let cursor = "0";
   do {
     const res = await r.scan(cursor, { match: `${prefix}*`, count: 100 });
@@ -142,10 +146,10 @@ export async function clearGameweekCache(gameweek: number): Promise<void> {
 /**
  * Clear cache for specific FPL IDs in a gameweek (league-scoped)
  */
-export async function clearGameweekCacheForIds(gameweek: number, fplIds: string[]): Promise<void> {
+export async function clearGameweekCacheForIds(gameweek: number, fplIds: string[], leagueId?: string | null): Promise<void> {
   const r = getRedis();
   if (!r || fplIds.length === 0) return;
-  const keys = fplIds.map((id) => getKey(id, gameweek));
+  const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
   const pipeline = r.pipeline();
   for (const key of keys) pipeline.del(key);
   await pipeline.exec();
@@ -155,14 +159,15 @@ export async function clearGameweekCacheForIds(gameweek: number, fplIds: string[
  * Get cache stats scoped to specific FPL IDs (league-scoped)
  */
 export async function getCacheStatsForIds(
-  fplIds: string[]
+  fplIds: string[],
+  leagueId?: string | null
 ): Promise<{ gameweek: number; entries: number }[]> {
   const r = getRedis();
   if (!r || fplIds.length === 0) return [];
   const stats: { gameweek: number; entries: number }[] = [];
 
   for (let gw = 1; gw <= 38; gw++) {
-    const keys = fplIds.map((id) => getKey(id, gw));
+    const keys = fplIds.map((id) => getKey(id, gw, leagueId));
     const pipeline = r.pipeline();
     for (const key of keys) pipeline.exists(key);
     const results = await pipeline.exec<number[]>();
@@ -178,11 +183,12 @@ export async function getCacheStatsForIds(
  */
 export async function getAllCachedScoresForIds(
   gameweek: number,
-  fplIds: string[]
+  fplIds: string[],
+  leagueId?: string | null
 ): Promise<Record<string, CachedScore>> {
   const r = getRedis();
   if (!r || fplIds.length === 0) return {};
-  const keys = fplIds.map((id) => getKey(id, gameweek));
+  const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
   const pipeline = r.pipeline();
   for (const key of keys) pipeline.get(key);
   const values = await pipeline.exec<(CachedScore | null)[]>();
@@ -196,15 +202,15 @@ export async function getAllCachedScoresForIds(
 }
 
 /**
- * Get cache stats
+ * Get cache stats (league-scoped)
  */
-export async function getCacheStats(): Promise<{ gameweek: number; entries: number }[]> {
+export async function getCacheStats(leagueId?: string | null): Promise<{ gameweek: number; entries: number }[]> {
   const r = getRedis();
   if (!r) return [];
   const stats: { gameweek: number; entries: number }[] = [];
 
   for (let gw = 1; gw <= 38; gw++) {
-    const prefix = `fpl:gw${gw}:`;
+    const prefix = `fpl:${leagueId ?? "global"}:gw${gw}:`;
     let count = 0;
     let cursor = "0";
     do {

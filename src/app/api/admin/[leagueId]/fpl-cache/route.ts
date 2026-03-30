@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const fplIds = await getLeagueFplIds(leagueId);
-    const stats = await getCacheStatsForIds(fplIds);
+    const stats = await getCacheStatsForIds(fplIds, leagueId);
     const totalEntries = stats.reduce((acc, s) => acc + s.entries, 0);
 
     return NextResponse.json({ totalEntries, gameweeks: stats });
@@ -57,12 +57,12 @@ export async function DELETE(request: NextRequest) {
       if (isNaN(gw) || gw < 1 || gw > 38) {
         return NextResponse.json({ error: "Invalid gameweek number" }, { status: 400 });
       }
-      await clearGameweekCacheForIds(gw, fplIds);
+      await clearGameweekCacheForIds(gw, fplIds, leagueId);
       await clearLiveCache(gw, leagueId);
       return NextResponse.json({ success: true, message: `Cache cleared for GW${gw}` });
     } else {
       for (let gw = 1; gw <= 38; gw++) {
-        await clearGameweekCacheForIds(gw, fplIds);
+        await clearGameweekCacheForIds(gw, fplIds, leagueId);
         await clearLiveCache(gw, leagueId);
       }
       return NextResponse.json({ success: true, message: "All cache cleared" });
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     }
 
     const fplIds = await getLeagueFplIds(leagueId);
-    const cacheData = await getAllCachedScoresForIds(gameweek, fplIds);
+    const cacheData = await getAllCachedScoresForIds(gameweek, fplIds, leagueId);
 
     return NextResponse.json({
       gameweek,
