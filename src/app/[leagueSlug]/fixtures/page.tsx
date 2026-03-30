@@ -334,9 +334,10 @@ export default function LeagueFixturesPage() {
         if (!response.ok) throw new Error("Failed to fetch fixtures");
         const data = await response.json();
         const fixturesData = data.fixtures || {};
+        const leaguePhaseEnd: number = data.playoffStartGw ? data.playoffStartGw - 1 : Infinity;
         setFixtures(fixturesData);
 
-        const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= 30).sort((a, b) => a - b);
+        const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
         setAvailableGWs(gws);
 
         if (gws.length > 0) {

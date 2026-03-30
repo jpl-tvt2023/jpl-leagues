@@ -13,11 +13,15 @@ export async function GET(request: NextRequest) {
     const groupParam = searchParams.get("group");
     const leagueSlug = searchParams.get("leagueSlug");
 
-    // Resolve leagueId from slug if provided
+    // Resolve leagueId and config from slug if provided
     let leagueId: string | null = null;
+    let playoffStartGw: number | null = null;
     if (leagueSlug) {
-      const league = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
-      if (league.length > 0) leagueId = league[0].id;
+      const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+      if (league.length > 0) {
+        leagueId = league[0].id;
+        playoffStartGw = league[0].playoffStartGw ?? null;
+      }
     }
 
     // Use relational queries for cleaner joins
@@ -68,6 +72,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       totalFixtures: allFixtures.length,
       fixtures: fixturesByGameweek,
+      playoffStartGw,
     });
   } catch (error) {
     console.error("Error fetching fixtures:", error);

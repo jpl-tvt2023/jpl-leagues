@@ -350,10 +350,11 @@ export default function FixturesPage() {
         }
         const data = await response.json();
         const fixturesData = data.fixtures || {};
+        const leaguePhaseEnd: number = data.playoffStartGw ? data.playoffStartGw - 1 : Infinity;
         setFixtures(fixturesData);
-        
-        // Get available gameweeks and determine current/default
-        const gws = Object.keys(fixturesData).map(Number).sort((a, b) => a - b);
+
+        // Get available gameweeks capped to the league phase (before playoffs)
+        const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
         setAvailableGWs(gws);
         
         if (gws.length > 0) {
