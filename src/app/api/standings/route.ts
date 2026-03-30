@@ -80,8 +80,12 @@ export async function GET(request: NextRequest) {
 
     // Return cached standings if available (populated by cron or previous request)
     if (leagueId) {
-      const cached = await getCachedStandings(leagueId);
-      if (cached) return NextResponse.json(cached);
+      try {
+        const cached = await getCachedStandings(leagueId);
+        if (cached) return NextResponse.json(cached);
+      } catch {
+        // Cache miss or Redis error — fall through to DB computation
+      }
     }
 
     // Get all teams with their relations using relational query
@@ -379,9 +383,9 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    // Write to cache for future requests (only when league-scoped)
+    // Fire-and-forget cache write — must not block or break the response
     if (leagueId) {
-      await setCachedStandings(leagueId, responseData);
+      setCachedStandings(leagueId, responseData).catch(() => {});
     }
 
     return NextResponse.json(responseData);

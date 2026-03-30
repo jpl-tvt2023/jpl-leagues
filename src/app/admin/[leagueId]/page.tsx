@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface Team {
   id: string;
@@ -1475,7 +1476,7 @@ export default function AdminDashboard() {
 
         {/* Teams List */}
         {isLoading ? (
-          <div className="text-center text-gray-400 py-12">Loading teams...</div>
+          <LoadingScreen variant="admin" fullScreen={false} />
         ) : (
           <div className={`grid ${leagueConfig.groupCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1"} gap-8`}>
             {/* Group A */}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 type TabType = "faqs" | "scenarios";
 
@@ -78,11 +79,7 @@ export default function SuperadminHelpPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
-      </div>
-    );
+    return <LoadingScreen variant="help" />;
   }
 
   const faqs: { question: string; answer: React.ReactNode }[] = [

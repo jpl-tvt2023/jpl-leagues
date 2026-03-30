@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface LivePlayerScore {
   name: string;
@@ -441,12 +442,7 @@ export default function LeagueFixturesPage() {
         </div>
 
         {isLoading ? (
-          <div className="animate-pulse space-y-6">
-            <div className="h-10 bg-slate-800 rounded w-64 mx-auto" />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[...Array(4)].map((_, i) => <div key={i} className="h-32 bg-slate-800 rounded-2xl" />)}
-            </div>
-          </div>
+          <LoadingScreen variant="fixtures" fullScreen={false} />
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : availableGWs.length === 0 ? (

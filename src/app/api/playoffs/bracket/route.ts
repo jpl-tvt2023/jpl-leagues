@@ -93,8 +93,12 @@ export async function GET(request: NextRequest) {
 
     // Return cached bracket if available (liveScores excluded from cache; page polls those separately)
     if (leagueId) {
-      const cached = await getCachedPlayoffBracket(leagueId);
-      if (cached) return NextResponse.json(cached);
+      try {
+        const cached = await getCachedPlayoffBracket(leagueId);
+        if (cached) return NextResponse.json(cached);
+      } catch {
+        // Cache miss or Redis error — fall through to DB computation
+      }
     }
 
     const tiesQuery = leagueId
@@ -108,9 +112,9 @@ export async function GET(request: NextRequest) {
     if (isLive) {
       const bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
       const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, playoffStartGw);
-      // Cache bracket structure only (liveScores are fetched fresh by the page's polling mechanism)
+      // Fire-and-forget cache write (liveScores excluded; page polls those separately)
       if (leagueId) {
-        await setCachedPlayoffBracket(leagueId, bracket);
+        setCachedPlayoffBracket(leagueId, bracket).catch(() => {});
       }
       return NextResponse.json({ ...bracket, liveScores });
     }
@@ -119,7 +123,7 @@ export async function GET(request: NextRequest) {
     const mode = latestCompletedGw >= leagueStageEnd ? "projected" : "tentative";
     const tentativeBracket = await buildTentativeBracket(latestCompletedGw, mode, leagueId, teamSize, playoffStartGw);
     if (leagueId) {
-      await setCachedPlayoffBracket(leagueId, tentativeBracket);
+      setCachedPlayoffBracket(leagueId, tentativeBracket).catch(() => {});
     }
     return NextResponse.json(tentativeBracket);
   } catch (error) {

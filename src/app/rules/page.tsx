@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function RulesPage() {
   const router = useRouter();
@@ -47,11 +48,7 @@ export default function RulesPage() {
   };
 
   if (isChecking) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white">Loading...</div>
-      </div>
-    );
+    return <LoadingScreen variant="rules" />;
   }
 
   return (

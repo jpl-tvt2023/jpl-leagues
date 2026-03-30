@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface LiveFixtureScore {
   fixtureId: string;
@@ -518,25 +519,7 @@ export default function PlayoffsPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 p-6">
-        <div className="max-w-7xl mx-auto animate-pulse space-y-6 pt-8">
-          <div className="h-8 bg-slate-800 rounded w-48" />
-          <div className="flex gap-3">
-            <div className="h-9 bg-slate-800 rounded w-28" />
-            <div className="h-9 bg-slate-800 rounded w-36" />
-          </div>
-          <div className="flex gap-4 overflow-x-auto pb-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-56 space-y-3">
-                <div className="h-5 bg-slate-800 rounded w-20" />
-                {[...Array(4)].map((_, j) => <div key={j} className="h-24 bg-slate-800 rounded-xl" />)}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingScreen variant="playoffs" />;
   }
 
   if (!data) {

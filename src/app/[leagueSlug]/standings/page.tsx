@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { StandingsTable } from "@/components/StandingsTable";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import type { TeamStanding } from "@/types/standings";
 
 export default function LeagueStandingsPage() {
@@ -126,66 +127,61 @@ export default function LeagueStandingsPage() {
       </nav>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
-        <div className="text-center mb-12">
-          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-4">League Standings</h1>
-          <p className="text-gray-400">
-            {latestGameweek > 0
-              ? `After Gameweek ${latestGameweek} · League Stage`
-              : totalTeams > 0
-                ? "League Stage · No matches played yet"
-                : "League Stage · Awaiting teams"
-            }
-          </p>
-        </div>
-
-        {/* Legend */}
-        <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-green-500"></span>
-            <span className="text-gray-400">Title Play-offs (1-{teamSize === 8 ? 4 : 8})</span>
-          </div>
-          {teamSize !== 8 && (
-            <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-yellow-500"></span>
-              <span className="text-gray-400">Challenger Series (9-14)</span>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-red-500"></span>
-            <span className="text-gray-400">Eliminated ({teamSize === 8 ? "5-8" : "15-16"})</span>
-          </div>
-        </div>
-
         {isLoading ? (
-          <div className="animate-pulse flex gap-6">
-            <div className="flex-1 space-y-3">
-              <div className="h-6 bg-slate-800 rounded w-20 mb-4" />
-              {[...Array(8)].map((_, i) => <div key={i} className="h-10 bg-slate-800 rounded" />)}
-            </div>
-            <div className="flex-1 space-y-3">
-              <div className="h-6 bg-slate-800 rounded w-20 mb-4" />
-              {[...Array(8)].map((_, i) => <div key={i} className="h-10 bg-slate-800 rounded" />)}
-            </div>
-          </div>
-        ) : error ? (
-          <div className="text-center text-red-400 py-12">{error}</div>
-        ) : totalTeams === 0 ? (
-          <div className="text-center py-12">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-              <h2 className="text-xl font-semibold text-white mb-2">No Teams Yet</h2>
-              <p className="text-gray-400">Standings will appear here once teams are registered and matches are played.</p>
-            </div>
-          </div>
+          <LoadingScreen variant="standings" fullScreen={false} />
         ) : (
-          <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
-            <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} />
-            {groupB.length > 0 && <StandingsTable teams={groupB} group="B" />}
-          </div>
-        )}
+          <>
+            <div className="text-center mb-12">
+              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-4">League Standings</h1>
+              <p className="text-gray-400">
+                {latestGameweek > 0
+                  ? `After Gameweek ${latestGameweek} · League Stage`
+                  : totalTeams > 0
+                    ? "League Stage · No matches played yet"
+                    : "League Stage · Awaiting teams"
+                }
+              </p>
+            </div>
 
-        <div className="mt-8 text-center text-sm text-gray-500">
-          MP = Matches Played · W = Won · D = Drawn · L = Lost · CP/BP = Chips &amp; Bonus Points · Pts = League Points · Scores = Total FPL Score
-        </div>
+            {/* Legend */}
+            <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-green-500"></span>
+                <span className="text-gray-400">Title Play-offs (1-{teamSize === 8 ? 4 : 8})</span>
+              </div>
+              {teamSize !== 8 && (
+                <div className="flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-full bg-yellow-500"></span>
+                  <span className="text-gray-400">Challenger Series (9-14)</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-red-500"></span>
+                <span className="text-gray-400">Eliminated ({teamSize === 8 ? "5-8" : "15-16"})</span>
+              </div>
+            </div>
+
+            {error ? (
+              <div className="text-center text-red-400 py-12">{error}</div>
+            ) : totalTeams === 0 ? (
+              <div className="text-center py-12">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
+                  <h2 className="text-xl font-semibold text-white mb-2">No Teams Yet</h2>
+                  <p className="text-gray-400">Standings will appear here once teams are registered and matches are played.</p>
+                </div>
+              </div>
+            ) : (
+              <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
+                <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} />
+                {groupB.length > 0 && <StandingsTable teams={groupB} group="B" />}
+              </div>
+            )}
+
+            <div className="mt-8 text-center text-sm text-gray-500">
+              MP = Matches Played · W = Won · D = Drawn · L = Lost · CP/BP = Chips &amp; Bonus Points · Pts = League Points · Scores = Total FPL Score
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

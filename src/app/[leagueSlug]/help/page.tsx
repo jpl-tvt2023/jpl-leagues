@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 type UserRole = "public" | "team" | "admin";
 type ActiveTab = "faqs" | "scenarios";
@@ -549,7 +550,7 @@ export default function LeagueHelpPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center text-gray-400 py-12">Loading help content...</div>
+          <LoadingScreen variant="help" fullScreen={false} />
         ) : (
           <>
             {/* Tab Bar */}

@@ -26,10 +26,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Return cached fixtures if available — only for unfiltered league requests
-    // (filtered requests by gameweek/group are less common and can hit DB directly)
     if (leagueId && !gameweekParam && !groupParam) {
-      const cached = await getCachedFixtures(leagueId);
-      if (cached) return NextResponse.json(cached);
+      try {
+        const cached = await getCachedFixtures(leagueId);
+        if (cached) return NextResponse.json(cached);
+      } catch {
+        // Cache miss or Redis error — fall through to DB computation
+      }
     }
 
     // Use relational queries for cleaner joins
@@ -83,9 +86,9 @@ export async function GET(request: NextRequest) {
       playoffStartGw,
     };
 
-    // Write to cache for future unfiltered requests
+    // Fire-and-forget cache write
     if (leagueId && !gameweekParam && !groupParam) {
-      await setCachedFixtures(leagueId, responseData);
+      setCachedFixtures(leagueId, responseData).catch(() => {});
     }
 
     return NextResponse.json(responseData);
