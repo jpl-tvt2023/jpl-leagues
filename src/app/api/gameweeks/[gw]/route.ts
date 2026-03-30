@@ -31,6 +31,7 @@ type GameweekWithRelations = Gameweek & {
 interface PlayerScoreData {
   playerId: string;
   isCaptain: boolean;
+  isAutoAssigned?: boolean;
   points: number;
   transferHits: number;
   netScore: number;
@@ -458,15 +459,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           );
         }
 
-        // Set isCaptain flag now that captains are resolved
+        // Set isCaptain + isAutoAssigned flags now that captains are resolved
+        const homeIsAutoAssigned = homeCaptain?.isValid === false;
+        const awayIsAutoAssigned = awayCaptain?.isValid === false;
+
         const homeScores = homeScoresRaw.map(s => ({
           ...s,
           isCaptain: homeCaptain?.playerId === s.playerId,
+          isAutoAssigned: homeCaptain?.playerId === s.playerId && homeIsAutoAssigned,
         }));
 
         const awayScores = awayScoresRaw.map(s => ({
           ...s,
           isCaptain: awayCaptain?.playerId === s.playerId,
+          isAutoAssigned: awayCaptain?.playerId === s.playerId && awayIsAutoAssigned,
         }));
 
         // Persist captain FPL scores to gameweekCaptains table
@@ -665,6 +671,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               fplScore: s.points,
               transferHits: s.transferHits,
               isCaptain: s.isCaptain,
+              isAutoAssigned: s.isAutoAssigned,
               finalScore,
             };
           })
@@ -681,6 +688,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               fplScore: s.points,
               transferHits: s.transferHits,
               isCaptain: s.isCaptain,
+              isAutoAssigned: s.isAutoAssigned,
               finalScore,
             };
           })

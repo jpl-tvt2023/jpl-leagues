@@ -140,6 +140,62 @@ export async function clearGameweekCache(gameweek: number): Promise<void> {
 }
 
 /**
+ * Clear cache for specific FPL IDs in a gameweek (league-scoped)
+ */
+export async function clearGameweekCacheForIds(gameweek: number, fplIds: string[]): Promise<void> {
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return;
+  const keys = fplIds.map((id) => getKey(id, gameweek));
+  const pipeline = r.pipeline();
+  for (const key of keys) pipeline.del(key);
+  await pipeline.exec();
+}
+
+/**
+ * Get cache stats scoped to specific FPL IDs (league-scoped)
+ */
+export async function getCacheStatsForIds(
+  fplIds: string[]
+): Promise<{ gameweek: number; entries: number }[]> {
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return [];
+  const stats: { gameweek: number; entries: number }[] = [];
+
+  for (let gw = 1; gw <= 38; gw++) {
+    const keys = fplIds.map((id) => getKey(id, gw));
+    const pipeline = r.pipeline();
+    for (const key of keys) pipeline.exists(key);
+    const results = await pipeline.exec<number[]>();
+    const count = results.filter((v) => v === 1).length;
+    if (count > 0) stats.push({ gameweek: gw, entries: count });
+  }
+
+  return stats;
+}
+
+/**
+ * Get all cached scores for specific FPL IDs in a gameweek (league-scoped)
+ */
+export async function getAllCachedScoresForIds(
+  gameweek: number,
+  fplIds: string[]
+): Promise<Record<string, CachedScore>> {
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return {};
+  const keys = fplIds.map((id) => getKey(id, gameweek));
+  const pipeline = r.pipeline();
+  for (const key of keys) pipeline.get(key);
+  const values = await pipeline.exec<(CachedScore | null)[]>();
+  const result: Record<string, CachedScore> = {};
+  for (let i = 0; i < keys.length; i++) {
+    if (values[i]) {
+      result[`${fplIds[i]}_gw${gameweek}`] = values[i]!;
+    }
+  }
+  return result;
+}
+
+/**
  * Get cache stats
  */
 export async function getCacheStats(): Promise<{ gameweek: number; entries: number }[]> {

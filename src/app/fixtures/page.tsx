@@ -9,6 +9,7 @@ interface LivePlayerScore {
   fplScore: number;
   transferHits: number;
   isCaptain: boolean;
+  isAutoAssigned?: boolean;
   finalScore: number;
 }
 
@@ -175,12 +176,12 @@ function FixtureCard({
                         >
                           {p.name}
                         </a>
-                        {p.isCaptain && (
+                        {p.isCaptain && !p.isAutoAssigned && (
                           <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
                         )}
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain ? (
+                        {p.isCaptain && !p.isAutoAssigned ? (
                           <span className="text-yellow-400 font-semibold">
                             {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                           </span>
@@ -207,12 +208,12 @@ function FixtureCard({
                         >
                           {p.name}
                         </a>
-                        {p.isCaptain && (
+                        {p.isCaptain && !p.isAutoAssigned && (
                           <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
                         )}
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain ? (
+                        {p.isCaptain && !p.isAutoAssigned ? (
                           <span className="text-yellow-400 font-semibold">
                             {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                           </span>
@@ -241,6 +242,7 @@ export default function FixturesPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLeagueId, setAdminLeagueId] = useState<string | null>(null);
+  const [adminLeague, setAdminLeague] = useState<string | null>(null);
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
   const [availableGWs, setAvailableGWs] = useState<number[]>([]);
   const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
@@ -252,7 +254,8 @@ export default function FixturesPage() {
   // Fetch live scores for selected GW
   const fetchLiveScores = useCallback(async (gw: number) => {
     try {
-      const res = await fetch(`/api/fixtures/live?gameweek=${gw}`);
+      const leagueParam = adminLeague ? `&leagueSlug=${encodeURIComponent(adminLeague)}` : "";
+      const res = await fetch(`/api/fixtures/live?gameweek=${gw}${leagueParam}`);
       if (res.ok) {
         const data = await res.json();
         if (data.isLive) {
@@ -270,13 +273,14 @@ export default function FixturesPage() {
     } catch {
       // Silently fail — live scores are optional
     }
-  }, []);
+  }, [adminLeague]);
 
   const handleRefresh = async () => {
     if (!selectedGW || isRefreshing) return;
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}`);
+      const leagueParam = adminLeague ? `&leagueSlug=${encodeURIComponent(adminLeague)}` : "";
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}${leagueParam}`);
       if (res.ok) {
         const data = await res.json();
         if (data.fixtures?.length) {
@@ -304,7 +308,7 @@ export default function FixturesPage() {
   useEffect(() => {
     // Check auth status
     const urlParam = new URLSearchParams(window.location.search).get("adminLeague");
-    if (urlParam) setAdminLeagueId(urlParam);
+    if (urlParam) { setAdminLeagueId(urlParam); setAdminLeague(urlParam); }
 
     const checkAuth = async () => {
       try {
@@ -349,7 +353,7 @@ export default function FixturesPage() {
         setFixtures(fixturesData);
         
         // Get available gameweeks and determine current/default
-        const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= 30).sort((a, b) => a - b);
+        const gws = Object.keys(fixturesData).map(Number).sort((a, b) => a - b);
         setAvailableGWs(gws);
         
         if (gws.length > 0) {

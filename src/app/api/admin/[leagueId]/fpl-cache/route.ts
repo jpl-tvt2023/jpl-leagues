@@ -1,17 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCacheStats, clearGameweekCache, getAllCachedScores, clearLiveCache } from "@/lib/fpl-cache";
+import { db } from "@/lib/db";
+import { teams } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import {
+  getCacheStatsForIds,
+  clearGameweekCacheForIds,
+  getAllCachedScoresForIds,
+  clearLiveCache,
+} from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+
+/** Fetch all FPL IDs for players in teams belonging to this league */
+async function getLeagueFplIds(leagueId: string): Promise<string[]> {
+  const leagueTeams = await db.query.teams.findMany({
+    where: eq(teams.leagueId, leagueId),
+    with: { players: true },
+  });
+  return leagueTeams.flatMap((t) => t.players.map((p) => p.fplId));
+}
 
 /**
  * GET /api/admin/[leagueId]/fpl-cache
- * Get FPL cache statistics
+ * Get FPL cache statistics scoped to this league's teams
  */
 export async function GET(request: NextRequest) {
   try {
     const leagueId = await getAuthorizedLeagueId(request);
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const stats = await getCacheStats();
+    const fplIds = await getLeagueFplIds(leagueId);
+    const stats = await getCacheStatsForIds(fplIds);
     const totalEntries = stats.reduce((acc, s) => acc + s.entries, 0);
 
     return NextResponse.json({ totalEntries, gameweeks: stats });
@@ -23,13 +41,14 @@ export async function GET(request: NextRequest) {
 
 /**
  * DELETE /api/admin/[leagueId]/fpl-cache
- * Clear FPL cache for a specific gameweek or all
+ * Clear FPL cache for a specific gameweek or all, scoped to this league
  */
 export async function DELETE(request: NextRequest) {
   try {
     const leagueId = await getAuthorizedLeagueId(request);
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+    const fplIds = await getLeagueFplIds(leagueId);
     const { searchParams } = new URL(request.url);
     const gwParam = searchParams.get("gw");
 
@@ -38,13 +57,13 @@ export async function DELETE(request: NextRequest) {
       if (isNaN(gw) || gw < 1 || gw > 38) {
         return NextResponse.json({ error: "Invalid gameweek number" }, { status: 400 });
       }
-      await clearGameweekCache(gw);
-      await clearLiveCache(gw);
+      await clearGameweekCacheForIds(gw, fplIds);
+      await clearLiveCache(gw, leagueId);
       return NextResponse.json({ success: true, message: `Cache cleared for GW${gw}` });
     } else {
       for (let gw = 1; gw <= 38; gw++) {
-        await clearGameweekCache(gw);
-        await clearLiveCache(gw);
+        await clearGameweekCacheForIds(gw, fplIds);
+        await clearLiveCache(gw, leagueId);
       }
       return NextResponse.json({ success: true, message: "All cache cleared" });
     }
@@ -56,7 +75,7 @@ export async function DELETE(request: NextRequest) {
 
 /**
  * POST /api/admin/[leagueId]/fpl-cache
- * Get detailed cache for a specific gameweek
+ * Get detailed cache for a specific gameweek, scoped to this league
  */
 export async function POST(request: NextRequest) {
   try {
@@ -70,7 +89,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid gameweek number" }, { status: 400 });
     }
 
-    const cacheData = await getAllCachedScores(gameweek);
+    const fplIds = await getLeagueFplIds(leagueId);
+    const cacheData = await getAllCachedScoresForIds(gameweek, fplIds);
 
     return NextResponse.json({
       gameweek,

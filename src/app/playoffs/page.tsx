@@ -435,7 +435,8 @@ export default function PlayoffsPage() {
     for (let gw = latestGw; gw <= Math.min(latestGw + 1, 38); gw++) {
       if (gw < 31) continue;
       try {
-        const res = await fetch(`/api/fixtures/live?gameweek=${gw}`);
+        const leagueParam = adminLeagueId ? `&leagueSlug=${encodeURIComponent(adminLeagueId)}` : "";
+        const res = await fetch(`/api/fixtures/live?gameweek=${gw}${leagueParam}`);
         if (res.ok) {
           const liveData = await res.json();
           if (liveData.isLive && liveData.fixtures?.length > 0) {
@@ -446,7 +447,7 @@ export default function PlayoffsPage() {
       } catch {}
     }
     setLiveScores([]);
-  }, []);
+  }, [adminLeagueId]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -500,7 +501,8 @@ export default function PlayoffsPage() {
   const handleRefreshRound = async (gwNumber: number) => {
     setRefreshing(gwNumber);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${gwNumber}`);
+      const leagueParam = adminLeagueId ? `&leagueSlug=${encodeURIComponent(adminLeagueId)}` : "";
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${gwNumber}${leagueParam}`);
       if (res.ok) {
         const freshData = await res.json();
         setTempLiveScores(prev => ({

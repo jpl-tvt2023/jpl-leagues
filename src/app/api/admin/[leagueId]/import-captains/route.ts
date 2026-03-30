@@ -237,16 +237,16 @@ export async function GET(request: NextRequest) {
     const leagueId = await getAuthorizedLeagueId(request);
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // Get count of captain entries per gameweek
-    const allCaptains = await db.query.gameweekCaptains.findMany({
-      with: {
-        player: {
-          with: { team: true },
-        },
-      },
-    });
-
-    const allGameweeks = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
+    // Get count of captain entries per gameweek — scoped to this league
+    const allGameweeks = await db.select({ id: gameweeks.id, number: gameweeks.number })
+      .from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
+    const gwIds = allGameweeks.map(gw => gw.id);
+    const allCaptains = gwIds.length > 0
+      ? await db.query.gameweekCaptains.findMany({
+          where: inArray(gameweekCaptains.gameweekId, gwIds),
+          with: { player: { with: { team: true } } },
+        })
+      : [];
 
     const gwStats = allGameweeks.map(gw => {
       const captainsForGW = allCaptains.filter(c => c.gameweekId === gw.id);
