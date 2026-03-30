@@ -1,3 +1,5 @@
+import React from "react";
+
 type LoadingVariant =
   | "standings"
   | "fixtures"
@@ -129,7 +131,7 @@ function IconDefault() {
 
 const VARIANTS: Record<
   LoadingVariant,
-  { label: string; ringColor: string; dotColor: string; textColor: string; Icon: () => JSX.Element }
+  { label: string; ringColor: string; dotColor: string; textColor: string; Icon: () => React.ReactElement }
 > = {
   standings: {
     label: "Loading League Table",
