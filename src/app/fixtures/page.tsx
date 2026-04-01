@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface LivePlayerScore {
   name: string;
@@ -9,6 +10,7 @@ interface LivePlayerScore {
   fplScore: number;
   transferHits: number;
   isCaptain: boolean;
+  isAutoAssigned?: boolean;
   finalScore: number;
 }
 
@@ -175,12 +177,12 @@ function FixtureCard({
                         >
                           {p.name}
                         </a>
-                        {p.isCaptain && (
+                        {p.isCaptain && !p.isAutoAssigned && (
                           <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
                         )}
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain ? (
+                        {p.isCaptain && !p.isAutoAssigned ? (
                           <span className="text-yellow-400 font-semibold">
                             {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                           </span>
@@ -207,12 +209,12 @@ function FixtureCard({
                         >
                           {p.name}
                         </a>
-                        {p.isCaptain && (
+                        {p.isCaptain && !p.isAutoAssigned && (
                           <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
                         )}
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain ? (
+                        {p.isCaptain && !p.isAutoAssigned ? (
                           <span className="text-yellow-400 font-semibold">
                             {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                           </span>
@@ -240,6 +242,8 @@ export default function FixturesPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(null);
+  const [adminLeague, setAdminLeague] = useState<string | null>(null);
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
   const [availableGWs, setAvailableGWs] = useState<number[]>([]);
   const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
@@ -251,7 +255,8 @@ export default function FixturesPage() {
   // Fetch live scores for selected GW
   const fetchLiveScores = useCallback(async (gw: number) => {
     try {
-      const res = await fetch(`/api/fixtures/live?gameweek=${gw}`);
+      const leagueParam = adminLeague ? `&leagueSlug=${encodeURIComponent(adminLeague)}` : "";
+      const res = await fetch(`/api/fixtures/live?gameweek=${gw}${leagueParam}`);
       if (res.ok) {
         const data = await res.json();
         if (data.isLive) {
@@ -269,13 +274,14 @@ export default function FixturesPage() {
     } catch {
       // Silently fail — live scores are optional
     }
-  }, []);
+  }, [adminLeague]);
 
   const handleRefresh = async () => {
     if (!selectedGW || isRefreshing) return;
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}`);
+      const leagueParam = adminLeague ? `&leagueSlug=${encodeURIComponent(adminLeague)}` : "";
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}${leagueParam}`);
       if (res.ok) {
         const data = await res.json();
         if (data.fixtures?.length) {
@@ -302,13 +308,21 @@ export default function FixturesPage() {
 
   useEffect(() => {
     // Check auth status
+    const urlParam = new URLSearchParams(window.location.search).get("adminLeague");
+    if (urlParam) { setAdminLeagueId(urlParam); setAdminLeague(urlParam); }
+
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
         if (res.ok && data.authenticated) {
           setIsLoggedIn(true);
-          setIsAdmin(data.type === "admin");
+          if (data.type === "admin" || data.type === "superadmin") {
+            setIsAdmin(true);
+            if (!urlParam && data.adminLeagueId) {
+              setAdminLeagueId(data.adminLeagueId);
+            }
+          }
         } else {
           setIsLoggedIn(false);
           setIsAdmin(false);
@@ -329,16 +343,19 @@ export default function FixturesPage() {
   useEffect(() => {
     const fetchFixtures = async () => {
       try {
-        const response = await fetch("/api/fixtures");
+        const adminLeague = new URLSearchParams(window.location.search).get("adminLeague");
+        const url = adminLeague ? `/api/fixtures?leagueSlug=${encodeURIComponent(adminLeague)}` : "/api/fixtures";
+        const response = await fetch(url);
         if (!response.ok) {
           throw new Error("Failed to fetch fixtures");
         }
         const data = await response.json();
         const fixturesData = data.fixtures || {};
+        const leaguePhaseEnd: number = data.playoffStartGw ? data.playoffStartGw - 1 : Infinity;
         setFixtures(fixturesData);
-        
-        // Get available gameweeks and determine current/default
-        const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= 30).sort((a, b) => a - b);
+
+        // Get available gameweeks capped to the league phase (before playoffs)
+        const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
         setAvailableGWs(gws);
         
         if (gws.length > 0) {
@@ -379,7 +396,8 @@ export default function FixturesPage() {
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
   const groupAFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "A");
   const groupBFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "B");
-  
+  const hasGroupB = Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
+
   const hasResults = selectedFixtures.some((f: Fixture) => f.result);
   const deadline = selectedFixtures[0]?.gameweek?.deadline;
 
@@ -399,7 +417,7 @@ export default function FixturesPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href={isAdmin ? "/admin" : isLoggedIn ? "/dashboard" : "/"} className="flex items-center gap-2">
+        <Link href={isAdmin ? (adminLeagueId ? `/admin/${adminLeagueId}` : "/admin") : isLoggedIn ? "/dashboard" : "/"} className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             TVT
           </div>
@@ -407,19 +425,19 @@ export default function FixturesPage() {
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           {isAdmin ? (
-            <Link href="/admin" className="text-gray-300 hover:text-white transition">Home</Link>
+            <Link href={adminLeagueId ? `/admin/${adminLeagueId}` : "/admin"} className="text-gray-300 hover:text-white transition">← Admin</Link>
           ) : isLoggedIn ? (
             <Link href="/dashboard" className="text-gray-300 hover:text-white transition">Dashboard</Link>
           ) : (
             <Link href="/" className="text-gray-300 hover:text-white transition">Home</Link>
           )}
-          <Link href="/standings" className="text-gray-300 hover:text-white transition">
+          <Link href={adminLeagueId ? `/standings?adminLeague=${adminLeagueId}` : "/standings"} className="text-gray-300 hover:text-white transition">
             Standings
           </Link>
-          <Link href="/fixtures" className="text-yellow-400 font-semibold transition">
+          <Link href={adminLeagueId ? `/fixtures?adminLeague=${adminLeagueId}` : "/fixtures"} className="text-yellow-400 font-semibold transition">
             Fixtures
           </Link>
-          <Link href="/playoffs" className="text-gray-300 hover:text-white transition">
+          <Link href={adminLeagueId ? `/playoffs?adminLeague=${adminLeagueId}` : "/playoffs"} className="text-gray-300 hover:text-white transition">
             Playoffs
           </Link>
           {isLoggedIn && (
@@ -452,7 +470,7 @@ export default function FixturesPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center text-gray-400 py-12">Loading fixtures...</div>
+          <LoadingScreen variant="fixtures" fullScreen={false} />
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : availableGWs.length === 0 ? (
@@ -546,52 +564,70 @@ export default function FixturesPage() {
               )}
             </div>
 
-            {/* Two-Column Layout: Group A | Group B */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Group A */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-blue-500"></span>
-                  Group A
-                </h2>
-                <div className="space-y-3">
-                  {groupAFixtures.length > 0 ? (
-                    groupAFixtures.map((fixture: Fixture) => (
-                      <FixtureCard
-                        key={fixture.id}
-                        fixture={fixture}
-                        liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
-                        isFreshlyRefreshed={isManuallyRefreshed}
-                      />
-                    ))
-                  ) : (
-                    <div className="text-center text-gray-400 py-8">No fixtures</div>
-                  )}
+            {hasGroupB ? (
+              /* Two-Column Layout: Group A | Group B */
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Group A */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-blue-500"></span>
+                    Group A
+                  </h2>
+                  <div className="space-y-3">
+                    {groupAFixtures.length > 0 ? (
+                      groupAFixtures.map((fixture: Fixture) => (
+                        <FixtureCard
+                          key={fixture.id}
+                          fixture={fixture}
+                          liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                          isFreshlyRefreshed={isManuallyRefreshed}
+                        />
+                      ))
+                    ) : (
+                      <div className="text-center text-gray-400 py-8">No fixtures</div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Group B */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-purple-500"></span>
-                  Group B
-                </h2>
-                <div className="space-y-3">
-                  {groupBFixtures.length > 0 ? (
-                    groupBFixtures.map((fixture: Fixture) => (
-                      <FixtureCard
-                        key={fixture.id}
-                        fixture={fixture}
-                        liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
-                        isFreshlyRefreshed={isManuallyRefreshed}
-                      />
-                    ))
-                  ) : (
-                    <div className="text-center text-gray-400 py-8">No fixtures</div>
-                  )}
+                {/* Group B */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-purple-500"></span>
+                    Group B
+                  </h2>
+                  <div className="space-y-3">
+                    {groupBFixtures.length > 0 ? (
+                      groupBFixtures.map((fixture: Fixture) => (
+                        <FixtureCard
+                          key={fixture.id}
+                          fixture={fixture}
+                          liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                          isFreshlyRefreshed={isManuallyRefreshed}
+                        />
+                      ))
+                    ) : (
+                      <div className="text-center text-gray-400 py-8">No fixtures</div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Single-Group Layout: no group label, centred */
+              <div className="max-w-2xl mx-auto space-y-3">
+                {groupAFixtures.length > 0 ? (
+                  groupAFixtures.map((fixture: Fixture) => (
+                    <FixtureCard
+                      key={fixture.id}
+                      fixture={fixture}
+                      liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                      isFreshlyRefreshed={isManuallyRefreshed}
+                    />
+                  ))
+                ) : (
+                  <div className="text-center text-gray-400 py-8">No fixtures</div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

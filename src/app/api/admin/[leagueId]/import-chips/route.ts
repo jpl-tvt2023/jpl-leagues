@@ -3,6 +3,7 @@ import { db, teams, gameweeks, gameweekChips, groups, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { getChipSet } from "@/lib/chip-validation";
 import { generateId } from "@/lib/id";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 // Safely convert any value to a trimmed string
@@ -257,6 +258,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       success: true,
       message: `Imported ${results.success.length} chips, ${results.errors.length} errors`,
@@ -363,6 +365,7 @@ export async function DELETE(request: NextRequest) {
 
       if (gw[0]) {
         await db.delete(gameweekChips).where(eq(gameweekChips.gameweekId, gw[0].id));
+        await invalidateLeaguePageCache(leagueId);
         return NextResponse.json({
           success: true,
           message: `Cleared chips for GW${gwNum}`
@@ -382,6 +385,7 @@ export async function DELETE(request: NextRequest) {
         winWinSet2Used: false,
       }).where(eq(teams.leagueId, leagueId));
 
+      await invalidateLeaguePageCache(leagueId);
       return NextResponse.json({
         success: true,
         message: "Cleared all chip data"

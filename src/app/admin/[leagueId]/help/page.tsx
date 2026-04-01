@@ -212,17 +212,41 @@ export default function AdminHelpPage() {
       ),
     },
     {
+      question: "Can I bulk-import captains for playoff gameweeks (GW31+)?",
+      answer: (
+        <div className="space-y-2">
+          <p>Yes. The captain import file supports GW1–38. Include a column for each gameweek (e.g. column header <code className="bg-white/10 px-1 rounded">31</code>) and mark the captain with <strong className="text-white">C</strong>.</p>
+          <ul className="list-disc list-inside space-y-1 mt-2">
+            <li>Playoff GWs are auto-created when you run <strong className="text-white">Generate Playoffs</strong>. You can import captains before or after that — missing GWs are created automatically during import.</li>
+            <li>After importing, open the <strong className="text-white">Captain Override</strong> tab. The filter defaults to the latest GW that has entries, so GW31 captains will appear immediately.</li>
+            <li>If the filter shows no entries, use the GW dropdown to select GW{playoffStartGw}.</li>
+          </ul>
+          <p className="text-yellow-300 text-xs mt-2">Always Force Reprocess the playoff GW after importing or overriding captains to apply changes to scores.</p>
+        </div>
+      ),
+    },
+    {
       question: `When should I generate playoffs?`,
       answer: (
         <div className="space-y-2">
-          <p>Generate playoffs <strong className="text-white">after GW{playoffGenerationGw} has been fully processed</strong> and the standings are final. For this {variantLabel} league ({groupDesc}), this is after GW{leagueStageEnd}.</p>
+          <p>Generate playoffs <strong className="text-white">after GW{leagueStageEnd} has been fully processed</strong> and the standings are final. For this {variantLabel} league ({groupDesc}), playoffs start at GW{playoffStartGw}.</p>
           <ol className="list-decimal list-inside space-y-1.5 mt-2">
             <li>Confirm GW{leagueStageEnd} is fully processed and standings look correct.</li>
             <li>Go to the <strong className="text-white">Playoffs</strong> tab.</li>
             <li>Click <strong className="text-white">Generate Playoffs</strong>. The bracket is seeded from final standings automatically.</li>
             <li>Visit the public Playoffs page to verify the bracket is correct before announcing it.</li>
+            <li>After generating, advance each playoff GW using the Advance buttons (GW{playoffStartGw} through GW38) after each GW is fully scored.</li>
           </ol>
-          <p className="text-yellow-300 text-xs mt-2">Do not generate early — the bracket is seeded from live standings. Regenerating after a reprocess is possible but should be done carefully.</p>
+          {teamSize === 8 && (
+            <p className="text-purple-300 text-xs mt-2">8-team: SF in GW36 (1-legged), Final + 3rd Place in GW37–38 (2-legged aggregate).</p>
+          )}
+          {teamSize === 16 && (
+            <p className="text-purple-300 text-xs mt-2">16-team: Group sprints GW31–33 → Merger QFs + Seeding GW34 → SFs GW35–36 → Finals GW37–38. All 16 teams play until GW34; only 4 Challenger QF losers are eliminated.</p>
+          )}
+          {teamSize === 32 && (
+            <p className="text-purple-300 text-xs mt-2">32-team: RO16 + Challenger-31 in GW31–32 → QF GW33–34 → SF GW35–36 → Final GW37–38.</p>
+          )}
+          <p className="text-yellow-300 text-xs mt-2">Do not generate early — the bracket is seeded from live standings. Regenerating is possible but should be done carefully.</p>
         </div>
       ),
     },
@@ -286,12 +310,17 @@ export default function AdminHelpPage() {
   const scenarios = [
     {
       number: 1,
-      title: "Setting up a new league (add teams, import fixtures, enable announcements)",
+      title: "Setting up a new league (add teams, generate/import fixtures, enable announcements)",
       steps: [
         "Confirm your league has been created by your superadmin and you have admin access — check by logging in to your Admin Dashboard.",
         "Go to the Teams tab. Add teams one by one using Add Team, or use Bulk Upload for multiple teams at once.",
         "Share login credentials (team login ID + temp password) with each team.",
-        "Go to Bulk Upload tab → upload fixtures (CSV/Excel: Home Team, Away Team, GW Number).",
+        teamSize === 32
+          ? "Generate fixtures automatically: scroll to Quick Actions at the bottom of the Teams tab and click Generate Fixtures. The system creates a full home-and-away round-robin for both groups (GW1–30)."
+          : teamSize === 16
+          ? "Generate fixtures automatically: scroll to Quick Actions at the bottom of the Teams tab and click Generate Fixtures. The system creates a full home-and-away round-robin for all 16 teams (GW1–30)."
+          : "Generate fixtures automatically: scroll to Quick Actions at the bottom of the Teams tab and click Generate Fixtures. The system creates 5 full round-robins for all 8 teams (GW1–35).",
+        "Alternatively, go to Bulk Upload tab → upload fixtures manually (CSV/Excel: Home Team, Away Team, GW Number). Only needed if you want custom fixture scheduling.",
         "Go to Settings tab → enable both Captain Announcement and Chip Announcement toggles.",
         "Confirm all teams join the official FPL mini-league before GW1 deadline.",
         "You are now ready for GW1 — remind teams to submit their captains before the first FPL deadline.",

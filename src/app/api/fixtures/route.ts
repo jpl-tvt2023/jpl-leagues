@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, fixtures, teams, gameweeks, groups, results, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
+import { getCachedFixtures, setCachedFixtures } from "@/lib/fpl-cache";
 
 /**
  * GET /api/fixtures
@@ -13,11 +14,34 @@ export async function GET(request: NextRequest) {
     const groupParam = searchParams.get("group");
     const leagueSlug = searchParams.get("leagueSlug");
 
-    // Resolve leagueId from slug if provided
-    let leagueId: string | null = null;
-    if (leagueSlug) {
-      const league = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
-      if (league.length > 0) leagueId = league[0].id;
+    // leagueSlug is required
+    if (!leagueSlug) {
+      return NextResponse.json(
+        { error: "leagueSlug parameter is required" },
+        { status: 400 }
+      );
+    }
+
+    // Resolve leagueId and config from slug
+    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+    if (league.length === 0) {
+      return NextResponse.json(
+        { error: "League not found" },
+        { status: 404 }
+      );
+    }
+
+    const leagueId = league[0].id;
+    const playoffStartGw = league[0].playoffStartGw ?? null;
+
+    // Return cached fixtures if available — only for unfiltered league requests
+    if (leagueId && !gameweekParam && !groupParam) {
+      try {
+        const cached = await getCachedFixtures(leagueId);
+        if (cached) return NextResponse.json(cached);
+      } catch {
+        // Cache miss or Redis error — fall through to DB computation
+      }
     }
 
     // Use relational queries for cleaner joins
@@ -31,10 +55,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Filter by league if leagueSlug provided
-    if (leagueId) {
-      allFixtures = allFixtures.filter(f => f.gameweek.leagueId === leagueId);
-    }
+    // Filter by league (now always present)
+    allFixtures = allFixtures.filter(f => f.gameweek.leagueId === leagueId);
 
     // Filter by gameweek if provided
     if (gameweekParam) {
@@ -65,10 +87,18 @@ export async function GET(request: NextRequest) {
       fixturesByGameweek[gw].push(fixture);
     }
 
-    return NextResponse.json({
+    const responseData = {
       totalFixtures: allFixtures.length,
       fixtures: fixturesByGameweek,
-    });
+      playoffStartGw,
+    };
+
+    // Fire-and-forget cache write
+    if (leagueId && !gameweekParam && !groupParam) {
+      setCachedFixtures(leagueId, responseData).catch(() => {});
+    }
+
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error("Error fetching fixtures:", error);
     return NextResponse.json(

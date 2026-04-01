@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { fixtures, results, gameweeks, gameweekCaptains, players, teams } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { fixtures, results, gameweeks, gameweekCaptains, players, teams, leagues } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { fetchTeamGameweekPicks } from "@/lib/fpl";
 import {
   getLiveCachedScores,
@@ -30,8 +30,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid gameweek" }, { status: 400 });
     }
 
-    // Find the gameweek record
-    const gwRecords = await db.select().from(gameweeks).where(eq(gameweeks.number, gwNumber));
+    // Resolve leagueId from leagueSlug if provided
+    const leagueSlug = searchParams.get("leagueSlug");
+    let leagueId: string | null = null;
+    if (leagueSlug) {
+      const leagueRow = await db.select({ id: leagues.id }).from(leagues)
+        .where(eq(leagues.slug, leagueSlug)).limit(1);
+      if (leagueRow.length > 0) leagueId = leagueRow[0].id;
+    }
+
+    // Find the gameweek record (scoped to league if provided)
+    const gwRecords = await db.select().from(gameweeks).where(
+      leagueId
+        ? and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId))
+        : eq(gameweeks.number, gwNumber)
+    );
     if (gwRecords.length === 0) {
       return NextResponse.json({ isLive: false, fixtures: [] });
     }
@@ -64,7 +77,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check live cache first
-    const cached = await getLiveCachedScores(gwNumber);
+    const cached = await getLiveCachedScores(gwNumber, leagueId);
     if (cached && cached.fixtures && cached.fixtures.length > 0) {
       return NextResponse.json({ isLive: true, ...cached });
     }
@@ -167,7 +180,7 @@ export async function GET(request: NextRequest) {
         };
 
         // Cache for 10 minutes
-        await setLiveCachedScores(gwNumber, liveData);
+        await setLiveCachedScores(gwNumber, liveData, leagueId);
 
         return NextResponse.json({ isLive: true, ...liveData });
       }

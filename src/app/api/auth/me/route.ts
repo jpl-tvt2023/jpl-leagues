@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, users, teams } from "@/lib/db";
+import { db, users, teams, leagueAdmins } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 
@@ -19,9 +19,15 @@ export async function GET(request: NextRequest) {
       const userList = await db.select().from(users).where(eq(users.id, session.id));
       const user = userList[0];
       if (user) {
+        let adminLeagueId: string | null = null;
+        if (session.type === "admin") {
+          const leagueRow = await db.select().from(leagueAdmins).where(eq(leagueAdmins.userId, user.id)).limit(1);
+          adminLeagueId = leagueRow[0]?.leagueId ?? null;
+        }
         return NextResponse.json({
           authenticated: true,
           type: session.type,
+          adminLeagueId,
           user: {
             id: user.id,
             email: user.email,

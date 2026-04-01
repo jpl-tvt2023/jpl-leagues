@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface LivePlayerScore {
   name: string;
@@ -10,6 +11,7 @@ interface LivePlayerScore {
   fplScore: number;
   transferHits: number;
   isCaptain: boolean;
+  isAutoAssigned?: boolean;
   finalScore: number;
 }
 
@@ -172,12 +174,12 @@ function FixtureCard({
                         >
                           {p.name}
                         </a>
-                        {p.isCaptain && (
+                        {p.isCaptain && !p.isAutoAssigned && (
                           <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
                         )}
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain ? (
+                        {p.isCaptain && !p.isAutoAssigned ? (
                           <span className="text-yellow-400 font-semibold">
                             {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                           </span>
@@ -204,12 +206,12 @@ function FixtureCard({
                         >
                           {p.name}
                         </a>
-                        {p.isCaptain && (
+                        {p.isCaptain && !p.isAutoAssigned && (
                           <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
                         )}
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain ? (
+                        {p.isCaptain && !p.isAutoAssigned ? (
                           <span className="text-yellow-400 font-semibold">
                             {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                           </span>
@@ -250,7 +252,7 @@ export default function LeagueFixturesPage() {
 
   const fetchLiveScores = useCallback(async (gw: number) => {
     try {
-      const res = await fetch(`/api/fixtures/live?gameweek=${gw}`);
+      const res = await fetch(`/api/fixtures/live?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.isLive) {
@@ -274,7 +276,7 @@ export default function LeagueFixturesPage() {
     if (!selectedGW || isRefreshing) return;
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}`);
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.fixtures?.length) {
@@ -333,9 +335,10 @@ export default function LeagueFixturesPage() {
         if (!response.ok) throw new Error("Failed to fetch fixtures");
         const data = await response.json();
         const fixturesData = data.fixtures || {};
+        const leaguePhaseEnd: number = data.playoffStartGw ? data.playoffStartGw - 1 : Infinity;
         setFixtures(fixturesData);
 
-        const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= 30).sort((a, b) => a - b);
+        const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
         setAvailableGWs(gws);
 
         if (gws.length > 0) {
@@ -370,6 +373,7 @@ export default function LeagueFixturesPage() {
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
   const groupAFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "A");
   const groupBFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "B");
+  const hasGroupB = Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
 
   const hasResults = selectedFixtures.some((f: Fixture) => f.result);
   const deadline = selectedFixtures[0]?.gameweek?.deadline;
@@ -389,7 +393,7 @@ export default function LeagueFixturesPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
+      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
         <Link href="/" className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             JPL
@@ -406,6 +410,9 @@ export default function LeagueFixturesPage() {
           </Link>
           <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
             Playoffs
+          </Link>
+          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
+            Winners
           </Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">
             Rules
@@ -438,7 +445,7 @@ export default function LeagueFixturesPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center text-gray-400 py-12">Loading fixtures...</div>
+          <LoadingScreen variant="fixtures" fullScreen={false} />
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : availableGWs.length === 0 ? (
@@ -532,50 +539,68 @@ export default function LeagueFixturesPage() {
               )}
             </div>
 
-            {/* Two-Column Layout: Group A | Group B */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-blue-500"></span>
-                  Group A
-                </h2>
-                <div className="space-y-3">
-                  {groupAFixtures.length > 0 ? (
-                    groupAFixtures.map((fixture: Fixture) => (
-                      <FixtureCard
-                        key={fixture.id}
-                        fixture={fixture}
-                        liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
-                        isFreshlyRefreshed={isManuallyRefreshed}
-                      />
-                    ))
-                  ) : (
-                    <div className="text-center text-gray-400 py-8">No fixtures</div>
-                  )}
+            {hasGroupB ? (
+              /* Two-Column Layout: Group A | Group B */
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-blue-500"></span>
+                    Group A
+                  </h2>
+                  <div className="space-y-3">
+                    {groupAFixtures.length > 0 ? (
+                      groupAFixtures.map((fixture: Fixture) => (
+                        <FixtureCard
+                          key={fixture.id}
+                          fixture={fixture}
+                          liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                          isFreshlyRefreshed={isManuallyRefreshed}
+                        />
+                      ))
+                    ) : (
+                      <div className="text-center text-gray-400 py-8">No fixtures</div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-purple-500"></span>
-                  Group B
-                </h2>
-                <div className="space-y-3">
-                  {groupBFixtures.length > 0 ? (
-                    groupBFixtures.map((fixture: Fixture) => (
-                      <FixtureCard
-                        key={fixture.id}
-                        fixture={fixture}
-                        liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
-                        isFreshlyRefreshed={isManuallyRefreshed}
-                      />
-                    ))
-                  ) : (
-                    <div className="text-center text-gray-400 py-8">No fixtures</div>
-                  )}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-purple-500"></span>
+                    Group B
+                  </h2>
+                  <div className="space-y-3">
+                    {groupBFixtures.length > 0 ? (
+                      groupBFixtures.map((fixture: Fixture) => (
+                        <FixtureCard
+                          key={fixture.id}
+                          fixture={fixture}
+                          liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                          isFreshlyRefreshed={isManuallyRefreshed}
+                        />
+                      ))
+                    ) : (
+                      <div className="text-center text-gray-400 py-8">No fixtures</div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Single-Group Layout: no group label, centred */
+              <div className="max-w-2xl mx-auto space-y-3">
+                {groupAFixtures.length > 0 ? (
+                  groupAFixtures.map((fixture: Fixture) => (
+                    <FixtureCard
+                      key={fixture.id}
+                      fixture={fixture}
+                      liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
+                      isFreshlyRefreshed={isManuallyRefreshed}
+                    />
+                  ))
+                ) : (
+                  <div className="text-center text-gray-400 py-8">No fixtures</div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

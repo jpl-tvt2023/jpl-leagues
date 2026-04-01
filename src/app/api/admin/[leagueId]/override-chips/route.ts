@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, auditLogs, gameweekChips, gameweeks } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { leagues } from "@/lib/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 // Valid chip types (existing + 3 new chips)
@@ -127,8 +129,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the team
-    const teamList = await db.select().from(teams).where(eq(teams.id, teamId));
+    // Get the team and verify it belongs to authorized league
+    const teamList = await db.select().from(teams).where(and(eq(teams.id, teamId), eq(teams.leagueId, leagueId)));
     const team = teamList[0];
 
     if (!team) {
@@ -239,6 +241,7 @@ export async function POST(request: NextRequest) {
       pointsAffected: 0,
     });
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       success: true,
       message: `${chipDisplayNames[chipType as ChipType]} status updated to ${statusText}`,
@@ -276,12 +279,20 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Get all chip usage from gameweekChips table to get GW numbers and wasted status
-    const allChipUsage = await db.query.gameweekChips.findMany({
-      with: {
-        gameweek: true,
-      },
-    });
+    // Get league's playoffStartGw to correctly split Set1/Set2 chips
+    const leagueRow = await db.select({ playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+    const playoffStartGw = leagueRow[0]?.playoffStartGw ?? 31;
+    const setMidpoint = Math.ceil((playoffStartGw - 1) / 2);
+
+    // Get chip usage scoped to this league's gameweeks only
+    const leagueGws = await db.select({ id: gameweeks.id }).from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
+    const leagueGwIds = leagueGws.map(g => g.id);
+    const allChipUsage = leagueGwIds.length > 0
+      ? await db.query.gameweekChips.findMany({
+          where: inArray(gameweekChips.gameweekId, leagueGwIds),
+          with: { gameweek: true },
+        })
+      : [];
 
     // Create a lookup map: teamId -> chipType -> { gwNumber, wasted, points }
     const chipGwLookup = new Map<string, Map<string, { gwNumber: number; wasted: boolean; points: number }>>();
@@ -290,7 +301,7 @@ export async function GET(request: NextRequest) {
         chipGwLookup.set(chip.teamId, new Map());
       }
       const gwNumber = chip.gameweek.number;
-      const set = gwNumber <= 15 ? 1 : 2;
+      const set = gwNumber <= setMidpoint ? 1 : 2;
       const key = `${chip.chipType}${set}`; // e.g., "W1", "D2", "C1"
       // Chip is wasted if it's processed but invalid, or has hadNegativeHits flag
       const wasted = (chip.isProcessed && !chip.isValid) || chip.hadNegativeHits;

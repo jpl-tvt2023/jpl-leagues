@@ -17,6 +17,7 @@ function getRedis(): Redis | null {
 
 const CACHE_TTL = 60 * 60 * 24; // 24 hours
 const LIVE_CACHE_TTL = 60 * 10; // 10 minutes
+const PAGE_CACHE_TTL = 60 * 60 * 25; // 25 hours (slightly longer than daily cron interval)
 
 interface CachedScore {
   points: number;
@@ -26,10 +27,10 @@ interface CachedScore {
 }
 
 /**
- * Get Redis key for a team's gameweek score
+ * Get Redis key for a team's gameweek score (league-namespaced)
  */
-function getKey(fplId: string, gameweek: number): string {
-  return `fpl:gw${gameweek}:${fplId}`;
+function getKey(fplId: string, gameweek: number, leagueId?: string | null): string {
+  return `fpl:${leagueId ?? "global"}:gw${gameweek}:${fplId}`;
 }
 
 /**
@@ -37,11 +38,12 @@ function getKey(fplId: string, gameweek: number): string {
  */
 export async function getCachedScore(
   fplId: string,
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<CachedScore | null> {
   const r = getRedis();
   if (!r) return null;
-  const data = await r.get<CachedScore>(getKey(fplId, gameweek));
+  const data = await r.get<CachedScore>(getKey(fplId, gameweek, leagueId));
   return data || null;
 }
 
@@ -51,7 +53,8 @@ export async function getCachedScore(
 export async function setCachedScore(
   fplId: string,
   gameweek: number,
-  score: { points: number; transferHits: number; netScore: number }
+  score: { points: number; transferHits: number; netScore: number },
+  leagueId?: string | null
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
@@ -59,7 +62,7 @@ export async function setCachedScore(
     ...score,
     cachedAt: new Date().toISOString(),
   };
-  await r.set(getKey(fplId, gameweek), value, { ex: CACHE_TTL });
+  await r.set(getKey(fplId, gameweek, leagueId), value, { ex: CACHE_TTL });
 }
 
 /**
@@ -67,12 +70,13 @@ export async function setCachedScore(
  */
 export async function isGameweekFullyCached(
   fplIds: string[],
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<boolean> {
   const r = getRedis();
   if (!r) return false;
   if (fplIds.length === 0) return true;
-  const keys = fplIds.map((id) => getKey(id, gameweek));
+  const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
   const pipeline = r.pipeline();
   for (const key of keys) {
     pipeline.exists(key);
@@ -82,15 +86,16 @@ export async function isGameweekFullyCached(
 }
 
 /**
- * Get all cached scores for a gameweek
- * Returns object with keys like "fplId_gwN" for backwards compatibility
+ * Get all cached scores for a gameweek (league-scoped)
+ * Returns object with keys like "fplId_gwN"
  */
 export async function getAllCachedScores(
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<Record<string, CachedScore>> {
   const r = getRedis();
   if (!r) return {};
-  const prefix = `fpl:gw${gameweek}:`;
+  const prefix = `fpl:${leagueId ?? "global"}:gw${gameweek}:`;
   const result: Record<string, CachedScore> = {};
 
   let cursor = "0";
@@ -118,12 +123,12 @@ export async function getAllCachedScores(
 }
 
 /**
- * Clear cache for a specific gameweek (for re-fetching)
+ * Clear cache for a specific gameweek (league-scoped)
  */
-export async function clearGameweekCache(gameweek: number): Promise<void> {
+export async function clearGameweekCache(gameweek: number, leagueId?: string | null): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  const prefix = `fpl:gw${gameweek}:`;
+  const prefix = `fpl:${leagueId ?? "global"}:gw${gameweek}:`;
   let cursor = "0";
   do {
     const res = await r.scan(cursor, { match: `${prefix}*`, count: 100 });
@@ -140,15 +145,73 @@ export async function clearGameweekCache(gameweek: number): Promise<void> {
 }
 
 /**
- * Get cache stats
+ * Clear cache for specific FPL IDs in a gameweek (league-scoped)
  */
-export async function getCacheStats(): Promise<{ gameweek: number; entries: number }[]> {
+export async function clearGameweekCacheForIds(gameweek: number, fplIds: string[], leagueId?: string | null): Promise<void> {
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return;
+  const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
+  const pipeline = r.pipeline();
+  for (const key of keys) pipeline.del(key);
+  await pipeline.exec();
+}
+
+/**
+ * Get cache stats scoped to specific FPL IDs (league-scoped)
+ */
+export async function getCacheStatsForIds(
+  fplIds: string[],
+  leagueId?: string | null
+): Promise<{ gameweek: number; entries: number }[]> {
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return [];
+  const stats: { gameweek: number; entries: number }[] = [];
+
+  for (let gw = 1; gw <= 38; gw++) {
+    const keys = fplIds.map((id) => getKey(id, gw, leagueId));
+    const pipeline = r.pipeline();
+    for (const key of keys) pipeline.exists(key);
+    const results = await pipeline.exec<number[]>();
+    const count = results.filter((v) => v === 1).length;
+    if (count > 0) stats.push({ gameweek: gw, entries: count });
+  }
+
+  return stats;
+}
+
+/**
+ * Get all cached scores for specific FPL IDs in a gameweek (league-scoped)
+ */
+export async function getAllCachedScoresForIds(
+  gameweek: number,
+  fplIds: string[],
+  leagueId?: string | null
+): Promise<Record<string, CachedScore>> {
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return {};
+  const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
+  const pipeline = r.pipeline();
+  for (const key of keys) pipeline.get(key);
+  const values = await pipeline.exec<(CachedScore | null)[]>();
+  const result: Record<string, CachedScore> = {};
+  for (let i = 0; i < keys.length; i++) {
+    if (values[i]) {
+      result[`${fplIds[i]}_gw${gameweek}`] = values[i]!;
+    }
+  }
+  return result;
+}
+
+/**
+ * Get cache stats (league-scoped)
+ */
+export async function getCacheStats(leagueId?: string | null): Promise<{ gameweek: number; entries: number }[]> {
   const r = getRedis();
   if (!r) return [];
   const stats: { gameweek: number; entries: number }[] = [];
 
   for (let gw = 1; gw <= 38; gw++) {
-    const prefix = `fpl:gw${gw}:`;
+    const prefix = `fpl:${leagueId ?? "global"}:gw${gw}:`;
     let count = 0;
     let cursor = "0";
     do {
@@ -188,19 +251,20 @@ export interface LiveGameweekData {
   cachedAt: string;
 }
 
-function getLiveKey(gameweek: number): string {
-  return `live:gw${gameweek}:all`;
+function getLiveKey(gameweek: number, leagueId?: string | null): string {
+  return `live:gw${gameweek}:${leagueId ?? "all"}`;
 }
 
 /**
  * Get cached live scores for a gameweek
  */
 export async function getLiveCachedScores(
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<LiveGameweekData | null> {
   const r = getRedis();
   if (!r) return null;
-  const data = await r.get<LiveGameweekData>(getLiveKey(gameweek));
+  const data = await r.get<LiveGameweekData>(getLiveKey(gameweek, leagueId));
   return data || null;
 }
 
@@ -209,18 +273,72 @@ export async function getLiveCachedScores(
  */
 export async function setLiveCachedScores(
   gameweek: number,
-  data: LiveGameweekData
+  data: LiveGameweekData,
+  leagueId?: string | null
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getLiveKey(gameweek), data, { ex: LIVE_CACHE_TTL });
+  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_TTL });
 }
 
 /**
  * Clear live cache for a specific gameweek
  */
-export async function clearLiveCache(gameweek: number): Promise<void> {
+export async function clearLiveCache(gameweek: number, leagueId?: string | null): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.del(getLiveKey(gameweek));
+  await r.del(getLiveKey(gameweek, leagueId));
+}
+
+// ============================================
+// Page Data Cache (25-hour TTL, league-scoped by leagueId UUID)
+// Written by: cron (pre-warm) and API routes (on cache miss)
+// Invalidated by: any admin write that affects displayed data
+// ============================================
+
+export async function getCachedStandings(leagueId: string): Promise<unknown | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return await r.get(`standings:${leagueId}`);
+}
+
+export async function setCachedStandings(leagueId: string, data: unknown): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(`standings:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+}
+
+export async function getCachedFixtures(leagueId: string): Promise<unknown | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return await r.get(`fixtures:${leagueId}`);
+}
+
+export async function setCachedFixtures(leagueId: string, data: unknown): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(`fixtures:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+}
+
+export async function getCachedPlayoffBracket(leagueId: string): Promise<unknown | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return await r.get(`playoffs:${leagueId}`);
+}
+
+export async function setCachedPlayoffBracket(leagueId: string, data: unknown): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(`playoffs:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+}
+
+/**
+ * Delete standings, fixtures, and playoffs cache keys for a league.
+ * Call this after any admin write that changes displayed data.
+ * The next page request will fall back to DB and repopulate the cache.
+ */
+export async function invalidateLeaguePageCache(leagueId: string): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.del(`standings:${leagueId}`, `fixtures:${leagueId}`, `playoffs:${leagueId}`);
 }

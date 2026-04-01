@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, leagues } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { fetchTeamGameweekPicks, detectLiveGameweek } from "@/lib/fpl";
-import { getLiveCachedScores } from "@/lib/fpl-cache";
+import { getLiveCachedScores, getCachedPlayoffBracket, setCachedPlayoffBracket } from "@/lib/fpl-cache";
 
 // Seeding tables (same as generate-playoffs)
 const RO16_SEEDING: [string, string, number, string, number][] = [
@@ -65,6 +65,26 @@ interface SurvivalDisplay {
   advanced: boolean;
 }
 
+interface GroupStanding {
+  teamId: string;
+  name: string;
+  abbr: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  pointsFor: number;
+  leaguePoints: number;
+  advanced: boolean;
+}
+
+interface GroupData {
+  name: string;
+  roundPrefix: string;
+  standings: GroupStanding[];
+  fixtures: TieDisplay[];
+}
+
 /**
  * GET /api/playoffs/bracket
  * Returns full bracket state — tentative, projected, or live
@@ -91,6 +111,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Return cached bracket if available (liveScores excluded from cache; page polls those separately)
+    if (leagueId) {
+      try {
+        const cached = await getCachedPlayoffBracket(leagueId);
+        if (cached) return NextResponse.json(cached);
+      } catch {
+        // Cache miss or Redis error — fall through to DB computation
+      }
+    }
+
     const tiesQuery = leagueId
       ? db.select().from(playoffTies).where(eq(playoffTies.leagueId, leagueId)).limit(1)
       : db.select().from(playoffTies).limit(1);
@@ -101,13 +131,21 @@ export async function GET(request: NextRequest) {
 
     if (isLive) {
       const bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
-      const liveScores = await fetchLiveScoresForAllPlayoffGws();
+      const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, playoffStartGw);
+      // Fire-and-forget cache write (liveScores excluded; page polls those separately)
+      if (leagueId) {
+        setCachedPlayoffBracket(leagueId, bracket).catch(() => {});
+      }
       return NextResponse.json({ ...bracket, liveScores });
     }
 
     // Not yet generated — show from standings
     const mode = latestCompletedGw >= leagueStageEnd ? "projected" : "tentative";
-    return NextResponse.json(await buildTentativeBracket(latestCompletedGw, mode, leagueId, teamSize, playoffStartGw));
+    const tentativeBracket = await buildTentativeBracket(latestCompletedGw, mode, leagueId, teamSize, playoffStartGw);
+    if (leagueId) {
+      setCachedPlayoffBracket(leagueId, tentativeBracket).catch(() => {});
+    }
+    return NextResponse.json(tentativeBracket);
   } catch (error) {
     console.error("Error fetching bracket:", error);
     return NextResponse.json({ error: "Failed to fetch bracket" }, { status: 500 });
@@ -134,15 +172,15 @@ async function getLatestCompletedGw(leagueId?: string | null): Promise<number> {
  * - Finished GWs: From DB results table (locked by cron)
  * - Upcoming GWs: Empty (scores = 0)
  */
-async function fetchLiveScoresForAllPlayoffGws(): Promise<Record<number, any[]>> {
+async function fetchLiveScoresForAllPlayoffGws(leagueId: string | null, playoffStartGw: number): Promise<Record<number, any[]>> {
   const liveScoresByGw: Record<number, any[]> = {};
 
   try {
     // Detect which GW is actually live
     const { liveGw, gwStatus } = await detectLiveGameweek();
 
-    // Process each playoff GW
-    for (let gwNumber = 31; gwNumber <= 38; gwNumber++) {
+    // Process each playoff GW from the league's playoffStartGw
+    for (let gwNumber = playoffStartGw; gwNumber <= 38; gwNumber++) {
       const status = gwStatus[gwNumber];
 
       if (status === "notStarted") {
@@ -162,7 +200,7 @@ async function fetchLiveScoresForAllPlayoffGws(): Promise<Record<number, any[]>>
           } else {
             console.warn(`Bracket: No cached data for live GW${gwNumber}, falling back to FPL API`);
             // Cache miss - fetch from FPL API as fallback
-            await fetchAndCacheLiveScoresForGw(gwNumber);
+            await fetchAndCacheLiveScoresForGw(gwNumber, leagueId);
             const retryData = await getLiveCachedScores(gwNumber);
             if (retryData && retryData.fixtures) {
               liveScoresByGw[gwNumber] = retryData.fixtures;
@@ -178,7 +216,7 @@ async function fetchLiveScoresForAllPlayoffGws(): Promise<Record<number, any[]>>
       if (status === "finished") {
         // Finished GW - fetch from DB results table
         try {
-          const dbScores = await getFinishedGwScoresFromDb(gwNumber);
+          const dbScores = await getFinishedGwScoresFromDb(gwNumber, leagueId);
           if (dbScores.length > 0) {
             liveScoresByGw[gwNumber] = dbScores;
             console.log(`Bracket: Using DB scores for finished GW${gwNumber}`);
@@ -202,9 +240,11 @@ async function fetchLiveScoresForAllPlayoffGws(): Promise<Record<number, any[]>>
 /**
  * Fetch finished GW scores from database (locked scores)
  */
-async function getFinishedGwScoresFromDb(gameweek: number): Promise<any[]> {
+async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | null): Promise<any[]> {
   const gwRecord = await db.query.gameweeks.findFirst({
-    where: eq(gameweeks.number, gameweek),
+    where: leagueId
+      ? and(eq(gameweeks.number, gameweek), eq(gameweeks.leagueId, leagueId))
+      : eq(gameweeks.number, gameweek),
   });
 
   if (!gwRecord) return [];
@@ -306,10 +346,12 @@ async function getFinishedGwScoresFromDb(gameweek: number): Promise<any[]> {
  * Fetch live scores from FPL API for a specific GW and cache in Redis
  * Used as fallback if Redis cache miss for live GW
  */
-async function fetchAndCacheLiveScoresForGw(gameweek: number): Promise<void> {
+async function fetchAndCacheLiveScoresForGw(gameweek: number, leagueId: string | null): Promise<void> {
   try {
     const gwRecord = await db.query.gameweeks.findFirst({
-      where: eq(gameweeks.number, gameweek),
+      where: leagueId
+        ? and(eq(gameweeks.number, gameweek), eq(gameweeks.leagueId, leagueId))
+        : eq(gameweeks.number, gameweek),
     });
 
     if (!gwRecord) return;
@@ -461,14 +503,14 @@ function buildTentative8Team(
     { tieId: "SF-B", roundName: "SF", status: "projected", gw1, gw2: null, home: ts(2), away: ts(3), winnerId: null, loserId: null },
   ];
   const thirdPlace: TieDisplay = {
-    tieId: "3rd", roundName: "3rd Place", status: "projected", gw1: gw1 + 1, gw2: null,
-    home: placeholder("L SF-A"), away: placeholder("L SF-B"), winnerId: null, loserId: null,
+    tieId: "3rd", roundName: "3rd Place", status: "projected", gw1: gw1 + 1, gw2: gw1 + 2,
+    home: placeholder("Loser of SF-A"), away: placeholder("Loser of SF-B"), winnerId: null, loserId: null,
   };
   const finalTie: TieDisplay = {
     tieId: "Final", roundName: "Final", status: "projected", gw1: gw1 + 1, gw2: gw1 + 2,
-    home: placeholder("W SF-A"), away: placeholder("W SF-B"), winnerId: null, loserId: null,
+    home: placeholder("Winner of SF-A"), away: placeholder("Winner of SF-B"), winnerId: null, loserId: null,
   };
-  return { mode, latestCompletedGw, tvt: { sf, thirdPlace: [thirdPlace], final: [finalTie] }, challenger: {} };
+  return { mode, latestCompletedGw, teamSize: 8, tvt: { sf, thirdPlace: [thirdPlace], final: [finalTie] }, challenger: {} };
 }
 
 /** 16-team bracket: QF (GW31-32) → SF (GW33-34) → Final (GW35-36). Challenger C-31 to C-36. */
@@ -492,12 +534,12 @@ function buildTentative16Team(
     { tieId: "QF-C", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(3), away: ts(6), winnerId: null, loserId: null },
   ];
   const sf: TieDisplay[] = [
-    { tieId: "SF-A", roundName: "SF", status: "projected", gw1: gw1 + 2, gw2: gw1 + 3, home: placeholder("W QF-A"), away: placeholder("W QF-D"), winnerId: null, loserId: null },
-    { tieId: "SF-B", roundName: "SF", status: "projected", gw1: gw1 + 2, gw2: gw1 + 3, home: placeholder("W QF-B"), away: placeholder("W QF-C"), winnerId: null, loserId: null },
+    { tieId: "SF-A", roundName: "SF", status: "projected", gw1: gw1 + 2, gw2: gw1 + 3, home: placeholder("Winner of QF-A"), away: placeholder("Winner of QF-D"), winnerId: null, loserId: null },
+    { tieId: "SF-B", roundName: "SF", status: "projected", gw1: gw1 + 2, gw2: gw1 + 3, home: placeholder("Winner of QF-B"), away: placeholder("Winner of QF-C"), winnerId: null, loserId: null },
   ];
   const finalTie: TieDisplay = {
     tieId: "Final", roundName: "Final", status: "projected", gw1: gw1 + 4, gw2: gw1 + 5,
-    home: placeholder("W SF-A"), away: placeholder("W SF-B"), winnerId: null, loserId: null,
+    home: placeholder("Winner of SF-A"), away: placeholder("Winner of SF-B"), winnerId: null, loserId: null,
   };
   // Challenger (ranks 9-14, single group)
   const c31: TieDisplay[] = [
@@ -507,8 +549,8 @@ function buildTentative16Team(
   ];
   // C-33 survival: 3 C-31 winners + 4 QF losers = 7 teams
   const c33Placeholder: SurvivalDisplay[] = [
-    ...["C-31-A", "C-31-B", "C-31-C"].map(id => ({ teamId: "", name: `W ${id}`, abbr: `W ${id}`, score: 0, rank: null, advanced: false })),
-    ...["QF-A", "QF-B", "QF-C", "QF-D"].map(id => ({ teamId: "", name: `L ${id}`, abbr: `L ${id}`, score: 0, rank: null, advanced: false })),
+    ...["C-31-A", "C-31-B", "C-31-C"].map(id => ({ teamId: "", name: `Winner of ${id}`, abbr: `Winner of ${id}`, score: 0, rank: null, advanced: false })),
+    ...["QF-A", "QF-B", "QF-C", "QF-D"].map(id => ({ teamId: "", name: `Loser of ${id}`, abbr: `Loser of ${id}`, score: 0, rank: null, advanced: false })),
   ];
   // C-34: top 4 from survival
   const c34: TieDisplay[] = [
@@ -516,13 +558,13 @@ function buildTentative16Team(
     { tieId: "C-34-B", roundName: "C-34", status: "projected", gw1: gw1 + 3, gw2: null, home: placeholder("Surv #2"), away: placeholder("Surv #3"), winnerId: null, loserId: null },
   ];
   const c35: TieDisplay[] = [
-    { tieId: "C-35-A", roundName: "C-35", status: "projected", gw1: gw1 + 4, gw2: null, home: placeholder("W C-34-A"), away: placeholder("W C-34-B"), winnerId: null, loserId: null },
+    { tieId: "C-35-A", roundName: "C-35", status: "projected", gw1: gw1 + 4, gw2: null, home: placeholder("Winner of C-34-A"), away: placeholder("Winner of C-34-B"), winnerId: null, loserId: null },
   ];
   const c36: TieDisplay[] = [
-    { tieId: "C-36-A", roundName: "C-36", status: "projected", gw1: gw1 + 5, gw2: null, home: placeholder("W C-35-A"), away: placeholder("Surv #5+"), winnerId: null, loserId: null },
+    { tieId: "C-36-A", roundName: "C-36", status: "projected", gw1: gw1 + 5, gw2: null, home: placeholder("Winner of C-35-A"), away: placeholder("Surv #5+"), winnerId: null, loserId: null },
   ];
   return {
-    mode, latestCompletedGw,
+    mode, latestCompletedGw, teamSize: 16,
     tvt: { qf, sf, final: [finalTie] },
     challenger: { c31, c33: c33Placeholder, c34, c35, c36 },
   };
@@ -531,7 +573,7 @@ function buildTentative16Team(
 async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null, teamSize = 32, playoffStartGw = 31) {
   const standings = await getGroupStandings(leagueId);
   if (!standings) {
-    return { mode, latestCompletedGw, error: "Failed to compute standings", tvt: {}, challenger: {} };
+    return { mode, latestCompletedGw, teamSize, error: "Failed to compute standings", tvt: {}, challenger: {} };
   }
 
   // Branch by variant
@@ -564,24 +606,24 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
   // Build tentative QF with placeholder labels
   const qf: TieDisplay[] = QF_SEEDING.map(([tieId, h, a]) => ({
     tieId, roundName: "QF", status: "projected", gw1: 33, gw2: 34,
-    home: placeholder(`W ${h}`),
-    away: placeholder(`W ${a}`),
+    home: placeholder(`Winner of ${h}`),
+    away: placeholder(`Winner of ${a}`),
     winnerId: null, loserId: null,
   }));
 
   // Build tentative SF
   const sf: TieDisplay[] = SF_SEEDING.map(([tieId, h, a]) => ({
     tieId, roundName: "SF", status: "projected", gw1: 35, gw2: 36,
-    home: placeholder(`W ${h}`),
-    away: placeholder(`W ${a}`),
+    home: placeholder(`Winner of ${h}`),
+    away: placeholder(`Winner of ${a}`),
     winnerId: null, loserId: null,
   }));
 
   // Build tentative Final
   const finalTie: TieDisplay = {
     tieId: "Final", roundName: "Final", status: "projected", gw1: 37, gw2: 38,
-    home: placeholder("W SF-A"),
-    away: placeholder("W SF-B"),
+    home: placeholder("Winner of SF-A"),
+    away: placeholder("Winner of SF-B"),
     winnerId: null, loserId: null,
   };
 
@@ -594,15 +636,15 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
 
   const c32: TieDisplay[] = C32_SEEDING.map(([tieId, h, a]) => ({
     tieId, roundName: "C-32", status: "projected", gw1: 32, gw2: null,
-    home: placeholder(`W ${h}`),
-    away: placeholder(`W ${a}`),
+    home: placeholder(`Winner of ${h}`),
+    away: placeholder(`Winner of ${a}`),
     winnerId: null, loserId: null,
   }));
 
   // C-33 survival: placeholder list of 11 teams (3 C-32 winners + 8 RO16 losers)
   const c33Placeholder: SurvivalDisplay[] = [
-    ...C32_SEEDING.map(([tieId]) => ({ teamId: "", name: `W ${tieId}`, abbr: `W ${tieId}`, score: 0, rank: null, advanced: false })),
-    ...RO16_SEEDING.map(([tieId]) => ({ teamId: "", name: `L ${tieId}`, abbr: `L ${tieId}`, score: 0, rank: null, advanced: false })),
+    ...C32_SEEDING.map(([tieId]) => ({ teamId: "", name: `Winner of ${tieId}`, abbr: `Winner of ${tieId}`, score: 0, rank: null, advanced: false })),
+    ...RO16_SEEDING.map(([tieId]) => ({ teamId: "", name: `Loser of ${tieId}`, abbr: `Loser of ${tieId}`, score: 0, rank: null, advanced: false })),
   ];
 
   // C-34: top 8 from survival, seeded 1v8, 2v7, 3v6, 4v5
@@ -620,36 +662,35 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
   // C-35: QF losers vs C-34 winners
   const c35: TieDisplay[] = C35_SEEDING.map(([tieId, qfTie, c34Tie]) => ({
     tieId, roundName: "C-35", status: "projected", gw1: 35, gw2: null,
-    home: placeholder(`L ${qfTie}`),
-    away: placeholder(`W ${c34Tie}`),
+    home: placeholder(`Loser of ${qfTie}`),
+    away: placeholder(`Winner of ${c34Tie}`),
     winnerId: null, loserId: null,
   }));
 
   // C-36
   const c36: TieDisplay[] = C36_SEEDING.map(([tieId, h, a]) => ({
     tieId, roundName: "C-36", status: "projected", gw1: 36, gw2: null,
-    home: placeholder(`W ${h}`),
-    away: placeholder(`W ${a}`),
+    home: placeholder(`Winner of ${h}`),
+    away: placeholder(`Winner of ${a}`),
     winnerId: null, loserId: null,
   }));
 
   // C-37: SF losers vs C-36 winners
   const c37: TieDisplay[] = [
     { tieId: "C-37-A", roundName: "C-37", status: "projected", gw1: 37, gw2: null,
-      home: placeholder("L SF-A"), away: placeholder("W C-36-B"), winnerId: null, loserId: null },
+      home: placeholder("Loser of SF-A"), away: placeholder("Winner of C-36-B"), winnerId: null, loserId: null },
     { tieId: "C-37-B", roundName: "C-37", status: "projected", gw1: 37, gw2: null,
-      home: placeholder("L SF-B"), away: placeholder("W C-36-A"), winnerId: null, loserId: null },
+      home: placeholder("Loser of SF-B"), away: placeholder("Winner of C-36-A"), winnerId: null, loserId: null },
   ];
 
   // C-38: Challenger Final
   const c38: TieDisplay[] = [
     { tieId: "C-38-A", roundName: "C-38", status: "projected", gw1: 38, gw2: null,
-      home: placeholder("W C-37-A"), away: placeholder("W C-37-B"), winnerId: null, loserId: null },
+      home: placeholder("Winner of C-37-A"), away: placeholder("Winner of C-37-B"), winnerId: null, loserId: null },
   ];
 
   return {
-    mode,
-    latestCompletedGw,
+    mode, latestCompletedGw, teamSize: 32,
     tvt: { ro16, qf, sf, final: [finalTie] },
     challenger: { c31, c32, c33: c33Placeholder, c34, c35, c36, c37, c38 },
   };
@@ -755,13 +796,13 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     const w = winnerMap.get(srcTieId);
     return w
       ? { teamId: w.teamId, name: w.name, abbr: w.abbr, leg1Score: null, leg2Score: null, aggregate: null }
-      : placeholder(`W ${srcTieId}`);
+      : placeholder(`Winner of ${srcTieId}`);
   };
   const resolveLoser = (srcTieId: string) => {
     const l = loserMap.get(srcTieId);
     return l
       ? { teamId: l.teamId, name: l.name, abbr: l.abbr, leg1Score: null, leg2Score: null, aggregate: null }
-      : placeholder(`L ${srcTieId}`);
+      : placeholder(`Loser of ${srcTieId}`);
   };
 
   // RO16: bracket-paired order so adjacent matches feed into same QF
@@ -820,11 +861,11 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
   const c33: SurvivalDisplay[] = survivalEntries.length > 0 ? survivalEntries : [
     ...C32_SEEDING.map(([tieId]) => {
       const w = winnerMap.get(tieId);
-      return { teamId: w?.teamId || "", name: w?.name || `W ${tieId}`, abbr: w?.abbr || `W ${tieId}`, score: 0, rank: null, advanced: false };
+      return { teamId: w?.teamId || "", name: w?.name || `Winner of ${tieId}`, abbr: w?.abbr || `Winner of ${tieId}`, score: 0, rank: null, advanced: false };
     }),
     ...RO16_SEEDING.map(([tieId]) => {
       const l = loserMap.get(tieId);
-      return { teamId: l?.teamId || "", name: l?.name || `L ${tieId}`, abbr: l?.abbr || `L ${tieId}`, score: 0, rank: null, advanced: false };
+      return { teamId: l?.teamId || "", name: l?.name || `Loser of ${tieId}`, abbr: l?.abbr || `Loser of ${tieId}`, score: 0, rank: null, advanced: false };
     }),
   ];
 
@@ -866,23 +907,118 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     home: resolveWinner("C-37-A"), away: resolveWinner("C-37-B"), winnerId: null, loserId: null,
   }];
 
+  // Helper to build group stage data (for 16-team format)
+  const buildGroupData = (roundPrefix: string, displayName: string): GroupData => {
+    const fixtures = tiesByRound(roundPrefix);
+
+    // Build standings from completed ties
+    const teamStats = new Map<string, GroupStanding>();
+
+    for (const tie of fixtures) {
+      // Add teams if not already in map
+      if (tie.home?.teamId && !teamStats.has(tie.home.teamId)) {
+        teamStats.set(tie.home.teamId, {
+          teamId: tie.home.teamId,
+          name: tie.home.name,
+          abbr: tie.home.abbr,
+          played: 0,
+          won: 0,
+          drawn: 0,
+          lost: 0,
+          pointsFor: 0,
+          leaguePoints: 0,
+          advanced: false,
+        });
+      }
+      if (tie.away?.teamId && !teamStats.has(tie.away.teamId)) {
+        teamStats.set(tie.away.teamId, {
+          teamId: tie.away.teamId,
+          name: tie.away.name,
+          abbr: tie.away.abbr,
+          played: 0,
+          won: 0,
+          drawn: 0,
+          lost: 0,
+          pointsFor: 0,
+          leaguePoints: 0,
+          advanced: false,
+        });
+      }
+
+      // Update stats from completed tie
+      if (tie.home?.teamId && tie.away?.teamId) {
+        const homeStat = teamStats.get(tie.home.teamId)!;
+        const awayStat = teamStats.get(tie.away.teamId)!;
+
+        const homeScore = tie.home.leg1Score ?? 0;
+        const awayScore = tie.away.leg1Score ?? 0;
+
+        homeStat.pointsFor += homeScore;
+        awayStat.pointsFor += awayScore;
+
+        if (tie.winnerId) {
+          // Tie is complete
+          if (tie.winnerId === tie.home.teamId) {
+            homeStat.won++;
+            awayStat.lost++;
+          } else {
+            awayStat.won++;
+            homeStat.lost++;
+          }
+          homeStat.played++;
+          awayStat.played++;
+          homeStat.leaguePoints = homeStat.won * 2 + homeStat.drawn;
+          awayStat.leaguePoints = awayStat.won * 2 + awayStat.drawn;
+        } else if (homeScore === awayScore && homeScore !== 0) {
+          // Draw
+          homeStat.drawn++;
+          awayStat.drawn++;
+          homeStat.played++;
+          awayStat.played++;
+          homeStat.leaguePoints = homeStat.won * 2 + homeStat.drawn;
+          awayStat.leaguePoints = awayStat.won * 2 + awayStat.drawn;
+        }
+      }
+    }
+
+    // Sort standings by league points desc, then points for desc
+    const standings = Array.from(teamStats.values()).sort((a, b) => {
+      if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
+      return b.pointsFor - a.pointsFor;
+    });
+
+    // Mark top 2 as advanced if group stage is complete (all 6 matches done)
+    const totalMatches = fixtures.filter(f => f.winnerId !== null).length;
+    if (totalMatches === 6) {
+      standings[0].advanced = true;
+      standings[1].advanced = true;
+    }
+
+    return {
+      name: displayName,
+      roundPrefix,
+      standings,
+      fixtures,
+    };
+  };
+
   // Branch output by variant
   if (teamSize === 8) {
-    const sfLive = tiesByRound("SF");
-    const thirdPlaceLive = tiesByRound("3rd Place");
-    const finalLive = tiesByRound("Final");
+    const sfLive = tiesByRound("8T-SF");
+    const thirdPlaceLive = tiesByRound("8T-3RD");
+    const finalLive = tiesByRound("8T-FINAL");
     return {
-      mode: "live", latestCompletedGw,
+      mode: "live", latestCompletedGw, teamSize: 8,
       tvt: {
         sf: sfLive.length > 0 ? sfLive : [
-          { tieId: "SF-A", roundName: "SF", status: "projected", gw1: playoffStartGw, gw2: null, home: placeholder("1st"), away: placeholder("4th"), winnerId: null, loserId: null },
-          { tieId: "SF-B", roundName: "SF", status: "projected", gw1: playoffStartGw, gw2: null, home: placeholder("2nd"), away: placeholder("3rd"), winnerId: null, loserId: null },
+          { tieId: "8T-SF-A", roundName: "8T-SF", status: "projected", gw1: playoffStartGw, gw2: null, home: placeholder("1st"), away: placeholder("4th"), winnerId: null, loserId: null },
+          { tieId: "8T-SF-B", roundName: "8T-SF", status: "projected", gw1: playoffStartGw, gw2: null, home: placeholder("2nd"), away: placeholder("3rd"), winnerId: null, loserId: null },
         ],
         thirdPlace: thirdPlaceLive.length > 0 ? thirdPlaceLive : [
-          { tieId: "3rd", roundName: "3rd Place", status: "projected", gw1: playoffStartGw + 1, gw2: null, home: resolveLoser("SF-A"), away: resolveLoser("SF-B"), winnerId: null, loserId: null },
+          { tieId: "8T-3RD", roundName: "8T-3RD", status: "projected", gw1: playoffStartGw + 1, gw2: playoffStartGw + 2, home: resolveLoser("8T-SF-A"), away: resolveLoser("8T-SF-B"), winnerId: null, loserId: null },
         ],
         final: finalLive.length > 0 ? finalLive : [
-          { tieId: "Final", roundName: "Final", status: "projected", gw1: playoffStartGw + 1, gw2: playoffStartGw + 2, home: resolveWinner("SF-A"), away: resolveWinner("SF-B"), winnerId: null, loserId: null },
+          { tieId: "8T-FINAL", roundName: "8T-FINAL", status: "projected", gw1: playoffStartGw + 1, gw2: playoffStartGw + 2, home: resolveWinner("8T-SF-A"), away: resolveWinner("8T-SF-B"), winnerId: null, loserId: null },
         ],
       },
       challenger: {},
@@ -890,44 +1026,66 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
   }
 
   if (teamSize === 16) {
-    const qfLive = tiesByRound("QF");
-    const sfLive = tiesByRound("SF");
-    const finalLive = tiesByRound("Final");
-    const c31Live = tiesByRound("C-31");
-    const c33Live: SurvivalDisplay[] = [];
-    const gw33 = await db.query.gameweeks.findFirst({ where: and(eq(gameweeks.number, playoffStartGw + 2), ...(leagueId ? [eq(gameweeks.leagueId, leagueId)] : [])) });
-    if (gw33) {
-      const entries = await db.select().from(challengerSurvivalEntries).where(eq(challengerSurvivalEntries.gameweekId, gw33.id));
-      for (const e of entries) {
-        const info = teamMap.get(e.teamId);
-        c33Live.push({ teamId: e.teamId, name: info?.name || "Unknown", abbr: info?.abbr || "?", score: e.score, rank: e.rank, advanced: e.advanced });
-      }
-      c33Live.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
-    }
+    // 16T championship path: Group Stage → Elite Seeding (GW34) → SF (GW35-36) → Final (GW37-38)
+    // "qf" slot maps to the 2 Elite Seeding matches (16T-ES-M1/M2)
+    const qfLive = tiesByRound("16T-ES");
+    const sfLive = tiesByRound("16T-SF");
+    const finalLive = tiesByRound("16T-FINAL");
+
+    // Build group stage data
+    const groupStageData = [
+      buildGroupData("16T-CA", "Championship Group A"),
+      buildGroupData("16T-CB", "Championship Group B"),
+      buildGroupData("16T-XA", "Challenger Group A"),
+      buildGroupData("16T-XB", "Challenger Group B"),
+    ];
+
+    // Challenger rounds with placeholders
+    const c34Live = tiesByRound("16T-QF");
+    const c35Live = tiesByRound("16T-CSF");
+    const c36Live = tiesByRound("16T-CFINAL");
+
     return {
-      mode: "live", latestCompletedGw,
+      mode: "live", latestCompletedGw, teamSize: 16,
+      groupStage: { groups: groupStageData },
       tvt: {
         qf: qfLive.length > 0 ? qfLive : [
-          { tieId: "QF-A", roundName: "QF", status: "projected", gw1: playoffStartGw, gw2: playoffStartGw + 1, home: placeholder("1st"), away: placeholder("8th"), winnerId: null, loserId: null },
-          { tieId: "QF-D", roundName: "QF", status: "projected", gw1: playoffStartGw, gw2: playoffStartGw + 1, home: placeholder("4th"), away: placeholder("5th"), winnerId: null, loserId: null },
-          { tieId: "QF-B", roundName: "QF", status: "projected", gw1: playoffStartGw, gw2: playoffStartGw + 1, home: placeholder("2nd"), away: placeholder("7th"), winnerId: null, loserId: null },
-          { tieId: "QF-C", roundName: "QF", status: "projected", gw1: playoffStartGw, gw2: playoffStartGw + 1, home: placeholder("3rd"), away: placeholder("6th"), winnerId: null, loserId: null },
+          { tieId: "16T-ES-M1", roundName: "16T-ES", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A1"), away: placeholder("Champ B1"), winnerId: null, loserId: null },
+          { tieId: "16T-ES-M2", roundName: "16T-ES", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A2"), away: placeholder("Champ B2"), winnerId: null, loserId: null },
         ],
+        // SF-A: ES-M1 winner vs ES-M2 loser (Seed#1 vs Seed#4), SF-B: ES-M1 loser vs ES-M2 winner (Seed#2 vs Seed#3)
         sf: sfLive.length > 0 ? sfLive : [
-          { tieId: "SF-A", roundName: "SF", status: "projected", gw1: playoffStartGw + 2, gw2: playoffStartGw + 3, home: resolveWinner("QF-A"), away: resolveWinner("QF-D"), winnerId: null, loserId: null },
-          { tieId: "SF-B", roundName: "SF", status: "projected", gw1: playoffStartGw + 2, gw2: playoffStartGw + 3, home: resolveWinner("QF-B"), away: resolveWinner("QF-C"), winnerId: null, loserId: null },
+          { tieId: "16T-SF-A", roundName: "16T-SF", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveWinner("16T-ES-M1"), away: resolveLoser("16T-ES-M2"), winnerId: null, loserId: null },
+          { tieId: "16T-SF-B", roundName: "16T-SF", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveLoser("16T-ES-M1"), away: resolveWinner("16T-ES-M2"), winnerId: null, loserId: null },
         ],
         final: finalLive.length > 0 ? finalLive : [
-          { tieId: "Final", roundName: "Final", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveWinner("SF-A"), away: resolveWinner("SF-B"), winnerId: null, loserId: null },
+          { tieId: "16T-FINAL", roundName: "16T-FINAL", status: "projected", gw1: playoffStartGw + 6, gw2: playoffStartGw + 7, home: resolveWinner("16T-SF-A"), away: resolveWinner("16T-SF-B"), winnerId: null, loserId: null },
         ],
       },
-      challenger: { c31: c31Live, c33: c33Live.length > 0 ? c33Live : [], c34: tiesByRound("C-34"), c35: tiesByRound("C-35"), c36: tiesByRound("C-36") },
+      challenger: {
+        c31: [],
+        c33: [],
+        c34: c34Live.length > 0 ? c34Live : [
+          { tieId: "16T-QF1", roundName: "16T-QF", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A 3rd"), away: placeholder("Chall B 2nd"), winnerId: null, loserId: null },
+          { tieId: "16T-QF2", roundName: "16T-QF", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ B 3rd"), away: placeholder("Chall A 2nd"), winnerId: null, loserId: null },
+          { tieId: "16T-QF3", roundName: "16T-QF", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A 4th"), away: placeholder("Chall B 1st"), winnerId: null, loserId: null },
+          { tieId: "16T-QF4", roundName: "16T-QF", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ B 4th"), away: placeholder("Chall A 1st"), winnerId: null, loserId: null },
+        ],
+        c35: c35Live.length > 0 ? c35Live : [
+          { tieId: "16T-CSF-A", roundName: "16T-CSF", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveWinner("16T-QF1"), away: resolveWinner("16T-QF4"), winnerId: null, loserId: null },
+          { tieId: "16T-CSF-B", roundName: "16T-CSF", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveWinner("16T-QF2"), away: resolveWinner("16T-QF3"), winnerId: null, loserId: null },
+        ],
+        c36: c36Live.length > 0 ? c36Live : [
+          { tieId: "16T-CFINAL", roundName: "16T-CFINAL", status: "projected", gw1: playoffStartGw + 6, gw2: playoffStartGw + 7, home: resolveWinner("16T-CSF-A"), away: resolveWinner("16T-CSF-B"), winnerId: null, loserId: null },
+        ],
+      },
     };
   }
 
   return {
     mode: "live",
     latestCompletedGw,
+    teamSize: 32,
     tvt: {
       ro16: ro16Ordered,
       qf,

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, fixtures, results, gameweekCaptains, auditLogs } from "@/lib/db";
-import { eq, or } from "drizzle-orm";
+import { eq, or, and } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 /**
  * DELETE /api/admin/[leagueId]/delete-team
@@ -22,8 +23,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Check if team exists
-    const existingTeam = await db.select().from(teams).where(eq(teams.id, teamId));
+    // Check if team exists and belongs to authorized league
+    const existingTeam = await db.select().from(teams).where(and(eq(teams.id, teamId), eq(teams.leagueId, leagueId)));
     if (existingTeam.length === 0) {
       return NextResponse.json(
         { error: "Team not found" },
@@ -65,6 +66,7 @@ export async function DELETE(request: NextRequest) {
       await tx.delete(teams).where(eq(teams.id, teamId));
     });
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       success: true,
       message: `Team "${teamName}" and all related data deleted successfully`,

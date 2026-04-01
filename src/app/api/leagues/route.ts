@@ -10,7 +10,16 @@ import { eq } from "drizzle-orm";
 export async function GET() {
   try {
     const allLeagues = await db
-      .select()
+      .select({
+        id: leagues.id,
+        slug: leagues.slug,
+        name: leagues.name,
+        sport: leagues.sport,
+        format: leagues.format,
+        season: leagues.season,
+        teamSize: leagues.teamSize,
+        isActive: leagues.isActive,
+      })
       .from(leagues)
       .where(eq(leagues.isActive, true));
 

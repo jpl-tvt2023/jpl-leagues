@@ -3,14 +3,19 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function RulesPage() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
+    const urlParam = new URLSearchParams(window.location.search).get("adminLeague");
+    if (urlParam) setAdminLeagueId(urlParam);
+
     // Check auth status — redirect to signin if not authenticated
     const checkAuth = async () => {
       try {
@@ -18,7 +23,12 @@ export default function RulesPage() {
         const data = await res.json();
         if (res.ok && data.authenticated) {
           setIsLoggedIn(true);
-          setIsAdmin(data.type === "admin");
+          if (data.type === "admin" || data.type === "superadmin") {
+            setIsAdmin(true);
+            if (!urlParam && data.adminLeagueId) {
+              setAdminLeagueId(data.adminLeagueId);
+            }
+          }
         } else {
           router.replace("/signin");
           return;
@@ -38,18 +48,14 @@ export default function RulesPage() {
   };
 
   if (isChecking) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white">Loading...</div>
-      </div>
-    );
+    return <LoadingScreen variant="rules" />;
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href={isAdmin ? "/admin" : isLoggedIn ? "/dashboard" : "/"} className="flex items-center gap-2">
+        <Link href={isAdmin ? (adminLeagueId ? `/admin/${adminLeagueId}` : "/admin") : isLoggedIn ? "/dashboard" : "/"} className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             TVT
           </div>
@@ -57,7 +63,7 @@ export default function RulesPage() {
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           {isAdmin ? (
-            <Link href="/admin" className="text-gray-300 hover:text-white transition">Home</Link>
+            <Link href={adminLeagueId ? `/admin/${adminLeagueId}` : "/admin"} className="text-gray-300 hover:text-white transition">← Admin</Link>
           ) : isLoggedIn ? (
             <Link href="/dashboard" className="text-gray-300 hover:text-white transition">Dashboard</Link>
           ) : (

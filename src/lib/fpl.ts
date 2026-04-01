@@ -121,10 +121,11 @@ import { eq, and, isNull, asc, inArray } from "drizzle-orm";
  */
 export async function calculateTeamGameweekScore(
   teamId: string,
-  gameweek: number
+  gameweek: number,
+  leagueId?: string | null
 ): Promise<{ points: number; transferHits: number; netScore: number }> {
   // Check cache first
-  const cached = await getCachedScore(teamId, gameweek);
+  const cached = await getCachedScore(teamId, gameweek, leagueId);
   if (cached) {
     return {
       points: cached.points,
@@ -135,7 +136,7 @@ export async function calculateTeamGameweekScore(
 
   // Fetch from FPL API
   const picks = await fetchTeamGameweekPicks(teamId, gameweek);
-  
+
   const score = {
     points: picks.entry_history.points,
     transferHits: picks.entry_history.event_transfers_cost,
@@ -143,7 +144,7 @@ export async function calculateTeamGameweekScore(
   };
 
   // Cache the result
-  await setCachedScore(teamId, gameweek, score);
+  await setCachedScore(teamId, gameweek, score, leagueId);
 
   return score;
 }

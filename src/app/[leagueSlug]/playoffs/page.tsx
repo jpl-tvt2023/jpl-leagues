@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface LiveFixtureScore {
   fixtureId: string;
@@ -47,29 +48,54 @@ interface SurvivalDisplay {
   advanced: boolean;
 }
 
+interface GroupStanding {
+  teamId: string;
+  name: string;
+  abbr: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  pointsFor: number;
+  leaguePoints: number;
+  advanced: boolean;
+}
+
+interface GroupData {
+  name: string;
+  roundPrefix: string;
+  standings: GroupStanding[];
+  fixtures: TieDisplay[];
+}
+
 interface BracketData {
   mode: "tentative" | "projected" | "live";
   latestCompletedGw: number;
+  teamSize?: number;
+  groupStage?: {
+    groups: GroupData[];
+  };
   tvt: {
-    ro16: TieDisplay[];
-    qf: TieDisplay[];
-    sf: TieDisplay[];
-    final: TieDisplay[];
+    ro16?: TieDisplay[];
+    qf?: TieDisplay[];
+    sf?: TieDisplay[];
+    thirdPlace?: TieDisplay[];
+    final?: TieDisplay[];
   };
   challenger: {
-    c31: TieDisplay[];
-    c32: TieDisplay[];
-    c33: SurvivalDisplay[];
-    c34: TieDisplay[];
-    c35: TieDisplay[];
-    c36: TieDisplay[];
-    c37: TieDisplay[];
-    c38: TieDisplay[];
+    c31?: TieDisplay[];
+    c32?: TieDisplay[];
+    c33?: SurvivalDisplay[];
+    c34?: TieDisplay[];
+    c35?: TieDisplay[];
+    c36?: TieDisplay[];
+    c37?: TieDisplay[];
+    c38?: TieDisplay[];
   };
   liveScores?: Record<number, LiveFixtureScore[]>;
 }
 
-type TabType = "tvt" | "challenger";
+type TabType = "tvt" | "challenger" | "groupStage";
 
 function PlayerBreakdown({
   label,
@@ -119,11 +145,13 @@ function MatchCard({
   compact,
   liveScores,
   isFreshlyRefreshed,
+  useFullName,
 }: {
   tie: TieDisplay;
   compact?: boolean;
   liveScores?: LiveFixtureScore[];
   isFreshlyRefreshed?: boolean;
+  useFullName?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const is2Leg = tie.gw2 !== null;
@@ -153,6 +181,7 @@ function MatchCard({
 
   const teamLabel = (side: TeamSide | null) => {
     if (!side) return "TBD";
+    if (useFullName) return side.name || side.abbr || "TBD";
     return side.abbr || side.name || "TBD";
   };
 
@@ -406,6 +435,262 @@ function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
   );
 }
 
+function GroupStageView({
+  groups,
+  liveScores,
+  refreshingGw,
+  tempLiveScores,
+  onRefreshRound,
+  playoffStartGw,
+  latestCompletedGw,
+}: {
+  groups: GroupData[];
+  liveScores?: Record<number, LiveFixtureScore[]>;
+  refreshingGw?: number | null;
+  tempLiveScores?: Record<number, LiveFixtureScore[]>;
+  onRefreshRound?: (gw: number) => void;
+  playoffStartGw?: number;
+  latestCompletedGw?: number;
+}) {
+  const [expandedGws, setExpandedGws] = useState<Record<string, Set<number>>>({});
+
+  // Initialize expanded state: default to current GW
+  useEffect(() => {
+    const currentGw = latestCompletedGw ? (latestCompletedGw < 33 ? latestCompletedGw + 1 : 33) : 31;
+    const newExpanded: Record<string, Set<number>> = {};
+    groups.forEach(g => {
+      newExpanded[g.roundPrefix] = new Set([currentGw]);
+    });
+    setExpandedGws(newExpanded);
+  }, [groups, latestCompletedGw]);
+
+  const toggleGwExpanded = (groupPrefix: string, gw: number) => {
+    setExpandedGws(prev => {
+      const newState = { ...prev };
+      if (!newState[groupPrefix]) newState[groupPrefix] = new Set();
+
+      if (newState[groupPrefix].has(gw)) {
+        newState[groupPrefix].delete(gw);
+      } else {
+        newState[groupPrefix].add(gw);
+      }
+      return newState;
+    });
+  };
+
+  const isGwExpanded = (groupPrefix: string, gw: number) => {
+    return expandedGws[groupPrefix]?.has(gw) ?? false;
+  };
+
+  const mergedScores = [
+    ...(tempLiveScores ? Object.values(tempLiveScores).flat() : []),
+    ...(liveScores ? Object.values(liveScores).flat() : []),
+  ];
+
+  // Determine group type (Championship vs Challenger)
+  const champGroups = groups.filter(g => g.roundPrefix.includes('C') && !g.roundPrefix.includes('XA') && !g.roundPrefix.includes('XB'));
+  const challGroups = groups.filter(g => g.roundPrefix.includes('X'));
+
+  return (
+    <div className="space-y-6">
+      {/* Tournament Flow Info */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-gradient-to-br from-blue-900/40 to-blue-900/20 border border-blue-400/30 rounded-xl p-4">
+          <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider mb-2">🏆 Championship Groups</p>
+          <p className="text-sm text-blue-100 font-medium mb-1">Top 2 advance to Championship Knockouts</p>
+          <p className="text-xs text-blue-200">3rd-4th join Challenger Quarter-Finals</p>
+        </div>
+        <div className="bg-gradient-to-br from-purple-900/40 to-purple-900/20 border border-purple-400/30 rounded-xl p-4">
+          <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider mb-2">⚡ Challenger Groups</p>
+          <p className="text-sm text-purple-100 font-medium mb-1">Top 2 play Challenger Quarter-Finals</p>
+          <p className="text-xs text-purple-200">3rd-4th are eliminated</p>
+        </div>
+      </div>
+
+      {/* All 4 Groups in one grid */}
+      {(champGroups.length > 0 || challGroups.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Championship Groups */}
+          {champGroups.map((group) => {
+            const groupLetter = group.roundPrefix.includes('CA') ? 'A' : 'B';
+            return (
+              <div key={group.roundPrefix} className="bg-slate-800/40 border border-blue-500/20 rounded-xl overflow-hidden shadow-lg hover:shadow-blue-500/10 transition-shadow">
+                {/* Group header with gradient */}
+                <div className="bg-gradient-to-r from-blue-900/60 to-blue-800/40 border-b border-blue-500/20 px-4 py-3">
+                  <p className="text-xs text-blue-400 uppercase tracking-wider font-semibold mb-1">Championship</p>
+                  <h3 className="text-base font-bold text-blue-200 uppercase tracking-wider">Group {groupLetter}</h3>
+                </div>
+
+                <div className="p-3">
+                  {/* Standings table */}
+                  <div className="mb-4 rounded-lg overflow-x-auto border border-blue-500/10">
+                    <table className="w-full text-xs min-w-[300px]">
+                      <thead>
+                        <tr className="text-blue-300 bg-slate-900/50 border-b border-blue-500/10">
+                          <th className="text-left px-2 py-1.5">Pos</th>
+                          <th className="text-left px-2 py-1.5">Team</th>
+                          <th className="text-center px-1 py-1.5">P</th>
+                          <th className="text-center px-1 py-1.5">W</th>
+                          <th className="text-center px-1 py-1.5">D</th>
+                          <th className="text-center px-1 py-1.5">L</th>
+                          <th className="text-right px-2 py-1.5">Pts</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.standings.map((team, i) => (
+                          <tr
+                            key={team.teamId}
+                            className={`border-b border-blue-500/10 transition-colors ${team.advanced ? "bg-green-900/25 hover:bg-green-900/35" : i >= 2 ? "bg-purple-900/15 hover:bg-purple-900/25" : "hover:bg-slate-700/30"}`}
+                          >
+                            <td className="px-2 py-1.5 text-blue-400 font-semibold text-xs">{i + 1}</td>
+                            <td className={`px-2 py-1.5 font-semibold text-xs ${team.advanced ? "text-green-300" : i >= 2 ? "text-purple-300" : "text-white"}`}>
+                              <span className="truncate block">{team.name}</span>
+                            </td>
+                            <td className="text-center text-gray-300 text-xs">{team.played}</td>
+                            <td className="text-center text-gray-300 text-xs">{team.won}</td>
+                            <td className="text-center text-gray-300 text-xs">{team.drawn}</td>
+                            <td className="text-center text-gray-300 text-xs">{team.lost}</td>
+                            <td className="text-right px-2 py-1.5 text-white font-bold tabular-nums text-xs">{team.leaguePoints}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Fixtures by GW - Collapsible */}
+                  <div className="space-y-1">
+                    <p className="text-xs text-blue-300/60 uppercase tracking-wider font-semibold">Matches</p>
+                    {[31, 32, 33].map((gw) => {
+                      const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
+                      if (gwFixtures.length === 0) return null;
+
+                      const isExpanded = isGwExpanded(group.roundPrefix, gw);
+
+                      return (
+                        <div key={gw}>
+                          <button
+                            onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
+                            className="w-full flex items-center justify-between text-xs font-semibold text-blue-300 hover:text-blue-200 transition py-1 px-1.5 rounded hover:bg-blue-500/10"
+                          >
+                            <span>GW{gw}</span>
+                            <span className="text-blue-500/60">{isExpanded ? "▼" : "▶"}</span>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="space-y-1 mt-1">
+                              {gwFixtures.map((tie) => (
+                                <MatchCard
+                                  key={tie.tieId}
+                                  tie={tie}
+                                  compact
+                                  liveScores={mergedScores}
+                                  useFullName={true}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Challenger Groups */}
+          {challGroups.map((group) => {
+            const groupLetter = group.roundPrefix.includes('XA') ? 'A' : 'B';
+            return (
+              <div key={group.roundPrefix} className="bg-slate-800/40 border border-purple-500/20 rounded-xl overflow-hidden shadow-lg hover:shadow-purple-500/10 transition-shadow">
+                {/* Group header with gradient */}
+                <div className="bg-gradient-to-r from-purple-900/60 to-purple-800/40 border-b border-purple-500/20 px-4 py-3">
+                  <p className="text-xs text-purple-400 uppercase tracking-wider font-semibold mb-1">Challenger</p>
+                  <h3 className="text-base font-bold text-purple-200 uppercase tracking-wider">Group {groupLetter}</h3>
+                </div>
+
+                <div className="p-3">
+                  {/* Standings table */}
+                  <div className="mb-4 rounded-lg overflow-x-auto border border-purple-500/10">
+                    <table className="w-full text-xs min-w-[300px]">
+                      <thead>
+                        <tr className="text-purple-300 bg-slate-900/50 border-b border-purple-500/10">
+                          <th className="text-left px-2 py-1.5">Pos</th>
+                          <th className="text-left px-2 py-1.5">Team</th>
+                          <th className="text-center px-1 py-1.5">P</th>
+                          <th className="text-center px-1 py-1.5">W</th>
+                          <th className="text-center px-1 py-1.5">D</th>
+                          <th className="text-center px-1 py-1.5">L</th>
+                          <th className="text-right px-2 py-1.5">Pts</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.standings.map((team, i) => (
+                          <tr
+                            key={team.teamId}
+                            className={`border-b border-purple-500/10 transition-colors ${team.advanced ? "bg-purple-900/30 hover:bg-purple-900/40" : "hover:bg-slate-700/30"}`}
+                          >
+                            <td className="px-2 py-1.5 text-purple-400 font-semibold text-xs">{i + 1}</td>
+                            <td className={`px-2 py-1.5 font-semibold text-xs ${team.advanced ? "text-purple-200" : "text-white"}`}>
+                              <span className="truncate block">{team.name}</span>
+                            </td>
+                            <td className="text-center text-gray-300 text-xs">{team.played}</td>
+                            <td className="text-center text-gray-300 text-xs">{team.won}</td>
+                            <td className="text-center text-gray-300 text-xs">{team.drawn}</td>
+                            <td className="text-center text-gray-300 text-xs">{team.lost}</td>
+                            <td className="text-right px-2 py-1.5 text-white font-bold tabular-nums text-xs">{team.leaguePoints}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Fixtures by GW - Collapsible */}
+                  <div className="space-y-1">
+                    <p className="text-xs text-purple-300/60 uppercase tracking-wider font-semibold">Matches</p>
+                    {[31, 32, 33].map((gw) => {
+                      const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
+                      if (gwFixtures.length === 0) return null;
+
+                      const isExpanded = isGwExpanded(group.roundPrefix, gw);
+
+                      return (
+                        <div key={gw}>
+                          <button
+                            onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
+                            className="w-full flex items-center justify-between text-xs font-semibold text-purple-300 hover:text-purple-200 transition py-1 px-1.5 rounded hover:bg-purple-500/10"
+                          >
+                            <span>GW{gw}</span>
+                            <span className="text-purple-500/60">{isExpanded ? "▼" : "▶"}</span>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="space-y-1 mt-1">
+                              {gwFixtures.map((tie) => (
+                                <MatchCard
+                                  key={tie.tieId}
+                                  tie={tie}
+                                  compact
+                                  liveScores={mergedScores}
+                                  useFullName={true}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LeaguePlayoffsPage() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
@@ -422,7 +707,7 @@ export default function LeaguePlayoffsPage() {
     for (let gw = latestGw; gw <= Math.min(latestGw + 1, 38); gw++) {
       if (gw < 31) continue;
       try {
-        const res = await fetch(`/api/fixtures/live?gameweek=${gw}`);
+        const res = await fetch(`/api/fixtures/live?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
         if (res.ok) {
           const liveData = await res.json();
           if (liveData.isLive && liveData.fixtures?.length > 0) {
@@ -440,6 +725,10 @@ export default function LeaguePlayoffsPage() {
         if (res.ok) {
           const bracket = await res.json();
           setData(bracket);
+          // Smart default tab for 16-team: show group stage if still in progress
+          if (bracket.teamSize === 16 && bracket.latestCompletedGw < 34) {
+            setActiveTab("groupStage");
+          }
           if (bracket.latestCompletedGw >= 30) {
             fetchLiveScores(bracket.latestCompletedGw);
           }
@@ -479,7 +768,7 @@ export default function LeaguePlayoffsPage() {
   const handleRefreshRound = async (gwNumber: number) => {
     setRefreshing(gwNumber);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${gwNumber}`);
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${gwNumber}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const freshData = await res.json();
         setTempLiveScores(prev => ({
@@ -495,11 +784,7 @@ export default function LeaguePlayoffsPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading playoffs bracket...</div>
-      </div>
-    );
+    return <LoadingScreen variant="playoffs" />;
   }
 
   if (!data) {
@@ -513,7 +798,7 @@ export default function LeaguePlayoffsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
+      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
         <Link href="/" className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             JPL
@@ -525,6 +810,7 @@ export default function LeaguePlayoffsPage() {
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
           <Link href={`/${leagueSlug}/playoffs`} className="text-yellow-400 font-semibold transition">Playoffs</Link>
+          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
           {isLoggedIn ? (
@@ -557,117 +843,208 @@ export default function LeaguePlayoffsPage() {
         </div>
 
         {/* Tab toggle */}
-        <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit">
-          <button
-            onClick={() => setActiveTab("tvt")}
-            className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-              activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-            }`}
-          >
-            TVT Main Draw
-          </button>
-          <button
-            onClick={() => setActiveTab("challenger")}
-            className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-              activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-            }`}
-          >
-            Challenger Series
-          </button>
-        </div>
-
-        {/* TVT Main Draw Bracket */}
-        {activeTab === "tvt" && (
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="grid grid-cols-4 gap-3 sm:gap-4 min-w-[700px] min-h-[600px]">
-              <RoundColumn
-                title="Round of 16"
-                ties={data.tvt.ro16}
-                liveScores={data.liveScores}
-                refreshingGw={refreshing}
-                tempLiveScores={tempLiveScores}
-                onRefreshRound={handleRefreshRound}
-              />
-              <RoundColumn
-                title="Quarter-Finals"
-                ties={data.tvt.qf}
-                liveScores={data.liveScores}
-                refreshingGw={refreshing}
-                tempLiveScores={tempLiveScores}
-                onRefreshRound={handleRefreshRound}
-              />
-              <RoundColumn
-                title="Semi-Finals"
-                ties={data.tvt.sf}
-                liveScores={data.liveScores}
-                refreshingGw={refreshing}
-                tempLiveScores={tempLiveScores}
-                onRefreshRound={handleRefreshRound}
-              />
-              <RoundColumn
-                title="Grand Finale"
-                ties={data.tvt.final}
-                liveScores={data.liveScores}
-                refreshingGw={refreshing}
-                tempLiveScores={tempLiveScores}
-                onRefreshRound={handleRefreshRound}
-              />
-            </div>
+        {data.teamSize === 16 && (
+          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
+            <button
+              onClick={() => setActiveTab("groupStage")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "groupStage" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Group Stage
+            </button>
+            <button
+              onClick={() => setActiveTab("tvt")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              TVT Main Draw
+            </button>
+            <button
+              onClick={() => setActiveTab("challenger")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Challenger Series
+            </button>
+          </div>
+        )}
+        {data.teamSize === 32 && (
+          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
+            <button
+              onClick={() => setActiveTab("tvt")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              TVT Main Draw
+            </button>
+            <button
+              onClick={() => setActiveTab("challenger")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Challenger Series
+            </button>
           </div>
         )}
 
-        {/* Challenger Series */}
-        {activeTab === "challenger" && (
+        {/* Group Stage — 16-team only */}
+        {activeTab === "groupStage" && data.teamSize === 16 && data.groupStage && (
+          <GroupStageView
+            groups={data.groupStage.groups}
+            liveScores={data.liveScores}
+            refreshingGw={refreshing}
+            tempLiveScores={tempLiveScores}
+            onRefreshRound={handleRefreshRound}
+            playoffStartGw={31}
+            latestCompletedGw={data.latestCompletedGw}
+          />
+        )}
+
+        {/* TVT Main Draw Bracket */}
+        {(activeTab === "tvt" || data.teamSize === 8) && (
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            {data.teamSize === 8 ? (
+              /* 8-team: SF → 3rd Place + Final */
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
+                <RoundColumn
+                  title="Semi-Finals"
+                  ties={data.tvt.sf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="3rd Place"
+                  ties={data.tvt.thirdPlace ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Final"
+                  ties={data.tvt.final ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+              </div>
+            ) : data.teamSize === 16 ? (
+              /* 16-team: Seeding → SF → Final */
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[600px] min-h-[500px]">
+                <RoundColumn
+                  title="Seeding Round"
+                  ties={data.tvt.qf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Semi-Finals"
+                  ties={data.tvt.sf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Grand Finale"
+                  ties={data.tvt.final ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+              </div>
+            ) : (
+              /* 32-team: RO16 → QF → SF → Final */
+              <div className="grid grid-cols-4 gap-3 sm:gap-4 min-w-[700px] min-h-[600px]">
+                <RoundColumn
+                  title="Round of 16"
+                  ties={data.tvt.ro16 ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Quarter-Finals"
+                  ties={data.tvt.qf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Semi-Finals"
+                  ties={data.tvt.sf ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+                <RoundColumn
+                  title="Grand Finale"
+                  ties={data.tvt.final ?? []}
+                  liveScores={data.liveScores}
+                  refreshingGw={refreshing}
+                  tempLiveScores={tempLiveScores}
+                  onRefreshRound={handleRefreshRound}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Challenger Series — 16/32-team only */}
+        {activeTab === "challenger" && data.teamSize !== 8 && (
           <div className="space-y-6">
             {(() => {
               const allLiveScores = data.liveScores ? Object.values(data.liveScores).flat() : [];
               const tempScores = tempLiveScores ? Object.values(tempLiveScores).flat() : [];
               const mergedScores = [...tempScores, ...allLiveScores];
+
+              // Determine challenger rounds based on team size
+              const challengerRounds = data.teamSize === 16 ? [
+                { key: "c34", label: "Challenger QFs (GW34)", gw: 34, data: data.challenger.c34 },
+                { key: "c35", label: "Challenger Semi-Finals (GW35–36)", gw: 35, data: data.challenger.c35 },
+                { key: "c36", label: "Challenger Final (GW37–38)", gw: 37, data: data.challenger.c36 },
+              ] : [
+                { key: "c31", label: "C-31 (GW31) — Round of 12", gw: 31, data: data.challenger.c31 },
+                { key: "c32", label: "C-32 (GW32) — Round of 6", gw: 32, data: data.challenger.c32 },
+                { key: "c34", label: "C-34 (GW34) — Quarter-Finals", gw: 34, data: data.challenger.c34 },
+                { key: "c35", label: "C-35 (GW35) — QF Losers vs C-34 Winners", gw: 35, data: data.challenger.c35 },
+                { key: "c36", label: "C-36 (GW36) — Round of 4", gw: 36, data: data.challenger.c36 },
+                { key: "c37", label: "C-37 (GW37) — Challenger Semi-Finals", gw: 37, data: data.challenger.c37 },
+                { key: "c38", label: "C-38 (GW38) — Challenger Final", gw: 38, data: data.challenger.c38 },
+              ];
+
+              const hasAnyChallengerRound = challengerRounds.some(r => (r.data as TieDisplay[])?.length > 0);
+
               return (
                 <>
-                  {[
-                    { key: "c31", label: "C-31 (GW31) — Round of 12", gw: 31, data: data.challenger.c31 },
-                    { key: "c32", label: "C-32 (GW32) — Round of 6", gw: 32, data: data.challenger.c32 },
-                  ].map(({ key, label, gw, data: roundTies }) => {
-                    const ties = roundTies as TieDisplay[];
-                    if (!ties || ties.length === 0) return null;
-                    const hasLive = mergedScores.some(s => s.gameweek === gw);
-                    const isRoundRefreshing = refreshing === gw;
-                    return (
-                      <div key={key}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider">{label}</h3>
-                          {hasLive && (
-                            <button
-                              onClick={() => handleRefreshRound(gw)}
-                              disabled={isRoundRefreshing}
-                              className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRoundRefreshing ? "animate-spin" : ""}`}
-                              title="Refresh live scores"
-                            >
-                              ⟳
-                            </button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {ties.map(tie => (
-                            <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {data.challenger.c33.length > 0 && (
+                  {/* Show C-33 survival table only for 32-team */}
+                  {data.teamSize === 32 && (data.challenger.c33?.length ?? 0) > 0 && (
                     <SurvivalTable entries={data.challenger.c33 as SurvivalDisplay[]} />
                   )}
 
-                  {[
-                    { key: "c34", label: "C-34 (GW34) — Quarter-Finals", gw: 34, data: data.challenger.c34 },
-                    { key: "c35", label: "C-35 (GW35) — QF Losers vs C-34 Winners", gw: 35, data: data.challenger.c35 },
-                    { key: "c36", label: "C-36 (GW36) — Round of 4", gw: 36, data: data.challenger.c36 },
-                    { key: "c37", label: "C-37 (GW37) — Challenger Semi-Finals", gw: 37, data: data.challenger.c37 },
-                    { key: "c38", label: "C-38 (GW38) — Challenger Final", gw: 38, data: data.challenger.c38 },
-                  ].map(({ key, label, gw, data: roundData }) => {
+                  {/* Empty state message for 16-team during group stage */}
+                  {data.teamSize === 16 && !hasAnyChallengerRound && (
+                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 text-center">
+                      <p className="text-gray-400 text-sm mb-2">⏳ Challenger fixtures will be available after group stage (GW33) completes.</p>
+                      <p className="text-gray-500 text-xs">Once admin advances playoffs, Top 2 from each Challenger Group will play QFs in GW34.</p>
+                    </div>
+                  )}
+
+                  {challengerRounds.map(({ key, label, gw, data: roundData }) => {
                     const ties = roundData as TieDisplay[];
                     if (!ties || ties.length === 0) return null;
                     const hasLive = mergedScores.some(s => s.gameweek === gw);

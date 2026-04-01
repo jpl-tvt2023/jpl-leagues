@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { fixtures, gameweeks, gameweekCaptains } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { fixtures, gameweeks, gameweekCaptains, leagues } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { fetchTeamGameweekPicks, fetchLiveGameweek } from "@/lib/fpl";
 import type { LiveFixtureScore, LiveGameweekData } from "@/lib/fpl-cache";
 
@@ -24,8 +24,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid gameweek" }, { status: 400 });
     }
 
-    // Find gameweek
-    const gwRecords = await db.select().from(gameweeks).where(eq(gameweeks.number, gwNumber));
+    // Resolve leagueId from leagueSlug if provided
+    const leagueSlug = searchParams.get("leagueSlug");
+    let leagueId: string | null = null;
+    if (leagueSlug) {
+      const leagueRow = await db.select({ id: leagues.id }).from(leagues)
+        .where(eq(leagues.slug, leagueSlug)).limit(1);
+      if (leagueRow.length > 0) leagueId = leagueRow[0].id;
+    }
+
+    // Find gameweek (scoped to league if provided)
+    const gwRecords = await db.select().from(gameweeks).where(
+      leagueId
+        ? and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId))
+        : eq(gameweeks.number, gwNumber)
+    );
     if (gwRecords.length === 0) {
       return NextResponse.json({ error: "Gameweek not found" }, { status: 404 });
     }

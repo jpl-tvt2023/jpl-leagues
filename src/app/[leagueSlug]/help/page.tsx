@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 type UserRole = "public" | "team" | "admin";
 type ActiveTab = "faqs" | "scenarios";
@@ -119,15 +120,15 @@ export default function LeagueHelpPage() {
   const set1Label = `GW1 – GW${midpoint}`;
   const set2Label = `GW${midpoint + 1} – GW${leagueStageEnd}`;
   const topCutoff = teamSize === 8 ? 4 : 8;
-  const eliminatedRange = teamSize === 8 ? "5–8" : "15–16";
+  const eliminatedRange = teamSize === 8 ? "5–8" : teamSize === 16 ? "QF losers (4 teams, after GW34)" : "15–16";
   const variantLabel = teamSize === 8 ? "8-Team" : teamSize === 16 ? "16-Team" : "32-Team";
 
   // Playoff bracket description per variant
   const playoffBracketDesc =
     teamSize === 8
-      ? `GW36: Semi-Finals (1v4, 2v3, single-leg). GW37: 3rd Place match + Final Leg 1. GW38: Final Leg 2. Ranks 5–8 are eliminated after the league stage.`
+      ? `GW36: Semi-Finals (1v4, 2v3, single-leg). GW37–38: Final + 3rd Place (2-legged aggregate). Ranks 5–8 are eliminated after the league stage.`
       : teamSize === 16
-      ? `GW31–32: Quarter-Finals (1v8, 2v7, 3v6, 4v5 — 2-legged). GW33–34: Semi-Finals (2-legged). GW35–36: Final (2-legged). Ranks 9–14 enter the Challenger Series. Ranks 15–16 are eliminated.`
+      ? `JPL-TVT Merged Funnel — All 16 teams play GW31–38. GW31–33: Group sprints (Championship ranks 1–8, Challenger ranks 9–16). GW34: Merger QFs (4 relegated Champs vs 4 surviving Challengers) + Elite Seeding (top 4) + Wooden Spoon Seeding (bottom 4). GW35–36: SFs across all 3 brackets. GW37–38: Finals + 3rd Place ties. Only the 4 Challenger QF losers (GW34) are eliminated.`
       : `GW31–32: Round of 16 (cross-group seeding, 2-legged). GW33–34: Quarter-Finals. GW35–36: Semi-Finals. GW37–38: Final. Ranks 9–14 per group enter the Challenger Series. Ranks 15–16 per group are eliminated.`;
 
   // --- FAQ CONTENT ---
@@ -157,10 +158,21 @@ export default function LeagueHelpPage() {
           <p>The colour bands show each team&apos;s current playoff trajectory based on their league position:</p>
           <ul className="mt-2 space-y-1.5">
             <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-green-500 shrink-0" /><span><strong className="text-green-400">Green (Rank 1–{topCutoff}):</strong> On track for the Title Play-offs.</span></li>
-            {teamSize !== 8 && (
+            {teamSize === 32 && (
               <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-yellow-500 shrink-0" /><span><strong className="text-yellow-400">Yellow (Rank 9–14):</strong> On track for the Challenger Series.</span></li>
             )}
-            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500 shrink-0" /><span><strong className="text-red-400">Red (Rank {eliminatedRange}):</strong> Eliminated — no further play after the league stage.</span></li>
+            {teamSize === 16 && (
+              <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-yellow-500 shrink-0" /><span><strong className="text-yellow-400">Yellow (Rank 9–16):</strong> On track for the Challenger bracket (all 16 teams enter the playoffs).</span></li>
+            )}
+            {teamSize === 32 && (
+              <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500 shrink-0" /><span><strong className="text-red-400">Red (Rank {eliminatedRange}):</strong> Eliminated — no further play after the league stage.</span></li>
+            )}
+            {teamSize === 8 && (
+              <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500 shrink-0" /><span><strong className="text-red-400">Red (Rank {eliminatedRange}):</strong> Eliminated — no further play after the league stage.</span></li>
+            )}
+            {teamSize === 16 && (
+              <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500 shrink-0" /><span><strong className="text-red-400">Red ({eliminatedRange}):</strong> Eliminated after GW34 Challenger QFs — only these 4 teams are knocked out in the entire playoff series.</span></li>
+            )}
           </ul>
           <p className="text-xs text-gray-400 mt-2">These are live projections based on current standings. Final positions are determined after GW{leagueStageEnd}.</p>
         </div>
@@ -538,7 +550,7 @@ export default function LeagueHelpPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center text-gray-400 py-12">Loading help content...</div>
+          <LoadingScreen variant="help" fullScreen={false} />
         ) : (
           <>
             {/* Tab Bar */}

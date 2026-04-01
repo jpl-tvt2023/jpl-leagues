@@ -16,9 +16,13 @@ function getFplTeamUrl(fplId: string, gameweek?: number): string {
   return `https://fantasy.premierleague.com/entry/${fplId}/history`;
 }
 
-async function getAnnouncementSettings() {
-  const captainSetting = await db.select().from(settings).where(eq(settings.key, "captainAnnouncementEnabled")).limit(1);
-  const chipSetting = await db.select().from(settings).where(eq(settings.key, "chipAnnouncementEnabled")).limit(1);
+async function getAnnouncementSettings(leagueId: string) {
+  const captainSetting = await db.select().from(settings)
+    .where(and(eq(settings.key, "captainAnnouncementEnabled"), eq(settings.leagueId, leagueId)))
+    .limit(1);
+  const chipSetting = await db.select().from(settings)
+    .where(and(eq(settings.key, "chipAnnouncementEnabled"), eq(settings.leagueId, leagueId)))
+    .limit(1);
   return {
     captainAnnouncementEnabled: captainSetting.length === 0 || captainSetting[0].value !== "false",
     chipAnnouncementEnabled: chipSetting.length === 0 || chipSetting[0].value !== "false",
@@ -668,7 +672,7 @@ export async function GET(request: NextRequest) {
       upcomingFixtures,
       teamMembers,
       oppositeGroupTeams,
-      announcementSettings: await getAnnouncementSettings(),
+      announcementSettings: await getAnnouncementSettings(teamLeagueId!),
     });
   } catch (error) {
     console.error("Dashboard error:", error);

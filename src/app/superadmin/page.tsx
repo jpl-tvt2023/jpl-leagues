@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface League {
   id: string;
@@ -991,7 +992,7 @@ export default function SuperAdminDashboard() {
 
             {/* Leagues list */}
             {isLoading ? (
-              <p className="text-gray-400 text-center py-12">Loading leagues...</p>
+              <LoadingScreen variant="admin" fullScreen={false} />
             ) : leagues.length === 0 ? (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-12 text-center">
                 <p className="text-gray-400">No leagues yet. Create your first league above.</p>
@@ -1084,7 +1085,7 @@ export default function SuperAdminDashboard() {
             </div>
 
             {isLoading ? (
-              <p className="text-gray-400 text-center py-12">Loading admins...</p>
+              <LoadingScreen variant="admin" fullScreen={false} />
             ) : admins.length === 0 ? (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-12 text-center">
                 <p className="text-gray-400">No admin users yet.</p>

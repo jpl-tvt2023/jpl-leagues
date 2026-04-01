@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface League {
   id: string;
@@ -97,9 +98,7 @@ export default function AdminLeaguePicker() {
         </div>
 
         {isLoading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
-          </div>
+          <LoadingScreen variant="admin" fullScreen={false} />
         )}
 
         {error && (

@@ -3,9 +3,10 @@ import { db, gameweeks, fixtures, teams, players, groups, results, gameweekCapta
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { calculateTVTTeamScore, determineMatchResult } from "@/lib/scoring";
 import { getTop2FromGroup } from "@/lib/chip-validation";
-import { getAllCachedScores } from "@/lib/fpl-cache";
+import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { eq, and, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { leagues } from "@/lib/db/schema";
 
 interface RouteParams {
   params: Promise<{ gw: string }>;
@@ -30,6 +31,7 @@ type GameweekWithRelations = Gameweek & {
 interface PlayerScoreData {
   playerId: string;
   isCaptain: boolean;
+  isAutoAssigned?: boolean;
   points: number;
   transferHits: number;
   netScore: number;
@@ -51,9 +53,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const { searchParams: getSearchParams } = new URL(request.url);
+    let getLeagueId = getSearchParams.get("leagueId");
+    // Resolve slug → UUID if needed
+    if (getLeagueId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(getLeagueId)) {
+      const row = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, getLeagueId)).limit(1);
+      getLeagueId = row[0]?.id ?? null;
+    }
+    const getGwWhere = getLeagueId
+      ? and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, getLeagueId))
+      : eq(gameweeks.number, gameweekNumber);
+
     // Find the gameweek with relations
     const gwList = await db.query.gameweeks.findMany({
-      where: eq(gameweeks.number, gameweekNumber),
+      where: getGwWhere,
       with: {
         fixtures: {
           with: {
@@ -150,7 +163,8 @@ async function autoAssignDefaultCaptain(
   team: Team & { players: Player[] },
   scores: { playerId: string; playerName: string; points: number; transferHits: number; netScore: number }[],
   gameweekId: string,
-  gameweekNumber: number
+  gameweekNumber: number,
+  leagueId?: string | null
 ): Promise<GameweekCaptain | undefined> {
   if (team.players.length === 0) return undefined;
 
@@ -163,7 +177,9 @@ async function autoAssignDefaultCaptain(
     let prevCaptainPlayerId: string | null = null;
     if (gameweekNumber > 1) {
       const prevGw = await db.query.gameweeks.findFirst({
-        where: eq(gameweeks.number, gameweekNumber - 1),
+        where: leagueId
+          ? and(eq(gameweeks.number, gameweekNumber - 1), eq(gameweeks.leagueId, leagueId))
+          : eq(gameweeks.number, gameweekNumber - 1),
       });
       if (prevGw) {
         const prevCaptains = await db.query.gameweekCaptains.findMany({
@@ -240,9 +256,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Find the gameweek
+    // Find the gameweek — filter by leagueId if provided (prevents wrong-league match in multi-league setups)
+    let leagueId = searchParams.get("leagueId");
+    // Resolve slug → UUID if needed
+    if (leagueId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leagueId)) {
+      const row = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueId)).limit(1);
+      leagueId = row[0]?.id ?? null;
+    }
+    const gwWhere = leagueId
+      ? and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, leagueId))
+      : eq(gameweeks.number, gameweekNumber);
+
     const gwList = await db.query.gameweeks.findMany({
-      where: eq(gameweeks.number, gameweekNumber),
+      where: gwWhere,
       with: {
         fixtures: {
           with: {
@@ -336,7 +362,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       
       // Re-fetch gameweek with cleared results
       const updatedGwList = await db.query.gameweeks.findMany({
-        where: eq(gameweeks.number, gameweekNumber),
+        where: gwWhere,
         with: {
           fixtures: {
             with: {
@@ -377,7 +403,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // FULL hit value deducted from their team's match score in GW N.
     const carryForwardMap = new Map<string, number>(); // fplId → transferHits to carry forward
     if (gameweekNumber > 1) {
-      const prevGwCache = await getAllCachedScores(gameweekNumber - 1);
+      const prevGwCache = await getAllCachedScores(gameweekNumber - 1, leagueId);
       const prevGwSuffix = `_gw${gameweekNumber - 1}`;
       for (const [key, data] of Object.entries(prevGwCache)) {
         if (key.endsWith(prevGwSuffix) && data.transferHits > 12) {
@@ -394,25 +420,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Process each fixture
     for (const fixture of unprocessedFixtures) {
       try {
-        // Get captain info for each team
-        let homeCaptain = gameweek.captains.find(
+        // Get captain info for each team — sort newest first so last-set captain wins
+        const sortedCaptains = [...gameweek.captains].sort(
+          (a: GameweekCaptain, b: GameweekCaptain) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        let homeCaptain = sortedCaptains.find(
           (c: GameweekCaptain) => fixture.homeTeam.players.some((p: Player) => p.id === c.playerId)
         );
-        let awayCaptain = gameweek.captains.find(
+        let awayCaptain = sortedCaptains.find(
           (c: GameweekCaptain) => fixture.awayTeam.players.some((p: Player) => p.id === c.playerId)
         );
 
         // Fetch FPL scores for all players (captain flag set after default assignment)
         const homeScoresRaw = await Promise.all(
           fixture.homeTeam.players.map(async (player: Player) => {
-            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber);
+            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber, leagueId);
             return { playerId: player.id, playerName: player.name, ...score };
           })
         );
 
         const awayScoresRaw = await Promise.all(
           fixture.awayTeam.players.map(async (player: Player) => {
-            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber);
+            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber, leagueId);
             return { playerId: player.id, playerName: player.name, ...score };
           })
         );
@@ -421,24 +450,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Penalty: the LOWEST scoring player becomes captain (doubling the lower score)
         if (!homeCaptain) {
           homeCaptain = await autoAssignDefaultCaptain(
-            fixture.homeTeam, homeScoresRaw, gameweek.id, gameweekNumber
+            fixture.homeTeam, homeScoresRaw, gameweek.id, gameweekNumber, leagueId
           );
         }
         if (!awayCaptain) {
           awayCaptain = await autoAssignDefaultCaptain(
-            fixture.awayTeam, awayScoresRaw, gameweek.id, gameweekNumber
+            fixture.awayTeam, awayScoresRaw, gameweek.id, gameweekNumber, leagueId
           );
         }
 
-        // Set isCaptain flag now that captains are resolved
+        // Set isCaptain + isAutoAssigned flags now that captains are resolved
+        const homeIsAutoAssigned = homeCaptain?.isValid === false;
+        const awayIsAutoAssigned = awayCaptain?.isValid === false;
+
         const homeScores = homeScoresRaw.map(s => ({
           ...s,
           isCaptain: homeCaptain?.playerId === s.playerId,
+          isAutoAssigned: homeCaptain?.playerId === s.playerId && homeIsAutoAssigned,
         }));
 
         const awayScores = awayScoresRaw.map(s => ({
           ...s,
           isCaptain: awayCaptain?.playerId === s.playerId,
+          isAutoAssigned: awayCaptain?.playerId === s.playerId && awayIsAutoAssigned,
         }));
 
         // Persist captain FPL scores to gameweekCaptains table
@@ -637,6 +671,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               fplScore: s.points,
               transferHits: s.transferHits,
               isCaptain: s.isCaptain,
+              isAutoAssigned: s.isAutoAssigned,
               finalScore,
             };
           })
@@ -653,6 +688,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               fplScore: s.points,
               transferHits: s.transferHits,
               isCaptain: s.isCaptain,
+              isAutoAssigned: s.isAutoAssigned,
               finalScore,
             };
           })
@@ -911,7 +947,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Fetch FPL scores for challenger team
         const challengerScores = await Promise.all(
           challengerTeam.players.map(async (player: Player) => {
-            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber);
+            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber, leagueId);
             return {
               playerId: player.id,
               isCaptain: challengerCaptain?.playerId === player.id,
@@ -923,7 +959,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Fetch FPL scores for challenged team
         const challengedScores = await Promise.all(
           challengedTeam.players.map(async (player: Player) => {
-            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber);
+            const score = await calculateTeamGameweekScore(player.fplId, gameweekNumber, leagueId);
             return {
               playerId: player.id,
               isCaptain: challengedCaptain?.playerId === player.id,
@@ -1027,6 +1063,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           error: challengeError instanceof Error ? challengeError.message : "Unknown error",
         });
       }
+    }
+
+    // Invalidate page cache so standings/fixtures/playoffs reflect new results
+    if (gameweek.leagueId) {
+      await invalidateLeaguePageCache(gameweek.leagueId);
     }
 
     return NextResponse.json({

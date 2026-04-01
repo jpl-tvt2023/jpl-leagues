@@ -3,6 +3,7 @@ import { db, users, teams, players, gameweeks, fixtures, results, gameweekCaptai
 import { eq, inArray, or } from "drizzle-orm";
 import { playoffTies, challengerSurvivalEntries } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import bcrypt from "bcryptjs";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
@@ -106,6 +107,7 @@ export async function POST(request: NextRequest) {
       await tx.delete(gameweeks).where(eq(gameweeks.leagueId, leagueId));
     });
 
+    await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({
       success: true,
       message: "Season data has been reset for this league. Admin accounts, groups, and settings are preserved.",

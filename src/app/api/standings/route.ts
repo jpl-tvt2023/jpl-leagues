@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { getAllCachedScores } from "@/lib/fpl-cache";
+import { getAllCachedScores, getCachedStandings, setCachedStandings } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
@@ -61,22 +61,38 @@ export async function GET(request: NextRequest) {
     const group = searchParams.get("group");
     const leagueSlug = searchParams.get("leagueSlug");
 
-    // Resolve leagueId and config from slug if provided
-    let leagueId: string | null = null;
-    let playoffStartGw = 31;
-    let leagueTeamSize = 32;
-    let leagueEnabledChips: string[] = ["D", "W", "C"];
-    if (leagueSlug) {
-      const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips })
-        .from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
-      if (league.length > 0) {
-        leagueId = league[0].id;
-        playoffStartGw = league[0].playoffStartGw ?? 31;
-        leagueTeamSize = league[0].teamSize ?? 32;
-        try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
-      }
+    // leagueSlug is required
+    if (!leagueSlug) {
+      return NextResponse.json(
+        { error: "leagueSlug parameter is required" },
+        { status: 400 }
+      );
     }
+
+    // Resolve leagueId and config from slug
+    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips })
+      .from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+    if (league.length === 0) {
+      return NextResponse.json(
+        { error: "League not found" },
+        { status: 404 }
+      );
+    }
+
+    const leagueId = league[0].id;
+    let playoffStartGw = league[0].playoffStartGw ?? 31;
+    let leagueTeamSize = league[0].teamSize ?? 32;
+    let leagueEnabledChips: string[] = ["D", "W", "C"];
+    try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
     const leagueStageEnd = playoffStartGw - 1; // last GW of the group stage
+
+    // Return cached standings if available (populated by cron or previous request)
+    try {
+      const cached = await getCachedStandings(leagueId);
+      if (cached) return NextResponse.json(cached);
+    } catch {
+      // Cache miss or Redis error — fall through to DB computation
+    }
 
     // Get all teams with their relations using relational query
     const allTeamsUnfiltered = await db.query.teams.findMany({
@@ -125,7 +141,7 @@ export async function GET(request: NextRequest) {
 
     for (const gw of processedGws) {
       // Try cache first
-      const gwCache = await getAllCachedScores(gw);
+      const gwCache = await getAllCachedScores(gw, leagueId);
       const suffix = `_gw${gw}`;
 
       if (Object.keys(gwCache).length > 0) {
@@ -143,7 +159,7 @@ export async function GET(request: NextRequest) {
         // Cache empty — fetch from FPL API (also populates cache for next time)
         for (const fplId of allFplIds) {
           try {
-            const score = await calculateTeamGameweekScore(fplId, gw);
+            const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
             if (!playerGwHitsMap.has(fplId)) {
               playerGwHitsMap.set(fplId, new Map());
             }
@@ -359,7 +375,7 @@ export async function GET(request: NextRequest) {
       }));
     }
 
-    return NextResponse.json({
+    const responseData = {
       groupA: groupMap["A"] ?? [],
       groupB: groupMap["B"] ?? [],
       totalTeams: standings.length,
@@ -371,7 +387,14 @@ export async function GET(request: NextRequest) {
         rank9to14: "Challenger Series",
         rank15to16: "Eliminated",
       },
-    });
+    };
+
+    // Fire-and-forget cache write — must not block or break the response
+    if (leagueId) {
+      setCachedStandings(leagueId, responseData).catch(() => {});
+    }
+
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error("Error fetching standings:", error);
     return NextResponse.json(

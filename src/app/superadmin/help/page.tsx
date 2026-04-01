@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 type TabType = "faqs" | "scenarios";
 
@@ -78,11 +79,7 @@ export default function SuperadminHelpPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
-      </div>
-    );
+    return <LoadingScreen variant="help" />;
   }
 
   const faqs: { question: string; answer: React.ReactNode }[] = [
@@ -143,8 +140,8 @@ export default function SuperadminHelpPage() {
             <p>2 groups of 16. 30 GW league stage. Playoffs GW31–38 (RO16 → QF → SF → Final). Challenger bracket for ranks 9–14 per group. Ranks 15–16 eliminated.</p>
           </div>
           <div className="mt-2">
-            <p className="font-medium text-white">16-team:</p>
-            <p>1 group of 16. 30 GW league stage. Playoffs GW31–36 (QF → SF → Final). Challenger bracket for ranks 9–14. Ranks 15–16 eliminated.</p>
+            <p className="font-medium text-white">16-team (JPL-TVT Merged Funnel):</p>
+            <p>1 group of 16. 30 GW league stage. Playoffs GW31–38 across three brackets: Championship (ranks 1–8), Challenger (ranks 9–16 + relegated Championship teams), and Wooden Spoon (bottom 4 Challengers). Group sprints GW31–33, Merger QFs + Seeding GW34, SFs GW35–36, Finals GW37–38. Only the 4 Challenger QF losers are eliminated — all other teams play GW31–38.</p>
           </div>
           <div className="mt-2">
             <p className="font-medium text-white">8-team:</p>
@@ -242,16 +239,29 @@ export default function SuperadminHelpPage() {
       ],
     },
     {
+      title: "Create a 16-team TVT league (JPL-TVT Merged Funnel)",
+      steps: [
+        "Click '+ New League' on the Superadmin dashboard.",
+        "Step 1 — Sport: Select 'Football (FPL)'.",
+        "Step 2 — Format: Select 'TVT'.",
+        "Step 3 — Team Size: Select '16 Teams (1 group of 16)'.",
+        "Step 4 — Chips: Enable the chips you want. Note: Challenge Chip is not available for 16-team format — the wizard disables it automatically.",
+        "Step 5 — Details: Enter league name, slug, season. Playoff start defaults to GW31 (after a 30-GW league stage).",
+        "Step 6 — Assign: Select an admin.",
+        "Click 'Create League'. The league stage will be 30 GWs (2 full round-robins), with a full 8-GW playoff series (GW31–38) across Championship, Challenger, and Wooden Spoon brackets.",
+      ],
+    },
+    {
       title: "Create an 8-team TVT league",
       steps: [
         "Click '+ New League' on the Superadmin dashboard.",
         "Step 1 — Sport: Select 'Football (FPL)'.",
         "Step 2 — Format: Select 'TVT'.",
         "Step 3 — Team Size: Select '8 Teams (1 group of 8)'.",
-        "Step 4 — Chips: Enable the chips you want. Note: Challenge Chip has no cross-group effect in an 8-team single-group format — consider leaving it off.",
+        "Step 4 — Chips: Enable the chips you want. Note: Challenge Chip is not available for 8-team format — the wizard disables it automatically.",
         "Step 5 — Details: Enter league name, slug, season. Playoff start defaults to GW36 (after the 35-GW league stage). Adjust if needed.",
         "Step 6 — Assign: Select an admin.",
-        "Click 'Create League'. The league stage will be 35 GWs (5 full round-robins), with playoffs in GW36–38.",
+        "Click 'Create League'. The league stage will be 35 GWs (5 full round-robins), with playoffs in GW36–38 (SF → Final + 3rd Place).",
       ],
     },
     {

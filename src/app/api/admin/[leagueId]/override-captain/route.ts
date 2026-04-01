@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, gameweeks, gameweekCaptains, auditLogs } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { leagues } from "@/lib/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 /**
@@ -32,19 +34,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the gameweek
-    const gwList = await db.select().from(gameweeks).where(eq(gameweeks.number, gwNumber));
-    const gw = gwList[0];
+    // Get the gameweek, creating it if it doesn't exist yet (e.g. playoff GWs)
+    const gwList = await db.select().from(gameweeks).where(and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId)));
+    let gw = gwList[0];
 
     if (!gw) {
-      return NextResponse.json(
-        { error: "Gameweek not found" },
-        { status: 404 }
-      );
+      const leagueRecord = await db.select({ playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+      const playoffStartGw = leagueRecord[0]?.playoffStartGw ?? 31;
+      const gwId = generateId();
+      const deadline = new Date();
+      deadline.setDate(deadline.getDate() + 7 * gwNumber);
+      deadline.setHours(11, 0, 0, 0);
+      await db.insert(gameweeks).values({ id: gwId, number: gwNumber, deadline, isPlayoffs: gwNumber >= playoffStartGw, leagueId });
+      gw = { id: gwId, number: gwNumber, deadline, isPlayoffs: gwNumber >= playoffStartGw, leagueId, createdAt: new Date(), updatedAt: new Date() };
     }
 
-    // Get the team and verify it exists
-    const teamList = await db.select().from(teams).where(eq(teams.id, teamId));
+    // Get the team and verify it belongs to authorized league
+    const teamList = await db.select().from(teams).where(and(eq(teams.id, teamId), eq(teams.leagueId, leagueId)));
     const team = teamList[0];
 
     if (!team) {
@@ -103,6 +109,7 @@ export async function POST(request: NextRequest) {
         pointsAffected: 0,
       });
 
+      await invalidateLeaguePageCache(leagueId);
       return NextResponse.json({
         success: true,
         message: `Captain changed from ${existingCaptain.player.name} to ${player.name}`,
@@ -134,6 +141,7 @@ export async function POST(request: NextRequest) {
         pointsAffected: 0,
       });
 
+      await invalidateLeaguePageCache(leagueId);
       return NextResponse.json({
         success: true,
         message: `Captain set to ${player.name}`,
@@ -175,15 +183,17 @@ export async function GET(request: NextRequest) {
     // Get all gameweeks
     const allGameweeks = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
 
-    // Get all captain announcements
-    const allCaptains = await db.query.gameweekCaptains.findMany({
-      with: {
-        player: {
-          with: { team: true },
-        },
-        gameweek: true,
-      },
-    });
+    // Get all captain announcements for this league's gameweeks only
+    const gwIds = allGameweeks.map(gw => gw.id);
+    const allCaptains = gwIds.length > 0
+      ? await db.query.gameweekCaptains.findMany({
+          where: inArray(gameweekCaptains.gameweekId, gwIds),
+          with: {
+            player: { with: { team: true } },
+            gameweek: true,
+          },
+        })
+      : [];
 
     return NextResponse.json({
       teams: teamsWithPlayers.map(t => ({

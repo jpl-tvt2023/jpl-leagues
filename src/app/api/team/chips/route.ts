@@ -98,8 +98,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Gameweek not found" }, { status: 404 });
     }
 
-    // Check if chip announcements are enabled
-    const chipSetting = await db.select().from(settings).where(eq(settings.key, "chipAnnouncementEnabled")).limit(1);
+    // Check if chip announcements are enabled for this league
+    const chipSetting = await db.select().from(settings)
+      .where(and(eq(settings.key, "chipAnnouncementEnabled"), eq(settings.leagueId, team.leagueId)))
+      .limit(1);
     if (chipSetting.length > 0 && chipSetting[0].value === "false") {
       return NextResponse.json(
         { error: "Chip announcements are currently disabled by the admin" },

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { TeamStanding } from "@/types/standings";
 
-export function StandingsTable({ teams, group }: { teams: TeamStanding[]; group: string }) {
+export function StandingsTable({ teams, group }: { teams: TeamStanding[]; group?: string }) {
   const [tooltip, setTooltip] = useState<{
     team: TeamStanding;
     x: number;
@@ -108,9 +108,11 @@ export function StandingsTable({ teams, group }: { teams: TeamStanding[]; group:
       )}
 
       <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur overflow-hidden">
-        <div className="bg-gradient-to-r from-purple-600/20 to-orange-500/20 px-4 py-3 border-b border-white/10">
-          <h2 className="text-lg font-bold text-white">Group {group}</h2>
-        </div>
+        {group && (
+          <div className="bg-gradient-to-r from-purple-600/20 to-orange-500/20 px-4 py-3 border-b border-white/10">
+            <h2 className="text-lg font-bold text-white">Group {group}</h2>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[500px]">
             <thead>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface LeagueConfig {
   teamSize: number;
@@ -606,7 +607,7 @@ export default function LeagueRulesPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center text-gray-400 py-12">Loading rules...</div>
+          <LoadingScreen variant="rules" fullScreen={false} />
         ) : config ? (
           config.teamSize === 8
             ? get8TeamRules(config)
