@@ -523,8 +523,8 @@ function GroupStageView({
 
                 <div className="p-3">
                   {/* Standings table */}
-                  <div className="mb-4 rounded-lg overflow-hidden border border-blue-500/10">
-                    <table className="w-full text-xs">
+                  <div className="mb-4 rounded-lg overflow-x-auto border border-blue-500/10">
+                    <table className="w-full text-xs min-w-[300px]">
                       <thead>
                         <tr className="text-blue-300 bg-slate-900/50 border-b border-blue-500/10">
                           <th className="text-left px-2 py-1.5">Pos</th>
@@ -611,8 +611,8 @@ function GroupStageView({
 
                 <div className="p-3">
                   {/* Standings table */}
-                  <div className="mb-4 rounded-lg overflow-hidden border border-purple-500/10">
-                    <table className="w-full text-xs">
+                  <div className="mb-4 rounded-lg overflow-x-auto border border-purple-500/10">
+                    <table className="w-full text-xs min-w-[300px]">
                       <thead>
                         <tr className="text-purple-300 bg-slate-900/50 border-b border-purple-500/10">
                           <th className="text-left px-2 py-1.5">Pos</th>
@@ -798,7 +798,7 @@ export default function LeaguePlayoffsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
+      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
         <Link href="/" className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             JPL
@@ -872,7 +872,7 @@ export default function LeaguePlayoffsPage() {
           </div>
         )}
         {data.teamSize === 32 && (
-          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit">
+          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
             <button
               onClick={() => setActiveTab("tvt")}
               className={`px-4 py-2 rounded-md text-sm font-semibold transition ${

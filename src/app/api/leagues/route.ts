@@ -18,6 +18,7 @@ export async function GET() {
         format: leagues.format,
         season: leagues.season,
         teamSize: leagues.teamSize,
+        isActive: leagues.isActive,
       })
       .from(leagues)
       .where(eq(leagues.isActive, true));

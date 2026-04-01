@@ -89,7 +89,7 @@ export default function Home() {
         ) : leagues.length === 0 ? (
           <p className="text-center text-gray-500">No leagues available yet.</p>
         ) : (
-          <div className="grid gap-6 sm:grid-cols-2">
+          <div className="grid gap-6 sm:grid-cols-2 items-stretch">
             {leagues.map((league) => {
               const icon = SPORT_ICONS[league.sport] ?? "🏆";
               const gradient = SPORT_GRADIENTS[league.sport] ?? "from-slate-800/60 to-slate-900/60";
@@ -99,10 +99,10 @@ export default function Home() {
               return (
                 <div
                   key={league.id}
-                  className={`relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br ${gradient} p-8 shadow-xl`}
+                  className={`relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br ${gradient} p-8 shadow-xl h-full flex flex-col`}
                 >
                   <div className={`absolute -right-8 -top-8 h-40 w-40 rounded-full ${glow} blur-2xl`} />
-                  <div className="relative">
+                  <div className="relative flex flex-col flex-1">
                     <div className="mb-5 flex items-center gap-3">
                       <span className="text-4xl">{icon}</span>
                       <div>
@@ -128,7 +128,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-3">
+                    <div className="flex flex-wrap gap-3 mt-auto">
                       <Link
                         href={`/${league.slug}/standings`}
                         className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}
