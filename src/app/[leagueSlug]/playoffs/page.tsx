@@ -609,10 +609,10 @@ export default function LeaguePlayoffsPage() {
                 />
               </div>
             ) : data.teamSize === 16 ? (
-              /* 16-team: QF → SF → Final */
+              /* 16-team: Seeding → SF → Final */
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[600px] min-h-[500px]">
                 <RoundColumn
-                  title="Quarter-Finals"
+                  title="Seeding Round"
                   ties={data.tvt.qf ?? []}
                   liveScores={data.liveScores}
                   refreshingGw={refreshing}
