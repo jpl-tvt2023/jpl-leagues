@@ -145,11 +145,13 @@ function MatchCard({
   compact,
   liveScores,
   isFreshlyRefreshed,
+  useFullName,
 }: {
   tie: TieDisplay;
   compact?: boolean;
   liveScores?: LiveFixtureScore[];
   isFreshlyRefreshed?: boolean;
+  useFullName?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const is2Leg = tie.gw2 !== null;
@@ -179,6 +181,7 @@ function MatchCard({
 
   const teamLabel = (side: TeamSide | null) => {
     if (!side) return "TBD";
+    if (useFullName) return side.name || side.abbr || "TBD";
     return side.abbr || side.name || "TBD";
   };
 
@@ -489,105 +492,115 @@ function GroupStageView({
   const challGroups = groups.filter(g => g.roundPrefix.includes('X'));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Tournament Flow Info */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="bg-blue-900/30 border border-blue-500/30 rounded-lg p-3">
-          <p className="text-xs font-semibold text-blue-300 uppercase mb-1">Championship Groups (A & B)</p>
-          <p className="text-xs text-blue-200">🏆 <strong>Top 2</strong> advance to Knockout (GW34)</p>
-          <p className="text-xs text-blue-200">📍 <strong>3rd-4th</strong> join Challenger QF (GW34)</p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-gradient-to-br from-blue-900/40 to-blue-900/20 border border-blue-400/30 rounded-xl p-4">
+          <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider mb-2">🏆 Championship Groups</p>
+          <p className="text-sm text-blue-100 font-medium mb-1">Top 2 advance to Championship Knockouts</p>
+          <p className="text-xs text-blue-200">3rd-4th join Challenger Quarter-Finals</p>
         </div>
-        <div className="bg-purple-900/30 border border-purple-500/30 rounded-lg p-3">
-          <p className="text-xs font-semibold text-purple-300 uppercase mb-1">Challenger Groups (A & B)</p>
-          <p className="text-xs text-purple-200">⚡ <strong>Top 2</strong> play Challenger QFs (GW34)</p>
-          <p className="text-xs text-purple-200">📍 <strong>3rd-4th</strong> eliminated</p>
+        <div className="bg-gradient-to-br from-purple-900/40 to-purple-900/20 border border-purple-400/30 rounded-xl p-4">
+          <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider mb-2">⚡ Challenger Groups</p>
+          <p className="text-sm text-purple-100 font-medium mb-1">Top 2 play Challenger Quarter-Finals</p>
+          <p className="text-xs text-purple-200">3rd-4th are eliminated</p>
         </div>
       </div>
 
       {/* Championship Groups */}
       {champGroups.length > 0 && (
         <div>
-          <h3 className="text-sm font-bold text-yellow-400 uppercase tracking-wider mb-4">Championship Groups</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {champGroups.map((group) => (
-              <div key={group.roundPrefix} className="bg-slate-800/50 border border-white/10 rounded-lg p-4">
-                {/* Group header */}
-                <div className="mb-4">
-                  <h3 className="text-sm font-bold text-yellow-300 uppercase tracking-wider mb-1">{group.name}</h3>
-                  <p className="text-xs text-gray-400">Top 2 advance to Championship KO (GW34) • 3rd-4th → Challenger QF</p>
-                </div>
+          <h2 className="text-lg font-bold text-blue-300 uppercase tracking-wider mb-6 flex items-center gap-2">
+            <span className="h-1 w-8 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full"></span>
+            Championship
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {champGroups.map((group) => {
+              const groupLetter = group.roundPrefix.includes('CA') ? 'A' : 'B';
+              return (
+                <div key={group.roundPrefix} className="bg-slate-800/40 border border-blue-500/20 rounded-xl overflow-hidden shadow-lg hover:shadow-blue-500/10 transition-shadow">
+                  {/* Group header with gradient */}
+                  <div className="bg-gradient-to-r from-blue-900/60 to-blue-800/40 border-b border-blue-500/20 px-4 py-3">
+                    <h3 className="text-base font-bold text-blue-200 uppercase tracking-wider">Group {groupLetter}</h3>
+                    <p className="text-xs text-blue-300/80 mt-1">Top 2 → KO • 3rd-4th → Challenger QF</p>
+                  </div>
 
-                {/* Standings table */}
-                <div className="mb-6 bg-slate-800/80 rounded overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-gray-400 text-xs border-b border-white/10">
-                        <th className="text-left px-2 py-1.5">Pos</th>
-                        <th className="text-left px-2 py-1.5">Team</th>
-                        <th className="text-center px-2 py-1.5 w-5">P</th>
-                        <th className="text-center px-2 py-1.5 w-5">W</th>
-                        <th className="text-center px-2 py-1.5 w-5">D</th>
-                        <th className="text-center px-2 py-1.5 w-5">L</th>
-                        <th className="text-right px-2 py-1.5 w-8">Pts</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.standings.map((team, i) => (
-                        <tr
-                          key={team.teamId}
-                          className={`border-b border-white/5 ${team.advanced ? "bg-green-900/20" : i >= 2 ? "bg-purple-900/10" : ""}`}
-                        >
-                          <td className="px-2 py-1.5 text-gray-400 text-xs">{i + 1}</td>
-                          <td className={`px-2 py-1.5 font-semibold ${team.advanced ? "text-green-400" : i >= 2 ? "text-purple-300" : "text-white"}`}>
-                            {team.abbr}
-                          </td>
-                          <td className="text-center text-gray-300 text-xs">{team.played}</td>
-                          <td className="text-center text-gray-300 text-xs">{team.won}</td>
-                          <td className="text-center text-gray-300 text-xs">{team.drawn}</td>
-                          <td className="text-center text-gray-300 text-xs">{team.lost}</td>
-                          <td className="text-right px-2 py-1.5 text-white tabular-nums font-bold text-xs">{team.leaguePoints}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                  <div className="p-4">
+                    {/* Standings table */}
+                    <div className="mb-6 rounded-lg overflow-hidden border border-blue-500/10">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-blue-300 bg-slate-900/50 border-b border-blue-500/10">
+                            <th className="text-left px-3 py-2">Pos</th>
+                            <th className="text-left px-3 py-2">Team</th>
+                            <th className="text-center px-2 py-2">P</th>
+                            <th className="text-center px-2 py-2">W</th>
+                            <th className="text-center px-2 py-2">D</th>
+                            <th className="text-center px-2 py-2">L</th>
+                            <th className="text-right px-3 py-2">Pts</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.standings.map((team, i) => (
+                            <tr
+                              key={team.teamId}
+                              className={`border-b border-blue-500/10 transition-colors ${team.advanced ? "bg-green-900/25 hover:bg-green-900/35" : i >= 2 ? "bg-purple-900/15 hover:bg-purple-900/25" : "hover:bg-slate-700/30"}`}
+                            >
+                              <td className="px-3 py-2 text-blue-400 font-semibold">{i + 1}</td>
+                              <td className={`px-3 py-2 font-semibold ${team.advanced ? "text-green-300" : i >= 2 ? "text-purple-300" : "text-white"}`}>
+                                {team.name}
+                              </td>
+                              <td className="text-center text-gray-300">{team.played}</td>
+                              <td className="text-center text-gray-300">{team.won}</td>
+                              <td className="text-center text-gray-300">{team.drawn}</td>
+                              <td className="text-center text-gray-300">{team.lost}</td>
+                              <td className="text-right px-3 py-2 text-white font-bold tabular-nums">{team.leaguePoints}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
-                {/* Fixtures by GW - Collapsible */}
-                <div className="space-y-2">
-                  {[31, 32, 33].map((gw) => {
-                    const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
-                    if (gwFixtures.length === 0) return null;
+                    {/* Fixtures by GW - Collapsible */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-blue-300/60 uppercase tracking-wider font-semibold mb-2">Matches</p>
+                      {[31, 32, 33].map((gw) => {
+                        const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
+                        if (gwFixtures.length === 0) return null;
 
-                    const isExpanded = isGwExpanded(group.roundPrefix, gw);
+                        const isExpanded = isGwExpanded(group.roundPrefix, gw);
 
-                    return (
-                      <div key={gw}>
-                        <button
-                          onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
-                          className="w-full flex items-center justify-between text-xs font-semibold text-gray-300 hover:text-yellow-300 transition py-1 px-2 rounded hover:bg-slate-700/50"
-                        >
-                          <span>GW{gw}</span>
-                          <span className="text-gray-500">{isExpanded ? "▼" : "▶"}</span>
-                        </button>
+                        return (
+                          <div key={gw}>
+                            <button
+                              onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
+                              className="w-full flex items-center justify-between text-xs font-semibold text-blue-300 hover:text-blue-200 transition py-1.5 px-2 rounded hover:bg-blue-500/10"
+                            >
+                              <span>GW{gw}</span>
+                              <span className="text-blue-500/60">{isExpanded ? "▼" : "▶"}</span>
+                            </button>
 
-                        {isExpanded && (
-                          <div className="space-y-1 mt-1">
-                            {gwFixtures.map((tie) => (
-                              <MatchCard
-                                key={tie.tieId}
-                                tie={tie}
-                                compact
-                                liveScores={mergedScores}
-                              />
-                            ))}
+                            {isExpanded && (
+                              <div className="space-y-1.5 mt-1.5 pl-1">
+                                {gwFixtures.map((tie) => (
+                                  <MatchCard
+                                    key={tie.tieId}
+                                    tie={tie}
+                                    compact
+                                    liveScores={mergedScores}
+                                    useFullName={true}
+                                  />
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -595,87 +608,97 @@ function GroupStageView({
       {/* Challenger Groups */}
       {challGroups.length > 0 && (
         <div>
-          <h3 className="text-sm font-bold text-purple-400 uppercase tracking-wider mb-4">Challenger Groups</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {challGroups.map((group) => (
-              <div key={group.roundPrefix} className="bg-slate-800/50 border border-white/10 rounded-lg p-4">
-                {/* Group header */}
-                <div className="mb-4">
-                  <h3 className="text-sm font-bold text-purple-300 uppercase tracking-wider mb-1">{group.name}</h3>
-                  <p className="text-xs text-gray-400">Top 2 play Challenger QFs (GW34) • 3rd-4th eliminated</p>
-                </div>
+          <h2 className="text-lg font-bold text-purple-300 uppercase tracking-wider mb-6 flex items-center gap-2">
+            <span className="h-1 w-8 bg-gradient-to-r from-purple-400 to-purple-600 rounded-full"></span>
+            Challenger
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {challGroups.map((group) => {
+              const groupLetter = group.roundPrefix.includes('XA') ? 'A' : 'B';
+              return (
+                <div key={group.roundPrefix} className="bg-slate-800/40 border border-purple-500/20 rounded-xl overflow-hidden shadow-lg hover:shadow-purple-500/10 transition-shadow">
+                  {/* Group header with gradient */}
+                  <div className="bg-gradient-to-r from-purple-900/60 to-purple-800/40 border-b border-purple-500/20 px-4 py-3">
+                    <h3 className="text-base font-bold text-purple-200 uppercase tracking-wider">Group {groupLetter}</h3>
+                    <p className="text-xs text-purple-300/80 mt-1">Top 2 → Challenger QF • 3rd-4th → Eliminated</p>
+                  </div>
 
-                {/* Standings table */}
-                <div className="mb-6 bg-slate-800/80 rounded overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-gray-400 text-xs border-b border-white/10">
-                        <th className="text-left px-2 py-1.5">Pos</th>
-                        <th className="text-left px-2 py-1.5">Team</th>
-                        <th className="text-center px-2 py-1.5 w-5">P</th>
-                        <th className="text-center px-2 py-1.5 w-5">W</th>
-                        <th className="text-center px-2 py-1.5 w-5">D</th>
-                        <th className="text-center px-2 py-1.5 w-5">L</th>
-                        <th className="text-right px-2 py-1.5 w-8">Pts</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.standings.map((team, i) => (
-                        <tr
-                          key={team.teamId}
-                          className={`border-b border-white/5 ${team.advanced ? "bg-purple-900/20" : ""}`}
-                        >
-                          <td className="px-2 py-1.5 text-gray-400 text-xs">{i + 1}</td>
-                          <td className={`px-2 py-1.5 font-semibold ${team.advanced ? "text-purple-400" : "text-white"}`}>
-                            {team.abbr}
-                          </td>
-                          <td className="text-center text-gray-300 text-xs">{team.played}</td>
-                          <td className="text-center text-gray-300 text-xs">{team.won}</td>
-                          <td className="text-center text-gray-300 text-xs">{team.drawn}</td>
-                          <td className="text-center text-gray-300 text-xs">{team.lost}</td>
-                          <td className="text-right px-2 py-1.5 text-white tabular-nums font-bold text-xs">{team.leaguePoints}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                  <div className="p-4">
+                    {/* Standings table */}
+                    <div className="mb-6 rounded-lg overflow-hidden border border-purple-500/10">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-purple-300 bg-slate-900/50 border-b border-purple-500/10">
+                            <th className="text-left px-3 py-2">Pos</th>
+                            <th className="text-left px-3 py-2">Team</th>
+                            <th className="text-center px-2 py-2">P</th>
+                            <th className="text-center px-2 py-2">W</th>
+                            <th className="text-center px-2 py-2">D</th>
+                            <th className="text-center px-2 py-2">L</th>
+                            <th className="text-right px-3 py-2">Pts</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.standings.map((team, i) => (
+                            <tr
+                              key={team.teamId}
+                              className={`border-b border-purple-500/10 transition-colors ${team.advanced ? "bg-purple-900/30 hover:bg-purple-900/40" : "hover:bg-slate-700/30"}`}
+                            >
+                              <td className="px-3 py-2 text-purple-400 font-semibold">{i + 1}</td>
+                              <td className={`px-3 py-2 font-semibold ${team.advanced ? "text-purple-200" : "text-white"}`}>
+                                {team.name}
+                              </td>
+                              <td className="text-center text-gray-300">{team.played}</td>
+                              <td className="text-center text-gray-300">{team.won}</td>
+                              <td className="text-center text-gray-300">{team.drawn}</td>
+                              <td className="text-center text-gray-300">{team.lost}</td>
+                              <td className="text-right px-3 py-2 text-white font-bold tabular-nums">{team.leaguePoints}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
-                {/* Fixtures by GW - Collapsible */}
-                <div className="space-y-2">
-                  {[31, 32, 33].map((gw) => {
-                    const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
-                    if (gwFixtures.length === 0) return null;
+                    {/* Fixtures by GW - Collapsible */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-purple-300/60 uppercase tracking-wider font-semibold mb-2">Matches</p>
+                      {[31, 32, 33].map((gw) => {
+                        const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
+                        if (gwFixtures.length === 0) return null;
 
-                    const isExpanded = isGwExpanded(group.roundPrefix, gw);
+                        const isExpanded = isGwExpanded(group.roundPrefix, gw);
 
-                    return (
-                      <div key={gw}>
-                        <button
-                          onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
-                          className="w-full flex items-center justify-between text-xs font-semibold text-gray-300 hover:text-purple-300 transition py-1 px-2 rounded hover:bg-slate-700/50"
-                        >
-                          <span>GW{gw}</span>
-                          <span className="text-gray-500">{isExpanded ? "▼" : "▶"}</span>
-                        </button>
+                        return (
+                          <div key={gw}>
+                            <button
+                              onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
+                              className="w-full flex items-center justify-between text-xs font-semibold text-purple-300 hover:text-purple-200 transition py-1.5 px-2 rounded hover:bg-purple-500/10"
+                            >
+                              <span>GW{gw}</span>
+                              <span className="text-purple-500/60">{isExpanded ? "▼" : "▶"}</span>
+                            </button>
 
-                        {isExpanded && (
-                          <div className="space-y-1 mt-1">
-                            {gwFixtures.map((tie) => (
-                              <MatchCard
-                                key={tie.tieId}
-                                tie={tie}
-                                compact
-                                liveScores={mergedScores}
-                              />
-                            ))}
+                            {isExpanded && (
+                              <div className="space-y-1.5 mt-1.5 pl-1">
+                                {gwFixtures.map((tie) => (
+                                  <MatchCard
+                                    key={tie.tieId}
+                                    tie={tie}
+                                    compact
+                                    liveScores={mergedScores}
+                                    useFullName={true}
+                                  />
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
