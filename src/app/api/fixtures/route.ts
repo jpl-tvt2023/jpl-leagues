@@ -14,16 +14,25 @@ export async function GET(request: NextRequest) {
     const groupParam = searchParams.get("group");
     const leagueSlug = searchParams.get("leagueSlug");
 
-    // Resolve leagueId and config from slug if provided
-    let leagueId: string | null = null;
-    let playoffStartGw: number | null = null;
-    if (leagueSlug) {
-      const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
-      if (league.length > 0) {
-        leagueId = league[0].id;
-        playoffStartGw = league[0].playoffStartGw ?? null;
-      }
+    // leagueSlug is required
+    if (!leagueSlug) {
+      return NextResponse.json(
+        { error: "leagueSlug parameter is required" },
+        { status: 400 }
+      );
     }
+
+    // Resolve leagueId and config from slug
+    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+    if (league.length === 0) {
+      return NextResponse.json(
+        { error: "League not found" },
+        { status: 404 }
+      );
+    }
+
+    const leagueId = league[0].id;
+    const playoffStartGw = league[0].playoffStartGw ?? null;
 
     // Return cached fixtures if available — only for unfiltered league requests
     if (leagueId && !gameweekParam && !groupParam) {
@@ -46,10 +55,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Filter by league if leagueSlug provided
-    if (leagueId) {
-      allFixtures = allFixtures.filter(f => f.gameweek.leagueId === leagueId);
-    }
+    // Filter by league (now always present)
+    allFixtures = allFixtures.filter(f => f.gameweek.leagueId === leagueId);
 
     // Filter by gameweek if provided
     if (gameweekParam) {

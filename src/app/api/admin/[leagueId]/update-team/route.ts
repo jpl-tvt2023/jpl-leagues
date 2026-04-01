@@ -45,8 +45,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Check if team exists
-    const existingTeam = await db.select().from(teams).where(eq(teams.id, teamId));
+    // Check if team exists and belongs to authorized league
+    const existingTeam = await db.select().from(teams).where(and(eq(teams.id, teamId), eq(teams.leagueId, leagueId)));
     if (existingTeam.length === 0) {
       return NextResponse.json(
         { error: "Team not found" },

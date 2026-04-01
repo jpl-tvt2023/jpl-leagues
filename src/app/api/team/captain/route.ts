@@ -35,16 +35,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if captain announcements are enabled
-    const captainSetting = await db.select().from(settings).where(eq(settings.key, "captainAnnouncementEnabled")).limit(1);
-    if (captainSetting.length > 0 && captainSetting[0].value === "false") {
-      return NextResponse.json(
-        { error: "Captain announcements are currently disabled by the admin" },
-        { status: 403 }
-      );
-    }
-
-    // Get the team and its players
+    // Get the team and its players first to get leagueId
     const team = await db.query.teams.findFirst({
       where: eq(teams.id, teamId),
       with: { players: true },
@@ -52,6 +43,17 @@ export async function POST(request: NextRequest) {
 
     if (!team) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+
+    // Check if captain announcements are enabled for this league
+    const captainSetting = await db.select().from(settings)
+      .where(and(eq(settings.key, "captainAnnouncementEnabled"), eq(settings.leagueId, team.leagueId)))
+      .limit(1);
+    if (captainSetting.length > 0 && captainSetting[0].value === "false") {
+      return NextResponse.json(
+        { error: "Captain announcements are currently disabled by the admin" },
+        { status: 403 }
+      );
     }
 
     // Verify the player belongs to this team
@@ -63,9 +65,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the gameweek
+    // Get the gameweek scoped to this league
     const gw = await db.query.gameweeks.findFirst({
-      where: eq(gameweeks.number, gameweekNumber),
+      where: and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, team.leagueId)),
     });
 
     if (!gw) {

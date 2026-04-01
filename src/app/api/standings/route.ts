@@ -61,31 +61,37 @@ export async function GET(request: NextRequest) {
     const group = searchParams.get("group");
     const leagueSlug = searchParams.get("leagueSlug");
 
-    // Resolve leagueId and config from slug if provided
-    let leagueId: string | null = null;
-    let playoffStartGw = 31;
-    let leagueTeamSize = 32;
-    let leagueEnabledChips: string[] = ["D", "W", "C"];
-    if (leagueSlug) {
-      const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips })
-        .from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
-      if (league.length > 0) {
-        leagueId = league[0].id;
-        playoffStartGw = league[0].playoffStartGw ?? 31;
-        leagueTeamSize = league[0].teamSize ?? 32;
-        try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
-      }
+    // leagueSlug is required
+    if (!leagueSlug) {
+      return NextResponse.json(
+        { error: "leagueSlug parameter is required" },
+        { status: 400 }
+      );
     }
+
+    // Resolve leagueId and config from slug
+    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips })
+      .from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+    if (league.length === 0) {
+      return NextResponse.json(
+        { error: "League not found" },
+        { status: 404 }
+      );
+    }
+
+    const leagueId = league[0].id;
+    let playoffStartGw = league[0].playoffStartGw ?? 31;
+    let leagueTeamSize = league[0].teamSize ?? 32;
+    let leagueEnabledChips: string[] = ["D", "W", "C"];
+    try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
     const leagueStageEnd = playoffStartGw - 1; // last GW of the group stage
 
     // Return cached standings if available (populated by cron or previous request)
-    if (leagueId) {
-      try {
-        const cached = await getCachedStandings(leagueId);
-        if (cached) return NextResponse.json(cached);
-      } catch {
-        // Cache miss or Redis error — fall through to DB computation
-      }
+    try {
+      const cached = await getCachedStandings(leagueId);
+      if (cached) return NextResponse.json(cached);
+    } catch {
+      // Cache miss or Redis error — fall through to DB computation
     }
 
     // Get all teams with their relations using relational query

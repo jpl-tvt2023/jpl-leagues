@@ -129,8 +129,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the team
-    const teamList = await db.select().from(teams).where(eq(teams.id, teamId));
+    // Get the team and verify it belongs to authorized league
+    const teamList = await db.select().from(teams).where(and(eq(teams.id, teamId), eq(teams.leagueId, leagueId)));
     const team = teamList[0];
 
     if (!team) {
