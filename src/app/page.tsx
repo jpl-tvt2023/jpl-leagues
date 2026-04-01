@@ -129,37 +129,24 @@ export default function Home() {
                     </div>
 
                     <div className="flex flex-wrap gap-3">
-                      {league.isActive ? (
-                        <>
-                          <Link
-                            href={`/${league.slug}/standings`}
-                            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}
-                          >
-                            Standings
-                          </Link>
-                          <Link
-                            href={`/${league.slug}/fixtures`}
-                            className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-                          >
-                            Fixtures
-                          </Link>
-                          <Link
-                            href={`/${league.slug}/playoffs`}
-                            className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-                          >
-                            Playoffs
-                          </Link>
-                        </>
-                      ) : (
-                        <>
-                          <span className={`cursor-not-allowed rounded-full px-4 py-2 text-sm font-semibold opacity-40 ${standingsBtn}`}>
-                            Standings
-                          </span>
-                          <span className="cursor-not-allowed rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/30">
-                            Fixtures
-                          </span>
-                        </>
-                      )}
+                      <Link
+                        href={`/${league.slug}/standings`}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}
+                      >
+                        Standings
+                      </Link>
+                      <Link
+                        href={`/${league.slug}/fixtures`}
+                        className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                      >
+                        Fixtures
+                      </Link>
+                      <Link
+                        href={`/${league.slug}/playoffs`}
+                        className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                      >
+                        Playoffs
+                      </Link>
                     </div>
                   </div>
                 </div>

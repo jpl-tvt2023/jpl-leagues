@@ -44,6 +44,7 @@ const PUBLIC_ROUTES = [
   "/api/fixtures",
   "/api/standings",
   "/api/playoffs/bracket",
+  "/api/playoffs/winners",
   "/api/leagues",
 ];
 
