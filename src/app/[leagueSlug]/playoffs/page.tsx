@@ -572,7 +572,22 @@ function GroupStageView({
                             onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
                             className="w-full flex items-center justify-between text-xs font-semibold text-blue-300 hover:text-blue-200 transition py-1 px-1.5 rounded hover:bg-blue-500/10"
                           >
-                            <span>GW{gw}</span>
+                            <div className="flex items-center gap-2">
+                              <span>GW{gw}</span>
+                              {mergedScores.some(s => s.gameweek === gw) && onRefreshRound && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRefreshRound(gw);
+                                  }}
+                                  disabled={refreshingGw === gw}
+                                  className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-xs ${refreshingGw === gw ? "animate-spin" : ""}`}
+                                  title="Refresh live scores"
+                                >
+                                  ⟳
+                                </button>
+                              )}
+                            </div>
                             <span className="text-blue-500/60">{isExpanded ? "▼" : "▶"}</span>
                           </button>
 
@@ -660,7 +675,22 @@ function GroupStageView({
                             onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
                             className="w-full flex items-center justify-between text-xs font-semibold text-purple-300 hover:text-purple-200 transition py-1 px-1.5 rounded hover:bg-purple-500/10"
                           >
-                            <span>GW{gw}</span>
+                            <div className="flex items-center gap-2">
+                              <span>GW{gw}</span>
+                              {mergedScores.some(s => s.gameweek === gw) && onRefreshRound && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRefreshRound(gw);
+                                  }}
+                                  disabled={refreshingGw === gw}
+                                  className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-xs ${refreshingGw === gw ? "animate-spin" : ""}`}
+                                  title="Refresh live scores"
+                                >
+                                  ⟳
+                                </button>
+                              )}
+                            </div>
                             <span className="text-purple-500/60">{isExpanded ? "▼" : "▶"}</span>
                           </button>
 
