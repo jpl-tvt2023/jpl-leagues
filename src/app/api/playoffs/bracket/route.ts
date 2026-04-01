@@ -65,6 +65,26 @@ interface SurvivalDisplay {
   advanced: boolean;
 }
 
+interface GroupStanding {
+  teamId: string;
+  name: string;
+  abbr: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  pointsFor: number;
+  leaguePoints: number;
+  advanced: boolean;
+}
+
+interface GroupData {
+  name: string;
+  roundPrefix: string;
+  standings: GroupStanding[];
+  fixtures: TieDisplay[];
+}
+
 /**
  * GET /api/playoffs/bracket
  * Returns full bracket state — tentative, projected, or live
@@ -887,6 +907,101 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     home: resolveWinner("C-37-A"), away: resolveWinner("C-37-B"), winnerId: null, loserId: null,
   }];
 
+  // Helper to build group stage data (for 16-team format)
+  const buildGroupData = (roundPrefix: string, displayName: string): GroupData => {
+    const fixtures = tiesByRound(roundPrefix);
+
+    // Build standings from completed ties
+    const teamStats = new Map<string, GroupStanding>();
+
+    for (const tie of fixtures) {
+      // Add teams if not already in map
+      if (tie.home?.teamId && !teamStats.has(tie.home.teamId)) {
+        teamStats.set(tie.home.teamId, {
+          teamId: tie.home.teamId,
+          name: tie.home.name,
+          abbr: tie.home.abbr,
+          played: 0,
+          won: 0,
+          drawn: 0,
+          lost: 0,
+          pointsFor: 0,
+          leaguePoints: 0,
+          advanced: false,
+        });
+      }
+      if (tie.away?.teamId && !teamStats.has(tie.away.teamId)) {
+        teamStats.set(tie.away.teamId, {
+          teamId: tie.away.teamId,
+          name: tie.away.name,
+          abbr: tie.away.abbr,
+          played: 0,
+          won: 0,
+          drawn: 0,
+          lost: 0,
+          pointsFor: 0,
+          leaguePoints: 0,
+          advanced: false,
+        });
+      }
+
+      // Update stats from completed tie
+      if (tie.home?.teamId && tie.away?.teamId) {
+        const homeStat = teamStats.get(tie.home.teamId)!;
+        const awayStat = teamStats.get(tie.away.teamId)!;
+
+        const homeScore = tie.home.leg1Score ?? 0;
+        const awayScore = tie.away.leg1Score ?? 0;
+
+        homeStat.pointsFor += homeScore;
+        awayStat.pointsFor += awayScore;
+
+        if (tie.winnerId) {
+          // Tie is complete
+          if (tie.winnerId === tie.home.teamId) {
+            homeStat.won++;
+            awayStat.lost++;
+          } else {
+            awayStat.won++;
+            homeStat.lost++;
+          }
+          homeStat.played++;
+          awayStat.played++;
+          homeStat.leaguePoints = homeStat.won * 2 + homeStat.drawn;
+          awayStat.leaguePoints = awayStat.won * 2 + awayStat.drawn;
+        } else if (homeScore === awayScore && homeScore !== 0) {
+          // Draw
+          homeStat.drawn++;
+          awayStat.drawn++;
+          homeStat.played++;
+          awayStat.played++;
+          homeStat.leaguePoints = homeStat.won * 2 + homeStat.drawn;
+          awayStat.leaguePoints = awayStat.won * 2 + awayStat.drawn;
+        }
+      }
+    }
+
+    // Sort standings by league points desc, then points for desc
+    const standings = Array.from(teamStats.values()).sort((a, b) => {
+      if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
+      return b.pointsFor - a.pointsFor;
+    });
+
+    // Mark top 2 as advanced if group stage is complete (all 6 matches done)
+    const totalMatches = fixtures.filter(f => f.winnerId !== null).length;
+    if (totalMatches === 6) {
+      standings[0].advanced = true;
+      standings[1].advanced = true;
+    }
+
+    return {
+      name: displayName,
+      roundPrefix,
+      standings,
+      fixtures,
+    };
+  };
+
   // Branch output by variant
   if (teamSize === 8) {
     const sfLive = tiesByRound("8T-SF");
@@ -916,8 +1031,18 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     const qfLive = tiesByRound("16T-ES");
     const sfLive = tiesByRound("16T-SF");
     const finalLive = tiesByRound("16T-FINAL");
+
+    // Build group stage data
+    const groupStageData = [
+      buildGroupData("16T-CA", "Championship Group A"),
+      buildGroupData("16T-CB", "Championship Group B"),
+      buildGroupData("16T-XA", "Challenger Group A"),
+      buildGroupData("16T-XB", "Challenger Group B"),
+    ];
+
     return {
       mode: "live", latestCompletedGw, teamSize: 16,
+      groupStage: { groups: groupStageData },
       tvt: {
         qf: qfLive.length > 0 ? qfLive : [
           { tieId: "16T-ES-M1", roundName: "16T-ES", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A1"), away: placeholder("Champ B1"), winnerId: null, loserId: null },

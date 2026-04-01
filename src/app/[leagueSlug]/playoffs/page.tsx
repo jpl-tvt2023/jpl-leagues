@@ -48,10 +48,33 @@ interface SurvivalDisplay {
   advanced: boolean;
 }
 
+interface GroupStanding {
+  teamId: string;
+  name: string;
+  abbr: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  pointsFor: number;
+  leaguePoints: number;
+  advanced: boolean;
+}
+
+interface GroupData {
+  name: string;
+  roundPrefix: string;
+  standings: GroupStanding[];
+  fixtures: TieDisplay[];
+}
+
 interface BracketData {
   mode: "tentative" | "projected" | "live";
   latestCompletedGw: number;
   teamSize?: number;
+  groupStage?: {
+    groups: GroupData[];
+  };
   tvt: {
     ro16?: TieDisplay[];
     qf?: TieDisplay[];
@@ -72,7 +95,7 @@ interface BracketData {
   liveScores?: Record<number, LiveFixtureScore[]>;
 }
 
-type TabType = "tvt" | "challenger";
+type TabType = "tvt" | "challenger" | "groupStage";
 
 function PlayerBreakdown({
   label,
@@ -409,6 +432,101 @@ function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
   );
 }
 
+function GroupStageView({
+  groups,
+  liveScores,
+  refreshingGw,
+  tempLiveScores,
+  onRefreshRound,
+  playoffStartGw,
+}: {
+  groups: GroupData[];
+  liveScores?: Record<number, LiveFixtureScore[]>;
+  refreshingGw?: number | null;
+  tempLiveScores?: Record<number, LiveFixtureScore[]>;
+  onRefreshRound?: (gw: number) => void;
+  playoffStartGw?: number;
+}) {
+  const mergedScores = [
+    ...(tempLiveScores ? Object.values(tempLiveScores).flat() : []),
+    ...(liveScores ? Object.values(liveScores).flat() : []),
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {groups.map((group, idx) => (
+          <div key={group.roundPrefix} className="bg-slate-800/50 border border-white/10 rounded-lg p-4">
+            {/* Group header */}
+            <div className="mb-4">
+              <h3 className="text-sm font-bold text-yellow-400 uppercase tracking-wider mb-1">{group.name}</h3>
+              <p className="text-xs text-gray-500">(Top 2 Advance)</p>
+            </div>
+
+            {/* Standings table */}
+            <div className="mb-6 bg-slate-800/80 rounded overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-400 text-xs border-b border-white/10">
+                    <th className="text-left px-2 py-1.5">Team</th>
+                    <th className="text-center px-2 py-1.5 w-6">P</th>
+                    <th className="text-center px-2 py-1.5 w-6">W</th>
+                    <th className="text-center px-2 py-1.5 w-6">D</th>
+                    <th className="text-center px-2 py-1.5 w-6">L</th>
+                    <th className="text-center px-2 py-1.5 w-8">PF</th>
+                    <th className="text-center px-2 py-1.5 w-8">Pts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.standings.map((team, i) => (
+                    <tr
+                      key={team.teamId}
+                      className={`border-b border-white/5 ${team.advanced ? "bg-green-900/20" : ""} ${i < 2 ? "font-semibold" : ""}`}
+                    >
+                      <td className={`px-2 py-1.5 ${team.advanced ? "text-green-400" : "text-white"}`}>
+                        {team.abbr}
+                      </td>
+                      <td className="text-center text-gray-300">{team.played}</td>
+                      <td className="text-center text-gray-300">{team.won}</td>
+                      <td className="text-center text-gray-300">{team.drawn}</td>
+                      <td className="text-center text-gray-300">{team.lost}</td>
+                      <td className="text-center text-gray-300">{team.pointsFor}</td>
+                      <td className="text-center text-white tabular-nums font-semibold">{team.leaguePoints}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Fixtures by GW */}
+            <div className="space-y-3">
+              {[31, 32, 33].map((gw) => {
+                const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
+                if (gwFixtures.length === 0) return null;
+                return (
+                  <div key={gw}>
+                    <p className="text-xs text-gray-500 font-semibold mb-1">GW{gw}</p>
+                    <div className="space-y-1">
+                      {gwFixtures.map((tie) => (
+                        <MatchCard
+                          key={tie.tieId}
+                          tie={tie}
+                          compact
+                          liveScores={mergedScores}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function LeaguePlayoffsPage() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
@@ -443,6 +561,10 @@ export default function LeaguePlayoffsPage() {
         if (res.ok) {
           const bracket = await res.json();
           setData(bracket);
+          // Smart default tab for 16-team: show group stage if still in progress
+          if (bracket.teamSize === 16 && bracket.latestCompletedGw < 34) {
+            setActiveTab("groupStage");
+          }
           if (bracket.latestCompletedGw >= 30) {
             fetchLiveScores(bracket.latestCompletedGw);
           }
@@ -555,8 +677,36 @@ export default function LeaguePlayoffsPage() {
           )}
         </div>
 
-        {/* Tab toggle — Challenger tab only for 16/32-team */}
-        {data.teamSize !== 8 && (
+        {/* Tab toggle */}
+        {data.teamSize === 16 && (
+          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
+            <button
+              onClick={() => setActiveTab("groupStage")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "groupStage" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Group Stage
+            </button>
+            <button
+              onClick={() => setActiveTab("tvt")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              TVT Main Draw
+            </button>
+            <button
+              onClick={() => setActiveTab("challenger")}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Challenger Series
+            </button>
+          </div>
+        )}
+        {data.teamSize === 32 && (
           <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit">
             <button
               onClick={() => setActiveTab("tvt")}
@@ -575,6 +725,18 @@ export default function LeaguePlayoffsPage() {
               Challenger Series
             </button>
           </div>
+        )}
+
+        {/* Group Stage — 16-team only */}
+        {activeTab === "groupStage" && data.teamSize === 16 && data.groupStage && (
+          <GroupStageView
+            groups={data.groupStage.groups}
+            liveScores={data.liveScores}
+            refreshingGw={refreshing}
+            tempLiveScores={tempLiveScores}
+            onRefreshRound={handleRefreshRound}
+            playoffStartGw={31} // Default, could be made dynamic from league config if needed
+          />
         )}
 
         {/* TVT Main Draw Bracket */}
@@ -683,51 +845,30 @@ export default function LeaguePlayoffsPage() {
               const allLiveScores = data.liveScores ? Object.values(data.liveScores).flat() : [];
               const tempScores = tempLiveScores ? Object.values(tempLiveScores).flat() : [];
               const mergedScores = [...tempScores, ...allLiveScores];
+
+              // Determine challenger rounds based on team size
+              const challengerRounds = data.teamSize === 16 ? [
+                { key: "c34", label: "Challenger QFs (GW34)", gw: 34, data: data.challenger.c34 },
+                { key: "c35", label: "Challenger Semi-Finals (GW35–36)", gw: 35, data: data.challenger.c35 },
+                { key: "c36", label: "Challenger Final (GW37–38)", gw: 37, data: data.challenger.c36 },
+              ] : [
+                { key: "c31", label: "C-31 (GW31) — Round of 12", gw: 31, data: data.challenger.c31 },
+                { key: "c32", label: "C-32 (GW32) — Round of 6", gw: 32, data: data.challenger.c32 },
+                { key: "c34", label: "C-34 (GW34) — Quarter-Finals", gw: 34, data: data.challenger.c34 },
+                { key: "c35", label: "C-35 (GW35) — QF Losers vs C-34 Winners", gw: 35, data: data.challenger.c35 },
+                { key: "c36", label: "C-36 (GW36) — Round of 4", gw: 36, data: data.challenger.c36 },
+                { key: "c37", label: "C-37 (GW37) — Challenger Semi-Finals", gw: 37, data: data.challenger.c37 },
+                { key: "c38", label: "C-38 (GW38) — Challenger Final", gw: 38, data: data.challenger.c38 },
+              ];
+
               return (
                 <>
-                  {[
-                    { key: "c31", label: "C-31 (GW31) — Round of 12", gw: 31, data: data.challenger.c31 },
-                    { key: "c32", label: "C-32 (GW32) — Round of 6", gw: 32, data: data.challenger.c32 },
-                  ].map(({ key, label, gw, data: roundTies }) => {
-                    const ties = roundTies as TieDisplay[];
-                    if (!ties || ties.length === 0) return null;
-                    const hasLive = mergedScores.some(s => s.gameweek === gw);
-                    const isRoundRefreshing = refreshing === gw;
-                    return (
-                      <div key={key}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider">{label}</h3>
-                          {hasLive && (
-                            <button
-                              onClick={() => handleRefreshRound(gw)}
-                              disabled={isRoundRefreshing}
-                              className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRoundRefreshing ? "animate-spin" : ""}`}
-                              title="Refresh live scores"
-                            >
-                              ⟳
-                            </button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {ties.map(tie => (
-                            <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {(data.challenger.c33?.length ?? 0) > 0 && (
+                  {/* Show C-33 survival table only for 32-team */}
+                  {data.teamSize === 32 && (data.challenger.c33?.length ?? 0) > 0 && (
                     <SurvivalTable entries={data.challenger.c33 as SurvivalDisplay[]} />
                   )}
 
-                  {[
-                    { key: "c34", label: "C-34 (GW34) — Quarter-Finals", gw: 34, data: data.challenger.c34 },
-                    { key: "c35", label: "C-35 (GW35) — QF Losers vs C-34 Winners", gw: 35, data: data.challenger.c35 },
-                    { key: "c36", label: "C-36 (GW36) — Round of 4", gw: 36, data: data.challenger.c36 },
-                    { key: "c37", label: "C-37 (GW37) — Challenger Semi-Finals", gw: 37, data: data.challenger.c37 },
-                    { key: "c38", label: "C-38 (GW38) — Challenger Final", gw: 38, data: data.challenger.c38 },
-                  ].map(({ key, label, gw, data: roundData }) => {
+                  {challengerRounds.map(({ key, label, gw, data: roundData }) => {
                     const ties = roundData as TieDisplay[];
                     if (!ties || ties.length === 0) return null;
                     const hasLive = mergedScores.some(s => s.gameweek === gw);
