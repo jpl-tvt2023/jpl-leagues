@@ -1040,6 +1040,11 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       buildGroupData("16T-XB", "Challenger Group B"),
     ];
 
+    // Challenger rounds with placeholders
+    const c34Live = tiesByRound("16T-QF");
+    const c35Live = tiesByRound("16T-CSF");
+    const c36Live = tiesByRound("16T-CFINAL");
+
     return {
       mode: "live", latestCompletedGw, teamSize: 16,
       groupStage: { groups: groupStageData },
@@ -1060,9 +1065,19 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       challenger: {
         c31: [],
         c33: [],
-        c34: tiesByRound("16T-QF"),     // Challenger QFs: 16T-QF1–4
-        c35: tiesByRound("16T-CSF"),    // Challenger SFs: 16T-CSF-A/B
-        c36: tiesByRound("16T-CFINAL"), // Challenger Final: 16T-CFINAL
+        c34: c34Live.length > 0 ? c34Live : [
+          { tieId: "16T-QF1", roundName: "16T-QF", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A 3rd"), away: placeholder("Chall B 2nd"), winnerId: null, loserId: null },
+          { tieId: "16T-QF2", roundName: "16T-QF", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ B 3rd"), away: placeholder("Chall A 2nd"), winnerId: null, loserId: null },
+          { tieId: "16T-QF3", roundName: "16T-QF", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A 4th"), away: placeholder("Chall B 1st"), winnerId: null, loserId: null },
+          { tieId: "16T-QF4", roundName: "16T-QF", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ B 4th"), away: placeholder("Chall A 1st"), winnerId: null, loserId: null },
+        ],
+        c35: c35Live.length > 0 ? c35Live : [
+          { tieId: "16T-CSF-A", roundName: "16T-CSF", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveWinner("16T-QF1"), away: resolveWinner("16T-QF4"), winnerId: null, loserId: null },
+          { tieId: "16T-CSF-B", roundName: "16T-CSF", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveWinner("16T-QF2"), away: resolveWinner("16T-QF3"), winnerId: null, loserId: null },
+        ],
+        c36: c36Live.length > 0 ? c36Live : [
+          { tieId: "16T-CFINAL", roundName: "16T-CFINAL", status: "projected", gw1: playoffStartGw + 6, gw2: playoffStartGw + 7, home: resolveWinner("16T-CSF-A"), away: resolveWinner("16T-CSF-B"), winnerId: null, loserId: null },
+        ],
       },
     };
   }

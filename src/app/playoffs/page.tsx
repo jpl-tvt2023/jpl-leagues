@@ -448,6 +448,7 @@ function GroupStageView({
   tempLiveScores,
   onRefreshRound,
   playoffStartGw,
+  latestCompletedGw,
 }: {
   groups: GroupData[];
   liveScores?: Record<number, LiveFixtureScore[]>;
@@ -455,83 +456,238 @@ function GroupStageView({
   tempLiveScores?: Record<number, LiveFixtureScore[]>;
   onRefreshRound?: (gw: number) => void;
   playoffStartGw?: number;
+  latestCompletedGw?: number;
 }) {
+  const [expandedGws, setExpandedGws] = useState<Record<string, Set<number>>>({});
+
+  // Initialize expanded state: default to current GW
+  useEffect(() => {
+    const currentGw = latestCompletedGw ? (latestCompletedGw < 33 ? latestCompletedGw + 1 : 33) : 31;
+    const newExpanded: Record<string, Set<number>> = {};
+    groups.forEach(g => {
+      newExpanded[g.roundPrefix] = new Set([currentGw]);
+    });
+    setExpandedGws(newExpanded);
+  }, [groups, latestCompletedGw]);
+
+  const toggleGwExpanded = (groupPrefix: string, gw: number) => {
+    setExpandedGws(prev => {
+      const newState = { ...prev };
+      if (!newState[groupPrefix]) newState[groupPrefix] = new Set();
+
+      if (newState[groupPrefix].has(gw)) {
+        newState[groupPrefix].delete(gw);
+      } else {
+        newState[groupPrefix].add(gw);
+      }
+      return newState;
+    });
+  };
+
+  const isGwExpanded = (groupPrefix: string, gw: number) => {
+    return expandedGws[groupPrefix]?.has(gw) ?? false;
+  };
+
   const mergedScores = [
     ...(tempLiveScores ? Object.values(tempLiveScores).flat() : []),
     ...(liveScores ? Object.values(liveScores).flat() : []),
   ];
 
+  // Determine group type (Championship vs Challenger)
+  const champGroups = groups.filter(g => g.roundPrefix.includes('C') && !g.roundPrefix.includes('XA') && !g.roundPrefix.includes('XB'));
+  const challGroups = groups.filter(g => g.roundPrefix.includes('X'));
+
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {groups.map((group, idx) => (
-          <div key={group.roundPrefix} className="bg-slate-800/50 border border-white/10 rounded-lg p-4">
-            {/* Group header */}
-            <div className="mb-4">
-              <h3 className="text-sm font-bold text-yellow-400 uppercase tracking-wider mb-1">{group.name}</h3>
-              <p className="text-xs text-gray-500">(Top 2 Advance)</p>
-            </div>
-
-            {/* Standings table */}
-            <div className="mb-6 bg-slate-800/80 rounded overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-gray-400 text-xs border-b border-white/10">
-                    <th className="text-left px-2 py-1.5">Team</th>
-                    <th className="text-center px-2 py-1.5 w-6">P</th>
-                    <th className="text-center px-2 py-1.5 w-6">W</th>
-                    <th className="text-center px-2 py-1.5 w-6">D</th>
-                    <th className="text-center px-2 py-1.5 w-6">L</th>
-                    <th className="text-center px-2 py-1.5 w-8">PF</th>
-                    <th className="text-center px-2 py-1.5 w-8">Pts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.standings.map((team, i) => (
-                    <tr
-                      key={team.teamId}
-                      className={`border-b border-white/5 ${team.advanced ? "bg-green-900/20" : ""} ${i < 2 ? "font-semibold" : ""}`}
-                    >
-                      <td className={`px-2 py-1.5 ${team.advanced ? "text-green-400" : "text-white"}`}>
-                        {team.abbr}
-                      </td>
-                      <td className="text-center text-gray-300">{team.played}</td>
-                      <td className="text-center text-gray-300">{team.won}</td>
-                      <td className="text-center text-gray-300">{team.drawn}</td>
-                      <td className="text-center text-gray-300">{team.lost}</td>
-                      <td className="text-center text-gray-300">{team.pointsFor}</td>
-                      <td className="text-center text-white tabular-nums font-semibold">{team.leaguePoints}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Fixtures by GW */}
-            <div className="space-y-3">
-              {[31, 32, 33].map((gw) => {
-                const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
-                if (gwFixtures.length === 0) return null;
-                return (
-                  <div key={gw}>
-                    <p className="text-xs text-gray-500 font-semibold mb-1">GW{gw}</p>
-                    <div className="space-y-1">
-                      {gwFixtures.map((tie) => (
-                        <MatchCard
-                          key={tie.tieId}
-                          tie={tie}
-                          compact
-                          liveScores={mergedScores}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      {/* Tournament Flow Info */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="bg-blue-900/30 border border-blue-500/30 rounded-lg p-3">
+          <p className="text-xs font-semibold text-blue-300 uppercase mb-1">Championship Groups (A & B)</p>
+          <p className="text-xs text-blue-200">🏆 <strong>Top 2</strong> advance to Knockout (GW34)</p>
+          <p className="text-xs text-blue-200">📍 <strong>3rd-4th</strong> join Challenger QF (GW34)</p>
+        </div>
+        <div className="bg-purple-900/30 border border-purple-500/30 rounded-lg p-3">
+          <p className="text-xs font-semibold text-purple-300 uppercase mb-1">Challenger Groups (A & B)</p>
+          <p className="text-xs text-purple-200">⚡ <strong>Top 2</strong> play Challenger QFs (GW34)</p>
+          <p className="text-xs text-purple-200">📍 <strong>3rd-4th</strong> eliminated</p>
+        </div>
       </div>
+
+      {/* Championship Groups */}
+      {champGroups.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-yellow-400 uppercase tracking-wider mb-4">Championship Groups</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {champGroups.map((group) => (
+              <div key={group.roundPrefix} className="bg-slate-800/50 border border-white/10 rounded-lg p-4">
+                {/* Group header */}
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold text-yellow-300 uppercase tracking-wider mb-1">{group.name}</h3>
+                  <p className="text-xs text-gray-400">Top 2 advance to Championship KO (GW34) • 3rd-4th → Challenger QF</p>
+                </div>
+
+                {/* Standings table */}
+                <div className="mb-6 bg-slate-800/80 rounded overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-400 text-xs border-b border-white/10">
+                        <th className="text-left px-2 py-1.5">Pos</th>
+                        <th className="text-left px-2 py-1.5">Team</th>
+                        <th className="text-center px-2 py-1.5 w-5">P</th>
+                        <th className="text-center px-2 py-1.5 w-5">W</th>
+                        <th className="text-center px-2 py-1.5 w-5">D</th>
+                        <th className="text-center px-2 py-1.5 w-5">L</th>
+                        <th className="text-right px-2 py-1.5 w-8">Pts</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.standings.map((team, i) => (
+                        <tr
+                          key={team.teamId}
+                          className={`border-b border-white/5 ${team.advanced ? "bg-green-900/20" : i >= 2 ? "bg-purple-900/10" : ""}`}
+                        >
+                          <td className="px-2 py-1.5 text-gray-400 text-xs">{i + 1}</td>
+                          <td className={`px-2 py-1.5 font-semibold ${team.advanced ? "text-green-400" : i >= 2 ? "text-purple-300" : "text-white"}`}>
+                            {team.abbr}
+                          </td>
+                          <td className="text-center text-gray-300 text-xs">{team.played}</td>
+                          <td className="text-center text-gray-300 text-xs">{team.won}</td>
+                          <td className="text-center text-gray-300 text-xs">{team.drawn}</td>
+                          <td className="text-center text-gray-300 text-xs">{team.lost}</td>
+                          <td className="text-right px-2 py-1.5 text-white tabular-nums font-bold text-xs">{team.leaguePoints}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Fixtures by GW - Collapsible */}
+                <div className="space-y-2">
+                  {[31, 32, 33].map((gw) => {
+                    const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
+                    if (gwFixtures.length === 0) return null;
+
+                    const isExpanded = isGwExpanded(group.roundPrefix, gw);
+
+                    return (
+                      <div key={gw}>
+                        <button
+                          onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
+                          className="w-full flex items-center justify-between text-xs font-semibold text-gray-300 hover:text-yellow-300 transition py-1 px-2 rounded hover:bg-slate-700/50"
+                        >
+                          <span>GW{gw}</span>
+                          <span className="text-gray-500">{isExpanded ? "▼" : "▶"}</span>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="space-y-1 mt-1">
+                            {gwFixtures.map((tie) => (
+                              <MatchCard
+                                key={tie.tieId}
+                                tie={tie}
+                                compact
+                                liveScores={mergedScores}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Challenger Groups */}
+      {challGroups.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-purple-400 uppercase tracking-wider mb-4">Challenger Groups</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {challGroups.map((group) => (
+              <div key={group.roundPrefix} className="bg-slate-800/50 border border-white/10 rounded-lg p-4">
+                {/* Group header */}
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold text-purple-300 uppercase tracking-wider mb-1">{group.name}</h3>
+                  <p className="text-xs text-gray-400">Top 2 play Challenger QFs (GW34) • 3rd-4th eliminated</p>
+                </div>
+
+                {/* Standings table */}
+                <div className="mb-6 bg-slate-800/80 rounded overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-400 text-xs border-b border-white/10">
+                        <th className="text-left px-2 py-1.5">Pos</th>
+                        <th className="text-left px-2 py-1.5">Team</th>
+                        <th className="text-center px-2 py-1.5 w-5">P</th>
+                        <th className="text-center px-2 py-1.5 w-5">W</th>
+                        <th className="text-center px-2 py-1.5 w-5">D</th>
+                        <th className="text-center px-2 py-1.5 w-5">L</th>
+                        <th className="text-right px-2 py-1.5 w-8">Pts</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.standings.map((team, i) => (
+                        <tr
+                          key={team.teamId}
+                          className={`border-b border-white/5 ${team.advanced ? "bg-purple-900/20" : ""}`}
+                        >
+                          <td className="px-2 py-1.5 text-gray-400 text-xs">{i + 1}</td>
+                          <td className={`px-2 py-1.5 font-semibold ${team.advanced ? "text-purple-400" : "text-white"}`}>
+                            {team.abbr}
+                          </td>
+                          <td className="text-center text-gray-300 text-xs">{team.played}</td>
+                          <td className="text-center text-gray-300 text-xs">{team.won}</td>
+                          <td className="text-center text-gray-300 text-xs">{team.drawn}</td>
+                          <td className="text-center text-gray-300 text-xs">{team.lost}</td>
+                          <td className="text-right px-2 py-1.5 text-white tabular-nums font-bold text-xs">{team.leaguePoints}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Fixtures by GW - Collapsible */}
+                <div className="space-y-2">
+                  {[31, 32, 33].map((gw) => {
+                    const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
+                    if (gwFixtures.length === 0) return null;
+
+                    const isExpanded = isGwExpanded(group.roundPrefix, gw);
+
+                    return (
+                      <div key={gw}>
+                        <button
+                          onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
+                          className="w-full flex items-center justify-between text-xs font-semibold text-gray-300 hover:text-purple-300 transition py-1 px-2 rounded hover:bg-slate-700/50"
+                        >
+                          <span>GW{gw}</span>
+                          <span className="text-gray-500">{isExpanded ? "▼" : "▶"}</span>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="space-y-1 mt-1">
+                            {gwFixtures.map((tie) => (
+                              <MatchCard
+                                key={tie.tieId}
+                                tie={tie}
+                                compact
+                                liveScores={mergedScores}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -888,11 +1044,21 @@ export default function PlayoffsPage() {
                 { key: "c38", label: "C-38 (GW38) — Challenger Final", gw: 38, data: data.challenger.c38 },
               ];
 
+              const hasAnyChallengerRound = challengerRounds.some(r => (r.data as TieDisplay[])?.length > 0);
+
               return (
                 <>
                   {/* Show C-33 survival table only for 32-team */}
                   {data.teamSize === 32 && (data.challenger.c33?.length ?? 0) > 0 && (
                     <SurvivalTable entries={data.challenger.c33 as SurvivalDisplay[]} />
+                  )}
+
+                  {/* Empty state message for 16-team during group stage */}
+                  {data.teamSize === 16 && !hasAnyChallengerRound && (
+                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 text-center">
+                      <p className="text-gray-400 text-sm mb-2">⏳ Challenger fixtures will be available after group stage (GW33) completes.</p>
+                      <p className="text-gray-500 text-xs">Once admin advances playoffs, Top 2 from each Challenger Group will play QFs in GW34.</p>
+                    </div>
                   )}
 
                   {challengerRounds.map(({ key, label, gw, data: roundData }) => {
