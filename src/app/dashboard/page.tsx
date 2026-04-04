@@ -246,6 +246,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewedGw, setViewedGw] = useState<number | null>(null);
+  const [leagueSlug, setLeagueSlug] = useState<string>("");
   
   // Submission states
   const [selectedCaptain, setSelectedCaptain] = useState<string>("");
@@ -280,6 +281,7 @@ export default function DashboardPage() {
         if (!response.ok) throw new Error("Failed to fetch dashboard");
         const dashboardData = await response.json();
         setData(dashboardData);
+        if (dashboardData.leagueSlug) setLeagueSlug(dashboardData.leagueSlug);
         if (dashboardData.lastGwResult) setViewedGw(dashboardData.lastGwResult.gameweek);
       }
     } catch (err) {
@@ -391,7 +393,13 @@ export default function DashboardPage() {
       const result = await response.json();
       
       if (!response.ok) {
-        setSubmitMessage({ type: "error", text: result.error || "Failed to submit captain" });
+        const errorText = result.error || "Failed to submit captain";
+        // Check if error is due to no gameweeks (fixtures not generated)
+        const isFixturesNotGenerated = errorText.toLowerCase().includes("gameweek not found");
+        const displayError = isFixturesNotGenerated
+          ? "Fixtures have not been generated yet. Please ask the admin to generate fixtures first."
+          : errorText;
+        setSubmitMessage({ type: "error", text: displayError });
       } else {
         const action = result.captain.wasSwitched ? "switched to" : "announced as";
         setSubmitMessage({ type: "success", text: `${result.captain.playerName} ${action} captain for GW${data.deadline.gameweek}` });
@@ -435,7 +443,13 @@ export default function DashboardPage() {
       const result = await response.json();
       
       if (!response.ok) {
-        setSubmitMessage({ type: "error", text: result.error || "Failed to submit chip" });
+        const errorText = result.error || "Failed to submit chip";
+        // Check if error is due to no gameweeks (fixtures not generated)
+        const isFixturesNotGenerated = errorText.toLowerCase().includes("gameweek not found");
+        const displayError = isFixturesNotGenerated
+          ? "Fixtures have not been generated yet. Please ask the admin to generate fixtures first."
+          : errorText;
+        setSubmitMessage({ type: "error", text: displayError });
       } else {
         setSubmitMessage({ type: "success", text: result.message });
         setSelectedChip(null);
@@ -508,13 +522,13 @@ export default function DashboardPage() {
           <Link href="/dashboard" className="text-yellow-400 font-semibold transition">
             Dashboard
           </Link>
-          <Link href="/standings" className="text-gray-300 hover:text-white transition">
+          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
             Standings
           </Link>
-          <Link href="/fixtures" className="text-gray-300 hover:text-white transition">
+          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
             Fixtures
           </Link>
-          <Link href="/playoffs" className="text-gray-300 hover:text-white transition">
+          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
             Playoffs
           </Link>
           <Link href="/rules" className="text-gray-300 hover:text-white transition">
@@ -1075,7 +1089,7 @@ export default function DashboardPage() {
                 ))}
               </div>
               <Link
-                href="/standings"
+                href={`/${leagueSlug}/standings`}
                 className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
               >
                 View Full Table →

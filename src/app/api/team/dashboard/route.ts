@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, players, groups, fixtures, results, gameweeks, gameweekCaptains, gameweekChips, settings } from "@/lib/db";
+import { db, teams, players, groups, fixtures, results, gameweeks, gameweekCaptains, gameweekChips, settings, leagues } from "@/lib/db";
 import { eq, and, gt, asc, desc, or } from "drizzle-orm";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
@@ -45,6 +45,10 @@ export async function GET(request: NextRequest) {
     // Get team's leagueId for scoped deadline sync
     const teamBasic = await db.select({ leagueId: teams.leagueId }).from(teams).where(eq(teams.id, teamId)).limit(1);
     const teamLeagueId = teamBasic[0]?.leagueId;
+    const leagueSlugRow = teamLeagueId
+      ? await db.select({ slug: leagues.slug }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
+      : [];
+    const leagueSlug = leagueSlugRow[0]?.slug ?? "";
 
     if (teamLeagueId) {
       try {
@@ -673,6 +677,7 @@ export async function GET(request: NextRequest) {
       teamMembers,
       oppositeGroupTeams,
       announcementSettings: await getAnnouncementSettings(teamLeagueId!),
+      leagueSlug,
     });
   } catch (error) {
     console.error("Dashboard error:", error);
