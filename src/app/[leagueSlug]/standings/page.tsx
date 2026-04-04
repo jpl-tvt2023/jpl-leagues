@@ -175,6 +175,18 @@ export default function LeagueStandingsPage() {
                   <p className="text-gray-400">Standings will appear here once teams are registered and matches are played.</p>
                 </div>
               </div>
+            ) : latestGameweek === 0 && totalTeams > 0 ? (
+              <div className="text-center py-12">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
+                  <h2 className="text-xl font-semibold text-white mb-2">Standings Coming Soon</h2>
+                  <p className="text-gray-400 mb-4">Standings will be updated once:</p>
+                  <ul className="text-gray-400 text-sm space-y-2">
+                    <li>✓ {teamSize === 32 ? "Admin assigns teams to groups" : "Teams are registered"}</li>
+                    <li>✓ Admin generates fixtures</li>
+                    <li>✓ Matches are played</li>
+                  </ul>
+                </div>
+              </div>
             ) : !groupsRevealed && groupB.length > 0 ? (
               /* Groups not yet revealed — show all teams in one table without group labels */
               <div className="max-w-3xl mx-auto">

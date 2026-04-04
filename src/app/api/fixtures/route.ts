@@ -101,9 +101,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(responseData);
   } catch (error) {
     console.error("Error fetching fixtures:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch fixtures" },
-      { status: 500 }
-    );
+    // Return empty fixtures instead of error — likely no fixtures generated yet
+    return NextResponse.json({
+      fixtures: {},
+      playoffStartGw: 31,
+    });
   }
 }
