@@ -291,8 +291,34 @@ export default function DashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    fetchDashboard();
-  }, [fetchDashboard]);
+    // Check auth status and profile completion before loading dashboard
+    const checkAuth = async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        const me = await res.json();
+
+        // If not authenticated, redirect to signin
+        if (!me.authenticated || me.type !== "team") {
+          router.push("/signin");
+          return;
+        }
+
+        // If profile not complete, redirect to setup
+        if (!me.team.isProfileComplete) {
+          router.push("/setup");
+          return;
+        }
+
+        // Auth is valid and profile is complete, load dashboard
+        fetchDashboard();
+      } catch (err) {
+        console.error("Auth check error:", err);
+        router.push("/signin");
+      }
+    };
+
+    checkAuth();
+  }, [fetchDashboard, router]);
 
   // GW navigation handlers
   const handlePrevGw = () => {

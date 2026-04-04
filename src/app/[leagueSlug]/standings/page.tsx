@@ -18,6 +18,7 @@ export default function LeagueStandingsPage() {
   const [latestGameweek, setLatestGameweek] = useState<number>(0);
   const [leagueStageEnd, setLeagueStageEnd] = useState<number>(30);
   const [teamSize, setTeamSize] = useState<number>(32);
+  const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [leagueName, setLeagueName] = useState<string>("");
 
@@ -59,6 +60,7 @@ export default function LeagueStandingsPage() {
         setGroupB(data.groupB || []);
         if (data.leagueStageEnd) setLeagueStageEnd(data.leagueStageEnd);
         if (data.teamSize) setTeamSize(data.teamSize);
+        setGroupsRevealed(data.groupsRevealed === true);
         const stageEnd: number = data.leagueStageEnd ?? 30;
         const maxPlayed = Math.min(
           Math.max(
@@ -172,6 +174,15 @@ export default function LeagueStandingsPage() {
                   <h2 className="text-xl font-semibold text-white mb-2">No Teams Yet</h2>
                   <p className="text-gray-400">Standings will appear here once teams are registered and matches are played.</p>
                 </div>
+              </div>
+            ) : !groupsRevealed && groupB.length > 0 ? (
+              /* Groups not yet revealed — show all teams in one table without group labels */
+              <div className="max-w-3xl mx-auto">
+                <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-center">
+                  <p className="text-yellow-300 text-sm font-semibold">Groups have not been revealed yet</p>
+                  <p className="text-yellow-400/70 text-xs mt-1">Group assignments will be announced by the admin before the season starts.</p>
+                </div>
+                <StandingsTable teams={[...groupA, ...groupB]} group={undefined} />
               </div>
             ) : (
               <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>

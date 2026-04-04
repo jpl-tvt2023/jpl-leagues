@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, settings, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
+import { eq, and } from "drizzle-orm";
 import { getAllCachedScores, getCachedStandings, setCachedStandings } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 
@@ -85,6 +85,13 @@ export async function GET(request: NextRequest) {
     let leagueEnabledChips: string[] = ["D", "W", "C"];
     try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
     const leagueStageEnd = playoffStartGw - 1; // last GW of the group stage
+
+    // Check if groups have been revealed to teams
+    const groupsRevealedRows = await db
+      .select({ value: settings.value })
+      .from(settings)
+      .where(and(eq(settings.leagueId, leagueId), eq(settings.key, "groupsRevealed")));
+    const groupsRevealed = groupsRevealedRows[0]?.value === "true";
 
     // Return cached standings if available (populated by cron or previous request)
     try {
@@ -382,6 +389,7 @@ export async function GET(request: NextRequest) {
       enabledChips: leagueEnabledChips,
       leagueStageEnd,
       teamSize: leagueTeamSize,
+      groupsRevealed,
       legend: {
         top8: "TVT Title Play-offs",
         rank9to14: "Challenger Series",

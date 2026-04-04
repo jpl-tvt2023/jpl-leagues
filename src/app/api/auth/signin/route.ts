@@ -79,6 +79,14 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Determine redirect: password change → setup wizard → dashboard
+      let redirectTo = "/";
+      if (team.mustChangePassword) {
+        redirectTo = "/change-password";
+      } else if (!team.isProfileComplete) {
+        redirectTo = "/setup";
+      }
+
       const response = NextResponse.json({
         success: true,
         team: {
@@ -88,8 +96,9 @@ export async function POST(request: NextRequest) {
           groupId: team.groupId,
           isAdmin: false,
           mustChangePassword: team.mustChangePassword,
+          isProfileComplete: team.isProfileComplete,
         },
-        redirectTo: team.mustChangePassword ? "/change-password" : "/",
+        redirectTo,
       });
 
       // Single signed session cookie — replaces teamId/isAdmin cookies

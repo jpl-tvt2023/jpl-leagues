@@ -101,7 +101,10 @@ export const teams = sqliteTable("teams", {
   scoreLockSet2Used: integer("score_lock_set2_used", { mode: "boolean" }).notNull().default(false),
   comebackSet2Used: integer("comeback_set2_used", { mode: "boolean" }).notNull().default(false),
   underdogSet2Used: integer("underdog_set2_used", { mode: "boolean" }).notNull().default(false),
-  
+
+  // Team onboarding: set to true when team completes setup wizard (team name, abbreviation, 2 players)
+  isProfileComplete: integer("is_profile_complete", { mode: "boolean" }).notNull().default(false),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({

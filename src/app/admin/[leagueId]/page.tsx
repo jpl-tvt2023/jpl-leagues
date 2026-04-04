@@ -13,6 +13,7 @@ interface Team {
   group: string;
   players: { id: string; name: string; fplId: string }[];
   needsPasswordChange: boolean;
+  isProfileComplete: boolean;
 }
 
 interface TeamWithPlayers {
@@ -163,6 +164,7 @@ export default function AdminDashboard() {
   const [fixturesFileName, setFixturesFileName] = useState("");
   const [captainsFileName, setCaptainsFileName] = useState("");
   const [chipsFileName, setChipsFileName] = useState("");
+  const [teamsUploadMode, setTeamsUploadMode] = useState<"full" | "credentials">("full");
   const [bulkUploadResult, setBulkUploadResult] = useState<BulkUploadResult | null>(null);
   const [bulkUploading, setBulkUploading] = useState(false);
 
@@ -184,9 +186,14 @@ export default function AdminDashboard() {
   const [cupGroupsLoading, setCupGroupsLoading] = useState(false);
   const [bracketsLoading, setBracketsLoading] = useState(false);
 
+  // Group Assignment State (32-team TVT)
+  const [groupAssignments, setGroupAssignments] = useState<Record<string, string>>({});
+  const [savingGroups, setSavingGroups] = useState(false);
+
   // Settings State
   const [captainAnnouncementEnabled, setCaptainAnnouncementEnabled] = useState(true);
   const [chipAnnouncementEnabled, setChipAnnouncementEnabled] = useState(true);
+  const [groupsRevealed, setGroupsRevealed] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
   // Reset Season State
@@ -251,6 +258,12 @@ export default function AdminDashboard() {
       }
       const data = await response.json();
       setTeams(data.teams || []);
+      // Seed group assignments from current team groups
+      const initialAssignments: Record<string, string> = {};
+      for (const t of (data.teams || [])) {
+        initialAssignments[t.id] = t.group || "A";
+      }
+      setGroupAssignments(initialAssignments);
     } catch (error) {
       console.error("Failed to fetch teams:", error);
     } finally {
@@ -590,6 +603,31 @@ export default function AdminDashboard() {
     }
   };
 
+  const saveGroupAssignments = async () => {
+    const assignments = Object.entries(groupAssignments).map(([teamId, group]) => ({ teamId, group }));
+    if (assignments.length === 0) return;
+    setSavingGroups(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/assign-groups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignments }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to save group assignments" });
+      } else {
+        setMessage({ type: "success", text: data.message || "Groups saved" });
+        fetchTeams(); // refresh team list
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setSavingGroups(false);
+    }
+  };
+
   const fetchSettings = async () => {
     setSettingsLoading(true);
     try {
@@ -598,6 +636,7 @@ export default function AdminDashboard() {
       if (res.ok) {
         setCaptainAnnouncementEnabled(data.captainAnnouncementEnabled);
         setChipAnnouncementEnabled(data.chipAnnouncementEnabled);
+        setGroupsRevealed(data.groupsRevealed ?? false);
       }
     } catch {
       // ignore
@@ -616,7 +655,11 @@ export default function AdminDashboard() {
       if (res.ok) {
         if (key === "captainAnnouncementEnabled") setCaptainAnnouncementEnabled(value);
         if (key === "chipAnnouncementEnabled") setChipAnnouncementEnabled(value);
-        setMessage({ type: "success", text: `${key === "captainAnnouncementEnabled" ? "Captain" : "Chip"} announcements ${value ? "enabled" : "disabled"}` });
+        if (key === "groupsRevealed") setGroupsRevealed(value);
+        const label = key === "captainAnnouncementEnabled" ? "Captain announcements"
+          : key === "chipAnnouncementEnabled" ? "Chip announcements"
+          : "Groups";
+        setMessage({ type: "success", text: `${label} ${value ? "enabled" : "disabled"}` });
       } else {
         const data = await res.json();
         setMessage({ type: "error", text: data.error || "Failed to update setting" });
@@ -772,22 +815,28 @@ export default function AdminDashboard() {
     setMessage(null);
     
     try {
-      // Map Excel columns to expected format
-      const teams = teamsData.map(row => ({
-        teamName: row["Team Name"] || row["teamName"] || row["Name"] || "",
-        abbreviation: row["Abbreviation"] || row["abbreviation"] || row["Abbr"] || "",
-        password: row["Password"] || row["password"] || "",
-        group: row["Group"] || row["group"] || "",
-        player1Name: row["Player1 Name"] || row["player1Name"] || row["Player 1 Name"] || "",
-        player1FplId: row["Player1 FPL ID"] || row["player1FplId"] || row["Player 1 FPL ID"] || "",
-        player2Name: row["Player2 Name"] || row["player2Name"] || row["Player 2 Name"] || "",
-        player2FplId: row["Player2 FPL ID"] || row["player2FplId"] || row["Player 2 FPL ID"] || "",
-      }));
+      // Map Excel columns based on upload mode
+      const teams = teamsUploadMode === "full"
+        ? teamsData.map(row => ({
+            teamName: row["Team Name"] || row["teamName"] || row["Name"] || "",
+            abbreviation: row["Abbreviation"] || row["abbreviation"] || row["Abbr"] || "",
+            password: row["Password"] || row["password"] || "",
+            group: row["Group"] || row["group"] || "",
+            player1Name: row["Player1 Name"] || row["player1Name"] || row["Player 1 Name"] || "",
+            player1FplId: row["Player1 FPL ID"] || row["player1FplId"] || row["Player 1 FPL ID"] || "",
+            player2Name: row["Player2 Name"] || row["player2Name"] || row["Player 2 Name"] || "",
+            player2FplId: row["Player2 FPL ID"] || row["player2FplId"] || row["Player 2 FPL ID"] || "",
+          }))
+        : teamsData.map(row => ({
+            teamName: row["Team Name"] || row["teamName"] || row["Name"] || "",
+            password: row["Password"] || row["password"] || "",
+            group: row["Group"] || row["group"] || "",
+          }));
 
       const response = await fetch(`/api/admin/${leagueId}/bulk-upload-teams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teams }),
+        body: JSON.stringify({ teams, mode: teamsUploadMode }),
       });
       
       const data = await response.json();
@@ -1540,7 +1589,9 @@ export default function AdminDashboard() {
                         <div>
                           <div className="font-semibold text-white">{team.name}</div>
                           <div className="text-xs text-gray-400">
-                            {team.players.map(p => p.name).join(" & ")}
+                            {team.isProfileComplete
+                              ? team.players.map(p => p.name).join(" & ")
+                              : "Profile Setup Pending"}
                           </div>
                         </div>
                       </div>
@@ -1557,8 +1608,18 @@ export default function AdminDashboard() {
                         >
                           Delete
                         </button>
-                        <span className={`text-xs ${team.needsPasswordChange ? "text-yellow-400" : "text-green-400"}`}>
-                          {team.needsPasswordChange ? "Pending" : "Active"}
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          team.needsPasswordChange && !team.isProfileComplete
+                            ? "bg-orange-500/20 text-orange-400"
+                            : !team.isProfileComplete
+                            ? "bg-yellow-500/20 text-yellow-400"
+                            : "bg-green-500/20 text-green-400"
+                        }`}>
+                          {team.needsPasswordChange && !team.isProfileComplete
+                            ? "Awaiting Login"
+                            : !team.isProfileComplete
+                            ? "Setup Pending"
+                            : "Active"}
                         </span>
                       </div>
                     </div>
@@ -1582,7 +1643,9 @@ export default function AdminDashboard() {
                         <div>
                           <div className="font-semibold text-white">{team.name}</div>
                           <div className="text-xs text-gray-400">
-                            {team.players.map(p => p.name).join(" & ")}
+                            {team.isProfileComplete
+                              ? team.players.map(p => p.name).join(" & ")
+                              : "Profile Setup Pending"}
                           </div>
                         </div>
                       </div>
@@ -1599,8 +1662,18 @@ export default function AdminDashboard() {
                         >
                           Delete
                         </button>
-                        <span className={`text-xs ${team.needsPasswordChange ? "text-yellow-400" : "text-green-400"}`}>
-                          {team.needsPasswordChange ? "Pending" : "Active"}
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          team.needsPasswordChange && !team.isProfileComplete
+                            ? "bg-orange-500/20 text-orange-400"
+                            : !team.isProfileComplete
+                            ? "bg-yellow-500/20 text-yellow-400"
+                            : "bg-green-500/20 text-green-400"
+                        }`}>
+                          {team.needsPasswordChange && !team.isProfileComplete
+                            ? "Awaiting Login"
+                            : !team.isProfileComplete
+                            ? "Setup Pending"
+                            : "Active"}
                         </span>
                       </div>
                     </div>
@@ -1609,6 +1682,43 @@ export default function AdminDashboard() {
               )}
             </div>
             )}
+          </div>
+        )}
+
+        {/* Group Assignment — 32-team leagues only */}
+        {leagueConfig.teamSize === 32 && teams.length > 0 && (
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Group Assignments</h3>
+                <p className="text-gray-400 text-sm">Assign each team to Group A or B. Teams won't see their group until you reveal groups in Settings.</p>
+              </div>
+              <button
+                onClick={saveGroupAssignments}
+                disabled={savingGroups}
+                className="px-5 py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 disabled:opacity-50 transition text-sm"
+              >
+                {savingGroups ? "Saving..." : "Save Groups"}
+              </button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              {teams.map((team) => (
+                <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                  <div>
+                    <div className="font-semibold text-white text-sm">{team.name}</div>
+                    <div className="text-xs text-gray-400">{team.abbreviation}</div>
+                  </div>
+                  <select
+                    value={groupAssignments[team.id] || "A"}
+                    onChange={(e) => setGroupAssignments(prev => ({ ...prev, [team.id]: e.target.value }))}
+                    className="rounded-lg bg-black/40 border border-white/20 text-white text-sm px-3 py-1.5 focus:border-yellow-400 focus:outline-none"
+                  >
+                    <option value="A">Group A</option>
+                    <option value="B">Group B</option>
+                  </select>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -2123,10 +2233,43 @@ export default function AdminDashboard() {
               {/* Teams Upload */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                 <h3 className="text-xl font-bold text-white mb-4">Upload Teams</h3>
-                <p className="text-gray-400 text-sm mb-4">
-                  Excel columns: Team Name, Abbreviation, Password, Group, Player1 Name, Player1 FPL ID, Player2 Name, Player2 FPL ID
-                </p>
-                
+
+                {/* Mode toggle */}
+                <div className="flex gap-2 mb-4 p-1 rounded-lg bg-white/5 border border-white/10">
+                  <button
+                    onClick={() => { setTeamsUploadMode("full"); setTeamsData([]); setTeamsFileName(""); }}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm font-semibold transition ${
+                      teamsUploadMode === "full"
+                        ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Full Setup
+                  </button>
+                  <button
+                    onClick={() => { setTeamsUploadMode("credentials"); setTeamsData([]); setTeamsFileName(""); }}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm font-semibold transition ${
+                      teamsUploadMode === "credentials"
+                        ? "bg-gradient-to-r from-blue-400 to-cyan-500 text-white"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Credentials Only
+                  </button>
+                </div>
+
+                {teamsUploadMode === "full" ? (
+                  <p className="text-gray-400 text-xs mb-4">
+                    <strong className="text-gray-300">Full Setup:</strong> Team Name, Abbreviation, Password, Group, Player1 Name, Player1 FPL ID, Player2 Name, Player2 FPL ID.
+                    Teams are created complete — no setup wizard needed.
+                  </p>
+                ) : (
+                  <p className="text-gray-400 text-xs mb-4">
+                    <strong className="text-gray-300">Credentials Only:</strong> Team Name, Password, Group.
+                    Teams log in and complete their own profile (final name, abbreviation, players) via setup wizard.
+                  </p>
+                )}
+
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
                   <input
@@ -2144,13 +2287,13 @@ export default function AdminDashboard() {
                     </p>
                   </div>
                 )}
-                
+
                 <button
                   onClick={handleBulkUploadTeams}
                   disabled={bulkUploading || teamsData.length === 0}
                   className="w-full rounded-lg bg-gradient-to-r from-blue-400 to-blue-600 px-6 py-3 font-semibold text-white hover:from-blue-300 hover:to-blue-500 transition disabled:opacity-50"
                 >
-                  {bulkUploading ? "Uploading..." : "Upload Teams"}
+                  {bulkUploading ? "Uploading..." : `Upload Teams (${teamsUploadMode === "full" ? "Full Setup" : "Credentials Only"})`}
                 </button>
               </div>
 
@@ -2734,6 +2877,25 @@ export default function AdminDashboard() {
                       }`} />
                     </button>
                   </div>
+
+                  {leagueConfig.groupCount >= 2 && (
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">
+                      <div>
+                        <div className="font-semibold text-white">Reveal Groups to Teams</div>
+                        <div className="text-sm text-gray-400">When enabled, teams can see their group assignment and group standings. Keep disabled until you are ready to announce groups.</div>
+                      </div>
+                      <button
+                        onClick={() => toggleSetting("groupsRevealed", !groupsRevealed)}
+                        className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                          groupsRevealed ? "bg-green-500" : "bg-gray-600"
+                        }`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          groupsRevealed ? "translate-x-6" : "translate-x-1"
+                        }`} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

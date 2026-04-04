@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
             abbreviation: team.abbreviation,
             groupId: team.groupId,
             mustChangePassword: team.mustChangePassword,
+            isProfileComplete: team.isProfileComplete,
           },
         });
       }

@@ -130,6 +130,7 @@ export async function GET(request: NextRequest) {
         group: t.group.name,
         players: t.players.map(p => ({ name: p.name, fplId: p.fplId })),
         needsPasswordChange: t.mustChangePassword,
+        isProfileComplete: t.isProfileComplete,
       })),
     });
   } catch (error) {
