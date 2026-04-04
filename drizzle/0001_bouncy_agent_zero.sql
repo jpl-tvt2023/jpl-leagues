@@ -1,1 +1,0 @@
-ALTER TABLE `teams` ADD `is_profile_complete` integer DEFAULT false NOT NULL;
