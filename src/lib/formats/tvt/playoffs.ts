@@ -46,7 +46,7 @@ export const SF_SEEDING_8: [string, string, number, string, number][] = [
 // 16-team playoff group stage schedule
 // ============================================
 
-type GSMatch16 = [string, number, number, number]; // [tieId, gwOffset, homeIdx, awayIdx]
+export type GSMatch16 = [string, number, number, number]; // [tieId, gwOffset, homeIdx, awayIdx]
 
 export const CHAMP_GA_MATCHES: GSMatch16[] = [
   ["16T-CA-31-1", 0, 0, 3], // GW31: rank1 v rank8

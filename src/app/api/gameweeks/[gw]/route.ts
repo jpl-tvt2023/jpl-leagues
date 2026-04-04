@@ -7,6 +7,7 @@ import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { eq, and, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { leagues } from "@/lib/db/schema";
+import { processTripleCrownGameweek } from "@/lib/formats/triple-crown/process-gameweek";
 
 interface RouteParams {
   params: Promise<{ gw: string }>;
@@ -294,6 +295,30 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 404 }
       );
     }
+
+    // ============================================
+    // FORMAT DISPATCHER
+    // ============================================
+    // Fetch league format and delegate to format-specific processor
+    const leagueRow = await db.select({ format: leagues.format })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId || ""))
+      .limit(1);
+
+    if (leagueRow[0]?.format === "triple-crown") {
+      const result = await processTripleCrownGameweek(
+        gameweek.id,
+        gameweekNumber,
+        leagueId || "",
+        forceReprocess
+      );
+      await invalidateLeaguePageCache(leagueId || "");
+      return NextResponse.json(result);
+    }
+
+    // ============================================
+    // TVT FORMAT (default)
+    // ============================================
 
     // If force reprocess, delete existing results and revert team points
     if (forceReprocess) {

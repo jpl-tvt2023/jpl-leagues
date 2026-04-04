@@ -64,8 +64,8 @@ export async function POST(request: NextRequest) {
 
     if (!groupRecord) {
       const groupId = generateId();
-      await db.insert(groups).values({ id: groupId, name: group, leagueId });
-      groupRecord = { id: groupId, name: group, leagueId };
+      await db.insert(groups).values({ id: groupId, name: group, leagueId, groupType: "pl" });
+      groupRecord = { id: groupId, name: group, leagueId, groupType: "pl" };
     }
 
     // Create team with password

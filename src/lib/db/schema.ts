@@ -56,11 +56,12 @@ export const leagueAdmins = sqliteTable("league_admins", {
   leagueUserUnique: uniqueIndex("league_admins_league_user_unique").on(table.leagueId, table.userId),
 }));
 
-// Group (A or B)
+// Group (A or B for TVT; Cup-A/B/C/D for Triple Crown)
 export const groups = sqliteTable("groups", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   leagueId: text("league_id").notNull().references(() => leagues.id),
+  groupType: text("group_type").default("pl"), // "pl" | "cup" (Triple Crown uses "cup" for cup groups)
 }, (table) => ({
   leagueNameUnique: uniqueIndex("groups_league_name_unique").on(table.leagueId, table.name),
 }));
@@ -78,6 +79,12 @@ export const teams = sqliteTable("teams", {
   // League points (separate from match scores)
   leaguePoints: integer("league_points").notNull().default(0),
   bonusPoints: integer("bonus_points").notNull().default(0),
+
+  // Triple Crown: Cup group points (separate from PL leaguePoints)
+  cupGroupPoints: integer("cup_group_points").notNull().default(0),
+
+  // Triple Crown: Ghost team marker
+  isGhost: integer("is_ghost", { mode: "boolean" }).notNull().default(false),
   
   // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)
   // Existing chips: WW = Win-Win, DP = Double Pointer, CC = Challenge Chip
@@ -142,6 +149,7 @@ export const fixtures = sqliteTable("fixtures", {
   // Fixture type
   isChallenge: integer("is_challenge", { mode: "boolean" }).notNull().default(false), // Challenge Chip fixture
   isPlayoff: integer("is_playoff", { mode: "boolean" }).notNull().default(false), // Playoff fixture
+  competitionType: text("competition_type"), // "pl" | "cup-group" | "ucl-knockout" | "uel-knockout" (Triple Crown)
   
   // Playoff-specific fields (null for league-phase fixtures)
   roundName: text("round_name"), // "RO16", "QF", "SF", "Final", "C-31", etc.

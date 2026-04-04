@@ -16,6 +16,7 @@ import {
   getGroupStandings,
   ensurePlayoffGws,
   getInitialRoundNames,
+  type GSMatch16,
 } from "@/lib/formats/tvt/playoffs";
 
 /**
