@@ -66,8 +66,8 @@ interface DashboardData {
     pointsDiff: number;
     bonusPointsEarned: number;
     chipPointsEarned: number;
-    highestScoringGW: { gameweek: number; score: number };
-    lowestScoringGW: { gameweek: number; score: number };
+    highestScoringGW: { gameweek: number; score: number } | null;
+    lowestScoringGW: { gameweek: number; score: number } | null;
     currentStreak: { type: "W" | "D" | "L"; count: number } | null;
   };
   leaguePosition: {
@@ -1110,15 +1110,15 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between p-3 rounded-lg bg-green-500/10">
                   <div className="text-sm text-gray-400">Highest Score</div>
                   <div className="text-right">
-                    <div className="text-green-400 font-bold">{data.seasonStats.highestScoringGW.score}</div>
-                    <div className="text-xs text-gray-500">GW{data.seasonStats.highestScoringGW.gameweek}</div>
+                    <div className="text-green-400 font-bold">{data.seasonStats.highestScoringGW?.score ?? '—'}</div>
+                    <div className="text-xs text-gray-500">{data.seasonStats.highestScoringGW ? `GW${data.seasonStats.highestScoringGW.gameweek}` : 'No data'}</div>
                   </div>
                 </div>
                 <div className="flex items-center justify-between p-3 rounded-lg bg-red-500/10">
                   <div className="text-sm text-gray-400">Lowest Score</div>
                   <div className="text-right">
-                    <div className="text-red-400 font-bold">{data.seasonStats.lowestScoringGW.score}</div>
-                    <div className="text-xs text-gray-500">GW{data.seasonStats.lowestScoringGW.gameweek}</div>
+                    <div className="text-red-400 font-bold">{data.seasonStats.lowestScoringGW?.score ?? '—'}</div>
+                    <div className="text-xs text-gray-500">{data.seasonStats.lowestScoringGW ? `GW${data.seasonStats.lowestScoringGW.gameweek}` : 'No data'}</div>
                   </div>
                 </div>
               </div>
