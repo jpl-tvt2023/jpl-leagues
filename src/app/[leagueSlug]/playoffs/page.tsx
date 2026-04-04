@@ -774,7 +774,7 @@ export default function LeaguePlayoffsPage() {
       try {
         const res = await fetch("/api/auth/me");
         const me = await res.json();
-        if (res.ok && me.authenticated) setIsLoggedIn(true);
+        if (res.ok && me.authenticated && me.type === "team") setIsLoggedIn(true);
       } catch {}
     };
 
@@ -836,7 +836,7 @@ export default function LeaguePlayoffsPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">All Leagues</Link>
+          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
           <Link href={`/${leagueSlug}/playoffs`} className="text-yellow-400 font-semibold transition">Playoffs</Link>

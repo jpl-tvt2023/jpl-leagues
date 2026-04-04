@@ -512,7 +512,7 @@ export default function LeagueRulesPage() {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated);
+        setIsLoggedIn(res.ok && data.authenticated && data.type === "team");
       } catch {
         setIsLoggedIn(false);
       }
@@ -521,29 +521,48 @@ export default function LeagueRulesPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/leagues")
-      .then((r) => r.json())
-      .then((data) => {
-        const league = (data.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
-      })
-      .catch(() => {});
-  }, [leagueSlug]);
-
-  useEffect(() => {
     if (!leagueSlug) return;
-    fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const teamSize: number = data.teamSize ?? 32;
-        const leagueStageEnd: number = data.leagueStageEnd ?? 30;
-        const enabledChips: string[] = data.enabledChips ?? ["D", "W", "C"];
-        setConfig({ teamSize, leagueStageEnd, leagueName: "", enabledChips });
-      })
-      .catch(() => {
+
+    const fetchConfig = async () => {
+      try {
+        // Fetch leagues to get league config (name, chips, playoffStartGw, teamSize)
+        const leaguesRes = await fetch("/api/leagues");
+        const leaguesData = await leaguesRes.json();
+        const league = (leaguesData.leagues || []).find((l: any) => l.slug === leagueSlug);
+
+        if (league) {
+          setLeagueName(league.name);
+
+          // Parse enabledChips from league (it's stored as JSON string)
+          let enabledChips: string[] = ["D", "W", "C"];
+          try {
+            if (league.enabledChips) {
+              enabledChips = JSON.parse(league.enabledChips);
+            }
+          } catch { /* keep default */ }
+
+          const leagueStageEnd = (league.playoffStartGw ?? 31) - 1;
+          const teamSize = league.teamSize ?? 32;
+
+          setConfig({ teamSize, leagueStageEnd, leagueName: league.name, enabledChips });
+        } else {
+          // Fallback to standings API if league not found (shouldn't happen)
+          const standingsRes = await fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`);
+          const standingsData = await standingsRes.json();
+          const teamSize = standingsData.teamSize ?? 32;
+          const leagueStageEnd = standingsData.leagueStageEnd ?? 30;
+          const enabledChips = standingsData.enabledChips ?? ["D", "W", "C"];
+          setConfig({ teamSize, leagueStageEnd, leagueName: "", enabledChips });
+        }
+      } catch (error) {
+        console.error("Failed to fetch league config:", error);
         setConfig({ teamSize: 32, leagueStageEnd: 30, leagueName: "", enabledChips: ["D", "W", "C"] });
-      })
-      .finally(() => setIsLoading(false));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchConfig();
   }, [leagueSlug]);
 
   const handleSignOut = async () => {
@@ -569,7 +588,7 @@ export default function LeagueRulesPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">All Leagues</Link>
+          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
           <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>

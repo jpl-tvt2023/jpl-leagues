@@ -19,6 +19,8 @@ export async function GET() {
         season: leagues.season,
         teamSize: leagues.teamSize,
         isActive: leagues.isActive,
+        enabledChips: leagues.enabledChips,
+        playoffStartGw: leagues.playoffStartGw,
       })
       .from(leagues)
       .where(eq(leagues.isActive, true));

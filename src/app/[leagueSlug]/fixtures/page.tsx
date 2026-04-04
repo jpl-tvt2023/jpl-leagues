@@ -305,7 +305,7 @@ export default function LeagueFixturesPage() {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated);
+        setIsLoggedIn(res.ok && data.authenticated && data.type === "team");
       } catch {
         setIsLoggedIn(false);
       }
@@ -401,7 +401,7 @@ export default function LeagueFixturesPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">All Leagues</Link>
+          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
             Standings
           </Link>
