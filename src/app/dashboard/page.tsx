@@ -658,9 +658,15 @@ export default function DashboardPage() {
             {/* Captain & Chip Submission */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <span className="text-yellow-400">📋</span> GW{data.deadline.gameweek} Submissions
+                <span className="text-yellow-400">📋</span> GW{data.deadline.gameweek > 0 ? data.deadline.gameweek : "?"} Submissions
               </h2>
-              
+
+              {data.deadline.gameweek === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-gray-400 text-sm">Captain and chip submissions will be available once the admin generates fixtures.</p>
+                </div>
+              ) : (
+              <>
               {/* Submit Message */}
               {submitMessage && (
                 <div className={`mb-4 p-3 rounded-lg ${submitMessage.type === "success" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
@@ -810,6 +816,8 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+              </>
+              )}
             </div>
             
             {/* Last GW Result with navigation */}
