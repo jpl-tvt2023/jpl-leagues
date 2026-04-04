@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups, fixtures, results, gameweeks, gameweekCaptains, gameweekChips, settings } from "@/lib/db";
 import { eq, and, gt, asc, desc, or } from "drizzle-orm";
 import { fetchBootstrapData } from "@/lib/fpl";
-import { getTop2FromGroup } from "@/lib/chip-validation";
-import { getChipSet } from "@/lib/scoring";
+import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
+import { getChipSet } from "@/lib/formats/tvt/scoring";
 
 // ⚠️ TEST OVERRIDE: set to null to use live GW detection
 const TEST_GW_OVERRIDE: number | null = null;

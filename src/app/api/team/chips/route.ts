@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, teams, gameweeks, gameweekChips, settings, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
-import { getChipSet } from "@/lib/scoring";
+import { getChipSet } from "@/lib/formats/tvt/scoring";
 
 const ALL_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"] as const;
 type ChipCode = typeof ALL_CHIP_CODES[number];

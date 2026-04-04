@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/settings/route.ts)",
+      "Bash(cat d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/reset-season/route.ts)"
+    ]
+  }
+}

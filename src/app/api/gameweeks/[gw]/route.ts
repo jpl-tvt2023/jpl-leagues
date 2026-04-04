@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, gameweeks, fixtures, teams, players, groups, results, gameweekCaptains, gameweekChips, auditLogs, type Gameweek, type Fixture, type Team, type Player, type Group, type Result, type GameweekCaptain, type GameweekChip } from "@/lib/db";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
-import { calculateTVTTeamScore, determineMatchResult } from "@/lib/scoring";
-import { getTop2FromGroup } from "@/lib/chip-validation";
+import { calculateTVTTeamScore, determineMatchResult } from "@/lib/formats/tvt/scoring";
+import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { eq, and, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";

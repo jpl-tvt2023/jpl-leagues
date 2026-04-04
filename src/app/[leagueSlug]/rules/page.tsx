@@ -573,6 +573,7 @@ export default function LeagueRulesPage() {
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
           <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-yellow-400 font-semibold transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
           {isLoggedIn ? (

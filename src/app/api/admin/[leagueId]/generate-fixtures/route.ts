@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, gameweeks, fixtures, groups, leagues } from "@/lib/db";
-import { generateRoundRobinFixtures, generateGameweeks } from "@/lib/fixtures";
+import { generateRoundRobinFixtures, generateGameweeks } from "@/lib/formats/tvt/fixtures";
 import { eq, and, asc, count } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, gameweeks, players, gameweekCaptains, auditLogs, teams, settings } from "@/lib/db";
-import { canBeCaptain } from "@/lib/scoring";
+import { canBeCaptain } from "@/lib/formats/tvt/scoring";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 

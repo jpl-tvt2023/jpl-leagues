@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, gameweeks, gameweekChips, groups, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
-import { getChipSet } from "@/lib/chip-validation";
+import { getChipSet } from "@/lib/formats/tvt/chip-validation";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";

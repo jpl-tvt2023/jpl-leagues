@@ -1,7 +1,7 @@
 // TVT Scoring Engine
 // Implements the scoring rules for TVT Fantasy Super League
 
-import { calculateTeamGameweekScore } from "./fpl";
+import { calculateTeamGameweekScore } from "../../fpl";
 
 export interface PlayerScore {
   fplScore: number;
@@ -67,14 +67,14 @@ export async function calculateTVTTeamScoreAsync(
   ]);
 
   const isCaptain1 = captainPlayerId === player1FplId;
-  
+
   // Captain's score and hits are doubled
-  const player1Final = isCaptain1 
-    ? (p1Score.netScore * 2) 
+  const player1Final = isCaptain1
+    ? (p1Score.netScore * 2)
     : p1Score.netScore;
-  
-  const player2Final = !isCaptain1 
-    ? (p2Score.netScore * 2) 
+
+  const player2Final = !isCaptain1
+    ? (p2Score.netScore * 2)
     : p2Score.netScore;
 
   const totalScore = player1Final + player2Final;
@@ -86,8 +86,8 @@ export async function calculateTVTTeamScoreAsync(
     player2Hits: p2Score.transferHits,
     captainId: captainPlayerId,
     totalScore,
-    doubledCaptainScore: isCaptain1 
-      ? p1Score.netScore * 2 
+    doubledCaptainScore: isCaptain1
+      ? p1Score.netScore * 2
       : p2Score.netScore * 2,
   };
 }
@@ -103,7 +103,7 @@ export function determineMatchResult(
   isDoublePointerAway: boolean = false
 ): MatchResult {
   const margin = Math.abs(homeScore - awayScore);
-  
+
   let homeMatchPoints: number;
   let awayMatchPoints: number;
 
@@ -228,19 +228,19 @@ export function compareTiebreaker(a: TeamStanding, b: TeamStanding): number {
   if (a.leaguePoints !== b.leaguePoints) {
     return b.leaguePoints - a.leaguePoints;
   }
-  
+
   // 2) Max Wins
   if (a.wins !== b.wins) {
     return b.wins - a.wins;
   }
-  
+
   // 3) Head-to-Head
   const aH2H = a.headToHeadRecord[b.teamId] || 0;
   const bH2H = b.headToHeadRecord[a.teamId] || 0;
   if (aH2H !== bH2H) {
     return bH2H - aH2H;
   }
-  
+
   // 4) Bonus Points
   return b.bonusPoints - a.bonusPoints;
 }

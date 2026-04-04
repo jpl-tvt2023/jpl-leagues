@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, fixtures, gameweeks, groups, teams, users, type Group, type Team, type Gameweek } from "@/lib/db";
-import { generateRoundRobinFixtures, generateGameweeks } from "@/lib/fixtures";
+import { generateRoundRobinFixtures, generateGameweeks } from "@/lib/formats/tvt/fixtures";
 import { eq, asc } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 
