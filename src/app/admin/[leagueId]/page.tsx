@@ -108,7 +108,7 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<TabType>("teams");
   const [teams, setTeams] = useState<Team[]>([]);
-  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[] }>({
+  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string }>({
     teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"],
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -177,6 +177,12 @@ export default function AdminDashboard() {
   const [playoffsGenerated, setPlayoffsGenerated] = useState(false);
   const [playoffsLoading, setPlayoffsLoading] = useState(false);
   const [advancingGW, setAdvancingGW] = useState<number | null>(null);
+
+  // Triple Crown State
+  const [cupGroupsGenerated, setCupGroupsGenerated] = useState(false);
+  const [bracketsGenerated, setBracketsGenerated] = useState(false);
+  const [cupGroupsLoading, setCupGroupsLoading] = useState(false);
+  const [bracketsLoading, setBracketsLoading] = useState(false);
 
   // Settings State
   const [captainAnnouncementEnabled, setCaptainAnnouncementEnabled] = useState(true);
@@ -267,6 +273,7 @@ export default function AdminDashboard() {
             groupCount: league.groupCount ?? 2,
             playoffStartGw: league.playoffStartGw ?? 31,
             enabledChips,
+            format: league.format,
           });
         }
       })
@@ -540,6 +547,46 @@ export default function AdminDashboard() {
       setMessage({ type: "error", text: "Network error" });
     } finally {
       setAdvancingGW(null);
+    }
+  };
+
+  const seedCupGroups = async () => {
+    if (!window.confirm("Seed cup groups from GW5 standings? This will create 4 cup groups and Ghost teams.")) return;
+    setCupGroupsLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/generate-cup-groups`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to seed cup groups" });
+      } else {
+        setMessage({ type: "success", text: data.message || "Cup groups seeded successfully" });
+        setCupGroupsGenerated(true);
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setCupGroupsLoading(false);
+    }
+  };
+
+  const generateBrackets = async () => {
+    if (!window.confirm("Generate UCL/UEL brackets from GW24 standings? This will create knockout ties for QF round.")) return;
+    setBracketsLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/generate-brackets`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to generate brackets" });
+      } else {
+        setMessage({ type: "success", text: data.message || "Brackets generated successfully" });
+        setBracketsGenerated(true);
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setBracketsLoading(false);
     }
   };
 
@@ -2499,69 +2546,147 @@ export default function AdminDashboard() {
         {/* Playoffs Management Tab */}
         {activeTab === "playoffs" && (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-lg font-bold text-white mb-4">Playoff Management</h3>
-
-              {(() => {
-                const { teamSize, playoffStartGw } = leagueConfig;
-                const bracketLabel = teamSize === 8 ? "SF" : teamSize === 16 ? "Group Stage" : "RO16 + C-31";
-                const standingsGw = playoffStartGw - 1;
-                const playoffGws = Array.from({ length: 38 - playoffStartGw + 1 }, (_, i) => playoffStartGw + i);
-                const firstGw = playoffGws[0];
-                const lastGw = playoffGws[playoffGws.length - 1];
-                return playoffsLoading ? (
-                  <p className="text-gray-400 text-sm">Loading…</p>
-                ) : !playoffsGenerated ? (
-                  <div>
-                    <p className="text-gray-400 text-sm mb-4">
-                      Generate the initial playoff bracket ({bracketLabel}) from GW{standingsGw} standings. This can only be done once.
-                    </p>
-                    <button
-                      onClick={generatePlayoffs}
-                      className="px-6 py-3 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 transition"
-                    >
-                      Generate Playoffs ({bracketLabel})
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-green-400 text-sm mb-6">✓ Playoffs generated. Use the buttons below to advance each gameweek after scoring is complete.</p>
-
-                    <div className="mb-6">
+            {leagueConfig.format === "triple-crown" ? (
+              <>
+                {/* Triple Crown: Cup Groups */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h3 className="text-lg font-bold text-white mb-4">Cup Groups (GW1–24)</h3>
+                  {cupGroupsLoading ? (
+                    <p className="text-gray-400 text-sm">Loading…</p>
+                  ) : !cupGroupsGenerated ? (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-4">
+                        Seed 20 teams into 4 cup groups from GW5 standings. Creates 4 Ghost opponents.
+                      </p>
                       <button
-                        onClick={regeneratePlayoffs}
-                        disabled={playoffsLoading}
-                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold hover:from-red-400 hover:to-orange-400 disabled:opacity-50 transition"
+                        onClick={seedCupGroups}
+                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-blue-400 to-cyan-500 text-white font-bold hover:from-blue-300 hover:to-cyan-400 transition"
                       >
-                        {playoffsLoading ? "Regenerating…" : `Regenerate Playoff Fixtures (${bracketLabel})`}
+                        Seed Cup Groups
                       </button>
-                      <p className="text-gray-500 text-xs mt-2">
-                        Deletes existing {bracketLabel} fixtures/results and regenerates from GW{standingsGw} standings.
-                        Use this if the initial standings were incorrect.
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-green-400 text-sm mb-4">✓ Cup groups seeded. Teams will play cup group fixtures on even GWs (6, 8, 10, 12, 14, 16, 18, 20, 22, 24).</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Triple Crown: Brackets */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h3 className="text-lg font-bold text-white mb-4">UCL/UEL Brackets (GW27–38)</h3>
+                  {bracketsLoading ? (
+                    <p className="text-gray-400 text-sm">Loading…</p>
+                  ) : !bracketsGenerated ? (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-4">
+                        Generate UCL/UEL knockout brackets from GW24 cup group standings. Creates QF ties.
+                      </p>
+                      <button
+                        onClick={generateBrackets}
+                        disabled={!cupGroupsGenerated}
+                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-purple-400 to-pink-500 text-white font-bold hover:from-purple-300 hover:to-pink-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                      >
+                        {!cupGroupsGenerated ? "Seed Cup Groups First" : "Generate UCL/UEL Brackets"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-green-400 text-sm mb-4">✓ Brackets generated. UCL/UEL quarterfinals ready for GW27 & GW29.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Triple Crown: Advance Knockouts */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h3 className="text-lg font-bold text-white mb-4">Advance Knockouts</h3>
+                  {playoffsGenerated && (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-4">Advance UCL/UEL knockout rounds after each gameweek is scored.</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[27, 29, 33, 35, 38].map((gw) => (
+                          <button
+                            key={gw}
+                            onClick={() => advancePlayoffs(gw)}
+                            disabled={advancingGW !== null}
+                            className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 disabled:opacity-50 transition text-sm"
+                          >
+                            {advancingGW === gw ? "Advancing…" : `Advance GW${gw}`}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-gray-500 text-xs mt-4">
+                        GW27: QF Leg 1 | GW29: QF Leg 2 / SF Leg 1 | GW33: SF Leg 2 | GW35: SF Leg 2 / Final Leg 1 | GW38: Final
                       </p>
                     </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h3 className="text-lg font-bold text-white mb-4">Playoff Management</h3>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {playoffGws.map((gw) => (
-                        <button
-                          key={gw}
-                          onClick={() => advancePlayoffs(gw)}
-                          disabled={advancingGW !== null}
-                          className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 disabled:opacity-50 transition text-sm"
-                        >
-                          {advancingGW === gw ? "Advancing…" : `Advance GW${gw}`}
-                        </button>
-                      ))}
+                {(() => {
+                  const { teamSize, playoffStartGw } = leagueConfig;
+                  const bracketLabel = teamSize === 8 ? "SF" : teamSize === 16 ? "Group Stage" : "RO16 + C-31";
+                  const standingsGw = playoffStartGw - 1;
+                  const playoffGws = Array.from({ length: 38 - playoffStartGw + 1 }, (_, i) => playoffStartGw + i);
+                  const firstGw = playoffGws[0];
+                  const lastGw = playoffGws[playoffGws.length - 1];
+                  return playoffsLoading ? (
+                    <p className="text-gray-400 text-sm">Loading…</p>
+                  ) : !playoffsGenerated ? (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-4">
+                        Generate the initial playoff bracket ({bracketLabel}) from GW{standingsGw} standings. This can only be done once.
+                      </p>
+                      <button
+                        onClick={generatePlayoffs}
+                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 transition"
+                      >
+                        Generate Playoffs ({bracketLabel})
+                      </button>
                     </div>
+                  ) : (
+                    <div>
+                      <p className="text-green-400 text-sm mb-6">✓ Playoffs generated. Use the buttons below to advance each gameweek after scoring is complete.</p>
 
-                    <p className="text-gray-500 text-xs mt-4">
-                      Each button resolves the current round&apos;s results and generates fixtures for the next round.
-                      Run them in order (GW{firstGw} → … → GW{lastGw}) after processing each gameweek&apos;s scores.
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
+                      <div className="mb-6">
+                        <button
+                          onClick={regeneratePlayoffs}
+                          disabled={playoffsLoading}
+                          className="px-6 py-3 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold hover:from-red-400 hover:to-orange-400 disabled:opacity-50 transition"
+                        >
+                          {playoffsLoading ? "Regenerating…" : `Regenerate Playoff Fixtures (${bracketLabel})`}
+                        </button>
+                        <p className="text-gray-500 text-xs mt-2">
+                          Deletes existing {bracketLabel} fixtures/results and regenerates from GW{standingsGw} standings.
+                          Use this if the initial standings were incorrect.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {playoffGws.map((gw) => (
+                          <button
+                            key={gw}
+                            onClick={() => advancePlayoffs(gw)}
+                            disabled={advancingGW !== null}
+                            className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 disabled:opacity-50 transition text-sm"
+                          >
+                            {advancingGW === gw ? "Advancing…" : `Advance GW${gw}`}
+                          </button>
+                        ))}
+                      </div>
+
+                      <p className="text-gray-500 text-xs mt-4">
+                        Each button resolves the current round&apos;s results and generates fixtures for the next round.
+                        Run them in order (GW{firstGw} → … → GW{lastGw}) after processing each gameweek&apos;s scores.
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         )}
 

@@ -8,7 +8,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 interface Winner {
   position: number;
   label: string;
-  category: "championship" | "challenger";
+  category: "championship" | "challenger" | "pl" | "ucl" | "uel";
   teamId: string;
   teamName: string;
   teamAbbr: string;
@@ -80,7 +80,10 @@ export default function LeagueWinnersPage() {
   };
 
   const getCategoryColor = (category: string) => {
-    return category === "championship" ? "text-blue-400" : "text-yellow-400";
+    if (category === "championship" || category === "pl") return "text-blue-400";
+    if (category === "ucl") return "text-blue-300";
+    if (category === "uel") return "text-purple-300";
+    return "text-yellow-400"; // challenger
   };
 
   const getCategoryBg = (category: string, position: number) => {
@@ -89,7 +92,10 @@ export default function LeagueWinnersPage() {
       if (position === 2) return "bg-gradient-to-r from-gray-600/40 to-gray-500/20";
       return "bg-gradient-to-r from-amber-900/40 to-amber-800/20";
     }
-    return category === "championship" ? "bg-blue-900/20" : "bg-yellow-900/20";
+    if (category === "championship" || category === "pl") return "bg-blue-900/20";
+    if (category === "ucl") return "bg-blue-800/20";
+    if (category === "uel") return "bg-purple-900/20";
+    return "bg-yellow-900/20"; // challenger
   };
 
   if (isLoading) {

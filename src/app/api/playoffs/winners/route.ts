@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leagues, playoffTies, teams, players } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 interface Winner {
   position: number;
   label: string;
-  category: "championship" | "challenger";
+  category: "championship" | "challenger" | "pl" | "ucl" | "uel";
   teamId: string;
   teamName: string;
   teamAbbr: string;
@@ -43,8 +43,19 @@ export async function GET(req: NextRequest): Promise<NextResponse<WinnersRespons
 
     const leagueId = league.id;
     const teamSize = league.teamSize ?? 8;
+    const format = league.format;
 
-    // Determine final tie ID by format
+    // Build winners array based on format
+    let winnersData: Winner[] = [];
+
+    if (format === "triple-crown") {
+      winnersData = await buildTripleCrownWinners(leagueId);
+      // Triple Crown is "concluded" when all three finals are complete
+      const allFinalsComplete = winnersData.length === 3;
+      return NextResponse.json({ concluded: allFinalsComplete, winners: winnersData });
+    }
+
+    // Determine final tie ID by format (TVT)
     let finalTieId: string;
     if (teamSize === 8) {
       finalTieId = "8T-FINAL";
@@ -64,9 +75,6 @@ export async function GET(req: NextRequest): Promise<NextResponse<WinnersRespons
       return NextResponse.json({ concluded: false, winners: [] });
     }
 
-    // Build winners array based on format
-    let winnersData: Winner[] = [];
-
     if (teamSize === 8) {
       winnersData = await build8TeamWinners(leagueId);
     } else if (teamSize === 16) {
@@ -83,6 +91,69 @@ export async function GET(req: NextRequest): Promise<NextResponse<WinnersRespons
       { status: 500 }
     );
   }
+}
+
+async function buildTripleCrownWinners(leagueId: string): Promise<Winner[]> {
+  const winners: Winner[] = [];
+
+  // PL Champion: top leaguePoints at GW38
+  const topTeam = await db.select({ id: teams.id })
+    .from(teams)
+    .where(eq(teams.leagueId, leagueId))
+    .orderBy(desc(teams.leaguePoints))
+    .limit(1);
+
+  const plChampion = topTeam.length > 0
+    ? await db.query.teams.findFirst({ where: eq(teams.id, topTeam[0].id) })
+    : null;
+
+  if (plChampion) {
+    const teamData = await getTeamData(plChampion.id);
+    if (teamData) {
+      winners.push({
+        position: 1,
+        label: "PL Champion",
+        category: "pl",
+        ...teamData,
+      });
+    }
+  }
+
+  // UCL Champion: UCL-FINAL winner
+  const uclFinal = await db.query.playoffTies.findFirst({
+    where: and(eq(playoffTies.tieId, "UCL-FINAL"), eq(playoffTies.leagueId, leagueId)),
+  });
+
+  if (uclFinal?.winnerId) {
+    const teamData = await getTeamData(uclFinal.winnerId);
+    if (teamData) {
+      winners.push({
+        position: 2,
+        label: "UCL Champion",
+        category: "ucl",
+        ...teamData,
+      });
+    }
+  }
+
+  // UEL Champion: UEL-FINAL winner
+  const uelFinal = await db.query.playoffTies.findFirst({
+    where: and(eq(playoffTies.tieId, "UEL-FINAL"), eq(playoffTies.leagueId, leagueId)),
+  });
+
+  if (uelFinal?.winnerId) {
+    const teamData = await getTeamData(uelFinal.winnerId);
+    if (teamData) {
+      winners.push({
+        position: 3,
+        label: "UEL Champion",
+        category: "uel",
+        ...teamData,
+      });
+    }
+  }
+
+  return winners;
 }
 
 async function build8TeamWinners(leagueId: string): Promise<Winner[]> {

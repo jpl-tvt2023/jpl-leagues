@@ -39,6 +39,7 @@ const SPORT_OPTIONS = [
 const FORMAT_OPTIONS: Record<string, { value: string; label: string; description: string; comingSoon?: boolean }[]> = {
   fpl: [
     { value: "tvt", label: "TVT", description: "Head-to-head, chips, captaincy, playoffs" },
+    { value: "triple-crown", label: "JPL Triple Crown", description: "PL + UCL + UEL — 20 teams, Double Header scoring" },
     { value: "classic", label: "Classic", description: "Round-robin / points-based", comingSoon: true },
   ],
 };
@@ -767,8 +768,20 @@ export default function SuperAdminDashboard() {
                           disabled={opt.comingSoon}
                           onClick={() => {
                             if (!opt.comingSoon) {
-                              setLeagueForm({ ...leagueForm, format: opt.value });
-                              // TVT has team-size variants; other formats go straight to details
+                              if (opt.value === "triple-crown") {
+                                // Triple Crown: hardcoded values
+                                setLeagueForm({
+                                  ...leagueForm,
+                                  format: opt.value,
+                                  teamSize: 20,
+                                  groupCount: 4,
+                                  playoffStartGw: 27,
+                                  enabledChips: [],
+                                });
+                              } else {
+                                setLeagueForm({ ...leagueForm, format: opt.value });
+                              }
+                              // TVT has team-size variants; Triple Crown and others go straight to details
                               setWizardStep(opt.value === "tvt" ? "team_size" : "details");
                             }
                           }}
