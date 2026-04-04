@@ -268,7 +268,9 @@ export default function DashboardPage() {
     try {
       if (gw) {
         // Lightweight GW-only fetch for navigation (no FPL sync, no standings, etc.)
-        const response = await fetch(`/api/team/dashboard/gw-result?gw=${gw}`);
+        const response = await fetch(`/api/team/dashboard/gw-result?gw=${gw}`, {
+          credentials: "include", // Ensure cookies are sent
+        });
         if (response.status === 401) { router.push("/signin"); return; }
         if (!response.ok) throw new Error("Failed to fetch GW result");
         const gwData = await response.json();
@@ -276,7 +278,9 @@ export default function DashboardPage() {
         if (gwData.lastGwResult) setViewedGw(gwData.lastGwResult.gameweek);
       } else {
         // Full initial load
-        const response = await fetch("/api/team/dashboard");
+        const response = await fetch("/api/team/dashboard", {
+          credentials: "include", // Ensure cookies are sent
+        });
         if (response.status === 401) { router.push("/signin"); return; }
         if (!response.ok) throw new Error("Failed to fetch dashboard");
         const dashboardData = await response.json();
@@ -340,7 +344,9 @@ export default function DashboardPage() {
     if (!data || !viewedGw) return;
     setLiveRefreshing(true);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${viewedGw}`);
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${viewedGw}`, {
+        credentials: "include", // Ensure cookies are sent
+      });
       if (res.ok) {
         const freshData = await res.json();
         // Find the fixture matching this user's team
@@ -376,22 +382,28 @@ export default function DashboardPage() {
   
   const handleCaptainSubmit = async () => {
     if (!selectedCaptain || !data) return;
-    
+
     setIsSubmitting(true);
     setSubmitMessage(null);
-    
+
     try {
+      const payload = {
+        playerId: selectedCaptain,
+        gameweek: data.deadline.gameweek,
+      };
+
+      console.log("Submitting captain with payload:", payload);
+
       const response = await fetch("/api/team/captain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          playerId: selectedCaptain,
-          gameweek: data.deadline.gameweek,
-        }),
+        body: JSON.stringify(payload),
+        credentials: "include", // Ensure cookies are sent
       });
-      
+
       const result = await response.json();
-      
+      console.log("Captain submission response:", response.status, result);
+
       if (!response.ok) {
         const errorText = result.error || "Failed to submit captain";
         // Check if error is due to no gameweeks (fixtures not generated)
@@ -406,7 +418,8 @@ export default function DashboardPage() {
         // Refresh dashboard data
         fetchDashboard();
       }
-    } catch {
+    } catch (error) {
+      console.error("Captain submission error:", error);
       setSubmitMessage({ type: "error", text: "Failed to submit captain" });
     } finally {
       setIsSubmitting(false);
@@ -425,23 +438,29 @@ export default function DashboardPage() {
 
     if (!selectedChip) return;
     if (selectedChip === "C" && !selectedChallengedTeam) return;
-    
+
     setIsSubmitting(true);
     setSubmitMessage(null);
-    
+
     try {
+      const payload = {
+        chipType: selectedChip,
+        gameweek: data.deadline.gameweek,
+        ...(selectedChip === "C" && { challengedTeamId: selectedChallengedTeam }),
+      };
+
+      console.log("Submitting chip with payload:", payload);
+
       const response = await fetch("/api/team/chips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chipType: selectedChip,
-          gameweek: data.deadline.gameweek,
-          ...(selectedChip === "C" && { challengedTeamId: selectedChallengedTeam }),
-        }),
+        body: JSON.stringify(payload),
+        credentials: "include", // Ensure cookies are sent
       });
-      
+
       const result = await response.json();
-      
+      console.log("Chip submission response:", response.status, result);
+
       if (!response.ok) {
         const errorText = result.error || "Failed to submit chip";
         // Check if error is due to no gameweeks (fixtures not generated)
@@ -465,17 +484,20 @@ export default function DashboardPage() {
   
   const handleCancelChip = async () => {
     if (!data) return;
-    
+
     setIsSubmitting(true);
     setSubmitMessage(null);
-    
+
     try {
+      const payload = {
+        gameweek: data.deadline.gameweek,
+      };
+
       const response = await fetch("/api/team/chips", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gameweek: data.deadline.gameweek,
-        }),
+        body: JSON.stringify(payload),
+        credentials: "include", // Ensure cookies are sent
       });
       
       const result = await response.json();
