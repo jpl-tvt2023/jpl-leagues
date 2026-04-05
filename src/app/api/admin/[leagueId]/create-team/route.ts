@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -62,9 +62,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if team name already exists in this league
+    // Check if team name already exists in this league (case-insensitive)
     const existingTeam = await db.select().from(teams).where(
-      and(eq(teams.name, teamName), eq(teams.leagueId, leagueId))
+      and(sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${teamName}, ' ', ''))`, eq(teams.leagueId, leagueId))
     );
     if (existingTeam.length > 0) {
       return NextResponse.json(

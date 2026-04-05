@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, gameweeks, fixtures, groups, leagues } from "@/lib/db";
+import { db, gameweeks, fixtures, results, groups, leagues } from "@/lib/db";
 import { generateRoundRobinFixtures, generateGameweeks } from "@/lib/formats/tvt/fixtures";
-import { eq, and, asc, count } from "drizzle-orm";
+import { eq, and, asc, count, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
         teamSize: leagues.teamSize,
         groupCount: leagues.groupCount,
         playoffStartGw: leagues.playoffStartGw,
+        format: leagues.format,
       })
       .from(leagues)
       .where(eq(leagues.id, leagueId))
@@ -34,7 +35,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "League not found" }, { status: 404 });
     }
 
-    const { teamSize, groupCount, playoffStartGw } = leagueRows[0];
+    const { teamSize, groupCount, playoffStartGw, format } = leagueRows[0];
+    const isTripleCrown = format === "triple-crown";
     const teamsPerGroup = (teamSize ?? 32) / (groupCount ?? 2);
     const effectivePlayoffStart = playoffStartGw ?? 31;
 
@@ -60,6 +62,66 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // ── Triple Crown: PL fixtures span all 38 GWs, single group, 2 reps (20 teams × 2 = 38) ──
+    if (isTripleCrown) {
+      const plGroup = allGroups.find((g) => g.name === "A");
+      if (!plGroup) {
+        return NextResponse.json({ error: "Group A must exist before generating fixtures" }, { status: 400 });
+      }
+      if (plGroup.teams.length < 2) {
+        return NextResponse.json({ error: `Group A must have at least 2 teams (has ${plGroup.teams.length})` }, { status: 400 });
+      }
+
+      // Ensure all 38 gameweeks exist, all isPlayoffs=false (Triple Crown has no TVT playoffs)
+      const existingGws = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
+      const existingGwNums = new Set(existingGws.map((gw) => gw.number));
+      for (let n = 1; n <= 38; n++) {
+        if (!existingGwNums.has(n)) {
+          await db.insert(gameweeks).values({
+            id: generateId(),
+            number: n,
+            leagueId,
+            isPlayoffs: false,
+            deadline: new Date(),
+          });
+        }
+      }
+
+      const allGws = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId)).orderBy(asc(gameweeks.number));
+      const gameweekMap = new Map(allGws.map((gw) => [gw.number, gw.id]));
+
+      // 20 teams × 2 reps = 38 GWs exactly
+      const tcRepetitions = 2;
+      const plFixtures = generateRoundRobinFixtures(plGroup.teams, tcRepetitions);
+
+      const fixtureData = plFixtures.map((f) => ({
+        id: generateId(),
+        homeTeamId: f.homeTeamId,
+        awayTeamId: f.awayTeamId,
+        gameweekId: gameweekMap.get(f.gameweekNumber)!,
+        groupId: plGroup.id,
+        competitionType: "pl",
+      })).filter((f) => f.gameweekId != null);
+
+      for (const fixture of fixtureData) {
+        await db.insert(fixtures).values(fixture);
+      }
+
+      await invalidateLeaguePageCache(leagueId);
+      return NextResponse.json({
+        success: true,
+        message: "PL fixtures generated successfully for Triple Crown league",
+        summary: {
+          format: "Triple Crown (20-team, 1 PL group)",
+          repetitions: tcRepetitions,
+          leagueStageGws: 38,
+          totalFixtures: fixtureData.length,
+          plGroup: { teams: plGroup.teams.length, fixtures: plFixtures.length },
+        },
+      });
+    }
+
+    // ── TVT path (unchanged) ──
     const groupA = allGroups.find((g) => g.name === "A");
     const groupB = (groupCount ?? 2) === 2 ? allGroups.find((g) => g.name === "B") : null;
 
@@ -234,5 +296,60 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error checking fixture status:", error);
     return NextResponse.json({ error: "Failed to check fixture status" }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/admin/[leagueId]/generate-fixtures
+ * Delete all league-stage fixtures and gameweeks for this league to allow re-generation.
+ * Preserves playoff fixtures if they exist.
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const leagueId = await getAuthorizedLeagueId(request);
+    if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    // Get all league-stage gameweeks (isPlayoffs = false)
+    const leagueGws = await db
+      .select({ id: gameweeks.id })
+      .from(gameweeks)
+      .where(and(eq(gameweeks.leagueId, leagueId), eq(gameweeks.isPlayoffs, false)));
+
+    if (leagueGws.length === 0) {
+      return NextResponse.json({ success: true, message: "No league-stage fixtures to delete" });
+    }
+
+    const leagueGwIds = leagueGws.map((gw) => gw.id);
+
+    // Delete results for these fixtures
+    const fixtureIds = await db
+      .select({ id: fixtures.id })
+      .from(fixtures)
+      .where(inArray(fixtures.gameweekId, leagueGwIds));
+
+    if (fixtureIds.length > 0) {
+      await db.delete(results).where(inArray(results.fixtureId, fixtureIds.map((f) => f.id)));
+    }
+
+    // Delete fixtures for league-stage gameweeks
+    const deletedFixturesCount = await db
+      .delete(fixtures)
+      .where(inArray(fixtures.gameweekId, leagueGwIds));
+
+    // Delete league-stage gameweeks
+    const deletedGwsCount = await db
+      .delete(gameweeks)
+      .where(inArray(gameweeks.id, leagueGwIds));
+
+    await invalidateLeaguePageCache(leagueId);
+    return NextResponse.json({
+      success: true,
+      message: "League-stage fixtures and gameweeks deleted successfully",
+      deletedGameweeks: leagueGws.length,
+      deletedFixtures: fixtureIds.length,
+    });
+  } catch (error) {
+    console.error("Error deleting fixtures:", error);
+    return NextResponse.json({ error: "Failed to delete fixtures" }, { status: 500 });
   }
 }

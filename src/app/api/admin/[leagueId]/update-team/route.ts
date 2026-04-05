@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -74,9 +74,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Check if new team name conflicts with another team in this league
+    // Check if new team name conflicts with another team in this league (case-insensitive)
     const conflictingTeam = await db.select().from(teams).where(
-      and(eq(teams.name, teamName), eq(teams.leagueId, leagueId))
+      and(sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${teamName}, ' ', ''))`, eq(teams.leagueId, leagueId))
     );
     if (conflictingTeam.length > 0 && conflictingTeam[0].id !== teamId) {
       return NextResponse.json(

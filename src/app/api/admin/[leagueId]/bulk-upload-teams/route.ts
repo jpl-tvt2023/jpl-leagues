@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -138,9 +138,9 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Per-league uniqueness check on display name (teamName)
+        // Per-league uniqueness check on display name (teamName) - case-insensitive
         const existingTeamFull = await db.select().from(teams).where(
-          and(eq(teams.name, teamName), eq(teams.leagueId, leagueId))
+          and(sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${teamName}, ' ', ''))`, eq(teams.leagueId, leagueId))
         );
         if (existingTeamFull.length > 0) {
           uploadResults.errors.push(`Row ${rowNum}: Team name "${teamName}" already exists in this league`);

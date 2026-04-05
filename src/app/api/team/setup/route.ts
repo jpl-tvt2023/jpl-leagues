@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -41,9 +41,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (checkName) {
-      // Per-league uniqueness check: query teams in this league for this name
+      // Per-league uniqueness check: query teams in this league for this name (case-insensitive)
       const existing = await db.select().from(teams).where(
-        and(eq(teams.leagueId, team.leagueId), eq(teams.name, checkName))
+        and(eq(teams.leagueId, team.leagueId), sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${checkName}, ' ', ''))`)
       ).limit(1);
       // Available if: no team with this name in league, OR this is the current team's name
       return NextResponse.json({
@@ -151,11 +151,11 @@ export async function POST(request: NextRequest) {
 
     const leagueId = team.leagueId;
 
-    // Check per-league uniqueness (name must be unique within the league, unless it's the current team's name)
+    // Check per-league uniqueness (name must be unique within the league, unless it's the current team's name) - case-insensitive
     const existingName = await db
       .select()
       .from(teams)
-      .where(and(eq(teams.leagueId, leagueId), eq(teams.name, trimmedTeamName)));
+      .where(and(eq(teams.leagueId, leagueId), sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${trimmedTeamName}, ' ', ''))`));
     if (existingName.length > 0 && existingName[0].id !== session.id) {
       return NextResponse.json(
         { error: "Team name is already taken in this league" },
