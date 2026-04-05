@@ -48,7 +48,9 @@ export default function SetupPage() {
 
   const [currentTeamLoginId, setCurrentTeamLoginId] = useState<string>("");
   const [currentTeamName, setCurrentTeamName] = useState<string>("");
+  const [currentAbbreviation, setCurrentAbbreviation] = useState<string>("");
   const [loginIdCheckLoading, setLoginIdCheckLoading] = useState(false);
+  const [abbrCheckLoading, setAbbrCheckLoading] = useState(false);
 
   // Check auth and load current team info
   useEffect(() => {
@@ -74,6 +76,7 @@ export default function SetupPage() {
           const setupData = await setupRes.json();
           setCurrentTeamLoginId(setupData.currentLoginId || "");
           setCurrentTeamName(setupData.currentName);
+          setCurrentAbbreviation(setupData.currentAbbreviation || "");
           setFormData((prev) => ({
             ...prev,
             teamLoginId: setupData.currentLoginId || "",
@@ -127,6 +130,25 @@ export default function SetupPage() {
       console.error("Name check error:", err);
     } finally {
       setNameCheckLoading(false);
+    }
+  };
+
+  const handleAbbrBlur = async (value: string) => {
+    if (!value.trim() || value === currentAbbreviation) return;
+
+    setAbbrCheckLoading(true);
+    try {
+      const res = await fetch(`/api/team/setup?checkAbbr=${encodeURIComponent(value)}`);
+      const data = await res.json();
+      if (!data.available) {
+        setErrors((prev) => ({ ...prev, abbreviation: "Abbreviation is already taken in this league" }));
+      } else {
+        setErrors((prev) => ({ ...prev, abbreviation: undefined }));
+      }
+    } catch (err) {
+      console.error("Abbreviation check error:", err);
+    } finally {
+      setAbbrCheckLoading(false);
     }
   };
 
@@ -318,16 +340,20 @@ export default function SetupPage() {
 
               <div>
                 <label className="block text-sm font-semibold text-white mb-2">Abbreviation</label>
-                <input
-                  type="text"
-                  value={formData.abbreviation}
-                  onChange={(e) => handleInputChange("abbreviation", e.target.value)}
-                  placeholder="DM"
-                  maxLength={4}
-                  className="w-full rounded-lg border border-white/20 bg-black/40 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={formData.abbreviation}
+                    onChange={(e) => handleInputChange("abbreviation", e.target.value)}
+                    onBlur={(e) => handleAbbrBlur(e.target.value)}
+                    placeholder="DM"
+                    maxLength={4}
+                    className="flex-1 rounded-lg border border-white/20 bg-black/40 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
+                  />
+                  {abbrCheckLoading && <span className="text-xs text-gray-400">Checking...</span>}
+                </div>
                 {errors.abbreviation && <p className="text-red-400 text-xs mt-1">{errors.abbreviation}</p>}
-                <p className="text-gray-500 text-xs mt-2">2-4 uppercase letters (e.g., DM, TEAM)</p>
+                <p className="text-gray-500 text-xs mt-2">2-4 uppercase letters. Must be unique within the league.</p>
               </div>
             </div>
           )}

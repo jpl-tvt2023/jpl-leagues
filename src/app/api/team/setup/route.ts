@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, leagues } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -18,9 +18,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if this is a teamLoginId or team name uniqueness check
+    // Get current team to know leagueId for per-league checks
+    const teamList = await db.select().from(teams).where(eq(teams.id, session.id));
+    const team = teamList[0];
+
+    if (!team) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+
+    // Check if this is a teamLoginId, team name, or abbreviation uniqueness check
     const checkLoginId = request.nextUrl.searchParams.get("checkLoginId");
     const checkName = request.nextUrl.searchParams.get("checkName");
+    const checkAbbr = request.nextUrl.searchParams.get("checkAbbr");
 
     if (checkLoginId) {
       // Global uniqueness check on teamLoginId
@@ -32,20 +41,25 @@ export async function GET(request: NextRequest) {
     }
 
     if (checkName) {
-      // Per-league uniqueness check: query all teams for this name
-      const existing = await db.select().from(teams).where(eq(teams.name, checkName)).limit(1);
-      // Available if: no team with this name, OR this is the current team's name
+      // Per-league uniqueness check: query teams in this league for this name
+      const existing = await db.select().from(teams).where(
+        and(eq(teams.leagueId, team.leagueId), eq(teams.name, checkName))
+      ).limit(1);
+      // Available if: no team with this name in league, OR this is the current team's name
       return NextResponse.json({
         available: existing.length === 0 || existing[0].id === session.id,
       });
     }
 
-    // Regular GET: return current team info
-    const teamList = await db.select().from(teams).where(eq(teams.id, session.id));
-    const team = teamList[0];
-
-    if (!team) {
-      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    if (checkAbbr) {
+      // Per-league uniqueness check: query teams in this league for this abbreviation
+      const existing = await db.select().from(teams).where(
+        and(eq(teams.leagueId, team.leagueId), eq(teams.abbreviation, checkAbbr))
+      ).limit(1);
+      // Available if: no team with this abbreviation in league, OR this is the current team's abbreviation
+      return NextResponse.json({
+        available: existing.length === 0 || existing[0].id === session.id,
+      });
     }
 
     return NextResponse.json({
@@ -141,7 +155,7 @@ export async function POST(request: NextRequest) {
     const existingName = await db
       .select()
       .from(teams)
-      .where(eq(teams.name, trimmedTeamName));
+      .where(and(eq(teams.leagueId, leagueId), eq(teams.name, trimmedTeamName)));
     if (existingName.length > 0 && existingName[0].id !== session.id) {
       return NextResponse.json(
         { error: "Team name is already taken in this league" },
@@ -160,6 +174,18 @@ export async function POST(request: NextRequest) {
     if (!/^[A-Z]{2,4}$/.test(abbreviation)) {
       return NextResponse.json(
         { error: "Abbreviation must be 2-4 uppercase letters" },
+        { status: 400 }
+      );
+    }
+
+    // Check per-league uniqueness for abbreviation
+    const existingAbbr = await db
+      .select()
+      .from(teams)
+      .where(and(eq(teams.leagueId, leagueId), eq(teams.abbreviation, abbreviation)));
+    if (existingAbbr.length > 0 && existingAbbr[0].id !== session.id) {
+      return NextResponse.json(
+        { error: "Abbreviation is already taken in this league" },
         { status: 400 }
       );
     }
