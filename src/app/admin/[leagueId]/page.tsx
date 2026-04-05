@@ -1701,7 +1701,27 @@ export default function AdminDashboard() {
             <div className={`grid ${leagueConfig.groupCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1"} gap-8`}>
               {/* Group A */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h3 className="text-xl font-bold text-blue-400 mb-4">{leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{teamsPerGroup})</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-blue-400">{leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{leagueConfig.groupCount === 2 ? teamsPerGroup : leagueConfig.teamSize})</h3>
+                  {groupATeams.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const allSelected = groupATeams.every(t => selectedTeamIds.has(t.id));
+                        setSelectedTeamIds(prev => {
+                          const newSet = new Set(prev);
+                          groupATeams.forEach(t => {
+                            if (allSelected) newSet.delete(t.id);
+                            else newSet.add(t.id);
+                          });
+                          return newSet;
+                        });
+                      }}
+                      className="text-xs px-3 py-1 rounded bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 transition"
+                    >
+                      {groupATeams.every(t => selectedTeamIds.has(t.id)) ? "Deselect All" : "Select All"}
+                    </button>
+                  )}
+                </div>
                 {groupATeams.length === 0 ? (
                   <p className="text-gray-500">No teams yet</p>
                 ) : (
@@ -1711,12 +1731,20 @@ export default function AdminDashboard() {
                         selectedTeamIds.has(team.id) ? "bg-red-500/20 border border-red-500/50" : "bg-white/5"
                       }`}>
                         <div className="flex items-center gap-3 flex-1">
-                          <input
-                            type="checkbox"
-                            checked={selectedTeamIds.has(team.id)}
-                            onChange={() => toggleTeamSelection(team.id)}
-                            className="w-4 h-4 accent-red-500 cursor-pointer"
-                          />
+                          <button
+                            onClick={() => toggleTeamSelection(team.id)}
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                              selectedTeamIds.has(team.id)
+                                ? "bg-red-500 border-red-500"
+                                : "border-gray-500 hover:border-red-500"
+                            }`}
+                          >
+                            {selectedTeamIds.has(team.id) && (
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
                           <span className="text-gray-500 w-6">{index + 1}.</span>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
@@ -1770,7 +1798,27 @@ export default function AdminDashboard() {
               {/* Group B — only shown for 2-group leagues */}
               {leagueConfig.groupCount === 2 && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h3 className="text-xl font-bold text-purple-400 mb-4">Group B ({groupBTeams.length}/{teamsPerGroup})</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-purple-400">Group B ({groupBTeams.length}/{teamsPerGroup})</h3>
+                  {groupBTeams.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const allSelected = groupBTeams.every(t => selectedTeamIds.has(t.id));
+                        setSelectedTeamIds(prev => {
+                          const newSet = new Set(prev);
+                          groupBTeams.forEach(t => {
+                            if (allSelected) newSet.delete(t.id);
+                            else newSet.add(t.id);
+                          });
+                          return newSet;
+                        });
+                      }}
+                      className="text-xs px-3 py-1 rounded bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 transition"
+                    >
+                      {groupBTeams.every(t => selectedTeamIds.has(t.id)) ? "Deselect All" : "Select All"}
+                    </button>
+                  )}
+                </div>
                 {groupBTeams.length === 0 ? (
                   <p className="text-gray-500">No teams yet</p>
                 ) : (
@@ -1780,12 +1828,20 @@ export default function AdminDashboard() {
                         selectedTeamIds.has(team.id) ? "bg-red-500/20 border border-red-500/50" : "bg-white/5"
                       }`}>
                         <div className="flex items-center gap-3 flex-1">
-                          <input
-                            type="checkbox"
-                            checked={selectedTeamIds.has(team.id)}
-                            onChange={() => toggleTeamSelection(team.id)}
-                            className="w-4 h-4 accent-red-500 cursor-pointer"
-                          />
+                          <button
+                            onClick={() => toggleTeamSelection(team.id)}
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                              selectedTeamIds.has(team.id)
+                                ? "bg-red-500 border-red-500"
+                                : "border-gray-500 hover:border-red-500"
+                            }`}
+                          >
+                            {selectedTeamIds.has(team.id) && (
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
                           <span className="text-gray-500 w-6">{index + 1}.</span>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
