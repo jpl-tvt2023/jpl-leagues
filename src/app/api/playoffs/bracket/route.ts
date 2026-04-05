@@ -1124,7 +1124,7 @@ async function getGroupStandings(leagueId?: string | null) {
       }
     }
 
-    const standings = allTeams.filter(t => t.group && t.group.name !== "Playoffs").map((team) => {
+    const standings = allTeams.filter(t => !t.group || t.group.name !== "Playoffs").map((team) => {
       let wins = 0, draws = 0, pointsFor = 0, bonusPtsTotal = 0;
 
       for (const fixture of team.homeFixtures) {
@@ -1152,7 +1152,7 @@ async function getGroupStandings(leagueId?: string | null) {
         teamId: team.id,
         name: team.name,
         abbreviation: team.abbreviation,
-        group: team.group!.name,
+        group: team.group?.name ?? null,
         leaguePoints: (wins * 2) + draws + cbpPts,
         pointsFor,
         cbpPoints: cbpPts,
@@ -1168,6 +1168,12 @@ async function getGroupStandings(leagueId?: string | null) {
 
     const groupA = standings.filter(t => t.group === "A").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
     const groupB = standings.filter(t => t.group === "B").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
+
+    // For groupless formats (8-team, 16-team), all teams go into groupA
+    if (groupA.length === 0 && groupB.length === 0 && standings.length > 0) {
+      const all = standings.sort(sortFn).map((t, i) => ({ ...t, group: "A", groupRank: i + 1 }));
+      return { groupA: all, groupB: [] };
+    }
 
     return { groupA, groupB };
   } catch (error) {

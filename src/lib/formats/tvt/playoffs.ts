@@ -236,6 +236,12 @@ export async function getGroupStandings(leagueId: string, leagueStageEnd: number
     const groupA = standings.filter(t => t.group === "A").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
     const groupB = standings.filter(t => t.group === "B").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
 
+    // For groupless/single-group formats (8-team, 16-team), all teams go into groupA
+    if (groupA.length === 0 && groupB.length === 0 && standings.length > 0) {
+      const all = standings.sort(sortFn).map((t, i) => ({ ...t, group: "A", groupRank: i + 1 }));
+      return { groupA: all, groupB: [] };
+    }
+
     return { groupA, groupB };
   } catch (error) {
     console.error("Error computing group standings:", error);

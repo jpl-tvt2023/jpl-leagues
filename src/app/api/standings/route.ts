@@ -7,7 +7,7 @@ import { calculateTeamGameweekScore } from "@/lib/fpl";
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
 
 type TeamWithRelations = Team & {
-  group: Group;
+  group: Group | null;
   players: Player[];
   homeFixtures: FixtureWithResult[];
   awayFixtures: FixtureWithResult[];
@@ -369,12 +369,22 @@ export async function GET(request: NextRequest) {
 
     type RankedStanding = TeamStanding & { rank: number; zone: string };
 
-    // Group standings by group name (filter out teams without groups)
+    // Group standings by group name
     const groupNames = [...new Set(standings.map(t => t.group).filter((g): g is string => g !== null))].sort();
     const groupMap: Record<string, RankedStanding[]> = {};
     for (const gName of groupNames) {
       const groupTeams = standings.filter(t => t.group === gName);
       groupMap[gName] = groupTeams.map((team, index) => ({
+        ...team,
+        rank: index + 1,
+        groupRank: index + 1,
+        zone: getQualificationZone(index + 1, leagueTeamSize),
+      }));
+    }
+
+    // For groupless leagues (8-team, 16-team, Triple Crown), all teams go into groupA
+    if (groupNames.length === 0 && standings.length > 0) {
+      groupMap["A"] = standings.map((team, index) => ({
         ...team,
         rank: index + 1,
         groupRank: index + 1,

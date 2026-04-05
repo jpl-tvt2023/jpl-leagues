@@ -64,31 +64,29 @@ export async function POST(request: NextRequest) {
 
     // ── Triple Crown: PL fixtures span all 38 GWs, single group (or no groups), 2 reps (20 teams × 2 = 38) ──
     if (isTripleCrown) {
-      let plGroup = allGroups.find((g) => g.name === "A");
+      // Get teams from group A if it exists, otherwise fetch all league teams
+      let plTeams: { id: string; name: string }[];
+      let plGroupId: string | null = null;
+      const existingGroup = allGroups.find((g) => g.name === "A");
 
-      // If no groups exist, fetch all league teams directly
-      if (!plGroup) {
-        const allTeams = await db.query.teams.findMany({
+      if (existingGroup) {
+        if (existingGroup.teams.length < 2) {
+          return NextResponse.json({ error: `Group A must have at least 2 teams (has ${existingGroup.teams.length})` }, { status: 400 });
+        }
+        plTeams = existingGroup.teams;
+        plGroupId = existingGroup.id;
+      } else {
+        plTeams = await db.query.teams.findMany({
           where: eq(teams.leagueId, leagueId),
           columns: { id: true, name: true },
         });
-        if (allTeams.length < 2) {
+        if (plTeams.length < 2) {
           return NextResponse.json(
-            { error: `League must have at least 2 teams for fixtures (has ${allTeams.length})` },
+            { error: `League must have at least 2 teams for fixtures (has ${plTeams.length})` },
             { status: 400 }
           );
         }
-        // Create a virtual group object (will use null groupId in fixtures)
-        plGroup = { id: null, name: "League", teams: allTeams, leagueId, groupType: "pl" } as any;
-      } else {
-        // Groups exist, validate group A
-        if (plGroup.teams.length < 2) {
-          return NextResponse.json({ error: `Group A must have at least 2 teams (has ${plGroup.teams.length})` }, { status: 400 });
-        }
       }
-
-      // After if/else, plGroup is guaranteed to be defined
-      if (!plGroup) throw new Error("plGroup should be defined"); // TypeScript guard
 
       // Ensure all 38 gameweeks exist, all isPlayoffs=false (Triple Crown has no TVT playoffs)
       const existingGws = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
@@ -110,14 +108,14 @@ export async function POST(request: NextRequest) {
 
       // 20 teams × 2 reps = 38 GWs exactly
       const tcRepetitions = 2;
-      const plFixtures = generateRoundRobinFixtures(plGroup.teams, tcRepetitions);
+      const plFixtures = generateRoundRobinFixtures(plTeams, tcRepetitions);
 
       const fixtureData = plFixtures.map((f) => ({
         id: generateId(),
         homeTeamId: f.homeTeamId,
         awayTeamId: f.awayTeamId,
         gameweekId: gameweekMap.get(f.gameweekNumber)!,
-        groupId: plGroup.id || null, // null for groupless leagues
+        groupId: plGroupId,
         competitionType: "pl",
       })).filter((f) => f.gameweekId != null);
 
@@ -134,7 +132,7 @@ export async function POST(request: NextRequest) {
           repetitions: tcRepetitions,
           leagueStageGws: 38,
           totalFixtures: fixtureData.length,
-          plGroup: { teams: plGroup.teams.length, fixtures: plFixtures.length },
+          plGroup: { teams: plTeams.length, fixtures: plFixtures.length },
         },
       });
     }
@@ -142,61 +140,69 @@ export async function POST(request: NextRequest) {
     // ── TVT path: handle both grouped (32-team) and groupless (8/16-team) leagues ──
     const isSingleGroupFormat = (groupCount ?? 2) === 1;
 
-    let groupA = allGroups.find((g) => g.name === "A");
-    let groupB = (groupCount ?? 2) === 2 ? allGroups.find((g) => g.name === "B") : null;
+    // Resolve teams and groupIds for fixture generation
+    let tvtTeamsA: { id: string; name: string }[];
+    let tvtGroupIdA: string | null = null;
+    let tvtTeamsB: { id: string; name: string }[] | null = null;
+    let tvtGroupIdB: string | null = null;
 
-    // For single-group formats (8/16-team), fetch all league teams if groups don't exist
+    const groupARecord = allGroups.find((g) => g.name === "A");
+    const groupBRecord = (groupCount ?? 2) === 2 ? allGroups.find((g) => g.name === "B") : null;
+
     if (isSingleGroupFormat) {
-      if (!groupA) {
-        // No groups exist, fetch all teams for the league directly
-        const allTeams = await db.query.teams.findMany({
-          where: eq(teams.leagueId, leagueId),
-          columns: { id: true, name: true },
-        });
-        if (allTeams.length < 2) {
+      // 8-team or 16-team: use group A if it exists, otherwise fetch all league teams
+      if (groupARecord) {
+        if (groupARecord.teams.length < 2) {
           return NextResponse.json(
-            { error: `League must have at least 2 teams (has ${allTeams.length})` },
+            { error: `Group A must have at least 2 teams (has ${groupARecord.teams.length})` },
             { status: 400 }
           );
         }
-        // Create a virtual group object for processing (will use null groupId in fixtures)
-        groupA = { id: null, name: "League", teams: allTeams, leagueId, groupType: "pl" } as any;
-      } else if (groupA.teams.length < 2) {
-        return NextResponse.json(
-          { error: `Group A must have at least 2 teams (has ${groupA.teams.length})` },
-          { status: 400 }
-        );
+        tvtTeamsA = groupARecord.teams;
+        tvtGroupIdA = groupARecord.id;
+      } else {
+        tvtTeamsA = await db.query.teams.findMany({
+          where: eq(teams.leagueId, leagueId),
+          columns: { id: true, name: true },
+        });
+        if (tvtTeamsA.length < 2) {
+          return NextResponse.json(
+            { error: `League must have at least 2 teams (has ${tvtTeamsA.length})` },
+            { status: 400 }
+          );
+        }
       }
     } else {
-      // For 2-group format (32-team), require both groups
-      if (!groupA) {
+      // 32-team: require both groups
+      if (!groupARecord) {
         return NextResponse.json(
           { error: "Group A must exist before generating fixtures" },
           { status: 400 }
         );
       }
-      if (!groupB) {
+      if (!groupBRecord) {
         return NextResponse.json(
           { error: "Both Group A and Group B must exist before generating fixtures" },
           { status: 400 }
         );
       }
-      if (groupA.teams.length < 2) {
+      if (groupARecord.teams.length < 2) {
         return NextResponse.json(
-          { error: `Group A must have at least 2 teams (has ${groupA.teams.length})` },
+          { error: `Group A must have at least 2 teams (has ${groupARecord.teams.length})` },
           { status: 400 }
         );
       }
-      if (groupB.teams.length < 2) {
+      if (groupBRecord.teams.length < 2) {
         return NextResponse.json(
-          { error: `Group B must have at least 2 teams (has ${groupB.teams.length})` },
+          { error: `Group B must have at least 2 teams (has ${groupBRecord.teams.length})` },
           { status: 400 }
         );
       }
+      tvtTeamsA = groupARecord.teams;
+      tvtGroupIdA = groupARecord.id;
+      tvtTeamsB = groupBRecord.teams;
+      tvtGroupIdB = groupBRecord.id;
     }
-
-    // After if/else blocks, groupA is guaranteed to be defined for both paths
-    if (!groupA) throw new Error("groupA should be defined"); // TypeScript guard
 
     // Compute repetitions from league config
     // Formula: (playoffStartGw - 1) / (teamsPerGroup - 1)
@@ -232,8 +238,8 @@ export async function POST(request: NextRequest) {
     const gameweekMap = new Map(leagueGws.map((gw) => [gw.number, gw.id]));
 
     // Generate fixtures per group
-    const groupAFixtures = generateRoundRobinFixtures(groupA.teams, repetitions);
-    const groupBFixtures = groupB ? generateRoundRobinFixtures(groupB.teams, repetitions) : [];
+    const groupAFixtures = generateRoundRobinFixtures(tvtTeamsA, repetitions);
+    const groupBFixtures = tvtTeamsB ? generateRoundRobinFixtures(tvtTeamsB, repetitions) : [];
 
     // Build insert payload
     const allFixtureData = [
@@ -242,15 +248,15 @@ export async function POST(request: NextRequest) {
         homeTeamId: f.homeTeamId,
         awayTeamId: f.awayTeamId,
         gameweekId: gameweekMap.get(f.gameweekNumber)!,
-        groupId: groupA.id || null, // null for groupless leagues
+        groupId: tvtGroupIdA,
       })),
-      ...(groupB
+      ...(tvtTeamsB
         ? groupBFixtures.map((f) => ({
             id: generateId(),
             homeTeamId: f.homeTeamId,
             awayTeamId: f.awayTeamId,
             gameweekId: gameweekMap.get(f.gameweekNumber)!,
-            groupId: groupB.id,
+            groupId: tvtGroupIdB,
           }))
         : []),
     ];
@@ -272,13 +278,13 @@ export async function POST(request: NextRequest) {
         leagueStageGws: effectivePlayoffStart - 1,
         totalFixtures: validFixtures.length,
         groupA: {
-          teams: groupA.teams.length,
+          teams: tvtTeamsA.length,
           fixtures: groupAFixtures.length,
         },
-        ...(groupB
+        ...(tvtTeamsB
           ? {
               groupB: {
-                teams: groupB.teams.length,
+                teams: tvtTeamsB.length,
                 fixtures: groupBFixtures.length,
               },
             }

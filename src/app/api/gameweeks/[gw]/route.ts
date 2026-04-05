@@ -16,7 +16,7 @@ interface RouteParams {
 type FixtureWithRelations = Fixture & {
   homeTeam: Team & { players: Player[] };
   awayTeam: Team & { players: Player[] };
-  group: Group;
+  group: Group | null;
   result: Result | null;
 };
 
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           abbreviation: f.awayTeam.abbreviation,
           players: f.awayTeam.players.map((p: Player) => ({ name: p.name, fplId: p.fplId })),
         },
-        group: f.group.name,
+        group: f.group?.name ?? null,
         isChallenge: f.isChallenge,
         isPlayoff: f.isPlayoff,
         result: f.result

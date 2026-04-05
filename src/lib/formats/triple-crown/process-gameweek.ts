@@ -28,7 +28,7 @@ interface ProcessResult {
 type FixtureWithRelations = Fixture & {
   homeTeam: Team & { players: Player[] };
   awayTeam: Team & { players: Player[] };
-  group: Group;
+  group: Group | null;
   result: Result | null;
 };
 
