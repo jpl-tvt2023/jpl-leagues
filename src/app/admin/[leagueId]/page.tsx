@@ -1149,7 +1149,7 @@ export default function AdminDashboard() {
     });
   };
 
-  const groupATeams = teams.filter(t => t.group === "A");
+  const groupATeams = leagueConfig.groupCount === 2 ? teams.filter(t => t.group === "A") : teams;
   const groupBTeams = teams.filter(t => t.group === "B");
   const teamsPerGroup = Math.round(leagueConfig.teamSize / leagueConfig.groupCount);
   const setupCompleteCount = teams.filter(t => t.isProfileComplete).length;
