@@ -313,7 +313,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         forceReprocess
       );
       await invalidateLeaguePageCache(leagueId || "");
-      return NextResponse.json(result);
+      // Normalize response to match ScoringResult shape expected by admin frontend
+      return NextResponse.json({
+        success: result.success,
+        gameweek: gameweekNumber,
+        processed: result.processed,
+        failed: result.errors?.length ?? 0,
+        results: [],
+        errors: result.errors,
+        bonusAwards: result.bonusAwards,
+        message: result.message,
+      });
     }
 
     // ============================================
