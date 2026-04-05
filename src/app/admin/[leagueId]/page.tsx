@@ -224,6 +224,10 @@ export default function AdminDashboard() {
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Bulk Select State
+  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
   // Superadmin detection — show "← Platform Admin" link if superadmin is viewing
   const [isSuperadminViewer, setIsSuperadminViewer] = useState(false);
   useEffect(() => {
@@ -1096,6 +1100,55 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleBulkDeleteTeams = async () => {
+    if (selectedTeamIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedTeamIds.size} team(s)? This cannot be undone and will delete all players, fixtures, results, and captain data.`)) return;
+
+    setIsBulkDeleting(true);
+    setMessage(null);
+
+    let deletedCount = 0;
+    let failedCount = 0;
+
+    for (const teamId of Array.from(selectedTeamIds)) {
+      try {
+        const response = await fetch(`/api/admin/${leagueId}/delete-team`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId }),
+        });
+
+        if (response.ok) {
+          deletedCount++;
+        } else {
+          failedCount++;
+        }
+      } catch {
+        failedCount++;
+      }
+    }
+
+    setSelectedTeamIds(new Set());
+    setMessage({
+      type: failedCount === 0 ? "success" : "error",
+      text: `Deleted ${deletedCount} team(s)${failedCount > 0 ? `, ${failedCount} failed` : ""}`,
+    });
+    setIsBulkDeleting(false);
+    fetchTeams();
+  };
+
+  const toggleTeamSelection = (teamId: string) => {
+    setSelectedTeamIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(teamId)) {
+        newSet.delete(teamId);
+      } else {
+        newSet.add(teamId);
+      }
+      return newSet;
+    });
+  };
+
   const groupATeams = teams.filter(t => t.group === "A");
   const groupBTeams = teams.filter(t => t.group === "B");
   const teamsPerGroup = Math.round(leagueConfig.teamSize / leagueConfig.groupCount);
@@ -1620,129 +1673,171 @@ export default function AdminDashboard() {
         {isLoading ? (
           <LoadingScreen variant="admin" fullScreen={false} />
         ) : (
-          <div className={`grid ${leagueConfig.groupCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1"} gap-8`}>
-            {/* Group A */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-blue-400 mb-4">{leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{teamsPerGroup})</h3>
-              {groupATeams.length === 0 ? (
-                <p className="text-gray-500">No teams yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {groupATeams.map((team, index) => (
-                    <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                      <div className="flex items-center gap-3">
-                        <span className="text-gray-500 w-6">{index + 1}.</span>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <div className="font-semibold text-white">{team.name}</div>
-                            {team.teamLoginId && (
-                              <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded">
-                                ID: {team.teamLoginId}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            {team.isProfileComplete
-                              ? team.players.map(p => p.name).join(" & ")
-                              : "Profile Setup Pending"}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openEditModal(team)}
-                          className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setDeletingTeam(team)}
-                          className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                        >
-                          Delete
-                        </button>
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          team.needsPasswordChange && !team.isProfileComplete
-                            ? "bg-orange-500/20 text-orange-400"
-                            : !team.isProfileComplete
-                            ? "bg-yellow-500/20 text-yellow-400"
-                            : "bg-green-500/20 text-green-400"
-                        }`}>
-                          {team.needsPasswordChange && !team.isProfileComplete
-                            ? "Awaiting Login"
-                            : !team.isProfileComplete
-                            ? "Setup Pending"
-                            : "Active"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+          <>
+            {/* Bulk Delete Toolbar */}
+            {selectedTeamIds.size > 0 && (
+              <div className="mb-6 rounded-lg border border-red-500/50 bg-red-500/10 p-4 flex items-center justify-between">
+                <div className="text-sm text-red-300">
+                  {selectedTeamIds.size} team(s) selected
                 </div>
-              )}
-            </div>
-
-            {/* Group B — only shown for 2-group leagues */}
-            {leagueConfig.groupCount === 2 && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-purple-400 mb-4">Group B ({groupBTeams.length}/{teamsPerGroup})</h3>
-              {groupBTeams.length === 0 ? (
-                <p className="text-gray-500">No teams yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {groupBTeams.map((team, index) => (
-                    <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                      <div className="flex items-center gap-3">
-                        <span className="text-gray-500 w-6">{index + 1}.</span>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <div className="font-semibold text-white">{team.name}</div>
-                            {team.teamLoginId && (
-                              <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded">
-                                ID: {team.teamLoginId}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            {team.isProfileComplete
-                              ? team.players.map(p => p.name).join(" & ")
-                              : "Profile Setup Pending"}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openEditModal(team)}
-                          className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setDeletingTeam(team)}
-                          className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                        >
-                          Delete
-                        </button>
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          team.needsPasswordChange && !team.isProfileComplete
-                            ? "bg-orange-500/20 text-orange-400"
-                            : !team.isProfileComplete
-                            ? "bg-yellow-500/20 text-yellow-400"
-                            : "bg-green-500/20 text-green-400"
-                        }`}>
-                          {team.needsPasswordChange && !team.isProfileComplete
-                            ? "Awaiting Login"
-                            : !team.isProfileComplete
-                            ? "Setup Pending"
-                            : "Active"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedTeamIds(new Set())}
+                    className="px-4 py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition text-sm"
+                  >
+                    Clear Selection
+                  </button>
+                  <button
+                    onClick={handleBulkDeleteTeams}
+                    disabled={isBulkDeleting}
+                    className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50 text-sm font-semibold"
+                  >
+                    {isBulkDeleting ? "Deleting..." : `Delete ${selectedTeamIds.size}`}
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
             )}
-          </div>
+
+            <div className={`grid ${leagueConfig.groupCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1"} gap-8`}>
+              {/* Group A */}
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h3 className="text-xl font-bold text-blue-400 mb-4">{leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{teamsPerGroup})</h3>
+                {groupATeams.length === 0 ? (
+                  <p className="text-gray-500">No teams yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {groupATeams.map((team, index) => (
+                      <div key={team.id} className={`flex items-center justify-between p-3 rounded-lg transition ${
+                        selectedTeamIds.has(team.id) ? "bg-red-500/20 border border-red-500/50" : "bg-white/5"
+                      }`}>
+                        <div className="flex items-center gap-3 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedTeamIds.has(team.id)}
+                            onChange={() => toggleTeamSelection(team.id)}
+                            className="w-4 h-4 accent-red-500 cursor-pointer"
+                          />
+                          <span className="text-gray-500 w-6">{index + 1}.</span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="font-semibold text-white">{team.name}</div>
+                              {team.teamLoginId && (
+                                <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded">
+                                  ID: {team.teamLoginId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {team.isProfileComplete
+                                ? team.players.map(p => p.name).join(" & ")
+                                : "Profile Setup Pending"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-2">
+                          <button
+                            onClick={() => openEditModal(team)}
+                            className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeletingTeam(team)}
+                            className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                          >
+                            Delete
+                          </button>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            team.needsPasswordChange && !team.isProfileComplete
+                              ? "bg-orange-500/20 text-orange-400"
+                              : !team.isProfileComplete
+                              ? "bg-yellow-500/20 text-yellow-400"
+                              : "bg-green-500/20 text-green-400"
+                          }`}>
+                            {team.needsPasswordChange && !team.isProfileComplete
+                              ? "Awaiting Login"
+                              : !team.isProfileComplete
+                              ? "Setup Pending"
+                              : "Active"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Group B — only shown for 2-group leagues */}
+              {leagueConfig.groupCount === 2 && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h3 className="text-xl font-bold text-purple-400 mb-4">Group B ({groupBTeams.length}/{teamsPerGroup})</h3>
+                {groupBTeams.length === 0 ? (
+                  <p className="text-gray-500">No teams yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {groupBTeams.map((team, index) => (
+                      <div key={team.id} className={`flex items-center justify-between p-3 rounded-lg transition ${
+                        selectedTeamIds.has(team.id) ? "bg-red-500/20 border border-red-500/50" : "bg-white/5"
+                      }`}>
+                        <div className="flex items-center gap-3 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedTeamIds.has(team.id)}
+                            onChange={() => toggleTeamSelection(team.id)}
+                            className="w-4 h-4 accent-red-500 cursor-pointer"
+                          />
+                          <span className="text-gray-500 w-6">{index + 1}.</span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="font-semibold text-white">{team.name}</div>
+                              {team.teamLoginId && (
+                                <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded">
+                                  ID: {team.teamLoginId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {team.isProfileComplete
+                                ? team.players.map(p => p.name).join(" & ")
+                                : "Profile Setup Pending"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-2">
+                          <button
+                            onClick={() => openEditModal(team)}
+                            className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeletingTeam(team)}
+                            className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                          >
+                            Delete
+                          </button>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            team.needsPasswordChange && !team.isProfileComplete
+                              ? "bg-orange-500/20 text-orange-400"
+                              : !team.isProfileComplete
+                              ? "bg-yellow-500/20 text-yellow-400"
+                              : "bg-green-500/20 text-green-400"
+                          }`}>
+                            {team.needsPasswordChange && !team.isProfileComplete
+                              ? "Awaiting Login"
+                              : !team.isProfileComplete
+                              ? "Setup Pending"
+                              : "Active"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              )}
+            </div>
+          </>
         )}
 
         {/* Group Assignment — 32-team leagues only */}
