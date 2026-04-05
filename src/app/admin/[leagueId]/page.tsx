@@ -116,6 +116,7 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState({
+    teamLoginId: "",
     teamName: "",
     abbreviation: "",
     password: "",
@@ -206,6 +207,7 @@ export default function AdminDashboard() {
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [editFormData, setEditFormData] = useState({
     teamId: "",
+    teamLoginId: "",
     teamName: "",
     abbreviation: "",
     password: "",
@@ -724,6 +726,7 @@ export default function AdminDashboard() {
       
       // Reset form
       setFormData({
+        teamLoginId: "",
         teamName: "",
         abbreviation: "",
         password: "",
@@ -1020,6 +1023,7 @@ export default function AdminDashboard() {
     setEditingTeam(team);
     setEditFormData({
       teamId: team.id,
+      teamLoginId: team.teamLoginId || "",
       teamName: team.name,
       abbreviation: team.abbreviation,
       password: "",
@@ -1153,7 +1157,18 @@ export default function AdminDashboard() {
               {/* Team Details */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Name (Login ID)</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Login ID</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.teamLoginId}
+                    onChange={(e) => setEditFormData({ ...editFormData, teamLoginId: e.target.value })}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                  />
+                  <p className="text-gray-500 text-xs mt-1">Used for team login. 3–20 alphanumeric/underscore/hyphen.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Name</label>
                   <input
                     type="text"
                     required
@@ -1161,17 +1176,23 @@ export default function AdminDashboard() {
                     onChange={(e) => setEditFormData({ ...editFormData, teamName: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                   />
+                  <p className="text-gray-500 text-xs mt-1">Display name. Unique within this league.</p>
                 </div>
+              </div>
+
+              {/* Abbreviation */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Team Abbreviation</label>
                   <input
                     type="text"
                     required
-                    maxLength={3}
+                    maxLength={4}
                     value={editFormData.abbreviation}
                     onChange={(e) => setEditFormData({ ...editFormData, abbreviation: e.target.value.toUpperCase() })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none uppercase"
                   />
+                  <p className="text-gray-500 text-xs mt-1">2–4 uppercase letters. Unique within this league.</p>
                 </div>
               </div>
 
@@ -1433,7 +1454,19 @@ export default function AdminDashboard() {
                   {/* Team Details */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Name (Login ID)</label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Login ID</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.teamLoginId}
+                        onChange={(e) => setFormData({ ...formData, teamLoginId: e.target.value })}
+                        placeholder="team-123"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Used for login. 3–20 alphanumeric/underscore/hyphen.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Name</label>
                       <input
                         type="text"
                         required
@@ -1442,21 +1475,26 @@ export default function AdminDashboard() {
                         placeholder="DM — Rahul"
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Both team members will use this to login</p>
+                      <p className="text-xs text-gray-500 mt-1">Display name. Unique within this league.</p>
                     </div>
+                  </div>
+
+                  {/* Abbreviation */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Abbreviation</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={3}
-                    value={formData.abbreviation}
-                    onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
-                    placeholder="DM"
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none uppercase"
-                  />
-                </div>
-              </div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Abbreviation</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={4}
+                        value={formData.abbreviation}
+                        onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
+                        placeholder="DM"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none uppercase"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">2–4 uppercase letters. Unique within this league.</p>
+                    </div>
+                  </div>
 
               {/* Password and Group */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
