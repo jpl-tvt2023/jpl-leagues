@@ -490,53 +490,60 @@ export async function GET(request: NextRequest) {
     // ============================================
     // LEAGUE POSITION
     // ============================================
-    // Get all teams in same group for ranking
-    const groupTeams = await db.query.teams.findMany({
-      where: eq(teams.groupId, team.groupId),
-      with: {
-        homeFixtures: { with: { result: true } },
-        awayFixtures: { with: { result: true } },
-      },
-    });
+    let groupRank = 0;
+    let pointsToTop = 0;
+    let zone: "playoffs" | "challenger" | "eliminated" = "eliminated";
+    let miniTable: Array<{ rank: number; name: string; points: number; isCurrentTeam: boolean }> = [];
 
-    // Calculate standings
-    const standings = groupTeams.map(t => {
-      let pts = t.leaguePoints;
-      let wins = 0;
-      
-      [...t.homeFixtures, ...t.awayFixtures].forEach(f => {
-        if (f.result) {
-          const isHome = f.homeTeamId === t.id;
-          const matchPts = isHome ? f.result.homeMatchPoints : f.result.awayMatchPoints;
-          if (matchPts === 2) wins++;
-        }
+    if (team.groupId) {
+      // Get all teams in same group for ranking
+      const groupTeams = await db.query.teams.findMany({
+        where: eq(teams.groupId, team.groupId),
+        with: {
+          homeFixtures: { with: { result: true } },
+          awayFixtures: { with: { result: true } },
+        },
       });
-      
-      return { id: t.id, name: t.name, points: pts, wins };
-    }).sort((a, b) => {
-      if (a.points !== b.points) return b.points - a.points;
-      return b.wins - a.wins;
-    });
 
-    const groupRank = standings.findIndex(t => t.id === teamId) + 1;
-    const pointsToTop = standings[0]?.points - team.leaguePoints || 0;
-    
-    // Determine zone
-    let zone: "playoffs" | "challenger" | "eliminated" = "playoffs";
-    if (groupRank > 8) zone = "challenger";
-    if (groupRank > 14) zone = "eliminated";
+      // Calculate standings
+      const standings = groupTeams.map(t => {
+        let pts = t.leaguePoints;
+        let wins = 0;
 
-    // Mini table (2 above, current, 2 below)
-    const myIndex = standings.findIndex(t => t.id === teamId);
-    const miniTable = standings.slice(
-      Math.max(0, myIndex - 2),
-      Math.min(standings.length, myIndex + 3)
-    ).map((t, i) => ({
-      rank: standings.indexOf(t) + 1,
-      name: t.name,
-      points: t.points,
-      isCurrentTeam: t.id === teamId,
-    }));
+        [...t.homeFixtures, ...t.awayFixtures].forEach(f => {
+          if (f.result) {
+            const isHome = f.homeTeamId === t.id;
+            const matchPts = isHome ? f.result.homeMatchPoints : f.result.awayMatchPoints;
+            if (matchPts === 2) wins++;
+          }
+        });
+
+        return { id: t.id, name: t.name, points: pts, wins };
+      }).sort((a, b) => {
+        if (a.points !== b.points) return b.points - a.points;
+        return b.wins - a.wins;
+      });
+
+      groupRank = standings.findIndex(t => t.id === teamId) + 1;
+      pointsToTop = standings[0]?.points - team.leaguePoints || 0;
+
+      // Determine zone
+      zone = "playoffs";
+      if (groupRank > 8) zone = "challenger";
+      if (groupRank > 14) zone = "eliminated";
+
+      // Mini table (2 above, current, 2 below)
+      const myIndex = standings.findIndex(t => t.id === teamId);
+      miniTable = standings.slice(
+        Math.max(0, myIndex - 2),
+        Math.min(standings.length, myIndex + 3)
+      ).map((t, i) => ({
+        rank: standings.indexOf(t) + 1,
+        name: t.name,
+        points: t.points,
+        isCurrentTeam: t.id === teamId,
+      }));
+    }
 
     // ============================================
     // NEXT 5 FIXTURES
@@ -636,7 +643,7 @@ export async function GET(request: NextRequest) {
         id: team.id,
         name: team.name,
         abbreviation: team.abbreviation,
-        group: team.group.name,
+        group: team.group?.name || null,
         leaguePoints: team.leaguePoints,
         bonusPoints: team.bonusPoints,
       },

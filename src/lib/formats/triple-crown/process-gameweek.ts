@@ -240,22 +240,24 @@ export async function processTripleCrownGameweek(
         // Track margin for bonus (75+ points)
         const margin = Math.abs(effectiveHomeScore - effectiveAwayScore);
         const groupId = fixture.groupId;
-        if (!plMargins.has(groupId)) {
-          plMargins.set(groupId, []);
-        }
-        if (margin >= 75) {
-          if (effectiveHomeScore > effectiveAwayScore) {
-            plMargins.get(groupId)!.push({
-              teamId: fixture.homeTeamId,
-              margin,
-              resultId,
-            });
-          } else if (effectiveAwayScore > effectiveHomeScore) {
-            plMargins.get(groupId)!.push({
-              teamId: fixture.awayTeamId,
-              margin,
-              resultId,
-            });
+        if (groupId) {
+          if (!plMargins.has(groupId)) {
+            plMargins.set(groupId, []);
+          }
+          if (margin >= 75) {
+            if (effectiveHomeScore > effectiveAwayScore) {
+              plMargins.get(groupId)!.push({
+                teamId: fixture.homeTeamId,
+                margin,
+                resultId,
+              });
+            } else if (effectiveAwayScore > effectiveHomeScore) {
+              plMargins.get(groupId)!.push({
+                teamId: fixture.awayTeamId,
+                margin,
+                resultId,
+              });
+            }
           }
         }
 
@@ -320,6 +322,11 @@ export async function processTripleCrownGameweek(
 
       for (const fixture of cupFixtures) {
         try {
+          // Skip cup fixtures without a group assignment
+          if (!fixture.groupId) {
+            continue;
+          }
+
           // Determine if fixture involves Ghost team
           const homeTeam = await db.select().from(teams).where(eq(teams.id, fixture.homeTeamId));
           const awayTeam = await db.select().from(teams).where(eq(teams.id, fixture.awayTeamId));

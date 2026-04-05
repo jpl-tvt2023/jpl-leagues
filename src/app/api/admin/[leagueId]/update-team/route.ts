@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups } from "@/lib/db";
 import { eq, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
@@ -30,24 +31,24 @@ export async function PUT(request: NextRequest) {
       group,
     } = body;
 
-    // Validate required fields
-    if (!teamId || !teamLoginId || !teamName || !abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId || !group) {
+    // Validate required fields (group is optional, defaults to "A")
+    if (!teamId || !teamLoginId || !teamName || !abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId) {
       return NextResponse.json(
-        { error: "All fields except password are required" },
+        { error: "All fields except password and group are required" },
         { status: 400 }
       );
     }
 
     // Validate teamLoginId format
-    if (!/^[A-Za-z0-9_-]{3,20}$/.test(teamLoginId)) {
+    if (!/^[A-Za-z0-9_-]{3,30}$/.test(teamLoginId)) {
       return NextResponse.json(
-        { error: "Team ID must be 3–20 alphanumeric/underscore/hyphen characters" },
+        { error: "Team ID must be 3–30 alphanumeric/underscore/hyphen characters" },
         { status: 400 }
       );
     }
 
-    // Validate group
-    if (group !== "A" && group !== "B") {
+    // Validate group (optional; if provided, must be A or B)
+    if (group && group !== "A" && group !== "B") {
       return NextResponse.json(
         { error: "Group must be either A or B" },
         { status: 400 }
@@ -85,16 +86,20 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Ensure group exists for this league
-    let groupRecords = await db.select().from(groups).where(
-      and(eq(groups.name, group), eq(groups.leagueId, leagueId))
-    );
-    let groupRecord = groupRecords[0];
+    // Resolve group (null if not provided)
+    let groupId: string | null = null;
+    if (group) {
+      const groupRecords = await db.select().from(groups).where(
+        and(eq(groups.name, group), eq(groups.leagueId, leagueId))
+      );
+      let groupRecord = groupRecords[0];
 
-    if (!groupRecord) {
-      const groupId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-      await db.insert(groups).values({ id: groupId, name: group, leagueId, groupType: "pl" });
-      groupRecord = { id: groupId, name: group, leagueId, groupType: "pl" };
+      if (!groupRecord) {
+        groupId = generateId();
+        await db.insert(groups).values({ id: groupId, name: group, leagueId, groupType: "pl" });
+      } else {
+        groupId = groupRecord.id;
+      }
     }
 
     // Update team
@@ -102,7 +107,7 @@ export async function PUT(request: NextRequest) {
       teamLoginId,
       name: teamName,
       abbreviation: abbreviation.toUpperCase(),
-      groupId: groupRecord.id,
+      groupId,
     };
 
     // Only update password if provided

@@ -85,9 +85,9 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Validate teamLoginId format (alphanumeric, underscore, hyphen; 3-20 chars)
-        if (!/^[A-Za-z0-9_-]{3,20}$/.test(teamLoginId)) {
-          uploadResults.errors.push(`Row ${rowNum}: Team ID must be 3–20 alphanumeric/underscore/hyphen characters`);
+        // Validate teamLoginId format (alphanumeric, underscore, hyphen; 3-30 chars)
+        if (!/^[A-Za-z0-9_-]{3,30}$/.test(teamLoginId)) {
+          uploadResults.errors.push(`Row ${rowNum}: Team ID must be 3–30 alphanumeric/underscore/hyphen characters`);
           continue;
         }
 
@@ -102,13 +102,7 @@ export async function POST(request: NextRequest) {
 
         // ---- MODE: CREDENTIALS ONLY ----
         if (mode === "credentials") {
-          // Auto-assign to group "A" (admin can reassign later via group assignment UI)
-          const credGroupName = "A";
-          const credGroupRecords = await db.select().from(groups).where(
-            and(eq(groups.name, credGroupName), eq(groups.leagueId, leagueId))
-          );
-          const credGroupRecord = credGroupRecords[0];
-
+          // No group assigned in credentials mode (admin assigns via group assignment UI later)
           const hashedPassword = await bcrypt.hash(password, 10);
           await db.insert(teams).values({
             id: generateId(),
@@ -116,7 +110,7 @@ export async function POST(request: NextRequest) {
             name: teamLoginId, // Use login ID as placeholder name (team sets display name during setup)
             abbreviation: "", // Will be set during setup
             password: hashedPassword,
-            groupId: credGroupRecord.id,
+            groupId: null, // No group assigned in credentials mode
             mustChangePassword: true,
             isProfileComplete: false,
             leagueId,
@@ -147,21 +141,21 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Resolve group
-        if (groupCount !== 1 && !group) {
-          uploadResults.errors.push(`Row ${rowNum}: Missing group`);
-          continue;
-        }
-        const groupNameResolved = groupCount === 1 ? "A" : group.toUpperCase();
-        if (groupNameResolved !== "A" && groupNameResolved !== "B") {
-          uploadResults.errors.push(`Row ${rowNum}: Group must be A or B`);
-          continue;
-        }
+        // Resolve group (optional; null if not provided)
+        let groupIdFull: string | null = null;
+        if (group) {
+          const groupNameResolved = group.toUpperCase();
+          if (groupNameResolved !== "A" && groupNameResolved !== "B") {
+            uploadResults.errors.push(`Row ${rowNum}: Group must be A or B`);
+            continue;
+          }
 
-        const groupRecordsFull = await db.select().from(groups).where(
-          and(eq(groups.name, groupNameResolved), eq(groups.leagueId, leagueId))
-        );
-        const groupRecordFull = groupRecordsFull[0];
+          const groupRecordsFull = await db.select().from(groups).where(
+            and(eq(groups.name, groupNameResolved), eq(groups.leagueId, leagueId))
+          );
+          const groupRecordFull = groupRecordsFull[0];
+          groupIdFull = groupRecordFull ? groupRecordFull.id : null;
+        }
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const teamId = generateId();
@@ -172,7 +166,7 @@ export async function POST(request: NextRequest) {
           name: teamName,
           abbreviation: abbreviation.toUpperCase(),
           password: hashedPassword,
-          groupId: groupRecordFull.id,
+          groupId: groupIdFull,
           mustChangePassword: true,
           isProfileComplete: true,
           leagueId,

@@ -742,30 +742,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
 
         // Track margin for bonus calculation (only winning teams with 75+ margin)
+        // Only track if fixture has a group assigned
         const groupId = fixture.groupId;
-        if (!groupMargins.has(groupId)) {
-          groupMargins.set(groupId, []);
-        }
-        
-        if (margin >= 75) {
-          if (effectiveHomeScore > effectiveAwayScore) {
-            // Home team won by 75+
-            groupMargins.get(groupId)!.push({
-              teamId: fixture.homeTeamId,
-              margin,
-              fixtureId: fixture.id,
-              resultId,
-              usedDoublePointer: homeUsedDoublePointer,
-            });
-          } else if (effectiveAwayScore > effectiveHomeScore) {
-            // Away team won by 75+
-            groupMargins.get(groupId)!.push({
-              teamId: fixture.awayTeamId,
-              margin,
-              fixtureId: fixture.id,
-              resultId,
-              usedDoublePointer: awayUsedDoublePointer,
-            });
+        if (groupId) {
+          if (!groupMargins.has(groupId)) {
+            groupMargins.set(groupId, []);
+          }
+
+          if (margin >= 75) {
+            if (effectiveHomeScore > effectiveAwayScore) {
+              // Home team won by 75+
+              groupMargins.get(groupId)!.push({
+                teamId: fixture.homeTeamId,
+                margin,
+                fixtureId: fixture.id,
+                resultId,
+                usedDoublePointer: homeUsedDoublePointer,
+              });
+            } else if (effectiveAwayScore > effectiveHomeScore) {
+              // Away team won by 75+
+              groupMargins.get(groupId)!.push({
+                teamId: fixture.awayTeamId,
+                margin,
+                fixtureId: fixture.id,
+                resultId,
+                usedDoublePointer: awayUsedDoublePointer,
+              });
+            }
           }
         }
 

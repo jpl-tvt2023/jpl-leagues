@@ -1124,7 +1124,7 @@ async function getGroupStandings(leagueId?: string | null) {
       }
     }
 
-    const standings = allTeams.filter(t => t.group.name !== "Playoffs").map((team) => {
+    const standings = allTeams.filter(t => t.group && t.group.name !== "Playoffs").map((team) => {
       let wins = 0, draws = 0, pointsFor = 0, bonusPtsTotal = 0;
 
       for (const fixture of team.homeFixtures) {
@@ -1152,7 +1152,7 @@ async function getGroupStandings(leagueId?: string | null) {
         teamId: team.id,
         name: team.name,
         abbreviation: team.abbreviation,
-        group: team.group.name,
+        group: team.group!.name,
         leaguePoints: (wins * 2) + draws + cbpPts,
         pointsFor,
         cbpPoints: cbpPts,

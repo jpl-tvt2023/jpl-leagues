@@ -219,7 +219,7 @@ export async function getGroupStandings(leagueId: string, leagueStageEnd: number
         teamId: team.id,
         name: team.name,
         abbreviation: team.abbreviation,
-        group: team.group.name,
+        group: team.group?.name || "Unknown",
         leaguePoints,
         pointsFor,
         cbpPoints: cbpPts,

@@ -113,7 +113,7 @@ export async function getGroupRankingsBeforeGW(
 
   return sorted.map((team, index) => ({
     teamId: team.id,
-    groupId: team.groupId,
+    groupId: team.groupId!,
     groupName: team.group?.name || "",
     rank: index + 1,
     leaguePoints: team.historicalLeaguePoints,

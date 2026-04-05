@@ -34,7 +34,7 @@ interface TeamStanding {
   teamId: string;
   name: string;
   abbreviation: string;
-  group: string;
+  group: string | null;
   played: number;
   wins: number;
   draws: number;
@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
 
     // Filter by group if provided
     if (group) {
-      allTeams = allTeams.filter(t => t.group.name === group);
+      allTeams = allTeams.filter(t => t.group && t.group.name === group);
     }
 
     // Fetch all chips for all teams — only need gameweek relation
@@ -338,7 +338,7 @@ export async function GET(request: NextRequest) {
         teamId: team.id,
         name: team.name,
         abbreviation: team.abbreviation,
-        group: team.group.name,
+        group: team.group?.name || null,
         played,
         wins,
         draws,
@@ -369,8 +369,8 @@ export async function GET(request: NextRequest) {
 
     type RankedStanding = TeamStanding & { rank: number; zone: string };
 
-    // Group standings by group name
-    const groupNames = [...new Set(standings.map(t => t.group))].sort();
+    // Group standings by group name (filter out teams without groups)
+    const groupNames = [...new Set(standings.map(t => t.group).filter((g): g is string => g !== null))].sort();
     const groupMap: Record<string, RankedStanding[]> = {};
     for (const gName of groupNames) {
       const groupTeams = standings.filter(t => t.group === gName);

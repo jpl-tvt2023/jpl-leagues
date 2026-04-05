@@ -199,7 +199,7 @@ export async function GET(request: NextRequest) {
       teams: teamsWithPlayers.map(t => ({
         id: t.id,
         name: t.name,
-        group: t.group.name,
+        group: t.group?.name || "Unassigned",
         players: t.players.map(p => ({
           id: p.id,
           name: p.name,

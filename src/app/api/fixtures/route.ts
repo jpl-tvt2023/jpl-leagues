@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     // Filter by group if provided
     if (groupParam && (groupParam === "A" || groupParam === "B")) {
-      allFixtures = allFixtures.filter(f => f.group.name === groupParam);
+      allFixtures = allFixtures.filter(f => f.group?.name === groupParam);
     }
 
     // Sort by gameweek number, then group name
@@ -75,7 +75,9 @@ export async function GET(request: NextRequest) {
       if (a.gameweek.number !== b.gameweek.number) {
         return a.gameweek.number - b.gameweek.number;
       }
-      return a.group.name.localeCompare(b.group.name);
+      const aGroup = a.group?.name || "";
+      const bGroup = b.group?.name || "";
+      return aGroup.localeCompare(bGroup);
     });
 
     // Group fixtures by gameweek

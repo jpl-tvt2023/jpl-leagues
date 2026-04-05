@@ -75,7 +75,7 @@ export const teams = sqliteTable("teams", {
   abbreviation: text("abbreviation").notNull(), // e.g., "DM"
   password: text("password").notNull(), // Hashed password for team login
   mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
-  groupId: text("group_id").notNull().references(() => groups.id),
+  groupId: text("group_id").references(() => groups.id), // Optional: null if group not assigned
   
   // League points (separate from match scores)
   leaguePoints: integer("league_points").notNull().default(0),
@@ -149,7 +149,7 @@ export const fixtures = sqliteTable("fixtures", {
   gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
   homeTeamId: text("home_team_id").notNull().references(() => teams.id),
   awayTeamId: text("away_team_id").notNull().references(() => teams.id),
-  groupId: text("group_id").notNull().references(() => groups.id),
+  groupId: text("group_id").references(() => groups.id), // Optional: can be null if team has no group
   
   // Fixture type
   isChallenge: integer("is_challenge", { mode: "boolean" }).notNull().default(false), // Challenge Chip fixture

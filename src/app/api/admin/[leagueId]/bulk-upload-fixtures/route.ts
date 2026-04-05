@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, groups, gameweeks, fixtures, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -71,7 +71,10 @@ export async function POST(request: NextRequest) {
 
     // Optionally clear existing fixtures (for re-upload)
     if (clearExisting) {
-      await db.delete(fixtures);
+      const leagueGwIds = allGameweeks.map(gw => gw.id);
+      if (leagueGwIds.length > 0) {
+        await db.delete(fixtures).where(inArray(fixtures.gameweekId, leagueGwIds));
+      }
     }
 
     // Process each fixture row
@@ -201,7 +204,7 @@ export async function GET(request: NextRequest) {
     csvExample: "1,DM — Rahul,SK — Arjun,2026-03-15 11:00",
     existingTeams: allTeams.map(t => ({
       name: t.name,
-      group: t.group.name,
+      group: t.group?.name || "Unassigned",
     })),
   });
 }
