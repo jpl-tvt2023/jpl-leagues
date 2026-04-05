@@ -46,9 +46,10 @@ export async function GET(request: NextRequest) {
     const teamBasic = await db.select({ leagueId: teams.leagueId }).from(teams).where(eq(teams.id, teamId)).limit(1);
     const teamLeagueId = teamBasic[0]?.leagueId;
     const leagueSlugRow = teamLeagueId
-      ? await db.select({ slug: leagues.slug }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
+      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
       : [];
     const leagueSlug = leagueSlugRow[0]?.slug ?? "";
+    const leagueGroupCount = leagueSlugRow[0]?.groupCount ?? 1;
 
     if (teamLeagueId) {
       try {
@@ -678,6 +679,7 @@ export async function GET(request: NextRequest) {
       oppositeGroupTeams,
       announcementSettings: await getAnnouncementSettings(teamLeagueId!),
       leagueSlug,
+      leagueGroupCount,
     });
   } catch (error) {
     console.error("Dashboard error:", error);

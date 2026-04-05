@@ -107,6 +107,7 @@ interface DashboardData {
     fplHistoryUrl: string;
     captaincyChipsUsed: number;
   }[];
+  leagueGroupCount?: number;
 }
 
 // Countdown Timer Component
@@ -574,7 +575,8 @@ export default function DashboardPage() {
             <ZoneBadge zone={data.leaguePosition.zone} />
           </div>
           <p className="text-sm sm:text-base text-gray-400">
-            Group {data.team.group} &bull; Rank #{data.leaguePosition.groupRank} &bull; {data.team.leaguePoints} Points
+            {data.leagueGroupCount && data.leagueGroupCount > 1 && `Group ${data.team.group} • `}
+            Rank #{data.leaguePosition.groupRank} &bull; {data.team.leaguePoints} Points
           </p>
         </div>
 

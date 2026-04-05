@@ -1094,6 +1094,7 @@ export default function AdminDashboard() {
   const groupATeams = teams.filter(t => t.group === "A");
   const groupBTeams = teams.filter(t => t.group === "B");
   const teamsPerGroup = Math.round(leagueConfig.teamSize / leagueConfig.groupCount);
+  const setupCompleteCount = teams.filter(t => t.isProfileComplete).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -1554,19 +1555,26 @@ export default function AdminDashboard() {
             <div className="text-3xl font-bold text-yellow-400">{teams.length}</div>
             <div className="text-sm text-gray-400">Total Teams</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-blue-400">{groupATeams.length}/{teamsPerGroup}</div>
-            <div className="text-sm text-gray-400">{leagueConfig.groupCount === 2 ? "Group A" : "Group"}</div>
-          </div>
-          {leagueConfig.groupCount === 2 && (
+          {leagueConfig.groupCount === 2 ? (
+            <>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
+                <div className="text-3xl font-bold text-blue-400">{groupATeams.length}/{teamsPerGroup}</div>
+                <div className="text-sm text-gray-400">Group A</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
+                <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
+                <div className="text-sm text-gray-400">Group B</div>
+              </div>
+            </>
+          ) : (
             <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-              <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
-              <div className="text-sm text-gray-400">Group B</div>
+              <div className="text-3xl font-bold text-blue-400">{setupCompleteCount}/{teams.length}</div>
+              <div className="text-sm text-gray-400">Setup Complete</div>
             </div>
           )}
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-green-400">{leagueConfig.teamSize - teams.length}</div>
-            <div className="text-sm text-gray-400">Spots Left</div>
+            <div className="text-3xl font-bold text-green-400">{leagueConfig.groupCount === 2 ? setupCompleteCount : leagueConfig.teamSize - teams.length}</div>
+            <div className="text-sm text-gray-400">{leagueConfig.groupCount === 2 ? "Setup Complete" : "Spots Left"}</div>
           </div>
         </div>
 
