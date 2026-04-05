@@ -2426,13 +2426,13 @@ export default function AdminDashboard() {
 
                 {teamsUploadMode === "full" ? (
                   <p className="text-gray-400 text-xs mb-4">
-                    <strong className="text-gray-300">Full Setup:</strong> Team Name, Abbreviation, Password, Group, Player1 Name, Player1 FPL ID, Player2 Name, Player2 FPL ID.
+                    <strong className="text-gray-300">Full Setup:</strong> Team ID, Team Name, Abbreviation, Password, Group, Player1 Name, Player1 FPL ID, Player2 Name, Player2 FPL ID.
                     Teams are created complete — no setup wizard needed.
                   </p>
                 ) : (
                   <p className="text-gray-400 text-xs mb-4">
-                    <strong className="text-gray-300">Credentials Only:</strong> Team Name, Password, Group.
-                    Teams log in and complete their own profile (final name, abbreviation, players) via setup wizard.
+                    <strong className="text-gray-300">Credentials Only:</strong> Team ID, Password.
+                    Teams log in and complete their own profile (name, abbreviation, players) via setup wizard.
                   </p>
                 )}
 
