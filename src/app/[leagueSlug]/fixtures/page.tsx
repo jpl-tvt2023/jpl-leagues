@@ -32,7 +32,7 @@ interface Fixture {
   id: string;
   homeTeam: { name: string; abbreviation: string };
   awayTeam: { name: string; abbreviation: string };
-  group: { name: string };
+  group: { name: string } | null;
   gameweek: { number: number; deadline: Date };
   result?: {
     homeScore: number;
@@ -372,8 +372,8 @@ export default function LeagueFixturesPage() {
   }, [leagueSlug]);
 
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
-  const groupAFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "A");
-  const groupBFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "B");
+  const groupAFixtures = selectedFixtures.filter((f: Fixture) => !f.group?.name || f.group.name === "A");
+  const groupBFixtures = selectedFixtures.filter((f: Fixture) => f.group?.name === "B");
   const hasGroupB = Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
 
   const hasResults = selectedFixtures.some((f: Fixture) => f.result);
