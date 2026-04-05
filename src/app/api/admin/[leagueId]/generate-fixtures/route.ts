@@ -69,13 +69,12 @@ export async function POST(request: NextRequest) {
       let plGroupId: string | null = null;
       const existingGroup = allGroups.find((g) => g.name === "A");
 
-      if (existingGroup) {
-        if (existingGroup.teams.length < 2) {
-          return NextResponse.json({ error: `Group A must have at least 2 teams (has ${existingGroup.teams.length})` }, { status: 400 });
-        }
+      if (existingGroup && existingGroup.teams.length >= 2) {
+        // Group A exists and has teams assigned — use it
         plTeams = existingGroup.teams;
         plGroupId = existingGroup.id;
       } else {
+        // No group or group has no teams (groupless league) — fetch all league teams
         plTeams = await db.query.teams.findMany({
           where: eq(teams.leagueId, leagueId),
           columns: { id: true, name: true },
@@ -150,17 +149,13 @@ export async function POST(request: NextRequest) {
     const groupBRecord = (groupCount ?? 2) === 2 ? allGroups.find((g) => g.name === "B") : null;
 
     if (isSingleGroupFormat) {
-      // 8-team or 16-team: use group A if it exists, otherwise fetch all league teams
-      if (groupARecord) {
-        if (groupARecord.teams.length < 2) {
-          return NextResponse.json(
-            { error: `Group A must have at least 2 teams (has ${groupARecord.teams.length})` },
-            { status: 400 }
-          );
-        }
+      // 8-team or 16-team: use group A if it has teams, otherwise fetch all league teams
+      if (groupARecord && groupARecord.teams.length >= 2) {
+        // Group A exists and has teams assigned — use it
         tvtTeamsA = groupARecord.teams;
         tvtGroupIdA = groupARecord.id;
       } else {
+        // No group or group has no teams (groupless league) — fetch all league teams
         tvtTeamsA = await db.query.teams.findMany({
           where: eq(teams.leagueId, leagueId),
           columns: { id: true, name: true },

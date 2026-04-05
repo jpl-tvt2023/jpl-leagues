@@ -52,21 +52,24 @@ export async function POST(request: NextRequest) {
 
     // Fetch league config
     const leagueRecord = await db
-      .select({ groupCount: leagues.groupCount })
+      .select({ groupCount: leagues.groupCount, format: leagues.format })
       .from(leagues)
       .where(eq(leagues.id, leagueId))
       .limit(1);
     if (!leagueRecord.length) return NextResponse.json({ error: "League not found" }, { status: 404 });
-    const { groupCount } = leagueRecord[0];
+    const { groupCount, format: leagueFormat } = leagueRecord[0];
 
-    // Ensure groups exist for this league
-    const groupNames = groupCount === 1 ? ["A"] : ["A", "B"];
-    for (const groupName of groupNames) {
-      const existingGroup = await db.select().from(groups).where(
-        and(eq(groups.name, groupName), eq(groups.leagueId, leagueId))
-      );
-      if (existingGroup.length === 0) {
-        await db.insert(groups).values({ id: generateId(), name: groupName, leagueId });
+    // Only create PL groups for TVT 2-group (32-team) format
+    // Triple Crown uses cup groups (created separately), and single-group TVT doesn't require explicit groups
+    if (leagueFormat !== "triple-crown" && (groupCount ?? 2) === 2) {
+      const groupNames = ["A", "B"];
+      for (const groupName of groupNames) {
+        const existingGroup = await db.select().from(groups).where(
+          and(eq(groups.name, groupName), eq(groups.leagueId, leagueId))
+        );
+        if (existingGroup.length === 0) {
+          await db.insert(groups).values({ id: generateId(), name: groupName, leagueId });
+        }
       }
     }
 
