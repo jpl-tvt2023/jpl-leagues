@@ -147,10 +147,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       teams: allTeams.map(t => ({
         id: t.id,
+        teamLoginId: t.teamLoginId,
         name: t.name,
         abbreviation: t.abbreviation,
         group: t.group.name,
-        players: t.players.map(p => ({ name: p.name, fplId: p.fplId })),
+        players: t.players.map(p => ({ name: p.name, fplId: p.fplId, id: p.id })),
         needsPasswordChange: t.mustChangePassword,
         isProfileComplete: t.isProfileComplete,
       })),

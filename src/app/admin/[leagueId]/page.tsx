@@ -1160,12 +1160,11 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">Team Login ID</label>
                   <input
                     type="text"
-                    required
+                    disabled
                     value={editFormData.teamLoginId}
-                    onChange={(e) => setEditFormData({ ...editFormData, teamLoginId: e.target.value })}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                    className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-3 text-gray-400 placeholder-gray-600 cursor-not-allowed opacity-60"
                   />
-                  <p className="text-gray-500 text-xs mt-1">Used for team login. 3–20 alphanumeric/underscore/hyphen.</p>
+                  <p className="text-gray-500 text-xs mt-1">Used for team login (cannot be changed)</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Team Name</label>
