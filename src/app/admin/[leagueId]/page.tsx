@@ -1802,6 +1802,17 @@ export default function AdminDashboard() {
             >
               Generate Fixtures
             </button>
+            <button
+              onClick={async () => {
+                if (!window.confirm("Delete all league-stage fixtures and gameweeks? You can then regenerate them. Playoff fixtures will be preserved.")) return;
+                const res = await fetch(`/api/admin/${leagueId}/generate-fixtures`, { method: "DELETE" });
+                const data = await res.json();
+                alert(data.message || data.error);
+              }}
+              className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition"
+            >
+              Delete Fixtures
+            </button>
           </div>
         </div>
           </>
