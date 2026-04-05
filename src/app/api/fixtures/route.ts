@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Resolve leagueId and config from slug
-    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, format: leagues.format }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
     if (league.length === 0) {
       return NextResponse.json(
         { error: "League not found" },
@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
 
     const leagueId = league[0].id;
     const playoffStartGw = league[0].playoffStartGw ?? null;
+    const format = league[0].format ?? "tvt";
 
     // Return cached fixtures if available — only for unfiltered league requests
     if (leagueId && !gameweekParam && !groupParam) {
@@ -91,6 +92,7 @@ export async function GET(request: NextRequest) {
       totalFixtures: allFixtures.length,
       fixtures: fixturesByGameweek,
       playoffStartGw,
+      format,
     };
 
     // Fire-and-forget cache write

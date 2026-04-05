@@ -335,7 +335,8 @@ export default function LeagueFixturesPage() {
         if (!response.ok) throw new Error("Failed to fetch fixtures");
         const data = await response.json();
         const fixturesData = data.fixtures || {};
-        const leaguePhaseEnd: number = data.playoffStartGw ? data.playoffStartGw - 1 : Infinity;
+        // For Triple Crown, show all 38 GWs; for TVT, show up to playoffStartGw - 1
+        const leaguePhaseEnd: number = data.format === "triple-crown" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : Infinity);
         setFixtures(fixturesData);
 
         const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
