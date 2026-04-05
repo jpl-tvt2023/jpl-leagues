@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface SetupState {
+  teamLoginId: string;
   teamName: string;
   abbreviation: string;
   player1Name: string;
@@ -14,6 +15,7 @@ interface SetupState {
 }
 
 interface Errors {
+  teamLoginId?: string;
   teamName?: string;
   abbreviation?: string;
   player1Name?: string;
@@ -35,6 +37,7 @@ export default function SetupPage() {
   const [nameCheckLoading, setNameCheckLoading] = useState(false);
 
   const [formData, setFormData] = useState<SetupState>({
+    teamLoginId: "",
     teamName: "",
     abbreviation: "",
     player1Name: "",
@@ -43,7 +46,9 @@ export default function SetupPage() {
     player2FplId: "",
   });
 
+  const [currentTeamLoginId, setCurrentTeamLoginId] = useState<string>("");
   const [currentTeamName, setCurrentTeamName] = useState<string>("");
+  const [loginIdCheckLoading, setLoginIdCheckLoading] = useState(false);
 
   // Check auth and load current team info
   useEffect(() => {
@@ -67,9 +72,11 @@ export default function SetupPage() {
         const setupRes = await fetch("/api/team/setup");
         if (setupRes.ok) {
           const setupData = await setupRes.json();
+          setCurrentTeamLoginId(setupData.currentLoginId || "");
           setCurrentTeamName(setupData.currentName);
           setFormData((prev) => ({
             ...prev,
+            teamLoginId: setupData.currentLoginId || "",
             teamName: setupData.currentName,
             abbreviation: setupData.currentAbbreviation,
           }));
@@ -84,6 +91,25 @@ export default function SetupPage() {
 
     checkAuth();
   }, [router]);
+
+  const handleLoginIdBlur = async (value: string) => {
+    if (!value.trim() || value === currentTeamLoginId) return;
+
+    setLoginIdCheckLoading(true);
+    try {
+      const res = await fetch(`/api/team/setup?checkLoginId=${encodeURIComponent(value)}`);
+      const data = await res.json();
+      if (!data.available) {
+        setErrors((prev) => ({ ...prev, teamLoginId: "Team ID is already taken" }));
+      } else {
+        setErrors((prev) => ({ ...prev, teamLoginId: undefined }));
+      }
+    } catch (err) {
+      console.error("Login ID check error:", err);
+    } finally {
+      setLoginIdCheckLoading(false);
+    }
+  };
 
   const handleTeamNameBlur = async (value: string) => {
     if (!value.trim() || value === currentTeamName) return;
@@ -106,6 +132,12 @@ export default function SetupPage() {
 
   const validateStep1 = () => {
     const newErrors: Errors = {};
+
+    if (!formData.teamLoginId.trim()) {
+      newErrors.teamLoginId = "Team ID is required";
+    } else if (!/^[A-Za-z0-9_-]{3,20}$/.test(formData.teamLoginId)) {
+      newErrors.teamLoginId = "Must be 3–20 alphanumeric/underscore/hyphen characters";
+    }
 
     if (!formData.teamName.trim()) {
       newErrors.teamName = "Team name is required";
@@ -247,6 +279,25 @@ export default function SetupPage() {
           {currentStep === 1 && (
             <div className="space-y-6">
               <div>
+                <label className="block text-sm font-semibold text-white mb-2">Team Login ID</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={formData.teamLoginId}
+                    onChange={(e) => handleInputChange("teamLoginId", e.target.value)}
+                    onBlur={(e) => handleLoginIdBlur(e.target.value)}
+                    placeholder={currentTeamLoginId}
+                    className="flex-1 rounded-lg border border-white/20 bg-black/40 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
+                  />
+                  {loginIdCheckLoading && <span className="text-xs text-gray-400">Checking...</span>}
+                </div>
+                {errors.teamLoginId && <p className="text-red-400 text-xs mt-1">{errors.teamLoginId}</p>}
+                <p className="text-gray-500 text-xs mt-2">
+                  Used to sign in. 3–20 chars: letters, numbers, underscore, hyphen.
+                </p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-semibold text-white mb-2">Team Name</label>
                 <div className="flex items-center gap-2">
                   <input
@@ -254,14 +305,14 @@ export default function SetupPage() {
                     value={formData.teamName}
                     onChange={(e) => handleInputChange("teamName", e.target.value)}
                     onBlur={(e) => handleTeamNameBlur(e.target.value)}
-                    placeholder={currentTeamName}
+                    placeholder="DM — Rahul"
                     className="flex-1 rounded-lg border border-white/20 bg-black/40 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
                   />
                   {nameCheckLoading && <span className="text-xs text-gray-400">Checking...</span>}
                 </div>
                 {errors.teamName && <p className="text-red-400 text-xs mt-1">{errors.teamName}</p>}
                 <p className="text-gray-500 text-xs mt-2">
-                  This replaces your temporary name and must be unique.
+                  Your display name. Must be unique within the league.
                 </p>
               </div>
 

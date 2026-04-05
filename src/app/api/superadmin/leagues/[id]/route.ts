@@ -20,10 +20,13 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  const updates: { name?: string; season?: string; isActive?: boolean } = {};
+  const updates: { name?: string; season?: string; isActive?: boolean; enabledChips?: string } = {};
   if (typeof body.name === "string") updates.name = body.name;
   if (typeof body.season === "string") updates.season = body.season;
   if (typeof body.isActive === "boolean") updates.isActive = body.isActive;
+  if (Array.isArray(body.enabledChips)) {
+    updates.enabledChips = JSON.stringify(body.enabledChips);
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });

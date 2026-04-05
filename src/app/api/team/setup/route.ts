@@ -18,13 +18,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if this is a name uniqueness check
+    // Check if this is a teamLoginId or team name uniqueness check
+    const checkLoginId = request.nextUrl.searchParams.get("checkLoginId");
     const checkName = request.nextUrl.searchParams.get("checkName");
 
+    if (checkLoginId) {
+      // Global uniqueness check on teamLoginId
+      const existing = await db.select().from(teams).where(eq(teams.teamLoginId, checkLoginId)).limit(1);
+      // Available if: no team with this loginId, OR this is the current team's loginId
+      return NextResponse.json({
+        available: existing.length === 0 || existing[0].id === session.id,
+      });
+    }
+
     if (checkName) {
-      // Uniqueness check: query all leagues for this team name
+      // Per-league uniqueness check: query all teams for this name
       const existing = await db.select().from(teams).where(eq(teams.name, checkName)).limit(1);
-      return NextResponse.json({ available: existing.length === 0 });
+      // Available if: no team with this name, OR this is the current team's name
+      return NextResponse.json({
+        available: existing.length === 0 || existing[0].id === session.id,
+      });
     }
 
     // Regular GET: return current team info
@@ -37,6 +50,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       teamId: team.id,
+      currentLoginId: team.teamLoginId,
       currentName: team.name,
       currentAbbreviation: team.abbreviation,
     });
@@ -61,6 +75,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
+      teamLoginId,
       teamName,
       abbreviation,
       player1Name,
@@ -71,7 +86,38 @@ export async function POST(request: NextRequest) {
 
     // ============= Validations =============
 
-    // Team name: non-empty, globally unique across all leagues
+    // Team Login ID: non-empty, format validation, globally unique
+    if (!teamLoginId || typeof teamLoginId !== "string" || !teamLoginId.trim()) {
+      return NextResponse.json(
+        { error: "Team ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const trimmedLoginId = teamLoginId.trim();
+
+    // Validate format
+    if (!/^[A-Za-z0-9_-]{3,20}$/.test(trimmedLoginId)) {
+      return NextResponse.json(
+        { error: "Team ID must be 3–20 alphanumeric/underscore/hyphen characters" },
+        { status: 400 }
+      );
+    }
+
+    // Check global uniqueness (across all leagues, unless it's the current team's ID)
+    const existingLoginId = await db
+      .select()
+      .from(teams)
+      .where(eq(teams.teamLoginId, trimmedLoginId))
+      .limit(1);
+    if (existingLoginId.length > 0 && existingLoginId[0].id !== session.id) {
+      return NextResponse.json(
+        { error: "Team ID is already taken" },
+        { status: 400 }
+      );
+    }
+
+    // Team name: non-empty, unique within league
     if (!teamName || typeof teamName !== "string" || !teamName.trim()) {
       return NextResponse.json(
         { error: "Team name is required" },
@@ -81,15 +127,24 @@ export async function POST(request: NextRequest) {
 
     const trimmedTeamName = teamName.trim();
 
-    // Check global uniqueness (across all leagues)
-    const existing = await db
+    // Get current team to check league
+    const teamList = await db.select().from(teams).where(eq(teams.id, session.id));
+    const team = teamList[0];
+
+    if (!team) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+
+    const leagueId = team.leagueId;
+
+    // Check per-league uniqueness (name must be unique within the league, unless it's the current team's name)
+    const existingName = await db
       .select()
       .from(teams)
-      .where(eq(teams.name, trimmedTeamName))
-      .limit(1);
-    if (existing.length > 0) {
+      .where(eq(teams.name, trimmedTeamName));
+    if (existingName.length > 0 && existingName[0].id !== session.id) {
       return NextResponse.json(
-        { error: "Team name is already taken" },
+        { error: "Team name is already taken in this league" },
         { status: 400 }
       );
     }
@@ -155,19 +210,11 @@ export async function POST(request: NextRequest) {
 
     // ============= Update Team =============
 
-    const teamList = await db.select().from(teams).where(eq(teams.id, session.id));
-    const team = teamList[0];
-
-    if (!team) {
-      return NextResponse.json({ error: "Team not found" }, { status: 404 });
-    }
-
-    const leagueId = team.leagueId;
-
-    // Update team: name, abbreviation, isProfileComplete = true
+    // Update team: teamLoginId, name, abbreviation, isProfileComplete = true
     await db
       .update(teams)
       .set({
+        teamLoginId: trimmedLoginId,
         name: trimmedTeamName,
         abbreviation,
         isProfileComplete: true,

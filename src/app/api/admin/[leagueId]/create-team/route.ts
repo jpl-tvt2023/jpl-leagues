@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
+      teamLoginId,
       teamName,
       abbreviation,
       password,
@@ -27,9 +28,28 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!teamName || !abbreviation || !password || !player1Name || !player1FplId || !player2Name || !player2FplId || !group) {
+    if (!teamLoginId || !teamName || !abbreviation || !password || !player1Name || !player1FplId || !player2Name || !player2FplId || !group) {
       return NextResponse.json(
         { error: "All fields are required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate teamLoginId format
+    if (!/^[A-Za-z0-9_-]{3,20}$/.test(teamLoginId)) {
+      return NextResponse.json(
+        { error: "Team ID must be 3–20 alphanumeric/underscore/hyphen characters" },
+        { status: 400 }
+      );
+    }
+
+    // Global uniqueness check on teamLoginId
+    const existingLoginId = await db.select().from(teams).where(
+      eq(teams.teamLoginId, teamLoginId)
+    );
+    if (existingLoginId.length > 0) {
+      return NextResponse.json(
+        { error: "Team ID already exists globally" },
         { status: 400 }
       );
     }
@@ -48,7 +68,7 @@ export async function POST(request: NextRequest) {
     );
     if (existingTeam.length > 0) {
       return NextResponse.json(
-        { error: "Team name already exists" },
+        { error: "Team name already exists in this league" },
         { status: 400 }
       );
     }
@@ -72,6 +92,7 @@ export async function POST(request: NextRequest) {
     const teamId = generateId();
     await db.insert(teams).values({
       id: teamId,
+      teamLoginId,
       name: teamName,
       abbreviation: abbreviation.toUpperCase(),
       password: hashedPassword,
@@ -91,6 +112,7 @@ export async function POST(request: NextRequest) {
       message: "Team created successfully. Team must change password on first login.",
       team: {
         id: teamId,
+        teamLoginId,
         name: teamName,
         abbreviation: abbreviation.toUpperCase(),
         group: group,

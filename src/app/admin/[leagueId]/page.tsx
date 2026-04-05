@@ -8,6 +8,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface Team {
   id: string;
+  teamLoginId?: string;
   name: string;
   abbreviation: string;
   group: string;
@@ -818,6 +819,7 @@ export default function AdminDashboard() {
       // Map Excel columns based on upload mode
       const teams = teamsUploadMode === "full"
         ? teamsData.map(row => ({
+            teamLoginId: row["Team ID"] || row["teamLoginId"] || row["teamId"] || "",
             teamName: row["Team Name"] || row["teamName"] || row["Name"] || "",
             abbreviation: row["Abbreviation"] || row["abbreviation"] || row["Abbr"] || "",
             password: row["Password"] || row["password"] || "",
@@ -828,9 +830,8 @@ export default function AdminDashboard() {
             player2FplId: row["Player2 FPL ID"] || row["player2FplId"] || row["Player 2 FPL ID"] || "",
           }))
         : teamsData.map(row => ({
-            teamName: row["Team Name"] || row["teamName"] || row["Name"] || "",
+            teamLoginId: row["Team ID"] || row["teamLoginId"] || row["teamId"] || "",
             password: row["Password"] || row["password"] || "",
-            group: row["Group"] || row["group"] || "",
           }));
 
       const response = await fetch(`/api/admin/${leagueId}/bulk-upload-teams`, {
@@ -1595,7 +1596,14 @@ export default function AdminDashboard() {
                       <div className="flex items-center gap-3">
                         <span className="text-gray-500 w-6">{index + 1}.</span>
                         <div>
-                          <div className="font-semibold text-white">{team.name}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-semibold text-white">{team.name}</div>
+                            {team.teamLoginId && (
+                              <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded">
+                                ID: {team.teamLoginId}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-gray-400">
                             {team.isProfileComplete
                               ? team.players.map(p => p.name).join(" & ")
@@ -1649,7 +1657,14 @@ export default function AdminDashboard() {
                       <div className="flex items-center gap-3">
                         <span className="text-gray-500 w-6">{index + 1}.</span>
                         <div>
-                          <div className="font-semibold text-white">{team.name}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-semibold text-white">{team.name}</div>
+                            {team.teamLoginId && (
+                              <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded">
+                                ID: {team.teamLoginId}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-gray-400">
                             {team.isProfileComplete
                               ? team.players.map(p => p.name).join(" & ")

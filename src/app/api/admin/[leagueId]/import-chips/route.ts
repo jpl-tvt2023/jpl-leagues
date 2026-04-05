@@ -13,7 +13,7 @@ function toStr(value: unknown): string {
 }
 
 interface ChipRow {
-  teamName: string;
+  teamId: string; // Team Login ID
   [key: string]: string | number | undefined; // GW columns: "1", "2", etc. with "W", "D", or "C"
 }
 
@@ -71,11 +71,11 @@ export async function POST(request: NextRequest) {
     if (!leagueRecord.length) return NextResponse.json({ error: "League not found" }, { status: 404 });
     const { playoffStartGw } = leagueRecord[0];
 
-    // Get all teams for this league — index by both full name and abbreviation for flexible matching
+    // Get all teams for this league — index by teamLoginId, with abbreviation as fallback
     const allTeams = await db.select().from(teams).where(eq(teams.leagueId, leagueId));
     const teamMap = new Map<string, typeof allTeams[0]>();
     for (const t of allTeams) {
-      teamMap.set(t.name.toLowerCase(), t);
+      if (t.teamLoginId) teamMap.set(t.teamLoginId.toLowerCase(), t);
       if (t.abbreviation) teamMap.set(t.abbreviation.toLowerCase(), t);
     }
 
@@ -89,17 +89,17 @@ export async function POST(request: NextRequest) {
       const rowNum = i + 2; // Excel row number (header is row 1)
 
       try {
-        const teamName = toStr(row.teamName || row["Team"] || row["team"] || row["Team Name"] || row["team name"]);
+        const teamId = toStr(row.teamId || row["Team ID"] || row["teamId"] || row["Team"] || row["team"]);
 
-        if (!teamName) {
-          results.errors.push(`Row ${rowNum}: Missing team name`);
+        if (!teamId) {
+          results.errors.push(`Row ${rowNum}: Missing team ID`);
           continue;
         }
 
         // Find team
-        const team = teamMap.get(teamName.toLowerCase());
+        const team = teamMap.get(teamId.toLowerCase());
         if (!team) {
-          results.errors.push(`Row ${rowNum}: Team "${teamName}" not found`);
+          results.errors.push(`Row ${rowNum}: Team "${teamId}" not found`);
           continue;
         }
 
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
               const existingChip = existing[0];
               if (existingChip.chipType !== chipType) {
                 results.warnings.push(
-                  `Row ${rowNum}: GW${gw} - ${teamName} replaced ${existingChip.chipType} chip with ${chipType}`
+                  `Row ${rowNum}: GW${gw} - ${teamId} replaced ${existingChip.chipType} chip with ${chipType}`
                 );
               }
               await db.delete(gameweekChips).where(eq(gameweekChips.id, existingChip.id));
@@ -225,9 +225,9 @@ export async function POST(request: NextRequest) {
             });
 
             if (isWasted) {
-              results.warnings.push(`Row ${rowNum}: GW${gw} - ${teamName} ${chipName} chip marked as WASTED`);
+              results.warnings.push(`Row ${rowNum}: GW${gw} - ${teamId} ${chipName} chip marked as WASTED`);
             } else {
-              results.success.push(`Row ${rowNum}: GW${gw} - ${teamName} ${chipName} chip imported`);
+              results.success.push(`Row ${rowNum}: GW${gw} - ${teamId} ${chipName} chip imported`);
             }
 
             // Update team's chip usage flags
@@ -295,7 +295,7 @@ export async function GET(request: NextRequest) {
 
     // Group by gameweek
     const chipsByGW: Record<number, Array<{
-      teamName: string;
+      teamId: string;
       chipType: string;
       isValid: boolean;
       isProcessed: boolean;
@@ -311,7 +311,7 @@ export async function GET(request: NextRequest) {
       }
 
       chipsByGW[gwNum].push({
-        teamName: chip.team?.name || "Unknown",
+        teamId: chip.team?.teamLoginId || "Unknown",
         chipType: chip.chipType,
         isValid: chip.isValid,
         isProcessed: chip.isProcessed,

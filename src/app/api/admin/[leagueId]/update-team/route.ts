@@ -17,6 +17,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const {
       teamId,
+      teamLoginId,
       teamName,
       abbreviation,
       password, // Optional - only update if provided
@@ -30,9 +31,17 @@ export async function PUT(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!teamId || !teamName || !abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId || !group) {
+    if (!teamId || !teamLoginId || !teamName || !abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId || !group) {
       return NextResponse.json(
         { error: "All fields except password are required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate teamLoginId format
+    if (!/^[A-Za-z0-9_-]{3,20}$/.test(teamLoginId)) {
+      return NextResponse.json(
+        { error: "Team ID must be 3–20 alphanumeric/underscore/hyphen characters" },
         { status: 400 }
       );
     }
@@ -54,13 +63,24 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Global uniqueness check on teamLoginId (unless it's the same team's current login ID)
+    const conflictingLoginId = await db.select().from(teams).where(
+      eq(teams.teamLoginId, teamLoginId)
+    );
+    if (conflictingLoginId.length > 0 && conflictingLoginId[0].id !== teamId) {
+      return NextResponse.json(
+        { error: "Team ID already exists globally" },
+        { status: 400 }
+      );
+    }
+
     // Check if new team name conflicts with another team in this league
     const conflictingTeam = await db.select().from(teams).where(
       and(eq(teams.name, teamName), eq(teams.leagueId, leagueId))
     );
     if (conflictingTeam.length > 0 && conflictingTeam[0].id !== teamId) {
       return NextResponse.json(
-        { error: "Team name already exists" },
+        { error: "Team name already exists in this league" },
         { status: 400 }
       );
     }
@@ -79,6 +99,7 @@ export async function PUT(request: NextRequest) {
 
     // Update team
     const updateData: Record<string, unknown> = {
+      teamLoginId,
       name: teamName,
       abbreviation: abbreviation.toUpperCase(),
       groupId: groupRecord.id,

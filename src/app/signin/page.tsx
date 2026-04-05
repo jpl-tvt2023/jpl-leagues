@@ -78,7 +78,7 @@ export default function SignInPage() {
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-white mb-4">Welcome Back</h1>
           <p className="text-gray-400">
-            Sign in with your team name or admin email.
+            Sign in with your team ID or admin email.
           </p>
         </div>
 
@@ -99,14 +99,13 @@ export default function SignInPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Team Name or Admin Email
+                  Team ID or Admin Email
                 </label>
                 <input
                   type="text"
                   required
                   value={formData.identifier}
                   onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
-                  placeholder="DM — Rahul or admin@email.com"
                   className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
                   suppressHydrationWarning
                 />

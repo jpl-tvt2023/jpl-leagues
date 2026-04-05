@@ -69,7 +69,8 @@ export const groups = sqliteTable("groups", {
 // Team (2 players per team) - also acts as login account
 export const teams = sqliteTable("teams", {
   id: text("id").primaryKey(),
-  name: text("name").notNull(), // Team name used as login ID
+  teamLoginId: text("team_login_id"), // Global login credential (set by admin, editable by team during setup)
+  name: text("name").notNull(), // Team display name (set by team during setup, unique per league)
   leagueId: text("league_id").notNull().references(() => leagues.id),
   abbreviation: text("abbreviation").notNull(), // e.g., "DM"
   password: text("password").notNull(), // Hashed password for team login
@@ -109,6 +110,7 @@ export const teams = sqliteTable("teams", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   leagueNameUnique: uniqueIndex("teams_league_name_unique").on(table.leagueId, table.name),
+  loginIdGlobalUnique: uniqueIndex("teams_login_id_global_unique").on(table.teamLoginId),
 }));
 
 // Player (each team has exactly 2 players)

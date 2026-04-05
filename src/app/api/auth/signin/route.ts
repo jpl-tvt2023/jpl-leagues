@@ -59,8 +59,8 @@ export async function POST(request: NextRequest) {
 
       return response;
     } else {
-      // Team login via team name
-      const teamList = await db.select().from(teams).where(eq(teams.name, identifier));
+      // Team login via team login ID
+      const teamList = await db.select().from(teams).where(eq(teams.teamLoginId, identifier));
       const team = teamList[0];
 
       if (!team) {

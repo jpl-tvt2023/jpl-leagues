@@ -16,13 +16,14 @@ function toStr(value: unknown): string {
  * POST /api/admin/[leagueId]/bulk-upload-teams
  * Supports two modes via the `mode` field in the request body:
  *
- * mode: "full" (default) — 8 columns, creates teams fully formed with players.
+ * mode: "full" (default) — 9 columns, creates teams fully formed with players.
  *   isProfileComplete = true. No setup wizard needed.
- *   Columns: teamName, abbreviation, password, group, player1Name, player1FplId, player2Name, player2FplId
+ *   Columns: Team ID, Team Name, Abbreviation, Password, Group, Player1 Name, Player1 FPL ID, Player2 Name, Player2 FPL ID
  *
- * mode: "credentials" — 3 columns, creates teams with credentials only.
+ * mode: "credentials" — 2 columns, creates teams with credentials only.
  *   isProfileComplete = false. Team completes their profile via setup wizard on first login.
- *   Columns: teamName, password, group
+ *   Columns: Team ID, Password
+ *   Note: Group is not specified; teams auto-assigned to group "A", admin can reassign via group assignment UI.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -75,89 +76,103 @@ export async function POST(request: NextRequest) {
       const rowNum = i + 2; // Excel row number (1-indexed + header)
 
       try {
-        const teamName = toStr(row.teamName);
+        const teamLoginId = toStr(row.teamLoginId);
         const password = toStr(row.password);
         const group = toStr(row.group);
 
-        if (!teamName || !password || (groupCount !== 1 && !group)) {
+        if (!teamLoginId || !password) {
           uploadResults.errors.push(`Row ${rowNum}: Missing required fields`);
           continue;
         }
 
-        // Resolve group
-        let groupName: string;
-        if (groupCount === 1) {
-          groupName = "A";
-        } else {
-          groupName = group.toUpperCase();
-          if (groupName !== "A" && groupName !== "B") {
-            uploadResults.errors.push(`Row ${rowNum}: Group must be A or B`);
-            continue;
-          }
-        }
-
-        // Duplicate check within this league
-        const existingTeam = await db.select().from(teams).where(
-          and(eq(teams.name, teamName), eq(teams.leagueId, leagueId))
-        );
-        if (existingTeam.length > 0) {
-          uploadResults.errors.push(`Row ${rowNum}: Team "${teamName}" already exists`);
+        // Validate teamLoginId format (alphanumeric, underscore, hyphen; 3-20 chars)
+        if (!/^[A-Za-z0-9_-]{3,20}$/.test(teamLoginId)) {
+          uploadResults.errors.push(`Row ${rowNum}: Team ID must be 3–20 alphanumeric/underscore/hyphen characters`);
           continue;
         }
 
-        // Fetch group record
-        const groupRecords = await db.select().from(groups).where(
-          and(eq(groups.name, groupName), eq(groups.leagueId, leagueId))
+        // Global uniqueness check on teamLoginId
+        const existingLoginId = await db.select().from(teams).where(
+          eq(teams.teamLoginId, teamLoginId)
         );
-        const groupRecord = groupRecords[0];
+        if (existingLoginId.length > 0) {
+          uploadResults.errors.push(`Row ${rowNum}: Team ID "${teamLoginId}" already exists globally`);
+          continue;
+        }
 
         // ---- MODE: CREDENTIALS ONLY ----
         if (mode === "credentials") {
-          const abbreviation = teamName
-            .replace(/[^A-Za-z0-9]/g, "")
-            .slice(0, 4)
-            .toUpperCase();
-          if (!abbreviation) {
-            uploadResults.errors.push(`Row ${rowNum}: Team name must contain at least one alphanumeric character`);
-            continue;
-          }
+          // Auto-assign to group "A" (admin can reassign later via group assignment UI)
+          const credGroupName = "A";
+          const credGroupRecords = await db.select().from(groups).where(
+            and(eq(groups.name, credGroupName), eq(groups.leagueId, leagueId))
+          );
+          const credGroupRecord = credGroupRecords[0];
 
           const hashedPassword = await bcrypt.hash(password, 10);
           await db.insert(teams).values({
             id: generateId(),
-            name: teamName,
-            abbreviation,
+            teamLoginId,
+            name: teamLoginId, // Use login ID as placeholder name (team sets display name during setup)
+            abbreviation: "", // Will be set during setup
             password: hashedPassword,
-            groupId: groupRecord.id,
+            groupId: credGroupRecord.id,
             mustChangePassword: true,
             isProfileComplete: false,
             leagueId,
           });
-          uploadResults.success.push(`Row ${rowNum}: "${teamName}" created (awaiting profile setup)`);
+          uploadResults.success.push(`Row ${rowNum}: "${teamLoginId}" created (awaiting setup wizard)`);
           continue;
         }
 
         // ---- MODE: FULL SETUP ----
+        const teamName = toStr(row.teamName);
         const abbreviation = toStr(row.abbreviation);
         const player1Name = toStr(row.player1Name);
         const player1FplId = toStr(row.player1FplId);
         const player2Name = toStr(row.player2Name);
         const player2FplId = toStr(row.player2FplId);
 
-        if (!abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId) {
-          uploadResults.errors.push(`Row ${rowNum}: Missing required fields (abbreviation, player names, FPL IDs)`);
+        if (!teamName || !abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId) {
+          uploadResults.errors.push(`Row ${rowNum}: Missing required fields (team name, abbreviation, player names, FPL IDs)`);
           continue;
         }
+
+        // Per-league uniqueness check on display name (teamName)
+        const existingTeamFull = await db.select().from(teams).where(
+          and(eq(teams.name, teamName), eq(teams.leagueId, leagueId))
+        );
+        if (existingTeamFull.length > 0) {
+          uploadResults.errors.push(`Row ${rowNum}: Team name "${teamName}" already exists in this league`);
+          continue;
+        }
+
+        // Resolve group
+        if (groupCount !== 1 && !group) {
+          uploadResults.errors.push(`Row ${rowNum}: Missing group`);
+          continue;
+        }
+        const groupNameResolved = groupCount === 1 ? "A" : group.toUpperCase();
+        if (groupNameResolved !== "A" && groupNameResolved !== "B") {
+          uploadResults.errors.push(`Row ${rowNum}: Group must be A or B`);
+          continue;
+        }
+
+        const groupRecordsFull = await db.select().from(groups).where(
+          and(eq(groups.name, groupNameResolved), eq(groups.leagueId, leagueId))
+        );
+        const groupRecordFull = groupRecordsFull[0];
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const teamId = generateId();
 
         await db.insert(teams).values({
           id: teamId,
+          teamLoginId,
           name: teamName,
           abbreviation: abbreviation.toUpperCase(),
           password: hashedPassword,
-          groupId: groupRecord.id,
+          groupId: groupRecordFull.id,
           mustChangePassword: true,
           isProfileComplete: true,
           leagueId,
@@ -168,7 +183,7 @@ export async function POST(request: NextRequest) {
           { id: generateId(), name: player2Name, fplId: player2FplId, teamId },
         ]);
 
-        uploadResults.success.push(`Row ${rowNum}: "${teamName}" created successfully`);
+        uploadResults.success.push(`Row ${rowNum}: "${teamLoginId}" (${teamName}) created successfully`);
       } catch (error) {
         console.error(`Error processing row ${rowNum}:`, error);
         uploadResults.errors.push(`Row ${rowNum}: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -198,16 +213,16 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     full: {
-      columns: ["Team Name", "Abbreviation", "Password", "Group", "Player1 Name", "Player1 FPL ID", "Player2 Name", "Player2 FPL ID"],
-      example: ["DM — Rahul", "DM", "team123", "A", "Rahul Kumar", "1234567", "Amit Singh", "7654321"],
-      csvHeader: "Team Name,Abbreviation,Password,Group,Player1 Name,Player1 FPL ID,Player2 Name,Player2 FPL ID",
+      columns: ["Team ID", "Team Name", "Abbreviation", "Password", "Group", "Player1 Name", "Player1 FPL ID", "Player2 Name", "Player2 FPL ID"],
+      example: ["team_001", "DM — Rahul", "DM", "team123", "A", "Rahul Kumar", "1234567", "Amit Singh", "7654321"],
+      csvHeader: "Team ID,Team Name,Abbreviation,Password,Group,Player1 Name,Player1 FPL ID,Player2 Name,Player2 FPL ID",
       note: "Teams are created fully formed. isProfileComplete = true. No setup wizard needed.",
     },
     credentials: {
-      columns: ["Team Name", "Password", "Group"],
-      example: ["TVT-League 1-Team1", "BAB@1234", "A"],
-      csvHeader: "Team Name,Password,Group",
-      note: "Teams log in and complete their own profile (name, abbreviation, players) via setup wizard.",
+      columns: ["Team ID", "Password"],
+      example: ["team_001", "BAB@1234"],
+      csvHeader: "Team ID,Password",
+      note: "Teams log in and complete their own profile (login ID, display name, abbreviation, players) via setup wizard. Auto-assigned to Group A.",
     },
   });
 }

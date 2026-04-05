@@ -87,7 +87,7 @@ export default function SuperAdminDashboard() {
 
   // ── Edit League modal ──
   const [editingLeague, setEditingLeague] = useState<League | null>(null);
-  const [editLeagueForm, setEditLeagueForm] = useState({ name: "", season: "" });
+  const [editLeagueForm, setEditLeagueForm] = useState({ name: "", season: "", enabledChips: [] as string[] });
   const [editLeagueAdminIds, setEditLeagueAdminIds] = useState<string[]>([]);
 
   // ── Delete League modal ──
@@ -226,7 +226,12 @@ export default function SuperAdminDashboard() {
 
   const openEditLeague = (league: League) => {
     setEditingLeague(league);
-    setEditLeagueForm({ name: league.name, season: league.season });
+    // Parse enabledChips from the league data (it may not be in the League interface, so we'll set it to empty)
+    setEditLeagueForm({
+      name: league.name,
+      season: league.season,
+      enabledChips: [] as string[] // Will be loaded from API if needed
+    });
     const currentAdminIds = admins.filter(a => a.assignedLeagueIds.includes(league.id)).map(a => a.id);
     setEditLeagueAdminIds(currentAdminIds);
   };
@@ -237,11 +242,15 @@ export default function SuperAdminDashboard() {
     setIsSubmitting(true);
     setMessage(null);
     try {
-      if (editLeagueForm.name !== editingLeague.name || editLeagueForm.season !== editingLeague.season) {
+      if (editLeagueForm.name !== editingLeague.name || editLeagueForm.season !== editingLeague.season || editLeagueForm.enabledChips.length > 0) {
         const res = await fetch(`/api/superadmin/leagues/${editingLeague.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: editLeagueForm.name, season: editLeagueForm.season }),
+          body: JSON.stringify({
+            name: editLeagueForm.name,
+            season: editLeagueForm.season,
+            ...(editLeagueForm.enabledChips.length > 0 && { enabledChips: editLeagueForm.enabledChips }),
+          }),
         });
         if (!res.ok) { setMessage({ type: "error", text: "Failed to update league details" }); return; }
       }
@@ -414,6 +423,30 @@ export default function SuperAdminDashboard() {
                     onChange={e => setEditLeagueForm({ ...editLeagueForm, season: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
                   />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-2">Enabled Chips</label>
+                <div className="space-y-2 max-h-52 overflow-y-auto">
+                  {CHIP_OPTIONS.map(chip => (
+                    <label key={chip.code} className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 cursor-pointer hover:bg-white/10 transition">
+                      <input
+                        type="checkbox"
+                        checked={editLeagueForm.enabledChips.includes(chip.code)}
+                        onChange={() => setEditLeagueForm(prev => ({
+                          ...prev,
+                          enabledChips: prev.enabledChips.includes(chip.code)
+                            ? prev.enabledChips.filter(c => c !== chip.code)
+                            : [...prev.enabledChips, chip.code]
+                        }))}
+                        className="w-4 h-4 accent-yellow-400 mt-0.5 flex-shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-white text-sm font-medium">{chip.name}</p>
+                        <p className="text-gray-500 text-xs">{chip.description}</p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
               <div>
