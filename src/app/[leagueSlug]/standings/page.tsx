@@ -21,6 +21,7 @@ export default function LeagueStandingsPage() {
   const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -39,8 +40,11 @@ export default function LeagueStandingsPage() {
     fetch("/api/leagues")
       .then((r) => r.json())
       .then((data) => {
-        const league = (data.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
+        const league = (data.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
+        if (league) {
+          setLeagueName(league.name);
+          setLeagueFormat(league.format ?? null);
+        }
       })
       .catch(() => {});
   }, [leagueSlug]);
@@ -82,6 +86,7 @@ export default function LeagueStandingsPage() {
   }, [leagueSlug]);
 
   const totalTeams = groupA.length + groupB.length;
+  const isTripleCrown = leagueFormat === "triple-crown";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -99,11 +104,18 @@ export default function LeagueStandingsPage() {
             Standings
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            Fixtures
+            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
           </Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
-            Playoffs
-          </Link>
+          {isTripleCrown ? (
+            <>
+              <Link href={`/${leagueSlug}/ucl`} className="text-gray-300 hover:text-white transition">UCL</Link>
+              <Link href={`/${leagueSlug}/europa`} className="text-gray-300 hover:text-white transition">Europa</Link>
+            </>
+          ) : (
+            <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
+              Playoffs
+            </Link>
+          )}
           <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
             Winners
           </Link>

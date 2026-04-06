@@ -730,6 +730,7 @@ export default function LeaguePlayoffsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("tvt");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<number | null>(null);
   const [tempLiveScores, setTempLiveScores] = useState<Record<number, LiveFixtureScore[]>>({});
 
@@ -781,8 +782,11 @@ export default function LeaguePlayoffsPage() {
     fetch("/api/leagues")
       .then((r) => r.json())
       .then((d) => {
-        const league = (d.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
+        const league = (d.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
+        if (league) {
+          setLeagueName(league.name);
+          setLeagueFormat(league.format ?? null);
+        }
       })
       .catch(() => {});
 
@@ -825,6 +829,8 @@ export default function LeaguePlayoffsPage() {
     );
   }
 
+  const isTripleCrown = leagueFormat === "triple-crown";
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
@@ -838,8 +844,17 @@ export default function LeaguePlayoffsPage() {
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-yellow-400 font-semibold transition">Playoffs</Link>
+          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
+            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
+          </Link>
+          {isTripleCrown ? (
+            <>
+              <Link href={`/${leagueSlug}/ucl`} className="text-gray-300 hover:text-white transition">UCL</Link>
+              <Link href={`/${leagueSlug}/europa`} className="text-gray-300 hover:text-white transition">Europa</Link>
+            </>
+          ) : (
+            <Link href={`/${leagueSlug}/playoffs`} className="text-yellow-400 font-semibold transition">Playoffs</Link>
+          )}
           <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
