@@ -1389,23 +1389,29 @@ export default function AdminDashboard() {
           <Link href="/admin" className="text-yellow-400 font-semibold transition">
             ← Leagues
           </Link>
-          <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
-            Standings
-          </Link>
           {leagueConfig.format === "triple-crown" ? (
             <>
+              <Link href={`/${leagueId}/standings`} className="text-gray-300 hover:text-white transition">
+                PL Standings
+              </Link>
               <Link href={`/${leagueId}/fixtures`} className="text-gray-300 hover:text-white transition">
                 PL Fixtures
               </Link>
-              <Link href={`/${leagueId}/ucl`} className="text-gray-300 hover:text-white transition">
-                UCL
+              <Link href={`/${leagueId}/uefa-standings`} className="text-gray-300 hover:text-white transition">
+                UEFA Standings
               </Link>
-              <Link href={`/${leagueId}/europa`} className="text-gray-300 hover:text-white transition">
-                Europa
+              <Link href={`/${leagueId}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">
+                UEFA Fixtures
+              </Link>
+              <Link href={`/${leagueId}/playoffs`} className="text-gray-300 hover:text-white transition">
+                Playoffs
               </Link>
             </>
           ) : (
             <>
+              <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+                Standings
+              </Link>
               <Link href={`/fixtures?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
                 Fixtures
               </Link>

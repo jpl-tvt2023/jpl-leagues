@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const allTeams = await db.query.teams.findMany({
-      where: eq(teams.leagueId, leagueId),
+      where: and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)),
       with: {
         players: true,
         group: true,

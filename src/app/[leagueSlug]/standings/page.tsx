@@ -89,7 +89,7 @@ export default function LeagueStandingsPage() {
   const isTripleCrown = leagueFormat === "triple-crown";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
       {/* Navigation */}
       <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
         <Link href="/" className="flex items-center gap-2">
@@ -101,15 +101,16 @@ export default function LeagueStandingsPage() {
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-yellow-400 font-semibold transition">
-            Standings
+            {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
             {isTripleCrown ? "PL Fixtures" : "Fixtures"}
           </Link>
           {isTripleCrown ? (
             <>
-              <Link href={`/${leagueSlug}/ucl`} className="text-gray-300 hover:text-white transition">UCL</Link>
-              <Link href={`/${leagueSlug}/europa`} className="text-gray-300 hover:text-white transition">Europa</Link>
+              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
             </>
           ) : (
             <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
@@ -149,7 +150,14 @@ export default function LeagueStandingsPage() {
         ) : (
           <>
             <div className="text-center mb-12">
-              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-4">League Standings</h1>
+              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">
+                {isTripleCrown ? "Premier League" : "League Standings"}
+              </h1>
+              {isTripleCrown && (
+                <p className="text-[#00ff85] text-sm font-semibold uppercase tracking-widest mb-2">
+                  2025/26 Season
+                </p>
+              )}
               <p className="text-gray-400">
                 {latestGameweek > 0
                   ? `After Gameweek ${latestGameweek} · League Stage`

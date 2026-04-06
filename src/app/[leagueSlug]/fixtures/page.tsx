@@ -415,15 +415,16 @@ export default function LeagueFixturesPage() {
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
-            Standings
+            {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-yellow-400 font-semibold transition">
             {isTripleCrown ? "PL Fixtures" : "Fixtures"}
           </Link>
           {isTripleCrown ? (
             <>
-              <Link href={`/${leagueSlug}/ucl`} className="text-gray-300 hover:text-white transition">UCL</Link>
-              <Link href={`/${leagueSlug}/europa`} className="text-gray-300 hover:text-white transition">Europa</Link>
+              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
             </>
           ) : (
             <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">

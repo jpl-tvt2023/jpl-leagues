@@ -1,0 +1,386 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { LoadingScreen } from "@/components/LoadingScreen";
+
+interface LivePlayerScore {
+  name: string;
+  fplId: string;
+  fplScore: number;
+  transferHits: number;
+  isCaptain: boolean;
+  finalScore: number;
+}
+
+interface LiveFixtureScore {
+  fixtureId: string;
+  gameweek: number;
+  homeTeamName: string;
+  awayTeamName: string;
+  homeScore: number;
+  awayScore: number;
+  homePlayers: LivePlayerScore[];
+  awayPlayers: LivePlayerScore[];
+}
+
+interface Fixture {
+  id: string;
+  homeTeam: { name: string; abbreviation: string };
+  awayTeam: { name: string; abbreviation: string };
+  competitionType?: string | null;
+  gameweek: { number: number };
+  group?: { name: string } | null;
+  result?: {
+    homeScore: number;
+    awayScore: number;
+  } | null;
+}
+
+interface GameweekFixtures {
+  [key: number]: Fixture[];
+}
+
+export default function UEFAFixturesPage() {
+  const params = useParams();
+  const leagueSlug = params.leagueSlug as string;
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [leagueName, setLeagueName] = useState<string>("");
+  const [fixtures, setFixtures] = useState<GameweekFixtures>({});
+  const [availableGWs, setAvailableGWs] = useState<number[]>([]);
+  const [selectedGW, setSelectedGW] = useState<number | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Live scoring
+  const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
+  const [isLive, setIsLive] = useState(false);
+  const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
+  const [isManuallyRefreshed, setIsManuallyRefreshed] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetchLiveScores = useCallback(async (gw: number) => {
+    try {
+      const res = await fetch(`/api/fixtures/live?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.isLive) {
+          setLiveScores(data.fixtures || []);
+          setIsLive(true);
+          setLiveCachedAt(data.cachedAt || null);
+          setIsManuallyRefreshed(false);
+        } else {
+          setLiveScores([]);
+          setIsLive(false);
+          setLiveCachedAt(null);
+          setIsManuallyRefreshed(false);
+        }
+      }
+    } catch {
+      // Silently fail — live scores are optional
+    }
+  }, [leagueSlug]);
+
+  const handleRefresh = async () => {
+    if (!selectedGW || isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.fixtures?.length) {
+          setLiveScores(data.fixtures);
+          setIsLive(true);
+          setLiveCachedAt(data.cachedAt || null);
+          setIsManuallyRefreshed(true);
+        }
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Auth check
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => setIsLoggedIn(d.authenticated && d.type === "team"))
+      .catch(() => setIsLoggedIn(false));
+  }, []);
+
+  // Fetch league name + fixtures
+  useEffect(() => {
+    if (!leagueSlug) return;
+    setIsLoading(true);
+
+    fetch("/api/leagues")
+      .then((r) => r.json())
+      .then((data) => {
+        const league = (data.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
+        if (league) setLeagueName(league.name);
+      })
+      .catch(() => {});
+
+    fetch(`/api/fixtures?leagueSlug=${encodeURIComponent(leagueSlug)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const allFixtures = data.fixtures || {};
+        const cupGWs = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24];
+        const cupFixtures: GameweekFixtures = {};
+        for (const gw of cupGWs) {
+          if (allFixtures[gw]) {
+            const filtered = allFixtures[gw].filter(
+              (f: Fixture) => f.competitionType === "cup-group"
+            );
+            if (filtered.length > 0) cupFixtures[gw] = filtered;
+          }
+        }
+        const available = cupGWs.filter((gw) => cupFixtures[gw]?.length > 0);
+        setFixtures(cupFixtures);
+        setAvailableGWs(available);
+        if (available.length > 0) setSelectedGW(available[0]);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [leagueSlug]);
+
+  // Auto-poll live scores every 10 minutes
+  useEffect(() => {
+    if (!selectedGW) return;
+    fetchLiveScores(selectedGW);
+    const interval = setInterval(() => fetchLiveScores(selectedGW), 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [selectedGW, fetchLiveScores]);
+
+  const handleSignOut = async () => {
+    await fetch("/api/auth/signout", { method: "POST" });
+    window.location.href = "/signin";
+  };
+
+  if (isLoading) return <LoadingScreen variant="fixtures" fullScreen />;
+
+  const selectedFixtures = selectedGW ? (fixtures[selectedGW] || []) : [];
+
+  // Group fixtures by cup group letter
+  const groupedFixtures = new Map<string, Fixture[]>();
+  for (const fixture of selectedFixtures) {
+    const letter = fixture.group?.name?.replace("Cup-", "") || "?";
+    if (!groupedFixtures.has(letter)) groupedFixtures.set(letter, []);
+    groupedFixtures.get(letter)!.push(fixture);
+  }
+  const groupOrder = ["A", "B", "C", "D"];
+  const sortedGroups = groupOrder.filter((g) => groupedFixtures.has(g));
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-[#061a33] via-[#08213d] to-[#040f1e]">
+      {/* Navigation */}
+      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-[#061a33]/80 backdrop-blur">
+        <Link href="/" className="flex items-center gap-2">
+          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
+            JPL
+          </div>
+          <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
+        </Link>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
+          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">
+            {isLoggedIn ? "Dashboard" : "All Leagues"}
+          </Link>
+          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
+            PL Standings
+          </Link>
+          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
+            PL Fixtures
+          </Link>
+          <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">
+            UEFA Standings
+          </Link>
+          <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-yellow-400 font-semibold transition">
+            UEFA Fixtures
+          </Link>
+          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
+            Playoffs
+          </Link>
+          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
+            Winners
+          </Link>
+          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">
+            Rules
+          </Link>
+          {isLoggedIn ? (
+            <button
+              onClick={handleSignOut}
+              className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition"
+            >
+              Sign Out
+            </button>
+          ) : (
+            <Link
+              href="/signin"
+              className="rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-2 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
+            >
+              Sign In
+            </Link>
+          )}
+        </div>
+      </nav>
+
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-12">
+        {/* Hero */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center gap-2 bg-[#0066cc]/20 border border-[#0066cc]/30 rounded-full px-4 py-1.5 mb-4">
+            <span className="text-[#4da6ff] text-xs font-semibold uppercase tracking-widest">UEFA · Triple Crown</span>
+          </div>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-2">Group Stage Fixtures</h1>
+          <p className="text-gray-400">Cup group stage · 2025/26 Season</p>
+        </div>
+
+        {availableGWs.length === 0 ? (
+          <div className="text-center rounded-xl border border-blue-500/20 bg-blue-500/5 px-5 py-10">
+            <p className="text-blue-300 font-semibold">No group stage fixtures yet</p>
+            <p className="text-blue-400/70 text-sm mt-1">Cup group fixtures will appear here once the group stage begins (GW6+).</p>
+          </div>
+        ) : (
+          <>
+            {/* GW Selector + Live controls */}
+            <div className="flex flex-wrap items-center justify-center gap-4 mb-8">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const idx = availableGWs.indexOf(selectedGW!);
+                    if (idx > 0) setSelectedGW(availableGWs[idx - 1]);
+                  }}
+                  disabled={selectedGW === availableGWs[0]}
+                  className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 transition"
+                >
+                  ←
+                </button>
+                <select
+                  value={selectedGW || ""}
+                  onChange={(e) => setSelectedGW(Number(e.target.value))}
+                  className="bg-[#0d2a4a] border border-blue-500/30 rounded-lg px-4 py-2 text-white font-semibold"
+                >
+                  {availableGWs.map((gw) => (
+                    <option key={gw} value={gw} className="bg-slate-800">
+                      Gameweek {gw}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    const idx = availableGWs.indexOf(selectedGW!);
+                    if (idx < availableGWs.length - 1) setSelectedGW(availableGWs[idx + 1]);
+                  }}
+                  disabled={selectedGW === availableGWs[availableGWs.length - 1]}
+                  className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 transition"
+                >
+                  →
+                </button>
+              </div>
+
+              {isLive && (
+                <button
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                    isRefreshing ? "bg-white/10 text-gray-400" : "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30"
+                  }`}
+                >
+                  <span className={isRefreshing ? "animate-spin" : ""}>↻</span>
+                  {isRefreshing ? "Refreshing..." : "Refresh Live Scores"}
+                </button>
+              )}
+            </div>
+
+            {isLive && liveCachedAt && (
+              <div className="text-center mb-4">
+                <span className="inline-flex items-center gap-1.5 text-xs text-amber-400/70">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-50" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
+                  </span>
+                  {isManuallyRefreshed ? "Live" : "Cached"} · Updated {new Date(liveCachedAt).toLocaleTimeString()}
+                </span>
+              </div>
+            )}
+
+            {/* Fixtures by group */}
+            <div className="space-y-8">
+              {sortedGroups.length > 0 ? sortedGroups.map((groupLetter) => {
+                const groupFixtures = groupedFixtures.get(groupLetter)!;
+                return (
+                  <div key={groupLetter}>
+                    {/* Group header */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="h-5 w-1 rounded-full bg-[#0066cc]" />
+                      <span className="text-white font-bold text-sm uppercase tracking-wider">Group {groupLetter}</span>
+                      <div className="flex-1 h-px bg-white/10" />
+                    </div>
+
+                    <div className="space-y-2">
+                      {groupFixtures.map((fixture) => {
+                        const live = liveScores.find((ls) => ls.fixtureId === fixture.id);
+                        const hasResult = !!fixture.result;
+                        const isFixtureLive = !!live;
+
+                        return (
+                          <div
+                            key={fixture.id}
+                            className={`rounded-xl border p-4 backdrop-blur transition ${
+                              isFixtureLive
+                                ? "border-amber-500/30 bg-amber-500/5"
+                                : hasResult
+                                ? "border-white/10 bg-white/5"
+                                : "border-blue-500/15 bg-blue-950/20"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              {/* Home team */}
+                              <div className="flex-1 text-right">
+                                <span className="font-semibold text-white text-sm">{fixture.homeTeam.name}</span>
+                              </div>
+
+                              {/* Score box */}
+                              <div className={`min-w-[72px] text-center rounded-lg px-3 py-2 border ${
+                                isFixtureLive
+                                  ? "bg-amber-900/40 border-amber-500/40"
+                                  : hasResult
+                                  ? "bg-green-900/30 border-green-500/30"
+                                  : "bg-blue-900/20 border-blue-500/20"
+                              }`}>
+                                {isFixtureLive ? (
+                                  <span className="text-lg font-bold text-amber-400 animate-pulse">
+                                    {live.homeScore} – {live.awayScore}
+                                  </span>
+                                ) : hasResult ? (
+                                  <span className="text-lg font-bold text-green-400">
+                                    {fixture.result!.homeScore} – {fixture.result!.awayScore}
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-gray-500 font-medium">vs</span>
+                                )}
+                              </div>
+
+                              {/* Away team */}
+                              <div className="flex-1 text-left">
+                                <span className="font-semibold text-white text-sm">{fixture.awayTeam.name}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div className="text-center text-gray-500 py-8">No cup group fixtures in this gameweek</div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
