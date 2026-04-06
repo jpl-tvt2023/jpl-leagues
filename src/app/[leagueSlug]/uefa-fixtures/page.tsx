@@ -27,14 +27,16 @@ interface LiveFixtureScore {
 
 interface Fixture {
   id: string;
-  homeTeam: { name: string; abbreviation: string };
-  awayTeam: { name: string; abbreviation: string };
+  homeTeam: { name: string; abbreviation: string; isGhost?: boolean };
+  awayTeam: { name: string; abbreviation: string; isGhost?: boolean };
   competitionType?: string | null;
   gameweek: { number: number };
   group?: { name: string } | null;
   result?: {
     homeScore: number;
     awayScore: number;
+    homePlayerScores?: string | null;
+    awayPlayerScores?: string | null;
   } | null;
 }
 
@@ -143,8 +145,8 @@ export default function UEFAFixturesPage() {
             const filtered = allFixtures[gw].filter(
               (f: Fixture) =>
                 f.competitionType === "cup-group" &&
-                !f.homeTeam.abbreviation.startsWith("GH") &&
-                !f.awayTeam.abbreviation.startsWith("GH")
+                !f.homeTeam.isGhost &&
+                !f.awayTeam.isGhost
             );
             if (filtered.length > 0) cupFixtures[gw] = filtered;
           }
@@ -291,21 +293,19 @@ export default function UEFAFixturesPage() {
                 </button>
               </div>
 
-              {isLive && (
-                <button
-                  onClick={handleRefresh}
-                  disabled={isRefreshing}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                    isRefreshing ? "bg-white/10 text-gray-400" : "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30"
-                  }`}
-                >
-                  <span className={isRefreshing ? "animate-spin" : ""}>↻</span>
-                  {isRefreshing ? "Refreshing..." : "Refresh Live Scores"}
-                </button>
-              )}
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                  isRefreshing ? "bg-white/10 text-gray-400" : "bg-white/10 text-gray-300 hover:bg-white/20"
+                }`}
+              >
+                <span className={isRefreshing ? "animate-spin" : ""}>↻</span>
+                {isRefreshing ? "Refreshing..." : "Refresh Scores"}
+              </button>
             </div>
 
-            {isLive && liveCachedAt && (
+            {liveCachedAt && (
               <div className="text-center mb-4">
                 <span className="inline-flex items-center gap-1.5 text-xs text-amber-400/70">
                   <span className="relative flex h-2 w-2">
@@ -335,9 +335,17 @@ export default function UEFAFixturesPage() {
                         const live = liveScores.find((ls) => ls.fixtureId === fixture.id);
                         const hasResult = !!fixture.result;
                         const isFixtureLive = !!live;
-                        const hasPlayerData = isFixtureLive && (live.homePlayers?.length ?? 0) > 0;
+                        const hasPlayerData = isFixtureLive
+                          ? (live.homePlayers?.length ?? 0) > 0
+                          : !!(fixture.result?.homePlayerScores);
                         const isExpanded = expandedFixtures.has(fixture.id);
                         const gwNumber = live?.gameweek ?? fixture.gameweek.number;
+                        const homePlayers: LivePlayerScore[] = isFixtureLive
+                          ? (live.homePlayers ?? [])
+                          : fixture.result?.homePlayerScores ? JSON.parse(fixture.result.homePlayerScores) : [];
+                        const awayPlayers: LivePlayerScore[] = isFixtureLive
+                          ? (live.awayPlayers ?? [])
+                          : fixture.result?.awayPlayerScores ? JSON.parse(fixture.result.awayPlayerScores) : [];
 
                         return (
                           <div
@@ -397,7 +405,7 @@ export default function UEFAFixturesPage() {
                                   <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
                                     <div>
                                       <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
-                                      {live.homePlayers.map((p, i) => (
+                                      {homePlayers.map((p, i) => (
                                         <div key={i} className="flex items-center justify-between py-1">
                                           <div className="flex items-center gap-1 min-w-0">
                                             <a
@@ -429,7 +437,7 @@ export default function UEFAFixturesPage() {
                                     </div>
                                     <div>
                                       <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
-                                      {live.awayPlayers.map((p, i) => (
+                                      {awayPlayers.map((p, i) => (
                                         <div key={i} className="flex items-center justify-between py-1">
                                           <div className="flex items-center gap-1 min-w-0">
                                             <a

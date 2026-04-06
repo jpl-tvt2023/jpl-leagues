@@ -570,6 +570,59 @@ function buildTentative16Team(
   };
 }
 
+async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null) {
+  // TC seeding: UCL = rank 1-2 per cup group, UEL = rank 3-4 per cup group
+  // Cross-group QF pairing: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1 (UCL)
+  //                          A3 vs C4, A4 vs C3, B3 vs D4, B4 vs D3 (UEL)
+  void leagueId; // reserved for future projected seed lookup
+
+  const rankLabel = (rank: number) => rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : "4th";
+  const tcSide = (group: string, rank: number): { teamId: null; name: string; abbr: string; leg1Score: null; leg2Score: null; aggregate: null } => {
+    const label = `${rankLabel(rank)} Cup-${group}`;
+    return { teamId: null, name: label, abbr: `${group}${rank}`, leg1Score: null, leg2Score: null, aggregate: null };
+  };
+
+  const uclQF: TieDisplay[] = [
+    { tieId: "UCL-QF-1", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 1), away: tcSide("C", 2), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-2", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 2), away: tcSide("C", 1), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-3", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 1), away: tcSide("D", 2), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-4", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 2), away: tcSide("D", 1), winnerId: null, loserId: null },
+  ];
+
+  const uclSF: TieDisplay[] = [
+    { tieId: "UCL-SF-1", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UCL-QF-1"), away: placeholder("Winner of UCL-QF-3"), winnerId: null, loserId: null },
+    { tieId: "UCL-SF-2", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UCL-QF-2"), away: placeholder("Winner of UCL-QF-4"), winnerId: null, loserId: null },
+  ];
+
+  const uclFinal: TieDisplay[] = [
+    { tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 38, gw2: null, home: placeholder("Winner of UCL-SF-1"), away: placeholder("Winner of UCL-SF-2"), winnerId: null, loserId: null },
+  ];
+
+  const uelQF: TieDisplay[] = [
+    { tieId: "UEL-QF-1", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 3), away: tcSide("C", 4), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-2", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 4), away: tcSide("C", 3), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-3", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 3), away: tcSide("D", 4), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-4", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 4), away: tcSide("D", 3), winnerId: null, loserId: null },
+  ];
+
+  const uelSF: TieDisplay[] = [
+    { tieId: "UEL-SF-1", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UEL-QF-1"), away: placeholder("Winner of UEL-QF-3"), winnerId: null, loserId: null },
+    { tieId: "UEL-SF-2", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UEL-QF-2"), away: placeholder("Winner of UEL-QF-4"), winnerId: null, loserId: null },
+  ];
+
+  const uelFinal: TieDisplay[] = [
+    { tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 38, gw2: null, home: placeholder("Winner of UEL-SF-1"), away: placeholder("Winner of UEL-SF-2"), winnerId: null, loserId: null },
+  ];
+
+  return {
+    mode,
+    latestCompletedGw,
+    teamSize: 20,
+    tvt: { qf: uclQF, sf: uclSF, final: uclFinal },
+    challenger: { c31: uelQF, c35: uelSF, c38: uelFinal },
+  };
+}
+
 async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null, teamSize = 32, playoffStartGw = 31) {
   const standings = await getGroupStandings(leagueId);
   if (!standings) {
@@ -579,6 +632,7 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
   // Branch by variant
   if (teamSize === 8) return buildTentative8Team(latestCompletedGw, mode, standings, playoffStartGw);
   if (teamSize === 16) return buildTentative16Team(latestCompletedGw, mode, standings, playoffStartGw);
+  if (teamSize === 20) return buildTentativeTC(latestCompletedGw, mode, leagueId);
 
   const { groupA, groupB } = standings;
   const rankMap: Record<string, Record<number, { teamId: string; name: string; abbr: string }>> = { A: {}, B: {} };
@@ -776,6 +830,25 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     .filter(t => t.roundName === round)
     .map(buildTieDisplay)
     .sort((a, b) => a.tieId.localeCompare(b.tieId));
+
+  // ── TRIPLE CROWN (teamSize === 20) ──────────────────────────────────────
+  if (teamSize === 20) {
+    return {
+      mode: "live" as const,
+      latestCompletedGw,
+      teamSize: 20,
+      tvt: {
+        qf: tiesByRound("UCL-QF"),
+        sf: tiesByRound("UCL-SF"),
+        final: tiesByRound("UCL-FINAL"),
+      },
+      challenger: {
+        c31: tiesByRound("UEL-QF"),
+        c35: tiesByRound("UEL-SF"),
+        c38: tiesByRound("UEL-FINAL"),
+      },
+    };
+  }
 
   // Build winner/loser maps from completed ties for placeholder resolution
   const winnerMap = new Map<string, { teamId: string; name: string; abbr: string }>();

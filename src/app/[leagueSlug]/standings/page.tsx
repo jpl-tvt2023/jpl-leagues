@@ -171,18 +171,7 @@ export default function LeagueStandingsPage() {
             </div>
 
             {/* Legend */}
-            {isTripleCrown ? (
-              <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-sm bg-green-500"></span>
-                  <span className="text-gray-400">Top 4 — Playoff Zone</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-sm bg-slate-600"></span>
-                  <span className="text-gray-400">Positions 5–20</span>
-                </div>
-              </div>
-            ) : (
+            {!isTripleCrown && (
             <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
               <div className="flex items-center gap-2">
                 <span className="h-3 w-3 rounded-full bg-green-500"></span>
