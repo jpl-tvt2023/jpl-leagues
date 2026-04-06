@@ -70,10 +70,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ isLive: false, fixtures: [] });
     }
 
-    // If ALL fixtures have results, this GW is done — not live
+    // If ALL fixtures have results, this GW is done — return stored data with player breakdowns
     const allHaveResults = gwFixtures.every((f) => f.result !== null);
     if (allHaveResults) {
-      return NextResponse.json({ isLive: false, fixtures: [], reason: "already_processed" });
+      const storedFixtures = gwFixtures
+        .filter(f => f.result)
+        .map(f => ({
+          fixtureId: f.id,
+          gameweek: gwNumber,
+          homeTeamName: f.homeTeam.name,
+          awayTeamName: f.awayTeam.name,
+          homeTeamAbbr: f.homeTeam.abbreviation,
+          awayTeamAbbr: f.awayTeam.abbreviation,
+          homeScore: f.result!.homeScore,
+          awayScore: f.result!.awayScore,
+          homePlayers: f.result!.homePlayerScores ? JSON.parse(f.result!.homePlayerScores) : [],
+          awayPlayers: f.result!.awayPlayerScores ? JSON.parse(f.result!.awayPlayerScores) : [],
+        }));
+      return NextResponse.json({ isLive: false, fixtures: storedFixtures, reason: "already_processed", cachedAt: new Date().toISOString() });
     }
 
     // Check live cache first

@@ -83,9 +83,7 @@ function FixtureCard({
       ? "text-amber-400 animate-pulse"
       : "text-white";
 
-  const hasPlayerData = isLive
-    ? (liveData?.homePlayers.length ?? 0) > 0
-    : !!(fixture.result?.homePlayerScores);
+  const hasPlayerData = (liveData?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores);
 
   return (
     <div
@@ -139,13 +137,13 @@ function FixtureCard({
       </div>
 
       {(() => {
-        const homePlayers: LivePlayerScore[] = isLive
-          ? (liveData?.homePlayers ?? [])
+        const homePlayers: LivePlayerScore[] = (liveData?.homePlayers?.length ?? 0) > 0
+          ? (liveData!.homePlayers ?? [])
           : fixture.result?.homePlayerScores
             ? JSON.parse(fixture.result.homePlayerScores)
             : [];
-        const awayPlayers: LivePlayerScore[] = isLive
-          ? (liveData?.awayPlayers ?? [])
+        const awayPlayers: LivePlayerScore[] = (liveData?.awayPlayers?.length ?? 0) > 0
+          ? (liveData!.awayPlayers ?? [])
           : fixture.result?.awayPlayerScores
             ? JSON.parse(fixture.result.awayPlayerScores)
             : [];
@@ -257,17 +255,10 @@ export default function LeagueFixturesPage() {
       const res = await fetch(`/api/fixtures/live?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.isLive) {
-          setLiveScores(data.fixtures || []);
-          setIsLive(true);
-          setLiveCachedAt(data.cachedAt || null);
-          setIsManuallyRefreshed(false);
-        } else {
-          setLiveScores([]);
-          setIsLive(false);
-          setLiveCachedAt(null);
-          setIsManuallyRefreshed(false);
-        }
+        setLiveScores(data.fixtures || []);
+        setIsLive(data.isLive ?? false);
+        setLiveCachedAt(data.cachedAt || null);
+        setIsManuallyRefreshed(false);
       }
     } catch {
       // Silently fail — live scores are optional

@@ -75,17 +75,10 @@ export default function UEFAFixturesPage() {
       const res = await fetch(`/api/fixtures/live?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.isLive) {
-          setLiveScores(data.fixtures || []);
-          setIsLive(true);
-          setLiveCachedAt(data.cachedAt || null);
-          setIsManuallyRefreshed(false);
-        } else {
-          setLiveScores([]);
-          setIsLive(false);
-          setLiveCachedAt(null);
-          setIsManuallyRefreshed(false);
-        }
+        setLiveScores(data.fixtures || []);
+        setIsLive(data.isLive ?? false);
+        setLiveCachedAt(data.cachedAt || null);
+        setIsManuallyRefreshed(false);
       }
     } catch {
       // Silently fail — live scores are optional
@@ -335,16 +328,14 @@ export default function UEFAFixturesPage() {
                         const live = liveScores.find((ls) => ls.fixtureId === fixture.id);
                         const hasResult = !!fixture.result;
                         const isFixtureLive = !!live;
-                        const hasPlayerData = isFixtureLive
-                          ? (live.homePlayers?.length ?? 0) > 0
-                          : !!(fixture.result?.homePlayerScores);
+                        const hasPlayerData = (live?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores);
                         const isExpanded = expandedFixtures.has(fixture.id);
                         const gwNumber = live?.gameweek ?? fixture.gameweek.number;
-                        const homePlayers: LivePlayerScore[] = isFixtureLive
-                          ? (live.homePlayers ?? [])
+                        const homePlayers: LivePlayerScore[] = (live?.homePlayers?.length ?? 0) > 0
+                          ? (live!.homePlayers ?? [])
                           : fixture.result?.homePlayerScores ? JSON.parse(fixture.result.homePlayerScores) : [];
-                        const awayPlayers: LivePlayerScore[] = isFixtureLive
-                          ? (live.awayPlayers ?? [])
+                        const awayPlayers: LivePlayerScore[] = (live?.awayPlayers?.length ?? 0) > 0
+                          ? (live!.awayPlayers ?? [])
                           : fixture.result?.awayPlayerScores ? JSON.parse(fixture.result.awayPlayerScores) : [];
 
                         return (

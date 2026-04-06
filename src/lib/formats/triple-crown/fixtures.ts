@@ -81,44 +81,43 @@ export function generateCupGroupFixtures(
   const cupGWs = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24]; // 10 matchdays
   const fixtures: Array<{ gameweekNumber: number; homeTeamId: string; awayTeamId: string }> = [];
 
-  // Round-robin with 2 repetitions (10 matchdays total)
-  for (let rep = 1; rep <= 2; rep++) {
-    for (let round = 1; round <= 5; round++) {
-      const matchdayNum = (rep - 1) * 5 + round; // 1-10
-      const gwNum = cupGWs[matchdayNum - 1];
+  // Circle-method round-robin for 6 teams (indices 0-4 human, 5 ghost)
+  // Fix team 5 (ghost) in place, rotate teams 0-4
+  // 5 rounds per rep, 2 reps = 10 matchdays
+  // Round k (0-indexed): ghost vs rotating[0], rotating[1] vs rotating[4], rotating[2] vs rotating[3]
+  const rotating = [0, 1, 2, 3, 4]; // team indices that rotate
 
-      // Berger table pairing for 6 teams (3 matches per round)
-      for (let i = 0; i < 3; i++) {
-        let homeIdx: number;
-        let awayIdx: number;
+  for (let rep = 0; rep < 2; rep++) {
+    const rotated = [...rotating]; // reset rotation each rep
+    for (let round = 0; round < 5; round++) {
+      const matchdayNum = rep * 5 + round; // 0-9
+      const gwNum = cupGWs[matchdayNum];
 
-        if (round <= 3) {
-          const offset = round - 1;
-          homeIdx = (i + offset) % 5;
-          awayIdx = (5 - i - offset) % 5;
-        } else {
-          const offset = round - 4;
-          awayIdx = (i + offset) % 5;
-          homeIdx = (5 - i - offset) % 5;
-        }
+      // 3 matches per round
+      const pairs: [number, number][] = [
+        [5, rotated[0]],            // ghost vs first in rotation
+        [rotated[1], rotated[4]],   // 2nd vs 5th
+        [rotated[2], rotated[3]],   // 3rd vs 4th
+      ];
 
-        // Team 6 (Ghost) plays against the rotated pair
-        if (i === 0) {
-          homeIdx = 5; // Ghost
-          awayIdx = (round - 1) % 5;
-        }
+      for (const [homeIdx, awayIdx] of pairs) {
+        // Rep 2 reverses home/away
+        const [h, a] = rep === 0 ? [homeIdx, awayIdx] : [awayIdx, homeIdx];
+        const homeTeamId = h === 5 ? ghostTeamId : teams[h].id;
+        const awayTeamId = a === 5 ? ghostTeamId : teams[a].id;
 
-        if (homeIdx !== awayIdx) {
-          const homeTeamId = homeIdx === 5 ? ghostTeamId : teams[homeIdx].id;
-          const awayTeamId = awayIdx === 5 ? ghostTeamId : teams[awayIdx].id;
-
-          fixtures.push({
-            gameweekNumber: gwNum,
-            homeTeamId,
-            awayTeamId,
-          });
-        }
+        fixtures.push({
+          gameweekNumber: gwNum,
+          homeTeamId,
+          awayTeamId,
+        });
       }
+
+      // Rotate: move last element to position 1 (keep index 0 fixed is wrong — rotate all)
+      // Standard circle method: fix ghost (idx 5), rotate 0-4 clockwise
+      // [0,1,2,3,4] → [4,0,1,2,3] → [3,4,0,1,2] → ...
+      const last = rotated.pop()!;
+      rotated.splice(0, 0, last);
     }
   }
 
@@ -154,10 +153,18 @@ export function seedCupGroups(
   };
 
   // Snake distribution (zig-zag pattern)
+  // Row 1 (→): A=1,  B=2,  C=3,  D=4
+  // Row 2 (←): A=8,  B=7,  C=6,  D=5
+  // Row 3 (→): A=9,  B=10, C=11, D=12
+  // Row 4 (←): A=16, B=15, C=14, D=13
+  // Row 5 (→): A=17, B=18, C=19, D=20
   const groupKeys = ["groupA", "groupB", "groupC", "groupD"];
 
   for (let rank = 0; rank < 20; rank++) {
-    const groupIdx = rank % 4;
+    const row = Math.floor(rank / 4);
+    const posInRow = rank % 4;
+    // Even rows go left→right (A,B,C,D), odd rows go right→left (D,C,B,A)
+    const groupIdx = row % 2 === 0 ? posInRow : 3 - posInRow;
     const groupKey = groupKeys[groupIdx];
     groups[groupKey].push(rankedTeams[rank]);
   }

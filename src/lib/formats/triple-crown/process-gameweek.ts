@@ -129,6 +129,7 @@ export async function processTripleCrownGameweek(
     const processedResults: string[] = [];
     const errors: Array<{ fixtureId: string; error: string }> = [];
     const teamScoreCache = new Map<string, number>(); // teamId → effectiveScore
+    const playerScoreCache = new Map<string, string>(); // teamId → JSON player scores
 
     const plFixtures = gameweek.fixtures.filter(
       f => f.competitionType === "pl" && !f.result
@@ -184,9 +185,22 @@ export async function processTripleCrownGameweek(
         const effectiveHomeScore = homeTeamScore - homeCarryForward;
         const effectiveAwayScore = awayTeamScore - awayCarryForward;
 
-        // Cache effective scores for Pass 2 (cup stage)
+        // Cache effective scores and player breakdowns for Pass 2 (cup stage)
         teamScoreCache.set(fixture.homeTeamId, effectiveHomeScore);
         teamScoreCache.set(fixture.awayTeamId, effectiveAwayScore);
+
+        playerScoreCache.set(fixture.homeTeamId, JSON.stringify(
+          homeScores.map((s, i) => {
+            const p = fixture.homeTeam.players[i];
+            return { name: p?.name ?? "", fplId: p?.fplId ?? "", fplScore: s.points, transferHits: s.transferHits, isCaptain: false, finalScore: s.points - s.transferHits };
+          })
+        ));
+        playerScoreCache.set(fixture.awayTeamId, JSON.stringify(
+          awayScores.map((s, i) => {
+            const p = fixture.awayTeam.players[i];
+            return { name: p?.name ?? "", fplId: p?.fplId ?? "", fplScore: s.points, transferHits: s.transferHits, isCaptain: false, finalScore: s.points - s.transferHits };
+          })
+        ));
 
         // Determine winner
         let homeMatchPoints = 0, awayMatchPoints = 0;
@@ -215,6 +229,8 @@ export async function processTripleCrownGameweek(
           awayGotBonus: false,
           homeUsedDoublePointer: false,
           awayUsedDoublePointer: false,
+          homePlayerScores: playerScoreCache.get(fixture.homeTeamId) ?? null,
+          awayPlayerScores: playerScoreCache.get(fixture.awayTeamId) ?? null,
         });
 
         // Update team league points
@@ -315,6 +331,8 @@ export async function processTripleCrownGameweek(
             awayGotBonus: false,
             homeUsedDoublePointer: false,
             awayUsedDoublePointer: false,
+            homePlayerScores: playerScoreCache.get(fixture.homeTeamId) ?? null,
+            awayPlayerScores: playerScoreCache.get(fixture.awayTeamId) ?? null,
           });
 
           // Update cup group points (only for human teams, not Ghost)
@@ -336,6 +354,90 @@ export async function processTripleCrownGameweek(
             error: error instanceof Error ? error.message : "Unknown error",
           });
         }
+      }
+    }
+
+    // ============================================
+    // PASS 3: UCL / UEL KNOCKOUT FIXTURES
+    // ============================================
+    const knockoutFixtures = gameweek.fixtures.filter(
+      f => (f.competitionType === "ucl-knockout" || f.competitionType === "uel-knockout") && !f.result
+    ) as FixtureWithRelations[];
+
+    for (const fixture of knockoutFixtures) {
+      try {
+        // Use cached scores from Pass 1 if available, otherwise fetch fresh
+        let homeTeamScore = teamScoreCache.get(fixture.homeTeamId);
+        let awayTeamScore = teamScoreCache.get(fixture.awayTeamId);
+        let homePlayerScoresJson = playerScoreCache.get(fixture.homeTeamId) ?? null;
+        let awayPlayerScoresJson = playerScoreCache.get(fixture.awayTeamId) ?? null;
+
+        if (homeTeamScore === undefined) {
+          const homeScores = await Promise.all(
+            fixture.homeTeam.players.map(async (p: Player) => {
+              const score = await calculateTeamGameweekScore(p.fplId, gameweekNumber, leagueId);
+              return { ...score, player: p };
+            })
+          );
+          homeTeamScore = homeScores.reduce((sum, s) => sum + (s.points - s.transferHits), 0);
+          homePlayerScoresJson = JSON.stringify(
+            homeScores.map(s => ({
+              name: s.player.name, fplId: s.player.fplId,
+              fplScore: s.points, transferHits: s.transferHits,
+              isCaptain: false, finalScore: s.points - s.transferHits,
+            }))
+          );
+        }
+
+        if (awayTeamScore === undefined) {
+          const awayScores = await Promise.all(
+            fixture.awayTeam.players.map(async (p: Player) => {
+              const score = await calculateTeamGameweekScore(p.fplId, gameweekNumber, leagueId);
+              return { ...score, player: p };
+            })
+          );
+          awayTeamScore = awayScores.reduce((sum, s) => sum + (s.points - s.transferHits), 0);
+          awayPlayerScoresJson = JSON.stringify(
+            awayScores.map(s => ({
+              name: s.player.name, fplId: s.player.fplId,
+              fplScore: s.points, transferHits: s.transferHits,
+              isCaptain: false, finalScore: s.points - s.transferHits,
+            }))
+          );
+        }
+
+        let homeMatchPoints = 0, awayMatchPoints = 0;
+        if (homeTeamScore > awayTeamScore) {
+          homeMatchPoints = 1; awayMatchPoints = 0;
+        } else if (awayTeamScore > homeTeamScore) {
+          homeMatchPoints = 0; awayMatchPoints = 1;
+        } else {
+          homeMatchPoints = 0; awayMatchPoints = 0; // draw — aggregate decides
+        }
+
+        const resultId = generateId();
+        await db.insert(results).values({
+          id: resultId,
+          fixtureId: fixture.id,
+          teamId: homeMatchPoints >= awayMatchPoints ? fixture.homeTeamId : fixture.awayTeamId,
+          homeScore: homeTeamScore,
+          awayScore: awayTeamScore,
+          homeMatchPoints,
+          awayMatchPoints,
+          homeGotBonus: false,
+          awayGotBonus: false,
+          homeUsedDoublePointer: false,
+          awayUsedDoublePointer: false,
+          homePlayerScores: homePlayerScoresJson,
+          awayPlayerScores: awayPlayerScoresJson,
+        });
+
+        processedResults.push(fixture.id);
+      } catch (error) {
+        errors.push({
+          fixtureId: fixture.id,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
       }
     }
 

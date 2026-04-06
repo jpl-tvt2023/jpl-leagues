@@ -321,6 +321,13 @@ async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | nu
       });
 
       if (result) {
+        // Prefer stored player scores (TC format stores them; TVT uses captain reconstruction)
+        const homePlayers = result.homePlayerScores
+          ? JSON.parse(result.homePlayerScores)
+          : buildPlayerBreakdown(fixture.homeTeam.players, fixture.homeTeamId, result.homeScore);
+        const awayPlayers = result.awayPlayerScores
+          ? JSON.parse(result.awayPlayerScores)
+          : buildPlayerBreakdown(fixture.awayTeam.players, fixture.awayTeamId, result.awayScore);
         gwLiveScores.push({
           fixtureId: fixture.id,
           gameweek: gameweek,
@@ -330,8 +337,8 @@ async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | nu
           awayTeamAbbr: fixture.awayTeam.abbreviation,
           homeScore: result.homeScore,
           awayScore: result.awayScore,
-          homePlayers: buildPlayerBreakdown(fixture.homeTeam.players, fixture.homeTeamId, result.homeScore),
-          awayPlayers: buildPlayerBreakdown(fixture.awayTeam.players, fixture.awayTeamId, result.awayScore),
+          homePlayers,
+          awayPlayers,
         });
       }
     } catch (err) {
