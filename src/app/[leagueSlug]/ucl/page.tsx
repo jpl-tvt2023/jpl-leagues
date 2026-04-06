@@ -7,8 +7,8 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface CupGroupStanding {
   teamId: string;
-  name: string;
-  abbreviation: string;
+  teamName: string;
+  teamAbbr: string;
   wins: number;
   draws: number;
   losses: number;
@@ -33,6 +33,7 @@ interface Fixture {
   awayTeam: { name: string; abbreviation: string };
   competitionType?: string | null;
   gameweek: { number: number; deadline: Date };
+  group?: { name: string } | null;
   result?: {
     homeScore: number;
     awayScore: number;
@@ -109,7 +110,7 @@ export default function UCLPage() {
         // Fetch cup standings
         const cupRes = await fetch(`/api/triple-crown/cup-standings?leagueId=${leagueId}`);
         const cupData = cupRes.ok ? await cupRes.json() : {};
-        setCupStandings(cupData);
+        setCupStandings(cupData.cupGroupStandings || {});
 
         // Fetch cup fixtures
         const fixturesRes = await fetch(`/api/fixtures?leagueSlug=${encodeURIComponent(leagueSlug)}`);
@@ -198,11 +199,11 @@ export default function UCLPage() {
 
         {error && <div className="text-center text-red-400 py-12">{error}</div>}
 
-        {/* Cup Group Standings */}
+        {/* Group Stage Standings */}
         <div className="mb-12">
           <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
             <span className="h-4 w-4 rounded-full bg-blue-500"></span>
-            Cup Group Standings (GW1-24)
+            Group Stage Standings
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -225,7 +226,7 @@ export default function UCLPage() {
                         <div key={team.teamId} className={`p-3 rounded ${bgClass} flex items-center justify-between text-sm`}>
                           <div className="flex items-center gap-3 flex-1">
                             <span className="font-bold text-gray-400 w-6">{idx + 1}</span>
-                            <span className="text-white font-semibold">{team.name}</span>
+                            <span className="text-white font-semibold">{team.teamName}</span>
                           </div>
                           <div className="flex items-center gap-4 text-gray-300 text-xs">
                             <span>{team.wins}W {team.draws}D {team.losses}L</span>
@@ -243,12 +244,12 @@ export default function UCLPage() {
           </div>
         </div>
 
-        {/* Cup Fixtures */}
+        {/* Group Stage Fixtures */}
         {availableGWs.length > 0 && (
           <div className="mb-12">
             <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
               <span className="h-4 w-4 rounded-full bg-cyan-500"></span>
-              Cup Group Fixtures
+              Group Stage Fixtures
             </h2>
 
             <div className="flex items-center justify-center gap-4 mb-6">
@@ -287,32 +288,49 @@ export default function UCLPage() {
               </button>
             </div>
 
-            <div className="space-y-3">
-              {selectedFixtures.length > 0 ? (
-                selectedFixtures.map((fixture) => (
-                  <div key={fixture.id} className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 text-left">
-                        <div className="font-semibold text-white">{fixture.homeTeam.name}</div>
-                      </div>
-                      <div className="flex items-center gap-2 px-3">
-                        {fixture.result ? (
-                          <>
-                            <span className="text-lg font-bold text-green-400">{fixture.result.homeScore}</span>
-                            <span className="text-gray-500">-</span>
-                            <span className="text-lg font-bold text-green-400">{fixture.result.awayScore}</span>
-                          </>
-                        ) : (
-                          <span className="text-gray-500 font-medium text-sm">VS</span>
-                        )}
-                      </div>
-                      <div className="flex-1 text-right">
-                        <div className="font-semibold text-white">{fixture.awayTeam.name}</div>
-                      </div>
+            <div className="space-y-6">
+              {selectedFixtures.length > 0 ? (() => {
+                // Group fixtures by cup group
+                const grouped = new Map<string, typeof selectedFixtures>();
+                for (const fixture of selectedFixtures) {
+                  const groupLetter = fixture.group?.name?.replace("Cup-", "") || "?";
+                  if (!grouped.has(groupLetter)) grouped.set(groupLetter, []);
+                  grouped.get(groupLetter)!.push(fixture);
+                }
+                const groupOrder = ["A", "B", "C", "D"];
+                const sortedGroups = groupOrder.filter(g => grouped.has(g));
+
+                return sortedGroups.map(groupLetter => (
+                  <div key={groupLetter} className="space-y-3">
+                    <h3 className="text-lg font-bold text-white">Group {groupLetter}</h3>
+                    <div className="space-y-2 ml-2">
+                      {grouped.get(groupLetter)!.map((fixture) => (
+                        <div key={fixture.id} className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur hover:bg-white/10 transition">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 text-left">
+                              <div className="font-semibold text-white text-sm">{fixture.homeTeam.name}</div>
+                            </div>
+                            <div className="flex items-center gap-2 px-3">
+                              {fixture.result ? (
+                                <>
+                                  <span className="text-lg font-bold text-green-400">{fixture.result.homeScore}</span>
+                                  <span className="text-gray-500">-</span>
+                                  <span className="text-lg font-bold text-green-400">{fixture.result.awayScore}</span>
+                                </>
+                              ) : (
+                                <span className="text-gray-500 font-medium text-sm">VS</span>
+                              )}
+                            </div>
+                            <div className="flex-1 text-right">
+                              <div className="font-semibold text-white text-sm">{fixture.awayTeam.name}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))
-              ) : (
+                ));
+              })() : (
                 <div className="text-center text-gray-400 py-8">No fixtures</div>
               )}
             </div>

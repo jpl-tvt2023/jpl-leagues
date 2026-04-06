@@ -185,6 +185,9 @@ export async function GET(request: NextRequest) {
       allTeams = allTeams.filter(t => t.leagueId === leagueId);
     }
 
+    // Exclude ghost teams (TC cup-group phantoms) from PL standings
+    allTeams = allTeams.filter(t => !t.isGhost);
+
     // Filter by group if provided
     if (group) {
       allTeams = allTeams.filter(t => t.group && t.group.name === group);
@@ -371,8 +374,8 @@ export async function GET(request: NextRequest) {
 
     type RankedStanding = TeamStanding & { rank: number; zone: string };
 
-    // Group standings by group name
-    const groupNames = [...new Set(standings.map(t => t.group).filter((g): g is string => g !== null))].sort();
+    // Group standings by group name (exclude cup group names for Triple Crown)
+    const groupNames = [...new Set(standings.map(t => t.group).filter((g): g is string => g !== null && !g.toLowerCase().startsWith("cup-")))].sort();
     const groupMap: Record<string, RankedStanding[]> = {};
     for (const gName of groupNames) {
       const groupTeams = standings.filter(t => t.group === gName);
