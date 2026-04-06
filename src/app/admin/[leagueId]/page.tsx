@@ -490,6 +490,14 @@ export default function AdminDashboard() {
         const data = await res.json();
         setPlayoffsGenerated(data.generated === true);
       }
+      // For Triple Crown, also fetch cup group status
+      if (leagueConfig.format === "triple-crown") {
+        const cupRes = await fetch(`/api/admin/${leagueId}/generate-cup-groups`);
+        if (cupRes.ok) {
+          const cupData = await cupRes.json();
+          setCupGroupsGenerated(cupData.cupGroupsSeeded === true);
+        }
+      }
     } catch {
       // ignore
     } finally {
@@ -582,6 +590,26 @@ export default function AdminDashboard() {
       } else {
         setMessage({ type: "success", text: data.message || "Cup groups seeded successfully" });
         setCupGroupsGenerated(true);
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setCupGroupsLoading(false);
+    }
+  };
+
+  const deleteCupGroups = async () => {
+    if (!window.confirm("Delete all cup groups, ghost teams, and cup fixtures? This cannot be undone. You can re-seed after.")) return;
+    setCupGroupsLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/generate-cup-groups`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to delete cup groups" });
+      } else {
+        setMessage({ type: "success", text: data.message || "Cup groups deleted successfully. You can now re-seed." });
+        setCupGroupsGenerated(false);
       }
     } catch {
       setMessage({ type: "error", text: "Network error" });
@@ -2933,6 +2961,13 @@ export default function AdminDashboard() {
                   ) : (
                     <div>
                       <p className="text-green-400 text-sm mb-4">✓ Cup groups seeded. Teams will play cup group fixtures on even GWs (6, 8, 10, 12, 14, 16, 18, 20, 22, 24).</p>
+                      <button
+                        onClick={deleteCupGroups}
+                        disabled={cupGroupsLoading}
+                        className="px-6 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 font-semibold hover:bg-red-500/30 disabled:opacity-50 transition text-sm"
+                      >
+                        {cupGroupsLoading ? "Deleting..." : "Delete & Re-seed Cup Groups"}
+                      </button>
                     </div>
                   )}
                 </div>

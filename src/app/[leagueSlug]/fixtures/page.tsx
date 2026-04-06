@@ -33,6 +33,7 @@ interface Fixture {
   homeTeam: { name: string; abbreviation: string };
   awayTeam: { name: string; abbreviation: string };
   group: { name: string } | null;
+  competitionType?: string | null;
   gameweek: { number: number; deadline: Date };
   result?: {
     homeScore: number;
@@ -248,6 +249,7 @@ export default function LeagueFixturesPage() {
   const [isLive, setIsLive] = useState(false);
   const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
   const [isManuallyRefreshed, setIsManuallyRefreshed] = useState(false);
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchLiveScores = useCallback(async (gw: number) => {
@@ -335,8 +337,10 @@ export default function LeagueFixturesPage() {
         if (!response.ok) throw new Error("Failed to fetch fixtures");
         const data = await response.json();
         const fixturesData = data.fixtures || {};
+        const format = data.format || "tvt";
+        setLeagueFormat(format);
         // For Triple Crown, show all 38 GWs; for TVT, show up to playoffStartGw - 1
-        const leaguePhaseEnd: number = data.format === "triple-crown" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : Infinity);
+        const leaguePhaseEnd: number = format === "triple-crown" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : Infinity);
         setFixtures(fixturesData);
 
         const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
@@ -372,9 +376,16 @@ export default function LeagueFixturesPage() {
   }, [leagueSlug]);
 
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
-  const groupAFixtures = selectedFixtures.filter((f: Fixture) => !f.group?.name || f.group.name === "A");
-  const groupBFixtures = selectedFixtures.filter((f: Fixture) => f.group?.name === "B");
-  const hasGroupB = Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
+  const isTripleCrown = leagueFormat === "triple-crown";
+
+  // Triple Crown: only show PL fixtures on this page (cup/knockout live on UCL/Europa pages)
+  const displayFixtures = isTripleCrown
+    ? selectedFixtures.filter((f: Fixture) => !f.competitionType || f.competitionType === "pl")
+    : selectedFixtures;
+
+  const groupAFixtures = displayFixtures.filter((f: Fixture) => !f.group?.name || f.group.name === "A");
+  const groupBFixtures = displayFixtures.filter((f: Fixture) => f.group?.name === "B");
+  const hasGroupB = !isTripleCrown && Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
 
   const hasResults = selectedFixtures.some((f: Fixture) => f.result);
   const deadline = selectedFixtures[0]?.gameweek?.deadline;
@@ -407,11 +418,18 @@ export default function LeagueFixturesPage() {
             Standings
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-yellow-400 font-semibold transition">
-            Fixtures
+            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
           </Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
-            Playoffs
-          </Link>
+          {isTripleCrown ? (
+            <>
+              <Link href={`/${leagueSlug}/ucl`} className="text-gray-300 hover:text-white transition">UCL</Link>
+              <Link href={`/${leagueSlug}/europa`} className="text-gray-300 hover:text-white transition">Europa</Link>
+            </>
+          ) : (
+            <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
+              Playoffs
+            </Link>
+          )}
           <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
             Winners
           </Link>

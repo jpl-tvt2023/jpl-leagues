@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
     const processedGws = new Set<number>();
     for (const t of allTeamsUnfiltered) {
       for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-        if (f.result && f.gameweek.number <= leagueStageEnd) {
+        if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
           processedGws.add(f.gameweek.number);
         }
       }
@@ -231,6 +231,7 @@ export async function GET(request: NextRequest) {
       // Process home fixtures (league stage only)
       for (const fixture of team.homeFixtures) {
         if (fixture.gameweek.number > leagueStageEnd) continue;
+        if (fixture.competitionType && fixture.competitionType !== "pl") continue;
         if (fixture.result) {
           pointsFor += fixture.result.homeScore;
           pointsAgainst += fixture.result.awayScore;
@@ -251,6 +252,7 @@ export async function GET(request: NextRequest) {
       // Process away fixtures (league stage only)
       for (const fixture of team.awayFixtures) {
         if (fixture.gameweek.number > leagueStageEnd) continue;
+        if (fixture.competitionType && fixture.competitionType !== "pl") continue;
         if (fixture.result) {
           pointsFor += fixture.result.awayScore;
           pointsAgainst += fixture.result.homeScore;

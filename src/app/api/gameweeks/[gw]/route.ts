@@ -321,7 +321,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         failed: result.errors?.length ?? 0,
         results: [],
         errors: result.errors,
-        bonusAwards: result.bonusAwards,
         message: result.message,
       });
     }

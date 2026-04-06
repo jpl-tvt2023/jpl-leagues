@@ -32,6 +32,7 @@ interface Fixture {
   homeTeam: { name: string; abbreviation: string };
   awayTeam: { name: string; abbreviation: string };
   group: { name: string } | null;
+  competitionType?: string | null;
   gameweek: { number: number; deadline: Date };
   result?: {
     homeScore: number;
@@ -251,6 +252,7 @@ export default function FixturesPage() {
   const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
   const [isManuallyRefreshed, setIsManuallyRefreshed] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
 
   // Fetch live scores for selected GW
   const fetchLiveScores = useCallback(async (gw: number) => {
@@ -351,7 +353,9 @@ export default function FixturesPage() {
         }
         const data = await response.json();
         const fixturesData = data.fixtures || {};
-        const leaguePhaseEnd: number = data.playoffStartGw ? data.playoffStartGw - 1 : Infinity;
+        const format = data.format || "tvt";
+        setLeagueFormat(format);
+        const leaguePhaseEnd: number = format === "triple-crown" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : Infinity);
         setFixtures(fixturesData);
 
         // Get available gameweeks capped to the league phase (before playoffs)
@@ -394,9 +398,16 @@ export default function FixturesPage() {
 
   // Get fixtures for selected gameweek, split by group
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
-  const groupAFixtures = selectedFixtures.filter((f: Fixture) => !f.group?.name || f.group.name === "A");
-  const groupBFixtures = selectedFixtures.filter((f: Fixture) => f.group?.name === "B");
-  const hasGroupB = Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
+  const isTripleCrown = leagueFormat === "triple-crown";
+
+  // Triple Crown: only show PL fixtures on this page
+  const displayFixtures = isTripleCrown
+    ? selectedFixtures.filter((f: Fixture) => !f.competitionType || f.competitionType === "pl")
+    : selectedFixtures;
+
+  const groupAFixtures = displayFixtures.filter((f: Fixture) => !f.group?.name || f.group.name === "A");
+  const groupBFixtures = displayFixtures.filter((f: Fixture) => f.group?.name === "B");
+  const hasGroupB = !isTripleCrown && Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
 
   const hasResults = selectedFixtures.some((f: Fixture) => f.result);
   const deadline = selectedFixtures[0]?.gameweek?.deadline;

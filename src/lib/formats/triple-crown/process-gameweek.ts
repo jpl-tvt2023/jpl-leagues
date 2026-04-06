@@ -22,7 +22,6 @@ interface ProcessResult {
   message: string;
   processed: number;
   errors?: Array<{ fixtureId: string; error: string }>;
-  bonusAwards?: Array<{ teamId: string; margin: number; group: string }>;
 }
 
 type FixtureWithRelations = Fixture & {
@@ -130,7 +129,6 @@ export async function processTripleCrownGameweek(
     const processedResults: string[] = [];
     const errors: Array<{ fixtureId: string; error: string }> = [];
     const teamScoreCache = new Map<string, number>(); // teamId → effectiveScore
-    const bonusAwards: Array<{ teamId: string; margin: number; group: string }> = [];
 
     const plFixtures = gameweek.fixtures.filter(
       f => f.competitionType === "pl" && !f.result
@@ -152,9 +150,6 @@ export async function processTripleCrownGameweek(
         }
       }
     }
-
-    // Track margins per PL group for bonus calculation
-    const plMargins: Map<string, { teamId: string; margin: number; resultId: string }[]> = new Map();
 
     // Process each PL fixture
     for (const fixture of plFixtures) {
@@ -237,78 +232,12 @@ export async function processTripleCrownGameweek(
             .where(eq(teams.id, fixture.awayTeamId));
         }
 
-        // Track margin for bonus (75+ points)
-        const margin = Math.abs(effectiveHomeScore - effectiveAwayScore);
-        const groupId = fixture.groupId;
-        if (groupId) {
-          if (!plMargins.has(groupId)) {
-            plMargins.set(groupId, []);
-          }
-          if (margin >= 75) {
-            if (effectiveHomeScore > effectiveAwayScore) {
-              plMargins.get(groupId)!.push({
-                teamId: fixture.homeTeamId,
-                margin,
-                resultId,
-              });
-            } else if (effectiveAwayScore > effectiveHomeScore) {
-              plMargins.get(groupId)!.push({
-                teamId: fixture.awayTeamId,
-                margin,
-                resultId,
-              });
-            }
-          }
-        }
-
         processedResults.push(fixture.id);
       } catch (error) {
         errors.push({
           fixtureId: fixture.id,
           error: error instanceof Error ? error.message : "Unknown error",
         });
-      }
-    }
-
-    // Award bonus points (highest margin per PL group)
-    for (const [groupId, margins] of plMargins) {
-      if (margins.length === 0) continue;
-      const highestMargin = Math.max(...margins.map(m => m.margin));
-      const bonusWinners = margins.filter(m => m.margin === highestMargin);
-
-      const groupRecord = await db.select().from(groups).where(eq(groups.id, groupId));
-      const groupName = groupRecord[0]?.name || groupId;
-
-      for (const winner of bonusWinners) {
-        const resultRecord = await db.select().from(results).where(eq(results.id, winner.resultId));
-        if (resultRecord[0]) {
-          const fixtureRecord = await db.select().from(fixtures).where(eq(fixtures.id, resultRecord[0].fixtureId));
-          const isHomeTeam = fixtureRecord[0]?.homeTeamId === winner.teamId;
-
-          // Award bonus point
-          await db.update(results)
-            .set({
-              homeGotBonus: isHomeTeam ? true : resultRecord[0].homeGotBonus,
-              awayGotBonus: !isHomeTeam ? true : resultRecord[0].awayGotBonus,
-            })
-            .where(eq(results.id, winner.resultId));
-
-          const teamRecord = await db.select().from(teams).where(eq(teams.id, winner.teamId));
-          if (teamRecord[0]) {
-            await db.update(teams)
-              .set({
-                leaguePoints: teamRecord[0].leaguePoints + 1,
-                bonusPoints: teamRecord[0].bonusPoints + 1,
-              })
-              .where(eq(teams.id, winner.teamId));
-          }
-
-          bonusAwards.push({
-            teamId: winner.teamId,
-            margin: winner.margin,
-            group: groupName,
-          });
-        }
       }
     }
 
@@ -415,7 +344,6 @@ export async function processTripleCrownGameweek(
       message: `Processed ${processedResults.length} fixtures`,
       processed: processedResults.length,
       errors: errors.length > 0 ? errors : undefined,
-      bonusAwards: bonusAwards.length > 0 ? bonusAwards : undefined,
     };
   } catch (error) {
     console.error("Error in processTripleCrownGameweek:", error);

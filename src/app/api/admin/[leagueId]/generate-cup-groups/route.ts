@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, groups, fixtures, gameweeks, leagues, type Team } from "@/lib/db";
+import { db, teams, groups, fixtures, gameweeks, leagues, results, type Team } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { generateId } from "@/lib/id";
@@ -268,5 +268,78 @@ export async function GET(request: NextRequest) {
       { error: "Failed to check cup group status" },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * DELETE /api/admin/[leagueId]/generate-cup-groups
+ * Delete all cup groups and fixtures for re-seeding
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const leagueId = await getAuthorizedLeagueId(request);
+    if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    // Find all cup groups for this league
+    const cupGroups = await db.select().from(groups).where(
+      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "cup"))
+    );
+
+    if (cupGroups.length === 0) {
+      return NextResponse.json({ error: "No cup groups to delete" }, { status: 400 });
+    }
+
+    const cupGroupIds = cupGroups.map((g) => g.id);
+
+    // Find all cup-group fixtures and delete their results first
+    const cupFixtures = await db.select().from(fixtures).where(
+      eq(fixtures.competitionType, "cup-group")
+    );
+    const leagueCupFixtures = cupFixtures.filter((f) => cupGroupIds.includes(f.groupId || ""));
+    const fixtureIds = leagueCupFixtures.map((f) => f.id);
+
+    // Delete results for cup fixtures
+    for (const fixtureId of fixtureIds) {
+      await db.delete(results).where(eq(results.fixtureId, fixtureId));
+    }
+
+    // Delete cup fixtures
+    for (const fixtureId of fixtureIds) {
+      await db.delete(fixtures).where(eq(fixtures.id, fixtureId));
+    }
+
+    // Delete ghost teams (isGhost = true for this league)
+    await db.delete(teams).where(
+      and(eq(teams.leagueId, leagueId), eq(teams.isGhost, true))
+    );
+
+    // Reassign human teams back to PL group (or null if no PL group exists)
+    const plGroup = await db.select().from(groups).where(
+      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "pl"))
+    );
+    const plGroupId = plGroup.length > 0 ? plGroup[0].id : null;
+
+    for (const cupGroupId of cupGroupIds) {
+      const cupTeams = await db.select().from(teams).where(
+        and(eq(teams.groupId, cupGroupId), eq(teams.isGhost, false))
+      );
+      for (const team of cupTeams) {
+        await db.update(teams)
+          .set({ groupId: plGroupId })
+          .where(eq(teams.id, team.id));
+      }
+    }
+
+    // Delete cup groups
+    for (const cupGroupId of cupGroupIds) {
+      await db.delete(groups).where(eq(groups.id, cupGroupId));
+    }
+
+    await invalidateLeaguePageCache(leagueId);
+
+    return NextResponse.json({ success: true, message: "Cup groups deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting cup groups:", error);
+    return NextResponse.json({ error: "Failed to delete cup groups" }, { status: 500 });
   }
 }
