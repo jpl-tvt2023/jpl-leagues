@@ -136,10 +136,7 @@ export default function UEFAFixturesPage() {
         for (const gw of cupGWs) {
           if (allFixtures[gw]) {
             const filtered = allFixtures[gw].filter(
-              (f: Fixture) =>
-                f.competitionType === "cup-group" &&
-                !f.homeTeam.isGhost &&
-                !f.awayTeam.isGhost
+              (f: Fixture) => f.competitionType === "cup-group"
             );
             if (filtered.length > 0) cupFixtures[gw] = filtered;
           }
@@ -338,11 +335,15 @@ export default function UEFAFixturesPage() {
                           ? (live!.awayPlayers ?? [])
                           : fixture.result?.awayPlayerScores ? JSON.parse(fixture.result.awayPlayerScores) : [];
 
+                        const isGhostFixture = !!(fixture.homeTeam.isGhost || fixture.awayTeam.isGhost);
+
                         return (
                           <div
                             key={fixture.id}
                             className={`rounded-xl border p-4 backdrop-blur transition ${
-                              isFixtureLive
+                              isGhostFixture
+                                ? "border-purple-500/20 bg-purple-950/10"
+                                : isFixtureLive
                                 ? "border-amber-500/30 bg-amber-500/5"
                                 : hasResult
                                 ? "border-white/10 bg-white/5"
@@ -353,7 +354,7 @@ export default function UEFAFixturesPage() {
                             <div className="flex items-center gap-3">
                               {/* Home team */}
                               <div className="flex-1 text-right">
-                                <span className="font-semibold text-white text-sm">{fixture.homeTeam.name}</span>
+                                <span className={`font-semibold text-sm ${fixture.homeTeam.isGhost ? "text-purple-400 italic" : "text-white"}`}>{fixture.homeTeam.name}</span>
                               </div>
 
                               {/* Score box */}
