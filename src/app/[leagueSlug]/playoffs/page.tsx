@@ -874,6 +874,70 @@ export default function LeaguePlayoffsPage() {
       </nav>
 
       <div className="mx-auto max-w-7xl px-6 py-8">
+
+        {/* ====== TRIPLE CROWN: UCL + UEL KNOCKOUTS ====== */}
+        {isTripleCrown ? (
+          <div className="space-y-12">
+            <div>
+              <h1 className="text-3xl font-bold text-white mb-2">Knockout Stage</h1>
+              <p className="text-gray-400 text-sm">UEFA Champions League &amp; Europa League · Triple Crown</p>
+            </div>
+
+            {/* UCL Section */}
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-8 w-1 rounded-full bg-blue-500" />
+                <div>
+                  <h2 className="text-xl font-bold text-white">UCL Knockouts</h2>
+                  <p className="text-blue-400 text-xs font-semibold uppercase tracking-wider">UEFA Champions League</p>
+                </div>
+              </div>
+              {(data.tvt.qf?.length || data.tvt.sf?.length || data.tvt.final?.length) ? (
+                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
+                    <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
+                    <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
+                    <RoundColumn title="UCL Final 🏆" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-yellow-500/50 pl-3" />
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-5 py-6 text-sm text-blue-300">
+                  UCL bracket will be generated after the group stage (GW24).
+                </div>
+              )}
+            </div>
+
+            {/* UEL Section */}
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-8 w-1 rounded-full bg-orange-500" />
+                <div>
+                  <h2 className="text-xl font-bold text-white">Europa Knockouts</h2>
+                  <p className="text-orange-400 text-xs font-semibold uppercase tracking-wider">UEFA Europa League</p>
+                </div>
+              </div>
+              {(() => {
+                const uelQF = data.challenger.c31 ?? data.challenger.c34 ?? [];
+                const uelSF = data.challenger.c35 ?? data.challenger.c37 ?? [];
+                const uelFinal = data.challenger.c36 ?? data.challenger.c38 ?? [];
+                const hasData = uelQF.length > 0 || uelSF.length > 0 || uelFinal.length > 0;
+                return hasData ? (
+                  <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
+                      <RoundColumn title="Quarter-Finals" ties={uelQF} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
+                      <RoundColumn title="Semi-Finals" ties={uelSF} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
+                      <RoundColumn title="Europa Final 🏆" ties={uelFinal} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 px-5 py-6 text-sm text-orange-300">
+                    Europa bracket will be generated after the group stage (GW24).
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        ) : (
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">Playoffs Bracket</h1>
           {data.mode === "tentative" && (
@@ -889,9 +953,10 @@ export default function LeaguePlayoffsPage() {
             </div>
           )}
         </div>
+        )}
 
-        {/* Tab toggle */}
-        {data.teamSize === 16 && (
+        {/* Tab toggle — TVT only */}
+        {!isTripleCrown && data.teamSize === 16 && (
           <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
             <button
               onClick={() => setActiveTab("groupStage")}
@@ -919,7 +984,7 @@ export default function LeaguePlayoffsPage() {
             </button>
           </div>
         )}
-        {data.teamSize === 32 && (
+        {!isTripleCrown && data.teamSize === 32 && (
           <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
             <button
               onClick={() => setActiveTab("tvt")}
@@ -941,7 +1006,7 @@ export default function LeaguePlayoffsPage() {
         )}
 
         {/* Group Stage — 16-team only */}
-        {activeTab === "groupStage" && data.teamSize === 16 && data.groupStage && (
+        {!isTripleCrown && activeTab === "groupStage" && data.teamSize === 16 && data.groupStage && (
           <GroupStageView
             groups={data.groupStage.groups}
             liveScores={data.liveScores}
@@ -954,7 +1019,7 @@ export default function LeaguePlayoffsPage() {
         )}
 
         {/* TVT Main Draw Bracket */}
-        {(activeTab === "tvt" || data.teamSize === 8) && (
+        {!isTripleCrown && (activeTab === "tvt" || data.teamSize === 8) && (
           <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
             {data.teamSize === 8 ? (
               /* 8-team: SF → 3rd Place + Final */
@@ -1053,7 +1118,7 @@ export default function LeaguePlayoffsPage() {
         )}
 
         {/* Challenger Series — 16/32-team only */}
-        {activeTab === "challenger" && data.teamSize !== 8 && (
+        {!isTripleCrown && activeTab === "challenger" && data.teamSize !== 8 && (
           <div className="space-y-6">
             {(() => {
               const allLiveScores = data.liveScores ? Object.values(data.liveScores).flat() : [];

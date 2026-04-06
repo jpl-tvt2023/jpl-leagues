@@ -53,6 +53,14 @@ export default function UEFAFixturesPage() {
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
+  // Expanded fixture cards
+  const [expandedFixtures, setExpandedFixtures] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string) => setExpandedFixtures(prev => {
+    const n = new Set(prev);
+    n.has(id) ? n.delete(id) : n.add(id);
+    return n;
+  });
+
   // Live scoring
   const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
   const [isLive, setIsLive] = useState(false);
@@ -133,7 +141,10 @@ export default function UEFAFixturesPage() {
         for (const gw of cupGWs) {
           if (allFixtures[gw]) {
             const filtered = allFixtures[gw].filter(
-              (f: Fixture) => f.competitionType === "cup-group"
+              (f: Fixture) =>
+                f.competitionType === "cup-group" &&
+                !f.homeTeam.abbreviation.startsWith("GH") &&
+                !f.awayTeam.abbreviation.startsWith("GH")
             );
             if (filtered.length > 0) cupFixtures[gw] = filtered;
           }
@@ -324,6 +335,9 @@ export default function UEFAFixturesPage() {
                         const live = liveScores.find((ls) => ls.fixtureId === fixture.id);
                         const hasResult = !!fixture.result;
                         const isFixtureLive = !!live;
+                        const hasPlayerData = isFixtureLive && (live.homePlayers?.length ?? 0) > 0;
+                        const isExpanded = expandedFixtures.has(fixture.id);
+                        const gwNumber = live?.gameweek ?? fixture.gameweek.number;
 
                         return (
                           <div
@@ -334,7 +348,8 @@ export default function UEFAFixturesPage() {
                                 : hasResult
                                 ? "border-white/10 bg-white/5"
                                 : "border-blue-500/15 bg-blue-950/20"
-                            }`}
+                            } ${hasPlayerData ? "cursor-pointer" : ""}`}
+                            onClick={() => hasPlayerData && toggleExpand(fixture.id)}
                           >
                             <div className="flex items-center gap-3">
                               {/* Home team */}
@@ -368,6 +383,86 @@ export default function UEFAFixturesPage() {
                                 <span className="font-semibold text-white text-sm">{fixture.awayTeam.name}</span>
                               </div>
                             </div>
+
+                            {/* Player breakdown toggle */}
+                            {hasPlayerData && (
+                              <div className="mt-2">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleExpand(fixture.id); }}
+                                  className="w-full text-center text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
+                                >
+                                  {isExpanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
+                                </button>
+                                {isExpanded && (
+                                  <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
+                                      {live.homePlayers.map((p, i) => (
+                                        <div key={i} className="flex items-center justify-between py-1">
+                                          <div className="flex items-center gap-1 min-w-0">
+                                            <a
+                                              href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-blue-400 hover:text-blue-300 underline truncate"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              {p.name}
+                                            </a>
+                                            {p.isCaptain && (
+                                              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
+                                            )}
+                                          </div>
+                                          <div className="text-right shrink-0 ml-2">
+                                            {p.isCaptain ? (
+                                              <span className="text-yellow-400 font-semibold">
+                                                {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
+                                              </span>
+                                            ) : (
+                                              <span className="text-white">
+                                                {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
+                                      {live.awayPlayers.map((p, i) => (
+                                        <div key={i} className="flex items-center justify-between py-1">
+                                          <div className="flex items-center gap-1 min-w-0">
+                                            <a
+                                              href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-blue-400 hover:text-blue-300 underline truncate"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              {p.name}
+                                            </a>
+                                            {p.isCaptain && (
+                                              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
+                                            )}
+                                          </div>
+                                          <div className="text-right shrink-0 ml-2">
+                                            {p.isCaptain ? (
+                                              <span className="text-yellow-400 font-semibold">
+                                                {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
+                                              </span>
+                                            ) : (
+                                              <span className="text-white">
+                                                {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}

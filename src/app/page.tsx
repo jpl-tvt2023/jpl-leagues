@@ -129,14 +129,14 @@ export default function Home() {
                     </div>
 
                     <div className="flex flex-wrap gap-3 mt-auto">
-                      <Link
-                        href={`/${league.slug}/standings`}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}
-                      >
-                        Standings
-                      </Link>
                       {league.format === "triple-crown" ? (
                         <>
+                          <Link
+                            href={`/${league.slug}/standings`}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}
+                          >
+                            PL Standings
+                          </Link>
                           <Link
                             href={`/${league.slug}/fixtures`}
                             className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
@@ -155,9 +155,21 @@ export default function Home() {
                           >
                             UEFA Fixtures
                           </Link>
+                          <Link
+                            href={`/${league.slug}/playoffs`}
+                            className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                          >
+                            Playoffs
+                          </Link>
                         </>
                       ) : (
                         <>
+                          <Link
+                            href={`/${league.slug}/standings`}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}
+                          >
+                            Standings
+                          </Link>
                           <Link
                             href={`/${league.slug}/fixtures`}
                             className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"

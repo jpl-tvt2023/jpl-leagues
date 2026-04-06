@@ -151,24 +151,38 @@ export default function LeagueStandingsPage() {
           <>
             <div className="text-center mb-12">
               <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">
-                {isTripleCrown ? "Premier League" : "League Standings"}
+                {isTripleCrown ? leagueName || "League" : "League Standings"}
               </h1>
               {isTripleCrown && (
                 <p className="text-[#00ff85] text-sm font-semibold uppercase tracking-widest mb-2">
-                  2025/26 Season
+                  Premier League · 2025/26 Season
                 </p>
               )}
-              <p className="text-gray-400">
-                {latestGameweek > 0
-                  ? `After Gameweek ${latestGameweek} · League Stage`
-                  : totalTeams > 0
-                    ? "League Stage · No matches played yet"
-                    : "League Stage · Awaiting teams"
-                }
-              </p>
+              {!isTripleCrown && (
+                <p className="text-gray-400">
+                  {latestGameweek > 0
+                    ? `After Gameweek ${latestGameweek} · League Stage`
+                    : totalTeams > 0
+                      ? "League Stage · No matches played yet"
+                      : "League Stage · Awaiting teams"
+                  }
+                </p>
+              )}
             </div>
 
             {/* Legend */}
+            {isTripleCrown ? (
+              <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-sm bg-green-500"></span>
+                  <span className="text-gray-400">Top 4 — Playoff Zone</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-sm bg-slate-600"></span>
+                  <span className="text-gray-400">Positions 5–20</span>
+                </div>
+              </div>
+            ) : (
             <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
               <div className="flex items-center gap-2">
                 <span className="h-3 w-3 rounded-full bg-green-500"></span>
@@ -185,6 +199,7 @@ export default function LeagueStandingsPage() {
                 <span className="text-gray-400">Eliminated ({teamSize === 8 ? "5-8" : "15-16"})</span>
               </div>
             </div>
+            )}
 
             {error ? (
               <div className="text-center text-red-400 py-12">{error}</div>
@@ -214,17 +229,17 @@ export default function LeagueStandingsPage() {
                   <p className="text-yellow-300 text-sm font-semibold">Groups have not been revealed yet</p>
                   <p className="text-yellow-400/70 text-xs mt-1">Group assignments will be announced by the admin before the season starts.</p>
                 </div>
-                <StandingsTable teams={[...groupA, ...groupB]} group={undefined} />
+                <StandingsTable teams={[...groupA, ...groupB]} group={undefined} isTripleCrown={isTripleCrown} />
               </div>
             ) : (
               <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
-                <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} />
-                {groupB.length > 0 && <StandingsTable teams={groupB} group="B" />}
+                <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} isTripleCrown={isTripleCrown} />
+                {groupB.length > 0 && <StandingsTable teams={groupB} group="B" isTripleCrown={isTripleCrown} />}
               </div>
             )}
 
             <div className="mt-8 text-center text-sm text-gray-500">
-              MP = Matches Played · W = Won · D = Drawn · L = Lost · CP/BP = Chips &amp; Bonus Points · Pts = League Points · Scores = Total FPL Score
+              MP = Matches Played · W = Won · D = Drawn · L = Lost{!isTripleCrown && " · CP/BP = Chips & Bonus Points"} · Pts = League Points · Scores = Total FPL Score
             </div>
           </>
         )}
