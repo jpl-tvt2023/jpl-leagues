@@ -28,7 +28,7 @@ export default function LeagueStandingsPage() {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated && data.type === "team");
+        setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
       } catch {
         setIsLoggedIn(false);
       }

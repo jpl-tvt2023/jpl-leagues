@@ -83,7 +83,7 @@ function FixtureCard({
       ? "text-amber-400 animate-pulse"
       : "text-white";
 
-  const hasPlayerData = (liveData?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores);
+  const hasPlayerData = (liveData?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores) || isResult;
 
   return (
     <div
@@ -148,7 +148,7 @@ function FixtureCard({
             ? JSON.parse(fixture.result.awayPlayerScores)
             : [];
         const gwNumber = liveData?.gameweek ?? fixture.gameweek.number;
-        if (homePlayers.length === 0) return null;
+        if (!hasPlayerData) return null;
         return (
           <div className="mt-2">
             <button
@@ -158,72 +158,78 @@ function FixtureCard({
               {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
             </button>
             {expanded && (
-              <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
-                <div>
-                  <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
-                  {homePlayers.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between py-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <a
-                          href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 underline truncate"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {p.name}
-                        </a>
-                        {p.isCaptain && !p.isAutoAssigned && (
-                          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain && !p.isAutoAssigned ? (
-                          <span className="text-yellow-400 font-semibold">
-                            {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
-                          </span>
-                        ) : (
-                          <span className="text-white">
-                            {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+              homePlayers.length === 0 && awayPlayers.length === 0 ? (
+                <div className="mt-1 pt-2 border-t border-white/10 text-center text-gray-500 italic text-[10px] py-2">
+                  Player breakdown not available for this gameweek
                 </div>
-                <div>
-                  <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
-                  {awayPlayers.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between py-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <a
-                          href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 underline truncate"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {p.name}
-                        </a>
-                        {p.isCaptain && !p.isAutoAssigned && (
-                          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
-                        )}
+              ) : (
+                <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
+                  <div>
+                    <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
+                    {homePlayers.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between py-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <a
+                            href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline truncate"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {p.name}
+                          </a>
+                          {p.isCaptain && !p.isAutoAssigned && (
+                            <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0 ml-2">
+                          {p.isCaptain && !p.isAutoAssigned ? (
+                            <span className="text-yellow-400 font-semibold">
+                              {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
+                            </span>
+                          ) : (
+                            <span className="text-white">
+                              {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain && !p.isAutoAssigned ? (
-                          <span className="text-yellow-400 font-semibold">
-                            {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
-                          </span>
-                        ) : (
-                          <span className="text-white">
-                            {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
-                          </span>
-                        )}
+                    ))}
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
+                    {awayPlayers.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between py-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <a
+                            href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline truncate"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {p.name}
+                          </a>
+                          {p.isCaptain && !p.isAutoAssigned && (
+                            <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0 ml-2">
+                          {p.isCaptain && !p.isAutoAssigned ? (
+                            <span className="text-yellow-400 font-semibold">
+                              {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
+                            </span>
+                          ) : (
+                            <span className="text-white">
+                              {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )
             )}
           </div>
         );
@@ -298,7 +304,7 @@ export default function LeagueFixturesPage() {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated && data.type === "team");
+        setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
       } catch {
         setIsLoggedIn(false);
       }

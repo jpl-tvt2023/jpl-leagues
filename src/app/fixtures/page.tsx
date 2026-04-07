@@ -85,7 +85,7 @@ function FixtureCard({
       ? "text-amber-400 animate-pulse"
       : "text-white";
 
-  const hasPlayerData = (liveData?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores);
+  const hasPlayerData = (liveData?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores) || isResult;
 
   return (
     <div
@@ -151,7 +151,7 @@ function FixtureCard({
             ? JSON.parse(fixture.result.awayPlayerScores)
             : [];
         const gwNumber = liveData?.gameweek ?? fixture.gameweek.number;
-        if (homePlayers.length === 0) return null;
+        if (!hasPlayerData) return null;
         return (
           <div className="mt-2">
             <button
@@ -161,6 +161,11 @@ function FixtureCard({
               {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
             </button>
             {expanded && (
+              homePlayers.length === 0 && awayPlayers.length === 0 ? (
+                <div className="mt-1 pt-2 border-t border-white/10 text-center text-gray-500 italic text-[10px] py-2">
+                  Player breakdown not available for this gameweek
+                </div>
+              ) : (
               <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-4 text-xs">
                 <div>
                   <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
@@ -227,6 +232,7 @@ function FixtureCard({
                   ))}
                 </div>
               </div>
+              )
             )}
           </div>
         );

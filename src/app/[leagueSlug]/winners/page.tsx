@@ -35,7 +35,7 @@ export default function LeagueWinnersPage() {
       try {
         const res = await fetch("/api/auth/me");
         const me = await res.json();
-        if (res.ok && me.authenticated && me.type === "team") setIsLoggedIn(true);
+        if (res.ok && me.authenticated && (me.type === "team" || me.type === "admin" || me.type === "superadmin")) setIsLoggedIn(true);
       } catch {}
     };
 

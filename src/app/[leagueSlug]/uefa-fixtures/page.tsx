@@ -110,7 +110,7 @@ export default function UEFAFixturesPage() {
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((d) => setIsLoggedIn(d.authenticated && d.type === "team"))
+      .then((d) => setIsLoggedIn(d.authenticated && (d.type === "team" || d.type === "admin" || d.type === "superadmin")))
       .catch(() => setIsLoggedIn(false));
   }, []);
 
@@ -325,7 +325,8 @@ export default function UEFAFixturesPage() {
                         const live = liveScores.find((ls) => ls.fixtureId === fixture.id);
                         const hasResult = !!fixture.result;
                         const isFixtureLive = !!live;
-                        const hasPlayerData = (live?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores);
+                        const isGhostFixture = !!(fixture.homeTeam.isGhost || fixture.awayTeam.isGhost);
+                        const hasPlayerData = (live?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores) || hasResult;
                         const isExpanded = expandedFixtures.has(fixture.id);
                         const gwNumber = live?.gameweek ?? fixture.gameweek.number;
                         const homePlayers: LivePlayerScore[] = (live?.homePlayers?.length ?? 0) > 0
@@ -334,8 +335,6 @@ export default function UEFAFixturesPage() {
                         const awayPlayers: LivePlayerScore[] = (live?.awayPlayers?.length ?? 0) > 0
                           ? (live!.awayPlayers ?? [])
                           : fixture.result?.awayPlayerScores ? JSON.parse(fixture.result.awayPlayerScores) : [];
-
-                        const isGhostFixture = !!(fixture.homeTeam.isGhost || fixture.awayTeam.isGhost);
 
                         return (
                           <div
@@ -380,7 +379,7 @@ export default function UEFAFixturesPage() {
 
                               {/* Away team */}
                               <div className="flex-1 text-left">
-                                <span className="font-semibold text-white text-sm">{fixture.awayTeam.name}</span>
+                                <span className={`font-semibold text-sm ${fixture.awayTeam.isGhost ? "text-purple-400 italic" : "text-white"}`}>{fixture.awayTeam.name}</span>
                               </div>
                             </div>
 
@@ -397,7 +396,12 @@ export default function UEFAFixturesPage() {
                                   <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
                                     <div>
                                       <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
-                                      {homePlayers.map((p, i) => (
+                                      {fixture.homeTeam.isGhost ? (
+                                        <div className="text-center py-3">
+                                          <span className="text-purple-400 italic text-xs">Ghost (Group Avg)</span>
+                                          {hasResult && <div className="text-purple-300 font-bold mt-1">{fixture.result!.homeScore}</div>}
+                                        </div>
+                                      ) : homePlayers.length > 0 ? homePlayers.map((p, i) => (
                                         <div key={i} className="flex items-center justify-between py-1">
                                           <div className="flex items-center gap-1 min-w-0">
                                             <a
@@ -425,11 +429,18 @@ export default function UEFAFixturesPage() {
                                             )}
                                           </div>
                                         </div>
-                                      ))}
+                                      )) : (
+                                        <div className="text-center text-gray-500 italic text-[10px] py-2">No breakdown available</div>
+                                      )}
                                     </div>
                                     <div>
                                       <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
-                                      {awayPlayers.map((p, i) => (
+                                      {fixture.awayTeam.isGhost ? (
+                                        <div className="text-center py-3">
+                                          <span className="text-purple-400 italic text-xs">Ghost (Group Avg)</span>
+                                          {hasResult && <div className="text-purple-300 font-bold mt-1">{fixture.result!.awayScore}</div>}
+                                        </div>
+                                      ) : awayPlayers.length > 0 ? awayPlayers.map((p, i) => (
                                         <div key={i} className="flex items-center justify-between py-1">
                                           <div className="flex items-center gap-1 min-w-0">
                                             <a
@@ -457,7 +468,9 @@ export default function UEFAFixturesPage() {
                                             )}
                                           </div>
                                         </div>
-                                      ))}
+                                      )) : (
+                                        <div className="text-center text-gray-500 italic text-[10px] py-2">No breakdown available</div>
+                                      )}
                                     </div>
                                   </div>
                                 )}

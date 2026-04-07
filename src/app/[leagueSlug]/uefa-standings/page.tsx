@@ -44,7 +44,7 @@ export default function UEFAStandingsPage() {
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((d) => setIsLoggedIn(d.authenticated && d.type === "team"))
+      .then((d) => setIsLoggedIn(d.authenticated && (d.type === "team" || d.type === "admin" || d.type === "superadmin")))
       .catch(() => setIsLoggedIn(false));
   }, []);
 
