@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Resolve leagueId and config from slug
-    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips })
+    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips, format: leagues.format })
       .from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
     if (league.length === 0) {
       return NextResponse.json(
@@ -82,9 +82,11 @@ export async function GET(request: NextRequest) {
     const leagueId = league[0].id;
     let playoffStartGw = league[0].playoffStartGw ?? 31;
     let leagueTeamSize = league[0].teamSize ?? 32;
+    const leagueFormat = league[0].format ?? "tvt";
     let leagueEnabledChips: string[] = ["D", "W", "C"];
     try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
-    const leagueStageEnd = playoffStartGw - 1; // last GW of the group stage
+    // Triple Crown runs PL all 38 GWs; TVT league stage ends at playoffStartGw - 1
+    const leagueStageEnd = leagueFormat === "triple-crown" ? 38 : playoffStartGw - 1;
 
     // Check if groups have been revealed to teams
     const groupsRevealedRows = await db

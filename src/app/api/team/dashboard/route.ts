@@ -46,10 +46,11 @@ export async function GET(request: NextRequest) {
     const teamBasic = await db.select({ leagueId: teams.leagueId }).from(teams).where(eq(teams.id, teamId)).limit(1);
     const teamLeagueId = teamBasic[0]?.leagueId;
     const leagueSlugRow = teamLeagueId
-      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
+      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount, format: leagues.format }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
       : [];
     const leagueSlug = leagueSlugRow[0]?.slug ?? "";
     const leagueGroupCount = leagueSlugRow[0]?.groupCount ?? 1;
+    const leagueFormat = leagueSlugRow[0]?.format ?? "tvt";
 
     if (teamLeagueId) {
       try {
@@ -687,6 +688,7 @@ export async function GET(request: NextRequest) {
       announcementSettings: await getAnnouncementSettings(teamLeagueId!),
       leagueSlug,
       leagueGroupCount,
+      leagueFormat,
     });
   } catch (error) {
     console.error("Dashboard error:", error);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 type UserRole = "public" | "team" | "admin";
@@ -60,6 +60,7 @@ function ScenarioCard({ number, title, steps }: ScenarioCardProps) {
 
 export default function LeagueHelpPage() {
   const params = useParams();
+  const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
 
   const [userRole, setUserRole] = useState<UserRole>("public");
@@ -78,18 +79,22 @@ export default function LeagueHelpPage() {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => {
-        if (d.authenticated && (d.type === "admin" || d.type === "superadmin")) {
+        if (!d.authenticated) {
+          router.push("/signin");
+          return;
+        }
+        if (d.type === "admin" || d.type === "superadmin") {
           setUserRole("admin");
           setIsLoggedIn(true);
           if (d.type === "admin" && d.adminLeagueId) setDashboardHref(`/admin/${d.adminLeagueId}`);
           else if (d.type === "superadmin") setDashboardHref("/admin");
-        } else if (d.authenticated && d.type === "team") {
+        } else if (d.type === "team") {
           setUserRole("team");
           setIsLoggedIn(true);
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => router.push("/signin"));
+  }, [router]);
 
   useEffect(() => {
     fetch("/api/leagues")

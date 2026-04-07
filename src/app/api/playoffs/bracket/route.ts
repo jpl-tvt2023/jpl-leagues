@@ -778,9 +778,17 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     .where(eq(fixtures.isPlayoff, true));
 
   const fixtureResults = new Map<string, { homeScore: number; awayScore: number }>();
+  // Secondary index by (tieId, leg) for TC fixtures that use random generated IDs
+  const fixtureByTieLeg = new Map<string, string>(); // key: "tieId-legN" or "tieId-single" → fixture.id
   for (const f of playoffFixtures) {
     const r = await db.query.results.findFirst({ where: eq(results.fixtureId, f.id) });
     if (r) fixtureResults.set(f.id, { homeScore: r.homeScore, awayScore: r.awayScore });
+    // Index by tieId+leg for TC fixtures (which have random IDs, not playoff-tieId-legN)
+    if (f.tieId && f.leg) {
+      fixtureByTieLeg.set(`${f.tieId}-leg${f.leg}`, f.id);
+    } else if (f.tieId && !f.leg) {
+      fixtureByTieLeg.set(`${f.tieId}-single`, f.id);
+    }
   }
 
   // Build display ties
@@ -792,17 +800,17 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     let awayLeg1: number | null = null, awayLeg2: number | null = null;
 
     if (tie.gw2) {
-      // 2-legged
-      const leg1Id = `playoff-${tie.tieId}-leg1`;
-      const leg2Id = `playoff-${tie.tieId}-leg2`;
-      const l1 = fixtureResults.get(leg1Id);
-      const l2 = fixtureResults.get(leg2Id);
+      // 2-legged: try tieId+leg index first (TC), fall back to playoff-tieId-legN pattern (TVT)
+      const leg1FixId = fixtureByTieLeg.get(`${tie.tieId}-leg1`) ?? `playoff-${tie.tieId}-leg1`;
+      const leg2FixId = fixtureByTieLeg.get(`${tie.tieId}-leg2`) ?? `playoff-${tie.tieId}-leg2`;
+      const l1 = fixtureResults.get(leg1FixId);
+      const l2 = fixtureResults.get(leg2FixId);
       if (l1) { homeLeg1 = l1.homeScore; awayLeg1 = l1.awayScore; }
       if (l2) { homeLeg2 = l2.awayScore; awayLeg2 = l2.homeScore; } // Swapped in leg2
     } else {
-      // Single-leg
-      const fId = `playoff-${tie.tieId}`;
-      const r = fixtureResults.get(fId);
+      // Single-leg: try tieId+single index first (TC), fall back to playoff-tieId pattern (TVT)
+      const singFixId = fixtureByTieLeg.get(`${tie.tieId}-single`) ?? `playoff-${tie.tieId}`;
+      const r = fixtureResults.get(singFixId);
       if (r) { homeLeg1 = r.homeScore; awayLeg1 = r.awayScore; }
     }
 

@@ -347,23 +347,22 @@ export default function LeagueFixturesPage() {
         setAvailableGWs(gws);
 
         if (gws.length > 0) {
-          let currentGW = gws[0];
+          // Default to latest fully-concluded GW; if mid-flight (partial), use that; if none done, use first GW
+          let best = gws[0];
           for (const gw of gws) {
             const gwFixtures = fixturesData[gw] || [];
-            const hasResults = gwFixtures.some((f: Fixture) => f.result);
-            const allProcessed = gwFixtures.every((f: Fixture) => f.result);
-
-            if (hasResults && !allProcessed) {
-              currentGW = gw;
-              break;
-            } else if (!hasResults) {
-              currentGW = gw;
+            const allDone = gwFixtures.length > 0 && gwFixtures.every((f: Fixture) => f.result);
+            const anyDone = gwFixtures.some((f: Fixture) => f.result);
+            if (allDone) {
+              best = gw; // fully concluded — keep advancing
+            } else if (anyDone) {
+              best = gw; // partially in-flight — this is "current"
               break;
             } else {
-              currentGW = gw;
+              break; // no results yet — stop
             }
           }
-          setSelectedGW(currentGW);
+          setSelectedGW(best);
         }
       } catch (err) {
         console.error("Error fetching fixtures:", err);
@@ -403,9 +402,9 @@ export default function LeagueFixturesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+    <div className={`min-h-screen bg-gradient-to-b ${isTripleCrown ? "from-[#37003c] via-[#1a0021] to-[#0d001a]" : "from-slate-900 via-purple-900 to-slate-900"}`}>
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
+      <nav className={`sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 backdrop-blur ${isTripleCrown ? "bg-[#37003c]/80" : "bg-slate-900/80"}`}>
         <Link href="/" className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             JPL
@@ -495,7 +494,7 @@ export default function LeagueFixturesPage() {
               <select
                 value={selectedGW || ""}
                 onChange={(e) => setSelectedGW(Number(e.target.value))}
-                className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white font-semibold min-w-[180px] text-center appearance-none cursor-pointer hover:bg-white/20 transition"
+                className={`border rounded-lg px-4 py-2 font-semibold min-w-[180px] text-center appearance-none cursor-pointer transition ${isTripleCrown ? "bg-[#00ff85]/10 border-[#00ff85]/30 text-[#00ff85] hover:bg-[#00ff85]/20" : "bg-white/10 border-white/20 text-white hover:bg-white/20"}`}
               >
                 {availableGWs.map((gw) => (
                   <option key={gw} value={gw} className="bg-slate-800 text-white">

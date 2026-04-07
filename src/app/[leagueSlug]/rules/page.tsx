@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface LeagueConfig {
@@ -568,6 +568,7 @@ function TiebreakerSection() {
 
 export default function LeagueRulesPage() {
   const params = useParams();
+  const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
 
   const [config, setConfig] = useState<LeagueConfig | null>(null);
@@ -582,15 +583,19 @@ export default function LeagueRulesPage() {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
+        if (!res.ok || !data.authenticated) {
+          router.push("/signin");
+          return;
+        }
+        setIsLoggedIn(true);
         if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
         else if (data.type === "superadmin") setDashboardHref("/admin");
       } catch {
-        setIsLoggedIn(false);
+        router.push("/signin");
       }
     };
     checkAuth();
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!leagueSlug) return;

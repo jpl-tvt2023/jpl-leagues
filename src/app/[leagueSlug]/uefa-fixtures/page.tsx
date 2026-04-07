@@ -149,7 +149,24 @@ export default function UEFAFixturesPage() {
         const available = cupGWs.filter((gw) => cupFixtures[gw]?.length > 0);
         setFixtures(cupFixtures);
         setAvailableGWs(available);
-        if (available.length > 0) setSelectedGW(available[0]);
+        if (available.length > 0) {
+          // Default to latest fully-concluded GW; if mid-flight, use that; else use first GW
+          let best = available[0];
+          for (const gw of available) {
+            const gwFixtures = cupFixtures[gw] || [];
+            const allDone = gwFixtures.length > 0 && gwFixtures.every((f: Fixture) => f.result);
+            const anyDone = gwFixtures.some((f: Fixture) => f.result);
+            if (allDone) {
+              best = gw;
+            } else if (anyDone) {
+              best = gw;
+              break;
+            } else {
+              break;
+            }
+          }
+          setSelectedGW(best);
+        }
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));

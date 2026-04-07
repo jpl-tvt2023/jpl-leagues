@@ -63,9 +63,12 @@ export default function UEFAStandingsPage() {
         if (league) {
           setLeagueName(league.name);
           setLeagueId(league.id);
+        } else {
+          // League not found — stop loading so page renders (shows unseeded banner)
+          setIsLoading(false);
         }
       })
-      .catch(() => {});
+      .catch(() => setIsLoading(false));
   }, [leagueSlug]);
 
   // Fetch cup standings once leagueId is known

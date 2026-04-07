@@ -248,6 +248,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewedGw, setViewedGw] = useState<number | null>(null);
   const [leagueSlug, setLeagueSlug] = useState<string>("");
+  const [leagueFormat, setLeagueFormat] = useState<string>("tvt");
   
   // Submission states
   const [selectedCaptain, setSelectedCaptain] = useState<string>("");
@@ -287,6 +288,7 @@ export default function DashboardPage() {
         const dashboardData = await response.json();
         setData(dashboardData);
         if (dashboardData.leagueSlug) setLeagueSlug(dashboardData.leagueSlug);
+        if (dashboardData.leagueFormat) setLeagueFormat(dashboardData.leagueFormat);
         if (dashboardData.lastGwResult) setViewedGw(dashboardData.lastGwResult.gameweek);
       }
     } catch (err) {
@@ -537,26 +539,32 @@ export default function DashboardPage() {
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <Link href="/dashboard" className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            TVT
+            JPL
           </div>
-          <span className="text-xl font-bold text-white hidden sm:inline">Fantasy Super League</span>
+          <span className="text-xl font-bold text-white hidden sm:inline">{data?.team?.name || "Dashboard"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           <Link href="/dashboard" className="text-yellow-400 font-semibold transition">
             Dashboard
           </Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
-            Standings
-          </Link>
-          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            Fixtures
-          </Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
-            Playoffs
-          </Link>
-          <Link href="/rules" className="text-gray-300 hover:text-white transition">
-            Rules
-          </Link>
+          {leagueFormat === "triple-crown" ? (
+            <>
+              <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">PL Standings</Link>
+              <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">PL Fixtures</Link>
+              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+            </>
+          ) : (
+            <>
+              <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
+              <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+            </>
+          )}
+          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
+          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
+          <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
           <button
             onClick={handleSignOut}
             className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition"
@@ -737,8 +745,8 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* TVT Chips Submission */}
-                <div className="p-4 rounded-xl bg-white/5">
+                {/* TVT Chips Submission — hidden for Triple Crown */}
+                {leagueFormat !== "triple-crown" && <div className="p-4 rounded-xl bg-white/5">
                   <h3 className="font-semibold text-white mb-3">
                     TVT Chips (Set {data.chipStatus.currentSet === "playoffs" ? "Playoffs" : data.chipStatus.currentSet})
                   </h3>
@@ -816,7 +824,7 @@ export default function DashboardPage() {
                     <ChipBadge used={currentChipSet.challengeChip.used} name="CC" />
                     <ChipBadge used={currentChipSet.winWin.used} name="WW" />
                   </div>
-                </div>
+                </div>}
               </div>
               </>
               )}
