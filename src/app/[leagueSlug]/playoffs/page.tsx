@@ -730,6 +730,7 @@ export default function LeaguePlayoffsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("tvt");
   const [tcTab, setTcTab] = useState<"ucl" | "uel">("ucl");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
   const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<number | null>(null);
@@ -776,7 +777,11 @@ export default function LeaguePlayoffsPage() {
       try {
         const res = await fetch("/api/auth/me");
         const me = await res.json();
-        if (res.ok && me.authenticated && (me.type === "team" || me.type === "admin" || me.type === "superadmin")) setIsLoggedIn(true);
+        if (res.ok && me.authenticated && (me.type === "team" || me.type === "admin" || me.type === "superadmin")) {
+          setIsLoggedIn(true);
+          if (me.type === "admin" && me.adminLeagueId) setDashboardHref(`/admin/${me.adminLeagueId}`);
+          else if (me.type === "superadmin") setDashboardHref("/admin");
+        }
       } catch {}
     };
 
@@ -843,7 +848,7 @@ export default function LeaguePlayoffsPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
             {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>

@@ -38,13 +38,18 @@ export default function UEFAStandingsPage() {
   const [leagueId, setLeagueId] = useState<string | null>(null);
   const [cupStandings, setCupStandings] = useState<CupStandingsData>({});
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [isStandingsSeeded, setIsStandingsSeeded] = useState(false);
 
   // Auth check
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((d) => setIsLoggedIn(d.authenticated && (d.type === "team" || d.type === "admin" || d.type === "superadmin")))
+      .then((d) => {
+        setIsLoggedIn(d.authenticated && (d.type === "team" || d.type === "admin" || d.type === "superadmin"));
+        if (d.type === "admin" && d.adminLeagueId) setDashboardHref(`/admin/${d.adminLeagueId}`);
+        else if (d.type === "superadmin") setDashboardHref("/admin");
+      })
       .catch(() => setIsLoggedIn(false));
   }, []);
 
@@ -101,7 +106,7 @@ export default function UEFAStandingsPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">
             {isLoggedIn ? "Dashboard" : "All Leagues"}
           </Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">

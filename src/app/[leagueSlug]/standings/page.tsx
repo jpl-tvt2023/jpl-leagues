@@ -20,6 +20,7 @@ export default function LeagueStandingsPage() {
   const [teamSize, setTeamSize] = useState<number>(32);
   const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
   const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
 
@@ -29,6 +30,8 @@ export default function LeagueStandingsPage() {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
         setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
+        if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
+        else if (data.type === "superadmin") setDashboardHref("/admin");
       } catch {
         setIsLoggedIn(false);
       }
@@ -99,7 +102,7 @@ export default function LeagueStandingsPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-yellow-400 font-semibold transition">
             {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>

@@ -69,6 +69,7 @@ export default function LeagueHelpPage() {
   const [leagueName, setLeagueName] = useState<string>("");
   const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [activeTab, setActiveTab] = useState<ActiveTab>("faqs");
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -80,6 +81,8 @@ export default function LeagueHelpPage() {
         if (d.authenticated && (d.type === "admin" || d.type === "superadmin")) {
           setUserRole("admin");
           setIsLoggedIn(true);
+          if (d.type === "admin" && d.adminLeagueId) setDashboardHref(`/admin/${d.adminLeagueId}`);
+          else if (d.type === "superadmin") setDashboardHref("/admin");
         } else if (d.authenticated && d.type === "team") {
           setUserRole("team");
           setIsLoggedIn(true);
@@ -668,7 +671,7 @@ export default function LeagueHelpPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
             {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>

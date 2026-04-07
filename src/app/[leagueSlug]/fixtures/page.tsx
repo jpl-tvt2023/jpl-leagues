@@ -246,6 +246,7 @@ export default function LeagueFixturesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
   const [availableGWs, setAvailableGWs] = useState<number[]>([]);
@@ -305,6 +306,8 @@ export default function LeagueFixturesPage() {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
         setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
+        if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
+        else if (data.type === "superadmin") setDashboardHref("/admin");
       } catch {
         setIsLoggedIn(false);
       }
@@ -410,7 +413,7 @@ export default function LeagueFixturesPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href={isLoggedIn ? "/dashboard" : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
             {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>
