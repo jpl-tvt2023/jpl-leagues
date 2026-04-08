@@ -46,6 +46,7 @@ const PUBLIC_ROUTES = [
   "/api/playoffs/bracket",
   "/api/playoffs/winners",
   "/api/leagues",
+  "/api/triple-crown/cup-standings",
 ];
 
 function isPublicRoute(pathname: string, method: string): boolean {
