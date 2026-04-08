@@ -2735,6 +2735,7 @@ export default function AdminDashboard() {
                     </button>
                   </div>
 
+                  {leagueConfig.format !== "triple-crown" && (
                   <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">
                     <div>
                       <div className="font-semibold text-white">Chip Announcements</div>
@@ -2751,6 +2752,7 @@ export default function AdminDashboard() {
                       }`} />
                     </button>
                   </div>
+                  )}
 
                   {leagueConfig.groupCount >= 2 && (
                     <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">

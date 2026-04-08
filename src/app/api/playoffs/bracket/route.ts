@@ -131,7 +131,9 @@ export async function GET(request: NextRequest) {
 
     if (isLive) {
       const bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
-      const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, playoffStartGw);
+      // TC (teamSize=20) knockouts start at GW27, not the standard playoffStartGw
+      const liveScoresStartGw = teamSize === 20 ? 27 : playoffStartGw;
+      const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, liveScoresStartGw);
       // Fire-and-forget cache write (liveScores excluded; page polls those separately)
       if (leagueId) {
         setCachedPlayoffBracket(leagueId, bracket).catch(() => {});
