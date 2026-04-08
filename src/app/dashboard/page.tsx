@@ -108,6 +108,34 @@ interface DashboardData {
     captaincyChipsUsed: number;
   }[];
   leagueGroupCount?: number;
+  plPosition?: {
+    rank: number;
+    totalTeams: number;
+  };
+  cupProgress?: {
+    groupName: string | null;
+    rank: number;
+    totalTeams: number;
+    cupZone: "ucl" | "uel";
+    miniTable: { rank: number; name: string; cupGroupPoints: number; isCurrentTeam: boolean }[];
+    lastCupResult: {
+      gameweek: number;
+      competitionType: string;
+      competitionLabel: string;
+      opponent: string | undefined;
+      isHome: boolean;
+      myScore: number;
+      oppScore: number;
+      result: "W" | "L";
+    } | null;
+    upcomingCupFixture: {
+      gameweek: number;
+      competitionType: string;
+      competitionLabel: string;
+      opponent: string | undefined;
+      isHome: boolean;
+    } | null;
+  };
 }
 
 // Countdown Timer Component
@@ -240,6 +268,8 @@ function ChipBadge({ used, name }: { used: boolean; name: string }) {
     </div>
   );
 }
+
+const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -580,11 +610,27 @@ export default function DashboardPage() {
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
             <h1 className="text-2xl sm:text-4xl font-bold text-white">{data.team.name}</h1>
             <span className="text-sm sm:text-lg text-gray-400">({data.team.abbreviation})</span>
-            <ZoneBadge zone={data.leaguePosition.zone} />
+            {leagueFormat === "triple-crown" ? (
+              <>
+                {data.plPosition && (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300">
+                    PL: #{data.plPosition.rank} of {data.plPosition.totalTeams}
+                  </span>
+                )}
+                {data.cupProgress && (
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${data.cupProgress.cupZone === "ucl" ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400"}`}>
+                    UEFA {data.cupProgress.groupName} #{data.cupProgress.rank} → {data.cupProgress.cupZone === "ucl" ? "UCL" : "Europa"}
+                  </span>
+                )}
+              </>
+            ) : (
+              <ZoneBadge zone={data.leaguePosition.zone} />
+            )}
           </div>
           <p className="text-sm sm:text-base text-gray-400">
-            {data.leagueGroupCount && data.leagueGroupCount > 1 && `Group ${data.team.group} • `}
-            Rank #{data.leaguePosition.groupRank} &bull; {data.team.leaguePoints} Points
+            {leagueFormat === "triple-crown"
+              ? `${data.team.leaguePoints} PL Points`
+              : `${data.leagueGroupCount && data.leagueGroupCount > 1 ? `Group ${data.team.group} • ` : ""}Rank #${data.leaguePosition.groupRank} • ${data.team.leaguePoints} Points`}
           </p>
         </div>
 
@@ -593,6 +639,15 @@ export default function DashboardPage() {
           {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
             {/* Deadline + Upcoming Fixture (side by side) */}
+            {leagueFormat === "triple-crown" && DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture && (
+              <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 flex items-center gap-3">
+                <span className="text-yellow-400 text-lg font-bold">⚡</span>
+                <div>
+                  <span className="text-yellow-300 font-bold text-sm">Double Header Week — GW{data.deadline.gameweek}</span>
+                  <span className="text-yellow-500/80 text-xs ml-2">PL + {data.cupProgress.upcomingCupFixture.competitionLabel} this gameweek</span>
+                </div>
+              </div>
+            )}
             <div className="grid md:grid-cols-2 gap-6">
               {/* Deadline Timer */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
@@ -605,7 +660,7 @@ export default function DashboardPage() {
               {/* Upcoming Fixture */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                  <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} Fixture
+                  <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} PL Fixture
                 </h2>
                 {data.upcomingFixture ? (
                   <div>
@@ -664,6 +719,26 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
+
+            {/* TC Cup Upcoming Fixture */}
+            {leagueFormat === "triple-crown" && data.cupProgress?.upcomingCupFixture && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                  <span className="text-blue-400">🏆</span> GW{data.cupProgress.upcomingCupFixture.gameweek} {data.cupProgress.upcomingCupFixture.competitionLabel}
+                </h2>
+                <div className="flex items-center justify-center gap-4">
+                  <div className="text-center">
+                    <div className="text-xs text-gray-400 mb-1">{data.cupProgress.upcomingCupFixture.isHome ? "HOME" : "AWAY"}</div>
+                    <div className="text-lg font-bold text-white">{data.team.abbreviation}</div>
+                  </div>
+                  <span className="text-gray-500 font-medium">VS</span>
+                  <div className="text-center">
+                    <div className="text-xs text-gray-400 mb-1">{data.cupProgress.upcomingCupFixture.isHome ? "AWAY" : "HOME"}</div>
+                    <div className="text-lg font-bold text-white">{data.cupProgress.upcomingCupFixture.opponent ?? "TBD"}</div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Captain & Chip Submission */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
@@ -736,11 +811,11 @@ export default function DashboardPage() {
                   <div className="mt-3 text-sm text-gray-400">
                     <div className="flex justify-between">
                       <span>{data.captaincyStatus.player1.name}</span>
-                      <span>{data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining}/15 chips left`}</span>
+                      <span>{data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining}/${leagueFormat === "triple-crown" ? 19 : 15} chips left`}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>{data.captaincyStatus.player2.name}</span>
-                      <span>{data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining}/15 chips left`}</span>
+                      <span>{data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining}/${leagueFormat === "triple-crown" ? 19 : 15} chips left`}</span>
                     </div>
                   </div>
                 </div>
@@ -1004,6 +1079,34 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* TC Cup Last Result */}
+            {leagueFormat === "triple-crown" && data.cupProgress?.lastCupResult && (
+              <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 backdrop-blur">
+                <h2 className="text-base font-bold text-blue-300 mb-4 flex items-center gap-2">
+                  <span>🏆</span>
+                  {data.cupProgress.lastCupResult.competitionLabel} — GW{data.cupProgress.lastCupResult.gameweek}
+                </h2>
+                <div className="flex items-center justify-between">
+                  <div className="text-center flex-1">
+                    <div className="text-xs text-gray-400 mb-1">{data.cupProgress.lastCupResult.isHome ? "HOME" : "AWAY"}</div>
+                    <div className="text-lg font-bold text-white">{data.team.abbreviation}</div>
+                  </div>
+                  <div className="px-6 text-center">
+                    <div className={`text-3xl font-bold ${data.cupProgress.lastCupResult.result === "W" ? "text-green-400" : "text-red-400"}`}>
+                      {data.cupProgress.lastCupResult.myScore} - {data.cupProgress.lastCupResult.oppScore}
+                    </div>
+                    <span className={`mt-2 inline-block px-2 py-0.5 rounded text-xs font-semibold ${data.cupProgress.lastCupResult.result === "W" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+                      {data.cupProgress.lastCupResult.result === "W" ? "WIN" : "LOSS"}
+                    </span>
+                  </div>
+                  <div className="text-center flex-1">
+                    <div className="text-xs text-gray-400 mb-1">{data.cupProgress.lastCupResult.isHome ? "AWAY" : "HOME"}</div>
+                    <div className="text-lg font-bold text-white">{data.cupProgress.lastCupResult.opponent ?? "TBD"}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Recent Form & Stats */}
             <div className="grid md:grid-cols-2 gap-6">
               {/* Recent Form */}
@@ -1102,7 +1205,85 @@ export default function DashboardPage() {
 
           {/* Right Column */}
           <div className="space-y-6">
-            {/* Mini Table */}
+            {/* Mini Table(s) */}
+            {leagueFormat === "triple-crown" ? (
+              <>
+                {/* PL Mini Table */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h2 className="text-lg font-bold text-white mb-4">PL Table</h2>
+                  <div className="space-y-2">
+                    {data.leaguePosition.miniTable.map((t) => (
+                      <div
+                        key={t.rank}
+                        className={`flex items-center justify-between p-3 rounded-lg ${
+                          t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${
+                            t.rank <= 4 ? "bg-green-500/20 text-green-400" :
+                            t.rank <= 8 ? "bg-blue-500/20 text-blue-400" :
+                            t.rank <= 14 ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
+                          }`}>
+                            {t.rank}
+                          </span>
+                          <span className={t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}>
+                            {t.name}
+                          </span>
+                        </div>
+                        <span className="text-white font-bold">{t.points}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Link
+                    href={`/${leagueSlug}/standings`}
+                    className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
+                  >
+                    View Full PL Table →
+                  </Link>
+                </div>
+
+                {/* Cup Group Mini Table */}
+                {data.cupProgress && (
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 backdrop-blur">
+                    <h2 className="text-lg font-bold text-white mb-1">
+                      Cup Group {data.cupProgress.groupName}
+                    </h2>
+                    <p className="text-xs text-gray-400 mb-4">
+                      Top 2 → UCL · Bottom 2 → Europa
+                    </p>
+                    <div className="space-y-2">
+                      {data.cupProgress.miniTable.map((t) => (
+                        <div
+                          key={t.rank}
+                          className={`flex items-center justify-between p-3 rounded-lg ${
+                            t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${
+                              t.rank <= 2 ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400"
+                            }`}>
+                              {t.rank}
+                            </span>
+                            <span className={t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}>
+                              {t.name}
+                            </span>
+                          </div>
+                          <span className="text-white font-bold">{t.cupGroupPoints} pts</span>
+                        </div>
+                      ))}
+                    </div>
+                    <Link
+                      href={`/${leagueSlug}/uefa-standings`}
+                      className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
+                    >
+                      View Full UEFA Standings →
+                    </Link>
+                  </div>
+                )}
+              </>
+            ) : (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4">Group {data.team.group} Table</h2>
               <div className="space-y-2">
@@ -1135,6 +1316,7 @@ export default function DashboardPage() {
                 View Full Table →
               </Link>
             </div>
+            )}
 
             {/* Next 5 Fixtures */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">

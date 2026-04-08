@@ -57,19 +57,13 @@ export default function SignInPage() {
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <Link href="/" className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            TVT
+            JPL
           </div>
-          <span className="text-xl font-bold text-white hidden sm:inline">Fantasy Super League</span>
+          <span className="text-xl font-bold text-white hidden sm:inline">JPL Sports</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/standings" className="text-gray-300 hover:text-white transition">
-            Standings
-          </Link>
-          <Link href="/fixtures" className="text-gray-300 hover:text-white transition">
-            Fixtures
-          </Link>
-          <Link href="/playoffs" className="text-gray-300 hover:text-white transition">
-            Playoffs
+          <Link href="/" className="text-gray-300 hover:text-white transition">
+            All Leagues
           </Link>
         </div>
       </nav>

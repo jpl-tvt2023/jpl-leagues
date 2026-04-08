@@ -4,6 +4,9 @@ import { eq, and, gt, asc, desc, or } from "drizzle-orm";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
+import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
+
+const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
 // ⚠️ TEST OVERRIDE: set to null to use live GW detection
 const TEST_GW_OVERRIDE: number | null = null;
@@ -107,9 +110,21 @@ export async function GET(request: NextRequest) {
 
     // Combine all fixtures for this team
     const allTeamFixtures = [...team.homeFixtures, ...team.awayFixtures];
-    
-    // Find the latest GW that has a result (current/completed GW)
-    const completedGWs = allTeamFixtures
+
+    // For TC: separate PL vs cup fixtures. For TVT: all fixtures are PL.
+    const plTeamFixtures = leagueFormat === "triple-crown"
+      ? allTeamFixtures.filter(f => (f as any).competitionType === "pl" || !(f as any).competitionType)
+      : allTeamFixtures;
+    const cupTeamFixtures = leagueFormat === "triple-crown"
+      ? allTeamFixtures.filter(f =>
+          (f as any).competitionType === "cup-group" ||
+          (f as any).competitionType === "ucl-knockout" ||
+          (f as any).competitionType === "uel-knockout"
+        )
+      : [];
+
+    // Find the latest GW that has a result (current/completed GW) — PL fixtures only for TC
+    const completedGWs = plTeamFixtures
       .filter(f => f.result)
       .map(f => f.gameweek.number);
     const latestCompletedGW = TEST_GW_OVERRIDE !== null
@@ -164,14 +179,14 @@ export async function GET(request: NextRequest) {
     }
 
     // ============================================
-    // RECENT FORM (Last 5 results)
+    // RECENT FORM (Last 5 PL results)
     // ============================================
-    const allFixtures = [...team.homeFixtures, ...team.awayFixtures]
+    const allFixtures = plTeamFixtures
       .filter(f => f.result)
       .sort((a, b) => b.gameweek.number - a.gameweek.number);
-    
+
     // ============================================
-    // LAST GW RESULT (most recent completed fixture, or requested GW)
+    // LAST GW RESULT (most recent completed PL fixture, or requested GW)
     // ============================================
     let lastGwResult = null;
     let lastF: any = null;
@@ -425,28 +440,30 @@ export async function GET(request: NextRequest) {
       orderBy: [desc(gameweekCaptains.createdAt)],
     });
     
-    // Count actual captain announcements per player (only in league stage GW1-30)
+    // Count actual captain announcements per player (within the league stage GW range)
+    const captainCheckLimit = leagueFormat === "triple-crown" ? 38 : 30;
     const player1CaptainCount = captainHistory.filter(
-      c => c.playerId === team.players[0]?.id && c.gameweek.number <= 30
+      c => c.playerId === team.players[0]?.id && c.gameweek.number <= captainCheckLimit
     ).length;
     const player2CaptainCount = captainHistory.filter(
-      c => c.playerId === team.players[1]?.id && c.gameweek.number <= 30
+      c => c.playerId === team.players[1]?.id && c.gameweek.number <= captainCheckLimit
     ).length;
 
-    const isPlayoffPhase = (nextGameweek?.number || 0) > 30;
+    const CAPTAIN_CAP = leagueFormat === "triple-crown" ? 19 : 15;
+    const isPlayoffPhase = leagueFormat === "triple-crown" ? false : (nextGameweek?.number || 0) > 30;
 
     const captaincyStatus = {
       player1: {
         id: team.players[0]?.id || "",
         name: team.players[0]?.name || "",
         chipsUsed: player1CaptainCount,
-        chipsRemaining: isPlayoffPhase ? 999 : 15 - player1CaptainCount,
+        chipsRemaining: isPlayoffPhase ? 999 : CAPTAIN_CAP - player1CaptainCount,
       },
       player2: {
         id: team.players[1]?.id || "",
         name: team.players[1]?.name || "",
         chipsUsed: player2CaptainCount,
-        chipsRemaining: isPlayoffPhase ? 999 : 15 - player2CaptainCount,
+        chipsRemaining: isPlayoffPhase ? 999 : CAPTAIN_CAP - player2CaptainCount,
       },
       recentCaptains: [...captainHistory]
         .sort((a, b) => b.gameweek.number - a.gameweek.number)
@@ -547,16 +564,23 @@ export async function GET(request: NextRequest) {
     }
 
     // ============================================
-    // NEXT 5 FIXTURES
+    // NEXT 5 PL FIXTURES
     // ============================================
-    const upcomingHomeFixtures = team.homeFixtures
+    const plHomeFixtures = leagueFormat === "triple-crown"
+      ? team.homeFixtures.filter(f => !(f as any).competitionType || (f as any).competitionType === "pl")
+      : team.homeFixtures;
+    const plAwayFixtures = leagueFormat === "triple-crown"
+      ? team.awayFixtures.filter(f => !(f as any).competitionType || (f as any).competitionType === "pl")
+      : team.awayFixtures;
+
+    const upcomingHomeFixtures = plHomeFixtures
       .filter(f => !f.result)
       .map(f => ({
         gameweek: f.gameweek.number,
         opponent: f.awayTeam.name,
         isHome: true,
       }));
-    const upcomingAwayFixtures = team.awayFixtures
+    const upcomingAwayFixtures = plAwayFixtures
       .filter(f => !f.result)
       .map(f => ({
         gameweek: f.gameweek.number,
@@ -639,6 +663,135 @@ export async function GET(request: NextRequest) {
       // Non-critical — leave empty if standings not yet available
     }
 
+    // ============================================
+    // TC: PL RANK (all 20 non-ghost teams)
+    // ============================================
+    let plPosition: { rank: number; totalTeams: number } | null = null;
+    if (leagueFormat === "triple-crown" && teamLeagueId) {
+      try {
+        const allNonGhost = await db.select({ id: teams.id, leaguePoints: teams.leaguePoints })
+          .from(teams)
+          .where(and(eq(teams.leagueId, teamLeagueId), eq(teams.isGhost, false)));
+        allNonGhost.sort((a, b) => b.leaguePoints - a.leaguePoints);
+        const plRank = allNonGhost.findIndex(t => t.id === teamId) + 1;
+        plPosition = { rank: plRank, totalTeams: allNonGhost.length };
+      } catch {
+        // non-critical
+      }
+    }
+
+    // ============================================
+    // TC: CUP GROUP PROGRESS
+    // ============================================
+    let cupProgress: {
+      groupName: string;
+      rank: number;
+      totalTeams: number;
+      cupZone: "ucl" | "uel";
+      miniTable: { rank: number; name: string; cupGroupPoints: number; isCurrentTeam: boolean }[];
+      lastCupResult: {
+        gameweek: number;
+        competitionType: string;
+        competitionLabel: string;
+        opponent: string;
+        isHome: boolean;
+        myScore: number;
+        oppScore: number;
+        result: "W" | "L";
+      } | null;
+      upcomingCupFixture: {
+        gameweek: number;
+        competitionType: string;
+        competitionLabel: string;
+        opponent: string;
+        isHome: boolean;
+        isDoubleHeader: boolean;
+      } | null;
+    } | null = null;
+
+    if (leagueFormat === "triple-crown" && team.groupId) {
+      try {
+        const cupGroupTeams = await db.select().from(teams).where(eq(teams.groupId, team.groupId));
+        const cupGroupFixtures = await db.query.fixtures.findMany({
+          where: and(eq(fixtures.groupId, team.groupId), eq(fixtures.competitionType, "cup-group")),
+          with: {
+            result: true,
+            homeTeam: true,
+            awayTeam: true,
+          },
+        });
+        const fixtureResults = cupGroupFixtures.filter(f => f.result).map(f => ({
+          fixtureId: f.id,
+          homeTeamId: f.homeTeamId,
+          awayTeamId: f.awayTeamId,
+          homeScore: f.result!.homeScore,
+          awayScore: f.result!.awayScore,
+          homeMatchPoints: f.result!.homeMatchPoints,
+          awayMatchPoints: f.result!.awayMatchPoints,
+        }));
+        const standings = computeCupGroupStandings(
+          cupGroupTeams.map(t => ({ id: t.id, name: t.name, abbreviation: t.abbreviation, isGhost: t.isGhost ?? false })),
+          fixtureResults
+        );
+        const humanStandings = standings.filter(s => !s.isGhost);
+        const myStandingIdx = humanStandings.findIndex(s => s.teamId === teamId);
+        const cupGroupRank = myStandingIdx >= 0 ? myStandingIdx + 1 : humanStandings.length;
+
+        // Last cup result (cup-group only — knockouts tracked separately)
+        const lastCupF = cupTeamFixtures
+          .filter(f => f.result)
+          .sort((a, b) => b.gameweek.number - a.gameweek.number)[0] as any | undefined;
+
+        // Next cup fixture
+        const nextCupF = cupTeamFixtures
+          .filter(f => !f.result)
+          .sort((a, b) => a.gameweek.number - b.gameweek.number)[0] as any | undefined;
+
+        const compLabel = (type: string) =>
+          type === "cup-group" ? "Cup Group" : type === "ucl-knockout" ? "UCL" : "Europa";
+
+        cupProgress = {
+          groupName: team.group?.name || "Cup Group",
+          rank: cupGroupRank,
+          totalTeams: humanStandings.length,
+          cupZone: cupGroupRank <= 2 ? "ucl" : "uel",
+          miniTable: humanStandings.map((s, i) => ({
+            rank: i + 1,
+            name: s.name,
+            cupGroupPoints: s.cupGroupPoints,
+            isCurrentTeam: s.teamId === teamId,
+          })),
+          lastCupResult: lastCupF && lastCupF.result ? {
+            gameweek: lastCupF.gameweek.number,
+            competitionType: lastCupF.competitionType || "cup-group",
+            competitionLabel: compLabel(lastCupF.competitionType || "cup-group"),
+            opponent: lastCupF.homeTeamId === teamId
+              ? (lastCupF.awayTeam?.name || "Unknown")
+              : (lastCupF.homeTeam?.name || "Unknown"),
+            isHome: lastCupF.homeTeamId === teamId,
+            myScore: lastCupF.homeTeamId === teamId ? lastCupF.result.homeScore : lastCupF.result.awayScore,
+            oppScore: lastCupF.homeTeamId === teamId ? lastCupF.result.awayScore : lastCupF.result.homeScore,
+            result: (lastCupF.homeTeamId === teamId
+              ? lastCupF.result.homeMatchPoints
+              : lastCupF.result.awayMatchPoints) === 2 ? "W" : "L",
+          } : null,
+          upcomingCupFixture: nextCupF ? {
+            gameweek: nextCupF.gameweek.number,
+            competitionType: nextCupF.competitionType || "cup-group",
+            competitionLabel: compLabel(nextCupF.competitionType || "cup-group"),
+            opponent: nextCupF.homeTeamId === teamId
+              ? (nextCupF.awayTeam?.name || "Unknown")
+              : (nextCupF.homeTeam?.name || "Unknown"),
+            isHome: nextCupF.homeTeamId === teamId,
+            isDoubleHeader: DOUBLE_HEADER_GWS.includes(nextCupF.gameweek.number),
+          } : null,
+        };
+      } catch (err) {
+        console.error("Cup progress error:", err);
+        // non-critical — leave null
+      }
+    }
+
     return NextResponse.json({
       team: {
         id: team.id,
@@ -689,6 +842,8 @@ export async function GET(request: NextRequest) {
       leagueSlug,
       leagueGroupCount,
       leagueFormat,
+      plPosition,
+      cupProgress,
     });
   } catch (error) {
     console.error("Dashboard error:", error);
