@@ -601,13 +601,20 @@ export async function GET(request: NextRequest) {
       const upcomingCupRows = cupTeamFixtures
         .filter(f => !f.result)
         .sort((a, b) => a.gameweek.number - b.gameweek.number)
-        .map(f => ({
-          gameweek: f.gameweek.number,
-          opponent: f.homeTeamId === teamId ? f.awayTeam?.name ?? "TBD" : f.homeTeam?.name ?? "TBD",
-          isHome: f.homeTeamId === teamId,
-          competitionType: f.competitionType ?? "cup-group",
-          competitionLabel: f.competitionType === "ucl-knockout" ? "UCL" : f.competitionType === "uel-knockout" ? "Europa" : "Cup",
-        }));
+        .map(f => {
+          const isHome = f.homeTeamId === teamId;
+          // homeFixtures have awayTeam; awayFixtures have homeTeam
+          const opponent = isHome
+            ? ((f as any).awayTeam?.name ?? "TBD")
+            : ((f as any).homeTeam?.name ?? "TBD");
+          return {
+            gameweek: f.gameweek.number,
+            opponent,
+            isHome,
+            competitionType: f.competitionType ?? "cup-group",
+            competitionLabel: f.competitionType === "ucl-knockout" ? "UCL" : f.competitionType === "uel-knockout" ? "Europa" : "Cup",
+          };
+        });
 
       // Build merged list: for each PL fixture, append cup fixture for same GW if exists
       const merged: typeof upcomingPlFixtures = [];
