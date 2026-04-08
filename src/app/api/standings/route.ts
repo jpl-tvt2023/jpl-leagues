@@ -139,42 +139,47 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine which league-stage GWs have been processed (have at least one result)
+    // For Triple Crown: skip FPL hit-penalty computation — leaguePoints is stored directly
+    // by processTripleCrownGameweek and is authoritative. Computing it here via FPL API
+    // calls would be extremely slow (38 GWs × 40 players = 1500+ sequential requests).
     const processedGws = new Set<number>();
-    for (const t of allTeamsUnfiltered) {
-      for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-        if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
-          processedGws.add(f.gameweek.number);
-        }
-      }
-    }
-
-    for (const gw of processedGws) {
-      // Try cache first
-      const gwCache = await getAllCachedScores(gw, leagueId);
-      const suffix = `_gw${gw}`;
-
-      if (Object.keys(gwCache).length > 0) {
-        // Cache has data — use it
-        for (const [key, data] of Object.entries(gwCache)) {
-          if (key.endsWith(suffix)) {
-            const fplId = key.slice(0, -suffix.length);
-            if (!playerGwHitsMap.has(fplId)) {
-              playerGwHitsMap.set(fplId, new Map());
-            }
-            playerGwHitsMap.get(fplId)!.set(gw, data.transferHits);
+    if (leagueFormat !== "triple-crown") {
+      for (const t of allTeamsUnfiltered) {
+        for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
+          if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
+            processedGws.add(f.gameweek.number);
           }
         }
-      } else {
-        // Cache empty — fetch from FPL API (also populates cache for next time)
-        for (const fplId of allFplIds) {
-          try {
-            const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
-            if (!playerGwHitsMap.has(fplId)) {
-              playerGwHitsMap.set(fplId, new Map());
+      }
+
+      for (const gw of processedGws) {
+        // Try cache first
+        const gwCache = await getAllCachedScores(gw, leagueId);
+        const suffix = `_gw${gw}`;
+
+        if (Object.keys(gwCache).length > 0) {
+          // Cache has data — use it
+          for (const [key, data] of Object.entries(gwCache)) {
+            if (key.endsWith(suffix)) {
+              const fplId = key.slice(0, -suffix.length);
+              if (!playerGwHitsMap.has(fplId)) {
+                playerGwHitsMap.set(fplId, new Map());
+              }
+              playerGwHitsMap.get(fplId)!.set(gw, data.transferHits);
             }
-            playerGwHitsMap.get(fplId)!.set(gw, score.transferHits);
-          } catch {
-            // FPL API may fail for some players/GWs — skip gracefully
+          }
+        } else {
+          // Cache empty — fetch from FPL API (also populates cache for next time)
+          for (const fplId of allFplIds) {
+            try {
+              const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
+              if (!playerGwHitsMap.has(fplId)) {
+                playerGwHitsMap.set(fplId, new Map());
+              }
+              playerGwHitsMap.get(fplId)!.set(gw, score.transferHits);
+            } catch {
+              // FPL API may fail for some players/GWs — skip gracefully
+            }
           }
         }
       }
@@ -294,7 +299,11 @@ export async function GET(request: NextRequest) {
       hitPenaltyGws.sort((a, b) => a.gameweek - b.gameweek);
       const hitPenaltyTotal = hitPenaltyGws.length;
 
-      const leaguePoints = (wins * 2) + (draws * 1) + cbpPts - hitPenaltyTotal;
+      // For Triple Crown: use the stored leaguePoints (computed by processTripleCrownGameweek)
+      // which already includes hit penalties baked in. For TVT: compute from W/D/L + chips - hits.
+      const leaguePoints = leagueFormat === "triple-crown"
+        ? team.leaguePoints
+        : (wins * 2) + (draws * 1) + cbpPts - hitPenaltyTotal;
       const teamRawChips = teamChipsRawMap.get(team.id) || [];
 
       // Build tooltip entries for only the 3 enabled chips (2 sets = 6 entries)
