@@ -94,7 +94,7 @@ interface DashboardData {
     player2: { id: string; name: string; chipsUsed: number; chipsRemaining: number };
     recentCaptains: { gameweek: number; playerName: string; score: number }[];
   };
-  upcomingFixtures: { gameweek: number; opponent: string; isHome: boolean }[];
+  upcomingFixtures: { gameweek: number; opponent: string; isHome: boolean; competitionType?: string; competitionLabel?: string }[];
   oppositeGroupTeams: { id: string; name: string; abbreviation: string }[];
   announcementSettings: {
     captainAnnouncementEnabled: boolean;
@@ -117,7 +117,7 @@ interface DashboardData {
     rank: number;
     totalTeams: number;
     cupZone: "ucl" | "uel";
-    miniTable: { rank: number; name: string; cupGroupPoints: number; isCurrentTeam: boolean }[];
+    miniTable: { rank: number; name: string; wins: number; losses: number; cupGroupPoints: number; isCurrentTeam: boolean }[];
     lastCupResult: {
       gameweek: number;
       competitionType: string;
@@ -1280,6 +1280,31 @@ export default function DashboardPage() {
                     >
                       View Full UEFA Standings →
                     </Link>
+
+                    {/* Cup Stats */}
+                    {(() => {
+                      const myStat = data.cupProgress!.miniTable.find(t => t.isCurrentTeam);
+                      if (!myStat) return null;
+                      return (
+                        <div className="mt-4 pt-4 border-t border-blue-500/20">
+                          <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">My Cup Stats</div>
+                          <div className="flex justify-around text-center">
+                            <div>
+                              <div className="text-xl font-bold text-green-400">{myStat.wins}</div>
+                              <div className="text-xs text-gray-500">W</div>
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold text-red-400">{myStat.losses}</div>
+                              <div className="text-xs text-gray-500">L</div>
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold text-white">{myStat.cupGroupPoints}</div>
+                              <div className="text-xs text-gray-500">Pts</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </>
@@ -1322,17 +1347,26 @@ export default function DashboardPage() {
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4">Upcoming Fixtures</h2>
               <div className="space-y-2">
-                {data.upcomingFixtures.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-8">GW{f.gameweek}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded ${f.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
-                        {f.isHome ? "H" : "A"}
-                      </span>
+                {data.upcomingFixtures.map((f, i) => {
+                  const isCup = f.competitionType && f.competitionType !== "pl";
+                  return (
+                    <div key={i} className={`flex items-center justify-between p-3 rounded-lg ${isCup ? "bg-blue-500/5 border border-blue-500/10" : "bg-white/5"}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 w-8">GW{f.gameweek}</span>
+                        {isCup ? (
+                          <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">
+                            {f.competitionLabel ?? "Cup"}
+                          </span>
+                        ) : (
+                          <span className={`text-xs px-2 py-0.5 rounded ${f.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
+                            {f.isHome ? "H" : "A"}
+                          </span>
+                        )}
+                      </div>
+                      <span className={isCup ? "text-blue-200" : "text-white"}>{f.opponent}</span>
                     </div>
-                    <span className="text-white">{f.opponent}</span>
-                  </div>
-                ))}
+                  );
+                })}
                 {data.upcomingFixtures.length === 0 && (
                   <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
                 )}

@@ -32,10 +32,12 @@ export async function GET(request: NextRequest) {
     ).orderBy(groups.name);
 
     if (cupGroups.length === 0) {
-      return NextResponse.json(
-        { error: "No cup groups found. Run 'Seed Cup Groups' first." },
-        { status: 404 }
-      );
+      return NextResponse.json({
+        success: true,
+        leagueId,
+        cupGroupStandings: {},
+        isSeeded: false,
+      });
     }
 
     // Compute standings for each cup group
@@ -108,6 +110,7 @@ export async function GET(request: NextRequest) {
       success: true,
       leagueId,
       cupGroupStandings: allStandings,
+      isSeeded: true,
     });
   } catch (error) {
     console.error("Error fetching cup standings:", error);

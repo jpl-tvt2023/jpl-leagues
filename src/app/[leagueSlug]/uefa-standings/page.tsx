@@ -80,10 +80,11 @@ export default function UEFAStandingsPage() {
         if (!r.ok) return {};
         return r.json();
       })
-      .then((cupData: { cupGroupStandings?: CupStandingsData }) => {
+      .then((cupData: { cupGroupStandings?: CupStandingsData; isSeeded?: boolean }) => {
         const standings = cupData.cupGroupStandings || {};
         setCupStandings(standings);
-        setIsStandingsSeeded(Object.keys(standings).length > 0);
+        // Use explicit isSeeded flag from API; fall back to checking if any groups returned
+        setIsStandingsSeeded(cupData.isSeeded ?? Object.keys(standings).length > 0);
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));

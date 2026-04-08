@@ -176,61 +176,72 @@ async function getLatestCompletedGw(leagueId?: string | null): Promise<number> {
  */
 async function fetchLiveScoresForAllPlayoffGws(leagueId: string | null, playoffStartGw: number): Promise<Record<number, any[]>> {
   const liveScoresByGw: Record<number, any[]> = {};
+  const now = new Date();
 
   try {
-    // Detect which GW is actually live
-    const { liveGw, gwStatus } = await detectLiveGameweek();
-
-    // Process each playoff GW from the league's playoffStartGw
+    // Process each knockout GW using inline DB-based status detection.
+    // This avoids detectLiveGameweek() which is hardcoded to GW31–38 and would
+    // return undefined status for TC knockout GWs 27 and 29.
     for (let gwNumber = playoffStartGw; gwNumber <= 38; gwNumber++) {
-      const status = gwStatus[gwNumber];
+      // Look up the GW record scoped to this league
+      const gwRecord = await db.query.gameweeks.findFirst({
+        where: leagueId
+          ? and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId))
+          : eq(gameweeks.number, gwNumber),
+      });
 
-      if (status === "notStarted") {
-        // Upcoming GW - return empty
+      // No GW in DB or deadline hasn't passed yet → upcoming, skip
+      if (!gwRecord || new Date(gwRecord.deadline) > now) {
         liveScoresByGw[gwNumber] = [];
         continue;
       }
 
-      if (status === "inProgress" && gwNumber === liveGw) {
-        // Live GW - fetch from Redis cache (populated by cron every 10 min)
+      // Get all playoff fixtures for this GW (with results eagerly loaded)
+      const gwFixtures = await db.query.fixtures.findMany({
+        where: and(eq(fixtures.gameweekId, gwRecord.id), eq(fixtures.isPlayoff, true)),
+        with: { result: true },
+      });
+
+      if (gwFixtures.length === 0) {
+        liveScoresByGw[gwNumber] = [];
+        continue;
+      }
+
+      const fixturesWithResults = gwFixtures.filter(f => f.result);
+      const allHaveResults = fixturesWithResults.length === gwFixtures.length;
+      const someHaveResults = fixturesWithResults.length > 0;
+
+      if (allHaveResults) {
+        // Finished GW — load from DB results table (has stored player scores)
+        try {
+          const dbScores = await getFinishedGwScoresFromDb(gwNumber, leagueId);
+          liveScoresByGw[gwNumber] = dbScores;
+          console.log(`Bracket: Using DB scores for finished GW${gwNumber} (${dbScores.length} fixtures)`);
+        } catch (err) {
+          console.error(`Bracket: Failed to fetch DB scores for GW${gwNumber}:`, err);
+          liveScoresByGw[gwNumber] = [];
+        }
+      } else if (someHaveResults) {
+        // In-progress GW — try Redis cache, fall back to FPL API
         try {
           const cachedData = await getLiveCachedScores(gwNumber);
           if (cachedData && cachedData.fixtures && cachedData.fixtures.length > 0) {
             liveScoresByGw[gwNumber] = cachedData.fixtures;
             console.log(`Bracket: Using cached live scores for GW${gwNumber}`);
-            continue;
           } else {
             console.warn(`Bracket: No cached data for live GW${gwNumber}, falling back to FPL API`);
-            // Cache miss - fetch from FPL API as fallback
             await fetchAndCacheLiveScoresForGw(gwNumber, leagueId);
             const retryData = await getLiveCachedScores(gwNumber);
-            if (retryData && retryData.fixtures) {
-              liveScoresByGw[gwNumber] = retryData.fixtures;
-              continue;
-            }
+            liveScoresByGw[gwNumber] = retryData?.fixtures ?? [];
           }
         } catch (err) {
           console.error(`Bracket: Failed to fetch cached scores for GW${gwNumber}:`, err);
-          // Silently skip this GW if cache fails
+          liveScoresByGw[gwNumber] = [];
         }
+      } else {
+        // Deadline passed but no results yet
+        liveScoresByGw[gwNumber] = [];
       }
-
-      if (status === "finished") {
-        // Finished GW - fetch from DB results table
-        try {
-          const dbScores = await getFinishedGwScoresFromDb(gwNumber, leagueId);
-          if (dbScores.length > 0) {
-            liveScoresByGw[gwNumber] = dbScores;
-            console.log(`Bracket: Using DB scores for finished GW${gwNumber}`);
-            continue;
-          }
-        } catch (err) {
-          console.error(`Bracket: Failed to fetch DB scores for GW${gwNumber}:`, err);
-        }
-      }
-
-      // Default: return empty if nothing matches
-      liveScoresByGw[gwNumber] = [];
     }
   } catch (error) {
     console.error("Error fetching live scores:", error);

@@ -579,6 +579,8 @@ export async function GET(request: NextRequest) {
         gameweek: f.gameweek.number,
         opponent: f.awayTeam.name,
         isHome: true,
+        competitionType: "pl" as string,
+        competitionLabel: "PL",
       }));
     const upcomingAwayFixtures = plAwayFixtures
       .filter(f => !f.result)
@@ -586,10 +588,44 @@ export async function GET(request: NextRequest) {
         gameweek: f.gameweek.number,
         opponent: f.homeTeam.name,
         isHome: false,
+        competitionType: "pl" as string,
+        competitionLabel: "PL",
       }));
-    const upcomingFixtures = [...upcomingHomeFixtures, ...upcomingAwayFixtures]
+    const upcomingPlFixtures = [...upcomingHomeFixtures, ...upcomingAwayFixtures]
       .sort((a, b) => a.gameweek - b.gameweek)
       .slice(0, 5);
+
+    // For TC: interleave cup fixtures after PL fixture for same GW
+    let upcomingFixtures = upcomingPlFixtures;
+    if (leagueFormat === "triple-crown") {
+      const upcomingCupRows = cupTeamFixtures
+        .filter(f => !f.result)
+        .sort((a, b) => a.gameweek.number - b.gameweek.number)
+        .map(f => ({
+          gameweek: f.gameweek.number,
+          opponent: f.homeTeamId === teamId ? f.awayTeam?.name ?? "TBD" : f.homeTeam?.name ?? "TBD",
+          isHome: f.homeTeamId === teamId,
+          competitionType: f.competitionType ?? "cup-group",
+          competitionLabel: f.competitionType === "ucl-knockout" ? "UCL" : f.competitionType === "uel-knockout" ? "Europa" : "Cup",
+        }));
+
+      // Build merged list: for each PL fixture, append cup fixture for same GW if exists
+      const merged: typeof upcomingPlFixtures = [];
+      for (const plF of upcomingPlFixtures) {
+        merged.push(plF);
+        const cupF = upcomingCupRows.find(c => c.gameweek === plF.gameweek);
+        if (cupF) merged.push(cupF);
+      }
+      // Also include any cup fixtures on GWs not in the PL top-5 (e.g. standalone knockout GWs)
+      for (const cupF of upcomingCupRows) {
+        if (!merged.find(m => m.gameweek === cupF.gameweek && m.competitionType !== "pl")) {
+          if (!upcomingPlFixtures.find(p => p.gameweek === cupF.gameweek)) {
+            merged.push(cupF);
+          }
+        }
+      }
+      upcomingFixtures = merged.sort((a, b) => a.gameweek - b.gameweek || (a.competitionType === "pl" ? -1 : 1));
+    }
 
     // ============================================
     // TEAM MEMBERS
@@ -758,6 +794,8 @@ export async function GET(request: NextRequest) {
           miniTable: humanStandings.map((s, i) => ({
             rank: i + 1,
             name: s.name,
+            wins: s.wins,
+            losses: s.losses,
             cupGroupPoints: s.cupGroupPoints,
             isCurrentTeam: s.teamId === teamId,
           })),
