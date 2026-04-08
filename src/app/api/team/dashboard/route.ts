@@ -188,6 +188,22 @@ export async function GET(request: NextRequest) {
     // ============================================
     // LAST GW RESULT (most recent completed PL fixture, or requested GW)
     // ============================================
+    // Helper to infer scores when no captain data available
+    const inferScores = (total: number, players: { name: string }[]) => {
+      const captainBase = Math.floor((total - 1) / 3);
+      const captainDoubled = captainBase * 2;
+      const nonCaptainScore = total - captainDoubled;
+      const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
+      return sortedPlayers.map((p, i) => ({
+        name: p.name,
+        isCaptain: i === 0,
+        fplScore: i === 0 ? captainBase : nonCaptainScore,
+        transferHits: 0,
+        finalScore: i === 0 ? captainDoubled : nonCaptainScore,
+        isInferred: true,
+      }));
+    };
+
     let lastGwResult = null;
     let lastF: any = null;
     if (allFixtures.length > 0) {
@@ -221,26 +237,6 @@ export async function GET(request: NextRequest) {
       // Find captain for my team
       const myCaptain = lastGwCaptains.find(c => c.player.teamId === teamId);
       const oppCaptain = opponentTeam ? lastGwCaptains.find(c => c.player.teamId === opponentTeam.id) : null;
-      
-      // Helper to infer scores when no captain data: assume least scoring was captain
-      // Total = 2*captainBase + nonCaptain, where captainBase < nonCaptain
-      // So captainBase < Total/3, max captainBase = floor((Total-1)/3)
-      const inferScores = (total: number, players: { name: string }[]) => {
-        const captainBase = Math.floor((total - 1) / 3);
-        const captainDoubled = captainBase * 2;
-        const nonCaptainScore = total - captainDoubled;
-        
-        // First player (alphabetically) is inferred as captain
-        const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
-        return sortedPlayers.map((p, i) => ({
-          name: p.name,
-          isCaptain: i === 0,
-          fplScore: i === 0 ? captainBase : nonCaptainScore,
-          transferHits: 0,
-          finalScore: i === 0 ? captainDoubled : nonCaptainScore,
-          isInferred: true,
-        }));
-      };
       
       // Build player scores for my team
       let myPlayerScores: { name: string; isCaptain: boolean; fplScore: number; transferHits: number; finalScore: number; isInferred?: boolean; fplId?: string; fplUrl?: string }[] = [];
@@ -648,22 +644,25 @@ export async function GET(request: NextRequest) {
     // ============================================
     // HIGHEST / LOWEST SCORING GW
     // ============================================
-    let highestGw: { gameweek: number; score: number } | null = null;
-    let lowestGw: { gameweek: number; score: number } | null = null;
-    
+    let highestGw: { gameweek: number; score: number; opponent?: string; opponentAbbr?: string } | null = null;
+    let lowestGw: { gameweek: number; score: number; opponent?: string; opponentAbbr?: string } | null = null;
+
     // Only consider fixtures from gameweeks strictly before the latest completed GW (ignore current and upcoming)
-    const concludedFixtures = allFixtures.filter(f => 
+    const concludedFixtures = allFixtures.filter(f =>
       f.gameweek.number < latestCompletedGW
     );
-    
+
     for (const f of concludedFixtures) {
       const isHome = f.homeTeamId === teamId;
       const myScore = isHome ? f.result!.homeScore : f.result!.awayScore;
+      const oppTeam = isHome ? (f as any).awayTeam : (f as any).homeTeam;
+      const opponent = oppTeam?.name as string | undefined;
+      const opponentAbbr = oppTeam?.abbreviation as string | undefined;
       if (!highestGw || myScore > highestGw.score) {
-        highestGw = { gameweek: f.gameweek.number, score: myScore };
+        highestGw = { gameweek: f.gameweek.number, score: myScore, opponent, opponentAbbr };
       }
       if (!lowestGw || myScore < lowestGw.score) {
-        lowestGw = { gameweek: f.gameweek.number, score: myScore };
+        lowestGw = { gameweek: f.gameweek.number, score: myScore, opponent, opponentAbbr };
       }
     }
 
@@ -731,16 +730,23 @@ export async function GET(request: NextRequest) {
       rank: number;
       totalTeams: number;
       cupZone: "ucl" | "uel";
-      miniTable: { rank: number; name: string; cupGroupPoints: number; isCurrentTeam: boolean }[];
+      minCompletedCupGw: number | null;
+      maxCompletedCupGw: number | null;
+      miniTable: { rank: number; name: string; wins: number; losses: number; cupGroupPoints: number; isCurrentTeam: boolean }[];
       lastCupResult: {
         gameweek: number;
         competitionType: string;
         competitionLabel: string;
         opponent: string;
+        opponentAbbr: string;
         isHome: boolean;
         myScore: number;
         oppScore: number;
         result: "W" | "L";
+        myPlayerScores: any[];
+        oppPlayerScores: any[];
+        hasMyCaptainData: boolean;
+        hasOppCaptainData: boolean;
       } | null;
       upcomingCupFixture: {
         gameweek: number;
@@ -780,7 +786,7 @@ export async function GET(request: NextRequest) {
         const myStandingIdx = humanStandings.findIndex(s => s.teamId === teamId);
         const cupGroupRank = myStandingIdx >= 0 ? myStandingIdx + 1 : humanStandings.length;
 
-        // Last cup result (cup-group only — knockouts tracked separately)
+        // Last cup result
         const lastCupF = cupTeamFixtures
           .filter(f => f.result)
           .sort((a, b) => b.gameweek.number - a.gameweek.number)[0] as any | undefined;
@@ -790,14 +796,71 @@ export async function GET(request: NextRequest) {
           .filter(f => !f.result)
           .sort((a, b) => a.gameweek.number - b.gameweek.number)[0] as any | undefined;
 
+        // Cup GW navigation bounds
+        const completedCupGwNums = cupTeamFixtures.filter(f => f.result).map(f => f.gameweek.number);
+        const minCompletedCupGw = completedCupGwNums.length > 0 ? Math.min(...completedCupGwNums) : null;
+        const maxCompletedCupGw = completedCupGwNums.length > 0 ? Math.max(...completedCupGwNums) : null;
+
         const compLabel = (type: string) =>
           type === "cup-group" ? "Cup Group" : type === "ucl-knockout" ? "UCL" : "Europa";
+
+        // Build cup player scores for lastCupResult
+        let cupLastMyPlayerScores: any[] = [];
+        let cupLastOppPlayerScores: any[] = [];
+        let cupLastHasMyCaptainData = false;
+        let cupLastHasOppCaptainData = false;
+        if (lastCupF && lastCupF.result) {
+          const cupIsHome = lastCupF.homeTeamId === teamId;
+          const cupMyScore = cupIsHome ? lastCupF.result.homeScore : lastCupF.result.awayScore;
+          const cupOppScore = cupIsHome ? lastCupF.result.awayScore : lastCupF.result.homeScore;
+          const cupOpponentTeam = cupIsHome ? lastCupF.awayTeam : lastCupF.homeTeam;
+          const cupCaptains = await db.query.gameweekCaptains.findMany({
+            where: eq(gameweekCaptains.gameweekId, lastCupF.gameweek.id),
+            with: { player: true },
+          });
+          const cupMyCaptain = cupCaptains.find((c: any) => c.player.teamId === teamId);
+          const cupOppCaptain = cupOpponentTeam ? cupCaptains.find((c: any) => c.player.teamId === cupOpponentTeam.id) : null;
+
+          if (cupMyCaptain) {
+            cupLastHasMyCaptainData = true;
+            cupLastMyPlayerScores = team.players.map(p => {
+              const isCaptain = cupMyCaptain.playerId === p.id;
+              const fplUrl = getFplTeamUrl(p.fplId, lastCupF.gameweek.number);
+              if (isCaptain) return { name: p.name, isCaptain: true, fplScore: cupMyCaptain.fplScore, transferHits: cupMyCaptain.transferHits, finalScore: cupMyCaptain.doubledScore, fplId: p.fplId, fplUrl };
+              const nonCaptain = cupMyScore - cupMyCaptain.doubledScore;
+              return { name: p.name, isCaptain: false, fplScore: nonCaptain, transferHits: 0, finalScore: nonCaptain, fplId: p.fplId, fplUrl };
+            });
+          } else {
+            cupLastMyPlayerScores = team.players.map((p, i) => {
+              const inf = inferScores(cupMyScore, team.players)[i];
+              return { ...inf, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, lastCupF.gameweek.number) };
+            });
+          }
+
+          if (cupOppCaptain && cupOpponentTeam?.players) {
+            cupLastHasOppCaptainData = true;
+            cupLastOppPlayerScores = cupOpponentTeam.players.map((p: any) => {
+              const isCaptain = cupOppCaptain.playerId === p.id;
+              const fplUrl = getFplTeamUrl(p.fplId, lastCupF.gameweek.number);
+              if (isCaptain) return { name: p.name, isCaptain: true, fplScore: cupOppCaptain.fplScore, transferHits: cupOppCaptain.transferHits, finalScore: cupOppCaptain.doubledScore, fplId: p.fplId, fplUrl };
+              const nonCaptain = cupOppScore - cupOppCaptain.doubledScore;
+              return { name: p.name, isCaptain: false, fplScore: nonCaptain, transferHits: 0, finalScore: nonCaptain, fplId: p.fplId, fplUrl };
+            });
+          } else if (cupOpponentTeam?.players) {
+            cupLastOppPlayerScores = cupOpponentTeam.players.map((p: any, i: number) => {
+              const inf = inferScores(cupOppScore, cupOpponentTeam.players)[i];
+              return { ...inf, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, lastCupF.gameweek.number) };
+            });
+          }
+        }
 
         cupProgress = {
           groupName: team.group?.name || "Cup Group",
           rank: cupGroupRank,
           totalTeams: humanStandings.length,
           cupZone: cupGroupRank <= 2 ? "ucl" : "uel",
+          minCompletedCupGw,
+          maxCompletedCupGw,
           miniTable: humanStandings.map((s, i) => ({
             rank: i + 1,
             name: s.name,
@@ -813,12 +876,19 @@ export async function GET(request: NextRequest) {
             opponent: lastCupF.homeTeamId === teamId
               ? (lastCupF.awayTeam?.name || "Unknown")
               : (lastCupF.homeTeam?.name || "Unknown"),
+            opponentAbbr: lastCupF.homeTeamId === teamId
+              ? (lastCupF.awayTeam?.abbreviation || "??")
+              : (lastCupF.homeTeam?.abbreviation || "??"),
             isHome: lastCupF.homeTeamId === teamId,
             myScore: lastCupF.homeTeamId === teamId ? lastCupF.result.homeScore : lastCupF.result.awayScore,
             oppScore: lastCupF.homeTeamId === teamId ? lastCupF.result.awayScore : lastCupF.result.homeScore,
             result: (lastCupF.homeTeamId === teamId
               ? lastCupF.result.homeMatchPoints
               : lastCupF.result.awayMatchPoints) === 2 ? "W" : "L",
+            myPlayerScores: cupLastMyPlayerScores,
+            oppPlayerScores: cupLastOppPlayerScores,
+            hasMyCaptainData: cupLastHasMyCaptainData,
+            hasOppCaptainData: cupLastHasOppCaptainData,
           } : null,
           upcomingCupFixture: nextCupF ? {
             gameweek: nextCupF.gameweek.number,

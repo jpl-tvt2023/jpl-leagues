@@ -66,8 +66,8 @@ interface DashboardData {
     pointsDiff: number;
     bonusPointsEarned: number;
     chipPointsEarned: number;
-    highestScoringGW: { gameweek: number; score: number } | null;
-    lowestScoringGW: { gameweek: number; score: number } | null;
+    highestScoringGW: { gameweek: number; score: number; opponent?: string; opponentAbbr?: string } | null;
+    lowestScoringGW: { gameweek: number; score: number; opponent?: string; opponentAbbr?: string } | null;
     currentStreak: { type: "W" | "D" | "L"; count: number } | null;
   };
   leaguePosition: {
@@ -117,16 +117,23 @@ interface DashboardData {
     rank: number;
     totalTeams: number;
     cupZone: "ucl" | "uel";
+    minCompletedCupGw?: number | null;
+    maxCompletedCupGw?: number | null;
     miniTable: { rank: number; name: string; wins: number; losses: number; cupGroupPoints: number; isCurrentTeam: boolean }[];
     lastCupResult: {
       gameweek: number;
       competitionType: string;
       competitionLabel: string;
       opponent: string | undefined;
+      opponentAbbr?: string;
       isHome: boolean;
       myScore: number;
       oppScore: number;
       result: "W" | "L";
+      myPlayerScores?: any[];
+      oppPlayerScores?: any[];
+      hasMyCaptainData?: boolean;
+      hasOppCaptainData?: boolean;
     } | null;
     upcomingCupFixture: {
       gameweek: number;
@@ -136,6 +143,22 @@ interface DashboardData {
       isHome: boolean;
     } | null;
   };
+  cupGwResult?: {
+    gameweek: number;
+    competitionType: string;
+    competitionLabel: string;
+    result: "W" | "L";
+    myScore: number;
+    oppScore: number;
+    isHome: boolean;
+    myTeamAbbr: string;
+    opponent: string;
+    opponentAbbr: string;
+    hasMyCaptainData: boolean;
+    hasOppCaptainData: boolean;
+    myPlayerScores: any[];
+    oppPlayerScores: any[];
+  } | null;
 }
 
 // Countdown Timer Component
@@ -288,6 +311,7 @@ export default function DashboardPage() {
   const [submitMessage, setSubmitMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showOpponentPlayers, setShowOpponentPlayers] = useState(false);
   const [showAllCaptains, setShowAllCaptains] = useState(false);
+  const [cupExpanded, setCupExpanded] = useState(false);
   const [liveRefreshing, setLiveRefreshing] = useState(false);
   const [liveScoreOverride, setLiveScoreOverride] = useState<{
     myScore: number;
@@ -306,7 +330,13 @@ export default function DashboardPage() {
         if (response.status === 401) { router.push("/signin"); return; }
         if (!response.ok) throw new Error("Failed to fetch GW result");
         const gwData = await response.json();
-        setData(prev => prev ? { ...prev, lastGwResult: gwData.lastGwResult, minCompletedGw: gwData.minCompletedGw, maxCompletedGw: gwData.maxCompletedGw } : prev);
+        setData(prev => prev ? {
+          ...prev,
+          lastGwResult: gwData.lastGwResult,
+          cupGwResult: gwData.cupGwResult ?? null,
+          minCompletedGw: gwData.minCompletedGw,
+          maxCompletedGw: gwData.maxCompletedGw,
+        } : prev);
         if (gwData.lastGwResult) setViewedGw(gwData.lastGwResult.gameweek);
       } else {
         // Full initial load
@@ -1079,33 +1109,147 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* TC Cup Last Result */}
-            {leagueFormat === "triple-crown" && data.cupProgress?.lastCupResult && (
-              <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 backdrop-blur">
-                <h2 className="text-base font-bold text-blue-300 mb-4 flex items-center gap-2">
-                  <span>🏆</span>
-                  {data.cupProgress.lastCupResult.competitionLabel} — GW{data.cupProgress.lastCupResult.gameweek}
-                </h2>
-                <div className="flex items-center justify-between">
-                  <div className="text-center flex-1">
-                    <div className="text-xs text-gray-400 mb-1">{data.cupProgress.lastCupResult.isHome ? "HOME" : "AWAY"}</div>
-                    <div className="text-lg font-bold text-white">{data.team.abbreviation}</div>
+            {/* TC Cup Last Result — full parity with PL card */}
+            {leagueFormat === "triple-crown" && (() => {
+              // Show cup result from navigation (cupGwResult) if available, otherwise initial load lastCupResult
+              const cupResult = data.cupGwResult ?? data.cupProgress?.lastCupResult ?? null;
+              if (!cupResult) return null;
+              const cupPlayerScores = cupResult.myPlayerScores ?? [];
+              const cupOppPlayerScores = cupResult.oppPlayerScores ?? [];
+              const myAbbr = (cupResult as any).myTeamAbbr ?? data.team.abbreviation;
+              const oppAbbr = (cupResult as any).opponentAbbr ?? "OPP";
+              const minCupGw = data.cupProgress?.minCompletedCupGw ?? null;
+              const maxCupGw = data.cupProgress?.maxCompletedCupGw ?? null;
+              return (
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 backdrop-blur">
+                  {/* Header with nav arrows */}
+                  <div className="flex items-center justify-between mb-4">
+                    <button
+                      onClick={() => {
+                        if (minCupGw && cupResult.gameweek > minCupGw) fetchDashboard(cupResult.gameweek - 2);
+                      }}
+                      disabled={!minCupGw || cupResult.gameweek <= minCupGw}
+                      className="text-xl px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400 text-blue-300 hover:bg-blue-400 hover:text-blue-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
+                    >
+                      ‹
+                    </button>
+                    <h2 className="text-base sm:text-lg font-bold text-blue-300 flex items-center gap-2">
+                      <span>🏆</span>
+                      {cupResult.competitionLabel} — GW{cupResult.gameweek}
+                    </h2>
+                    <button
+                      onClick={() => {
+                        if (maxCupGw && cupResult.gameweek < maxCupGw) fetchDashboard(cupResult.gameweek + 2);
+                      }}
+                      disabled={!maxCupGw || cupResult.gameweek >= maxCupGw}
+                      className="text-xl px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400 text-blue-300 hover:bg-blue-400 hover:text-blue-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
+                    >
+                      ›
+                    </button>
                   </div>
-                  <div className="px-6 text-center">
-                    <div className={`text-3xl font-bold ${data.cupProgress.lastCupResult.result === "W" ? "text-green-400" : "text-red-400"}`}>
-                      {data.cupProgress.lastCupResult.myScore} - {data.cupProgress.lastCupResult.oppScore}
+
+                  {/* Score */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between mb-4 gap-2">
+                    <div className="flex-1 text-center">
+                      <div className="text-xs text-gray-400 mb-1">{cupResult.isHome ? "HOME" : "AWAY"}</div>
+                      <div className="text-base sm:text-lg font-bold text-white">{myAbbr}</div>
                     </div>
-                    <span className={`mt-2 inline-block px-2 py-0.5 rounded text-xs font-semibold ${data.cupProgress.lastCupResult.result === "W" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
-                      {data.cupProgress.lastCupResult.result === "W" ? "WIN" : "LOSS"}
-                    </span>
+                    <div className="px-4 sm:px-6 text-center">
+                      <div className={`text-3xl sm:text-4xl font-bold ${cupResult.result === "W" ? "text-green-400" : "text-red-400"}`}>
+                        {cupResult.myScore} - {cupResult.oppScore}
+                      </div>
+                      <div className="mt-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${cupResult.result === "W" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+                          {cupResult.result === "W" ? "WIN" : "LOSS"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex-1 text-center">
+                      <div className="text-xs text-gray-400 mb-1">{cupResult.isHome ? "AWAY" : "HOME"}</div>
+                      <div className="text-base sm:text-lg font-bold text-white">{cupResult.opponent ?? "TBD"}</div>
+                    </div>
                   </div>
-                  <div className="text-center flex-1">
-                    <div className="text-xs text-gray-400 mb-1">{data.cupProgress.lastCupResult.isHome ? "AWAY" : "HOME"}</div>
-                    <div className="text-lg font-bold text-white">{data.cupProgress.lastCupResult.opponent ?? "TBD"}</div>
-                  </div>
+
+                  {/* Expand/collapse player breakdown */}
+                  {cupPlayerScores.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setCupExpanded(e => !e)}
+                        className="w-full text-center text-xs text-blue-400 hover:text-blue-300 py-1 mb-2"
+                      >
+                        {cupExpanded ? "▲ Hide player breakdown" : "▼ Show player breakdown"}
+                      </button>
+                      {cupExpanded && (
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="p-3 rounded-lg bg-blue-900/10 border border-blue-500/20">
+                            <div className="text-xs text-gray-400 mb-2 text-center">
+                              {myAbbr} Players
+                              {!(cupResult as any).hasMyCaptainData && <span className="text-orange-400 ml-1">(estimated)</span>}
+                            </div>
+                            {cupPlayerScores.map((p: any, i: number) => (
+                              <div key={i} className="flex items-center justify-between py-1">
+                                <div className="flex items-center gap-2">
+                                  {p.fplUrl ? (
+                                    <a href={p.fplUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">{p.name}</a>
+                                  ) : (
+                                    <span className="text-white">{p.name}</span>
+                                  )}
+                                  {p.isCaptain && (
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${p.isInferred ? "bg-orange-500/20 text-orange-400" : "bg-yellow-500/20 text-yellow-400"}`}>
+                                      C{p.isInferred ? "?" : ""}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  {p.isCaptain ? (
+                                    <span className={`${p.isInferred ? "text-orange-400" : "text-yellow-400"} font-semibold`}>
+                                      {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} × 2 = {p.finalScore}
+                                    </span>
+                                  ) : (
+                                    <span className="text-white">{p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="p-3 rounded-lg bg-blue-900/10 border border-blue-500/20">
+                            <div className="text-xs text-gray-400 mb-2 text-center">
+                              {oppAbbr} Players
+                              {!(cupResult as any).hasOppCaptainData && <span className="text-orange-400 ml-1">(estimated)</span>}
+                            </div>
+                            {cupOppPlayerScores.map((p: any, i: number) => (
+                              <div key={i} className="flex items-center justify-between py-1">
+                                <div className="flex items-center gap-2">
+                                  {p.fplUrl ? (
+                                    <a href={p.fplUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">{p.name}</a>
+                                  ) : (
+                                    <span className="text-white">{p.name}</span>
+                                  )}
+                                  {p.isCaptain && (
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${p.isInferred ? "bg-orange-500/20 text-orange-400" : "bg-yellow-500/20 text-yellow-400"}`}>
+                                      C{p.isInferred ? "?" : ""}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  {p.isCaptain ? (
+                                    <span className={`${p.isInferred ? "text-orange-400" : "text-yellow-400"} font-semibold`}>
+                                      {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} × 2 = {p.finalScore}
+                                    </span>
+                                  ) : (
+                                    <span className="text-white">{p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Recent Form & Stats */}
             <div className="grid md:grid-cols-2 gap-6">
@@ -1241,6 +1385,29 @@ export default function DashboardPage() {
                   >
                     View Full PL Table →
                   </Link>
+
+                  {/* My PL Stats */}
+                  <div className="mt-4 pt-4 border-t border-white/10">
+                    <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">My PL Stats</div>
+                    <div className="flex justify-around text-center">
+                      <div>
+                        <div className="text-xl font-bold text-green-400">{data.seasonStats.wins}</div>
+                        <div className="text-xs text-gray-500">W</div>
+                      </div>
+                      <div>
+                        <div className="text-xl font-bold text-gray-400">{data.seasonStats.draws}</div>
+                        <div className="text-xs text-gray-500">D</div>
+                      </div>
+                      <div>
+                        <div className="text-xl font-bold text-red-400">{data.seasonStats.losses}</div>
+                        <div className="text-xs text-gray-500">L</div>
+                      </div>
+                      <div>
+                        <div className="text-xl font-bold text-white">{data.team.leaguePoints}</div>
+                        <div className="text-xs text-gray-500">Pts</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Cup Group Mini Table */}
@@ -1343,34 +1510,60 @@ export default function DashboardPage() {
             </div>
             )}
 
-            {/* Next 5 Fixtures */}
+            {/* Next 5 Fixtures — grouped by GW */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4">Upcoming Fixtures</h2>
-              <div className="space-y-2">
-                {data.upcomingFixtures.map((f, i) => {
-                  const isCup = f.competitionType && f.competitionType !== "pl";
-                  return (
-                    <div key={i} className={`flex items-center justify-between p-3 rounded-lg ${isCup ? "bg-blue-500/5 border border-blue-500/10" : "bg-white/5"}`}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500 w-8">GW{f.gameweek}</span>
-                        {isCup ? (
-                          <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">
-                            {f.competitionLabel ?? "Cup"}
-                          </span>
-                        ) : (
-                          <span className={`text-xs px-2 py-0.5 rounded ${f.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
-                            {f.isHome ? "H" : "A"}
-                          </span>
-                        )}
-                      </div>
-                      <span className={isCup ? "text-blue-200" : "text-white"}>{f.opponent}</span>
-                    </div>
-                  );
-                })}
-                {data.upcomingFixtures.length === 0 && (
-                  <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
-                )}
-              </div>
+              {data.upcomingFixtures.length === 0 ? (
+                <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
+              ) : (
+                <div className="space-y-3">
+                  {(() => {
+                    // Group by GW number preserving order
+                    const byGw = new Map<number, typeof data.upcomingFixtures>();
+                    for (const f of data.upcomingFixtures) {
+                      if (!byGw.has(f.gameweek)) byGw.set(f.gameweek, []);
+                      byGw.get(f.gameweek)!.push(f);
+                    }
+                    return Array.from(byGw.entries()).map(([gw, gwFixtures]) => {
+                      const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "pl");
+                      const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "pl");
+                      const isDouble = !!plFix && !!cupFix;
+                      return (
+                        <div key={gw} className="rounded-xl border border-white/8 overflow-hidden">
+                          {/* GW label */}
+                          <div className="px-3 py-1.5 bg-white/5 border-b border-white/8">
+                            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">GW{gw}</span>
+                            {isDouble && (
+                              <span className="ml-2 text-xs text-yellow-400 font-semibold">Double Header</span>
+                            )}
+                          </div>
+                          {/* Fixture row(s) */}
+                          <div className={isDouble ? "grid grid-cols-2 divide-x divide-white/8" : ""}>
+                            {plFix && (
+                              <div className="flex items-center gap-2 px-3 py-2.5">
+                                <span className={`text-xs px-2 py-0.5 rounded font-semibold ${plFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
+                                  {plFix.isHome ? "H" : "A"}
+                                </span>
+                                <span className="text-white text-sm truncate">{plFix.opponent}</span>
+                                <span className="text-xs text-gray-500 ml-auto shrink-0">{plFix.competitionLabel ?? "PL"}</span>
+                              </div>
+                            )}
+                            {cupFix && (
+                              <div className="flex items-center gap-2 px-3 py-2.5">
+                                <span className={`text-xs px-2 py-0.5 rounded font-semibold ${cupFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
+                                  {cupFix.isHome ? "H" : "A"}
+                                </span>
+                                <span className="text-blue-200 text-sm truncate">{cupFix.opponent}</span>
+                                <span className="text-xs text-blue-400/70 ml-auto shrink-0">{cupFix.competitionLabel ?? "Cup"}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Highs & Lows */}
@@ -1381,14 +1574,22 @@ export default function DashboardPage() {
                   <div className="text-sm text-gray-400">Highest Score</div>
                   <div className="text-right">
                     <div className="text-green-400 font-bold">{data.seasonStats.highestScoringGW?.score ?? '—'}</div>
-                    <div className="text-xs text-gray-500">{data.seasonStats.highestScoringGW ? `GW${data.seasonStats.highestScoringGW.gameweek}` : 'No data'}</div>
+                    <div className="text-xs text-gray-500">
+                      {data.seasonStats.highestScoringGW
+                        ? `${data.seasonStats.highestScoringGW.opponent ? `vs ${data.seasonStats.highestScoringGW.opponent} · ` : ''}GW${data.seasonStats.highestScoringGW.gameweek}`
+                        : 'No data'}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center justify-between p-3 rounded-lg bg-red-500/10">
                   <div className="text-sm text-gray-400">Lowest Score</div>
                   <div className="text-right">
                     <div className="text-red-400 font-bold">{data.seasonStats.lowestScoringGW?.score ?? '—'}</div>
-                    <div className="text-xs text-gray-500">{data.seasonStats.lowestScoringGW ? `GW${data.seasonStats.lowestScoringGW.gameweek}` : 'No data'}</div>
+                    <div className="text-xs text-gray-500">
+                      {data.seasonStats.lowestScoringGW
+                        ? `${data.seasonStats.lowestScoringGW.opponent ? `vs ${data.seasonStats.lowestScoringGW.opponent} · ` : ''}GW${data.seasonStats.lowestScoringGW.gameweek}`
+                        : 'No data'}
+                    </div>
                   </div>
                 </div>
               </div>

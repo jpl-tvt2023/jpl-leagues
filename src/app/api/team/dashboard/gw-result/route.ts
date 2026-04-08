@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, fixtures, results, gameweeks, gameweekCaptains } from "@/lib/db";
+import { db, teams, fixtures, results, gameweeks, gameweekCaptains, leagues } from "@/lib/db";
 import { eq, and, asc, desc } from "drizzle-orm";
 
 function getFplTeamUrl(fplId: string, gameweek?: number): string {
@@ -57,22 +57,40 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // All completed fixtures
-    const allFixtures = [...team.homeFixtures, ...team.awayFixtures]
-      .filter(f => f.result)
-      .sort((a, b) => b.gameweek.number - a.gameweek.number);
+    // Get league format
+    const leagueRow = await db.select({ format: leagues.format }).from(leagues)
+      .where(eq(leagues.id, team.leagueId)).limit(1);
+    const leagueFormat = leagueRow[0]?.format ?? "tvt";
 
-    if (allFixtures.length === 0) {
-      return NextResponse.json({ lastGwResult: null, minCompletedGw: null, maxCompletedGw: null });
+    // All completed fixtures
+    const allFixtures = [...team.homeFixtures, ...team.awayFixtures].filter(f => f.result);
+
+    // For TC: separate PL and cup fixtures
+    const plFixtures = leagueFormat === "triple-crown"
+      ? allFixtures.filter(f => !((f as any).competitionType) || (f as any).competitionType === "pl")
+      : allFixtures;
+    const cupFixtures = leagueFormat === "triple-crown"
+      ? allFixtures.filter(f => (f as any).competitionType && (f as any).competitionType !== "pl")
+      : [];
+
+    const plFixturesSorted = plFixtures.sort((a, b) => b.gameweek.number - a.gameweek.number);
+
+    if (plFixturesSorted.length === 0) {
+      return NextResponse.json({ lastGwResult: null, cupGwResult: null, minCompletedGw: null, maxCompletedGw: null, minCompletedCupGw: null, maxCompletedCupGw: null });
     }
 
-    // Min/max for navigation
-    const completedGwNumbers = allFixtures.map(f => f.gameweek.number);
+    // Min/max for navigation (PL GWs)
+    const completedGwNumbers = plFixturesSorted.map(f => f.gameweek.number);
     const minCompletedGw = Math.min(...completedGwNumbers);
     const maxCompletedGw = Math.max(...completedGwNumbers);
 
-    // Find the requested fixture
-    const lastF: any = allFixtures.find(f => f.gameweek.number === requestedGw) || allFixtures[0];
+    // Min/max for cup GW navigation
+    const cupGwNumbers = cupFixtures.map(f => f.gameweek.number);
+    const minCompletedCupGw = cupGwNumbers.length > 0 ? Math.min(...cupGwNumbers) : null;
+    const maxCompletedCupGw = cupGwNumbers.length > 0 ? Math.max(...cupGwNumbers) : null;
+
+    // Find the requested PL fixture
+    const lastF: any = plFixturesSorted.find(f => f.gameweek.number === requestedGw) || plFixturesSorted[0];
 
     const isHome = lastF.homeTeamId === teamId;
     const myScore = isHome ? lastF.result!.homeScore : lastF.result!.awayScore;
@@ -198,7 +216,93 @@ export async function GET(request: NextRequest) {
       leg: lastF.leg || null,
     };
 
-    return NextResponse.json({ lastGwResult, minCompletedGw, maxCompletedGw });
+    // ============================================================
+    // TC: Cup fixture for the same GW (double-header)
+    // ============================================================
+    let cupGwResult: any = null;
+    if (leagueFormat === "triple-crown") {
+      const cupF: any = cupFixtures.find(f => f.gameweek.number === lastF.gameweek.number);
+      if (cupF && cupF.result) {
+        const cupIsHome = cupF.homeTeamId === teamId;
+        const cupMyScore = cupIsHome ? cupF.result.homeScore : cupF.result.awayScore;
+        const cupOppScore = cupIsHome ? cupF.result.awayScore : cupF.result.homeScore;
+        const cupMyPoints = cupIsHome ? cupF.result.homeMatchPoints : cupF.result.awayMatchPoints;
+        const cupResult: "W" | "L" = cupMyPoints === 2 ? "W" : "L";
+
+        const cupOpponentTeam = cupIsHome
+          ? team.homeFixtures.find(f => f.id === cupF.id)?.awayTeam
+          : team.awayFixtures.find(f => f.id === cupF.id)?.homeTeam;
+
+        const cupGwId = cupF.gameweek.id;
+        const cupCaptains = await db.query.gameweekCaptains.findMany({
+          where: eq(gameweekCaptains.gameweekId, cupGwId),
+          with: { player: true },
+        });
+        const cupMyCaptain = cupCaptains.find(c => c.player.teamId === teamId);
+        const cupOppCaptain = cupOpponentTeam ? cupCaptains.find(c => c.player.teamId === cupOpponentTeam.id) : null;
+
+        let cupMyPlayerScores: any[] = [];
+        let cupHasMyCaptainData = false;
+        if (cupMyCaptain) {
+          cupHasMyCaptainData = true;
+          cupMyPlayerScores = team.players.map(p => {
+            const isCaptain = cupMyCaptain.playerId === p.id;
+            const fplUrl = getFplTeamUrl(p.fplId, cupF.gameweek.number);
+            if (isCaptain) {
+              return { name: p.name, isCaptain: true, fplScore: cupMyCaptain.fplScore, transferHits: cupMyCaptain.transferHits, finalScore: cupMyCaptain.doubledScore, fplId: p.fplId, fplUrl };
+            }
+            const nonCaptainScore = cupMyScore - cupMyCaptain.doubledScore;
+            return { name: p.name, isCaptain: false, fplScore: nonCaptainScore, transferHits: 0, finalScore: nonCaptainScore, fplId: p.fplId, fplUrl };
+          });
+        } else {
+          cupMyPlayerScores = team.players.map((p, i) => {
+            const inferred = inferScores(cupMyScore, team.players)[i];
+            return { ...inferred, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, cupF.gameweek.number) };
+          });
+        }
+
+        let cupOppPlayerScores: any[] = [];
+        let cupHasOppCaptainData = false;
+        if (cupOppCaptain && cupOpponentTeam) {
+          cupHasOppCaptainData = true;
+          cupOppPlayerScores = (cupOpponentTeam as any).players?.map((p: any) => {
+            const isCaptain = cupOppCaptain.playerId === p.id;
+            const fplUrl = getFplTeamUrl(p.fplId, cupF.gameweek.number);
+            if (isCaptain) {
+              return { name: p.name, isCaptain: true, fplScore: cupOppCaptain.fplScore, transferHits: cupOppCaptain.transferHits, finalScore: cupOppCaptain.doubledScore, fplId: p.fplId, fplUrl };
+            }
+            const nonCaptainScore = cupOppScore - cupOppCaptain.doubledScore;
+            return { name: p.name, isCaptain: false, fplScore: nonCaptainScore, transferHits: 0, finalScore: nonCaptainScore, fplId: p.fplId, fplUrl };
+          }) ?? [];
+        } else if (cupOpponentTeam) {
+          const oppPlayers = (cupOpponentTeam as any).players ?? [];
+          cupOppPlayerScores = oppPlayers.map((p: any, i: number) => {
+            const inferred = inferScores(cupOppScore, oppPlayers)[i];
+            return { ...inferred, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, cupF.gameweek.number) };
+          });
+        }
+
+        const compType = cupF.competitionType ?? "cup-group";
+        cupGwResult = {
+          gameweek: cupF.gameweek.number,
+          competitionType: compType,
+          competitionLabel: compType === "ucl-knockout" ? "UCL" : compType === "uel-knockout" ? "Europa" : "Cup Group",
+          result: cupResult,
+          myScore: cupMyScore,
+          oppScore: cupOppScore,
+          isHome: cupIsHome,
+          myTeamAbbr: team.abbreviation,
+          opponent: (cupOpponentTeam as any)?.name ?? "Unknown",
+          opponentAbbr: (cupOpponentTeam as any)?.abbreviation ?? "??",
+          hasMyCaptainData: cupHasMyCaptainData,
+          hasOppCaptainData: cupHasOppCaptainData,
+          myPlayerScores: cupMyPlayerScores,
+          oppPlayerScores: cupOppPlayerScores,
+        };
+      }
+    }
+
+    return NextResponse.json({ lastGwResult, cupGwResult, minCompletedGw, maxCompletedGw, minCompletedCupGw, maxCompletedCupGw });
   } catch (error) {
     console.error("GW result error:", error);
     return NextResponse.json({ error: "Failed to fetch GW result" }, { status: 500 });
