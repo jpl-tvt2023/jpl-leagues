@@ -9,10 +9,24 @@ function getFplTeamUrl(fplId: string, gameweek?: number): string {
   return `https://fantasy.premierleague.com/entry/${fplId}/history`;
 }
 
+function inferScores(total: number, players: { name: string }[]) {
+  const captainBase = Math.floor((total - 1) / 3);
+  const captainDoubled = captainBase * 2;
+  const nonCaptainScore = total - captainDoubled;
+  const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
+  return sortedPlayers.map((p, i) => ({
+    name: p.name, isCaptain: i === 0,
+    fplScore: i === 0 ? captainBase : nonCaptainScore,
+    transferHits: 0,
+    finalScore: i === 0 ? captainDoubled : nonCaptainScore,
+    isInferred: true,
+  }));
+}
+
 /**
  * GET /api/team/dashboard/gw-result?gw=N
- * Lightweight endpoint — returns ONLY the GW result data for navigation.
- * No FPL deadline sync, no standings, no chip/captain status refresh.
+ * Also supports ?cupGw=N for independent cup GW navigation.
+ * Lightweight endpoint — no FPL deadline sync, no standings, no chip/captain status refresh.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -23,12 +37,19 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
     const gwParam = url.searchParams.get("gw");
-    if (!gwParam) {
-      return NextResponse.json({ error: "gw parameter required" }, { status: 400 });
+    const cupGwParam = url.searchParams.get("cupGw");
+
+    if (!gwParam && !cupGwParam) {
+      return NextResponse.json({ error: "gw or cupGw parameter required" }, { status: 400 });
     }
-    const requestedGw = parseInt(gwParam, 10);
-    if (isNaN(requestedGw) || requestedGw < 1) {
+    const requestedGw = gwParam ? parseInt(gwParam, 10) : null;
+    const requestedCupGw = cupGwParam ? parseInt(cupGwParam, 10) : null;
+
+    if (requestedGw !== null && (isNaN(requestedGw) || requestedGw < 1)) {
       return NextResponse.json({ error: "Invalid gw parameter" }, { status: 400 });
+    }
+    if (requestedCupGw !== null && (isNaN(requestedCupGw) || requestedCupGw < 1)) {
+      return NextResponse.json({ error: "Invalid cupGw parameter" }, { status: 400 });
     }
 
     // Get team with players
@@ -75,6 +96,83 @@ export async function GET(request: NextRequest) {
 
     const plFixturesSorted = plFixtures.sort((a, b) => b.gameweek.number - a.gameweek.number);
 
+    // Min/max for cup GW navigation
+    const cupGwNumbers = cupFixtures.map(f => f.gameweek.number);
+    const minCompletedCupGw = cupGwNumbers.length > 0 ? Math.min(...cupGwNumbers) : null;
+    const maxCompletedCupGw = cupGwNumbers.length > 0 ? Math.max(...cupGwNumbers) : null;
+
+    // ---- Cup-only navigation path ----
+    if (requestedCupGw !== null) {
+      const cupF: any = cupFixtures.find(f => f.gameweek.number === requestedCupGw) || cupFixtures.sort((a, b) => b.gameweek.number - a.gameweek.number)[0];
+      if (!cupF || !cupF.result) {
+        return NextResponse.json({ cupGwResult: null, minCompletedCupGw, maxCompletedCupGw });
+      }
+      const cupIsHome = cupF.homeTeamId === teamId;
+      const cupMyScore = cupIsHome ? cupF.result.homeScore : cupF.result.awayScore;
+      const cupOppScore = cupIsHome ? cupF.result.awayScore : cupF.result.homeScore;
+      const cupMyPoints = cupIsHome ? cupF.result.homeMatchPoints : cupF.result.awayMatchPoints;
+      const cupOpponentTeam = cupIsHome
+        ? team.homeFixtures.find((f: any) => f.id === cupF.id)?.awayTeam
+        : team.awayFixtures.find((f: any) => f.id === cupF.id)?.homeTeam;
+      const cupCaptains = await db.query.gameweekCaptains.findMany({
+        where: eq(gameweekCaptains.gameweekId, cupF.gameweek.id),
+        with: { player: true },
+      });
+      const cupMyCaptain = cupCaptains.find((c: any) => c.player.teamId === teamId);
+      const cupOppCaptain = cupOpponentTeam ? cupCaptains.find((c: any) => c.player.teamId === cupOpponentTeam.id) : null;
+      let cupMyPlayerScores: any[] = [];
+      let cupHasMyCaptainData = false;
+      if (cupMyCaptain) {
+        cupHasMyCaptainData = true;
+        cupMyPlayerScores = team.players.map(p => {
+          const isCaptain = cupMyCaptain.playerId === p.id;
+          const fplUrl = getFplTeamUrl(p.fplId, cupF.gameweek.number);
+          if (isCaptain) return { name: p.name, isCaptain: true, fplScore: cupMyCaptain.fplScore, transferHits: cupMyCaptain.transferHits, finalScore: cupMyCaptain.doubledScore, fplId: p.fplId, fplUrl };
+          const nc = cupMyScore - cupMyCaptain.doubledScore;
+          return { name: p.name, isCaptain: false, fplScore: nc, transferHits: 0, finalScore: nc, fplId: p.fplId, fplUrl };
+        });
+      } else {
+        cupMyPlayerScores = team.players.map((p, i) => {
+          const inf = inferScores(cupMyScore, team.players)[i];
+          return { ...inf, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, cupF.gameweek.number) };
+        });
+      }
+      let cupOppPlayerScores: any[] = [];
+      let cupHasOppCaptainData = false;
+      const oppPlayers = (cupOpponentTeam as any)?.players ?? [];
+      if (cupOppCaptain && oppPlayers.length > 0) {
+        cupHasOppCaptainData = true;
+        cupOppPlayerScores = oppPlayers.map((p: any) => {
+          const isCaptain = cupOppCaptain.playerId === p.id;
+          const fplUrl = getFplTeamUrl(p.fplId, cupF.gameweek.number);
+          if (isCaptain) return { name: p.name, isCaptain: true, fplScore: cupOppCaptain.fplScore, transferHits: cupOppCaptain.transferHits, finalScore: cupOppCaptain.doubledScore, fplId: p.fplId, fplUrl };
+          const nc = cupOppScore - cupOppCaptain.doubledScore;
+          return { name: p.name, isCaptain: false, fplScore: nc, transferHits: 0, finalScore: nc, fplId: p.fplId, fplUrl };
+        });
+      } else if (oppPlayers.length > 0) {
+        cupOppPlayerScores = oppPlayers.map((p: any, i: number) => {
+          const inf = inferScores(cupOppScore, oppPlayers)[i];
+          return { ...inf, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, cupF.gameweek.number) };
+        });
+      }
+      const compType = cupF.competitionType ?? "cup-group";
+      return NextResponse.json({
+        cupGwResult: {
+          gameweek: cupF.gameweek.number, competitionType: compType,
+          competitionLabel: compType === "ucl-knockout" ? "UCL" : compType === "uel-knockout" ? "Europa" : "Cup Group",
+          result: cupMyPoints === 2 ? "W" : "L",
+          myScore: cupMyScore, oppScore: cupOppScore, isHome: cupIsHome,
+          myTeamAbbr: team.abbreviation,
+          opponent: (cupOpponentTeam as any)?.name ?? "Unknown",
+          opponentAbbr: (cupOpponentTeam as any)?.abbreviation ?? "??",
+          hasMyCaptainData: cupHasMyCaptainData, hasOppCaptainData: cupHasOppCaptainData,
+          myPlayerScores: cupMyPlayerScores, oppPlayerScores: cupOppPlayerScores,
+        },
+        minCompletedCupGw, maxCompletedCupGw,
+      });
+    }
+    // ---- End cup-only path ----
+
     if (plFixturesSorted.length === 0) {
       return NextResponse.json({ lastGwResult: null, cupGwResult: null, minCompletedGw: null, maxCompletedGw: null, minCompletedCupGw: null, maxCompletedCupGw: null });
     }
@@ -83,11 +181,6 @@ export async function GET(request: NextRequest) {
     const completedGwNumbers = plFixturesSorted.map(f => f.gameweek.number);
     const minCompletedGw = Math.min(...completedGwNumbers);
     const maxCompletedGw = Math.max(...completedGwNumbers);
-
-    // Min/max for cup GW navigation
-    const cupGwNumbers = cupFixtures.map(f => f.gameweek.number);
-    const minCompletedCupGw = cupGwNumbers.length > 0 ? Math.min(...cupGwNumbers) : null;
-    const maxCompletedCupGw = cupGwNumbers.length > 0 ? Math.max(...cupGwNumbers) : null;
 
     // Find the requested PL fixture
     const lastF: any = plFixturesSorted.find(f => f.gameweek.number === requestedGw) || plFixturesSorted[0];
@@ -115,21 +208,6 @@ export async function GET(request: NextRequest) {
 
     const myCaptain = lastGwCaptains.find(c => c.player.teamId === teamId);
     const oppCaptain = opponentTeam ? lastGwCaptains.find(c => c.player.teamId === opponentTeam.id) : null;
-
-    const inferScores = (total: number, players: { name: string }[]) => {
-      const captainBase = Math.floor((total - 1) / 3);
-      const captainDoubled = captainBase * 2;
-      const nonCaptainScore = total - captainDoubled;
-      const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
-      return sortedPlayers.map((p, i) => ({
-        name: p.name,
-        isCaptain: i === 0,
-        fplScore: i === 0 ? captainBase : nonCaptainScore,
-        transferHits: 0,
-        finalScore: i === 0 ? captainDoubled : nonCaptainScore,
-        isInferred: true,
-      }));
-    };
 
     // Build my player scores
     let myPlayerScores: any[] = [];
