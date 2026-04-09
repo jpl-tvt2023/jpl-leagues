@@ -100,12 +100,13 @@ export async function GET(request: NextRequest) {
     const cupGwNumbers = cupFixtures.map(f => f.gameweek.number);
     const minCompletedCupGw = cupGwNumbers.length > 0 ? Math.min(...cupGwNumbers) : null;
     const maxCompletedCupGw = cupGwNumbers.length > 0 ? Math.max(...cupGwNumbers) : null;
+    const completedCupGws = [...new Set(cupGwNumbers)].sort((a, b) => a - b);
 
     // ---- Cup-only navigation path ----
     if (requestedCupGw !== null) {
       const cupF: any = cupFixtures.find(f => f.gameweek.number === requestedCupGw) || cupFixtures.sort((a, b) => b.gameweek.number - a.gameweek.number)[0];
       if (!cupF || !cupF.result) {
-        return NextResponse.json({ cupGwResult: null, minCompletedCupGw, maxCompletedCupGw });
+        return NextResponse.json({ cupGwResult: null, minCompletedCupGw, maxCompletedCupGw, completedCupGws });
       }
       const cupIsHome = cupF.homeTeamId === teamId;
       const cupMyScore = cupIsHome ? cupF.result.homeScore : cupF.result.awayScore;
@@ -168,13 +169,13 @@ export async function GET(request: NextRequest) {
           hasMyCaptainData: cupHasMyCaptainData, hasOppCaptainData: cupHasOppCaptainData,
           myPlayerScores: cupMyPlayerScores, oppPlayerScores: cupOppPlayerScores,
         },
-        minCompletedCupGw, maxCompletedCupGw,
+        minCompletedCupGw, maxCompletedCupGw, completedCupGws,
       });
     }
     // ---- End cup-only path ----
 
     if (plFixturesSorted.length === 0) {
-      return NextResponse.json({ lastGwResult: null, cupGwResult: null, minCompletedGw: null, maxCompletedGw: null, minCompletedCupGw: null, maxCompletedCupGw: null });
+      return NextResponse.json({ lastGwResult: null, cupGwResult: null, minCompletedGw: null, maxCompletedGw: null, minCompletedCupGw: null, maxCompletedCupGw: null, completedCupGws: [] });
     }
 
     // Min/max for navigation (PL GWs)
@@ -380,7 +381,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ lastGwResult, cupGwResult, minCompletedGw, maxCompletedGw, minCompletedCupGw, maxCompletedCupGw });
+    return NextResponse.json({ lastGwResult, cupGwResult, minCompletedGw, maxCompletedGw, minCompletedCupGw, maxCompletedCupGw, completedCupGws });
   } catch (error) {
     console.error("GW result error:", error);
     return NextResponse.json({ error: "Failed to fetch GW result" }, { status: 500 });

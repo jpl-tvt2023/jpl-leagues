@@ -709,14 +709,29 @@ export async function GET(request: NextRequest) {
     // TC: PL RANK (all 20 non-ghost teams)
     // ============================================
     let plPosition: { rank: number; totalTeams: number } | null = null;
+    let allNonGhostSorted: { id: string; name: string; leaguePoints: number }[] = [];
     if (leagueFormat === "triple-crown" && teamLeagueId) {
       try {
-        const allNonGhost = await db.select({ id: teams.id, leaguePoints: teams.leaguePoints })
+        const allNonGhost = await db.select({ id: teams.id, name: teams.name, leaguePoints: teams.leaguePoints })
           .from(teams)
           .where(and(eq(teams.leagueId, teamLeagueId), eq(teams.isGhost, false)));
         allNonGhost.sort((a, b) => b.leaguePoints - a.leaguePoints);
+        allNonGhostSorted = allNonGhost;
         const plRank = allNonGhost.findIndex(t => t.id === teamId) + 1;
         plPosition = { rank: plRank, totalTeams: allNonGhost.length };
+
+        // Override miniTable to use all 20 league teams (not cup-group subset)
+        const myIdx = allNonGhost.findIndex(t => t.id === teamId);
+        miniTable = allNonGhost.slice(
+          Math.max(0, myIdx - 2),
+          Math.min(allNonGhost.length, myIdx + 3)
+        ).map(t => ({
+          rank: allNonGhost.indexOf(t) + 1,
+          name: t.name,
+          points: t.leaguePoints,
+          isCurrentTeam: t.id === teamId,
+        }));
+        groupRank = myIdx + 1;
       } catch {
         // non-critical
       }
@@ -732,6 +747,7 @@ export async function GET(request: NextRequest) {
       cupZone: "ucl" | "uel";
       minCompletedCupGw: number | null;
       maxCompletedCupGw: number | null;
+      completedCupGws: number[];
       miniTable: { rank: number; name: string; wins: number; losses: number; cupGroupPoints: number; isCurrentTeam: boolean }[];
       lastCupResult: {
         gameweek: number;
@@ -800,6 +816,7 @@ export async function GET(request: NextRequest) {
         const completedCupGwNums = cupTeamFixtures.filter(f => f.result).map(f => f.gameweek.number);
         const minCompletedCupGw = completedCupGwNums.length > 0 ? Math.min(...completedCupGwNums) : null;
         const maxCompletedCupGw = completedCupGwNums.length > 0 ? Math.max(...completedCupGwNums) : null;
+        const completedCupGws = [...new Set(completedCupGwNums)].sort((a, b) => a - b);
 
         const compLabel = (type: string) =>
           type === "cup-group" ? "Cup Group" : type === "ucl-knockout" ? "UCL" : "Europa";
@@ -861,6 +878,7 @@ export async function GET(request: NextRequest) {
           cupZone: cupGroupRank <= 2 ? "ucl" : "uel",
           minCompletedCupGw,
           maxCompletedCupGw,
+          completedCupGws,
           miniTable: humanStandings.map((s, i) => ({
             rank: i + 1,
             name: s.name,

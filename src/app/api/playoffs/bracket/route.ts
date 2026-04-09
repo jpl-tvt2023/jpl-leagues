@@ -239,8 +239,16 @@ async function fetchLiveScoresForAllPlayoffGws(leagueId: string | null, playoffS
           liveScoresByGw[gwNumber] = [];
         }
       } else {
-        // Deadline passed but no results yet
-        liveScoresByGw[gwNumber] = [];
+        // Deadline passed but no results yet — fetch live from FPL API
+        try {
+          await fetchAndCacheLiveScoresForGw(gwNumber, leagueId);
+          const liveData = await getLiveCachedScores(gwNumber);
+          liveScoresByGw[gwNumber] = liveData?.fixtures ?? [];
+          console.log(`Bracket: Fetched live scores for unprocessed GW${gwNumber} (${liveScoresByGw[gwNumber].length} fixtures)`);
+        } catch (err) {
+          console.error(`Bracket: Failed to fetch live scores for unprocessed GW${gwNumber}:`, err);
+          liveScoresByGw[gwNumber] = [];
+        }
       }
     }
   } catch (error) {
