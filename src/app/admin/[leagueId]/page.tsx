@@ -2633,7 +2633,7 @@ export default function AdminDashboard() {
                         ))}
                       </div>
                       <p className="text-gray-500 text-xs mt-4">
-                        GW27: QF Leg 1 | GW29: QF Leg 2 / SF Leg 1 | GW33: SF Leg 2 | GW35: SF Leg 2 / Final Leg 1 | GW38: Final
+                        GW27: QF Leg 1 | GW29: QF Leg 2 + Create SFs | GW33: SF Leg 1 | GW35: SF Leg 2 + Create Finals | GW38: Final
                       </p>
                     </div>
                   )}
