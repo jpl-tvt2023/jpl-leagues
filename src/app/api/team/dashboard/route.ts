@@ -153,10 +153,11 @@ export async function GET(request: NextRequest) {
             players: homeFixture.awayTeam.players.map(p => ({
               name: p.name,
               fplId: p.fplId,
-              fplUrl: getFplTeamUrl(p.fplId, currentGwNumber || undefined),
+              fplUrl: getFplTeamUrl(p.fplId, latestCompletedGW || undefined),
             })),
           },
           gameweek: nextGameweek.number,
+          lastCompletedGw: latestCompletedGW,
         };
       } else if (awayFixture) {
         upcomingFixture = {
@@ -168,10 +169,11 @@ export async function GET(request: NextRequest) {
             players: awayFixture.homeTeam.players.map(p => ({
               name: p.name,
               fplId: p.fplId,
-              fplUrl: getFplTeamUrl(p.fplId, currentGwNumber || undefined),
+              fplUrl: getFplTeamUrl(p.fplId, latestCompletedGW || undefined),
             })),
           },
           gameweek: nextGameweek.number,
+          lastCompletedGw: latestCompletedGW,
         };
       }
     } else {

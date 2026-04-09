@@ -29,6 +29,7 @@ interface DashboardData {
       players: { name: string; fplId: string; fplUrl: string }[];
     };
     gameweek: number;
+    lastCompletedGw?: number;
   } | null;
   upcomingCaptain: { playerId: string; playerName: string } | null;
   upcomingChip: { type: string; chipName: string } | null;
@@ -726,7 +727,7 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-center gap-4 mb-3">
                         <div className="text-center">
                           <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "HOME" : "AWAY"}</div>
-                          <div className="text-lg font-bold text-white">{data.team.abbreviation}</div>
+                          <div className="text-lg font-bold text-white">{data.team.name}</div>
                         </div>
                         <span className="text-gray-500 font-medium">VS</span>
                         <div className="text-center">
@@ -735,7 +736,7 @@ export default function DashboardPage() {
                             onClick={() => setShowOpponentPlayers(!showOpponentPlayers)}
                             className="text-lg font-bold text-blue-400 hover:text-blue-300 underline decoration-dotted underline-offset-4 transition"
                           >
-                            {data.upcomingFixture.opponent.abbreviation}
+                            {data.upcomingFixture.opponent.name}
                           </button>
                         </div>
                       </div>
@@ -752,12 +753,7 @@ export default function DashboardPage() {
                                 <div className="flex gap-2">
                                   <a href={p.fplUrl} target="_blank" rel="noopener noreferrer"
                                     className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition">
-                                    GW{data.deadline.gameweek} ↗
-                                  </a>
-                                  <a href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${data.deadline.gameweek - 1}`}
-                                    target="_blank" rel="noopener noreferrer"
-                                    className="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition">
-                                    GW{data.deadline.gameweek - 1} ↗
+                                    GW{data.upcomingFixture?.lastCompletedGw ?? (data.deadline.gameweek - 1)} ↗
                                   </a>
                                 </div>
                               </div>
@@ -876,7 +872,7 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-center gap-4 mb-3">
                       <div className="text-center">
                         <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "HOME" : "AWAY"}</div>
-                        <div className="text-lg font-bold text-white">{data.team.abbreviation}</div>
+                        <div className="text-lg font-bold text-white">{data.team.name}</div>
                       </div>
                       <span className="text-gray-500 font-medium">VS</span>
                       <div className="text-center">
@@ -885,7 +881,7 @@ export default function DashboardPage() {
                           onClick={() => setShowOpponentPlayers(!showOpponentPlayers)}
                           className="text-lg font-bold text-blue-400 hover:text-blue-300 underline decoration-dotted underline-offset-4 transition"
                         >
-                          {data.upcomingFixture.opponent.abbreviation}
+                          {data.upcomingFixture.opponent.name}
                         </button>
                       </div>
                     </div>
@@ -902,7 +898,7 @@ export default function DashboardPage() {
                               <div className="flex gap-2">
                                 <a href={p.fplUrl} target="_blank" rel="noopener noreferrer"
                                   className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition">
-                                  GW{data.deadline.gameweek} ↗
+                                  GW{data.upcomingFixture?.lastCompletedGw ?? (data.deadline.gameweek - 1)} ↗
                                 </a>
                               </div>
                             </div>
@@ -920,7 +916,7 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-center gap-4 mb-3">
                         <div className="text-center">
                           <div className="text-xs text-gray-400 mb-1">{data.cupProgress.upcomingCupFixture.isHome ? "HOME" : "AWAY"}</div>
-                          <div className="text-lg font-bold text-white">{data.team.abbreviation}</div>
+                          <div className="text-lg font-bold text-white">{data.team.name}</div>
                         </div>
                         <span className="text-gray-500 font-medium">VS</span>
                         <div className="text-center">
