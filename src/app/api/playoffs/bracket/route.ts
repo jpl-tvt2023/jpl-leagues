@@ -111,16 +111,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Return cached bracket if available (liveScores excluded from cache; page polls those separately)
-    if (leagueId) {
-      try {
-        const cached = await getCachedPlayoffBracket(leagueId);
-        if (cached) return NextResponse.json(cached);
-      } catch {
-        // Cache miss or Redis error — fall through to DB computation
-      }
-    }
-
     const tiesQuery = leagueId
       ? db.select().from(playoffTies).where(eq(playoffTies.leagueId, leagueId)).limit(1)
       : db.select().from(playoffTies).limit(1);
@@ -130,14 +120,24 @@ export async function GET(request: NextRequest) {
     const latestCompletedGw = await getLatestCompletedGw(leagueId);
 
     if (isLive) {
-      const bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
+      // Try cached bracket (liveScores always fetched fresh)
+      let bracket: any = null;
+      if (leagueId) {
+        try {
+          bracket = await getCachedPlayoffBracket(leagueId);
+        } catch {
+          // Cache miss or Redis error — fall through to DB computation
+        }
+      }
+      if (!bracket) {
+        bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
+        if (leagueId) {
+          setCachedPlayoffBracket(leagueId, bracket).catch(() => {});
+        }
+      }
       // TC (teamSize=20) knockouts start at GW27, not the standard playoffStartGw
       const liveScoresStartGw = teamSize === 20 ? 27 : playoffStartGw;
       const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, liveScoresStartGw);
-      // Fire-and-forget cache write (liveScores excluded; page polls those separately)
-      if (leagueId) {
-        setCachedPlayoffBracket(leagueId, bracket).catch(() => {});
-      }
       return NextResponse.json({ ...bracket, liveScores });
     }
 
@@ -867,25 +867,6 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     .map(buildTieDisplay)
     .sort((a, b) => a.tieId.localeCompare(b.tieId));
 
-  // ── TRIPLE CROWN (teamSize === 20) ──────────────────────────────────────
-  if (teamSize === 20) {
-    return {
-      mode: "live" as const,
-      latestCompletedGw,
-      teamSize: 20,
-      tvt: {
-        qf: tiesByRound("UCL-QF"),
-        sf: tiesByRound("UCL-SF"),
-        final: tiesByRound("UCL-FINAL"),
-      },
-      challenger: {
-        c31: tiesByRound("UEL-QF"),
-        c35: tiesByRound("UEL-SF"),
-        c38: tiesByRound("UEL-FINAL"),
-      },
-    };
-  }
-
   // Build winner/loser maps from completed ties for placeholder resolution
   const winnerMap = new Map<string, { teamId: string; name: string; abbr: string }>();
   const loserMap = new Map<string, { teamId: string; name: string; abbr: string }>();
@@ -898,6 +879,72 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       const info = teamMap.get(tie.loserId);
       if (info) loserMap.set(tie.tieId, { teamId: tie.loserId, ...info });
     }
+  }
+
+  // ── TRIPLE CROWN (teamSize === 20) ──────────────────────────────────────
+  if (teamSize === 20) {
+    const resolveWinnerTC = (srcTieId: string) => {
+      const w = winnerMap.get(srcTieId);
+      return w
+        ? { teamId: w.teamId, name: w.name, abbr: w.abbr, leg1Score: null, leg2Score: null, aggregate: null }
+        : placeholder(`W ${srcTieId}`);
+    };
+
+    // UCL: QF (GW27+29) → SF (GW33+35) → Final (GW38)
+    const uclQf = tiesByRound("UCL-QF");
+    const uclSfFromDb = tiesByRound("UCL-SF");
+    const uclSf = uclSfFromDb.length > 0 ? uclSfFromDb : [{
+      tieId: "UCL-SF-1", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("UCL-QF-1"), away: resolveWinnerTC("UCL-QF-2"),
+      winnerId: null, loserId: null,
+    } as TieDisplay, {
+      tieId: "UCL-SF-2", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("UCL-QF-3"), away: resolveWinnerTC("UCL-QF-4"),
+      winnerId: null, loserId: null,
+    } as TieDisplay];
+
+    const uclFinalFromDb = tiesByRound("UCL-FINAL");
+    const uclFinal = uclFinalFromDb.length > 0 ? uclFinalFromDb : [{
+      tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 38, gw2: null,
+      home: resolveWinnerTC("UCL-SF-1"), away: resolveWinnerTC("UCL-SF-2"),
+      winnerId: null, loserId: null,
+    } as TieDisplay];
+
+    // UEL: QF (GW27+29) → SF (GW33+35) → Final (GW38)
+    const uelQf = tiesByRound("UEL-QF");
+    const uelSfFromDb = tiesByRound("UEL-SF");
+    const uelSf = uelSfFromDb.length > 0 ? uelSfFromDb : [{
+      tieId: "UEL-SF-1", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("UEL-QF-1"), away: resolveWinnerTC("UEL-QF-2"),
+      winnerId: null, loserId: null,
+    } as TieDisplay, {
+      tieId: "UEL-SF-2", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("UEL-QF-3"), away: resolveWinnerTC("UEL-QF-4"),
+      winnerId: null, loserId: null,
+    } as TieDisplay];
+
+    const uelFinalFromDb = tiesByRound("UEL-FINAL");
+    const uelFinal = uelFinalFromDb.length > 0 ? uelFinalFromDb : [{
+      tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 38, gw2: null,
+      home: resolveWinnerTC("UEL-SF-1"), away: resolveWinnerTC("UEL-SF-2"),
+      winnerId: null, loserId: null,
+    } as TieDisplay];
+
+    return {
+      mode: "live" as const,
+      latestCompletedGw,
+      teamSize: 20,
+      tvt: {
+        qf: uclQf,
+        sf: uclSf,
+        final: uclFinal,
+      },
+      challenger: {
+        c31: uelQf,
+        c35: uelSf,
+        c38: uelFinal,
+      },
+    };
   }
 
   // Resolve a winner/loser reference: use real team if tie is complete, else placeholder label
