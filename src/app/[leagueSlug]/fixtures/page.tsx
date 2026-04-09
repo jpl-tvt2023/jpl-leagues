@@ -32,7 +32,8 @@ interface Fixture {
   id: string;
   homeTeam: { name: string; abbreviation: string };
   awayTeam: { name: string; abbreviation: string };
-  group: { name: string };
+  group: { name: string } | null;
+  competitionType?: string | null;
   gameweek: { number: number; deadline: Date };
   result?: {
     homeScore: number;
@@ -82,9 +83,7 @@ function FixtureCard({
       ? "text-amber-400 animate-pulse"
       : "text-white";
 
-  const hasPlayerData = isLive
-    ? (liveData?.homePlayers.length ?? 0) > 0
-    : !!(fixture.result?.homePlayerScores);
+  const hasPlayerData = (liveData?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores) || isResult;
 
   return (
     <div
@@ -138,18 +137,18 @@ function FixtureCard({
       </div>
 
       {(() => {
-        const homePlayers: LivePlayerScore[] = isLive
-          ? (liveData?.homePlayers ?? [])
+        const homePlayers: LivePlayerScore[] = (liveData?.homePlayers?.length ?? 0) > 0
+          ? (liveData!.homePlayers ?? [])
           : fixture.result?.homePlayerScores
             ? JSON.parse(fixture.result.homePlayerScores)
             : [];
-        const awayPlayers: LivePlayerScore[] = isLive
-          ? (liveData?.awayPlayers ?? [])
+        const awayPlayers: LivePlayerScore[] = (liveData?.awayPlayers?.length ?? 0) > 0
+          ? (liveData!.awayPlayers ?? [])
           : fixture.result?.awayPlayerScores
             ? JSON.parse(fixture.result.awayPlayerScores)
             : [];
         const gwNumber = liveData?.gameweek ?? fixture.gameweek.number;
-        if (homePlayers.length === 0) return null;
+        if (!hasPlayerData) return null;
         return (
           <div className="mt-2">
             <button
@@ -159,72 +158,78 @@ function FixtureCard({
               {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
             </button>
             {expanded && (
-              <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
-                <div>
-                  <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
-                  {homePlayers.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between py-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <a
-                          href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 underline truncate"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {p.name}
-                        </a>
-                        {p.isCaptain && !p.isAutoAssigned && (
-                          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain && !p.isAutoAssigned ? (
-                          <span className="text-yellow-400 font-semibold">
-                            {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
-                          </span>
-                        ) : (
-                          <span className="text-white">
-                            {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+              homePlayers.length === 0 && awayPlayers.length === 0 ? (
+                <div className="mt-1 pt-2 border-t border-white/10 text-center text-gray-500 italic text-[10px] py-2">
+                  Player breakdown not available for this gameweek
                 </div>
-                <div>
-                  <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
-                  {awayPlayers.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between py-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <a
-                          href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 underline truncate"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {p.name}
-                        </a>
-                        {p.isCaptain && !p.isAutoAssigned && (
-                          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
-                        )}
+              ) : (
+                <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
+                  <div>
+                    <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
+                    {homePlayers.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between py-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <a
+                            href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline truncate"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {p.name}
+                          </a>
+                          {p.isCaptain && !p.isAutoAssigned && (
+                            <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0 ml-2">
+                          {p.isCaptain && !p.isAutoAssigned ? (
+                            <span className="text-yellow-400 font-semibold">
+                              {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
+                            </span>
+                          ) : (
+                            <span className="text-white">
+                              {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-right shrink-0 ml-2">
-                        {p.isCaptain && !p.isAutoAssigned ? (
-                          <span className="text-yellow-400 font-semibold">
-                            {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
-                          </span>
-                        ) : (
-                          <span className="text-white">
-                            {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
-                          </span>
-                        )}
+                    ))}
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
+                    {awayPlayers.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between py-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <a
+                            href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline truncate"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {p.name}
+                          </a>
+                          {p.isCaptain && !p.isAutoAssigned && (
+                            <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0 ml-2">
+                          {p.isCaptain && !p.isAutoAssigned ? (
+                            <span className="text-yellow-400 font-semibold">
+                              {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
+                            </span>
+                          ) : (
+                            <span className="text-white">
+                              {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )
             )}
           </div>
         );
@@ -241,6 +246,7 @@ export default function LeagueFixturesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
   const [availableGWs, setAvailableGWs] = useState<number[]>([]);
@@ -248,6 +254,7 @@ export default function LeagueFixturesPage() {
   const [isLive, setIsLive] = useState(false);
   const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
   const [isManuallyRefreshed, setIsManuallyRefreshed] = useState(false);
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchLiveScores = useCallback(async (gw: number) => {
@@ -255,17 +262,10 @@ export default function LeagueFixturesPage() {
       const res = await fetch(`/api/fixtures/live?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.isLive) {
-          setLiveScores(data.fixtures || []);
-          setIsLive(true);
-          setLiveCachedAt(data.cachedAt || null);
-          setIsManuallyRefreshed(false);
-        } else {
-          setLiveScores([]);
-          setIsLive(false);
-          setLiveCachedAt(null);
-          setIsManuallyRefreshed(false);
-        }
+        setLiveScores(data.fixtures || []);
+        setIsLive(data.isLive ?? false);
+        setLiveCachedAt(data.cachedAt || null);
+        setIsManuallyRefreshed(false);
       }
     } catch {
       // Silently fail — live scores are optional
@@ -305,7 +305,9 @@ export default function LeagueFixturesPage() {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated);
+        setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
+        if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
+        else if (data.type === "superadmin") setDashboardHref("/admin");
       } catch {
         setIsLoggedIn(false);
       }
@@ -335,30 +337,32 @@ export default function LeagueFixturesPage() {
         if (!response.ok) throw new Error("Failed to fetch fixtures");
         const data = await response.json();
         const fixturesData = data.fixtures || {};
-        const leaguePhaseEnd: number = data.playoffStartGw ? data.playoffStartGw - 1 : Infinity;
+        const format = data.format || "tvt";
+        setLeagueFormat(format);
+        // For Triple Crown, show all 38 GWs; for TVT, show up to playoffStartGw - 1
+        const leaguePhaseEnd: number = format === "triple-crown" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : Infinity);
         setFixtures(fixturesData);
 
         const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
         setAvailableGWs(gws);
 
         if (gws.length > 0) {
-          let currentGW = gws[0];
+          // Default to latest fully-concluded GW; if mid-flight (partial), use that; if none done, use first GW
+          let best = gws[0];
           for (const gw of gws) {
             const gwFixtures = fixturesData[gw] || [];
-            const hasResults = gwFixtures.some((f: Fixture) => f.result);
-            const allProcessed = gwFixtures.every((f: Fixture) => f.result);
-
-            if (hasResults && !allProcessed) {
-              currentGW = gw;
-              break;
-            } else if (!hasResults) {
-              currentGW = gw;
+            const allDone = gwFixtures.length > 0 && gwFixtures.every((f: Fixture) => f.result);
+            const anyDone = gwFixtures.some((f: Fixture) => f.result);
+            if (allDone) {
+              best = gw; // fully concluded — keep advancing
+            } else if (anyDone) {
+              best = gw; // partially in-flight — this is "current"
               break;
             } else {
-              currentGW = gw;
+              break; // no results yet — stop
             }
           }
-          setSelectedGW(currentGW);
+          setSelectedGW(best);
         }
       } catch (err) {
         console.error("Error fetching fixtures:", err);
@@ -371,9 +375,16 @@ export default function LeagueFixturesPage() {
   }, [leagueSlug]);
 
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
-  const groupAFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "A");
-  const groupBFixtures = selectedFixtures.filter((f: Fixture) => f.group.name === "B");
-  const hasGroupB = Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
+  const isTripleCrown = leagueFormat === "triple-crown";
+
+  // Triple Crown: only show PL fixtures on this page (cup/knockout live on UCL/Europa pages)
+  const displayFixtures = isTripleCrown
+    ? selectedFixtures.filter((f: Fixture) => !f.competitionType || f.competitionType === "pl")
+    : selectedFixtures;
+
+  const groupAFixtures = displayFixtures.filter((f: Fixture) => !f.group?.name || f.group.name === "A");
+  const groupBFixtures = displayFixtures.filter((f: Fixture) => f.group?.name === "B");
+  const hasGroupB = !isTripleCrown && Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
 
   const hasResults = selectedFixtures.some((f: Fixture) => f.result);
   const deadline = selectedFixtures[0]?.gameweek?.deadline;
@@ -391,9 +402,9 @@ export default function LeagueFixturesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+    <div className={`min-h-screen bg-gradient-to-b ${isTripleCrown ? "from-[#37003c] via-[#1a0021] to-[#0d001a]" : "from-slate-900 via-purple-900 to-slate-900"}`}>
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
+      <nav className={`sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 backdrop-blur ${isTripleCrown ? "bg-[#37003c]/80" : "bg-slate-900/80"}`}>
         <Link href="/" className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             JPL
@@ -401,16 +412,24 @@ export default function LeagueFixturesPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">All Leagues</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
-            Standings
+            {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-yellow-400 font-semibold transition">
-            Fixtures
+            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
           </Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
-            Playoffs
-          </Link>
+          {isTripleCrown ? (
+            <>
+              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+            </>
+          ) : (
+            <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
+              Playoffs
+            </Link>
+          )}
           <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
             Winners
           </Link>
@@ -475,7 +494,7 @@ export default function LeagueFixturesPage() {
               <select
                 value={selectedGW || ""}
                 onChange={(e) => setSelectedGW(Number(e.target.value))}
-                className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white font-semibold min-w-[180px] text-center appearance-none cursor-pointer hover:bg-white/20 transition"
+                className={`border rounded-lg px-4 py-2 font-semibold min-w-[180px] text-center appearance-none cursor-pointer transition ${isTripleCrown ? "bg-[#00ff85]/10 border-[#00ff85]/30 text-[#00ff85] hover:bg-[#00ff85]/20" : "bg-white/10 border-white/20 text-white hover:bg-white/20"}`}
               >
                 {availableGWs.map((gw) => (
                   <option key={gw} value={gw} className="bg-slate-800 text-white">
@@ -512,16 +531,6 @@ export default function LeagueFixturesPage() {
                     isManuallyRefreshed ? "bg-amber-400" : "bg-gray-400"
                   }`}></span>
                   Live Scores
-                  <button
-                    onClick={handleRefresh}
-                    disabled={isRefreshing}
-                    className="ml-1 p-0.5 rounded hover:bg-white/10 transition disabled:opacity-50"
-                    title="Refresh live scores"
-                  >
-                    <svg className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </button>
                 </span>
               ) : (
                 <span className="px-4 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-sm font-medium flex items-center gap-2">
@@ -529,10 +538,24 @@ export default function LeagueFixturesPage() {
                   Upcoming
                 </span>
               )}
+              {/* Refresh button — always visible */}
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  isRefreshing ? "bg-white/5 text-gray-500" : "bg-white/10 text-gray-300 hover:bg-white/20"
+                }`}
+                title="Refresh scores"
+              >
+                <svg className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </button>
               {deadline && !hasResults && !isLive && (
                 <span className="text-sm text-gray-400">Deadline: {formatDeadline(deadline)}</span>
               )}
-              {isLive && liveCachedAt && (
+              {liveCachedAt && (
                 <span className="text-xs text-gray-500">
                   Updated: {new Date(liveCachedAt).toLocaleTimeString()}
                 </span>

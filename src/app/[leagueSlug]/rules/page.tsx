@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface LeagueConfig {
@@ -362,6 +362,74 @@ function get8TeamRules(cfg: LeagueConfig) {
   );
 }
 
+function getTripleCrownRules(cfg: LeagueConfig) {
+  const leagueStageEnd = cfg.leagueStageEnd;
+  return (
+    <div className="space-y-8">
+      {/* A — Structure */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="A" color="purple" title="League Structure" />
+        <ul className="space-y-4 text-gray-300">
+          <RuleItem><strong>Format:</strong> 20 teams compete across 3 parallel competitions — Premier League (PL), Cup Groups (UEFA), and UCL/UEL Knockouts.</RuleItem>
+          <RuleItem><strong>Squad:</strong> 2 FPL managers per team. Team score = combined FPL scores of both players minus transfer hits.</RuleItem>
+          <RuleItem><strong>Captaincy:</strong> One player is nominated as captain per GW. Their net score (FPL score minus hits) is <strong>doubled</strong>. Same deadline and rules as TVT.</RuleItem>
+          <RuleItem><strong>No Chips:</strong> Triple Crown does not use any special chips (Win-Win, Double Pointer, Challenge, etc.).</RuleItem>
+        </ul>
+      </section>
+
+      {/* B — PL */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="B" color="orange" title="Premier League (PL)" />
+        <ul className="space-y-4 text-gray-300">
+          <RuleItem><strong>Duration:</strong> All 38 gameweeks. Every team plays every other team twice (home &amp; away) — 38 matches total.</RuleItem>
+          <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
+          <RuleItem><strong>Scoring:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is doubled.</RuleItem>
+          <RuleItem><strong>Standings:</strong> Teams are ranked by total league points. PL standings after GW5 determine cup group seeding.</RuleItem>
+        </ul>
+      </section>
+
+      {/* C — Cup Groups */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="C" color="green" title="Cup Groups (UEFA)" />
+        <ul className="space-y-4 text-gray-300">
+          <RuleItem><strong>Seeding:</strong> After GW5, the 20 teams are snake-seeded into 4 cup groups (A/B/C/D) of 5 teams each, based on PL standings. Rank 1 gets the easiest group.</RuleItem>
+          <RuleItem><strong>Ghost Teams:</strong> Each group has a 6th &quot;Ghost&quot; team. One team plays the Ghost each matchday. The Ghost&apos;s score = average of the other 4 human teams in the group (rounded up).</RuleItem>
+          <RuleItem><strong>Schedule:</strong> 10 matchdays on even GWs: 6, 8, 10, 12, 14, 16, 18, 20, 22, 24. Each team plays every group opponent twice (including the Ghost).</RuleItem>
+          <RuleItem><strong>Cup Points:</strong> Win = 3 pts, Draw = 1 pt, Loss = 0 pts (football-style table).</RuleItem>
+          <RuleItem><strong>Qualification:</strong> Top 2 from each group qualify for UCL. Ranks 3–4 qualify for UEL.</RuleItem>
+        </ul>
+      </section>
+
+      {/* D — UCL/UEL Knockouts */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="D" color="blue" title="UCL / UEL Knockouts" />
+        <ul className="space-y-4 text-gray-300">
+          <RuleItem><strong>UCL (Champions League):</strong> 8 teams (top 2 from each cup group). Quarter-Finals → Semi-Finals → Final.</RuleItem>
+          <RuleItem><strong>UEL (Europa League):</strong> 8 teams (ranks 3–4 from each cup group). Quarter-Finals → Semi-Finals → Final.</RuleItem>
+          <RuleItem><strong>Format:</strong> 2-legged ties. Aggregate score over both legs decides the winner.</RuleItem>
+          <RuleItem><strong>QF Seeding (cross-group):</strong></RuleItem>
+          <li className="ml-8 space-y-1 text-sm">
+            <div className="text-blue-400 font-medium">UCL: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1</div>
+            <div className="text-orange-400 font-medium">UEL: A3 vs C4, A4 vs C3, B3 vs D4, B4 vs D3</div>
+          </li>
+          <RuleItem><strong>Scoring:</strong> Same as PL — combined FPL score minus hits, captain doubled. Each leg is scored independently.</RuleItem>
+        </ul>
+      </section>
+
+      {/* E — Hits & Tiebreakers */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="E" color="yellow" title="Transfer Hits & Tiebreakers" />
+        <ul className="space-y-4 text-gray-300">
+          <RuleItem><strong>Transfer Hits:</strong> Each FPL transfer beyond the free allowance costs −4 points. These are deducted from the player&apos;s score before captain doubling.</RuleItem>
+          <RuleItem><strong>PL Tiebreaker:</strong> Total FPL score (higher is better), then head-to-head record.</RuleItem>
+          <RuleItem><strong>Cup Group Tiebreaker:</strong> Goal difference (total points scored for minus against), then total points scored.</RuleItem>
+          <RuleItem><strong>Knockout Tiebreaker:</strong> If aggregate is tied after 2 legs, the team with the higher single-leg score wins. If still tied, the higher-seeded team advances.</RuleItem>
+        </ul>
+      </section>
+    </div>
+  );
+}
+
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
 function SectionHeader({ letter, color, title }: { letter: string; color: string; title: string }) {
@@ -500,50 +568,79 @@ function TiebreakerSection() {
 
 export default function LeagueRulesPage() {
   const params = useParams();
+  const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
 
   const [config, setConfig] = useState<LeagueConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated);
+        if (!res.ok || !data.authenticated) {
+          router.push("/signin");
+          return;
+        }
+        setIsLoggedIn(true);
+        if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
+        else if (data.type === "superadmin") setDashboardHref("/admin");
       } catch {
-        setIsLoggedIn(false);
+        router.push("/signin");
       }
     };
     checkAuth();
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/leagues")
-      .then((r) => r.json())
-      .then((data) => {
-        const league = (data.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
-      })
-      .catch(() => {});
-  }, [leagueSlug]);
+  }, [router]);
 
   useEffect(() => {
     if (!leagueSlug) return;
-    fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const teamSize: number = data.teamSize ?? 32;
-        const leagueStageEnd: number = data.leagueStageEnd ?? 30;
-        const enabledChips: string[] = data.enabledChips ?? ["D", "W", "C"];
-        setConfig({ teamSize, leagueStageEnd, leagueName: "", enabledChips });
-      })
-      .catch(() => {
+
+    const fetchConfig = async () => {
+      try {
+        // Fetch leagues to get league config (name, chips, playoffStartGw, teamSize)
+        const leaguesRes = await fetch("/api/leagues");
+        const leaguesData = await leaguesRes.json();
+        const league = (leaguesData.leagues || []).find((l: any) => l.slug === leagueSlug);
+
+        if (league) {
+          setLeagueName(league.name);
+          setLeagueFormat(league.format ?? null);
+
+          // Parse enabledChips from league (it's stored as JSON string)
+          let enabledChips: string[] = ["D", "W", "C"];
+          try {
+            if (league.enabledChips) {
+              enabledChips = JSON.parse(league.enabledChips);
+            }
+          } catch { /* keep default */ }
+
+          const leagueStageEnd = (league.playoffStartGw ?? 31) - 1;
+          const teamSize = league.teamSize ?? 32;
+
+          setConfig({ teamSize, leagueStageEnd, leagueName: league.name, enabledChips });
+        } else {
+          // Fallback to standings API if league not found (shouldn't happen)
+          const standingsRes = await fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`);
+          const standingsData = await standingsRes.json();
+          const teamSize = standingsData.teamSize ?? 32;
+          const leagueStageEnd = standingsData.leagueStageEnd ?? 30;
+          const enabledChips = standingsData.enabledChips ?? ["D", "W", "C"];
+          setConfig({ teamSize, leagueStageEnd, leagueName: "", enabledChips });
+        }
+      } catch (error) {
+        console.error("Failed to fetch league config:", error);
         setConfig({ teamSize: 32, leagueStageEnd: 30, leagueName: "", enabledChips: ["D", "W", "C"] });
-      })
-      .finally(() => setIsLoading(false));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchConfig();
   }, [leagueSlug]);
 
   const handleSignOut = async () => {
@@ -551,12 +648,15 @@ export default function LeagueRulesPage() {
     window.location.href = "/signin";
   };
 
-  const variantLabel =
-    config?.teamSize === 8
-      ? "8-Team Format"
-      : config?.teamSize === 16
-      ? "16-Team Format"
-      : "32-Team Format";
+  const isTripleCrown = leagueFormat === "triple-crown";
+
+  const variantLabel = isTripleCrown
+    ? "Triple Crown (20 Teams)"
+    : config?.teamSize === 8
+    ? "8-Team Format"
+    : config?.teamSize === 16
+    ? "16-Team Format"
+    : "32-Team Format";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -569,10 +669,23 @@ export default function LeagueRulesPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">All Leagues</Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
+          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
+            {isTripleCrown ? "PL Standings" : "Standings"}
+          </Link>
+          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
+            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
+          </Link>
+          {isTripleCrown ? (
+            <>
+              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+            </>
+          ) : (
+            <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+          )}
+          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-yellow-400 font-semibold transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
           {isLoggedIn ? (
@@ -595,7 +708,7 @@ export default function LeagueRulesPage() {
 
       <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-12">
         <div className="text-center mb-10">
-          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-3">TVT Rules &amp; Regulations</h1>
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-3">{isTripleCrown ? "Triple Crown Rules & Regulations" : "TVT Rules & Regulations"}</h1>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <p className="text-gray-400">{leagueName || leagueSlug}</p>
             {!isLoading && config && (
@@ -609,7 +722,9 @@ export default function LeagueRulesPage() {
         {isLoading ? (
           <LoadingScreen variant="rules" fullScreen={false} />
         ) : config ? (
-          config.teamSize === 8
+          isTripleCrown
+            ? getTripleCrownRules(config)
+            : config.teamSize === 8
             ? get8TeamRules(config)
             : config.teamSize === 16
             ? get16TeamRules(config)

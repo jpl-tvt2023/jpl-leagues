@@ -69,16 +69,21 @@ export async function POST(request: NextRequest) {
 
       // Update password and clear mustChangePassword flag
       await db.update(teams)
-        .set({ 
-          password: hashedPassword, 
+        .set({
+          password: hashedPassword,
           mustChangePassword: false,
           updatedAt: new Date(),
         })
         .where(eq(teams.id, teamId));
 
+      // Re-fetch team to check isProfileComplete
+      const updatedTeamList = await db.select().from(teams).where(eq(teams.id, teamId));
+      const updatedTeam = updatedTeamList[0];
+
       return NextResponse.json({
         success: true,
         message: "Password changed successfully",
+        redirectTo: updatedTeam.isProfileComplete ? "/" : "/setup",
       });
     }
 

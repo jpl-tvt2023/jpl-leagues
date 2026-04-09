@@ -59,8 +59,8 @@ export async function POST(request: NextRequest) {
 
       return response;
     } else {
-      // Team login via team name
-      const teamList = await db.select().from(teams).where(eq(teams.name, identifier));
+      // Team login via team login ID
+      const teamList = await db.select().from(teams).where(eq(teams.teamLoginId, identifier));
       const team = teamList[0];
 
       if (!team) {
@@ -79,6 +79,14 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Determine redirect: password change → setup wizard → dashboard
+      let redirectTo = "/";
+      if (team.mustChangePassword) {
+        redirectTo = "/change-password";
+      } else if (!team.isProfileComplete) {
+        redirectTo = "/setup";
+      }
+
       const response = NextResponse.json({
         success: true,
         team: {
@@ -88,8 +96,9 @@ export async function POST(request: NextRequest) {
           groupId: team.groupId,
           isAdmin: false,
           mustChangePassword: team.mustChangePassword,
+          isProfileComplete: team.isProfileComplete,
         },
-        redirectTo: team.mustChangePassword ? "/change-password" : "/",
+        redirectTo,
       });
 
       // Single signed session cookie — replaces teamId/isAdmin cookies

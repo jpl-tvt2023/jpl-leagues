@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, settings } from "@/lib/db";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 /**
@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       captainAnnouncementEnabled: settingsMap["captainAnnouncementEnabled"] !== "false",
       chipAnnouncementEnabled: settingsMap["chipAnnouncementEnabled"] !== "false",
+      groupsRevealed: settingsMap["groupsRevealed"] === "true",
     });
   } catch (error) {
     console.error("Error fetching settings:", error);
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "key and boolean value are required" }, { status: 400 });
     }
 
-    const allowedKeys = ["captainAnnouncementEnabled", "chipAnnouncementEnabled"];
+    const allowedKeys = ["captainAnnouncementEnabled", "chipAnnouncementEnabled", "groupsRevealed"];
     if (!allowedKeys.includes(key)) {
       return NextResponse.json({ error: "Invalid setting key" }, { status: 400 });
     }

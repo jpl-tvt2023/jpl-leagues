@@ -12,7 +12,7 @@ function toStr(value: unknown): string {
 }
 
 interface CaptainRow {
-  teamName: string;
+  teamId: string; // Or teamLoginId — either name
   playerName: string;
   [key: string]: string | number | undefined; // GW columns: "1", "2", etc.
 }
@@ -62,7 +62,11 @@ export async function POST(request: NextRequest) {
       where: eq(teams.leagueId, leagueId),
       with: { players: true },
     });
-    const teamMap = new Map(allTeams.map(t => [t.name.toLowerCase(), t]));
+    const teamMap = new Map(allTeams.map(t => [t.teamLoginId?.toLowerCase() || "", t]));
+    // Also add by abbreviation as fallback for flexibility
+    for (const t of allTeams) {
+      if (t.abbreviation) teamMap.set(t.abbreviation.toLowerCase(), t);
+    }
 
     // Get all gameweeks for this league
     const allGameweeks = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
@@ -103,18 +107,18 @@ export async function POST(request: NextRequest) {
       const rowNum = i + 2; // Excel row number
 
       try {
-        const teamName = toStr(row.teamName || row["Team"] || row["team"]);
+        const teamId = toStr(row.teamId || row["Team ID"] || row["teamId"] || row["Team"] || row["team"]);
         const playerName = toStr(row.playerName || row["Players"] || row["Player"] || row["player"]);
 
-        if (!teamName || !playerName) {
-          results.errors.push(`Row ${rowNum}: Missing team name or player name`);
+        if (!teamId || !playerName) {
+          results.errors.push(`Row ${rowNum}: Missing team ID or player name`);
           continue;
         }
 
         // Find team
-        const team = teamMap.get(teamName.toLowerCase());
+        const team = teamMap.get(teamId.toLowerCase());
         if (!team) {
-          results.errors.push(`Row ${rowNum}: Team "${teamName}" not found`);
+          results.errors.push(`Row ${rowNum}: Team "${teamId}" not found`);
           continue;
         }
 
@@ -123,7 +127,7 @@ export async function POST(request: NextRequest) {
           p => p.name.toLowerCase() === playerName.toLowerCase()
         );
         if (!player) {
-          results.errors.push(`Row ${rowNum}: Player "${playerName}" not found in team "${teamName}"`);
+          results.errors.push(`Row ${rowNum}: Player "${playerName}" not found in team "${teamId}"`);
           continue;
         }
 
@@ -188,7 +192,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        results.success.push(`Row ${rowNum}: Processed captain data for ${playerName} (${teamName})`);
+        results.success.push(`Row ${rowNum}: Processed captain data for ${playerName} (${teamId})`);
       } catch (error) {
         console.error(`Error processing row ${rowNum}:`, error);
         results.errors.push(`Row ${rowNum}: ${error instanceof Error ? error.message : "Unknown error"}`);

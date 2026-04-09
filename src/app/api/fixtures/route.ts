@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Resolve leagueId and config from slug
-    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
+    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, format: leagues.format }).from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
     if (league.length === 0) {
       return NextResponse.json(
         { error: "League not found" },
@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
 
     const leagueId = league[0].id;
     const playoffStartGw = league[0].playoffStartGw ?? null;
+    const format = league[0].format ?? "tvt";
 
     // Return cached fixtures if available — only for unfiltered league requests
     if (leagueId && !gameweekParam && !groupParam) {
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     // Filter by group if provided
     if (groupParam && (groupParam === "A" || groupParam === "B")) {
-      allFixtures = allFixtures.filter(f => f.group.name === groupParam);
+      allFixtures = allFixtures.filter(f => f.group?.name === groupParam);
     }
 
     // Sort by gameweek number, then group name
@@ -74,7 +75,9 @@ export async function GET(request: NextRequest) {
       if (a.gameweek.number !== b.gameweek.number) {
         return a.gameweek.number - b.gameweek.number;
       }
-      return a.group.name.localeCompare(b.group.name);
+      const aGroup = a.group?.name || "";
+      const bGroup = b.group?.name || "";
+      return aGroup.localeCompare(bGroup);
     });
 
     // Group fixtures by gameweek
@@ -91,6 +94,7 @@ export async function GET(request: NextRequest) {
       totalFixtures: allFixtures.length,
       fixtures: fixturesByGameweek,
       playoffStartGw,
+      format,
     };
 
     // Fire-and-forget cache write
@@ -101,9 +105,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(responseData);
   } catch (error) {
     console.error("Error fetching fixtures:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch fixtures" },
-      { status: 500 }
-    );
+    // Return empty fixtures instead of error — likely no fixtures generated yet
+    return NextResponse.json({
+      fixtures: {},
+      playoffStartGw: 31,
+    });
   }
 }

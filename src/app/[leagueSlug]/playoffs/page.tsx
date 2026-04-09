@@ -572,7 +572,22 @@ function GroupStageView({
                             onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
                             className="w-full flex items-center justify-between text-xs font-semibold text-blue-300 hover:text-blue-200 transition py-1 px-1.5 rounded hover:bg-blue-500/10"
                           >
-                            <span>GW{gw}</span>
+                            <div className="flex items-center gap-2">
+                              <span>GW{gw}</span>
+                              {mergedScores.some(s => s.gameweek === gw) && onRefreshRound && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRefreshRound(gw);
+                                  }}
+                                  disabled={refreshingGw === gw}
+                                  className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-xs ${refreshingGw === gw ? "animate-spin" : ""}`}
+                                  title="Refresh live scores"
+                                >
+                                  ⟳
+                                </button>
+                              )}
+                            </div>
                             <span className="text-blue-500/60">{isExpanded ? "▼" : "▶"}</span>
                           </button>
 
@@ -660,7 +675,22 @@ function GroupStageView({
                             onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
                             className="w-full flex items-center justify-between text-xs font-semibold text-purple-300 hover:text-purple-200 transition py-1 px-1.5 rounded hover:bg-purple-500/10"
                           >
-                            <span>GW{gw}</span>
+                            <div className="flex items-center gap-2">
+                              <span>GW{gw}</span>
+                              {mergedScores.some(s => s.gameweek === gw) && onRefreshRound && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRefreshRound(gw);
+                                  }}
+                                  disabled={refreshingGw === gw}
+                                  className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-xs ${refreshingGw === gw ? "animate-spin" : ""}`}
+                                  title="Refresh live scores"
+                                >
+                                  ⟳
+                                </button>
+                              )}
+                            </div>
                             <span className="text-purple-500/60">{isExpanded ? "▼" : "▶"}</span>
                           </button>
 
@@ -698,8 +728,11 @@ export default function LeaguePlayoffsPage() {
   const [data, setData] = useState<BracketData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("tvt");
+  const [tcTab, setTcTab] = useState<"ucl" | "uel">("ucl");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<number | null>(null);
   const [tempLiveScores, setTempLiveScores] = useState<Record<number, LiveFixtureScore[]>>({});
 
@@ -744,15 +777,22 @@ export default function LeaguePlayoffsPage() {
       try {
         const res = await fetch("/api/auth/me");
         const me = await res.json();
-        if (res.ok && me.authenticated) setIsLoggedIn(true);
+        if (res.ok && me.authenticated && (me.type === "team" || me.type === "admin" || me.type === "superadmin")) {
+          setIsLoggedIn(true);
+          if (me.type === "admin" && me.adminLeagueId) setDashboardHref(`/admin/${me.adminLeagueId}`);
+          else if (me.type === "superadmin") setDashboardHref("/admin");
+        }
       } catch {}
     };
 
     fetch("/api/leagues")
       .then((r) => r.json())
       .then((d) => {
-        const league = (d.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
+        const league = (d.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
+        if (league) {
+          setLeagueName(league.name);
+          setLeagueFormat(league.format ?? null);
+        }
       })
       .catch(() => {});
 
@@ -795,6 +835,8 @@ export default function LeaguePlayoffsPage() {
     );
   }
 
+  const isTripleCrown = leagueFormat === "triple-crown";
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
@@ -806,10 +848,22 @@ export default function LeaguePlayoffsPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">All Leagues</Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-yellow-400 font-semibold transition">Playoffs</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
+          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
+            {isTripleCrown ? "PL Standings" : "Standings"}
+          </Link>
+          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
+            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
+          </Link>
+          {isTripleCrown ? (
+            <>
+              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-yellow-400 font-semibold transition">Playoffs</Link>
+            </>
+          ) : (
+            <Link href={`/${leagueSlug}/playoffs`} className="text-yellow-400 font-semibold transition">Playoffs</Link>
+          )}
           <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
@@ -826,6 +880,94 @@ export default function LeaguePlayoffsPage() {
       </nav>
 
       <div className="mx-auto max-w-7xl px-6 py-8">
+
+        {/* ====== TRIPLE CROWN: UCL + UEL KNOCKOUTS ====== */}
+        {isTripleCrown ? (
+          <div>
+            <div className="mb-6">
+              <h1 className="text-3xl font-bold text-white mb-2">Knockout Stage</h1>
+              <p className="text-gray-400 text-sm">UEFA Champions League &amp; Europa League · Triple Crown</p>
+            </div>
+
+            {/* UCL / UEL Tab Toggle */}
+            <div className="flex gap-1 mb-8 bg-slate-800/50 rounded-lg p-1 w-fit">
+              <button
+                onClick={() => setTcTab("ucl")}
+                className={`px-5 py-2 rounded-md text-sm font-semibold transition ${
+                  tcTab === "ucl" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                ★ UCL
+              </button>
+              <button
+                onClick={() => setTcTab("uel")}
+                className={`px-5 py-2 rounded-md text-sm font-semibold transition ${
+                  tcTab === "uel" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                ◆ Europa League
+              </button>
+            </div>
+
+            {/* UCL Tab */}
+            {tcTab === "ucl" && (
+              <div>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="h-8 w-1 rounded-full bg-blue-500" />
+                  <div>
+                    <h2 className="text-xl font-bold text-white">UCL Knockouts</h2>
+                    <p className="text-blue-400 text-xs font-semibold uppercase tracking-wider">UEFA Champions League</p>
+                  </div>
+                </div>
+                {(data.tvt.qf?.length || data.tvt.sf?.length || data.tvt.final?.length) ? (
+                  <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
+                      <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
+                      <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
+                      <RoundColumn title="UCL Final 🏆" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-yellow-500/50 pl-3" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-5 py-6 text-sm text-blue-300">
+                    UCL bracket will be generated after the group stage (GW24).
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* UEL Tab */}
+            {tcTab === "uel" && (
+              <div>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="h-8 w-1 rounded-full bg-orange-500" />
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Europa Knockouts</h2>
+                    <p className="text-orange-400 text-xs font-semibold uppercase tracking-wider">UEFA Europa League</p>
+                  </div>
+                </div>
+                {(() => {
+                  const uelQF = data.challenger.c31 ?? data.challenger.c34 ?? [];
+                  const uelSF = data.challenger.c35 ?? data.challenger.c37 ?? [];
+                  const uelFinal = data.challenger.c36 ?? data.challenger.c38 ?? [];
+                  const hasData = uelQF.length > 0 || uelSF.length > 0 || uelFinal.length > 0;
+                  return hasData ? (
+                    <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
+                        <RoundColumn title="Quarter-Finals" ties={uelQF} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
+                        <RoundColumn title="Semi-Finals" ties={uelSF} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
+                        <RoundColumn title="Europa Final 🏆" ties={uelFinal} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 px-5 py-6 text-sm text-orange-300">
+                      Europa bracket will be generated after the group stage (GW24).
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">Playoffs Bracket</h1>
           {data.mode === "tentative" && (
@@ -841,9 +983,10 @@ export default function LeaguePlayoffsPage() {
             </div>
           )}
         </div>
+        )}
 
-        {/* Tab toggle */}
-        {data.teamSize === 16 && (
+        {/* Tab toggle — TVT only */}
+        {!isTripleCrown && data.teamSize === 16 && (
           <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
             <button
               onClick={() => setActiveTab("groupStage")}
@@ -871,7 +1014,7 @@ export default function LeaguePlayoffsPage() {
             </button>
           </div>
         )}
-        {data.teamSize === 32 && (
+        {!isTripleCrown && data.teamSize === 32 && (
           <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
             <button
               onClick={() => setActiveTab("tvt")}
@@ -893,7 +1036,7 @@ export default function LeaguePlayoffsPage() {
         )}
 
         {/* Group Stage — 16-team only */}
-        {activeTab === "groupStage" && data.teamSize === 16 && data.groupStage && (
+        {!isTripleCrown && activeTab === "groupStage" && data.teamSize === 16 && data.groupStage && (
           <GroupStageView
             groups={data.groupStage.groups}
             liveScores={data.liveScores}
@@ -906,7 +1049,7 @@ export default function LeaguePlayoffsPage() {
         )}
 
         {/* TVT Main Draw Bracket */}
-        {(activeTab === "tvt" || data.teamSize === 8) && (
+        {!isTripleCrown && (activeTab === "tvt" || data.teamSize === 8) && (
           <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
             {data.teamSize === 8 ? (
               /* 8-team: SF → 3rd Place + Final */
@@ -1005,7 +1148,7 @@ export default function LeaguePlayoffsPage() {
         )}
 
         {/* Challenger Series — 16/32-team only */}
-        {activeTab === "challenger" && data.teamSize !== 8 && (
+        {!isTripleCrown && activeTab === "challenger" && data.teamSize !== 8 && (
           <div className="space-y-6">
             {(() => {
               const allLiveScores = data.liveScores ? Object.values(data.liveScores).flat() : [];

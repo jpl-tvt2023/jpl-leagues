@@ -57,19 +57,13 @@ export default function SignInPage() {
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <Link href="/" className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            TVT
+            JPL
           </div>
-          <span className="text-xl font-bold text-white hidden sm:inline">Fantasy Super League</span>
+          <span className="text-xl font-bold text-white hidden sm:inline">JPL Sports</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/standings" className="text-gray-300 hover:text-white transition">
-            Standings
-          </Link>
-          <Link href="/fixtures" className="text-gray-300 hover:text-white transition">
-            Fixtures
-          </Link>
-          <Link href="/playoffs" className="text-gray-300 hover:text-white transition">
-            Playoffs
+          <Link href="/" className="text-gray-300 hover:text-white transition">
+            All Leagues
           </Link>
         </div>
       </nav>
@@ -78,7 +72,7 @@ export default function SignInPage() {
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-white mb-4">Welcome Back</h1>
           <p className="text-gray-400">
-            Sign in with your team name or admin email.
+            Sign in with your team ID or admin email.
           </p>
         </div>
 
@@ -99,14 +93,13 @@ export default function SignInPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Team Name or Admin Email
+                  Team ID or Admin Email
                 </label>
                 <input
                   type="text"
                   required
                   value={formData.identifier}
                   onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
-                  placeholder="DM — Rahul or admin@email.com"
                   className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
                   suppressHydrationWarning
                 />

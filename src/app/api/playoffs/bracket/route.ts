@@ -111,16 +111,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Return cached bracket if available (liveScores excluded from cache; page polls those separately)
-    if (leagueId) {
-      try {
-        const cached = await getCachedPlayoffBracket(leagueId);
-        if (cached) return NextResponse.json(cached);
-      } catch {
-        // Cache miss or Redis error — fall through to DB computation
-      }
-    }
-
     const tiesQuery = leagueId
       ? db.select().from(playoffTies).where(eq(playoffTies.leagueId, leagueId)).limit(1)
       : db.select().from(playoffTies).limit(1);
@@ -130,12 +120,24 @@ export async function GET(request: NextRequest) {
     const latestCompletedGw = await getLatestCompletedGw(leagueId);
 
     if (isLive) {
-      const bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
-      const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, playoffStartGw);
-      // Fire-and-forget cache write (liveScores excluded; page polls those separately)
+      // Try cached bracket (liveScores always fetched fresh)
+      let bracket: any = null;
       if (leagueId) {
-        setCachedPlayoffBracket(leagueId, bracket).catch(() => {});
+        try {
+          bracket = await getCachedPlayoffBracket(leagueId);
+        } catch {
+          // Cache miss or Redis error — fall through to DB computation
+        }
       }
+      if (!bracket) {
+        bracket = await buildLiveBracket(latestCompletedGw, leagueId, teamSize, playoffStartGw);
+        if (leagueId) {
+          setCachedPlayoffBracket(leagueId, bracket).catch(() => {});
+        }
+      }
+      // TC (teamSize=20) knockouts start at GW27, not the standard playoffStartGw
+      const liveScoresStartGw = teamSize === 20 ? 27 : playoffStartGw;
+      const liveScores = await fetchLiveScoresForAllPlayoffGws(leagueId, liveScoresStartGw);
       return NextResponse.json({ ...bracket, liveScores });
     }
 
@@ -174,61 +176,80 @@ async function getLatestCompletedGw(leagueId?: string | null): Promise<number> {
  */
 async function fetchLiveScoresForAllPlayoffGws(leagueId: string | null, playoffStartGw: number): Promise<Record<number, any[]>> {
   const liveScoresByGw: Record<number, any[]> = {};
+  const now = new Date();
 
   try {
-    // Detect which GW is actually live
-    const { liveGw, gwStatus } = await detectLiveGameweek();
-
-    // Process each playoff GW from the league's playoffStartGw
+    // Process each knockout GW using inline DB-based status detection.
+    // This avoids detectLiveGameweek() which is hardcoded to GW31–38 and would
+    // return undefined status for TC knockout GWs 27 and 29.
     for (let gwNumber = playoffStartGw; gwNumber <= 38; gwNumber++) {
-      const status = gwStatus[gwNumber];
+      // Look up the GW record scoped to this league
+      const gwRecord = await db.query.gameweeks.findFirst({
+        where: leagueId
+          ? and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId))
+          : eq(gameweeks.number, gwNumber),
+      });
 
-      if (status === "notStarted") {
-        // Upcoming GW - return empty
+      // No GW in DB or deadline hasn't passed yet → upcoming, skip
+      if (!gwRecord || new Date(gwRecord.deadline) > now) {
         liveScoresByGw[gwNumber] = [];
         continue;
       }
 
-      if (status === "inProgress" && gwNumber === liveGw) {
-        // Live GW - fetch from Redis cache (populated by cron every 10 min)
+      // Get all playoff fixtures for this GW (with results eagerly loaded)
+      const gwFixtures = await db.query.fixtures.findMany({
+        where: and(eq(fixtures.gameweekId, gwRecord.id), eq(fixtures.isPlayoff, true)),
+        with: { result: true },
+      });
+
+      if (gwFixtures.length === 0) {
+        liveScoresByGw[gwNumber] = [];
+        continue;
+      }
+
+      const fixturesWithResults = gwFixtures.filter(f => f.result);
+      const allHaveResults = fixturesWithResults.length === gwFixtures.length;
+      const someHaveResults = fixturesWithResults.length > 0;
+
+      if (allHaveResults) {
+        // Finished GW — load from DB results table (has stored player scores)
+        try {
+          const dbScores = await getFinishedGwScoresFromDb(gwNumber, leagueId);
+          liveScoresByGw[gwNumber] = dbScores;
+          console.log(`Bracket: Using DB scores for finished GW${gwNumber} (${dbScores.length} fixtures)`);
+        } catch (err) {
+          console.error(`Bracket: Failed to fetch DB scores for GW${gwNumber}:`, err);
+          liveScoresByGw[gwNumber] = [];
+        }
+      } else if (someHaveResults) {
+        // In-progress GW — try Redis cache, fall back to FPL API
         try {
           const cachedData = await getLiveCachedScores(gwNumber);
           if (cachedData && cachedData.fixtures && cachedData.fixtures.length > 0) {
             liveScoresByGw[gwNumber] = cachedData.fixtures;
             console.log(`Bracket: Using cached live scores for GW${gwNumber}`);
-            continue;
           } else {
             console.warn(`Bracket: No cached data for live GW${gwNumber}, falling back to FPL API`);
-            // Cache miss - fetch from FPL API as fallback
             await fetchAndCacheLiveScoresForGw(gwNumber, leagueId);
             const retryData = await getLiveCachedScores(gwNumber);
-            if (retryData && retryData.fixtures) {
-              liveScoresByGw[gwNumber] = retryData.fixtures;
-              continue;
-            }
+            liveScoresByGw[gwNumber] = retryData?.fixtures ?? [];
           }
         } catch (err) {
           console.error(`Bracket: Failed to fetch cached scores for GW${gwNumber}:`, err);
-          // Silently skip this GW if cache fails
+          liveScoresByGw[gwNumber] = [];
         }
-      }
-
-      if (status === "finished") {
-        // Finished GW - fetch from DB results table
+      } else {
+        // Deadline passed but no results yet — fetch live from FPL API
         try {
-          const dbScores = await getFinishedGwScoresFromDb(gwNumber, leagueId);
-          if (dbScores.length > 0) {
-            liveScoresByGw[gwNumber] = dbScores;
-            console.log(`Bracket: Using DB scores for finished GW${gwNumber}`);
-            continue;
-          }
+          await fetchAndCacheLiveScoresForGw(gwNumber, leagueId);
+          const liveData = await getLiveCachedScores(gwNumber);
+          liveScoresByGw[gwNumber] = liveData?.fixtures ?? [];
+          console.log(`Bracket: Fetched live scores for unprocessed GW${gwNumber} (${liveScoresByGw[gwNumber].length} fixtures)`);
         } catch (err) {
-          console.error(`Bracket: Failed to fetch DB scores for GW${gwNumber}:`, err);
+          console.error(`Bracket: Failed to fetch live scores for unprocessed GW${gwNumber}:`, err);
+          liveScoresByGw[gwNumber] = [];
         }
       }
-
-      // Default: return empty if nothing matches
-      liveScoresByGw[gwNumber] = [];
     }
   } catch (error) {
     console.error("Error fetching live scores:", error);
@@ -321,6 +342,13 @@ async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | nu
       });
 
       if (result) {
+        // Prefer stored player scores (TC format stores them; TVT uses captain reconstruction)
+        const homePlayers = result.homePlayerScores
+          ? JSON.parse(result.homePlayerScores)
+          : buildPlayerBreakdown(fixture.homeTeam.players, fixture.homeTeamId, result.homeScore);
+        const awayPlayers = result.awayPlayerScores
+          ? JSON.parse(result.awayPlayerScores)
+          : buildPlayerBreakdown(fixture.awayTeam.players, fixture.awayTeamId, result.awayScore);
         gwLiveScores.push({
           fixtureId: fixture.id,
           gameweek: gameweek,
@@ -330,8 +358,8 @@ async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | nu
           awayTeamAbbr: fixture.awayTeam.abbreviation,
           homeScore: result.homeScore,
           awayScore: result.awayScore,
-          homePlayers: buildPlayerBreakdown(fixture.homeTeam.players, fixture.homeTeamId, result.homeScore),
-          awayPlayers: buildPlayerBreakdown(fixture.awayTeam.players, fixture.awayTeamId, result.awayScore),
+          homePlayers,
+          awayPlayers,
         });
       }
     } catch (err) {
@@ -570,6 +598,59 @@ function buildTentative16Team(
   };
 }
 
+async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null) {
+  // TC seeding: UCL = rank 1-2 per cup group, UEL = rank 3-4 per cup group
+  // Cross-group QF pairing: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1 (UCL)
+  //                          A3 vs C4, A4 vs C3, B3 vs D4, B4 vs D3 (UEL)
+  void leagueId; // reserved for future projected seed lookup
+
+  const rankLabel = (rank: number) => rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : "4th";
+  const tcSide = (group: string, rank: number): { teamId: null; name: string; abbr: string; leg1Score: null; leg2Score: null; aggregate: null } => {
+    const label = `${rankLabel(rank)} Cup-${group}`;
+    return { teamId: null, name: label, abbr: `${group}${rank}`, leg1Score: null, leg2Score: null, aggregate: null };
+  };
+
+  const uclQF: TieDisplay[] = [
+    { tieId: "UCL-QF-1", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 1), away: tcSide("C", 2), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-2", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 2), away: tcSide("C", 1), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-3", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 1), away: tcSide("D", 2), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-4", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 2), away: tcSide("D", 1), winnerId: null, loserId: null },
+  ];
+
+  const uclSF: TieDisplay[] = [
+    { tieId: "UCL-SF-1", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UCL-QF-1"), away: placeholder("Winner of UCL-QF-3"), winnerId: null, loserId: null },
+    { tieId: "UCL-SF-2", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UCL-QF-2"), away: placeholder("Winner of UCL-QF-4"), winnerId: null, loserId: null },
+  ];
+
+  const uclFinal: TieDisplay[] = [
+    { tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 38, gw2: null, home: placeholder("Winner of UCL-SF-1"), away: placeholder("Winner of UCL-SF-2"), winnerId: null, loserId: null },
+  ];
+
+  const uelQF: TieDisplay[] = [
+    { tieId: "UEL-QF-1", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 3), away: tcSide("C", 4), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-2", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 4), away: tcSide("C", 3), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-3", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 3), away: tcSide("D", 4), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-4", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 4), away: tcSide("D", 3), winnerId: null, loserId: null },
+  ];
+
+  const uelSF: TieDisplay[] = [
+    { tieId: "UEL-SF-1", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UEL-QF-1"), away: placeholder("Winner of UEL-QF-3"), winnerId: null, loserId: null },
+    { tieId: "UEL-SF-2", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UEL-QF-2"), away: placeholder("Winner of UEL-QF-4"), winnerId: null, loserId: null },
+  ];
+
+  const uelFinal: TieDisplay[] = [
+    { tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 38, gw2: null, home: placeholder("Winner of UEL-SF-1"), away: placeholder("Winner of UEL-SF-2"), winnerId: null, loserId: null },
+  ];
+
+  return {
+    mode,
+    latestCompletedGw,
+    teamSize: 20,
+    tvt: { qf: uclQF, sf: uclSF, final: uclFinal },
+    challenger: { c31: uelQF, c35: uelSF, c38: uelFinal },
+  };
+}
+
 async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null, teamSize = 32, playoffStartGw = 31) {
   const standings = await getGroupStandings(leagueId);
   if (!standings) {
@@ -579,6 +660,7 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
   // Branch by variant
   if (teamSize === 8) return buildTentative8Team(latestCompletedGw, mode, standings, playoffStartGw);
   if (teamSize === 16) return buildTentative16Team(latestCompletedGw, mode, standings, playoffStartGw);
+  if (teamSize === 20) return buildTentativeTC(latestCompletedGw, mode, leagueId);
 
   const { groupA, groupB } = standings;
   const rankMap: Record<string, Record<number, { teamId: string; name: string; abbr: string }>> = { A: {}, B: {} };
@@ -717,9 +799,17 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     .where(eq(fixtures.isPlayoff, true));
 
   const fixtureResults = new Map<string, { homeScore: number; awayScore: number }>();
+  // Secondary index by (tieId, leg) for TC fixtures that use random generated IDs
+  const fixtureByTieLeg = new Map<string, string>(); // key: "tieId-legN" or "tieId-single" → fixture.id
   for (const f of playoffFixtures) {
     const r = await db.query.results.findFirst({ where: eq(results.fixtureId, f.id) });
     if (r) fixtureResults.set(f.id, { homeScore: r.homeScore, awayScore: r.awayScore });
+    // Index by tieId+leg for TC fixtures (which have random IDs, not playoff-tieId-legN)
+    if (f.tieId && f.leg) {
+      fixtureByTieLeg.set(`${f.tieId}-leg${f.leg}`, f.id);
+    } else if (f.tieId && !f.leg) {
+      fixtureByTieLeg.set(`${f.tieId}-single`, f.id);
+    }
   }
 
   // Build display ties
@@ -731,17 +821,17 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     let awayLeg1: number | null = null, awayLeg2: number | null = null;
 
     if (tie.gw2) {
-      // 2-legged
-      const leg1Id = `playoff-${tie.tieId}-leg1`;
-      const leg2Id = `playoff-${tie.tieId}-leg2`;
-      const l1 = fixtureResults.get(leg1Id);
-      const l2 = fixtureResults.get(leg2Id);
+      // 2-legged: try tieId+leg index first (TC), fall back to playoff-tieId-legN pattern (TVT)
+      const leg1FixId = fixtureByTieLeg.get(`${tie.tieId}-leg1`) ?? `playoff-${tie.tieId}-leg1`;
+      const leg2FixId = fixtureByTieLeg.get(`${tie.tieId}-leg2`) ?? `playoff-${tie.tieId}-leg2`;
+      const l1 = fixtureResults.get(leg1FixId);
+      const l2 = fixtureResults.get(leg2FixId);
       if (l1) { homeLeg1 = l1.homeScore; awayLeg1 = l1.awayScore; }
       if (l2) { homeLeg2 = l2.awayScore; awayLeg2 = l2.homeScore; } // Swapped in leg2
     } else {
-      // Single-leg
-      const fId = `playoff-${tie.tieId}`;
-      const r = fixtureResults.get(fId);
+      // Single-leg: try tieId+single index first (TC), fall back to playoff-tieId pattern (TVT)
+      const singFixId = fixtureByTieLeg.get(`${tie.tieId}-single`) ?? `playoff-${tie.tieId}`;
+      const r = fixtureResults.get(singFixId);
       if (r) { homeLeg1 = r.homeScore; awayLeg1 = r.awayScore; }
     }
 
@@ -789,6 +879,72 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       const info = teamMap.get(tie.loserId);
       if (info) loserMap.set(tie.tieId, { teamId: tie.loserId, ...info });
     }
+  }
+
+  // ── TRIPLE CROWN (teamSize === 20) ──────────────────────────────────────
+  if (teamSize === 20) {
+    const resolveWinnerTC = (srcTieId: string) => {
+      const w = winnerMap.get(srcTieId);
+      return w
+        ? { teamId: w.teamId, name: w.name, abbr: w.abbr, leg1Score: null, leg2Score: null, aggregate: null }
+        : placeholder(`W ${srcTieId}`);
+    };
+
+    // UCL: QF (GW27+29) → SF (GW33+35) → Final (GW38)
+    const uclQf = tiesByRound("UCL-QF");
+    const uclSfFromDb = tiesByRound("UCL-SF");
+    const uclSf = uclSfFromDb.length > 0 ? uclSfFromDb : [{
+      tieId: "UCL-SF-1", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("UCL-QF-1"), away: resolveWinnerTC("UCL-QF-2"),
+      winnerId: null, loserId: null,
+    } as TieDisplay, {
+      tieId: "UCL-SF-2", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("UCL-QF-3"), away: resolveWinnerTC("UCL-QF-4"),
+      winnerId: null, loserId: null,
+    } as TieDisplay];
+
+    const uclFinalFromDb = tiesByRound("UCL-FINAL");
+    const uclFinal = uclFinalFromDb.length > 0 ? uclFinalFromDb : [{
+      tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 38, gw2: null,
+      home: resolveWinnerTC("UCL-SF-1"), away: resolveWinnerTC("UCL-SF-2"),
+      winnerId: null, loserId: null,
+    } as TieDisplay];
+
+    // UEL: QF (GW27+29) → SF (GW33+35) → Final (GW38)
+    const uelQf = tiesByRound("UEL-QF");
+    const uelSfFromDb = tiesByRound("UEL-SF");
+    const uelSf = uelSfFromDb.length > 0 ? uelSfFromDb : [{
+      tieId: "UEL-SF-1", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("UEL-QF-1"), away: resolveWinnerTC("UEL-QF-2"),
+      winnerId: null, loserId: null,
+    } as TieDisplay, {
+      tieId: "UEL-SF-2", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("UEL-QF-3"), away: resolveWinnerTC("UEL-QF-4"),
+      winnerId: null, loserId: null,
+    } as TieDisplay];
+
+    const uelFinalFromDb = tiesByRound("UEL-FINAL");
+    const uelFinal = uelFinalFromDb.length > 0 ? uelFinalFromDb : [{
+      tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 38, gw2: null,
+      home: resolveWinnerTC("UEL-SF-1"), away: resolveWinnerTC("UEL-SF-2"),
+      winnerId: null, loserId: null,
+    } as TieDisplay];
+
+    return {
+      mode: "live" as const,
+      latestCompletedGw,
+      teamSize: 20,
+      tvt: {
+        qf: uclQf,
+        sf: uclSf,
+        final: uclFinal,
+      },
+      challenger: {
+        c31: uelQf,
+        c35: uelSf,
+        c38: uelFinal,
+      },
+    };
   }
 
   // Resolve a winner/loser reference: use real team if tie is complete, else placeholder label
@@ -1124,11 +1280,11 @@ async function getGroupStandings(leagueId?: string | null) {
       }
     }
 
-    const standings = allTeams.filter(t => t.group.name !== "Playoffs").map((team) => {
+    const standings = allTeams.filter(t => !t.group || t.group.name !== "Playoffs").map((team) => {
       let wins = 0, draws = 0, pointsFor = 0, bonusPtsTotal = 0;
 
       for (const fixture of team.homeFixtures) {
-        if (fixture.result && !fixture.isPlayoff) {
+        if (fixture.result && !fixture.isPlayoff && (!fixture.competitionType || fixture.competitionType === "pl")) {
           pointsFor += fixture.result.homeScore;
           if (fixture.result.homeScore > fixture.result.awayScore) wins++;
           else if (fixture.result.homeScore === fixture.result.awayScore) draws++;
@@ -1137,7 +1293,7 @@ async function getGroupStandings(leagueId?: string | null) {
       }
 
       for (const fixture of team.awayFixtures) {
-        if (fixture.result && !fixture.isPlayoff) {
+        if (fixture.result && !fixture.isPlayoff && (!fixture.competitionType || fixture.competitionType === "pl")) {
           pointsFor += fixture.result.awayScore;
           if (fixture.result.awayScore > fixture.result.homeScore) wins++;
           else if (fixture.result.awayScore === fixture.result.homeScore) draws++;
@@ -1152,7 +1308,7 @@ async function getGroupStandings(leagueId?: string | null) {
         teamId: team.id,
         name: team.name,
         abbreviation: team.abbreviation,
-        group: team.group.name,
+        group: team.group?.name ?? null,
         leaguePoints: (wins * 2) + draws + cbpPts,
         pointsFor,
         cbpPoints: cbpPts,
@@ -1168,6 +1324,12 @@ async function getGroupStandings(leagueId?: string | null) {
 
     const groupA = standings.filter(t => t.group === "A").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
     const groupB = standings.filter(t => t.group === "B").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
+
+    // For groupless formats (8-team, 16-team), all teams go into groupA
+    if (groupA.length === 0 && groupB.length === 0 && standings.length > 0) {
+      const all = standings.sort(sortFn).map((t, i) => ({ ...t, group: "A", groupRank: i + 1 }));
+      return { groupA: all, groupB: [] };
+    }
 
     return { groupA, groupB };
   } catch (error) {

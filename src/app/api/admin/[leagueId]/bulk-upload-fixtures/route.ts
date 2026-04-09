@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, groups, gameweeks, fixtures, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 interface FixtureRow {
   gameweek: string | number;
-  homeTeam: string;
-  awayTeam: string;
+  homeTeamId: string; // Team Login ID
+  awayTeamId: string; // Team Login ID
 }
 
 /**
@@ -59,7 +59,11 @@ export async function POST(request: NextRequest) {
       where: eq(teams.leagueId, leagueId),
       with: { group: true },
     });
-    const teamMap = new Map(allTeams.map(t => [t.name.toLowerCase(), t]));
+    const teamMap = new Map(allTeams.map(t => [t.teamLoginId?.toLowerCase() || "", t]));
+    // Also add by abbreviation as fallback
+    for (const t of allTeams) {
+      if (t.abbreviation) teamMap.set(t.abbreviation.toLowerCase(), t);
+    }
 
     // Get all gameweeks for this league for lookup
     const allGameweeks = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
@@ -67,7 +71,10 @@ export async function POST(request: NextRequest) {
 
     // Optionally clear existing fixtures (for re-upload)
     if (clearExisting) {
-      await db.delete(fixtures);
+      const leagueGwIds = allGameweeks.map(gw => gw.id);
+      if (leagueGwIds.length > 0) {
+        await db.delete(fixtures).where(inArray(fixtures.gameweekId, leagueGwIds));
+      }
     }
 
     // Process each fixture row
@@ -77,8 +84,8 @@ export async function POST(request: NextRequest) {
 
       try {
         // Validate required fields
-        if (!row.gameweek || !row.homeTeam || !row.awayTeam) {
-          results.errors.push(`Row ${rowNum}: Missing required fields (gameweek, homeTeam, awayTeam)`);
+        if (!row.gameweek || !row.homeTeamId || !row.awayTeamId) {
+          results.errors.push(`Row ${rowNum}: Missing required fields (gameweek, homeTeamId, awayTeamId)`);
           continue;
         }
 
@@ -89,16 +96,16 @@ export async function POST(request: NextRequest) {
         }
 
         // Find home team
-        const homeTeam = teamMap.get(row.homeTeam.toLowerCase().trim());
+        const homeTeam = teamMap.get(row.homeTeamId.toLowerCase().trim());
         if (!homeTeam) {
-          results.errors.push(`Row ${rowNum}: Home team "${row.homeTeam}" not found`);
+          results.errors.push(`Row ${rowNum}: Home team "${row.homeTeamId}" not found`);
           continue;
         }
 
         // Find away team
-        const awayTeam = teamMap.get(row.awayTeam.toLowerCase().trim());
+        const awayTeam = teamMap.get(row.awayTeamId.toLowerCase().trim());
         if (!awayTeam) {
-          results.errors.push(`Row ${rowNum}: Away team "${row.awayTeam}" not found`);
+          results.errors.push(`Row ${rowNum}: Away team "${row.awayTeamId}" not found`);
           continue;
         }
 
@@ -138,7 +145,7 @@ export async function POST(request: NextRequest) {
         );
 
         if (existingFixtures.length > 0) {
-          results.errors.push(`Row ${rowNum}: Fixture already exists (GW${gwNumber}: ${row.homeTeam} vs ${row.awayTeam})`);
+          results.errors.push(`Row ${rowNum}: Fixture already exists (GW${gwNumber}: ${row.homeTeamId} vs ${row.awayTeamId})`);
           continue;
         }
 
@@ -151,7 +158,7 @@ export async function POST(request: NextRequest) {
           groupId: homeTeam.groupId,
         });
 
-        results.success.push(`Row ${rowNum}: GW${gwNumber} - ${row.homeTeam} vs ${row.awayTeam} created`);
+        results.success.push(`Row ${rowNum}: GW${gwNumber} - ${row.homeTeamId} vs ${row.awayTeamId} created`);
       } catch (error) {
         console.error(`Error processing row ${rowNum}:`, error);
         results.errors.push(`Row ${rowNum}: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -197,7 +204,7 @@ export async function GET(request: NextRequest) {
     csvExample: "1,DM — Rahul,SK — Arjun,2026-03-15 11:00",
     existingTeams: allTeams.map(t => ({
       name: t.name,
-      group: t.group.name,
+      group: t.group?.name || "Unassigned",
     })),
   });
 }

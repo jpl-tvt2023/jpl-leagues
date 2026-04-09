@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
@@ -17,6 +18,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const {
       teamId,
+      teamLoginId,
       teamName,
       abbreviation,
       password, // Optional - only update if provided
@@ -29,16 +31,24 @@ export async function PUT(request: NextRequest) {
       group,
     } = body;
 
-    // Validate required fields
-    if (!teamId || !teamName || !abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId || !group) {
+    // Validate required fields (group is optional, defaults to "A")
+    if (!teamId || !teamLoginId || !teamName || !abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId) {
       return NextResponse.json(
-        { error: "All fields except password are required" },
+        { error: "All fields except password and group are required" },
         { status: 400 }
       );
     }
 
-    // Validate group
-    if (group !== "A" && group !== "B") {
+    // Validate teamLoginId format
+    if (!/^[A-Za-z0-9_-]{3,30}$/.test(teamLoginId)) {
+      return NextResponse.json(
+        { error: "Team ID must be 3–30 alphanumeric/underscore/hyphen characters" },
+        { status: 400 }
+      );
+    }
+
+    // Validate group (optional; if provided, must be A or B)
+    if (group && group !== "A" && group !== "B") {
       return NextResponse.json(
         { error: "Group must be either A or B" },
         { status: 400 }
@@ -54,34 +64,50 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Check if new team name conflicts with another team in this league
-    const conflictingTeam = await db.select().from(teams).where(
-      and(eq(teams.name, teamName), eq(teams.leagueId, leagueId))
+    // Global uniqueness check on teamLoginId (unless it's the same team's current login ID)
+    const conflictingLoginId = await db.select().from(teams).where(
+      eq(teams.teamLoginId, teamLoginId)
     );
-    if (conflictingTeam.length > 0 && conflictingTeam[0].id !== teamId) {
+    if (conflictingLoginId.length > 0 && conflictingLoginId[0].id !== teamId) {
       return NextResponse.json(
-        { error: "Team name already exists" },
+        { error: "Team ID already exists globally" },
         { status: 400 }
       );
     }
 
-    // Ensure group exists for this league
-    let groupRecords = await db.select().from(groups).where(
-      and(eq(groups.name, group), eq(groups.leagueId, leagueId))
+    // Check if new team name conflicts with another team in this league (case-insensitive)
+    const conflictingTeam = await db.select().from(teams).where(
+      and(sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${teamName}, ' ', ''))`, eq(teams.leagueId, leagueId))
     );
-    let groupRecord = groupRecords[0];
+    if (conflictingTeam.length > 0 && conflictingTeam[0].id !== teamId) {
+      return NextResponse.json(
+        { error: "Team name already exists in this league" },
+        { status: 400 }
+      );
+    }
 
-    if (!groupRecord) {
-      const groupId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-      await db.insert(groups).values({ id: groupId, name: group, leagueId });
-      groupRecord = { id: groupId, name: group, leagueId };
+    // Resolve group (null if not provided)
+    let groupId: string | null = null;
+    if (group) {
+      const groupRecords = await db.select().from(groups).where(
+        and(eq(groups.name, group), eq(groups.leagueId, leagueId))
+      );
+      let groupRecord = groupRecords[0];
+
+      if (!groupRecord) {
+        groupId = generateId();
+        await db.insert(groups).values({ id: groupId, name: group, leagueId, groupType: "pl" });
+      } else {
+        groupId = groupRecord.id;
+      }
     }
 
     // Update team
     const updateData: Record<string, unknown> = {
+      teamLoginId,
       name: teamName,
       abbreviation: abbreviation.toUpperCase(),
-      groupId: groupRecord.id,
+      groupId,
     };
 
     // Only update password if provided

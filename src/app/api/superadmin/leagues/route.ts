@@ -47,28 +47,44 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "slug, name, sport, format, and season are required" }, { status: 400 });
   }
 
-  // Derive groupCount from teamSize if not explicitly provided
-  const resolvedTeamSize: number = teamSize ?? 32;
-  const resolvedGroupCount: number = groupCount ?? (resolvedTeamSize === 32 ? 2 : 1);
-  const resolvedPlayoffStartGw: number = playoffStartGw ?? (resolvedTeamSize === 8 ? 36 : 31);
+  // Format-specific validation and defaults
+  let resolvedTeamSize: number;
+  let resolvedGroupCount: number;
+  let resolvedPlayoffStartGw: number;
+  let resolvedEnabledChips: string[];
 
-  if (![8, 16, 32].includes(resolvedTeamSize)) {
-    return NextResponse.json({ error: "teamSize must be 8, 16, or 32" }, { status: 400 });
-  }
-  if (resolvedPlayoffStartGw < 31 || resolvedPlayoffStartGw > 36) {
-    return NextResponse.json({ error: "playoffStartGw must be between 31 and 36" }, { status: 400 });
-  }
+  if (format === "triple-crown") {
+    // Triple Crown: hardcoded values
+    resolvedTeamSize = 20;
+    resolvedGroupCount = 4; // 1 PL group + 4 cup groups (managed separately)
+    resolvedPlayoffStartGw = 27;
+    resolvedEnabledChips = [];
+  } else if (format === "tvt") {
+    // TVT: derive from teamSize
+    resolvedTeamSize = teamSize ?? 32;
+    resolvedGroupCount = groupCount ?? (resolvedTeamSize === 32 ? 2 : 1);
+    resolvedPlayoffStartGw = playoffStartGw ?? (resolvedTeamSize === 8 ? 36 : 31);
 
-  // Validate enabledChips: must be array of exactly 3 valid chip codes
-  const VALID_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"];
-  const resolvedEnabledChips: string[] = enabledChips ?? ["D", "W", "C"];
-  if (
-    !Array.isArray(resolvedEnabledChips) ||
-    resolvedEnabledChips.length !== 3 ||
-    !resolvedEnabledChips.every((c) => VALID_CHIP_CODES.includes(c)) ||
-    new Set(resolvedEnabledChips).size !== 3
-  ) {
-    return NextResponse.json({ error: "enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)" }, { status: 400 });
+    if (![8, 16, 32].includes(resolvedTeamSize)) {
+      return NextResponse.json({ error: "TVT teamSize must be 8, 16, or 32" }, { status: 400 });
+    }
+    if (resolvedPlayoffStartGw < 31 || resolvedPlayoffStartGw > 36) {
+      return NextResponse.json({ error: "TVT playoffStartGw must be between 31 and 36" }, { status: 400 });
+    }
+
+    // Validate enabledChips: must be array of exactly 3 valid chip codes
+    const VALID_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"];
+    resolvedEnabledChips = enabledChips ?? ["D", "W", "C"];
+    if (
+      !Array.isArray(resolvedEnabledChips) ||
+      resolvedEnabledChips.length !== 3 ||
+      !resolvedEnabledChips.every((c) => VALID_CHIP_CODES.includes(c)) ||
+      new Set(resolvedEnabledChips).size !== 3
+    ) {
+      return NextResponse.json({ error: "TVT enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)" }, { status: 400 });
+    }
+  } else {
+    return NextResponse.json({ error: `Format "${format}" is not supported` }, { status: 400 });
   }
 
   try {

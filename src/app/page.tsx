@@ -33,6 +33,19 @@ const STANDINGS_BTN: Record<string, string> = {
   cricket: "bg-emerald-700/40 text-emerald-300",
 };
 
+// Format-specific overrides (applied on top of sport defaults)
+const FORMAT_GRADIENT: Record<string, string> = {
+  "triple-crown": "from-[#0d1a33]/90 via-[#061426]/80 to-slate-900/70",
+};
+
+const FORMAT_GLOW: Record<string, string> = {
+  "triple-crown": "bg-[#0066cc]/15",
+};
+
+const FORMAT_PRIMARY_BTN: Record<string, string> = {
+  "triple-crown": "bg-[#00cc44] hover:bg-[#00ff55] text-slate-900 font-bold",
+};
+
 export default function Home() {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -92,9 +105,9 @@ export default function Home() {
           <div className="grid gap-6 sm:grid-cols-2 items-stretch">
             {leagues.map((league) => {
               const icon = SPORT_ICONS[league.sport] ?? "🏆";
-              const gradient = SPORT_GRADIENTS[league.sport] ?? "from-slate-800/60 to-slate-900/60";
-              const glow = SPORT_GLOW[league.sport] ?? "bg-white/5";
-              const standingsBtn = STANDINGS_BTN[league.sport] ?? "bg-white/10 text-white";
+              const gradient = FORMAT_GRADIENT[league.format] ?? SPORT_GRADIENTS[league.sport] ?? "from-slate-800/60 to-slate-900/60";
+              const glow = FORMAT_GLOW[league.format] ?? SPORT_GLOW[league.sport] ?? "bg-white/5";
+              const standingsBtn = FORMAT_PRIMARY_BTN[league.format] ?? STANDINGS_BTN[league.sport] ?? "bg-white/10 text-white";
 
               return (
                 <div
@@ -129,24 +142,21 @@ export default function Home() {
                     </div>
 
                     <div className="flex flex-wrap gap-3 mt-auto">
-                      <Link
-                        href={`/${league.slug}/standings`}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}
-                      >
-                        Standings
-                      </Link>
-                      <Link
-                        href={`/${league.slug}/fixtures`}
-                        className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-                      >
-                        Fixtures
-                      </Link>
-                      <Link
-                        href={`/${league.slug}/playoffs`}
-                        className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-                      >
-                        Playoffs
-                      </Link>
+                      {league.format === "triple-crown" ? (
+                        <>
+                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}>PL Standings</Link>
+                          <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">PL Fixtures</Link>
+                          <Link href={`/${league.slug}/uefa-standings`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">UEFA Standings</Link>
+                          <Link href={`/${league.slug}/uefa-fixtures`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">UEFA Fixtures</Link>
+                          <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
+                        </>
+                      ) : (
+                        <>
+                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}>Standings</Link>
+                          <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">Fixtures</Link>
+                          <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

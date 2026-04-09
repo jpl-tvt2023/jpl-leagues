@@ -314,7 +314,7 @@ export async function GET(request: NextRequest) {
         return {
           id: t.id,
           name: t.name,
-          group: t.group.name,
+          group: t.group?.name || "Unassigned",
           chips: {
             set1: {
               doublePointer: {

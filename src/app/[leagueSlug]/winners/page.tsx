@@ -8,7 +8,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 interface Winner {
   position: number;
   label: string;
-  category: "championship" | "challenger";
+  category: "championship" | "challenger" | "pl" | "ucl" | "uel";
   teamId: string;
   teamName: string;
   teamAbbr: string;
@@ -27,22 +27,31 @@ export default function LeagueWinnersPage() {
   const [data, setData] = useState<WinnersData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
         const me = await res.json();
-        if (res.ok && me.authenticated) setIsLoggedIn(true);
+        if (res.ok && me.authenticated && (me.type === "team" || me.type === "admin" || me.type === "superadmin")) {
+          setIsLoggedIn(true);
+          if (me.type === "admin" && me.adminLeagueId) setDashboardHref(`/admin/${me.adminLeagueId}`);
+          else if (me.type === "superadmin") setDashboardHref("/admin");
+        }
       } catch {}
     };
 
     fetch("/api/leagues")
       .then((r) => r.json())
       .then((d) => {
-        const league = (d.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
+        const league = (d.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
+        if (league) {
+          setLeagueName(league.name);
+          setLeagueFormat(league.format ?? null);
+        }
       })
       .catch(() => {});
 
@@ -80,7 +89,10 @@ export default function LeagueWinnersPage() {
   };
 
   const getCategoryColor = (category: string) => {
-    return category === "championship" ? "text-blue-400" : "text-yellow-400";
+    if (category === "championship" || category === "pl") return "text-blue-400";
+    if (category === "ucl") return "text-blue-300";
+    if (category === "uel") return "text-purple-300";
+    return "text-yellow-400"; // challenger
   };
 
   const getCategoryBg = (category: string, position: number) => {
@@ -89,12 +101,17 @@ export default function LeagueWinnersPage() {
       if (position === 2) return "bg-gradient-to-r from-gray-600/40 to-gray-500/20";
       return "bg-gradient-to-r from-amber-900/40 to-amber-800/20";
     }
-    return category === "championship" ? "bg-blue-900/20" : "bg-yellow-900/20";
+    if (category === "championship" || category === "pl") return "bg-blue-900/20";
+    if (category === "ucl") return "bg-blue-800/20";
+    if (category === "uel") return "bg-purple-900/20";
+    return "bg-yellow-900/20"; // challenger
   };
 
   if (isLoading) {
     return <LoadingScreen variant="standings" fullScreen />;
   }
+
+  const isTripleCrown = leagueFormat === "triple-crown";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -107,18 +124,26 @@ export default function LeagueWinnersPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">
-            All Leagues
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">
+            {isLoggedIn ? "Dashboard" : "All Leagues"}
           </Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
-            Standings
+            {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            Fixtures
+            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
           </Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
-            Playoffs
-          </Link>
+          {isTripleCrown ? (
+            <>
+              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+            </>
+          ) : (
+            <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
+              Playoffs
+            </Link>
+          )}
           <Link href={`/${leagueSlug}/winners`} className="text-yellow-400 font-semibold transition">
             Winners
           </Link>

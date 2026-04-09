@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, gameweeks, players, gameweekCaptains, auditLogs, teams, settings } from "@/lib/db";
-import { canBeCaptain } from "@/lib/scoring";
+import { db, gameweeks, players, gameweekCaptains, auditLogs, teams, settings, leagues } from "@/lib/db";
+import { canBeCaptain } from "@/lib/formats/tvt/scoring";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 
@@ -44,6 +44,13 @@ export async function POST(request: NextRequest) {
     if (!team) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
+
+    // Determine captain cap based on league format (TC: 19, others: 15)
+    const leagueRow = await db.select({ format: leagues.format })
+      .from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
+    const leagueFormat = leagueRow[0]?.format ?? "tvt";
+    const CAPTAIN_CAP = leagueFormat === "triple-crown" ? 19 : 15;
+    const captainCheckLimit = leagueFormat === "triple-crown" ? 38 : 30;
 
     // Check if captain announcements are enabled for this league
     const captainSetting = await db.select().from(settings)
@@ -94,21 +101,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check captaincy chip availability (15 per player in League Stage)
+    // Check captaincy chip availability (format-aware cap per player)
     // Only the final selection counts toward the limit
-    if (gameweekNumber <= 30) {
+    if (gameweekNumber <= captainCheckLimit) {
       const playerCaptainHistory = await db.query.gameweekCaptains.findMany({
         where: eq(gameweekCaptains.playerId, playerId),
         with: { gameweek: true },
       });
       // Exclude the current GW if this player was already captain for it (switching back)
       const leagueStageCount = playerCaptainHistory.filter(
-        c => c.gameweek.number <= 30 && c.gameweek.id !== gw.id
+        c => c.gameweek.number <= captainCheckLimit && c.gameweek.id !== gw.id
       ).length;
 
-      if (leagueStageCount >= 15) {
+      if (leagueStageCount >= CAPTAIN_CAP) {
         return NextResponse.json(
-          { error: `${player.name} has used all 15 captaincy chips for the League Stage` },
+          { error: `${player.name} has used all ${CAPTAIN_CAP} captaincy chips for the League Stage` },
           { status: 400 }
         );
       }
@@ -158,9 +165,9 @@ export async function POST(request: NextRequest) {
       where: eq(gameweekCaptains.playerId, playerId),
       with: { gameweek: true },
     });
-    const finalLeagueCount = updatedHistory.filter(c => c.gameweek.number <= 30).length;
-    const chipsRemaining = gameweekNumber <= 30
-      ? 15 - finalLeagueCount
+    const finalLeagueCount = updatedHistory.filter(c => c.gameweek.number <= captainCheckLimit).length;
+    const chipsRemaining = gameweekNumber <= captainCheckLimit
+      ? CAPTAIN_CAP - finalLeagueCount
       : "unlimited";
 
     return NextResponse.json({

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, settings, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
+import { eq, and } from "drizzle-orm";
 import { getAllCachedScores, getCachedStandings, setCachedStandings } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
 
 type TeamWithRelations = Team & {
-  group: Group;
+  group: Group | null;
   players: Player[];
   homeFixtures: FixtureWithResult[];
   awayFixtures: FixtureWithResult[];
@@ -34,7 +34,7 @@ interface TeamStanding {
   teamId: string;
   name: string;
   abbreviation: string;
-  group: string;
+  group: string | null;
   played: number;
   wins: number;
   draws: number;
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Resolve leagueId and config from slug
-    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips })
+    const league = await db.select({ id: leagues.id, playoffStartGw: leagues.playoffStartGw, teamSize: leagues.teamSize, enabledChips: leagues.enabledChips, format: leagues.format })
       .from(leagues).where(eq(leagues.slug, leagueSlug)).limit(1);
     if (league.length === 0) {
       return NextResponse.json(
@@ -82,9 +82,18 @@ export async function GET(request: NextRequest) {
     const leagueId = league[0].id;
     let playoffStartGw = league[0].playoffStartGw ?? 31;
     let leagueTeamSize = league[0].teamSize ?? 32;
+    const leagueFormat = league[0].format ?? "tvt";
     let leagueEnabledChips: string[] = ["D", "W", "C"];
     try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
-    const leagueStageEnd = playoffStartGw - 1; // last GW of the group stage
+    // Triple Crown runs PL all 38 GWs; TVT league stage ends at playoffStartGw - 1
+    const leagueStageEnd = leagueFormat === "triple-crown" ? 38 : playoffStartGw - 1;
+
+    // Check if groups have been revealed to teams
+    const groupsRevealedRows = await db
+      .select({ value: settings.value })
+      .from(settings)
+      .where(and(eq(settings.leagueId, leagueId), eq(settings.key, "groupsRevealed")));
+    const groupsRevealed = groupsRevealedRows[0]?.value === "true";
 
     // Return cached standings if available (populated by cron or previous request)
     try {
@@ -130,42 +139,47 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine which league-stage GWs have been processed (have at least one result)
+    // For Triple Crown: skip FPL hit-penalty computation — leaguePoints is stored directly
+    // by processTripleCrownGameweek and is authoritative. Computing it here via FPL API
+    // calls would be extremely slow (38 GWs × 40 players = 1500+ sequential requests).
     const processedGws = new Set<number>();
-    for (const t of allTeamsUnfiltered) {
-      for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-        if (f.result && f.gameweek.number <= leagueStageEnd) {
-          processedGws.add(f.gameweek.number);
-        }
-      }
-    }
-
-    for (const gw of processedGws) {
-      // Try cache first
-      const gwCache = await getAllCachedScores(gw, leagueId);
-      const suffix = `_gw${gw}`;
-
-      if (Object.keys(gwCache).length > 0) {
-        // Cache has data — use it
-        for (const [key, data] of Object.entries(gwCache)) {
-          if (key.endsWith(suffix)) {
-            const fplId = key.slice(0, -suffix.length);
-            if (!playerGwHitsMap.has(fplId)) {
-              playerGwHitsMap.set(fplId, new Map());
-            }
-            playerGwHitsMap.get(fplId)!.set(gw, data.transferHits);
+    if (leagueFormat !== "triple-crown") {
+      for (const t of allTeamsUnfiltered) {
+        for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
+          if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
+            processedGws.add(f.gameweek.number);
           }
         }
-      } else {
-        // Cache empty — fetch from FPL API (also populates cache for next time)
-        for (const fplId of allFplIds) {
-          try {
-            const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
-            if (!playerGwHitsMap.has(fplId)) {
-              playerGwHitsMap.set(fplId, new Map());
+      }
+
+      for (const gw of processedGws) {
+        // Try cache first
+        const gwCache = await getAllCachedScores(gw, leagueId);
+        const suffix = `_gw${gw}`;
+
+        if (Object.keys(gwCache).length > 0) {
+          // Cache has data — use it
+          for (const [key, data] of Object.entries(gwCache)) {
+            if (key.endsWith(suffix)) {
+              const fplId = key.slice(0, -suffix.length);
+              if (!playerGwHitsMap.has(fplId)) {
+                playerGwHitsMap.set(fplId, new Map());
+              }
+              playerGwHitsMap.get(fplId)!.set(gw, data.transferHits);
             }
-            playerGwHitsMap.get(fplId)!.set(gw, score.transferHits);
-          } catch {
-            // FPL API may fail for some players/GWs — skip gracefully
+          }
+        } else {
+          // Cache empty — fetch from FPL API (also populates cache for next time)
+          for (const fplId of allFplIds) {
+            try {
+              const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
+              if (!playerGwHitsMap.has(fplId)) {
+                playerGwHitsMap.set(fplId, new Map());
+              }
+              playerGwHitsMap.get(fplId)!.set(gw, score.transferHits);
+            } catch {
+              // FPL API may fail for some players/GWs — skip gracefully
+            }
           }
         }
       }
@@ -178,9 +192,12 @@ export async function GET(request: NextRequest) {
       allTeams = allTeams.filter(t => t.leagueId === leagueId);
     }
 
+    // Exclude ghost teams (TC cup-group phantoms) from PL standings
+    allTeams = allTeams.filter(t => !t.isGhost);
+
     // Filter by group if provided
     if (group) {
-      allTeams = allTeams.filter(t => t.group.name === group);
+      allTeams = allTeams.filter(t => t.group && t.group.name === group);
     }
 
     // Fetch all chips for all teams — only need gameweek relation
@@ -224,6 +241,7 @@ export async function GET(request: NextRequest) {
       // Process home fixtures (league stage only)
       for (const fixture of team.homeFixtures) {
         if (fixture.gameweek.number > leagueStageEnd) continue;
+        if (fixture.competitionType && fixture.competitionType !== "pl") continue;
         if (fixture.result) {
           pointsFor += fixture.result.homeScore;
           pointsAgainst += fixture.result.awayScore;
@@ -244,6 +262,7 @@ export async function GET(request: NextRequest) {
       // Process away fixtures (league stage only)
       for (const fixture of team.awayFixtures) {
         if (fixture.gameweek.number > leagueStageEnd) continue;
+        if (fixture.competitionType && fixture.competitionType !== "pl") continue;
         if (fixture.result) {
           pointsFor += fixture.result.awayScore;
           pointsAgainst += fixture.result.homeScore;
@@ -280,7 +299,11 @@ export async function GET(request: NextRequest) {
       hitPenaltyGws.sort((a, b) => a.gameweek - b.gameweek);
       const hitPenaltyTotal = hitPenaltyGws.length;
 
-      const leaguePoints = (wins * 2) + (draws * 1) + cbpPts - hitPenaltyTotal;
+      // For Triple Crown: use the stored leaguePoints (computed by processTripleCrownGameweek)
+      // which already includes hit penalties baked in. For TVT: compute from W/D/L + chips - hits.
+      const leaguePoints = leagueFormat === "triple-crown"
+        ? team.leaguePoints
+        : (wins * 2) + (draws * 1) + cbpPts - hitPenaltyTotal;
       const teamRawChips = teamChipsRawMap.get(team.id) || [];
 
       // Build tooltip entries for only the 3 enabled chips (2 sets = 6 entries)
@@ -331,7 +354,7 @@ export async function GET(request: NextRequest) {
         teamId: team.id,
         name: team.name,
         abbreviation: team.abbreviation,
-        group: team.group.name,
+        group: team.group?.name || null,
         played,
         wins,
         draws,
@@ -362,12 +385,22 @@ export async function GET(request: NextRequest) {
 
     type RankedStanding = TeamStanding & { rank: number; zone: string };
 
-    // Group standings by group name
-    const groupNames = [...new Set(standings.map(t => t.group))].sort();
+    // Group standings by group name (exclude cup group names for Triple Crown)
+    const groupNames = [...new Set(standings.map(t => t.group).filter((g): g is string => g !== null && !g.toLowerCase().startsWith("cup-")))].sort();
     const groupMap: Record<string, RankedStanding[]> = {};
     for (const gName of groupNames) {
       const groupTeams = standings.filter(t => t.group === gName);
       groupMap[gName] = groupTeams.map((team, index) => ({
+        ...team,
+        rank: index + 1,
+        groupRank: index + 1,
+        zone: getQualificationZone(index + 1, leagueTeamSize),
+      }));
+    }
+
+    // For groupless leagues (8-team, 16-team, Triple Crown), all teams go into groupA
+    if (groupNames.length === 0 && standings.length > 0) {
+      groupMap["A"] = standings.map((team, index) => ({
         ...team,
         rank: index + 1,
         groupRank: index + 1,
@@ -382,6 +415,7 @@ export async function GET(request: NextRequest) {
       enabledChips: leagueEnabledChips,
       leagueStageEnd,
       teamSize: leagueTeamSize,
+      groupsRevealed,
       legend: {
         top8: "TVT Title Play-offs",
         rank9to14: "Challenger Series",
@@ -397,10 +431,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(responseData);
   } catch (error) {
     console.error("Error fetching standings:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch standings" },
-      { status: 500 }
-    );
+    // Return empty standings instead of error — likely no fixtures generated yet
+    return NextResponse.json({
+      groupA: [],
+      groupB: [],
+      leagueStageEnd: 30,
+      teamSize: 32,
+      groupsRevealed: false,
+    });
   }
 }
 

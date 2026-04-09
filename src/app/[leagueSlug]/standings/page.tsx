@@ -18,15 +18,20 @@ export default function LeagueStandingsPage() {
   const [latestGameweek, setLatestGameweek] = useState<number>(0);
   const [leagueStageEnd, setLeagueStageEnd] = useState<number>(30);
   const [teamSize, setTeamSize] = useState<number>(32);
+  const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated);
+        setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
+        if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
+        else if (data.type === "superadmin") setDashboardHref("/admin");
       } catch {
         setIsLoggedIn(false);
       }
@@ -38,8 +43,11 @@ export default function LeagueStandingsPage() {
     fetch("/api/leagues")
       .then((r) => r.json())
       .then((data) => {
-        const league = (data.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
+        const league = (data.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
+        if (league) {
+          setLeagueName(league.name);
+          setLeagueFormat(league.format ?? null);
+        }
       })
       .catch(() => {});
   }, [leagueSlug]);
@@ -59,6 +67,7 @@ export default function LeagueStandingsPage() {
         setGroupB(data.groupB || []);
         if (data.leagueStageEnd) setLeagueStageEnd(data.leagueStageEnd);
         if (data.teamSize) setTeamSize(data.teamSize);
+        setGroupsRevealed(data.groupsRevealed === true);
         const stageEnd: number = data.leagueStageEnd ?? 30;
         const maxPlayed = Math.min(
           Math.max(
@@ -80,9 +89,10 @@ export default function LeagueStandingsPage() {
   }, [leagueSlug]);
 
   const totalTeams = groupA.length + groupB.length;
+  const isTripleCrown = leagueFormat === "triple-crown";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
       {/* Navigation */}
       <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
         <Link href="/" className="flex items-center gap-2">
@@ -92,16 +102,24 @@ export default function LeagueStandingsPage() {
           <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">All Leagues</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-yellow-400 font-semibold transition">
-            Standings
+            {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            Fixtures
+            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
           </Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
-            Playoffs
-          </Link>
+          {isTripleCrown ? (
+            <>
+              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+            </>
+          ) : (
+            <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
+              Playoffs
+            </Link>
+          )}
           <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
             Winners
           </Link>
@@ -135,18 +153,28 @@ export default function LeagueStandingsPage() {
         ) : (
           <>
             <div className="text-center mb-12">
-              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-4">League Standings</h1>
-              <p className="text-gray-400">
-                {latestGameweek > 0
-                  ? `After Gameweek ${latestGameweek} · League Stage`
-                  : totalTeams > 0
-                    ? "League Stage · No matches played yet"
-                    : "League Stage · Awaiting teams"
-                }
-              </p>
+              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">
+                {isTripleCrown ? leagueName || "League" : "League Standings"}
+              </h1>
+              {isTripleCrown && (
+                <p className="text-[#00ff85] text-sm font-semibold uppercase tracking-widest mb-2">
+                  Premier League · 2025/26 Season
+                </p>
+              )}
+              {!isTripleCrown && (
+                <p className="text-gray-400">
+                  {latestGameweek > 0
+                    ? `After Gameweek ${latestGameweek} · League Stage`
+                    : totalTeams > 0
+                      ? "League Stage · No matches played yet"
+                      : "League Stage · Awaiting teams"
+                  }
+                </p>
+              )}
             </div>
 
             {/* Legend */}
+            {!isTripleCrown && (
             <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
               <div className="flex items-center gap-2">
                 <span className="h-3 w-3 rounded-full bg-green-500"></span>
@@ -163,6 +191,7 @@ export default function LeagueStandingsPage() {
                 <span className="text-gray-400">Eliminated ({teamSize === 8 ? "5-8" : "15-16"})</span>
               </div>
             </div>
+            )}
 
             {error ? (
               <div className="text-center text-red-400 py-12">{error}</div>
@@ -173,15 +202,36 @@ export default function LeagueStandingsPage() {
                   <p className="text-gray-400">Standings will appear here once teams are registered and matches are played.</p>
                 </div>
               </div>
+            ) : latestGameweek === 0 && totalTeams > 0 ? (
+              <div className="text-center py-12">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
+                  <h2 className="text-xl font-semibold text-white mb-2">Standings Coming Soon</h2>
+                  <p className="text-gray-400 mb-4">Standings will be updated once:</p>
+                  <ul className="text-gray-400 text-sm space-y-2">
+                    <li>✓ {teamSize === 32 ? "Admin assigns teams to groups" : "Teams are registered"}</li>
+                    <li>✓ Admin generates fixtures</li>
+                    <li>✓ Matches are played</li>
+                  </ul>
+                </div>
+              </div>
+            ) : !groupsRevealed && groupB.length > 0 ? (
+              /* Groups not yet revealed — show all teams in one table without group labels */
+              <div className="max-w-3xl mx-auto">
+                <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-center">
+                  <p className="text-yellow-300 text-sm font-semibold">Groups have not been revealed yet</p>
+                  <p className="text-yellow-400/70 text-xs mt-1">Group assignments will be announced by the admin before the season starts.</p>
+                </div>
+                <StandingsTable teams={[...groupA, ...groupB]} group={undefined} isTripleCrown={isTripleCrown} />
+              </div>
             ) : (
               <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
-                <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} />
-                {groupB.length > 0 && <StandingsTable teams={groupB} group="B" />}
+                <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} isTripleCrown={isTripleCrown} />
+                {groupB.length > 0 && <StandingsTable teams={groupB} group="B" isTripleCrown={isTripleCrown} />}
               </div>
             )}
 
             <div className="mt-8 text-center text-sm text-gray-500">
-              MP = Matches Played · W = Won · D = Drawn · L = Lost · CP/BP = Chips &amp; Bonus Points · Pts = League Points · Scores = Total FPL Score
+              MP = Matches Played · W = Won · D = Drawn · L = Lost{!isTripleCrown && " · CP/BP = Chips & Bonus Points"} · Pts = League Points · Scores = Total FPL Score
             </div>
           </>
         )}

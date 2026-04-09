@@ -8,11 +8,13 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface Team {
   id: string;
+  teamLoginId?: string;
   name: string;
   abbreviation: string;
   group: string;
   players: { id: string; name: string; fplId: string }[];
   needsPasswordChange: boolean;
+  isProfileComplete: boolean;
 }
 
 interface TeamWithPlayers {
@@ -100,7 +102,7 @@ interface CacheStats {
   gameweeks: { gameweek: number; entries: number }[];
 }
 
-type TabType = "teams" | "captain" | "chips" | "bulkUpload" | "scoring" | "playoffs" | "settings";
+type TabType = "teams" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings";
 
 export default function AdminDashboard() {
   const params = useParams<{ leagueId: string }>();
@@ -108,12 +110,13 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<TabType>("teams");
   const [teams, setTeams] = useState<Team[]>([]);
-  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[] }>({
+  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string }>({
     teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"],
   });
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState({
+    teamLoginId: "",
     teamName: "",
     abbreviation: "",
     password: "",
@@ -163,6 +166,7 @@ export default function AdminDashboard() {
   const [fixturesFileName, setFixturesFileName] = useState("");
   const [captainsFileName, setCaptainsFileName] = useState("");
   const [chipsFileName, setChipsFileName] = useState("");
+  const [teamsUploadMode, setTeamsUploadMode] = useState<"full" | "credentials">("full");
   const [bulkUploadResult, setBulkUploadResult] = useState<BulkUploadResult | null>(null);
   const [bulkUploading, setBulkUploading] = useState(false);
 
@@ -178,9 +182,20 @@ export default function AdminDashboard() {
   const [playoffsLoading, setPlayoffsLoading] = useState(false);
   const [advancingGW, setAdvancingGW] = useState<number | null>(null);
 
+  // Triple Crown State
+  const [cupGroupsGenerated, setCupGroupsGenerated] = useState(false);
+  const [bracketsGenerated, setBracketsGenerated] = useState(false);
+  const [cupGroupsLoading, setCupGroupsLoading] = useState(false);
+  const [bracketsLoading, setBracketsLoading] = useState(false);
+
+  // Group Assignment State (32-team TVT)
+  const [groupAssignments, setGroupAssignments] = useState<Record<string, string>>({});
+  const [savingGroups, setSavingGroups] = useState(false);
+
   // Settings State
   const [captainAnnouncementEnabled, setCaptainAnnouncementEnabled] = useState(true);
   const [chipAnnouncementEnabled, setChipAnnouncementEnabled] = useState(true);
+  const [groupsRevealed, setGroupsRevealed] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
   // Reset Season State
@@ -192,6 +207,7 @@ export default function AdminDashboard() {
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [editFormData, setEditFormData] = useState({
     teamId: "",
+    teamLoginId: "",
     teamName: "",
     abbreviation: "",
     password: "",
@@ -207,6 +223,10 @@ export default function AdminDashboard() {
   // Delete Team State
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Bulk Select State
+  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   // Superadmin detection — show "← Platform Admin" link if superadmin is viewing
   const [isSuperadminViewer, setIsSuperadminViewer] = useState(false);
@@ -224,8 +244,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (activeTab === "captain") {
       fetchCaptainData();
-    } else if (activeTab === "chips") {
-      fetchChipsData();
     } else if (activeTab === "scoring") {
       fetchGameweekStatuses();
       fetchCacheStats();
@@ -245,6 +263,12 @@ export default function AdminDashboard() {
       }
       const data = await response.json();
       setTeams(data.teams || []);
+      // Seed group assignments from current team groups
+      const initialAssignments: Record<string, string> = {};
+      for (const t of (data.teams || [])) {
+        initialAssignments[t.id] = t.group || "A";
+      }
+      setGroupAssignments(initialAssignments);
     } catch (error) {
       console.error("Failed to fetch teams:", error);
     } finally {
@@ -267,6 +291,7 @@ export default function AdminDashboard() {
             groupCount: league.groupCount ?? 2,
             playoffStartGw: league.playoffStartGw ?? 31,
             enabledChips,
+            format: league.format,
           });
         }
       })
@@ -463,6 +488,14 @@ export default function AdminDashboard() {
         const data = await res.json();
         setPlayoffsGenerated(data.generated === true);
       }
+      // For Triple Crown, also fetch cup group status
+      if (leagueConfig.format === "triple-crown") {
+        const cupRes = await fetch(`/api/admin/${leagueId}/generate-cup-groups`);
+        if (cupRes.ok) {
+          const cupData = await cupRes.json();
+          setCupGroupsGenerated(cupData.cupGroupsSeeded === true);
+        }
+      }
     } catch {
       // ignore
     } finally {
@@ -543,6 +576,91 @@ export default function AdminDashboard() {
     }
   };
 
+  const seedCupGroups = async () => {
+    if (!window.confirm("Seed cup groups from GW5 standings? This will create 4 cup groups and Ghost teams.")) return;
+    setCupGroupsLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/generate-cup-groups`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to seed cup groups" });
+      } else {
+        setMessage({ type: "success", text: data.message || "Cup groups seeded successfully" });
+        setCupGroupsGenerated(true);
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setCupGroupsLoading(false);
+    }
+  };
+
+  const deleteCupGroups = async () => {
+    if (!window.confirm("Delete all cup groups, ghost teams, and cup fixtures? This cannot be undone. You can re-seed after.")) return;
+    setCupGroupsLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/generate-cup-groups`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to delete cup groups" });
+      } else {
+        setMessage({ type: "success", text: data.message || "Cup groups deleted successfully. You can now re-seed." });
+        setCupGroupsGenerated(false);
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setCupGroupsLoading(false);
+    }
+  };
+
+  const generateBrackets = async () => {
+    if (!window.confirm("Generate UCL/UEL brackets from GW24 standings? This will create knockout ties for QF round.")) return;
+    setBracketsLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/generate-brackets`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to generate brackets" });
+      } else {
+        setMessage({ type: "success", text: data.message || "Brackets generated successfully" });
+        setBracketsGenerated(true);
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setBracketsLoading(false);
+    }
+  };
+
+  const saveGroupAssignments = async () => {
+    const assignments = Object.entries(groupAssignments).map(([teamId, group]) => ({ teamId, group }));
+    if (assignments.length === 0) return;
+    setSavingGroups(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/assign-groups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignments }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to save group assignments" });
+      } else {
+        setMessage({ type: "success", text: data.message || "Groups saved" });
+        fetchTeams(); // refresh team list
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setSavingGroups(false);
+    }
+  };
+
   const fetchSettings = async () => {
     setSettingsLoading(true);
     try {
@@ -551,6 +669,7 @@ export default function AdminDashboard() {
       if (res.ok) {
         setCaptainAnnouncementEnabled(data.captainAnnouncementEnabled);
         setChipAnnouncementEnabled(data.chipAnnouncementEnabled);
+        setGroupsRevealed(data.groupsRevealed ?? false);
       }
     } catch {
       // ignore
@@ -569,7 +688,11 @@ export default function AdminDashboard() {
       if (res.ok) {
         if (key === "captainAnnouncementEnabled") setCaptainAnnouncementEnabled(value);
         if (key === "chipAnnouncementEnabled") setChipAnnouncementEnabled(value);
-        setMessage({ type: "success", text: `${key === "captainAnnouncementEnabled" ? "Captain" : "Chip"} announcements ${value ? "enabled" : "disabled"}` });
+        if (key === "groupsRevealed") setGroupsRevealed(value);
+        const label = key === "captainAnnouncementEnabled" ? "Captain announcements"
+          : key === "chipAnnouncementEnabled" ? "Chip announcements"
+          : "Groups";
+        setMessage({ type: "success", text: `${label} ${value ? "enabled" : "disabled"}` });
       } else {
         const data = await res.json();
         setMessage({ type: "error", text: data.error || "Failed to update setting" });
@@ -633,6 +756,7 @@ export default function AdminDashboard() {
       
       // Reset form
       setFormData({
+        teamLoginId: "",
         teamName: "",
         abbreviation: "",
         password: "",
@@ -725,22 +849,28 @@ export default function AdminDashboard() {
     setMessage(null);
     
     try {
-      // Map Excel columns to expected format
-      const teams = teamsData.map(row => ({
-        teamName: row["Team Name"] || row["teamName"] || row["Name"] || "",
-        abbreviation: row["Abbreviation"] || row["abbreviation"] || row["Abbr"] || "",
-        password: row["Password"] || row["password"] || "",
-        group: row["Group"] || row["group"] || "",
-        player1Name: row["Player1 Name"] || row["player1Name"] || row["Player 1 Name"] || "",
-        player1FplId: row["Player1 FPL ID"] || row["player1FplId"] || row["Player 1 FPL ID"] || "",
-        player2Name: row["Player2 Name"] || row["player2Name"] || row["Player 2 Name"] || "",
-        player2FplId: row["Player2 FPL ID"] || row["player2FplId"] || row["Player 2 FPL ID"] || "",
-      }));
+      // Map Excel columns based on upload mode
+      const teams = teamsUploadMode === "full"
+        ? teamsData.map(row => ({
+            teamLoginId: row["Team ID"] || row["teamLoginId"] || row["teamId"] || "",
+            teamName: row["Team Name"] || row["teamName"] || row["Name"] || "",
+            abbreviation: row["Abbreviation"] || row["abbreviation"] || row["Abbr"] || "",
+            password: row["Password"] || row["password"] || "",
+            group: row["Group"] || row["group"] || "",
+            player1Name: row["Player1 Name"] || row["player1Name"] || row["Player 1 Name"] || "",
+            player1FplId: row["Player1 FPL ID"] || row["player1FplId"] || row["Player 1 FPL ID"] || "",
+            player2Name: row["Player2 Name"] || row["player2Name"] || row["Player 2 Name"] || "",
+            player2FplId: row["Player2 FPL ID"] || row["player2FplId"] || row["Player 2 FPL ID"] || "",
+          }))
+        : teamsData.map(row => ({
+            teamLoginId: row["Team ID"] || row["teamLoginId"] || row["teamId"] || "",
+            password: row["Password"] || row["password"] || "",
+          }));
 
       const response = await fetch(`/api/admin/${leagueId}/bulk-upload-teams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teams }),
+        body: JSON.stringify({ teams, mode: teamsUploadMode }),
       });
       
       const data = await response.json();
@@ -923,6 +1053,7 @@ export default function AdminDashboard() {
     setEditingTeam(team);
     setEditFormData({
       teamId: team.id,
+      teamLoginId: team.teamLoginId || "",
       teamName: team.name,
       abbreviation: team.abbreviation,
       password: "",
@@ -995,9 +1126,59 @@ export default function AdminDashboard() {
     }
   };
 
-  const groupATeams = teams.filter(t => t.group === "A");
+  const handleBulkDeleteTeams = async () => {
+    if (selectedTeamIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedTeamIds.size} team(s)? This cannot be undone and will delete all players, fixtures, results, and captain data.`)) return;
+
+    setIsBulkDeleting(true);
+    setMessage(null);
+
+    let deletedCount = 0;
+    let failedCount = 0;
+
+    for (const teamId of Array.from(selectedTeamIds)) {
+      try {
+        const response = await fetch(`/api/admin/${leagueId}/delete-team`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId }),
+        });
+
+        if (response.ok) {
+          deletedCount++;
+        } else {
+          failedCount++;
+        }
+      } catch {
+        failedCount++;
+      }
+    }
+
+    setSelectedTeamIds(new Set());
+    setMessage({
+      type: failedCount === 0 ? "success" : "error",
+      text: `Deleted ${deletedCount} team(s)${failedCount > 0 ? `, ${failedCount} failed` : ""}`,
+    });
+    setIsBulkDeleting(false);
+    fetchTeams();
+  };
+
+  const toggleTeamSelection = (teamId: string) => {
+    setSelectedTeamIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(teamId)) {
+        newSet.delete(teamId);
+      } else {
+        newSet.add(teamId);
+      }
+      return newSet;
+    });
+  };
+
+  const groupATeams = leagueConfig.groupCount === 2 ? teams.filter(t => t.group === "A") : teams;
   const groupBTeams = teams.filter(t => t.group === "B");
   const teamsPerGroup = Math.round(leagueConfig.teamSize / leagueConfig.groupCount);
+  const setupCompleteCount = teams.filter(t => t.isProfileComplete).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -1055,7 +1236,17 @@ export default function AdminDashboard() {
               {/* Team Details */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Name (Login ID)</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Login ID</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={editFormData.teamLoginId}
+                    className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-3 text-gray-400 placeholder-gray-600 cursor-not-allowed opacity-60"
+                  />
+                  <p className="text-gray-500 text-xs mt-1">Used for team login (cannot be changed)</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Name</label>
                   <input
                     type="text"
                     required
@@ -1063,17 +1254,23 @@ export default function AdminDashboard() {
                     onChange={(e) => setEditFormData({ ...editFormData, teamName: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                   />
+                  <p className="text-gray-500 text-xs mt-1">Display name. Unique within this league.</p>
                 </div>
+              </div>
+
+              {/* Abbreviation */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Team Abbreviation</label>
                   <input
                     type="text"
                     required
-                    maxLength={3}
+                    maxLength={4}
                     value={editFormData.abbreviation}
                     onChange={(e) => setEditFormData({ ...editFormData, abbreviation: e.target.value.toUpperCase() })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none uppercase"
                   />
+                  <p className="text-gray-500 text-xs mt-1">2–4 uppercase letters. Unique within this league.</p>
                 </div>
               </div>
 
@@ -1190,15 +1387,37 @@ export default function AdminDashboard() {
           <Link href="/admin" className="text-yellow-400 font-semibold transition">
             ← Leagues
           </Link>
-          <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
-            Standings
-          </Link>
-          <Link href={`/fixtures?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
-            Fixtures
-          </Link>
-          <Link href={`/playoffs?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
-            Playoffs
-          </Link>
+          {leagueConfig.format === "triple-crown" ? (
+            <>
+              <Link href={`/${leagueId}/standings`} className="text-gray-300 hover:text-white transition">
+                PL Standings
+              </Link>
+              <Link href={`/${leagueId}/fixtures`} className="text-gray-300 hover:text-white transition">
+                PL Fixtures
+              </Link>
+              <Link href={`/${leagueId}/uefa-standings`} className="text-gray-300 hover:text-white transition">
+                UEFA Standings
+              </Link>
+              <Link href={`/${leagueId}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">
+                UEFA Fixtures
+              </Link>
+              <Link href={`/${leagueId}/playoffs`} className="text-gray-300 hover:text-white transition">
+                Playoffs
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+                Standings
+              </Link>
+              <Link href={`/fixtures?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+                Fixtures
+              </Link>
+              <Link href={`/playoffs?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+                Playoffs
+              </Link>
+            </>
+          )}
           <Link href={`/admin/${leagueId}/help`} className="text-gray-300 hover:text-white transition">
             Help
           </Link>
@@ -1234,16 +1453,6 @@ export default function AdminDashboard() {
             }`}
           >
             Captain Override
-          </button>
-          <button
-            onClick={() => { setActiveTab("chips"); setMessage(null); }}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
-              activeTab === "chips"
-                ? "bg-yellow-500 text-slate-900"
-                : "bg-white/5 text-gray-300 hover:bg-white/10"
-            }`}
-          >
-            Chips Override
           </button>
           <button
             onClick={() => { setActiveTab("bulkUpload"); setMessage(null); }}
@@ -1335,7 +1544,19 @@ export default function AdminDashboard() {
                   {/* Team Details */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Name (Login ID)</label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Login ID</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.teamLoginId}
+                        onChange={(e) => setFormData({ ...formData, teamLoginId: e.target.value })}
+                        placeholder="team-123"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Used for login. 3–20 alphanumeric/underscore/hyphen.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Name</label>
                       <input
                         type="text"
                         required
@@ -1344,21 +1565,26 @@ export default function AdminDashboard() {
                         placeholder="DM — Rahul"
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Both team members will use this to login</p>
+                      <p className="text-xs text-gray-500 mt-1">Display name. Unique within this league.</p>
                     </div>
+                  </div>
+
+                  {/* Abbreviation */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Abbreviation</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={3}
-                    value={formData.abbreviation}
-                    onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
-                    placeholder="DM"
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none uppercase"
-                  />
-                </div>
-              </div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Abbreviation</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={4}
+                        value={formData.abbreviation}
+                        onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
+                        placeholder="DM"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none uppercase"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">2–4 uppercase letters. Unique within this league.</p>
+                    </div>
+                  </div>
 
               {/* Password and Group */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1458,19 +1684,26 @@ export default function AdminDashboard() {
             <div className="text-3xl font-bold text-yellow-400">{teams.length}</div>
             <div className="text-sm text-gray-400">Total Teams</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-blue-400">{groupATeams.length}/{teamsPerGroup}</div>
-            <div className="text-sm text-gray-400">{leagueConfig.groupCount === 2 ? "Group A" : "Group"}</div>
-          </div>
-          {leagueConfig.groupCount === 2 && (
+          {leagueConfig.groupCount === 2 ? (
+            <>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
+                <div className="text-3xl font-bold text-blue-400">{groupATeams.length}/{teamsPerGroup}</div>
+                <div className="text-sm text-gray-400">Group A</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
+                <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
+                <div className="text-sm text-gray-400">Group B</div>
+              </div>
+            </>
+          ) : (
             <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-              <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
-              <div className="text-sm text-gray-400">Group B</div>
+              <div className="text-3xl font-bold text-blue-400">{setupCompleteCount}/{teams.length}</div>
+              <div className="text-sm text-gray-400">Setup Complete</div>
             </div>
           )}
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-green-400">{leagueConfig.teamSize - teams.length}</div>
-            <div className="text-sm text-gray-400">Spots Left</div>
+            <div className="text-3xl font-bold text-green-400">{leagueConfig.groupCount === 2 ? setupCompleteCount : leagueConfig.teamSize - teams.length}</div>
+            <div className="text-sm text-gray-400">{leagueConfig.groupCount === 2 ? "Setup Complete" : "Spots Left"}</div>
           </div>
         </div>
 
@@ -1478,90 +1711,263 @@ export default function AdminDashboard() {
         {isLoading ? (
           <LoadingScreen variant="admin" fullScreen={false} />
         ) : (
-          <div className={`grid ${leagueConfig.groupCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1"} gap-8`}>
-            {/* Group A */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-blue-400 mb-4">{leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{teamsPerGroup})</h3>
-              {groupATeams.length === 0 ? (
-                <p className="text-gray-500">No teams yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {groupATeams.map((team, index) => (
-                    <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                      <div className="flex items-center gap-3">
-                        <span className="text-gray-500 w-6">{index + 1}.</span>
-                        <div>
-                          <div className="font-semibold text-white">{team.name}</div>
-                          <div className="text-xs text-gray-400">
-                            {team.players.map(p => p.name).join(" & ")}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openEditModal(team)}
-                          className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setDeletingTeam(team)}
-                          className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                        >
-                          Delete
-                        </button>
-                        <span className={`text-xs ${team.needsPasswordChange ? "text-yellow-400" : "text-green-400"}`}>
-                          {team.needsPasswordChange ? "Pending" : "Active"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+          <>
+            {/* Bulk Delete Toolbar */}
+            {selectedTeamIds.size > 0 && (
+              <div className="mb-6 rounded-lg border border-red-500/50 bg-red-500/10 p-4 flex items-center justify-between">
+                <div className="text-sm text-red-300">
+                  {selectedTeamIds.size} team(s) selected
                 </div>
-              )}
-            </div>
-
-            {/* Group B — only shown for 2-group leagues */}
-            {leagueConfig.groupCount === 2 && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-purple-400 mb-4">Group B ({groupBTeams.length}/{teamsPerGroup})</h3>
-              {groupBTeams.length === 0 ? (
-                <p className="text-gray-500">No teams yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {groupBTeams.map((team, index) => (
-                    <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                      <div className="flex items-center gap-3">
-                        <span className="text-gray-500 w-6">{index + 1}.</span>
-                        <div>
-                          <div className="font-semibold text-white">{team.name}</div>
-                          <div className="text-xs text-gray-400">
-                            {team.players.map(p => p.name).join(" & ")}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openEditModal(team)}
-                          className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setDeletingTeam(team)}
-                          className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                        >
-                          Delete
-                        </button>
-                        <span className={`text-xs ${team.needsPasswordChange ? "text-yellow-400" : "text-green-400"}`}>
-                          {team.needsPasswordChange ? "Pending" : "Active"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedTeamIds(new Set())}
+                    className="px-4 py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition text-sm"
+                  >
+                    Clear Selection
+                  </button>
+                  <button
+                    onClick={handleBulkDeleteTeams}
+                    disabled={isBulkDeleting}
+                    className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50 text-sm font-semibold"
+                  >
+                    {isBulkDeleting ? "Deleting..." : `Delete ${selectedTeamIds.size}`}
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
             )}
+
+            <div className={`grid ${leagueConfig.groupCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1"} gap-8`}>
+              {/* Group A */}
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-blue-400">{leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{leagueConfig.groupCount === 2 ? teamsPerGroup : leagueConfig.teamSize})</h3>
+                  {groupATeams.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const allSelected = groupATeams.every(t => selectedTeamIds.has(t.id));
+                        setSelectedTeamIds(prev => {
+                          const newSet = new Set(prev);
+                          groupATeams.forEach(t => {
+                            if (allSelected) newSet.delete(t.id);
+                            else newSet.add(t.id);
+                          });
+                          return newSet;
+                        });
+                      }}
+                      className="text-xs px-3 py-1 rounded bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 transition"
+                    >
+                      {groupATeams.every(t => selectedTeamIds.has(t.id)) ? "Deselect All" : "Select All"}
+                    </button>
+                  )}
+                </div>
+                {groupATeams.length === 0 ? (
+                  <p className="text-gray-500">No teams yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {groupATeams.map((team, index) => (
+                      <div key={team.id} className={`flex items-center justify-between p-3 rounded-lg transition ${
+                        selectedTeamIds.has(team.id) ? "bg-red-500/20 border border-red-500/50" : "bg-white/5"
+                      }`}>
+                        <div className="flex items-center gap-3 flex-1">
+                          <button
+                            onClick={() => toggleTeamSelection(team.id)}
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                              selectedTeamIds.has(team.id)
+                                ? "bg-red-500 border-red-500"
+                                : "border-gray-500 hover:border-red-500"
+                            }`}
+                          >
+                            {selectedTeamIds.has(team.id) && (
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                          <span className="text-gray-500 w-6">{index + 1}.</span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="font-semibold text-white">{team.name}</div>
+                              {team.teamLoginId && (
+                                <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded">
+                                  ID: {team.teamLoginId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {team.isProfileComplete
+                                ? team.players.map(p => p.name).join(" & ")
+                                : "Profile Setup Pending"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-2">
+                          <button
+                            onClick={() => openEditModal(team)}
+                            className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeletingTeam(team)}
+                            className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                          >
+                            Delete
+                          </button>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            team.needsPasswordChange && !team.isProfileComplete
+                              ? "bg-orange-500/20 text-orange-400"
+                              : !team.isProfileComplete
+                              ? "bg-yellow-500/20 text-yellow-400"
+                              : "bg-green-500/20 text-green-400"
+                          }`}>
+                            {team.needsPasswordChange && !team.isProfileComplete
+                              ? "Awaiting Login"
+                              : !team.isProfileComplete
+                              ? "Setup Pending"
+                              : "Active"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Group B — only shown for 2-group leagues */}
+              {leagueConfig.groupCount === 2 && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-purple-400">Group B ({groupBTeams.length}/{teamsPerGroup})</h3>
+                  {groupBTeams.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const allSelected = groupBTeams.every(t => selectedTeamIds.has(t.id));
+                        setSelectedTeamIds(prev => {
+                          const newSet = new Set(prev);
+                          groupBTeams.forEach(t => {
+                            if (allSelected) newSet.delete(t.id);
+                            else newSet.add(t.id);
+                          });
+                          return newSet;
+                        });
+                      }}
+                      className="text-xs px-3 py-1 rounded bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 transition"
+                    >
+                      {groupBTeams.every(t => selectedTeamIds.has(t.id)) ? "Deselect All" : "Select All"}
+                    </button>
+                  )}
+                </div>
+                {groupBTeams.length === 0 ? (
+                  <p className="text-gray-500">No teams yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {groupBTeams.map((team, index) => (
+                      <div key={team.id} className={`flex items-center justify-between p-3 rounded-lg transition ${
+                        selectedTeamIds.has(team.id) ? "bg-red-500/20 border border-red-500/50" : "bg-white/5"
+                      }`}>
+                        <div className="flex items-center gap-3 flex-1">
+                          <button
+                            onClick={() => toggleTeamSelection(team.id)}
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                              selectedTeamIds.has(team.id)
+                                ? "bg-red-500 border-red-500"
+                                : "border-gray-500 hover:border-red-500"
+                            }`}
+                          >
+                            {selectedTeamIds.has(team.id) && (
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                          <span className="text-gray-500 w-6">{index + 1}.</span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="font-semibold text-white">{team.name}</div>
+                              {team.teamLoginId && (
+                                <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded">
+                                  ID: {team.teamLoginId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {team.isProfileComplete
+                                ? team.players.map(p => p.name).join(" & ")
+                                : "Profile Setup Pending"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-2">
+                          <button
+                            onClick={() => openEditModal(team)}
+                            className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeletingTeam(team)}
+                            className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                          >
+                            Delete
+                          </button>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            team.needsPasswordChange && !team.isProfileComplete
+                              ? "bg-orange-500/20 text-orange-400"
+                              : !team.isProfileComplete
+                              ? "bg-yellow-500/20 text-yellow-400"
+                              : "bg-green-500/20 text-green-400"
+                          }`}>
+                            {team.needsPasswordChange && !team.isProfileComplete
+                              ? "Awaiting Login"
+                              : !team.isProfileComplete
+                              ? "Setup Pending"
+                              : "Active"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Group Assignment — 32-team leagues only */}
+        {leagueConfig.teamSize === 32 && teams.length > 0 && (
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Group Assignments</h3>
+                <p className="text-gray-400 text-sm">Assign each team to Group A or B. Teams won't see their group until you reveal groups in Settings.</p>
+              </div>
+              <button
+                onClick={saveGroupAssignments}
+                disabled={savingGroups}
+                className="px-5 py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 disabled:opacity-50 transition text-sm"
+              >
+                {savingGroups ? "Saving..." : "Save Groups"}
+              </button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              {teams.map((team) => (
+                <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                  <div>
+                    <div className="font-semibold text-white text-sm">{team.name}</div>
+                    <div className="text-xs text-gray-400">{team.abbreviation}</div>
+                  </div>
+                  <select
+                    value={groupAssignments[team.id] || "A"}
+                    onChange={(e) => setGroupAssignments(prev => ({ ...prev, [team.id]: e.target.value }))}
+                    className="rounded-lg bg-black/40 border border-white/20 text-white text-sm px-3 py-1.5 focus:border-yellow-400 focus:outline-none"
+                  >
+                    <option value="A">Group A</option>
+                    <option value="B">Group B</option>
+                  </select>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1584,6 +1990,17 @@ export default function AdminDashboard() {
               className="px-4 py-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 transition"
             >
               Generate Fixtures
+            </button>
+            <button
+              onClick={async () => {
+                if (!window.confirm("Delete all league-stage fixtures and gameweeks? You can then regenerate them. Playoff fixtures will be preserved.")) return;
+                const res = await fetch(`/api/admin/${leagueId}/generate-fixtures`, { method: "DELETE" });
+                const data = await res.json();
+                alert(data.message || data.error);
+              }}
+              className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition"
+            >
+              Delete Fixtures
             </button>
           </div>
         </div>
@@ -1769,300 +2186,6 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {/* Chips Override Tab */}
-        {activeTab === "chips" && (
-          <>
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-white">Chips Override</h1>
-              <p className="text-gray-400 mt-1">Reset or mark chips as used for teams in case of technical issues</p>
-            </div>
-
-            {chipsLoading ? (
-              <div className="text-center text-gray-400 py-12">Loading chips data...</div>
-            ) : (
-              <>
-                {/* Override Form */}
-                <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-                  <h2 className="text-xl font-bold text-white mb-6">Update Chip Status</h2>
-
-                  <form onSubmit={handleChipsOverride} className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Select Team</label>
-                        <select
-                          required
-                          value={chipOverride.teamId}
-                          onChange={(e) => setChipOverride({ ...chipOverride, teamId: e.target.value })}
-                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
-                        >
-                          <option value="" className="bg-slate-800">Select a team...</option>
-                          {chipTeams.map((team) => (
-                            <option key={team.id} value={team.id} className="bg-slate-800">
-                              {team.name} (Group {team.group})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Select Chip</label>
-                        {(() => {
-                          const CHIP_KEY: Record<string, string> = { W: "winWin", D: "doublePointer", C: "challengeChip", SL: "scoreLock", CB: "comeback", UD: "underdog" };
-                          const CHIP_NAME: Record<string, string> = { W: "Win-Win", D: "Double Pointer", C: "Challenge Chip", SL: "Score Lock", CB: "Comeback", UD: "Underdog" };
-                          const mid = Math.ceil((leagueConfig.playoffStartGw - 1) / 2);
-                          const stageEnd = leagueConfig.playoffStartGw - 1;
-                          return (
-                            <select
-                              required
-                              value={chipOverride.chipType}
-                              onChange={(e) => setChipOverride({ ...chipOverride, chipType: e.target.value })}
-                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
-                            >
-                              <option value="" className="bg-slate-800">Select a chip...</option>
-                              {leagueConfig.enabledChips.map(code => (
-                                <option key={`${code}Set1`} value={`${CHIP_KEY[code]}Set1`} className="bg-slate-800">
-                                  {CHIP_NAME[code]} (Set 1, GW1-{mid})
-                                </option>
-                              ))}
-                              {leagueConfig.enabledChips.map(code => (
-                                <option key={`${code}Set2`} value={`${CHIP_KEY[code]}Set2`} className="bg-slate-800">
-                                  {CHIP_NAME[code]} (Set 2, GW{mid + 1}-{stageEnd})
-                                </option>
-                              ))}
-                            </select>
-                          );
-                        })()}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Set Status To</label>
-                        <div className="flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="chipStatus"
-                              checked={chipOverride.status === "available"}
-                              onChange={() => setChipOverride({ ...chipOverride, status: "available" })}
-                              className="w-4 h-4 text-yellow-500"
-                            />
-                            <span className="text-green-400">Available (reset)</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="chipStatus"
-                              checked={chipOverride.status === "used"}
-                              onChange={() => setChipOverride({ ...chipOverride, status: "used" })}
-                              className="w-4 h-4 text-yellow-500"
-                            />
-                            <span className="text-red-400">Used</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="chipStatus"
-                              checked={chipOverride.status === "wasted"}
-                              onChange={() => setChipOverride({ ...chipOverride, status: "wasted" })}
-                              className="w-4 h-4 text-yellow-500"
-                            />
-                            <span className="text-orange-400">Used but wasted</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {chipOverride.status !== "available" && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">Gameweek Used</label>
-                          <input
-                            type="number"
-                            required
-                            min={1}
-                            max={leagueConfig.playoffStartGw - 1}
-                            value={chipOverride.gameweek}
-                            onChange={(e) => setChipOverride({ ...chipOverride, gameweek: e.target.value })}
-                            placeholder={chipOverride.chipType.includes("Set1") ? `1-${Math.ceil((leagueConfig.playoffStartGw - 1) / 2)}` : `${Math.ceil((leagueConfig.playoffStartGw - 1) / 2) + 1}-${leagueConfig.playoffStartGw - 1}`}
-                            className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Reason (optional)</label>
-                        <input
-                          type="text"
-                          value={chipOverride.reason}
-                          onChange={(e) => setChipOverride({ ...chipOverride, reason: e.target.value })}
-                          placeholder="e.g., Chip used by accident, system error"
-                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
-                    >
-                      {isSubmitting ? "Updating..." : "Update Chip Status"}
-                    </button>
-                  </form>
-                </div>
-
-                {/* Team Chips Status */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                  <h3 className="text-xl font-bold text-white mb-4">Team Chips Status</h3>
-
-                  {/* Team Filter */}
-                  <div className="flex flex-wrap gap-4 mb-4">
-                    <div className="min-w-[180px]">
-                      <label className="block text-xs text-gray-400 mb-1">Team</label>
-                      <select
-                        value={chipFilterTeam}
-                        onChange={(e) => setChipFilterTeam(e.target.value)}
-                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none"
-                      >
-                        <option value="" className="bg-slate-800">All Teams</option>
-                        {chipTeams.map((team) => (
-                          <option key={team.id} value={team.id} className="bg-slate-800">
-                            {team.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {chipTeams.length === 0 ? (
-                    <p className="text-gray-500">No teams found</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {chipTeams.filter((team) => !chipFilterTeam || team.id === chipFilterTeam).map((team) => (
-                        <div key={team.id} className="p-4 rounded-lg bg-white/5">
-                          <div className="font-semibold text-white mb-3">{team.name} (Group {team.group})</div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                            {/* Set 1 */}
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <span className={team.chips.set1.doublePointer.used ? (team.chips.set1.doublePointer.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>●</span>
-                                <span className="text-gray-300">DP Set1:</span>
-                                <span className={team.chips.set1.doublePointer.used ? (team.chips.set1.doublePointer.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>
-                                  {team.chips.set1.doublePointer.used 
-                                    ? (team.chips.set1.doublePointer.wasted 
-                                        ? `Wasted in GW${team.chips.set1.doublePointer.gameweek ?? "?"}` 
-                                        : `Used in GW${team.chips.set1.doublePointer.gameweek ?? "?"}`)
-                                    : "Available"}
-                                </span>
-                              </div>
-                              {team.chips.set1.doublePointer.used && (
-                                <span className={`ml-5 text-xs ${team.chips.set1.doublePointer.points > 0 ? "text-green-400" : "text-gray-500"}`}>
-                                  +{team.chips.set1.doublePointer.points} points
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <span className={team.chips.set1.challengeChip.used ? (team.chips.set1.challengeChip.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>●</span>
-                                <span className="text-gray-300">CC Set1:</span>
-                                <span className={team.chips.set1.challengeChip.used ? (team.chips.set1.challengeChip.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>
-                                  {team.chips.set1.challengeChip.used 
-                                    ? (team.chips.set1.challengeChip.wasted 
-                                        ? `Wasted in GW${team.chips.set1.challengeChip.gameweek ?? "?"}` 
-                                        : `Used in GW${team.chips.set1.challengeChip.gameweek ?? "?"}`)
-                                    : "Available"}
-                                </span>
-                              </div>
-                              {team.chips.set1.challengeChip.used && (
-                                <span className={`ml-5 text-xs ${team.chips.set1.challengeChip.points > 0 ? "text-green-400" : "text-gray-500"}`}>
-                                  +{team.chips.set1.challengeChip.points} points
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <span className={team.chips.set1.winWin.used ? (team.chips.set1.winWin.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>●</span>
-                                <span className="text-gray-300">WW Set1:</span>
-                                <span className={team.chips.set1.winWin.used ? (team.chips.set1.winWin.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>
-                                  {team.chips.set1.winWin.used 
-                                    ? (team.chips.set1.winWin.wasted 
-                                        ? `Wasted in GW${team.chips.set1.winWin.gameweek ?? "?"}` 
-                                        : `Used in GW${team.chips.set1.winWin.gameweek ?? "?"}`)
-                                    : "Available"}
-                                </span>
-                              </div>
-                              {team.chips.set1.winWin.used && (
-                                <span className={`ml-5 text-xs ${team.chips.set1.winWin.points > 0 ? "text-green-400" : "text-gray-500"}`}>
-                                  +{team.chips.set1.winWin.points} points
-                                </span>
-                              )}
-                            </div>
-                            {/* Set 2 */}
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <span className={team.chips.set2.doublePointer.used ? (team.chips.set2.doublePointer.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>●</span>
-                                <span className="text-gray-300">DP Set2:</span>
-                                <span className={team.chips.set2.doublePointer.used ? (team.chips.set2.doublePointer.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>
-                                  {team.chips.set2.doublePointer.used 
-                                    ? (team.chips.set2.doublePointer.wasted 
-                                        ? `Wasted in GW${team.chips.set2.doublePointer.gameweek ?? "?"}` 
-                                        : `Used in GW${team.chips.set2.doublePointer.gameweek ?? "?"}`)
-                                    : "Available"}
-                                </span>
-                              </div>
-                              {team.chips.set2.doublePointer.used && (
-                                <span className={`ml-5 text-xs ${team.chips.set2.doublePointer.points > 0 ? "text-green-400" : "text-gray-500"}`}>
-                                  +{team.chips.set2.doublePointer.points} points
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <span className={team.chips.set2.challengeChip.used ? (team.chips.set2.challengeChip.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>●</span>
-                                <span className="text-gray-300">CC Set2:</span>
-                                <span className={team.chips.set2.challengeChip.used ? (team.chips.set2.challengeChip.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>
-                                  {team.chips.set2.challengeChip.used 
-                                    ? (team.chips.set2.challengeChip.wasted 
-                                        ? `Wasted in GW${team.chips.set2.challengeChip.gameweek ?? "?"}` 
-                                        : `Used in GW${team.chips.set2.challengeChip.gameweek ?? "?"}`)
-                                    : "Available"}
-                                </span>
-                              </div>
-                              {team.chips.set2.challengeChip.used && (
-                                <span className={`ml-5 text-xs ${team.chips.set2.challengeChip.points > 0 ? "text-green-400" : "text-gray-500"}`}>
-                                  +{team.chips.set2.challengeChip.points} points
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <span className={team.chips.set2.winWin.used ? (team.chips.set2.winWin.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>●</span>
-                                <span className="text-gray-300">WW Set2:</span>
-                                <span className={team.chips.set2.winWin.used ? (team.chips.set2.winWin.wasted ? "text-orange-400" : "text-red-400") : "text-green-400"}>
-                                  {team.chips.set2.winWin.used 
-                                    ? (team.chips.set2.winWin.wasted 
-                                        ? `Wasted in GW${team.chips.set2.winWin.gameweek ?? "?"}` 
-                                        : `Used in GW${team.chips.set2.winWin.gameweek ?? "?"}`)
-                                    : "Available"}
-                                </span>
-                              </div>
-                              {team.chips.set2.winWin.used && (
-                                <span className={`ml-5 text-xs ${team.chips.set2.winWin.points > 0 ? "text-green-400" : "text-gray-500"}`}>
-                                  +{team.chips.set2.winWin.points} points
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </>
-        )}
 
         {/* Bulk Upload Tab */}
         {activeTab === "bulkUpload" && (
@@ -2076,10 +2199,43 @@ export default function AdminDashboard() {
               {/* Teams Upload */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                 <h3 className="text-xl font-bold text-white mb-4">Upload Teams</h3>
-                <p className="text-gray-400 text-sm mb-4">
-                  Excel columns: Team Name, Abbreviation, Password, Group, Player1 Name, Player1 FPL ID, Player2 Name, Player2 FPL ID
-                </p>
-                
+
+                {/* Mode toggle */}
+                <div className="flex gap-2 mb-4 p-1 rounded-lg bg-white/5 border border-white/10">
+                  <button
+                    onClick={() => { setTeamsUploadMode("full"); setTeamsData([]); setTeamsFileName(""); }}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm font-semibold transition ${
+                      teamsUploadMode === "full"
+                        ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Full Setup
+                  </button>
+                  <button
+                    onClick={() => { setTeamsUploadMode("credentials"); setTeamsData([]); setTeamsFileName(""); }}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm font-semibold transition ${
+                      teamsUploadMode === "credentials"
+                        ? "bg-gradient-to-r from-blue-400 to-cyan-500 text-white"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Credentials Only
+                  </button>
+                </div>
+
+                {teamsUploadMode === "full" ? (
+                  <p className="text-gray-400 text-xs mb-4">
+                    <strong className="text-gray-300">Full Setup:</strong> Team ID, Team Name, Abbreviation, Password, Group, Player1 Name, Player1 FPL ID, Player2 Name, Player2 FPL ID.
+                    Teams are created complete — no setup wizard needed.
+                  </p>
+                ) : (
+                  <p className="text-gray-400 text-xs mb-4">
+                    <strong className="text-gray-300">Credentials Only:</strong> Team ID, Password.
+                    Teams log in and complete their own profile (name, abbreviation, players) via setup wizard.
+                  </p>
+                )}
+
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
                   <input
@@ -2097,13 +2253,13 @@ export default function AdminDashboard() {
                     </p>
                   </div>
                 )}
-                
+
                 <button
                   onClick={handleBulkUploadTeams}
                   disabled={bulkUploading || teamsData.length === 0}
                   className="w-full rounded-lg bg-gradient-to-r from-blue-400 to-blue-600 px-6 py-3 font-semibold text-white hover:from-blue-300 hover:to-blue-500 transition disabled:opacity-50"
                 >
-                  {bulkUploading ? "Uploading..." : "Upload Teams"}
+                  {bulkUploading ? "Uploading..." : `Upload Teams (${teamsUploadMode === "full" ? "Full Setup" : "Credentials Only"})`}
                 </button>
               </div>
 
@@ -2180,105 +2336,6 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            {/* TVT Chips Import Section */}
-            <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-white mb-4">Import TVT Chips Data</h3>
-              <p className="text-gray-400 text-sm mb-2">
-                First column must be <span className="text-white font-medium">Team</span> (full name or abbreviation), followed by gameweek numbers (1, 2, 3…) with chip markers.
-              </p>
-              <div className="mb-4 overflow-x-auto">
-                <table className="text-xs text-gray-300 border-collapse">
-                  <thead>
-                    <tr className="text-gray-400">
-                      <th className="border border-white/10 px-3 py-1 bg-white/5 text-left">Team</th>
-                      {[1,2,3,"...",15,16,17,"...",30].map((h, i) => (
-                        <th key={i} className="border border-white/10 px-3 py-1 bg-white/5">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="border border-white/10 px-3 py-1 text-white">Team Alpha</td>
-                      <td className="border border-white/10 px-3 py-1 text-green-400 text-center">W</td>
-                      <td className="border border-white/10 px-3 py-1"></td>
-                      <td className="border border-white/10 px-3 py-1 text-blue-400 text-center">D</td>
-                      <td className="border border-white/10 px-3 py-1 text-gray-500 text-center">…</td>
-                      <td className="border border-white/10 px-3 py-1 text-purple-400 text-center">C</td>
-                      <td className="border border-white/10 px-3 py-1"></td>
-                      <td className="border border-white/10 px-3 py-1 text-green-400 text-center">W</td>
-                      <td className="border border-white/10 px-3 py-1 text-gray-500 text-center">…</td>
-                      <td className="border border-white/10 px-3 py-1"></td>
-                    </tr>
-                    <tr>
-                      <td className="border border-white/10 px-3 py-1 text-white">TBeta</td>
-                      <td className="border border-white/10 px-3 py-1"></td>
-                      <td className="border border-white/10 px-3 py-1 text-blue-400 text-center">D</td>
-                      <td className="border border-white/10 px-3 py-1"></td>
-                      <td className="border border-white/10 px-3 py-1 text-gray-500 text-center">…</td>
-                      <td className="border border-white/10 px-3 py-1"></td>
-                      <td className="border border-white/10 px-3 py-1 text-green-400 text-center">WW</td>
-                      <td className="border border-white/10 px-3 py-1"></td>
-                      <td className="border border-white/10 px-3 py-1 text-gray-500 text-center">…</td>
-                      <td className="border border-white/10 px-3 py-1 text-purple-400 text-center">C</td>
-                    </tr>
-                  </tbody>
-                </table>
-                <p className="text-gray-500 text-xs mt-1">Team column accepts full name (e.g. <span className="text-gray-300">Team Alpha</span>) or abbreviation (e.g. <span className="text-gray-300">TBeta</span>)</p>
-              </div>
-              <p className="text-gray-400 text-sm mb-3">Chip markers:</p>
-              <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
-                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30">
-                  <span className="font-bold text-green-400">W</span>
-                  <span className="text-gray-300"> = Win-Win (2pts regardless of result)</span>
-                </div>
-                <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
-                  <span className="font-bold text-blue-400">D</span>
-                  <span className="text-gray-300"> = Double Pointer (2x match points)</span>
-                </div>
-                <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
-                  <span className="font-bold text-purple-400">C</span>
-                  <span className="text-gray-300"> = Challenge (vs top-2 opponent)</span>
-                </div>
-              </div>
-              
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={(e) => handleFileUpload(e, "chips")}
-                    className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-pink-500/20 file:text-pink-400 hover:file:bg-pink-500/30"
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    onClick={handleImportChips}
-                    disabled={bulkUploading || chipsData.length === 0}
-                    className="w-full rounded-lg bg-gradient-to-r from-pink-400 to-pink-600 px-6 py-3 font-semibold text-white hover:from-pink-300 hover:to-pink-500 transition disabled:opacity-50"
-                  >
-                    {bulkUploading ? "Importing..." : "Import Chips"}
-                  </button>
-                </div>
-              </div>
-
-              {chipsFileName && (
-                <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
-                  <p className="text-green-400 text-sm">
-                    ✓ Loaded: {chipsFileName} ({chipsData.length} rows)
-                  </p>
-                </div>
-              )}
-
-              <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-                <p className="text-yellow-400 text-sm">
-                  <strong>Note:</strong> Chips will be validated during import. Win-Win cannot have transfer hits,
-                  Double Pointer blocked in GW1, Challenge must target top-2 from opposite group.
-                  Chip sets: Set 1 (GW1–{Math.ceil((leagueConfig.playoffStartGw - 1) / 2)}), Set 2 (GW{Math.ceil((leagueConfig.playoffStartGw - 1) / 2) + 1}–{leagueConfig.playoffStartGw - 1}).
-                </p>
-              </div>
-            </div>
 
             {/* Upload Results */}
             {bulkUploadResult && (
@@ -2499,69 +2556,154 @@ export default function AdminDashboard() {
         {/* Playoffs Management Tab */}
         {activeTab === "playoffs" && (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-lg font-bold text-white mb-4">Playoff Management</h3>
-
-              {(() => {
-                const { teamSize, playoffStartGw } = leagueConfig;
-                const bracketLabel = teamSize === 8 ? "SF" : teamSize === 16 ? "Group Stage" : "RO16 + C-31";
-                const standingsGw = playoffStartGw - 1;
-                const playoffGws = Array.from({ length: 38 - playoffStartGw + 1 }, (_, i) => playoffStartGw + i);
-                const firstGw = playoffGws[0];
-                const lastGw = playoffGws[playoffGws.length - 1];
-                return playoffsLoading ? (
-                  <p className="text-gray-400 text-sm">Loading…</p>
-                ) : !playoffsGenerated ? (
-                  <div>
-                    <p className="text-gray-400 text-sm mb-4">
-                      Generate the initial playoff bracket ({bracketLabel}) from GW{standingsGw} standings. This can only be done once.
-                    </p>
-                    <button
-                      onClick={generatePlayoffs}
-                      className="px-6 py-3 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 transition"
-                    >
-                      Generate Playoffs ({bracketLabel})
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-green-400 text-sm mb-6">✓ Playoffs generated. Use the buttons below to advance each gameweek after scoring is complete.</p>
-
-                    <div className="mb-6">
+            {leagueConfig.format === "triple-crown" ? (
+              <>
+                {/* Triple Crown: Cup Groups */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h3 className="text-lg font-bold text-white mb-4">Cup Groups (GW1–24)</h3>
+                  {cupGroupsLoading ? (
+                    <p className="text-gray-400 text-sm">Loading…</p>
+                  ) : !cupGroupsGenerated ? (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-4">
+                        Seed 20 teams into 4 cup groups from GW5 standings. Creates 4 Ghost opponents.
+                      </p>
                       <button
-                        onClick={regeneratePlayoffs}
-                        disabled={playoffsLoading}
-                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold hover:from-red-400 hover:to-orange-400 disabled:opacity-50 transition"
+                        onClick={seedCupGroups}
+                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-blue-400 to-cyan-500 text-white font-bold hover:from-blue-300 hover:to-cyan-400 transition"
                       >
-                        {playoffsLoading ? "Regenerating…" : `Regenerate Playoff Fixtures (${bracketLabel})`}
+                        Seed Cup Groups
                       </button>
-                      <p className="text-gray-500 text-xs mt-2">
-                        Deletes existing {bracketLabel} fixtures/results and regenerates from GW{standingsGw} standings.
-                        Use this if the initial standings were incorrect.
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-green-400 text-sm mb-4">✓ Cup groups seeded. Teams will play cup group fixtures on even GWs (6, 8, 10, 12, 14, 16, 18, 20, 22, 24).</p>
+                      <button
+                        onClick={deleteCupGroups}
+                        disabled={cupGroupsLoading}
+                        className="px-6 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 font-semibold hover:bg-red-500/30 disabled:opacity-50 transition text-sm"
+                      >
+                        {cupGroupsLoading ? "Deleting..." : "Delete & Re-seed Cup Groups"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Triple Crown: Brackets */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h3 className="text-lg font-bold text-white mb-4">UCL/UEL Brackets (GW27–38)</h3>
+                  {bracketsLoading ? (
+                    <p className="text-gray-400 text-sm">Loading…</p>
+                  ) : !bracketsGenerated ? (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-4">
+                        Generate UCL/UEL knockout brackets from GW24 cup group standings. Creates QF ties.
+                      </p>
+                      <button
+                        onClick={generateBrackets}
+                        disabled={!cupGroupsGenerated}
+                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-purple-400 to-pink-500 text-white font-bold hover:from-purple-300 hover:to-pink-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                      >
+                        {!cupGroupsGenerated ? "Seed Cup Groups First" : "Generate UCL/UEL Brackets"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-green-400 text-sm mb-4">✓ Brackets generated. UCL/UEL quarterfinals ready for GW27 & GW29.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Triple Crown: Advance Knockouts */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h3 className="text-lg font-bold text-white mb-4">Advance Knockouts</h3>
+                  {playoffsGenerated && (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-4">Advance UCL/UEL knockout rounds after each gameweek is scored.</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[27, 29, 33, 35, 38].map((gw) => (
+                          <button
+                            key={gw}
+                            onClick={() => advancePlayoffs(gw)}
+                            disabled={advancingGW !== null}
+                            className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 disabled:opacity-50 transition text-sm"
+                          >
+                            {advancingGW === gw ? "Advancing…" : `Advance GW${gw}`}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-gray-500 text-xs mt-4">
+                        GW27: QF Leg 1 | GW29: QF Leg 2 + Create SFs | GW33: SF Leg 1 | GW35: SF Leg 2 + Create Finals | GW38: Final
                       </p>
                     </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h3 className="text-lg font-bold text-white mb-4">Playoff Management</h3>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {playoffGws.map((gw) => (
-                        <button
-                          key={gw}
-                          onClick={() => advancePlayoffs(gw)}
-                          disabled={advancingGW !== null}
-                          className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 disabled:opacity-50 transition text-sm"
-                        >
-                          {advancingGW === gw ? "Advancing…" : `Advance GW${gw}`}
-                        </button>
-                      ))}
+                {(() => {
+                  const { teamSize, playoffStartGw } = leagueConfig;
+                  const bracketLabel = teamSize === 8 ? "SF" : teamSize === 16 ? "Group Stage" : "RO16 + C-31";
+                  const standingsGw = playoffStartGw - 1;
+                  const playoffGws = Array.from({ length: 38 - playoffStartGw + 1 }, (_, i) => playoffStartGw + i);
+                  const firstGw = playoffGws[0];
+                  const lastGw = playoffGws[playoffGws.length - 1];
+                  return playoffsLoading ? (
+                    <p className="text-gray-400 text-sm">Loading…</p>
+                  ) : !playoffsGenerated ? (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-4">
+                        Generate the initial playoff bracket ({bracketLabel}) from GW{standingsGw} standings. This can only be done once.
+                      </p>
+                      <button
+                        onClick={generatePlayoffs}
+                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 transition"
+                      >
+                        Generate Playoffs ({bracketLabel})
+                      </button>
                     </div>
+                  ) : (
+                    <div>
+                      <p className="text-green-400 text-sm mb-6">✓ Playoffs generated. Use the buttons below to advance each gameweek after scoring is complete.</p>
 
-                    <p className="text-gray-500 text-xs mt-4">
-                      Each button resolves the current round&apos;s results and generates fixtures for the next round.
-                      Run them in order (GW{firstGw} → … → GW{lastGw}) after processing each gameweek&apos;s scores.
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
+                      <div className="mb-6">
+                        <button
+                          onClick={regeneratePlayoffs}
+                          disabled={playoffsLoading}
+                          className="px-6 py-3 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold hover:from-red-400 hover:to-orange-400 disabled:opacity-50 transition"
+                        >
+                          {playoffsLoading ? "Regenerating…" : `Regenerate Playoff Fixtures (${bracketLabel})`}
+                        </button>
+                        <p className="text-gray-500 text-xs mt-2">
+                          Deletes existing {bracketLabel} fixtures/results and regenerates from GW{standingsGw} standings.
+                          Use this if the initial standings were incorrect.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {playoffGws.map((gw) => (
+                          <button
+                            key={gw}
+                            onClick={() => advancePlayoffs(gw)}
+                            disabled={advancingGW !== null}
+                            className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 disabled:opacity-50 transition text-sm"
+                          >
+                            {advancingGW === gw ? "Advancing…" : `Advance GW${gw}`}
+                          </button>
+                        ))}
+                      </div>
+
+                      <p className="text-gray-500 text-xs mt-4">
+                        Each button resolves the current round&apos;s results and generates fixtures for the next round.
+                        Run them in order (GW{firstGw} → … → GW{lastGw}) after processing each gameweek&apos;s scores.
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         )}
 
@@ -2593,6 +2735,7 @@ export default function AdminDashboard() {
                     </button>
                   </div>
 
+                  {leagueConfig.format !== "triple-crown" && (
                   <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">
                     <div>
                       <div className="font-semibold text-white">Chip Announcements</div>
@@ -2609,6 +2752,26 @@ export default function AdminDashboard() {
                       }`} />
                     </button>
                   </div>
+                  )}
+
+                  {leagueConfig.groupCount >= 2 && (
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">
+                      <div>
+                        <div className="font-semibold text-white">Reveal Groups to Teams</div>
+                        <div className="text-sm text-gray-400">When enabled, teams can see their group assignment and group standings. Keep disabled until you are ready to announce groups.</div>
+                      </div>
+                      <button
+                        onClick={() => toggleSetting("groupsRevealed", !groupsRevealed)}
+                        className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                          groupsRevealed ? "bg-green-500" : "bg-gray-600"
+                        }`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          groupsRevealed ? "translate-x-6" : "translate-x-1"
+                        }`} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

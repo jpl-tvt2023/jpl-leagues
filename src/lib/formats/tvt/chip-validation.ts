@@ -1,26 +1,26 @@
 /**
  * TVT Chip Validation Engine
- * 
+ *
  * Validates TVT chips (Win-Win, Double Pointer, Challenge) according to league rules:
- * 
+ *
  * GENERAL RULES:
  * - TVT chips cannot be combined with FPL chips (WC, BB, FH, TC)
  * - Once announced and deadline passed, chip cannot be revoked
  * - Each chip can be used once per set (Set 1: GW1-15, Set 2: GW16-30)
- * 
+ *
  * WIN-WIN (W):
  * - Awards 2 points regardless of match result
  * - If negative hits taken, chip is wasted (counted as used, no points)
- * 
+ *
  * DOUBLE POINTER (D):
  * - Doubles TVT League points for that gameweek
- * 
+ *
  * CHALLENGE CHIP (C):
  * - Challenge any top-2 team from opposite group
  * - Win additional 2 points if they beat them
  */
 
-import { db, teams, fixtures, gameweekChips, gameweeks, groups } from "./db";
+import { db, teams, fixtures, gameweekChips, gameweeks, groups } from "../../db";
 import { eq, and, lt } from "drizzle-orm";
 import { getChipSet } from "./scoring";
 
@@ -59,7 +59,7 @@ export async function isChipUsedInSet(
   const midpoint = Math.ceil((playoffStartGw - 1) / 2);
   const setStart = chipSet === 1 ? 1 : midpoint + 1;
   const setEnd = chipSet === 1 ? midpoint : playoffStartGw - 1;
-  
+
   // Query chips used by this team of this type in this set's gameweeks
   const usedChips = await db.query.gameweekChips.findMany({
     where: eq(gameweekChips.teamId, teamId),
@@ -67,12 +67,12 @@ export async function isChipUsedInSet(
       gameweek: true,
     },
   });
-  
+
   return usedChips.some(chip => {
     const gwNum = chip.gameweek?.number;
-    return chip.chipType === chipType && 
+    return chip.chipType === chipType &&
            gwNum !== undefined &&
-           gwNum >= setStart && 
+           gwNum >= setStart &&
            gwNum <= setEnd;
   });
 }
@@ -92,17 +92,17 @@ export async function getGroupRankingsBeforeGW(
       group: true,
     },
   });
-  
+
   // Calculate historical points for each team
   const teamPoints = await calculateHistoricalPoints(teamsInGroup.map(t => t.id), gameweekNumber);
-  
+
   // Build rankings with historical points
   const teamsWithPoints = teamsInGroup.map(team => ({
     ...team,
     historicalLeaguePoints: teamPoints.get(team.id)?.leaguePoints || 0,
     historicalBonusPoints: teamPoints.get(team.id)?.bonusPoints || 0,
   }));
-  
+
   // Sort by league points (desc), then bonus points (desc)
   const sorted = teamsWithPoints.sort((a, b) => {
     if (a.historicalLeaguePoints !== b.historicalLeaguePoints) {
@@ -110,10 +110,10 @@ export async function getGroupRankingsBeforeGW(
     }
     return b.historicalBonusPoints - a.historicalBonusPoints;
   });
-  
+
   return sorted.map((team, index) => ({
     teamId: team.id,
-    groupId: team.groupId,
+    groupId: team.groupId!,
     groupName: team.group?.name || "",
     rank: index + 1,
     leaguePoints: team.historicalLeaguePoints,
@@ -130,17 +130,17 @@ async function calculateHistoricalPoints(
   beforeGameweekNumber: number
 ): Promise<Map<string, { leaguePoints: number; bonusPoints: number }>> {
   const pointsMap = new Map<string, { leaguePoints: number; bonusPoints: number }>();
-  
+
   // Initialize all teams with 0 points
   for (const teamId of teamIds) {
     pointsMap.set(teamId, { leaguePoints: 0, bonusPoints: 0 });
   }
-  
+
   // If gameweek 1, everyone starts with 0
   if (beforeGameweekNumber <= 1) {
     return pointsMap;
   }
-  
+
   // Get all fixtures from previous gameweeks
   const previousFixtures = await db.query.fixtures.findMany({
     with: {
@@ -148,16 +148,16 @@ async function calculateHistoricalPoints(
       gameweek: true,
     },
   });
-  
+
   // Filter to only fixtures from previous gameweeks that have results
   const relevantFixtures = previousFixtures.filter(
     f => f.gameweek && f.gameweek.number < beforeGameweekNumber && f.result
   );
-  
+
   // Sum up points from each result
   for (const fixture of relevantFixtures) {
     if (!fixture.result) continue;
-    
+
     // Home team points
     if (pointsMap.has(fixture.homeTeamId)) {
       const current = pointsMap.get(fixture.homeTeamId)!;
@@ -166,7 +166,7 @@ async function calculateHistoricalPoints(
         bonusPoints: current.bonusPoints + (fixture.result.homeGotBonus ? 1 : 0),
       });
     }
-    
+
     // Away team points
     if (pointsMap.has(fixture.awayTeamId)) {
       const current = pointsMap.get(fixture.awayTeamId)!;
@@ -176,7 +176,7 @@ async function calculateHistoricalPoints(
       });
     }
   }
-  
+
   return pointsMap;
 }
 
@@ -194,7 +194,7 @@ export async function getTop2FromGroup(
 
 /**
  * Validate Win-Win chip usage
- * 
+ *
  * Rules:
  * - Cannot combine with FPL chips
  * - If negative hits taken, chip is wasted (but still valid to import)
@@ -212,7 +212,7 @@ export async function validateWinWin(
   if (alreadyUsed) {
     errors.push(`Win-Win chip already used in Set ${getChipSet(gameweekNumber, playoffStartGw)}`);
   }
-  
+
   return {
     isValid: errors.length === 0,
     errors,
@@ -222,7 +222,7 @@ export async function validateWinWin(
 
 /**
  * Validate Double Pointer chip usage
- * 
+ *
  * Rules:
  * - Doubles TVT League points for the gameweek
  */
@@ -240,7 +240,7 @@ export async function validateDoublePointer(
   if (alreadyUsed) {
     errors.push(`Double Pointer chip already used in Set ${getChipSet(gameweekNumber, playoffStartGw)}`);
   }
-  
+
   return {
     isValid: errors.length === 0,
     errors,
@@ -250,7 +250,7 @@ export async function validateDoublePointer(
 
 /**
  * Validate Challenge Chip usage
- * 
+ *
  * Rules:
  * - Challenge any top-2 team from opposite group
  * - Win additional 2 points if they beat them
@@ -269,7 +269,7 @@ export async function validateChallengeChip(
   if (alreadyUsed) {
     errors.push(`Challenge Chip already used in Set ${getChipSet(gameweekNumber, playoffStartGw)}`);
   }
-  
+
   return {
     isValid: errors.length === 0,
     errors,
@@ -317,7 +317,7 @@ export async function getChipsForTeamInGW(
       eq(gameweekChips.teamId, teamId),
       eq(gameweekChips.gameweekId, gameweekId)
     ));
-  
+
   return chips.map(c => ({
     chipType: c.chipType as "W" | "D" | "C",
     isValid: c.isValid,

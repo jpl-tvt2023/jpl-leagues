@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, gameweeks, fixtures, teams, players, groups, results, gameweekCaptains, gameweekChips, auditLogs, type Gameweek, type Fixture, type Team, type Player, type Group, type Result, type GameweekCaptain, type GameweekChip } from "@/lib/db";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
-import { calculateTVTTeamScore, determineMatchResult } from "@/lib/scoring";
-import { getTop2FromGroup } from "@/lib/chip-validation";
+import { calculateTVTTeamScore, determineMatchResult } from "@/lib/formats/tvt/scoring";
+import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { eq, and, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { leagues } from "@/lib/db/schema";
+import { processTripleCrownGameweek } from "@/lib/formats/triple-crown/process-gameweek";
 
 interface RouteParams {
   params: Promise<{ gw: string }>;
@@ -15,7 +16,7 @@ interface RouteParams {
 type FixtureWithRelations = Fixture & {
   homeTeam: Team & { players: Player[] };
   awayTeam: Team & { players: Player[] };
-  group: Group;
+  group: Group | null;
   result: Result | null;
 };
 
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           abbreviation: f.awayTeam.abbreviation,
           players: f.awayTeam.players.map((p: Player) => ({ name: p.name, fplId: p.fplId })),
         },
-        group: f.group.name,
+        group: f.group?.name ?? null,
         isChallenge: f.isChallenge,
         isPlayoff: f.isPlayoff,
         result: f.result
@@ -294,6 +295,39 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 404 }
       );
     }
+
+    // ============================================
+    // FORMAT DISPATCHER
+    // ============================================
+    // Fetch league format and delegate to format-specific processor
+    const leagueRow = await db.select({ format: leagues.format })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId || ""))
+      .limit(1);
+
+    if (leagueRow[0]?.format === "triple-crown") {
+      const result = await processTripleCrownGameweek(
+        gameweek.id,
+        gameweekNumber,
+        leagueId || "",
+        forceReprocess
+      );
+      await invalidateLeaguePageCache(leagueId || "");
+      // Normalize response to match ScoringResult shape expected by admin frontend
+      return NextResponse.json({
+        success: result.success,
+        gameweek: gameweekNumber,
+        processed: result.processed,
+        failed: result.errors?.length ?? 0,
+        results: [],
+        errors: result.errors,
+        message: result.message,
+      });
+    }
+
+    // ============================================
+    // TVT FORMAT (default)
+    // ============================================
 
     // If force reprocess, delete existing results and revert team points
     if (forceReprocess) {
@@ -717,30 +751,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
 
         // Track margin for bonus calculation (only winning teams with 75+ margin)
+        // Only track if fixture has a group assigned
         const groupId = fixture.groupId;
-        if (!groupMargins.has(groupId)) {
-          groupMargins.set(groupId, []);
-        }
-        
-        if (margin >= 75) {
-          if (effectiveHomeScore > effectiveAwayScore) {
-            // Home team won by 75+
-            groupMargins.get(groupId)!.push({
-              teamId: fixture.homeTeamId,
-              margin,
-              fixtureId: fixture.id,
-              resultId,
-              usedDoublePointer: homeUsedDoublePointer,
-            });
-          } else if (effectiveAwayScore > effectiveHomeScore) {
-            // Away team won by 75+
-            groupMargins.get(groupId)!.push({
-              teamId: fixture.awayTeamId,
-              margin,
-              fixtureId: fixture.id,
-              resultId,
-              usedDoublePointer: awayUsedDoublePointer,
-            });
+        if (groupId) {
+          if (!groupMargins.has(groupId)) {
+            groupMargins.set(groupId, []);
+          }
+
+          if (margin >= 75) {
+            if (effectiveHomeScore > effectiveAwayScore) {
+              // Home team won by 75+
+              groupMargins.get(groupId)!.push({
+                teamId: fixture.homeTeamId,
+                margin,
+                fixtureId: fixture.id,
+                resultId,
+                usedDoublePointer: homeUsedDoublePointer,
+              });
+            } else if (effectiveAwayScore > effectiveHomeScore) {
+              // Away team won by 75+
+              groupMargins.get(groupId)!.push({
+                teamId: fixture.awayTeamId,
+                margin,
+                fixtureId: fixture.id,
+                resultId,
+                usedDoublePointer: awayUsedDoublePointer,
+              });
+            }
           }
         }
 

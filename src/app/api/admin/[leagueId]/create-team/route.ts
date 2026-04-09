@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
+      teamLoginId,
       teamName,
       abbreviation,
       password,
@@ -26,29 +27,48 @@ export async function POST(request: NextRequest) {
       group,
     } = body;
 
-    // Validate required fields
-    if (!teamName || !abbreviation || !password || !player1Name || !player1FplId || !player2Name || !player2FplId || !group) {
+    // Validate required fields (group is optional, defaults to "A")
+    if (!teamLoginId || !teamName || !abbreviation || !password || !player1Name || !player1FplId || !player2Name || !player2FplId) {
       return NextResponse.json(
-        { error: "All fields are required" },
+        { error: "All fields except group are required" },
         { status: 400 }
       );
     }
 
-    // Validate group
-    if (group !== "A" && group !== "B") {
+    // Validate teamLoginId format
+    if (!/^[A-Za-z0-9_-]{3,30}$/.test(teamLoginId)) {
+      return NextResponse.json(
+        { error: "Team ID must be 3–30 alphanumeric/underscore/hyphen characters" },
+        { status: 400 }
+      );
+    }
+
+    // Global uniqueness check on teamLoginId
+    const existingLoginId = await db.select().from(teams).where(
+      eq(teams.teamLoginId, teamLoginId)
+    );
+    if (existingLoginId.length > 0) {
+      return NextResponse.json(
+        { error: "Team ID already exists globally" },
+        { status: 400 }
+      );
+    }
+
+    // Validate group (optional; if provided, must be A or B)
+    if (group && group !== "A" && group !== "B") {
       return NextResponse.json(
         { error: "Group must be either A or B" },
         { status: 400 }
       );
     }
 
-    // Check if team name already exists in this league
+    // Check if team name already exists in this league (case-insensitive)
     const existingTeam = await db.select().from(teams).where(
-      and(eq(teams.name, teamName), eq(teams.leagueId, leagueId))
+      and(sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${teamName}, ' ', ''))`, eq(teams.leagueId, leagueId))
     );
     if (existingTeam.length > 0) {
       return NextResponse.json(
-        { error: "Team name already exists" },
+        { error: "Team name already exists in this league" },
         { status: 400 }
       );
     }
@@ -56,27 +76,32 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Ensure group exists for this league
-    let groupRecords = await db.select().from(groups).where(
-      and(eq(groups.name, group), eq(groups.leagueId, leagueId))
-    );
-    let groupRecord = groupRecords[0];
+    // Resolve group (null if not provided)
+    let groupId: string | null = null;
+    if (group) {
+      const groupRecords = await db.select().from(groups).where(
+        and(eq(groups.name, group), eq(groups.leagueId, leagueId))
+      );
+      let groupRecord = groupRecords[0];
 
-    if (!groupRecord) {
-      const groupId = generateId();
-      await db.insert(groups).values({ id: groupId, name: group, leagueId });
-      groupRecord = { id: groupId, name: group, leagueId };
+      if (!groupRecord) {
+        groupId = generateId();
+        await db.insert(groups).values({ id: groupId, name: group, leagueId, groupType: "pl" });
+      } else {
+        groupId = groupRecord.id;
+      }
     }
 
     // Create team with password
     const teamId = generateId();
     await db.insert(teams).values({
       id: teamId,
+      teamLoginId,
       name: teamName,
       abbreviation: abbreviation.toUpperCase(),
       password: hashedPassword,
       mustChangePassword: true,
-      groupId: groupRecord.id,
+      groupId,
       leagueId,
     });
 
@@ -91,9 +116,10 @@ export async function POST(request: NextRequest) {
       message: "Team created successfully. Team must change password on first login.",
       team: {
         id: teamId,
+        teamLoginId,
         name: teamName,
         abbreviation: abbreviation.toUpperCase(),
-        group: group,
+        group: group || null,
       },
     });
   } catch (error) {
@@ -115,7 +141,7 @@ export async function GET(request: NextRequest) {
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const allTeams = await db.query.teams.findMany({
-      where: eq(teams.leagueId, leagueId),
+      where: and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)),
       with: {
         players: true,
         group: true,
@@ -125,11 +151,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       teams: allTeams.map(t => ({
         id: t.id,
+        teamLoginId: t.teamLoginId,
         name: t.name,
         abbreviation: t.abbreviation,
-        group: t.group.name,
-        players: t.players.map(p => ({ name: p.name, fplId: p.fplId })),
+        group: t.group?.name || "Unassigned",
+        players: t.players.map(p => ({ name: p.name, fplId: p.fplId, id: p.id })),
         needsPasswordChange: t.mustChangePassword,
+        isProfileComplete: t.isProfileComplete,
       })),
     });
   } catch (error) {

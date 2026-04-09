@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { TeamStanding } from "@/types/standings";
 
-export function StandingsTable({ teams, group }: { teams: TeamStanding[]; group?: string }) {
+export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamStanding[]; group?: string; isTripleCrown?: boolean }) {
   const [tooltip, setTooltip] = useState<{
     team: TeamStanding;
     x: number;
@@ -107,23 +107,23 @@ export function StandingsTable({ teams, group }: { teams: TeamStanding[]; group?
         </div>
       )}
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur overflow-hidden">
+      <div className="rounded-2xl border border-purple-500/20 bg-purple-950/20 backdrop-blur overflow-hidden">
         {group && (
-          <div className="bg-gradient-to-r from-purple-600/20 to-orange-500/20 px-4 py-3 border-b border-white/10">
+          <div className="bg-gradient-to-r from-purple-700/40 to-purple-900/40 px-4 py-3 border-b border-purple-500/20">
             <h2 className="text-lg font-bold text-white">Group {group}</h2>
           </div>
         )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[500px]">
             <thead>
-              <tr className="border-b border-white/10 text-xs text-gray-400">
+              <tr className="border-b border-purple-500/20 bg-purple-900/30 text-xs text-gray-300">
                 <th className="px-3 py-2 text-left font-medium w-10">Rank</th>
                 <th className="px-2 py-2 text-left font-medium">Team</th>
                 <th className="px-2 py-2 text-center font-medium w-9">MP</th>
                 <th className="px-2 py-2 text-center font-medium w-8">W</th>
                 <th className="px-2 py-2 text-center font-medium w-8">D</th>
                 <th className="px-2 py-2 text-center font-medium w-8">L</th>
-                <th className="px-2 py-2 text-center font-medium w-12" title="Chips and Bonus Points">CP/BP</th>
+                {!isTripleCrown && <th className="px-2 py-2 text-center font-medium w-12" title="Chips and Bonus Points">CP/BP</th>}
                 <th className="px-2 py-2 text-center font-medium w-14">Pts</th>
                 <th className="px-2 py-2 text-center font-medium w-16">Scores</th>
               </tr>
@@ -131,7 +131,7 @@ export function StandingsTable({ teams, group }: { teams: TeamStanding[]; group?
             <tbody>
               {teams.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
+                  <td colSpan={isTripleCrown ? 8 : 9} className="px-3 py-8 text-center text-gray-500">
                     No teams in this group yet
                   </td>
                 </tr>
@@ -140,21 +140,25 @@ export function StandingsTable({ teams, group }: { teams: TeamStanding[]; group?
                   <tr
                     key={team.teamId}
                     className={`border-b border-white/5 transition hover:bg-white/5 ${
-                      team.zone === "playoffs"
-                        ? "bg-green-500/5"
-                        : team.zone === "challenger"
-                        ? "bg-yellow-500/5"
-                        : "bg-red-500/5"
+                      isTripleCrown
+                        ? team.groupRank <= 4 ? "bg-green-500/5" : "bg-white/2"
+                        : team.zone === "playoffs"
+                          ? "bg-green-500/5"
+                          : team.zone === "challenger"
+                          ? "bg-yellow-500/5"
+                          : "bg-red-500/5"
                     }`}
                   >
                     <td className="px-3 py-2">
                       <span
                         className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                          team.zone === "playoffs"
-                            ? "bg-green-500/20 text-green-400"
-                            : team.zone === "challenger"
-                            ? "bg-yellow-500/20 text-yellow-400"
-                            : "bg-red-500/20 text-red-400"
+                          isTripleCrown
+                            ? team.groupRank <= 4 ? "bg-green-500/20 text-green-400" : "bg-white/10 text-gray-400"
+                            : team.zone === "playoffs"
+                              ? "bg-green-500/20 text-green-400"
+                              : team.zone === "challenger"
+                              ? "bg-yellow-500/20 text-yellow-400"
+                              : "bg-red-500/20 text-red-400"
                         }`}
                       >
                         {team.groupRank}
@@ -165,16 +169,18 @@ export function StandingsTable({ teams, group }: { teams: TeamStanding[]; group?
                     <td className="px-2 py-2 text-center text-green-400">{team.wins}</td>
                     <td className="px-2 py-2 text-center text-gray-400">{team.draws}</td>
                     <td className="px-2 py-2 text-center text-red-400">{team.losses}</td>
-                    <td
-                      className="px-2 py-2 text-center text-purple-400"
-                      onMouseEnter={(e) => handleMouseEnter(e, team)}
-                      onMouseLeave={handleMouseLeave}
-                      onClick={(e) => handleClick(e, team)}
-                    >
-                      <span className="cursor-help underline decoration-dotted underline-offset-2">
-                        {team.cbpPoints}
-                      </span>
-                    </td>
+                    {!isTripleCrown && (
+                      <td
+                        className="px-2 py-2 text-center text-purple-400"
+                        onMouseEnter={(e) => handleMouseEnter(e, team)}
+                        onMouseLeave={handleMouseLeave}
+                        onClick={(e) => handleClick(e, team)}
+                      >
+                        <span className="cursor-help underline decoration-dotted underline-offset-2">
+                          {team.cbpPoints}
+                        </span>
+                      </td>
+                    )}
                     <td className="px-2 py-2 text-center font-bold text-white">{team.leaguePoints}</td>
                     <td className="px-2 py-2 text-center text-gray-400">{team.pointsFor}</td>
                   </tr>

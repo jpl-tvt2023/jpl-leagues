@@ -234,13 +234,19 @@ export async function POST(request: NextRequest) {
 
   // Fetch format config
   const leagueRow = await db.select({
+    format: leagues.format,
     teamSize: leagues.teamSize,
     playoffStartGw: leagues.playoffStartGw,
   }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+  const format = leagueRow[0]?.format;
   const teamSize = leagueRow[0]?.teamSize ?? 32;
   const playoffStartGw = leagueRow[0]?.playoffStartGw ?? 31;
 
-  const playoffsGroupId = await getPlayoffsGroupId(leagueId);
+  // For TC: use any cup group as the groupId for new fixtures (SF/Final)
+  // For TVT: use the "Playoffs" group
+  const playoffsGroupId = format === "triple-crown"
+    ? (await db.query.groups.findFirst({ where: and(eq(groups.groupType, "cup"), eq(groups.leagueId, leagueId)) }))?.id
+    : await getPlayoffsGroupId(leagueId);
   if (!playoffsGroupId) {
     return NextResponse.json({ error: "Playoffs group not found" }, { status: 500 });
   }
@@ -248,7 +254,267 @@ export async function POST(request: NextRequest) {
   const actions: string[] = [];
 
   try {
-    if (teamSize === 8) {
+    if (format === "triple-crown") {
+      // ── TRIPLE CROWN FORMAT ──────────────────────────────────────
+      // GW27: QF Leg 1 played (mark leg 1 done)
+      // GW29: QF Leg 2 → Resolve QFs + Create SF ties (GW33+35)
+      // GW33: SF Leg 1 played (mark leg 1 done)
+      // GW35: SF Leg 2 → Resolve SFs + Create Finals (GW38)
+      // GW38: Resolve Finals
+      if (gwNumber === 27) {
+        // QF Leg 1 has been played — mark leg 1 done for all QF ties
+        const uclQfTies = await db.select({ tieId: playoffTies.tieId })
+          .from(playoffTies)
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"), eq(playoffTies.roundName, "UCL-QF")));
+        for (const tie of uclQfTies) {
+          await markLeg1Done(tie.tieId);
+          actions.push(`${tie.tieId}: QF leg 1 recorded`);
+        }
+
+        const uelQfTies = await db.select({ tieId: playoffTies.tieId })
+          .from(playoffTies)
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"), eq(playoffTies.roundName, "UEL-QF")));
+        for (const tie of uelQfTies) {
+          await markLeg1Done(tie.tieId);
+          actions.push(`${tie.tieId}: QF leg 1 recorded`);
+        }
+      } else if (gwNumber === 29) {
+        // QF Leg 2 — Resolve all QF ties and create SF ties
+        const uclQfTies = await db.select().from(playoffTies)
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"), eq(playoffTies.roundName, "UCL-QF")));
+        const uelQfTies = await db.select().from(playoffTies)
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"), eq(playoffTies.roundName, "UEL-QF")));
+
+        // Resolve UCL QFs
+        const uclWinners: Array<{ winnerId: string; loserId: string }> = [];
+        for (const tie of uclQfTies) {
+          const result = await resolve2LegTie(tie.tieId, leagueId);
+          if (result) {
+            uclWinners.push(result);
+            actions.push(`${tie.tieId}: UCL QF winner determined`);
+          }
+        }
+
+        // Resolve UEL QFs
+        const uelWinners: Array<{ winnerId: string; loserId: string }> = [];
+        for (const tie of uelQfTies) {
+          const result = await resolve2LegTie(tie.tieId, leagueId);
+          if (result) {
+            uelWinners.push(result);
+            actions.push(`${tie.tieId}: UEL QF winner determined`);
+          }
+        }
+
+        // Create UCL SF ties: QF-1 winner vs QF-4 winner, QF-2 winner vs QF-3 winner
+        // Skip if SFs already exist (idempotent re-advance)
+        const existingUclSf = await getTie("UCL-SF-1", leagueId);
+        if (!existingUclSf && uclWinners.length >= 4) {
+          const gw33 = await getGameweekId(33, leagueId);
+          const gw35 = await getGameweekId(35, leagueId);
+          if (gw33 && gw35) {
+            await create2LegTie({
+              tieId: "UCL-SF-1",
+              leagueId,
+              roundName: "UCL-SF",
+              roundType: "ucl-knockout",
+              homeTeamId: uclWinners[0].winnerId,
+              awayTeamId: uclWinners[3].winnerId,
+              gw1Id: gw33,
+              gw2Id: gw35,
+              gw1Num: 33,
+              gw2Num: 35,
+              groupId: playoffsGroupId,
+            });
+            await create2LegTie({
+              tieId: "UCL-SF-2",
+              leagueId,
+              roundName: "UCL-SF",
+              roundType: "ucl-knockout",
+              homeTeamId: uclWinners[1].winnerId,
+              awayTeamId: uclWinners[2].winnerId,
+              gw1Id: gw33,
+              gw2Id: gw35,
+              gw1Num: 33,
+              gw2Num: 35,
+              groupId: playoffsGroupId,
+            });
+            actions.push("UCL-SF: 2 Semi-Final ties created");
+          }
+        } else if (!existingUclSf && uclWinners.length >= 2) {
+          // Fallback: fewer than 4 QF results — pair sequentially
+          const gw33 = await getGameweekId(33, leagueId);
+          const gw35 = await getGameweekId(35, leagueId);
+          if (gw33 && gw35) {
+            await create2LegTie({
+              tieId: "UCL-SF-1",
+              leagueId,
+              roundName: "UCL-SF",
+              roundType: "ucl-knockout",
+              homeTeamId: uclWinners[0].winnerId,
+              awayTeamId: uclWinners[1].winnerId,
+              gw1Id: gw33,
+              gw2Id: gw35,
+              gw1Num: 33,
+              gw2Num: 35,
+              groupId: playoffsGroupId,
+            });
+            actions.push("UCL-SF: SF-1 created (partial)");
+          }
+        }
+
+        // Create UEL SF ties: QF-1 winner vs QF-4 winner, QF-2 winner vs QF-3 winner
+        const existingUelSf = await getTie("UEL-SF-1", leagueId);
+        if (!existingUelSf && uelWinners.length >= 4) {
+          const gw33 = await getGameweekId(33, leagueId);
+          const gw35 = await getGameweekId(35, leagueId);
+          if (gw33 && gw35) {
+            await create2LegTie({
+              tieId: "UEL-SF-1",
+              leagueId,
+              roundName: "UEL-SF",
+              roundType: "uel-knockout",
+              homeTeamId: uelWinners[0].winnerId,
+              awayTeamId: uelWinners[3].winnerId,
+              gw1Id: gw33,
+              gw2Id: gw35,
+              gw1Num: 33,
+              gw2Num: 35,
+              groupId: playoffsGroupId,
+            });
+            await create2LegTie({
+              tieId: "UEL-SF-2",
+              leagueId,
+              roundName: "UEL-SF",
+              roundType: "uel-knockout",
+              homeTeamId: uelWinners[1].winnerId,
+              awayTeamId: uelWinners[2].winnerId,
+              gw1Id: gw33,
+              gw2Id: gw35,
+              gw1Num: 33,
+              gw2Num: 35,
+              groupId: playoffsGroupId,
+            });
+            actions.push("UEL-SF: 2 Semi-Final ties created");
+          }
+        } else if (!existingUelSf && uelWinners.length >= 2) {
+          const gw33 = await getGameweekId(33, leagueId);
+          const gw35 = await getGameweekId(35, leagueId);
+          if (gw33 && gw35) {
+            await create2LegTie({
+              tieId: "UEL-SF-1",
+              leagueId,
+              roundName: "UEL-SF",
+              roundType: "uel-knockout",
+              homeTeamId: uelWinners[0].winnerId,
+              awayTeamId: uelWinners[1].winnerId,
+              gw1Id: gw33,
+              gw2Id: gw35,
+              gw1Num: 33,
+              gw2Num: 35,
+              groupId: playoffsGroupId,
+            });
+            actions.push("UEL-SF: SF-1 created (partial)");
+          }
+        }
+      } else if (gwNumber === 33) {
+        // SF Leg 1 played — mark leg 1 done for all SF ties
+        const uclSfTies = await db.select({ tieId: playoffTies.tieId })
+          .from(playoffTies)
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"), eq(playoffTies.roundName, "UCL-SF")));
+        for (const tie of uclSfTies) {
+          await markLeg1Done(tie.tieId);
+          actions.push(`${tie.tieId}: SF leg 1 recorded`);
+        }
+
+        const uelSfTies = await db.select({ tieId: playoffTies.tieId })
+          .from(playoffTies)
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"), eq(playoffTies.roundName, "UEL-SF")));
+        for (const tie of uelSfTies) {
+          await markLeg1Done(tie.tieId);
+          actions.push(`${tie.tieId}: SF leg 1 recorded`);
+        }
+      } else if (gwNumber === 35) {
+        // SF Leg 2 — Resolve all SF ties and create Finals
+        const uclSfTies = await db.select().from(playoffTies)
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"), eq(playoffTies.roundName, "UCL-SF")));
+        const uelSfTies = await db.select().from(playoffTies)
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"), eq(playoffTies.roundName, "UEL-SF")));
+
+        // Resolve UCL SFs
+        const uclSfWinners: Array<{ winnerId: string; loserId: string }> = [];
+        for (const tie of uclSfTies) {
+          const result = await resolve2LegTie(tie.tieId, leagueId);
+          if (result) {
+            uclSfWinners.push(result);
+            actions.push(`${tie.tieId}: UCL SF winner determined`);
+          }
+        }
+
+        // Create UCL Final (skip if already exists)
+        const existingUclFinal = await getTie("UCL-FINAL", leagueId);
+        if (!existingUclFinal && uclSfWinners.length >= 2) {
+          const gw38 = await getGameweekId(38, leagueId);
+          if (gw38) {
+            await create1LegTie({
+              tieId: "UCL-FINAL",
+              leagueId,
+              roundName: "UCL-FINAL",
+              roundType: "ucl-knockout",
+              homeTeamId: uclSfWinners[0].winnerId,
+              awayTeamId: uclSfWinners[1].winnerId,
+              gwId: gw38,
+              gwNum: 38,
+              groupId: playoffsGroupId,
+            });
+            actions.push("UCL-FINAL: Final created");
+          }
+        }
+
+        // Resolve UEL SFs
+        const uelSfWinners: Array<{ winnerId: string; loserId: string }> = [];
+        for (const tie of uelSfTies) {
+          const result = await resolve2LegTie(tie.tieId, leagueId);
+          if (result) {
+            uelSfWinners.push(result);
+            actions.push(`${tie.tieId}: UEL SF winner determined`);
+          }
+        }
+
+        // Create UEL Final (skip if already exists)
+        const existingUelFinal = await getTie("UEL-FINAL", leagueId);
+        if (!existingUelFinal && uelSfWinners.length >= 2) {
+          const gw38 = await getGameweekId(38, leagueId);
+          if (gw38) {
+            await create1LegTie({
+              tieId: "UEL-FINAL",
+              leagueId,
+              roundName: "UEL-FINAL",
+              roundType: "uel-knockout",
+              homeTeamId: uelSfWinners[0].winnerId,
+              awayTeamId: uelSfWinners[1].winnerId,
+              gwId: gw38,
+              gwNum: 38,
+              groupId: playoffsGroupId,
+            });
+            actions.push("UEL-FINAL: Final created");
+          }
+        }
+      } else if (gwNumber === 38) {
+        // Resolve Finals
+        const uclFinal = await resolve1LegTie("UCL-FINAL", leagueId);
+        if (uclFinal) actions.push("UCL-FINAL: UCL Champion crowned!");
+
+        const uelFinal = await resolve1LegTie("UEL-FINAL", leagueId);
+        if (uelFinal) actions.push("UEL-FINAL: UEL Champion crowned!");
+
+        actions.push("Triple Crown tournament complete!");
+      } else {
+        return NextResponse.json({
+          error: "Triple Crown playoff advancement: GW27 (QF Leg 1), GW29 (QF Leg 2 + SF creation), GW33 (SF Leg 1), GW35 (SF Leg 2 + Final creation), or GW38 (Finals)",
+        }, { status: 400 });
+      }
+
+    } else if (teamSize === 8) {
       // ── 8-TEAM FORMAT ────────────────────────────────────────
       // GW36 (playoffStartGw): resolve SFs → create Final + 3rd
       // GW37 (playoffStartGw+1): mark leg1 done

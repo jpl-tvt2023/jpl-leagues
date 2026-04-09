@@ -56,11 +56,12 @@ export const leagueAdmins = sqliteTable("league_admins", {
   leagueUserUnique: uniqueIndex("league_admins_league_user_unique").on(table.leagueId, table.userId),
 }));
 
-// Group (A or B)
+// Group (A or B for TVT; Cup-A/B/C/D for Triple Crown)
 export const groups = sqliteTable("groups", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   leagueId: text("league_id").notNull().references(() => leagues.id),
+  groupType: text("group_type").default("pl"), // "pl" | "cup" (Triple Crown uses "cup" for cup groups)
 }, (table) => ({
   leagueNameUnique: uniqueIndex("groups_league_name_unique").on(table.leagueId, table.name),
 }));
@@ -68,16 +69,23 @@ export const groups = sqliteTable("groups", {
 // Team (2 players per team) - also acts as login account
 export const teams = sqliteTable("teams", {
   id: text("id").primaryKey(),
-  name: text("name").notNull(), // Team name used as login ID
+  teamLoginId: text("team_login_id"), // Global login credential (set by admin, editable by team during setup)
+  name: text("name").notNull(), // Team display name (set by team during setup, unique per league)
   leagueId: text("league_id").notNull().references(() => leagues.id),
   abbreviation: text("abbreviation").notNull(), // e.g., "DM"
   password: text("password").notNull(), // Hashed password for team login
   mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
-  groupId: text("group_id").notNull().references(() => groups.id),
+  groupId: text("group_id").references(() => groups.id), // Optional: null if group not assigned
   
   // League points (separate from match scores)
   leaguePoints: integer("league_points").notNull().default(0),
   bonusPoints: integer("bonus_points").notNull().default(0),
+
+  // Triple Crown: Cup group points (separate from PL leaguePoints)
+  cupGroupPoints: integer("cup_group_points").notNull().default(0),
+
+  // Triple Crown: Ghost team marker
+  isGhost: integer("is_ghost", { mode: "boolean" }).notNull().default(false),
   
   // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)
   // Existing chips: WW = Win-Win, DP = Double Pointer, CC = Challenge Chip
@@ -94,11 +102,15 @@ export const teams = sqliteTable("teams", {
   scoreLockSet2Used: integer("score_lock_set2_used", { mode: "boolean" }).notNull().default(false),
   comebackSet2Used: integer("comeback_set2_used", { mode: "boolean" }).notNull().default(false),
   underdogSet2Used: integer("underdog_set2_used", { mode: "boolean" }).notNull().default(false),
-  
+
+  // Team onboarding: set to true when team completes setup wizard (team name, abbreviation, 2 players)
+  isProfileComplete: integer("is_profile_complete", { mode: "boolean" }).notNull().default(false),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   leagueNameUnique: uniqueIndex("teams_league_name_unique").on(table.leagueId, table.name),
+  loginIdGlobalUnique: uniqueIndex("teams_login_id_global_unique").on(table.teamLoginId),
 }));
 
 // Player (each team has exactly 2 players)
@@ -137,11 +149,12 @@ export const fixtures = sqliteTable("fixtures", {
   gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
   homeTeamId: text("home_team_id").notNull().references(() => teams.id),
   awayTeamId: text("away_team_id").notNull().references(() => teams.id),
-  groupId: text("group_id").notNull().references(() => groups.id),
+  groupId: text("group_id").references(() => groups.id), // Optional: can be null if team has no group
   
   // Fixture type
   isChallenge: integer("is_challenge", { mode: "boolean" }).notNull().default(false), // Challenge Chip fixture
   isPlayoff: integer("is_playoff", { mode: "boolean" }).notNull().default(false), // Playoff fixture
+  competitionType: text("competition_type"), // "pl" | "cup-group" | "ucl-knockout" | "uel-knockout" (Triple Crown)
   
   // Playoff-specific fields (null for league-phase fixtures)
   roundName: text("round_name"), // "RO16", "QF", "SF", "Final", "C-31", etc.

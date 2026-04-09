@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/generate-playoffs/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/advance-playoffs/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/reset-season/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/settings/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/[leagueSlug]/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/gameweeks/[gw]/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/[leagueSlug]/standings/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/[leagueSlug]/fixtures/)",
+      "Bash(ls d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/generate-fixtures/)",
+      "Bash(cat d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/generate-fixtures/route.ts)"
+    ]
+  }
+}
