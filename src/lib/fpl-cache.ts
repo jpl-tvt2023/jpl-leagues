@@ -229,6 +229,70 @@ export async function getCacheStats(leagueId?: string | null): Promise<{ gamewee
 }
 
 // ============================================
+// JPL Auction: Element-Level Cache (individual PL player points)
+// ============================================
+
+/**
+ * Cache key for all PL player element points in a gameweek.
+ * One API call to /event/{gw}/live/ returns all ~700 players.
+ * We cache the entire Map<elementId, points> as a single JSON object.
+ */
+function getElementPointsKey(gameweek: number): string {
+  return `fpl:elements:gw${gameweek}`;
+}
+
+export async function getCachedElementPoints(gameweek: number): Promise<Record<number, number> | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<Record<number, number>>(getElementPointsKey(gameweek));
+  return data || null;
+}
+
+export async function setCachedElementPoints(gameweek: number, data: Record<number, number>): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(getElementPointsKey(gameweek), data, { ex: CACHE_TTL });
+}
+
+export async function clearCachedElementPoints(gameweek: number): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.del(getElementPointsKey(gameweek));
+}
+
+/**
+ * Cache key for FPL bootstrap data (player metadata: name, team, position, status, cost).
+ * Updated once per day by FPL.
+ */
+function getBootstrapKey(): string {
+  return "fpl:bootstrap:latest";
+}
+
+export interface CachedElementInfo {
+  id: number;
+  web_name: string;
+  team: number;
+  element_type: number; // 1=GKP, 2=DEF, 3=MID, 4=FWD
+  now_cost: number;
+  total_points: number;
+  status: string; // "a"=available, "i"=injured, "s"=suspended, "u"=unavailable
+  minutes: number; // total minutes played this season
+}
+
+export async function getCachedBootstrap(): Promise<CachedElementInfo[] | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<CachedElementInfo[]>(getBootstrapKey());
+  return data || null;
+}
+
+export async function setCachedBootstrap(data: CachedElementInfo[]): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(getBootstrapKey(), data, { ex: CACHE_TTL });
+}
+
+// ============================================
 // Live Score Cache (10-minute TTL)
 // ============================================
 

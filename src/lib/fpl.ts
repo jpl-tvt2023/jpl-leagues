@@ -110,7 +110,12 @@ export async function fetchTeamHistory(teamId: string) {
   return res.json();
 }
 
-import { getCachedScore, setCachedScore } from "./fpl-cache";
+import {
+  getCachedScore, setCachedScore,
+  getCachedElementPoints, setCachedElementPoints,
+  getCachedBootstrap, setCachedBootstrap,
+  type CachedElementInfo,
+} from "./fpl-cache";
 import { db, gameweeks, fixtures, results } from "./db";
 import { eq, and, isNull, asc, inArray } from "drizzle-orm";
 
@@ -260,4 +265,61 @@ export async function detectLiveGameweek(): Promise<{
   }
 
   return { liveGw, gwStatus };
+}
+
+// ============================================
+// JPL Auction: Element-Level Data
+// ============================================
+
+/**
+ * Fetch all PL player GW points in a single API call.
+ * Returns a map of elementId -> total_points for the gameweek.
+ * Uses cache (24hr TTL) to avoid rate limits.
+ */
+export async function fetchElementGameweekPoints(
+  gameweek: number
+): Promise<Record<number, number>> {
+  // Check cache first
+  const cached = await getCachedElementPoints(gameweek);
+  if (cached) return cached;
+
+  // Fetch from FPL API — one call returns all ~700 players
+  const liveData = await fetchLiveGameweek(gameweek);
+  const pointsMap: Record<number, number> = {};
+  for (const element of liveData.elements) {
+    pointsMap[element.id] = element.stats.total_points;
+  }
+
+  // Cache the result
+  await setCachedElementPoints(gameweek, pointsMap);
+  return pointsMap;
+}
+
+/**
+ * Fetch PL player metadata (name, team, position, status, cost, minutes).
+ * Uses cache (24hr TTL) since bootstrap updates once daily.
+ */
+export async function fetchElementInfo(): Promise<CachedElementInfo[]> {
+  // Check cache first
+  const cached = await getCachedBootstrap();
+  if (cached) return cached;
+
+  // Fetch from FPL API
+  const bootstrap = await fetchBootstrapData();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawElements = bootstrap.elements as any[];
+  const elements: CachedElementInfo[] = rawElements.map((p) => ({
+    id: p.id as number,
+    web_name: p.web_name as string,
+    team: p.team as number,
+    element_type: p.element_type as number,
+    now_cost: p.now_cost as number,
+    total_points: p.total_points as number,
+    status: (p.status as string) ?? "a",
+    minutes: (p.minutes as number) ?? 0,
+  }));
+
+  // Cache the result
+  await setCachedBootstrap(elements);
+  return elements;
 }

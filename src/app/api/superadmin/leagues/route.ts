@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips } = body;
+  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget } = body;
 
   if (!slug || !name || !sport || !format || !season) {
     return NextResponse.json({ error: "slug, name, sport, format, and season are required" }, { status: 400 });
@@ -83,6 +83,12 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json({ error: "TVT enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)" }, { status: 400 });
     }
+  } else if (format === "auction") {
+    // JPL Auction: no groups, no playoffs, no chips
+    resolvedTeamSize = teamSize ?? 10;
+    resolvedGroupCount = 0;
+    resolvedPlayoffStartGw = 39; // effectively no playoffs
+    resolvedEnabledChips = [];
   } else {
     return NextResponse.json({ error: `Format "${format}" is not supported` }, { status: 400 });
   }
@@ -95,6 +101,7 @@ export async function POST(request: NextRequest) {
       groupCount: resolvedGroupCount,
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: JSON.stringify(resolvedEnabledChips),
+      initialBudget: format === "auction" ? (initialBudget ?? 100_000_000) : 100_000_000,
     });
     return NextResponse.json({
       success: true,

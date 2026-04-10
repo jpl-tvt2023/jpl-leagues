@@ -8,6 +8,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { leagues } from "@/lib/db/schema";
 import { processTripleCrownGameweek } from "@/lib/formats/triple-crown/process-gameweek";
+import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 
 interface RouteParams {
   params: Promise<{ gw: string }>;
@@ -322,6 +323,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         results: [],
         errors: result.errors,
         message: result.message,
+      });
+    }
+
+    if (leagueRow[0]?.format === "auction") {
+      const result = await processAuctionGameweek(
+        gameweek.id,
+        gameweekNumber,
+        leagueId || "",
+        forceReprocess
+      );
+      await invalidateLeaguePageCache(leagueId || "");
+      return NextResponse.json({
+        success: result.success,
+        gameweek: gameweekNumber,
+        processed: result.teamsProcessed,
+        failed: 0,
+        results: result.scores,
+        errors: result.error ? [result.error] : [],
+        message: result.success
+          ? `Auction GW${gameweekNumber}: ${result.teamsProcessed} teams scored`
+          : result.error,
       });
     }
 

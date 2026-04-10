@@ -44,6 +44,9 @@ export const leagues = sqliteTable("leagues", {
   playoffStartGw: integer("playoff_start_gw").notNull().default(31),
   enabledChips: text("enabled_chips").notNull().default('["D","W","C"]'),
 
+  // JPL Auction config
+  initialBudget: integer("initial_budget").notNull().default(100_000_000),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -86,6 +89,12 @@ export const teams = sqliteTable("teams", {
 
   // Triple Crown: Ghost team marker
   isGhost: integer("is_ghost", { mode: "boolean" }).notNull().default(false),
+
+  // JPL Auction: Economy tracking
+  purse: integer("purse").notNull().default(0),
+  totalSpent: integer("total_spent").notNull().default(0),
+  totalRefunds: integer("total_refunds").notNull().default(0),
+  totalIncome: integer("total_income").notNull().default(0),
   
   // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)
   // Existing chips: WW = Win-Win, DP = Double Pointer, CC = Challenge Chip
@@ -306,6 +315,87 @@ export const auditLogs = sqliteTable("audit_logs", {
 });
 
 // ============================================
+// JPL Auction Tables
+// ============================================
+
+// Auction ownership — which PL player (FPL element) is owned by which team
+export const auctionOwnership = sqliteTable("auction_ownership", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  fplElementId: integer("fpl_element_id").notNull(), // FPL element ID (the actual PL player)
+  playerName: text("player_name").notNull(), // Cached web_name from bootstrap
+  purchasePrice: integer("purchase_price").notNull(),
+  acquiredGw: integer("acquired_gw").notNull(), // GW in which player was acquired (0 = pre-season)
+  releasedGw: integer("released_gw"), // GW in which player was released (null if active)
+  status: text("status").notNull().default("active"), // "active" | "deadwood" | "released"
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  activeOwnerUnique: uniqueIndex("auction_ownership_active_unique").on(table.leagueId, table.fplElementId),
+}));
+
+// Auction scores — per-GW team totals (replaces results for auction format)
+export const auctionScores = sqliteTable("auction_scores", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
+  totalPoints: integer("total_points").notNull(), // Sum of all owned players' GW points
+  playerBreakdown: text("player_breakdown").notNull(), // JSON: [{elementId, name, points}]
+  rank: integer("rank"), // GW rank (computed after all teams scored)
+  payout: integer("payout").notNull().default(0), // Income earned this GW based on rank
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  teamGwUnique: uniqueIndex("auction_scores_team_gw_unique").on(table.leagueId, table.teamId, table.gameweekId),
+}));
+
+// Auction sessions — tracks auction windows (pausable/resumable, can span multiple days)
+export const auctionSessions = sqliteTable("auction_sessions", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  type: text("type").notNull(), // "initial" | "mini-auction"
+  cycleNumber: integer("cycle_number").notNull().default(0), // 0=initial, 1/2/3 for 10-GW cycles
+  status: text("status").notNull().default("pending"), // "pending" | "active" | "paused" | "completed"
+  snakeOrder: text("snake_order").notNull().default("[]"), // JSON array of teamIds in nomination order
+  currentNominatorIndex: integer("current_nominator_index").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+// Auction bids — live auction item state per nomination
+export const auctionBids = sqliteTable("auction_bids", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  sessionId: text("session_id").notNull().references(() => auctionSessions.id),
+  nominatorTeamId: text("nominator_team_id").notNull().references(() => teams.id),
+  fplElementId: integer("fpl_element_id").notNull(),
+  playerName: text("player_name").notNull(),
+  currentHighBid: integer("current_high_bid").notNull(),
+  currentHighBidderId: text("current_high_bidder_id").notNull().references(() => teams.id),
+  minBid: integer("min_bid").notNull(),
+  status: text("status").notNull().default("open"), // "open" | "sold" | "unsold" | "cancelled"
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+// Trade proposals — P2P marketplace with veto system
+export const tradeProposals = sqliteTable("trade_proposals", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  proposerTeamId: text("proposer_team_id").notNull().references(() => teams.id),
+  targetTeamId: text("target_team_id").notNull().references(() => teams.id),
+  offeredPlayerIds: text("offered_player_ids").notNull().default("[]"), // JSON array of auctionOwnership IDs
+  requestedPlayerIds: text("requested_player_ids").notNull().default("[]"), // JSON array of auctionOwnership IDs
+  cashOffered: integer("cash_offered").notNull().default(0), // Positive = proposer pays target, negative = target pays
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "rejected" | "vetoed" | "expired"
+  vetoDeadline: integer("veto_deadline", { mode: "timestamp" }),
+  vetoVotes: text("veto_votes").notNull().default("{}"), // JSON: {teamId: "veto" | "approve"}
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+// ============================================
 // Relations
 // ============================================
 
@@ -315,6 +405,11 @@ export const leaguesRelations = relations(leagues, ({ many }) => ({
   teams: many(teams),
   gameweeks: many(gameweeks),
   playoffTies: many(playoffTies),
+  auctionOwnerships: many(auctionOwnership),
+  auctionScores: many(auctionScores),
+  auctionSessions: many(auctionSessions),
+  auctionBids: many(auctionBids),
+  tradeProposals: many(tradeProposals),
 }));
 
 export const leagueAdminsRelations = relations(leagueAdmins, ({ one }) => ({
@@ -354,6 +449,8 @@ export const teamsRelations = relations(teams, ({ one, many }) => ({
   results: many(results),
   chips: many(gameweekChips, { relationName: "teamChips" }),
   challengedChips: many(gameweekChips, { relationName: "challengedTeamChips" }),
+  auctionOwnerships: many(auctionOwnership),
+  auctionScores: many(auctionScores),
 }));
 
 export const playersRelations = relations(players, ({ one, many }) => ({
@@ -474,6 +571,82 @@ export const gameweekChipsRelations = relations(gameweekChips, ({ one }) => ({
 }));
 
 // ============================================
+// JPL Auction Relations
+// ============================================
+
+export const auctionOwnershipRelations = relations(auctionOwnership, ({ one }) => ({
+  league: one(leagues, {
+    fields: [auctionOwnership.leagueId],
+    references: [leagues.id],
+  }),
+  team: one(teams, {
+    fields: [auctionOwnership.teamId],
+    references: [teams.id],
+  }),
+}));
+
+export const auctionScoresRelations = relations(auctionScores, ({ one }) => ({
+  league: one(leagues, {
+    fields: [auctionScores.leagueId],
+    references: [leagues.id],
+  }),
+  team: one(teams, {
+    fields: [auctionScores.teamId],
+    references: [teams.id],
+  }),
+  gameweek: one(gameweeks, {
+    fields: [auctionScores.gameweekId],
+    references: [gameweeks.id],
+  }),
+}));
+
+export const auctionSessionsRelations = relations(auctionSessions, ({ one, many }) => ({
+  league: one(leagues, {
+    fields: [auctionSessions.leagueId],
+    references: [leagues.id],
+  }),
+  bids: many(auctionBids),
+}));
+
+export const auctionBidsRelations = relations(auctionBids, ({ one }) => ({
+  league: one(leagues, {
+    fields: [auctionBids.leagueId],
+    references: [leagues.id],
+  }),
+  session: one(auctionSessions, {
+    fields: [auctionBids.sessionId],
+    references: [auctionSessions.id],
+  }),
+  nominator: one(teams, {
+    fields: [auctionBids.nominatorTeamId],
+    references: [teams.id],
+    relationName: "nominatedBids",
+  }),
+  highBidder: one(teams, {
+    fields: [auctionBids.currentHighBidderId],
+    references: [teams.id],
+    relationName: "wonBids",
+  }),
+}));
+
+export const tradeProposalsRelations = relations(tradeProposals, ({ one }) => ({
+  league: one(leagues, {
+    fields: [tradeProposals.leagueId],
+    references: [leagues.id],
+  }),
+  proposer: one(teams, {
+    fields: [tradeProposals.proposerTeamId],
+    references: [teams.id],
+    relationName: "proposedTrades",
+  }),
+  target: one(teams, {
+    fields: [tradeProposals.targetTeamId],
+    references: [teams.id],
+    relationName: "receivedTrades",
+  }),
+}));
+
+// ============================================
 // Type Exports (use these instead of Prisma types)
 // ============================================
 
@@ -515,3 +688,18 @@ export type NewLeague = typeof leagues.$inferInsert;
 
 export type LeagueAdmin = typeof leagueAdmins.$inferSelect;
 export type NewLeagueAdmin = typeof leagueAdmins.$inferInsert;
+
+export type AuctionOwnership = typeof auctionOwnership.$inferSelect;
+export type NewAuctionOwnership = typeof auctionOwnership.$inferInsert;
+
+export type AuctionScore = typeof auctionScores.$inferSelect;
+export type NewAuctionScore = typeof auctionScores.$inferInsert;
+
+export type AuctionSession = typeof auctionSessions.$inferSelect;
+export type NewAuctionSession = typeof auctionSessions.$inferInsert;
+
+export type AuctionBid = typeof auctionBids.$inferSelect;
+export type NewAuctionBid = typeof auctionBids.$inferInsert;
+
+export type TradeProposal = typeof tradeProposals.$inferSelect;
+export type NewTradeProposal = typeof tradeProposals.$inferInsert;
