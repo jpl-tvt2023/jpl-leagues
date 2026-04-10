@@ -40,6 +40,7 @@ const FORMAT_OPTIONS: Record<string, { value: string; label: string; description
   fpl: [
     { value: "tvt", label: "TVT", description: "Head-to-head, chips, captaincy, playoffs" },
     { value: "triple-crown", label: "JPL Triple Crown", description: "PL + UCL + UEL — 20 teams, Double Header scoring" },
+    { value: "auction", label: "JPL Auction", description: "14-player squads, live auctions, economy system — total points league" },
     { value: "classic", label: "Classic", description: "Round-robin / points-based", comingSoon: true },
   ],
 };
@@ -81,6 +82,7 @@ export default function SuperAdminDashboard() {
     slug: "", name: "", sport: "", format: "", season: "",
     teamSize: 32, groupCount: 2, playoffStartGw: 31,
     enabledChips: ["D", "W", "C"] as string[],
+    initialBudget: 100_000_000,
   });
   const [wizardSelectedAdminIds, setWizardSelectedAdminIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -157,6 +159,7 @@ export default function SuperAdminDashboard() {
           groupCount: leagueForm.groupCount,
           playoffStartGw: leagueForm.playoffStartGw,
           enabledChips: leagueForm.enabledChips,
+          initialBudget: leagueForm.initialBudget,
         }),
       });
       const data = await res.json();
@@ -179,7 +182,7 @@ export default function SuperAdminDashboard() {
       setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
       setShowWizard(false);
       setWizardStep("sport");
-      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"] });
+      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000 });
       setWizardSelectedAdminIds([]);
       setLeagues(prev => [...prev, { ...data, teamCount: 0, currentGameweek: null }]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
@@ -743,7 +746,7 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400 text-sm mt-1">Manage all leagues on the platform</p>
               </div>
               <button
-                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"] }); setMessage(null); }}
+                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000 }); setMessage(null); }}
                 className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
               >
                 + Create League
@@ -811,10 +814,21 @@ export default function SuperAdminDashboard() {
                                   playoffStartGw: 27,
                                   enabledChips: [],
                                 });
+                              } else if (opt.value === "auction") {
+                                // JPL Auction: no groups, no playoffs, no chips
+                                setLeagueForm({
+                                  ...leagueForm,
+                                  format: opt.value,
+                                  teamSize: 10,
+                                  groupCount: 0,
+                                  playoffStartGw: 39,
+                                  enabledChips: [],
+                                  initialBudget: 100_000_000,
+                                });
                               } else {
                                 setLeagueForm({ ...leagueForm, format: opt.value });
                               }
-                              // TVT has team-size variants; Triple Crown and others go straight to details
+                              // TVT has team-size variants; Triple Crown and Auction go straight to details
                               setWizardStep(opt.value === "tvt" ? "team_size" : "details");
                             }
                           }}
@@ -936,15 +950,15 @@ export default function SuperAdminDashboard() {
                     <button onClick={() => setWizardStep(leagueForm.format === "tvt" ? "chips" : "format")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
                     <h3 className="text-white font-semibold text-lg mb-1">League Details</h3>
                     <p className="text-gray-400 text-sm mb-5">
-                      {leagueForm.sport.toUpperCase()} · {leagueForm.format.toUpperCase()} · {leagueForm.teamSize} Teams
+                      {leagueForm.sport.toUpperCase()} · {leagueForm.format === "auction" ? "JPL Auction" : leagueForm.format.toUpperCase()} · {leagueForm.teamSize} {leagueForm.format === "auction" ? "Managers" : "Teams"}
                     </p>
                     <form onSubmit={handleCreateLeague} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm text-gray-300 mb-1">Slug <span className="text-gray-500">(unique ID, e.g. tvt-fpl-2526)</span></label>
+                        <label className="block text-sm text-gray-300 mb-1">Slug <span className="text-gray-500">(unique ID, e.g. {leagueForm.format === "auction" ? "jpl-auction-2526" : "tvt-fpl-2526"})</span></label>
                         <input
                           required value={leagueForm.slug}
                           onChange={e => setLeagueForm({ ...leagueForm, slug: e.target.value.toLowerCase().replace(/\s+/g, "-") })}
-                          placeholder="tvt-fpl-2526"
+                          placeholder={leagueForm.format === "auction" ? "jpl-auction-2526" : "tvt-fpl-2526"}
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                         />
                       </div>
@@ -953,7 +967,7 @@ export default function SuperAdminDashboard() {
                         <input
                           required value={leagueForm.name}
                           onChange={e => setLeagueForm({ ...leagueForm, name: e.target.value })}
-                          placeholder="JPL TVT FPL"
+                          placeholder={leagueForm.format === "auction" ? "JPL Auction League" : "JPL TVT FPL"}
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                         />
                       </div>
@@ -966,6 +980,29 @@ export default function SuperAdminDashboard() {
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                         />
                       </div>
+                      {leagueForm.format === "auction" ? (
+                        <>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Number of Managers</label>
+                            <input
+                              type="number" min={2} max={20} required value={leagueForm.teamSize}
+                              onChange={e => setLeagueForm({ ...leagueForm, teamSize: parseInt(e.target.value) || 10 })}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Initial Budget</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number" min={10_000_000} step={1_000_000} required value={leagueForm.initialBudget}
+                                onChange={e => setLeagueForm({ ...leagueForm, initialBudget: parseInt(e.target.value) || 100_000_000 })}
+                                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                              />
+                              <span className="text-gray-500 text-xs whitespace-nowrap">({(leagueForm.initialBudget / 1_000_000).toFixed(0)}M)</span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
                       <div>
                         <label className="block text-sm text-gray-300 mb-1">Playoff Start GW</label>
                         <div className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white text-sm flex items-center gap-2">
@@ -973,6 +1010,7 @@ export default function SuperAdminDashboard() {
                           <span className="text-gray-500 text-xs">(determined by team size)</span>
                         </div>
                       </div>
+                      )}
                       <div className="sm:col-span-2 flex gap-3">
                         <button
                           type="submit"
