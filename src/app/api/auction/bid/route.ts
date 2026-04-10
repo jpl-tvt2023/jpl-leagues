@@ -1,0 +1,130 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db, auctionBids, auctionSessions, auctionOwnership, teams, leagues } from "@/lib/db";
+import { eq, and } from "drizzle-orm";
+import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { generateId } from "@/lib/id";
+
+const BID_TIMER_SECONDS = 30;
+const MIN_BID_INCREMENT = 100_000; // 100K minimum raise
+
+/**
+ * POST /api/auction/bid
+ * Place a bid on the current open auction item.
+ *
+ * Body: { sessionId, bidAmount }
+ */
+export async function POST(request: NextRequest) {
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const session = token ? await verifySession(token) : null;
+
+  if (!session || session.type !== "team") {
+    return NextResponse.json({ error: "Team authentication required" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { sessionId, bidAmount } = body;
+
+  if (!sessionId || typeof bidAmount !== "number") {
+    return NextResponse.json({ error: "sessionId and bidAmount are required" }, { status: 400 });
+  }
+
+  // Verify session is active
+  const sessionRow = await db
+    .select()
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+
+  if (sessionRow.length === 0 || sessionRow[0].status !== "active") {
+    return NextResponse.json({ error: "Auction session is not active" }, { status: 400 });
+  }
+
+  const leagueId = sessionRow[0].leagueId;
+
+  // Get team and verify they belong to this league
+  const teamRow = await db.select().from(teams).where(eq(teams.id, session.id)).limit(1);
+  if (teamRow.length === 0 || teamRow[0].leagueId !== leagueId) {
+    return NextResponse.json({ error: "Team not in this league" }, { status: 403 });
+  }
+
+  // Atomically place the bid
+  const result = await db.transaction(async (tx) => {
+    // Get the current open bid
+    const openBids = await tx
+      .select()
+      .from(auctionBids)
+      .where(
+        and(
+          eq(auctionBids.sessionId, sessionId),
+          eq(auctionBids.status, "open")
+        )
+      )
+      .limit(1);
+
+    if (openBids.length === 0) {
+      return { error: "No open auction item", status: 400 };
+    }
+
+    const currentBid = openBids[0];
+
+    // Check timer hasn't expired
+    if (new Date() > currentBid.expiresAt) {
+      return { error: "Auction timer has expired", status: 400 };
+    }
+
+    // Validate bid amount
+    if (bidAmount < currentBid.currentHighBid + MIN_BID_INCREMENT) {
+      return {
+        error: `Minimum bid is ${(currentBid.currentHighBid + MIN_BID_INCREMENT).toLocaleString()}`,
+        status: 400,
+      };
+    }
+
+    // Check bidder has enough purse
+    if (bidAmount > teamRow[0].purse) {
+      return { error: "Insufficient purse", status: 400 };
+    }
+
+    // Check bidder doesn't already have 14 active players
+    const activeOwned = await tx
+      .select()
+      .from(auctionOwnership)
+      .where(
+        and(
+          eq(auctionOwnership.leagueId, leagueId),
+          eq(auctionOwnership.teamId, session.id),
+          eq(auctionOwnership.status, "active")
+        )
+      );
+
+    if (activeOwned.length >= 14) {
+      return { error: "Squad is full (14 players)", status: 400 };
+    }
+
+    // Place the bid — reset timer
+    const newExpiry = new Date(Date.now() + BID_TIMER_SECONDS * 1000);
+    await tx
+      .update(auctionBids)
+      .set({
+        currentHighBid: bidAmount,
+        currentHighBidderId: session.id,
+        expiresAt: newExpiry,
+        updatedAt: new Date(),
+      })
+      .where(eq(auctionBids.id, currentBid.id));
+
+    return {
+      success: true,
+      bidId: currentBid.id,
+      bidAmount,
+      bidderId: session.id,
+      expiresAt: newExpiry.toISOString(),
+    };
+  });
+
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
+  return NextResponse.json(result);
+}
