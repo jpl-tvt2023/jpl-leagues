@@ -3,6 +3,7 @@ import { db, auctionBids, auctionSessions, auctionOwnership, teams, leagues } fr
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
+import { calculatePurse } from "@/lib/formats/auction/economy";
 
 const BID_COUNTER_EXTENSION_MS = 5_000; // +5s per counter-bid
 const BID_MAX_TIMER_MS = 20_000; // cap at 20s from now
@@ -81,8 +82,15 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    // Check bidder has enough purse
-    if (bidAmount > teamRow[0].purse) {
+    // Compute available purse (initialBudget + income + refunds - spent)
+    const leagueRow = await tx.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+    const availablePurse = calculatePurse(
+      leagueRow[0]?.initialBudget ?? 0,
+      teamRow[0].totalIncome,
+      teamRow[0].totalSpent,
+      teamRow[0].totalRefunds
+    );
+    if (bidAmount > availablePurse) {
       return { error: "Insufficient purse", status: 400 };
     }
 
