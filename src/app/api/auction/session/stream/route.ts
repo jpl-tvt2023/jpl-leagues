@@ -54,6 +54,8 @@ export async function GET(request: NextRequest) {
       let lastSessionStatus: string | null = null;
       let lastNominatorIndex: number | null = null;
       let lastWaitingSnapshot: string | null = null;
+      let lastHighBidderId: string | null = null;
+      let lastHighBid: number | null = null;
 
       const poll = async () => {
         if (isClosed) return;
@@ -118,7 +120,8 @@ export async function GET(request: NextRequest) {
             // Emit if bid state changed
             if (updatedAtStr !== lastBidUpdatedAt) {
               lastBidUpdatedAt = updatedAtStr;
-              send("auction-state", {
+
+              const auctionPayload = {
                 bidId: bid.id,
                 fplElementId: bid.fplElementId,
                 playerName: bid.playerName,
@@ -128,24 +131,49 @@ export async function GET(request: NextRequest) {
                 minBid: bid.minBid,
                 expiresAt: bid.expiresAt.toISOString(),
                 status: bid.status,
-              });
+              };
+
+              send("auction-state", auctionPayload);
+
+              // Emit bid-placed when the high bidder or amount changed (a new bid was placed)
+              if (
+                lastHighBidderId !== null &&
+                (bid.currentHighBidderId !== lastHighBidderId || bid.currentHighBid !== lastHighBid)
+              ) {
+                send("bid-placed", auctionPayload);
+              }
+
+              lastHighBidderId = bid.currentHighBidderId;
+              lastHighBid = bid.currentHighBid;
             }
 
             // Check if timer expired — resolve via shared logic
             if (new Date() > bid.expiresAt) {
-              await resolveExpiredBid(bid);
+              const outcome = await resolveExpiredBid(bid);
 
-              // Advance nominator BEFORE notifying clients so the DB is already
-              // updated when the client calls refreshSessionState() on "sold".
-              await advanceNominator(sessionId);
+              if (outcome === "sold") {
+                // Advance nominator BEFORE notifying clients so the DB is already
+                // updated when the client calls refreshSessionState() on "sold".
+                await advanceNominator(sessionId);
 
-              send("sold", {
-                bidId: bid.id,
-                fplElementId: bid.fplElementId,
-                playerName: bid.playerName,
-                finalBid: bid.currentHighBid,
-                winnerId: bid.currentHighBidderId,
-              });
+                // Re-read the bid to get the freshest winner/amount (counter-bids
+                // may have arrived after the initial read)
+                const resolved = await db
+                  .select()
+                  .from(auctionBids)
+                  .where(eq(auctionBids.id, bid.id))
+                  .limit(1);
+                const final = resolved[0] ?? bid;
+
+                send("sold", {
+                  bidId: final.id,
+                  fplElementId: final.fplElementId,
+                  playerName: final.playerName,
+                  finalBid: final.currentHighBid,
+                  winnerId: final.currentHighBidderId,
+                });
+              }
+              // else: already-resolved by another caller — skip
 
               lastBidUpdatedAt = null;
             }

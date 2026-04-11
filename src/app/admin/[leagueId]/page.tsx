@@ -209,7 +209,7 @@ export default function AdminDashboard() {
   const [fixturesFileName, setFixturesFileName] = useState("");
   const [captainsFileName, setCaptainsFileName] = useState("");
   const [chipsFileName, setChipsFileName] = useState("");
-  const [teamsUploadMode, setTeamsUploadMode] = useState<"full" | "credentials">("full");
+  const [teamsUploadMode, setTeamsUploadMode] = useState<"full" | "credentials" | "auction">("full");
   const [bulkUploadResult, setBulkUploadResult] = useState<BulkUploadResult | null>(null);
   const [bulkUploading, setBulkUploading] = useState(false);
 
@@ -1009,22 +1009,32 @@ export default function AdminDashboard() {
     
     try {
       // Map Excel columns based on upload mode
-      const teams = teamsUploadMode === "full"
-        ? teamsData.map(row => ({
-            teamLoginId: row["Team ID"] || row["teamLoginId"] || row["teamId"] || "",
-            teamName: row["Team Name"] || row["teamName"] || row["Name"] || "",
-            abbreviation: row["Abbreviation"] || row["abbreviation"] || row["Abbr"] || "",
-            password: row["Password"] || row["password"] || "",
-            group: row["Group"] || row["group"] || "",
-            player1Name: row["Player1 Name"] || row["player1Name"] || row["Player 1 Name"] || "",
-            player1FplId: row["Player1 FPL ID"] || row["player1FplId"] || row["Player 1 FPL ID"] || "",
-            player2Name: row["Player2 Name"] || row["player2Name"] || row["Player 2 Name"] || "",
-            player2FplId: row["Player2 FPL ID"] || row["player2FplId"] || row["Player 2 FPL ID"] || "",
-          }))
-        : teamsData.map(row => ({
-            teamLoginId: row["Team ID"] || row["teamLoginId"] || row["teamId"] || "",
-            password: row["Password"] || row["password"] || "",
-          }));
+      let teams;
+      if (teamsUploadMode === "full") {
+        teams = teamsData.map(row => ({
+          teamLoginId: row["Team ID"] || row["teamLoginId"] || row["teamId"] || row["LoginID"] || "",
+          teamName: row["Team Name"] || row["teamName"] || row["Name"] || row["Manager Name"] || "",
+          abbreviation: row["Abbreviation"] || row["abbreviation"] || row["Abbr"] || "",
+          password: row["Password"] || row["password"] || "",
+          group: row["Group"] || row["group"] || "",
+          player1Name: row["Player1 Name"] || row["player1Name"] || row["Player 1 Name"] || "",
+          player1FplId: row["Player1 FPL ID"] || row["player1FplId"] || row["Player 1 FPL ID"] || "",
+          player2Name: row["Player2 Name"] || row["player2Name"] || row["Player 2 Name"] || "",
+          player2FplId: row["Player2 FPL ID"] || row["player2FplId"] || row["Player 2 FPL ID"] || "",
+        }));
+      } else if (teamsUploadMode === "auction") {
+        teams = teamsData.map(row => ({
+          teamLoginId: row["LoginID"] || row["Team ID"] || row["teamLoginId"] || row["teamId"] || "",
+          teamName: row["Manager Name"] || row["Team Name"] || row["teamName"] || row["Name"] || "",
+          abbreviation: row["Abbreviation"] || row["abbreviation"] || row["Abbr"] || "",
+          password: row["Password"] || row["password"] || "",
+        }));
+      } else {
+        teams = teamsData.map(row => ({
+          teamLoginId: row["Team ID"] || row["teamLoginId"] || row["teamId"] || "",
+          password: row["Password"] || row["password"] || "",
+        }));
+      }
 
       const response = await fetch(`/api/admin/${leagueId}/bulk-upload-teams`, {
         method: "POST",
@@ -2403,7 +2413,7 @@ export default function AdminDashboard() {
                 <div className="flex gap-2 mb-4 p-1 rounded-lg bg-white/5 border border-white/10">
                   <button
                     onClick={() => { setTeamsUploadMode("full"); setTeamsData([]); setTeamsFileName(""); }}
-                    className={`flex-1 px-3 py-2 rounded-md text-sm font-semibold transition ${
+                    className={`flex-1 px-3 py-2 rounded-md text-xs font-semibold transition ${
                       teamsUploadMode === "full"
                         ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900"
                         : "text-gray-400 hover:text-white"
@@ -2412,8 +2422,18 @@ export default function AdminDashboard() {
                     Full Setup
                   </button>
                   <button
+                    onClick={() => { setTeamsUploadMode("auction"); setTeamsData([]); setTeamsFileName(""); }}
+                    className={`flex-1 px-3 py-2 rounded-md text-xs font-semibold transition ${
+                      teamsUploadMode === "auction"
+                        ? "bg-gradient-to-r from-purple-400 to-indigo-500 text-white"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Auction
+                  </button>
+                  <button
                     onClick={() => { setTeamsUploadMode("credentials"); setTeamsData([]); setTeamsFileName(""); }}
-                    className={`flex-1 px-3 py-2 rounded-md text-sm font-semibold transition ${
+                    className={`flex-1 px-3 py-2 rounded-md text-xs font-semibold transition ${
                       teamsUploadMode === "credentials"
                         ? "bg-gradient-to-r from-blue-400 to-cyan-500 text-white"
                         : "text-gray-400 hover:text-white"
@@ -2427,6 +2447,11 @@ export default function AdminDashboard() {
                   <p className="text-gray-400 text-xs mb-4">
                     <strong className="text-gray-300">Full Setup:</strong> Team ID, Team Name, Abbreviation, Password, Group, Player1 Name, Player1 FPL ID, Player2 Name, Player2 FPL ID.
                     Teams are created complete — no setup wizard needed.
+                  </p>
+                ) : teamsUploadMode === "auction" ? (
+                  <p className="text-gray-400 text-xs mb-4">
+                    <strong className="text-gray-300">Auction:</strong> LoginID, Manager Name, Abbreviation, Password.
+                    Teams created with name and abbreviation — no players. Suitable for auction-format leagues.
                   </p>
                 ) : (
                   <p className="text-gray-400 text-xs mb-4">
@@ -2458,7 +2483,7 @@ export default function AdminDashboard() {
                   disabled={bulkUploading || teamsData.length === 0}
                   className="w-full rounded-lg bg-gradient-to-r from-blue-400 to-blue-600 px-6 py-3 font-semibold text-white hover:from-blue-300 hover:to-blue-500 transition disabled:opacity-50"
                 >
-                  {bulkUploading ? "Uploading..." : `Upload Teams (${teamsUploadMode === "full" ? "Full Setup" : "Credentials Only"})`}
+                  {bulkUploading ? "Uploading..." : `Upload Teams (${teamsUploadMode === "full" ? "Full Setup" : teamsUploadMode === "auction" ? "Auction" : "Credentials Only"})`}
                 </button>
               </div>
 

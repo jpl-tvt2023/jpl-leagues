@@ -17,12 +17,12 @@ import {
   auctionWishlists,
   teams,
 } from "@/lib/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 
 const NOMINATION_TIMEOUT_SECONDS = 60;
 const DEFAULT_MIN_BID = 500_000;
-const BID_TIMER_SECONDS = 30;
+const BID_TIMER_SECONDS = 20;
 
 // ---- Types ----
 
@@ -44,24 +44,42 @@ interface BidRow {
 
 /**
  * Resolve an expired bid as "sold": assign player to winner, deduct purse.
+ * Returns true if resolution happened, false if already resolved by another caller.
+ *
+ * Uses an atomic status guard (open → sold) and re-reads the bid from DB
+ * to get the freshest currentHighBid / currentHighBidderId values.
  */
-export async function resolveBidToSold(bid: BidRow): Promise<void> {
+export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
   const now = new Date();
 
-  // Mark bid as sold
-  await db
+  // Atomically mark bid as sold ONLY if still open — prevents duplicate resolution
+  const updated = await db
     .update(auctionBids)
     .set({ status: "sold", updatedAt: now })
-    .where(eq(auctionBids.id, bid.id));
+    .where(and(eq(auctionBids.id, bid.id), eq(auctionBids.status, "open")));
+
+  // If no row was updated, another caller already resolved this bid
+  if (updated.rowsAffected === 0) return false;
+
+  // Re-read the bid to get the freshest counter-bid values (the passed-in
+  // object may be stale if the safety-net fetched it before a counter-bid)
+  const freshRows = await db
+    .select()
+    .from(auctionBids)
+    .where(eq(auctionBids.id, bid.id))
+    .limit(1);
+  const fresh = freshRows[0];
+  const winnerId = fresh?.currentHighBidderId ?? bid.currentHighBidderId;
+  const winAmount = fresh?.currentHighBid ?? bid.currentHighBid;
 
   // Create ownership record
   await db.insert(auctionOwnership).values({
     id: generateId(),
     leagueId: bid.leagueId,
-    teamId: bid.currentHighBidderId,
+    teamId: winnerId,
     fplElementId: bid.fplElementId,
     playerName: bid.playerName,
-    purchasePrice: bid.currentHighBid,
+    purchasePrice: winAmount,
     acquiredGw: 0,
     status: "active",
     createdAt: now,
@@ -78,21 +96,16 @@ export async function resolveBidToSold(bid: BidRow): Promise<void> {
       )
     );
 
-  // Deduct from winner's purse
-  const teamRow = await db
-    .select({ purse: teams.purse, totalSpent: teams.totalSpent })
-    .from(teams)
-    .where(eq(teams.id, bid.currentHighBidderId))
-    .limit(1);
-  if (teamRow.length) {
-    await db
-      .update(teams)
-      .set({
-        purse: teamRow[0].purse - bid.currentHighBid,
-        totalSpent: teamRow[0].totalSpent + bid.currentHighBid,
-      })
-      .where(eq(teams.id, bid.currentHighBidderId));
-  }
+  // Atomically deduct from winner's purse (no read-then-write race)
+  await db
+    .update(teams)
+    .set({
+      purse: sql`${teams.purse} - ${winAmount}`,
+      totalSpent: sql`${teams.totalSpent} + ${winAmount}`,
+    })
+    .where(eq(teams.id, winnerId));
+
+  return true;
 }
 
 /**
@@ -109,10 +122,15 @@ export async function resolveBidToUnsold(bid: BidRow): Promise<void> {
  * Resolve an expired bid. The nominator is always the floor bidder, so the
  * player is always sold — either to the highest counter-bidder or, if no one
  * counter-bid, to the nominator at the base price.
+ *
+ * Returns "sold" if this call resolved the bid, or "already-resolved" if
+ * another caller (SSE / safety-net) already handled it.
  */
-export async function resolveExpiredBid(bid: BidRow): Promise<"sold"> {
-  await resolveBidToSold(bid);
-  return "sold";
+export async function resolveExpiredBid(
+  bid: BidRow
+): Promise<"sold" | "already-resolved"> {
+  const resolved = await resolveBidToSold(bid);
+  return resolved ? "sold" : "already-resolved";
 }
 
 // ---- Nominator Advancement ----

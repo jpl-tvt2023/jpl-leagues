@@ -103,7 +103,6 @@ export default function AuctionRoomPage() {
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
   const [bidFeed, setBidFeed] = useState<BidFeedItem[]>([]);
   const [timerSec, setTimerSec] = useState<number>(0);
-  const [bidInput, setBidInput] = useState<string>("");
   const [placing, setPlacing] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
@@ -113,8 +112,6 @@ export default function AuctionRoomPage() {
   const [nominating, setNominating] = useState<number | null>(null);
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [nominationDeadlineSec, setNominationDeadlineSec] = useState<number>(0);
-  const [wishlistSelections, setWishlistSelections] = useState<Set<number>>(new Set());
-
   const eventSourceRef = useRef<EventSource | null>(null);
   const teamMapRef = useRef<Map<string, StandingEntry>>(new Map());
   const leagueIdRef = useRef<string | null>(null);
@@ -127,7 +124,7 @@ export default function AuctionRoomPage() {
   useEffect(() => { currentBidRef.current = currentBid; }, [currentBid]);
 
   const addFeed = useCallback((text: string, kind: BidFeedItem["kind"]) => {
-    setBidFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now() }, ...prev].slice(0, 20));
+    setBidFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now() }, ...prev]);
   }, []);
 
   // Initial data load
@@ -174,10 +171,14 @@ export default function AuctionRoomPage() {
         fetch(`/api/auction/wishlist?teamId=${me.team.id}`),
       ]);
 
+      let activeSessionId: string | null = null;
+      const standingsMap = new Map<string, StandingEntry>();
+
       if (sessRes.ok) {
         const sessJson = await sessRes.json();
         const active = sessJson.activeSession;
         if (active) {
+          activeSessionId = active.id;
           setSession({
             id: active.id,
             type: active.type,
@@ -193,16 +194,18 @@ export default function AuctionRoomPage() {
           const fallback = (sessJson.sessions ?? []).find(
             (s: AuctionSession) => s.status === "pending" || s.status === "paused"
           );
-          if (fallback) setSession(fallback);
+          if (fallback) {
+            activeSessionId = fallback.id;
+            setSession(fallback);
+          }
         }
       }
 
       if (standingsRes.ok) {
         const standingsJson = await standingsRes.json();
         const rows: StandingEntry[] = standingsJson.standings ?? [];
-        const map = new Map<string, StandingEntry>();
-        for (const r of rows) map.set(r.teamId, r);
-        setTeamMap(map);
+        for (const r of rows) standingsMap.set(r.teamId, r);
+        setTeamMap(standingsMap);
       }
 
       if (ownedRes.ok) {
@@ -218,6 +221,26 @@ export default function AuctionRoomPage() {
       if (wishlistRes.ok) {
         const wl = await wishlistRes.json();
         setWishlist(wl.wishlist ?? []);
+      }
+
+      // Load historical bid feed (persists across page reloads)
+      if (activeSessionId) {
+        const histRes = await fetch(`/api/auction/bid-history?sessionId=${activeSessionId}`);
+        if (histRes.ok) {
+          const histJson = await histRes.json();
+          const histFeed: BidFeedItem[] = (histJson.bids ?? []).map(
+            (b: { id: string; playerName: string; currentHighBid: number; currentHighBidderId: string; status: string; updatedAt: string }) => ({
+              id: b.id,
+              text:
+                b.status === "sold"
+                  ? `SOLD: ${b.playerName} → ${standingsMap.get(b.currentHighBidderId)?.teamName ?? "Unknown"} for ${formatCurrency(b.currentHighBid)}`
+                  : `UNSOLD: ${b.playerName}`,
+              kind: (b.status === "sold" ? "sold" : "unsold") as BidFeedItem["kind"],
+              ts: new Date(b.updatedAt).getTime(),
+            })
+          );
+          setBidFeed(histFeed);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -314,6 +337,8 @@ export default function AuctionRoomPage() {
       }
       if (mtid) {
         fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => r.json()).then((d) => setMyPurse(d.computedPurse ?? 0));
+        // Refresh wishlist — sold player was removed server-side
+        fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => r.json()).then((d) => setWishlist(d.wishlist ?? []));
       }
     });
     es.addEventListener("unsold", (e) => {
@@ -497,22 +522,6 @@ export default function AuctionRoomPage() {
     if (res.ok) await refreshWishlist();
   };
 
-  const handleBulkAddToWishlist = async () => {
-    if (!leagueId || !myTeamId || wishlistSelections.size === 0) return;
-    await Promise.all(
-      [...wishlistSelections].map((elementId) => {
-        const playerName = elements.find((e) => e.id === elementId)?.web_name ?? "";
-        return fetch("/api/auction/wishlist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ leagueId, teamId: myTeamId, fplElementId: elementId, playerName }),
-        });
-      })
-    );
-    setWishlistSelections(new Set());
-    await refreshWishlist();
-  };
-
   const handleReorderWishlist = async (fromIdx: number, toIdx: number) => {
     if (!myTeamId || toIdx < 0 || toIdx >= wishlist.length) return;
     const next = [...wishlist];
@@ -618,7 +627,7 @@ export default function AuctionRoomPage() {
                       <div>
                         <div className="text-xs uppercase text-gray-400">High Bidder</div>
                         <div className={`text-lg font-bold ${isHighBidder ? "text-yellow-400" : "text-white"}`}>
-                          {teamMap.get(currentBid.currentHighBidderId)?.abbreviation ?? "—"}
+                          {teamMap.get(currentBid.currentHighBidderId)?.teamName ?? "—"}
                           {isHighBidder && " (YOU)"}
                         </div>
                       </div>
@@ -759,39 +768,43 @@ export default function AuctionRoomPage() {
                   )}
                 </div>
 
-                {/* Feed */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Live Feed</h3>
-                  <div className="space-y-1 max-h-80 overflow-y-auto text-xs">
-                    {bidFeed.length === 0 ? (
-                      <div className="text-gray-500">No activity yet</div>
-                    ) : (
-                      bidFeed.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`px-2 py-1 rounded ${
-                            item.kind === "sold" ? "text-green-300 font-semibold" :
-                            item.kind === "unsold" ? "text-yellow-300" :
-                            item.kind === "bid" ? "text-white" :
-                            "text-gray-400"
-                          }`}
-                        >
-                          {item.text}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+              </div>
+            </div>
+
+            {/* Live Auction Feed — always visible, full width */}
+            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Auction History</h3>
+              <div className="space-y-1 max-h-96 overflow-y-auto text-xs">
+                {bidFeed.length === 0 ? (
+                  <div className="text-gray-500 py-3 text-center">No activity yet</div>
+                ) : (
+                  bidFeed.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-start gap-2 px-2 py-1.5 rounded ${
+                        item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
+                        item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
+                        item.kind === "bid" ? "text-white" :
+                        "text-gray-400"
+                      }`}
+                    >
+                      <span className="text-[10px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
+                        {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                      </span>
+                      <span>{item.text}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
             {/* Nomination Modal */}
             {showNominate && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => { setShowNominate(false); setWishlistSelections(new Set()); }}>
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowNominate(false)}>
                 <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xl font-bold text-white">Nominate a Player</h3>
-                    <button onClick={() => { setShowNominate(false); setWishlistSelections(new Set()); }} className="text-gray-400 hover:text-white">✕</button>
+                    <button onClick={() => setShowNominate(false)} className="text-gray-400 hover:text-white">✕</button>
                   </div>
                   <input
                     type="text"
@@ -822,26 +835,8 @@ export default function AuctionRoomPage() {
                       </button>
                     ))}
                   </div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="mb-3">
                     <span className="text-xs text-gray-500">Opening bid: £500K (fixed) • Showing top {searchResults.length} by points</span>
-                    {searchResults.length > 0 && (
-                      <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-400 hover:text-white select-none">
-                        <input
-                          type="checkbox"
-                          className="accent-yellow-400"
-                          checked={searchResults.filter(e => !wishlistElementIds.has(e.id)).every(e => wishlistSelections.has(e.id)) && searchResults.some(e => !wishlistElementIds.has(e.id))}
-                          onChange={(ev) => {
-                            const eligible = searchResults.filter(e => !wishlistElementIds.has(e.id)).map(e => e.id);
-                            if (ev.target.checked) {
-                              setWishlistSelections(prev => new Set([...prev, ...eligible]));
-                            } else {
-                              setWishlistSelections(prev => { const next = new Set(prev); eligible.forEach(id => next.delete(id)); return next; });
-                            }
-                          }}
-                        />
-                        Select all
-                      </label>
-                    )}
                   </div>
                   <div className="max-h-80 overflow-y-auto space-y-1">
                     {searchResults.length === 0 ? (
@@ -850,7 +845,6 @@ export default function AuctionRoomPage() {
                       searchResults.map((el) => {
                         const team = plTeams.get(el.team);
                         const inWishlist = wishlistElementIds.has(el.id);
-                        const selected = wishlistSelections.has(el.id);
                         return (
                           <div
                             key={el.id}
@@ -877,20 +871,13 @@ export default function AuctionRoomPage() {
                               {inWishlist ? (
                                 <span className="h-7 w-7 flex items-center justify-center rounded-full text-xs bg-yellow-400/20 text-yellow-400" title="In wishlist">★</span>
                               ) : (
-                                <input
-                                  type="checkbox"
-                                  className="h-4 w-4 accent-yellow-400 cursor-pointer"
-                                  checked={selected}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleAddToWishlist(el.id, el.web_name); }}
+                                  className="h-7 w-7 flex items-center justify-center rounded-full text-xs bg-white/10 text-gray-300 hover:bg-purple-500/30 hover:text-purple-300 transition"
                                   title="Add to wishlist"
-                                  onChange={(ev) => {
-                                    setWishlistSelections(prev => {
-                                      const next = new Set(prev);
-                                      if (ev.target.checked) next.add(el.id);
-                                      else next.delete(el.id);
-                                      return next;
-                                    });
-                                  }}
-                                />
+                                >
+                                  +
+                                </button>
                               )}
                             </div>
                           </div>
@@ -898,16 +885,6 @@ export default function AuctionRoomPage() {
                       })
                     )}
                   </div>
-                  {wishlistSelections.size > 0 && (
-                    <div className="mt-3 border-t border-white/10 pt-3">
-                      <button
-                        onClick={handleBulkAddToWishlist}
-                        className="w-full rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2.5 font-bold text-white hover:from-purple-400 hover:to-indigo-400 transition text-sm"
-                      >
-                        Add {wishlistSelections.size} player{wishlistSelections.size !== 1 ? "s" : ""} to Wishlist
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
             )}

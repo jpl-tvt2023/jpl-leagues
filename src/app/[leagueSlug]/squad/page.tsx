@@ -101,6 +101,7 @@ export default function SquadPage() {
   const [wlSearch, setWlSearch] = useState("");
   const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
+  const [wishlistSelections, setWishlistSelections] = useState<Set<number>>(new Set());
 
   const loadAll = useCallback(async () => {
     setIsLoading(true);
@@ -268,6 +269,22 @@ export default function SquadPage() {
     });
   };
 
+  const handleBulkAddToWishlist = async () => {
+    if (!leagueId || !teamId || wishlistSelections.size === 0) return;
+    await Promise.all(
+      [...wishlistSelections].map((elementId) => {
+        const playerName = elementsList.find((e) => e.id === elementId)?.web_name ?? "";
+        return fetch("/api/auction/wishlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leagueId, teamId, fplElementId: elementId, playerName }),
+        });
+      })
+    );
+    setWishlistSelections(new Set());
+    await refreshWishlist();
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
       <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
@@ -425,19 +442,53 @@ export default function SquadPage() {
                       </button>
                     ))}
                   </div>
+                  {searchResults.length > 0 && (
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-gray-500">Showing top {searchResults.length} by points</span>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-400 hover:text-white select-none">
+                        <input
+                          type="checkbox"
+                          className="accent-yellow-400"
+                          checked={searchResults.every((e) => wishlistSelections.has(e.id)) && searchResults.length > 0}
+                          onChange={(ev) => {
+                            const ids = searchResults.map((e) => e.id);
+                            if (ev.target.checked) {
+                              setWishlistSelections((prev) => new Set([...prev, ...ids]));
+                            } else {
+                              setWishlistSelections((prev) => { const next = new Set(prev); ids.forEach((id) => next.delete(id)); return next; });
+                            }
+                          }}
+                        />
+                        Select all
+                      </label>
+                    </div>
+                  )}
                   <div className="max-h-[32rem] overflow-y-auto space-y-1">
                     {searchResults.length === 0 ? (
                       <div className="text-sm text-gray-500 py-6 text-center">No matches</div>
                     ) : (
                       searchResults.map((el) => {
                         const team = teamsMap.get(el.team);
+                        const selected = wishlistSelections.has(el.id);
                         return (
-                          <button
+                          <div
                             key={el.id}
-                            onClick={() => handleAddWishlist(el.id, el.web_name)}
                             className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-left"
                           >
                             <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 accent-yellow-400 cursor-pointer shrink-0"
+                                checked={selected}
+                                onChange={(ev) => {
+                                  setWishlistSelections((prev) => {
+                                    const next = new Set(prev);
+                                    if (ev.target.checked) next.add(el.id);
+                                    else next.delete(el.id);
+                                    return next;
+                                  });
+                                }}
+                              />
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${POSITION_COLORS[el.element_type]}`}>
                                 {POSITION_LABELS[el.element_type]}
                               </span>
@@ -448,13 +499,29 @@ export default function SquadPage() {
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="text-sm font-mono text-[#00ff85]">{el.total_points} pts</div>
-                              <span className="text-yellow-400 font-bold text-lg">+</span>
+                              <button
+                                onClick={() => handleAddWishlist(el.id, el.web_name)}
+                                className="text-yellow-400 font-bold text-lg hover:text-yellow-300 transition"
+                                title="Add to wishlist"
+                              >
+                                +
+                              </button>
                             </div>
-                          </button>
+                          </div>
                         );
                       })
                     )}
                   </div>
+                  {wishlistSelections.size > 0 && (
+                    <div className="mt-3 border-t border-white/10 pt-3">
+                      <button
+                        onClick={handleBulkAddToWishlist}
+                        className="w-full rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2.5 font-bold text-white hover:from-purple-400 hover:to-indigo-400 transition text-sm"
+                      >
+                        Add {wishlistSelections.size} player{wishlistSelections.size !== 1 ? "s" : ""} to Wishlist
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
