@@ -1,6 +1,16 @@
 import { NextRequest } from "next/server";
 import { db, auctionSessions, auctionBids } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
+import {
+  resolveExpiredBid,
+  advanceNominator,
+  setNominationDeadline,
+  handleNominationTimeout,
+} from "@/lib/formats/auction/resolve-bid";
+
+// Force dynamic so Vercel doesn't buffer/cache the SSE response
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const POLL_INTERVAL_MS = 2000; // Poll DB every 2 seconds for updates
 const HEARTBEAT_INTERVAL_MS = 15000; // Send heartbeat every 15 seconds
@@ -11,9 +21,11 @@ const HEARTBEAT_INTERVAL_MS = 15000; // Send heartbeat every 15 seconds
  *
  * Events emitted:
  * - auction-state: Current bid state (bid amount, bidder, timer)
- * - bid-placed: New bid placed
- * - sold: Player sold to highest bidder
+ * - sold: Player sold to highest bidder (ownership created, purse deducted)
  * - unsold: Player went unsold (no bids above min)
+ * - waiting: No open bid, waiting for nomination (includes deadline info)
+ * - auto-nominated: System auto-nominated from wishlist after timeout
+ * - penalised: Nominator penalised for missed nomination (empty wishlist)
  * - session-status: Session started/paused/completed
  * - heartbeat: Keep-alive
  */
@@ -40,6 +52,7 @@ export async function GET(request: NextRequest) {
 
       let lastBidUpdatedAt: string | null = null;
       let lastSessionStatus: string | null = null;
+      let lastNominatorIndex: number | null = null;
 
       const poll = async () => {
         if (isClosed) return;
@@ -60,14 +73,17 @@ export async function GET(request: NextRequest) {
           }
 
           const session = sessionRow[0];
+          const snakeOrder: string[] = JSON.parse(session.snakeOrder);
 
-          // Emit session status changes
-          if (session.status !== lastSessionStatus) {
+          // Emit session status changes (or nominator changes)
+          if (session.status !== lastSessionStatus || session.currentNominatorIndex !== lastNominatorIndex) {
             lastSessionStatus = session.status;
+            lastNominatorIndex = session.currentNominatorIndex;
             send("session-status", {
               status: session.status,
               currentNominatorIndex: session.currentNominatorIndex,
-              snakeOrder: JSON.parse(session.snakeOrder),
+              snakeOrder,
+              nominationDeadline: session.nominationDeadline?.toISOString() ?? null,
             });
           }
 
@@ -77,6 +93,9 @@ export async function GET(request: NextRequest) {
             controller.close();
             return;
           }
+
+          // Only process bids/nominations for active sessions
+          if (session.status !== "active") return;
 
           // Get current open bid
           const openBids = await db
@@ -110,30 +129,62 @@ export async function GET(request: NextRequest) {
               });
             }
 
-            // Check if timer expired — mark as sold/unsold
+            // Check if timer expired — resolve via shared logic
             if (new Date() > bid.expiresAt) {
-              const isSold = bid.currentHighBid > bid.minBid || bid.currentHighBidderId !== bid.nominatorTeamId;
-              const newStatus = isSold ? "sold" : "unsold";
+              const outcome = await resolveExpiredBid(bid);
 
-              await db
-                .update(auctionBids)
-                .set({ status: newStatus, updatedAt: new Date() })
-                .where(eq(auctionBids.id, bid.id));
-
-              send(newStatus, {
+              send(outcome, {
                 bidId: bid.id,
                 fplElementId: bid.fplElementId,
                 playerName: bid.playerName,
                 finalBid: bid.currentHighBid,
-                winnerId: isSold ? bid.currentHighBidderId : null,
+                winnerId: outcome === "sold" ? bid.currentHighBidderId : null,
               });
 
-              lastBidUpdatedAt = null; // Reset to pick up next state
+              // Advance to next nominator (sets 60s nomination deadline)
+              await advanceNominator(sessionId);
+
+              lastBidUpdatedAt = null;
             }
           } else {
             lastBidUpdatedAt = null;
-            // No open bid — waiting for next nomination
-            send("waiting", { message: "Waiting for next nomination" });
+
+            // No open bid — check nomination deadline
+            const currentNominatorId = snakeOrder[session.currentNominatorIndex];
+            const now = new Date();
+
+            if (session.nominationDeadline && now > session.nominationDeadline) {
+              // Nomination timeout — auto-nominate or penalise
+              const result = await handleNominationTimeout(
+                sessionId,
+                currentNominatorId,
+                session.leagueId
+              );
+
+              send(result, {
+                teamId: currentNominatorId,
+                message: result === "auto-nominated"
+                  ? "Auto-nominated from wishlist"
+                  : "Penalised for missed nomination — turn skipped",
+              });
+            } else if (!session.nominationDeadline) {
+              // No deadline set yet (e.g. session just started) — set one
+              await setNominationDeadline(sessionId);
+            }
+
+            // Emit waiting state with deadline info
+            // Re-fetch session to get updated deadline
+            const refreshed = await db
+              .select({ nominationDeadline: auctionSessions.nominationDeadline, currentNominatorIndex: auctionSessions.currentNominatorIndex })
+              .from(auctionSessions)
+              .where(eq(auctionSessions.id, sessionId))
+              .limit(1);
+
+            send("waiting", {
+              message: "Waiting for next nomination",
+              currentNominatorId: snakeOrder[refreshed[0]?.currentNominatorIndex ?? session.currentNominatorIndex],
+              nominationDeadline: refreshed[0]?.nominationDeadline?.toISOString() ?? null,
+            });
           }
         } catch (error) {
           console.error("SSE poll error:", error);

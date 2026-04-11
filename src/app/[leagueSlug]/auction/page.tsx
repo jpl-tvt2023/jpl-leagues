@@ -12,6 +12,14 @@ interface AuctionSession {
   status: "pending" | "active" | "paused" | "completed";
   snakeOrder: string[];
   currentNominatorIndex: number;
+  nominationDeadline: string | null;
+}
+
+interface WishlistEntry {
+  id: string;
+  fplElementId: number;
+  playerName: string;
+  priority: number;
 }
 
 interface CurrentBid {
@@ -88,7 +96,10 @@ export default function AuctionRoomPage() {
   const [sseConnected, setSseConnected] = useState(false);
   const [showNominate, setShowNominate] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [positionFilter, setPositionFilter] = useState<number | null>(null);
   const [nominating, setNominating] = useState<number | null>(null);
+  const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
+  const [nominationDeadlineSec, setNominationDeadlineSec] = useState<number>(0);
 
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -132,11 +143,12 @@ export default function AuctionRoomPage() {
         setPlTeams(tMap);
       }
 
-      const [sessRes, standingsRes, ownedRes, economyRes] = await Promise.all([
+      const [sessRes, standingsRes, ownedRes, economyRes, wishlistRes] = await Promise.all([
         fetch(`/api/auction/session?leagueId=${league.id}`),
         fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`),
         fetch(`/api/auction/league-owned?leagueId=${league.id}`),
         fetch(`/api/auction/economy?teamId=${me.team.id}`),
+        fetch(`/api/auction/wishlist?teamId=${me.team.id}`),
       ]);
 
       if (sessRes.ok) {
@@ -150,6 +162,7 @@ export default function AuctionRoomPage() {
             status: active.status,
             snakeOrder: active.snakeOrder ?? [],
             currentNominatorIndex: active.currentNominatorIndex ?? 0,
+            nominationDeadline: active.nominationDeadline ?? null,
           });
           if (active.currentBid) setCurrentBid(active.currentBid);
         } else {
@@ -157,7 +170,7 @@ export default function AuctionRoomPage() {
           const fallback = (sessJson.sessions ?? []).find(
             (s: AuctionSession) => s.status === "pending" || s.status === "paused"
           );
-          if (fallback) setSession(fallback);
+          if (fallback) setSession({ ...fallback, nominationDeadline: fallback.nominationDeadline ?? null });
         }
       }
 
@@ -178,6 +191,11 @@ export default function AuctionRoomPage() {
         const econ = await economyRes.json();
         setMyPurse(econ.computedPurse ?? 0);
       }
+
+      if (wishlistRes.ok) {
+        const wl = await wishlistRes.json();
+        setWishlist(wl.wishlist ?? []);
+      }
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to load auction room");
@@ -189,6 +207,28 @@ export default function AuctionRoomPage() {
   useEffect(() => {
     loadInitial();
   }, [loadInitial]);
+
+  // Helper to refetch the active session + currentBid from the REST endpoint
+  const refreshSessionState = useCallback(async () => {
+    if (!leagueId) return;
+    const res = await fetch(`/api/auction/session?leagueId=${leagueId}`);
+    if (!res.ok) return;
+    const json = await res.json();
+    if (json.activeSession) {
+      setSession((prev) => prev ? {
+        ...prev,
+        status: json.activeSession.status,
+        currentNominatorIndex: json.activeSession.currentNominatorIndex ?? 0,
+        snakeOrder: json.activeSession.snakeOrder ?? prev.snakeOrder,
+        nominationDeadline: json.activeSession.nominationDeadline ?? null,
+      } : prev);
+      if (json.activeSession.currentBid) {
+        setCurrentBid(json.activeSession.currentBid);
+      } else {
+        setCurrentBid(null);
+      }
+    }
+  }, [leagueId]);
 
   // SSE subscription
   useEffect(() => {
@@ -230,13 +270,25 @@ export default function AuctionRoomPage() {
     });
     es.addEventListener("session-status", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      setSession((prev) => prev ? { ...prev, status: data.status, currentNominatorIndex: data.currentNominatorIndex, snakeOrder: data.snakeOrder } : prev);
+      setSession((prev) => prev ? { ...prev, status: data.status, currentNominatorIndex: data.currentNominatorIndex, snakeOrder: data.snakeOrder, nominationDeadline: data.nominationDeadline ?? null } : prev);
     });
     es.addEventListener("session-complete", () => {
       addFeed("Auction session completed", "info");
     });
-    es.addEventListener("waiting", () => {
+    es.addEventListener("waiting", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
       setCurrentBid(null);
+      setSession((prev) => prev ? { ...prev, nominationDeadline: data.nominationDeadline ?? null } : prev);
+    });
+    es.addEventListener("auto-nominated", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      const teamName = teamMap.get(data.teamId)?.teamName ?? "Team";
+      addFeed(`${teamName} auto-nominated from wishlist`, "info");
+    });
+    es.addEventListener("penalised", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      const teamName = teamMap.get(data.teamId)?.teamName ?? "Team";
+      addFeed(`${teamName} penalised — missed nomination (wishlist empty)`, "unsold");
     });
 
     return () => {
@@ -246,24 +298,12 @@ export default function AuctionRoomPage() {
     };
   }, [session, addFeed, teamMap, leagueId, myTeamId]);
 
-  // Refetch session on intervals (to pick up nominator index changes after sold)
+  // Refetch session + currentBid on intervals (SSE fallback)
   useEffect(() => {
     if (!leagueId || !session) return;
-    const t = setInterval(async () => {
-      const res = await fetch(`/api/auction/session?leagueId=${leagueId}`);
-      if (!res.ok) return;
-      const json = await res.json();
-      if (json.activeSession) {
-        setSession((prev) => prev ? {
-          ...prev,
-          status: json.activeSession.status,
-          currentNominatorIndex: json.activeSession.currentNominatorIndex ?? 0,
-          snakeOrder: json.activeSession.snakeOrder ?? prev.snakeOrder,
-        } : prev);
-      }
-    }, 5000);
+    const t = setInterval(() => refreshSessionState(), 3000);
     return () => clearInterval(t);
-  }, [leagueId, session]);
+  }, [leagueId, session, refreshSessionState]);
 
   // Timer countdown
   useEffect(() => {
@@ -279,6 +319,21 @@ export default function AuctionRoomPage() {
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
   }, [currentBid]);
+
+  // Nomination deadline countdown (only when no currentBid)
+  useEffect(() => {
+    if (currentBid || !session?.nominationDeadline) {
+      setNominationDeadlineSec(0);
+      return;
+    }
+    const tick = () => {
+      const ms = new Date(session.nominationDeadline!).getTime() - Date.now();
+      setNominationDeadlineSec(Math.max(0, Math.ceil(ms / 1000)));
+    };
+    tick();
+    const t = setInterval(tick, 500);
+    return () => clearInterval(t);
+  }, [currentBid, session?.nominationDeadline]);
 
   const currentNominatorId = useMemo(() => {
     if (!session?.snakeOrder?.length) return null;
@@ -327,6 +382,8 @@ export default function AuctionRoomPage() {
       if (!res.ok) throw new Error(data.error || "Nomination failed");
       setShowNominate(false);
       setSearchTerm("");
+      // Immediately refresh to pick up the new bid (don't rely solely on SSE)
+      await refreshSessionState();
     } catch (err) {
       setBidError(err instanceof Error ? err.message : "Nomination failed");
     } finally {
@@ -340,13 +397,63 @@ export default function AuctionRoomPage() {
   };
 
   const searchResults = useMemo(() => {
-    if (!searchTerm.trim()) return [];
-    const lc = searchTerm.toLowerCase();
-    return elements
-      .filter((el) => !ownedElementIds.has(el.id) && el.web_name.toLowerCase().includes(lc))
+    const lc = searchTerm.trim().toLowerCase();
+    const filtered = elements.filter((el) => {
+      if (ownedElementIds.has(el.id)) return false;
+      if (positionFilter !== null && el.element_type !== positionFilter) return false;
+      if (lc && !el.web_name.toLowerCase().includes(lc)) return false;
+      return true;
+    });
+    return filtered
       .sort((a, b) => b.total_points - a.total_points)
-      .slice(0, 20);
-  }, [elements, ownedElementIds, searchTerm]);
+      .slice(0, 30);
+  }, [elements, ownedElementIds, searchTerm, positionFilter]);
+
+  const refreshWishlist = useCallback(async () => {
+    if (!myTeamId) return;
+    const res = await fetch(`/api/auction/wishlist?teamId=${myTeamId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setWishlist(data.wishlist ?? []);
+    }
+  }, [myTeamId]);
+
+  const handleAddToWishlist = async (elementId: number, playerName: string) => {
+    if (!leagueId || !myTeamId) return;
+    const res = await fetch("/api/auction/wishlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leagueId, teamId: myTeamId, fplElementId: elementId, playerName }),
+    });
+    if (res.ok) await refreshWishlist();
+  };
+
+  const handleRemoveFromWishlist = async (id: string) => {
+    if (!myTeamId) return;
+    const res = await fetch("/api/auction/wishlist", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, teamId: myTeamId }),
+    });
+    if (res.ok) await refreshWishlist();
+  };
+
+  const handleReorderWishlist = async (fromIdx: number, toIdx: number) => {
+    if (!myTeamId || toIdx < 0 || toIdx >= wishlist.length) return;
+    const next = [...wishlist];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    // Optimistic update
+    setWishlist(next.map((e, i) => ({ ...e, priority: i + 1 })));
+    const items = next.map((e, i) => ({ id: e.id, priority: i + 1 }));
+    await fetch("/api/auction/wishlist", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teamId: myTeamId, items }),
+    });
+  };
+
+  const wishlistElementIds = useMemo(() => new Set(wishlist.map((w) => w.fplElementId)), [wishlist]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -470,7 +577,12 @@ export default function AuctionRoomPage() {
                     <div className="text-xs uppercase tracking-widest text-gray-400 mb-2">Waiting for Nomination</div>
                     {isMyTurn && session.status === "active" ? (
                       <>
-                        <p className="text-white mb-4">It&apos;s your turn to nominate a player.</p>
+                        <p className="text-white mb-2">It&apos;s your turn to nominate a player.</p>
+                        {nominationDeadlineSec > 0 && (
+                          <div className={`mb-4 text-sm font-mono ${nominationDeadlineSec <= 10 ? "text-red-400" : "text-yellow-300"}`}>
+                            Auto-nom from wishlist in {nominationDeadlineSec}s
+                          </div>
+                        )}
                         <button
                           onClick={() => setShowNominate(true)}
                           className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
@@ -479,9 +591,16 @@ export default function AuctionRoomPage() {
                         </button>
                       </>
                     ) : (
-                      <p className="text-gray-400">
-                        {currentNominatorId ? `Waiting for ${teamMap.get(currentNominatorId)?.teamName ?? "nominator"}...` : "Waiting for next nomination..."}
-                      </p>
+                      <>
+                        <p className="text-gray-400">
+                          {currentNominatorId ? `Waiting for ${teamMap.get(currentNominatorId)?.teamName ?? "nominator"}...` : "Waiting for next nomination..."}
+                        </p>
+                        {nominationDeadlineSec > 0 && (
+                          <div className="mt-2 text-xs font-mono text-gray-500">
+                            Auto-nom in {nominationDeadlineSec}s
+                          </div>
+                        )}
+                      </>
                     )}
                     {bidError && <div className="mt-3 text-sm text-red-400">{bidError}</div>}
                   </div>
@@ -509,6 +628,54 @@ export default function AuctionRoomPage() {
                       );
                     })}
                   </div>
+                </div>
+
+                {/* Wishlist */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
+                    <span className="text-xs text-gray-500">{wishlist.length}</span>
+                  </div>
+                  {wishlist.length === 0 ? (
+                    <div className="text-xs text-gray-500 py-3 text-center">
+                      Empty — add players from the nomination modal. If you miss your turn with an empty list, you&apos;ll lose a squad slot.
+                    </div>
+                  ) : (
+                    <div className="space-y-1 max-h-60 overflow-y-auto">
+                      {wishlist.map((entry, idx) => (
+                        <div
+                          key={entry.id}
+                          className="flex items-center gap-2 px-2 py-1 rounded text-sm bg-white/5"
+                        >
+                          <span className="w-5 text-right text-xs text-gray-500">{idx + 1}.</span>
+                          <span className="flex-1 truncate text-white">{entry.playerName}</span>
+                          <button
+                            onClick={() => handleReorderWishlist(idx, idx - 1)}
+                            disabled={idx === 0}
+                            className="text-gray-400 hover:text-white disabled:opacity-30 text-xs"
+                            title="Move up"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            onClick={() => handleReorderWishlist(idx, idx + 1)}
+                            disabled={idx === wishlist.length - 1}
+                            className="text-gray-400 hover:text-white disabled:opacity-30 text-xs"
+                            title="Move down"
+                          >
+                            ▼
+                          </button>
+                          <button
+                            onClick={() => handleRemoveFromWishlist(entry.id)}
+                            className="text-red-400 hover:text-red-300 text-xs"
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Feed */}
@@ -551,25 +718,47 @@ export default function AuctionRoomPage() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     autoFocus
-                    className="w-full rounded-lg bg-white/10 border border-white/20 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none mb-4"
+                    className="w-full rounded-lg bg-white/10 border border-white/20 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none mb-3"
                   />
-                  <div className="text-xs text-gray-500 mb-3">Opening bid: £500K (fixed)</div>
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    {([
+                      [null, "ALL"],
+                      [1, "GKP"],
+                      [2, "DEF"],
+                      [3, "MID"],
+                      [4, "FWD"],
+                    ] as [number | null, string][]).map(([pos, label]) => (
+                      <button
+                        key={label}
+                        onClick={() => setPositionFilter(pos)}
+                        className={`px-3 py-1 rounded-full text-xs font-bold uppercase border transition ${
+                          positionFilter === pos
+                            ? "bg-yellow-400 text-slate-900 border-yellow-400"
+                            : "bg-white/5 text-gray-300 border-white/20 hover:bg-white/10"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-xs text-gray-500 mb-3">Opening bid: £500K (fixed) • Showing top {searchResults.length} by points</div>
                   <div className="max-h-96 overflow-y-auto space-y-1">
                     {searchResults.length === 0 ? (
-                      <div className="text-sm text-gray-500 py-6 text-center">
-                        {searchTerm ? "No matches" : "Start typing to search"}
-                      </div>
+                      <div className="text-sm text-gray-500 py-6 text-center">No matches</div>
                     ) : (
                       searchResults.map((el) => {
                         const team = plTeams.get(el.team);
+                        const inWishlist = wishlistElementIds.has(el.id);
                         return (
-                          <button
+                          <div
                             key={el.id}
-                            onClick={() => handleNominate(el.id, el.web_name)}
-                            disabled={nominating === el.id}
-                            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-left disabled:opacity-50"
+                            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition"
                           >
-                            <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => handleNominate(el.id, el.web_name)}
+                              disabled={nominating === el.id}
+                              className="flex items-center gap-3 flex-1 text-left disabled:opacity-50"
+                            >
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-white/20 bg-white/10 text-gray-300">
                                 {POSITION_LABELS[el.element_type]}
                               </span>
@@ -577,12 +766,26 @@ export default function AuctionRoomPage() {
                                 <div className="text-white font-semibold">{el.web_name}</div>
                                 <div className="text-xs text-gray-400">{team?.short_name ?? "—"}</div>
                               </div>
+                            </button>
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <div className="text-sm font-mono text-[#00ff85]">{el.total_points} pts</div>
+                                {nominating === el.id && <div className="text-xs text-gray-400">Nominating...</div>}
+                              </div>
+                              <button
+                                onClick={() => inWishlist ? null : handleAddToWishlist(el.id, el.web_name)}
+                                disabled={inWishlist}
+                                title={inWishlist ? "Already in wishlist" : "Add to wishlist"}
+                                className={`h-7 w-7 rounded-full text-xs font-bold transition ${
+                                  inWishlist
+                                    ? "bg-yellow-400/20 text-yellow-400 cursor-default"
+                                    : "bg-white/10 text-gray-300 hover:bg-white/20"
+                                }`}
+                              >
+                                {inWishlist ? "★" : "+"}
+                              </button>
                             </div>
-                            <div className="text-right">
-                              <div className="text-sm font-mono text-[#00ff85]">{el.total_points} pts</div>
-                              {nominating === el.id && <div className="text-xs text-gray-400">Nominating...</div>}
-                            </div>
-                          </button>
+                          </div>
                         );
                       })
                     )}

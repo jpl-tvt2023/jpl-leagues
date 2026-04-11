@@ -95,6 +95,9 @@ export const teams = sqliteTable("teams", {
   totalSpent: integer("total_spent").notNull().default(0),
   totalRefunds: integer("total_refunds").notNull().default(0),
   totalIncome: integer("total_income").notNull().default(0),
+
+  // JPL Auction: Penalty slots (missed nominations reduce max squad size from 14)
+  penaltySlots: integer("penalty_slots").notNull().default(0),
   
   // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)
   // Existing chips: WW = Win-Win, DP = Double Pointer, CC = Challenge Chip
@@ -359,6 +362,18 @@ export const auctionSessions = sqliteTable("auction_sessions", {
   status: text("status").notNull().default("pending"), // "pending" | "active" | "paused" | "completed"
   snakeOrder: text("snake_order").notNull().default("[]"), // JSON array of teamIds in nomination order
   currentNominatorIndex: integer("current_nominator_index").notNull().default(0),
+  nominationDeadline: integer("nomination_deadline", { mode: "timestamp" }), // When current nominator must nominate by (null = no active deadline)
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+// Auction wishlists — priority-ordered player lists per team for auto-nomination
+export const auctionWishlists = sqliteTable("auction_wishlists", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  fplElementId: integer("fpl_element_id").notNull(),
+  playerName: text("player_name").notNull(),
+  priority: integer("priority").notNull(), // 1 = highest priority
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -409,6 +424,7 @@ export const leaguesRelations = relations(leagues, ({ many }) => ({
   auctionScores: many(auctionScores),
   auctionSessions: many(auctionSessions),
   auctionBids: many(auctionBids),
+  auctionWishlists: many(auctionWishlists),
   tradeProposals: many(tradeProposals),
 }));
 
@@ -451,6 +467,7 @@ export const teamsRelations = relations(teams, ({ one, many }) => ({
   challengedChips: many(gameweekChips, { relationName: "challengedTeamChips" }),
   auctionOwnerships: many(auctionOwnership),
   auctionScores: many(auctionScores),
+  auctionWishlists: many(auctionWishlists),
 }));
 
 export const playersRelations = relations(players, ({ one, many }) => ({

@@ -4,6 +4,35 @@ import { eq, and, desc } from "drizzle-orm";
 import { isSuperAdmin, verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { generateSnakeOrder } from "@/lib/formats/auction/mini-auction";
+import {
+  resolveExpiredBid,
+  advanceNominator,
+  setNominationDeadline,
+} from "@/lib/formats/auction/resolve-bid";
+
+/**
+ * Auto-resolve expired open bids that SSE may have missed.
+ * Creates ownership + deducts purse for sold bids, advances nominator.
+ */
+async function resolveExpiredBids(sessionId: string) {
+  const openBids = await db
+    .select()
+    .from(auctionBids)
+    .where(
+      and(
+        eq(auctionBids.sessionId, sessionId),
+        eq(auctionBids.status, "open")
+      )
+    );
+
+  const now = new Date();
+  for (const bid of openBids) {
+    if (now > bid.expiresAt) {
+      await resolveExpiredBid(bid);
+      await advanceNominator(sessionId);
+    }
+  }
+}
 
 /**
  * GET /api/auction/session?leagueId=xxx
@@ -39,6 +68,9 @@ export async function GET(request: NextRequest) {
 
   let currentBid = null;
   if (activeSession) {
+    // Auto-resolve any expired open bids (safety net if SSE wasn't running)
+    await resolveExpiredBids(activeSession.id);
+
     const openBids = await db
       .select()
       .from(auctionBids)
@@ -69,6 +101,7 @@ export async function GET(request: NextRequest) {
           status: activeSession.status,
           snakeOrder: JSON.parse(activeSession.snakeOrder),
           currentNominatorIndex: activeSession.currentNominatorIndex,
+          nominationDeadline: activeSession.nominationDeadline?.toISOString() ?? null,
           currentBid,
         }
       : null,
@@ -174,6 +207,11 @@ export async function POST(request: NextRequest) {
     .update(auctionSessions)
     .set({ status: newStatus })
     .where(eq(auctionSessions.id, sessionId));
+
+  // When starting/resuming, set the nomination deadline for the current nominator
+  if (newStatus === "active") {
+    await setNominationDeadline(sessionId);
+  }
 
   return NextResponse.json({ success: true, sessionId, status: newStatus });
 }

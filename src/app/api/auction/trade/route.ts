@@ -167,7 +167,9 @@ export async function POST(request: NextRequest) {
     proposerSquad.length,
     targetSquad.length,
     proposerTeam[0]?.purse ?? 0,
-    targetTeam[0]?.purse ?? 0
+    targetTeam[0]?.purse ?? 0,
+    proposerTeam[0]?.penaltySlots ?? 0,
+    targetTeam[0]?.penaltySlots ?? 0
   );
 
   if (!validation.valid) {

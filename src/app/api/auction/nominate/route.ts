@@ -3,6 +3,11 @@ import { db, auctionBids, auctionSessions, auctionOwnership, teams, leagues } fr
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
+import {
+  resolveExpiredBid,
+  advanceNominator,
+  clearNominationDeadline,
+} from "@/lib/formats/auction/resolve-bid";
 
 const BID_TIMER_SECONDS = 30;
 const DEFAULT_MIN_BID = 500_000; // 500K minimum starting bid
@@ -53,7 +58,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not your turn to nominate" }, { status: 403 });
   }
 
-  // Check no other item is currently open
+  // Auto-resolve any expired open bids (safety net if SSE wasn't running)
+  const staleOpenBids = await db
+    .select()
+    .from(auctionBids)
+    .where(
+      and(
+        eq(auctionBids.sessionId, sessionId),
+        eq(auctionBids.status, "open")
+      )
+    );
+  const now = new Date();
+  for (const stale of staleOpenBids) {
+    if (now > stale.expiresAt) {
+      await resolveExpiredBid(stale);
+      await advanceNominator(sessionId);
+    }
+  }
+
+  // Check no other item is currently open (after cleanup)
   const openBids = await db
     .select()
     .from(auctionBids)
@@ -104,6 +127,9 @@ export async function POST(request: NextRequest) {
     status: "open",
     expiresAt,
   });
+
+  // Clear nomination deadline — the 30s bid timer takes over
+  await clearNominationDeadline(sessionId);
 
   return NextResponse.json({
     success: true,
