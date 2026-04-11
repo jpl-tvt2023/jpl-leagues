@@ -68,6 +68,16 @@ export async function resolveBidToSold(bid: BidRow): Promise<void> {
     updatedAt: now,
   });
 
+  // Remove player from every team's wishlist in the league (they're no longer available)
+  await db
+    .delete(auctionWishlists)
+    .where(
+      and(
+        eq(auctionWishlists.leagueId, bid.leagueId),
+        eq(auctionWishlists.fplElementId, bid.fplElementId)
+      )
+    );
+
   // Deduct from winner's purse
   const teamRow = await db
     .select({ purse: teams.purse, totalSpent: teams.totalSpent })

@@ -135,6 +135,10 @@ export async function GET(request: NextRequest) {
             if (new Date() > bid.expiresAt) {
               await resolveExpiredBid(bid);
 
+              // Advance nominator BEFORE notifying clients so the DB is already
+              // updated when the client calls refreshSessionState() on "sold".
+              await advanceNominator(sessionId);
+
               send("sold", {
                 bidId: bid.id,
                 fplElementId: bid.fplElementId,
@@ -142,9 +146,6 @@ export async function GET(request: NextRequest) {
                 finalBid: bid.currentHighBid,
                 winnerId: bid.currentHighBidderId,
               });
-
-              // Advance to next nominator (sets 60s nomination deadline)
-              await advanceNominator(sessionId);
 
               lastBidUpdatedAt = null;
             }
