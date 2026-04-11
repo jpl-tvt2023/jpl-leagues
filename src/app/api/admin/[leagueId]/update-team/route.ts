@@ -31,10 +31,10 @@ export async function PUT(request: NextRequest) {
       group,
     } = body;
 
-    // Validate required fields (group is optional, defaults to "A")
-    if (!teamId || !teamLoginId || !teamName || !abbreviation || !player1Name || !player1FplId || !player2Name || !player2FplId) {
+    // Validate required fields (player fields, password, and group are optional)
+    if (!teamId || !teamLoginId || !teamName || !abbreviation) {
       return NextResponse.json(
-        { error: "All fields except password and group are required" },
+        { error: "Team ID, Login ID, Name, and Abbreviation are required" },
         { status: 400 }
       );
     }
@@ -118,15 +118,15 @@ export async function PUT(request: NextRequest) {
 
     await db.update(teams).set(updateData).where(eq(teams.id, teamId));
 
-    // Update players
-    if (player1Id) {
+    // Update players (only if player data is provided)
+    if (player1Name && player1FplId && player1Id) {
       await db.update(players).set({
         name: player1Name,
         fplId: player1FplId,
       }).where(eq(players.id, player1Id));
     }
 
-    if (player2Id) {
+    if (player2Name && player2FplId && player2Id) {
       await db.update(players).set({
         name: player2Name,
         fplId: player2FplId,

@@ -4,7 +4,8 @@ import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 
-const BID_TIMER_SECONDS = 30;
+const BID_COUNTER_EXTENSION_MS = 5_000; // +5s per counter-bid
+const BID_MAX_TIMER_MS = 20_000; // cap at 20s from now
 const MIN_BID_INCREMENT = 100_000; // 100K minimum raise
 
 /**
@@ -102,8 +103,10 @@ export async function POST(request: NextRequest) {
       return { error: `Squad is full (${maxSquadSize} players)`, status: 400 };
     }
 
-    // Place the bid — reset timer
-    const newExpiry = new Date(Date.now() + BID_TIMER_SECONDS * 1000);
+    // Place the bid — extend timer by +5s, capped at 20s from now
+    const extended = currentBid.expiresAt.getTime() + BID_COUNTER_EXTENSION_MS;
+    const maxFromNow = Date.now() + BID_MAX_TIMER_MS;
+    const newExpiry = new Date(Math.min(extended, maxFromNow));
     await tx
       .update(auctionBids)
       .set({

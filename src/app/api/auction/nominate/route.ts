@@ -9,7 +9,7 @@ import {
   clearNominationDeadline,
 } from "@/lib/formats/auction/resolve-bid";
 
-const BID_TIMER_SECONDS = 30;
+const BID_TIMER_SECONDS = 20;
 const DEFAULT_MIN_BID = 500_000; // 500K minimum starting bid
 
 /**
@@ -70,8 +70,11 @@ export async function POST(request: NextRequest) {
   for (const stale of staleOpenBids) {
     if (now > stale.expiresAt) {
       try {
-        await resolveExpiredBid(stale);
-        await advanceNominator(sessionId);
+        const outcome = await resolveExpiredBid(stale);
+        if (outcome === "sold") {
+          await advanceNominator(sessionId);
+        }
+        // else: already-resolved by SSE — skip advancement
       } catch (err) {
         // SSE may have already resolved this bid — log and continue
         console.error("[nominate] Safety-net resolution failed for bid", stale.id, err);

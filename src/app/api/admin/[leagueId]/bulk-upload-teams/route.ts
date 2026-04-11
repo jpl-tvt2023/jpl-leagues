@@ -24,6 +24,10 @@ function toStr(value: unknown): string {
  *   isProfileComplete = false. Team completes their profile via setup wizard on first login.
  *   Columns: Team ID, Password
  *   Note: Group is not specified; teams auto-assigned to group "A", admin can reassign via group assignment UI.
+ *
+ * mode: "auction" — 4 columns, creates teams with name + abbreviation but no players.
+ *   isProfileComplete = true. No players created (auction-format leagues don't use FPL player pairs).
+ *   Columns: LoginID, Manager Name, Abbreviation, Password
  */
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +37,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { teams: teamRows, mode = "full" } = body as {
       teams: Record<string, string | number>[];
-      mode?: "full" | "credentials";
+      mode?: "full" | "credentials" | "auction";
     };
 
     if (!teamRows || !Array.isArray(teamRows) || teamRows.length === 0) {
@@ -44,8 +48,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Too many rows. Maximum 500 teams per upload." }, { status: 400 });
     }
 
-    if (mode !== "full" && mode !== "credentials") {
-      return NextResponse.json({ error: 'mode must be "full" or "credentials"' }, { status: 400 });
+    if (mode !== "full" && mode !== "credentials" && mode !== "auction") {
+      return NextResponse.json({ error: 'mode must be "full", "credentials", or "auction"' }, { status: 400 });
     }
 
     const uploadResults: { success: string[]; errors: string[] } = { success: [], errors: [] };
@@ -119,6 +123,41 @@ export async function POST(request: NextRequest) {
             leagueId,
           });
           uploadResults.success.push(`Row ${rowNum}: "${teamLoginId}" created (awaiting setup wizard)`);
+          continue;
+        }
+
+        // ---- MODE: AUCTION (no players) ----
+        if (mode === "auction") {
+          const teamName = toStr(row.teamName);
+          const abbreviation = toStr(row.abbreviation);
+
+          if (!teamName || !abbreviation) {
+            uploadResults.errors.push(`Row ${rowNum}: Missing required fields (Manager Name, Abbreviation)`);
+            continue;
+          }
+
+          // Per-league uniqueness check on display name (case-insensitive)
+          const existingTeamAuction = await db.select().from(teams).where(
+            and(sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${teamName}, ' ', ''))`, eq(teams.leagueId, leagueId))
+          );
+          if (existingTeamAuction.length > 0) {
+            uploadResults.errors.push(`Row ${rowNum}: Manager name "${teamName}" already exists in this league`);
+            continue;
+          }
+
+          const hashedPassword = await bcrypt.hash(password, 10);
+          await db.insert(teams).values({
+            id: generateId(),
+            teamLoginId,
+            name: teamName,
+            abbreviation: abbreviation.toUpperCase(),
+            password: hashedPassword,
+            groupId: null,
+            mustChangePassword: true,
+            isProfileComplete: true,
+            leagueId,
+          });
+          uploadResults.success.push(`Row ${rowNum}: "${teamLoginId}" (${teamName}) created`);
           continue;
         }
 
@@ -220,6 +259,12 @@ export async function GET(request: NextRequest) {
       example: ["team_001", "BAB@1234"],
       csvHeader: "Team ID,Password",
       note: "Teams log in and complete their own profile (login ID, display name, abbreviation, players) via setup wizard. Auto-assigned to Group A.",
+    },
+    auction: {
+      columns: ["Team ID", "Manager Name", "Abbreviation", "Password"],
+      example: ["team_001", "DM — Rahul", "DM", "team123"],
+      csvHeader: "Team ID,Manager Name,Abbreviation,Password",
+      note: "Teams created with name and abbreviation. No players. Suitable for auction-format leagues.",
     },
   });
 }
