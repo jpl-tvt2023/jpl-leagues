@@ -153,7 +153,7 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<TabType>("teams");
   const [teams, setTeams] = useState<Team[]>([]);
-  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string }>({
+  const [leagueConfig, setLeagueConfig] = useState<{ leagueDbId?: string; teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string }>({
     teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"],
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -343,6 +343,7 @@ export default function AdminDashboard() {
           let enabledChips: string[] = ["D", "W", "C"];
           try { enabledChips = JSON.parse(league.enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
           setLeagueConfig({
+            leagueDbId: league.id,
             teamSize: league.teamSize ?? 32,
             groupCount: league.groupCount ?? 2,
             playoffStartGw: league.playoffStartGw ?? 31,
@@ -404,6 +405,23 @@ export default function AdminDashboard() {
   const fetchGameweekStatuses = async () => {
     setScoringLoading(true);
     try {
+      // Auction format: use dedicated scoring-status endpoint
+      if (isAuctionFormat && leagueConfig.leagueDbId) {
+        const response = await fetch(`/api/auction/scoring-status?leagueId=${leagueConfig.leagueDbId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const statuses: GameweekStatus[] = (data.statuses || []).map((s: { number: number; totalManagers: number; scored: number; isPending: boolean }) => ({
+            number: s.number,
+            fixturesCount: s.totalManagers,
+            resultsProcessed: s.scored,
+            isPending: s.isPending,
+          }));
+          setGameweekStatuses(statuses);
+        }
+        setScoringLoading(false);
+        return;
+      }
+
       const statuses: GameweekStatus[] = [];
       // Fetch status for GW1-38 (or until we find gameweeks with no fixtures)
       for (let gw = 1; gw <= 38; gw++) {
@@ -764,7 +782,9 @@ export default function AdminDashboard() {
     setAuctionLoading(true);
     try {
       // Fetch sessions
-      const sessionRes = await fetch(`/api/auction/session?leagueId=${leagueId}`);
+      const auctionDbId = leagueConfig.leagueDbId;
+      if (!auctionDbId) return;
+      const sessionRes = await fetch(`/api/auction/session?leagueId=${auctionDbId}`);
       if (sessionRes.ok) {
         const sessionData = await sessionRes.json();
         setAuctionSessions(sessionData.sessions || []);
@@ -785,7 +805,7 @@ export default function AdminDashboard() {
       setAuctionTeamSquads(squads);
 
       // Fetch trades
-      const tradeRes = await fetch(`/api/auction/trade?leagueId=${leagueId}`);
+      const tradeRes = await fetch(`/api/auction/trade?leagueId=${auctionDbId}`);
       if (tradeRes.ok) {
         const tradeData = await tradeRes.json();
         setAuctionTrades(tradeData.proposals || []);
@@ -803,7 +823,7 @@ export default function AdminDashboard() {
       const res = await fetch("/api/auction/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leagueId, action: "create", type, cycleNumber: type === "initial" ? 0 : undefined }),
+        body: JSON.stringify({ leagueId: leagueConfig.leagueDbId, action: "create", type, cycleNumber: type === "initial" ? 0 : undefined }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -825,7 +845,7 @@ export default function AdminDashboard() {
       const res = await fetch("/api/auction/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leagueId, action, sessionId }),
+        body: JSON.stringify({ leagueId: leagueConfig.leagueDbId, action, sessionId }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -2615,7 +2635,7 @@ export default function AdminDashboard() {
               {scoringLoading ? (
                 <div className="text-center text-gray-400 py-8 text-sm">Loading gameweeks…</div>
               ) : gameweekStatuses.length === 0 ? (
-                <div className="text-center text-gray-400 py-8 text-sm">No gameweeks with fixtures found</div>
+                <div className="text-center text-gray-400 py-8 text-sm">{isAuctionFormat ? "No gameweeks found — create gameweeks first" : "No gameweeks with fixtures found"}</div>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-10 gap-2">
                   {gameweekStatuses.map((gw) => {
@@ -3079,6 +3099,7 @@ export default function AdminDashboard() {
         {/* Settings Tab */}
         {activeTab === "settings" && (
           <div className="space-y-6">
+            {!isAuctionFormat && (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h3 className="text-lg font-bold text-white mb-4">Announcement Controls</h3>
               <p className="text-gray-400 text-sm mb-6">Toggle captain and chip announcements on or off. When disabled, teams cannot submit new announcements.</p>
@@ -3087,7 +3108,6 @@ export default function AdminDashboard() {
                 <p className="text-gray-400 text-sm">Loading…</p>
               ) : (
                 <div className="space-y-4">
-                  {!isAuctionFormat && (
                   <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">
                     <div>
                       <div className="font-semibold text-white">Captain Announcements</div>
@@ -3104,9 +3124,8 @@ export default function AdminDashboard() {
                       }`} />
                     </button>
                   </div>
-                  )}
 
-                  {leagueConfig.format !== "triple-crown" && !isAuctionFormat && (
+                  {leagueConfig.format !== "triple-crown" && (
                   <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">
                     <div>
                       <div className="font-semibold text-white">Chip Announcements</div>
@@ -3146,6 +3165,7 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
+            )}
 
             <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6 backdrop-blur">
               <h3 className="text-lg font-bold text-red-400 mb-2">Reset Season Data</h3>

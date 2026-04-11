@@ -296,6 +296,233 @@ function ChipBadge({ used, name }: { used: boolean; name: string }) {
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
+// ===== Auction Dashboard Types & Component =====
+interface AuctionDashboardData {
+  leagueSlug: string;
+  leagueFormat: "auction";
+  team: { id: string; name: string; abbreviation: string };
+  purse: number;
+  totalSpent: number;
+  totalIncome: number;
+  totalPoints: number;
+  squadValue: number;
+  squadSize: number;
+  squad: { id: string; fplElementId: number; playerName: string; purchasePrice: number; acquiredGw: number; status: string }[];
+  rank: number;
+  totalManagers: number;
+  standings: { id: string; name: string; abbreviation: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
+  gwHistory: { gameweek: number; points: number; rank: number | null; income: number }[];
+  lastGwResult: { gameweek: number; points: number; rank: number | null; income: number } | null;
+  auctionSession: { id: string; type: string; status: string } | null;
+  deadline: { gameweek: number; timestamp: string | null };
+  serverTime: string;
+}
+
+function formatCurrency(value: number): string {
+  if (value >= 1_000_000) return `£${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `£${(value / 1_000).toFixed(0)}K`;
+  return `£${value}`;
+}
+
+function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashboardData; leagueSlug: string; onSignOut: () => void }) {
+  const netPnL = data.totalIncome - data.totalSpent;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+      {/* Navigation */}
+      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
+        <Link href="/dashboard" className="flex items-center gap-2">
+          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
+            JPL
+          </div>
+          <span className="text-xl font-bold text-white hidden sm:inline">{data.team.name}</span>
+        </Link>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
+          <Link href="/dashboard" className="text-yellow-400 font-semibold transition">Dashboard</Link>
+          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
+          <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
+          <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
+          <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
+          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
+          <button onClick={onSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
+            Sign Out
+          </button>
+        </div>
+      </nav>
+
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
+            <h1 className="text-2xl sm:text-4xl font-bold text-white">{data.team.name}</h1>
+            <span className="text-sm sm:text-lg text-gray-400">({data.team.abbreviation})</span>
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-300">
+              Rank #{data.rank} of {data.totalManagers}
+            </span>
+          </div>
+          <p className="text-sm sm:text-base text-gray-400">
+            {data.totalPoints} total points • {data.squadSize}/14 players
+          </p>
+        </div>
+
+        {/* Active Auction Alert */}
+        {data.auctionSession && (
+          <div className="mb-6 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 backdrop-blur flex items-center justify-between">
+            <div>
+              <div className="text-yellow-300 font-bold">🔨 Auction {data.auctionSession.status === "active" ? "In Progress" : "Paused"}</div>
+              <div className="text-sm text-gray-300 mt-1">
+                {data.auctionSession.type === "initial" ? "Initial Draft" : "Mini-Auction"} — Join the auction room to bid.
+              </div>
+            </div>
+            <Link href={`/${leagueSlug}/auction`} className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 font-semibold transition">
+              Enter Room
+            </Link>
+          </div>
+        )}
+
+        {/* Economy Grid */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Purse</div>
+            <div className="text-2xl font-bold text-green-400">{formatCurrency(data.purse)}</div>
+            <div className="text-xs text-gray-500 mt-1">Available to bid</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Squad Value</div>
+            <div className="text-2xl font-bold text-white">{formatCurrency(data.squadValue)}</div>
+            <div className="text-xs text-gray-500 mt-1">{data.squadSize}/14 players</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Income Earned</div>
+            <div className="text-2xl font-bold text-blue-400">{formatCurrency(data.totalIncome)}</div>
+            <div className="text-xs text-gray-500 mt-1">From GW payouts</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Net P&amp;L</div>
+            <div className={`text-2xl font-bold ${netPnL >= 0 ? "text-green-400" : "text-red-400"}`}>
+              {netPnL >= 0 ? "+" : ""}{formatCurrency(netPnL)}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">Income − Spent</div>
+          </div>
+        </div>
+
+        {/* Main Grid */}
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Left column: Squad + GW History */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Squad */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span className="text-yellow-400">👥</span> Squad ({data.squadSize}/14)
+              </h2>
+              {data.squad.length === 0 ? (
+                <div className="text-center text-gray-400 py-8">
+                  <p>No players yet.</p>
+                  <p className="text-sm mt-2">Join the auction to acquire players.</p>
+                </div>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {data.squad.map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
+                      <div>
+                        <div className="text-sm font-semibold text-white">{p.playerName}</div>
+                        <div className="text-xs text-gray-500">Acquired GW{p.acquiredGw}</div>
+                      </div>
+                      <div className="text-sm text-yellow-400 font-mono">{formatCurrency(p.purchasePrice)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* GW History */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span className="text-yellow-400">📊</span> Gameweek History
+              </h2>
+              {data.gwHistory.length === 0 ? (
+                <div className="text-center text-gray-400 py-6 text-sm">No gameweeks processed yet</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase text-gray-400 border-b border-white/10">
+                        <th className="py-2">GW</th>
+                        <th className="py-2 text-right">Points</th>
+                        <th className="py-2 text-right">Rank</th>
+                        <th className="py-2 text-right">Income</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...data.gwHistory].reverse().map(gw => (
+                        <tr key={gw.gameweek} className="border-b border-white/5">
+                          <td className="py-2 text-white font-semibold">GW{gw.gameweek}</td>
+                          <td className="py-2 text-right text-white">{gw.points}</td>
+                          <td className="py-2 text-right text-gray-400">{gw.rank ?? "—"}</td>
+                          <td className="py-2 text-right text-green-400 font-mono">{formatCurrency(gw.income)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right column: Deadline + Standings */}
+          <div className="space-y-6">
+            {/* Deadline */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span className="text-yellow-400">⏱</span> Next Deadline
+              </h2>
+              <DeadlineTimer deadline={data.deadline.timestamp} gameweek={data.deadline.gameweek} serverTime={data.serverTime} />
+            </div>
+
+            {/* Last GW */}
+            {data.lastGwResult && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h2 className="text-lg font-bold text-white mb-3">Last Gameweek</h2>
+                <div className="text-sm text-gray-400 mb-2">GW{data.lastGwResult.gameweek}</div>
+                <div className="text-3xl font-bold text-white mb-1">{data.lastGwResult.points} pts</div>
+                <div className="text-sm text-gray-400">
+                  Rank #{data.lastGwResult.rank ?? "—"} • Income: <span className="text-green-400">{formatCurrency(data.lastGwResult.income)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Mini Standings */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span className="text-yellow-400">🏆</span> Standings
+              </h2>
+              <div className="space-y-1">
+                {data.standings.map(s => (
+                  <div
+                    key={s.id}
+                    className={`flex items-center justify-between px-3 py-2 rounded-lg ${s.isCurrentTeam ? "bg-yellow-500/10 border border-yellow-500/20" : "bg-white/5"}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-6">#{s.rank}</span>
+                      <span className={`text-sm ${s.isCurrentTeam ? "text-yellow-300 font-semibold" : "text-white"}`}>
+                        {s.name}
+                      </span>
+                    </div>
+                    <span className="text-sm text-white font-mono">{s.totalPoints}</span>
+                  </div>
+                ))}
+              </div>
+              <Link href={`/${leagueSlug}/standings`} className="block mt-3 text-center text-xs text-yellow-400 hover:text-yellow-300">
+                View Full Standings →
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -624,6 +851,11 @@ export default function DashboardPage() {
         <div className="text-red-400 text-xl">{error || "Failed to load dashboard"}</div>
       </div>
     );
+  }
+
+  // ===== Auction format dashboard — separate layout =====
+  if (leagueFormat === "auction") {
+    return <AuctionDashboard data={data as unknown as AuctionDashboardData} leagueSlug={leagueSlug} onSignOut={handleSignOut} />;
   }
 
   const currentChipSet = data.chipStatus.currentSet === 1 ? data.chipStatus.set1 : data.chipStatus.set2;
