@@ -1637,7 +1637,6 @@ export default function AdminDashboard() {
             Captain Override
           </button>
           )}
-          {!isAuctionFormat && (
           <button
             onClick={() => { setActiveTab("bulkUpload"); setMessage(null); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
@@ -1648,7 +1647,6 @@ export default function AdminDashboard() {
           >
             Bulk Upload
           </button>
-          )}
           <button
             onClick={() => { setActiveTab("scoring"); setMessage(null); setScoringResults([]); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
