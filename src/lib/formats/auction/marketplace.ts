@@ -13,7 +13,7 @@ export interface TradePlayer {
 
 /**
  * Validate a trade proposal to ensure it meets all rules:
- * 1. Both teams must remain with valid squad sizes (max 14, min 11)
+ * 1. Both teams must remain with valid squad sizes (max 14 - penalty slots, min 11)
  * 2. Cash offered must not exceed available purse
  * 3. Trade value must meet the 80% FMV floor
  */
@@ -24,22 +24,26 @@ export function validateTradeProposal(
   proposerSquadSize: number,
   targetSquadSize: number,
   proposerPurse: number,
-  targetPurse: number
+  targetPurse: number,
+  proposerPenaltySlots: number = 0,
+  targetPenaltySlots: number = 0
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
   // Squad size checks after trade
   const proposerAfter = proposerSquadSize - offeredPlayers.length + requestedPlayers.length;
   const targetAfter = targetSquadSize + offeredPlayers.length - requestedPlayers.length;
+  const proposerMax = 14 - proposerPenaltySlots;
+  const targetMax = 14 - targetPenaltySlots;
 
-  if (proposerAfter > 14) {
-    errors.push("Proposer would exceed 14-player squad limit");
+  if (proposerAfter > proposerMax) {
+    errors.push(`Proposer would exceed ${proposerMax}-player squad limit`);
   }
   if (proposerAfter < 11) {
     errors.push("Proposer would drop below 11-player minimum");
   }
-  if (targetAfter > 14) {
-    errors.push("Target would exceed 14-player squad limit");
+  if (targetAfter > targetMax) {
+    errors.push(`Target would exceed ${targetMax}-player squad limit`);
   }
   if (targetAfter < 11) {
     errors.push("Target would drop below 11-player minimum");

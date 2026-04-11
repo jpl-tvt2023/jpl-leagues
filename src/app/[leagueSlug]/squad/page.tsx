@@ -57,6 +57,13 @@ interface AuctionSession {
   status: "pending" | "active" | "paused" | "completed";
 }
 
+interface WishlistEntry {
+  id: string;
+  fplElementId: number;
+  playerName: string;
+  priority: number;
+}
+
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 const POSITION_COLORS: Record<number, string> = {
   1: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
@@ -83,10 +90,16 @@ export default function SquadPage() {
   const [squadData, setSquadData] = useState<SquadResponse | null>(null);
   const [economy, setEconomy] = useState<EconomyResponse | null>(null);
   const [elements, setElements] = useState<Map<number, BootstrapElement>>(new Map());
+  const [elementsList, setElementsList] = useState<BootstrapElement[]>([]);
   const [teamsMap, setTeamsMap] = useState<Map<number, BootstrapTeam>>(new Map());
   const [session, setSession] = useState<AuctionSession | null>(null);
   const [releasing, setReleasing] = useState<string | null>(null);
   const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"squad" | "wishlist">("squad");
+  const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
+  const [wlSearch, setWlSearch] = useState("");
+  const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
+  const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
 
   const loadAll = useCallback(async () => {
     setIsLoading(true);
@@ -124,6 +137,7 @@ export default function SquadPage() {
         const elMap = new Map<number, BootstrapElement>();
         for (const el of boot.elements ?? []) elMap.set(el.id, el);
         setElements(elMap);
+        setElementsList(boot.elements ?? []);
         const tMap = new Map<number, BootstrapTeam>();
         for (const t of boot.teams ?? []) tMap.set(t.id, t);
         setTeamsMap(tMap);
@@ -137,6 +151,20 @@ export default function SquadPage() {
           (s: AuctionSession) => s.status === "active" || s.status === "paused"
         );
         setSession(active ?? null);
+      }
+
+      // Load wishlist
+      const wlRes = await fetch(`/api/auction/wishlist?teamId=${teamId}`);
+      if (wlRes.ok) {
+        const wlJson = await wlRes.json();
+        setWishlist(wlJson.wishlist ?? []);
+      }
+
+      // Load owned players in league to filter search
+      const ownedRes = await fetch(`/api/auction/league-owned?leagueId=${squadJson.leagueId}`);
+      if (ownedRes.ok) {
+        const ownedJson = await ownedRes.json();
+        setOwnedElementIds(new Set(ownedJson.ownedElementIds ?? []));
       }
     } catch (err) {
       console.error(err);
@@ -179,6 +207,65 @@ export default function SquadPage() {
 
   const netPL = economy ? economy.totalIncome - economy.totalSpent + economy.totalRefunds : 0;
   const squadValue = squadData?.squad.reduce((sum, p) => sum + p.fmv, 0) ?? 0;
+
+  const wishlistElementIds = new Set(wishlist.map((w) => w.fplElementId));
+  const teamId = squadData?.teamId;
+  const leagueId = squadData?.leagueId;
+
+  const searchResults = elementsList
+    .filter((el) => {
+      if (ownedElementIds.has(el.id)) return false;
+      if (wishlistElementIds.has(el.id)) return false;
+      if (wlPositionFilter !== null && el.element_type !== wlPositionFilter) return false;
+      const lc = wlSearch.trim().toLowerCase();
+      if (lc && !el.web_name.toLowerCase().includes(lc)) return false;
+      return true;
+    })
+    .sort((a, b) => b.total_points - a.total_points)
+    .slice(0, 30);
+
+  const refreshWishlist = async () => {
+    if (!teamId) return;
+    const res = await fetch(`/api/auction/wishlist?teamId=${teamId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setWishlist(data.wishlist ?? []);
+    }
+  };
+
+  const handleAddWishlist = async (elementId: number, playerName: string) => {
+    if (!leagueId || !teamId) return;
+    const res = await fetch("/api/auction/wishlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leagueId, teamId, fplElementId: elementId, playerName }),
+    });
+    if (res.ok) await refreshWishlist();
+  };
+
+  const handleRemoveWishlist = async (id: string) => {
+    if (!teamId) return;
+    const res = await fetch("/api/auction/wishlist", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, teamId }),
+    });
+    if (res.ok) await refreshWishlist();
+  };
+
+  const handleReorderWishlist = async (fromIdx: number, toIdx: number) => {
+    if (!teamId || toIdx < 0 || toIdx >= wishlist.length) return;
+    const next = [...wishlist];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    setWishlist(next.map((e, i) => ({ ...e, priority: i + 1 })));
+    const items = next.map((e, i) => ({ id: e.id, priority: i + 1 }));
+    await fetch("/api/auction/wishlist", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teamId, items }),
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -235,6 +322,128 @@ export default function SquadPage() {
               </div>
             )}
 
+            <div className="mb-6 flex gap-2 border-b border-white/10">
+              <button
+                onClick={() => setActiveTab("squad")}
+                className={`px-4 py-2 text-sm font-semibold uppercase tracking-wider transition border-b-2 ${
+                  activeTab === "squad" ? "border-yellow-400 text-yellow-400" : "border-transparent text-gray-400 hover:text-white"
+                }`}
+              >
+                Squad
+              </button>
+              <button
+                onClick={() => setActiveTab("wishlist")}
+                className={`px-4 py-2 text-sm font-semibold uppercase tracking-wider transition border-b-2 ${
+                  activeTab === "wishlist" ? "border-yellow-400 text-yellow-400" : "border-transparent text-gray-400 hover:text-white"
+                }`}
+              >
+                Wishlist ({wishlist.length})
+              </button>
+            </div>
+
+            {activeTab === "wishlist" ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+                {/* Current wishlist */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <h2 className="text-lg font-bold text-white mb-3">Your Priority List</h2>
+                  <p className="text-xs text-gray-400 mb-4">
+                    When your nomination turn comes and the 60s timer expires, the top unowned entry is auto-nominated. If the list is empty, you lose a squad slot.
+                  </p>
+                  {wishlist.length === 0 ? (
+                    <div className="text-sm text-gray-500 py-8 text-center">Empty — add players from the right.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {wishlist.map((entry, idx) => {
+                        const el = elements.get(entry.fplElementId);
+                        const position = el ? POSITION_LABELS[el.element_type] : "—";
+                        const positionColor = el ? POSITION_COLORS[el.element_type] : "bg-white/10 text-gray-300 border-white/20";
+                        const team = el ? teamsMap.get(el.team) : null;
+                        const owned = ownedElementIds.has(entry.fplElementId);
+                        return (
+                          <div key={entry.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${owned ? "border-red-500/30 bg-red-500/5 opacity-60" : "border-white/10 bg-white/5"}`}>
+                            <span className="w-6 text-center text-xs font-bold text-gray-400">{idx + 1}</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${positionColor}`}>{position}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-white font-semibold truncate">{entry.playerName}</div>
+                              <div className="text-xs text-gray-400">{team?.short_name ?? "—"}{owned && " • OWNED"}</div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => handleReorderWishlist(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 px-1" title="Up">▲</button>
+                              <button onClick={() => handleReorderWishlist(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 px-1" title="Down">▼</button>
+                              <button onClick={() => handleRemoveWishlist(entry.id)} className="text-red-400 hover:text-red-300 px-1" title="Remove">✕</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Add players */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <h2 className="text-lg font-bold text-white mb-3">Add Players</h2>
+                  <input
+                    type="text"
+                    placeholder="Search player name..."
+                    value={wlSearch}
+                    onChange={(e) => setWlSearch(e.target.value)}
+                    className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none mb-3"
+                  />
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    {([
+                      [null, "ALL"],
+                      [1, "GKP"],
+                      [2, "DEF"],
+                      [3, "MID"],
+                      [4, "FWD"],
+                    ] as [number | null, string][]).map(([pos, label]) => (
+                      <button
+                        key={label}
+                        onClick={() => setWlPositionFilter(pos)}
+                        className={`px-3 py-1 rounded-full text-xs font-bold uppercase border transition ${
+                          wlPositionFilter === pos
+                            ? "bg-yellow-400 text-slate-900 border-yellow-400"
+                            : "bg-white/5 text-gray-300 border-white/20 hover:bg-white/10"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="max-h-[32rem] overflow-y-auto space-y-1">
+                    {searchResults.length === 0 ? (
+                      <div className="text-sm text-gray-500 py-6 text-center">No matches</div>
+                    ) : (
+                      searchResults.map((el) => {
+                        const team = teamsMap.get(el.team);
+                        return (
+                          <button
+                            key={el.id}
+                            onClick={() => handleAddWishlist(el.id, el.web_name)}
+                            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-left"
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${POSITION_COLORS[el.element_type]}`}>
+                                {POSITION_LABELS[el.element_type]}
+                              </span>
+                              <div>
+                                <div className="text-white font-semibold">{el.web_name}</div>
+                                <div className="text-xs text-gray-400">{team?.short_name ?? "—"}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="text-sm font-mono text-[#00ff85]">{el.total_points} pts</div>
+                              <span className="text-yellow-400 font-bold text-lg">+</span>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-10">
               {squadData.squad.map((p) => {
                 const el = elements.get(p.fplElementId);
@@ -299,6 +508,8 @@ export default function SquadPage() {
                 <div><div className="text-xs text-gray-400 uppercase">Squad Value</div><div className="font-mono text-white">{formatCurrency(squadValue)}</div></div>
               </div>
             </div>
+            </>
+            )}
           </>
         )}
       </div>

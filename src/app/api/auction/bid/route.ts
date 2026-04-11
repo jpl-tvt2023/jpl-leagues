@@ -97,8 +97,9 @@ export async function POST(request: NextRequest) {
         )
       );
 
-    if (activeOwned.length >= 14) {
-      return { error: "Squad is full (14 players)", status: 400 };
+    const maxSquadSize = 14 - (teamRow[0].penaltySlots ?? 0);
+    if (activeOwned.length >= maxSquadSize) {
+      return { error: `Squad is full (${maxSquadSize} players)`, status: 400 };
     }
 
     // Place the bid — reset timer
