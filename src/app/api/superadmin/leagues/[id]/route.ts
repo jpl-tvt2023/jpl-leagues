@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import {
   leagues, groups, teams, players, gameweeks, fixtures, results,
   gameweekChips, playoffTies, challengerSurvivalEntries, leagueAdmins, settings, users,
+  auctionBids, auctionWishlists, auctionOwnership, auctionScores, auctionSessions, tradeProposals,
 } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
@@ -114,17 +115,25 @@ export async function DELETE(
     if (teamIds.length > 0) {
       await tx.delete(players).where(inArray(players.teamId, teamIds));
     }
-    // 7. Settings (depend on league)
+    // 7. Auction data (FK: league, team, session, gameweek). Order matters:
+    //    bids → wishlists → ownership → scores → trade proposals → sessions.
+    await tx.delete(auctionBids).where(eq(auctionBids.leagueId, id));
+    await tx.delete(auctionWishlists).where(eq(auctionWishlists.leagueId, id));
+    await tx.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, id));
+    await tx.delete(auctionScores).where(eq(auctionScores.leagueId, id));
+    await tx.delete(tradeProposals).where(eq(tradeProposals.leagueId, id));
+    await tx.delete(auctionSessions).where(eq(auctionSessions.leagueId, id));
+    // 8. Settings (depend on league)
     await tx.delete(settings).where(eq(settings.leagueId, id));
-    // 8. League admins (depend on league)
+    // 9. League admins (depend on league)
     await tx.delete(leagueAdmins).where(eq(leagueAdmins.leagueId, id));
-    // 9. Teams (depend on groups + league)
+    // 10. Teams (depend on groups + league)
     await tx.delete(teams).where(eq(teams.leagueId, id));
-    // 10. Groups (depend on league)
+    // 11. Groups (depend on league)
     await tx.delete(groups).where(eq(groups.leagueId, id));
-    // 11. Gameweeks (depend on league)
+    // 12. Gameweeks (depend on league)
     await tx.delete(gameweeks).where(eq(gameweeks.leagueId, id));
-    // 12. League itself
+    // 13. League itself
     await tx.delete(leagues).where(eq(leagues.id, id));
   });
 
