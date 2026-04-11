@@ -95,6 +95,7 @@ export default function SquadPage() {
   const [session, setSession] = useState<AuctionSession | null>(null);
   const [releasing, setReleasing] = useState<string | null>(null);
   const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"squad" | "wishlist">("squad");
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [wlSearch, setWlSearch] = useState("");
@@ -294,25 +295,39 @@ export default function SquadPage() {
           <div className="text-center text-gray-400 py-12">No squad data available.</div>
         ) : (
           <>
-            <div className="mb-8">
-              <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">{squadData.teamName}</h1>
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <span className="rounded-full bg-white/10 px-3 py-1 text-white">
-                  {squadData.activeCount}/14 active
-                </span>
-                {squadData.deadwoodCount > 0 && (
-                  <span className="rounded-full bg-yellow-500/20 text-yellow-300 px-3 py-1 border border-yellow-500/30">
-                    {squadData.deadwoodCount} deadwood
-                  </span>
-                )}
-                <span className="rounded-full bg-green-500/20 text-green-300 px-3 py-1 border border-green-500/30">
-                  Purse {formatCurrency(economy.computedPurse)}
-                </span>
-                {canRelease && (
-                  <span className="rounded-full bg-blue-500/20 text-blue-300 px-3 py-1 border border-blue-500/30">
-                    Release window open
-                  </span>
-                )}
+            <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+              <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">{squadData.teamName}</h1>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-white">{squadData.activeCount}/14 active</span>
+                    {squadData.deadwoodCount > 0 && (
+                      <span className="rounded-full bg-yellow-500/20 text-yellow-300 px-3 py-1 border border-yellow-500/30">
+                        {squadData.deadwoodCount} deadwood
+                      </span>
+                    )}
+                    {canRelease && (
+                      <span className="rounded-full bg-blue-500/20 text-blue-300 px-3 py-1 border border-blue-500/30">
+                        Release window open
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-400 uppercase">Purse</div>
+                  <div className="text-2xl font-mono font-bold text-green-300">{formatCurrency(economy.computedPurse)}</div>
+                </div>
+              </div>
+              {/* Economy summary — always visible */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-3 border-t border-white/10 text-sm">
+                <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Initial Budget</div><div className="font-mono text-white">{formatCurrency(economy.initialBudget)}</div></div>
+                <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Total Spent</div><div className="font-mono text-red-300">{formatCurrency(economy.totalSpent)}</div></div>
+                <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Total Income</div><div className="font-mono text-green-300">{formatCurrency(economy.totalIncome)}</div></div>
+                <div>
+                  <div className="text-[10px] text-gray-400 uppercase mb-0.5">Net P&amp;L</div>
+                  <div className={`font-mono ${netPL >= 0 ? "text-green-300" : "text-red-300"}`}>{netPL >= 0 ? "+" : ""}{formatCurrency(netPL)}</div>
+                </div>
+                <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Squad Value</div><div className="font-mono text-white">{formatCurrency(squadValue)}</div></div>
               </div>
             </div>
 
@@ -451,41 +466,54 @@ export default function SquadPage() {
                 const positionColor = el ? POSITION_COLORS[el.element_type] : "bg-white/10 text-gray-300 border-white/20";
                 const team = el ? teamsMap.get(el.team) : null;
                 const pnl = p.fmv - p.purchasePrice;
+                const isExpanded = expandedCard === p.ownershipId;
                 return (
                   <div
                     key={p.ownershipId}
-                    className={`rounded-xl border ${p.status === "deadwood" ? "border-yellow-500/40 bg-yellow-500/5" : "border-white/10 bg-white/5"} p-4 backdrop-blur hover:bg-white/10 transition`}
+                    className={`rounded-xl border ${p.status === "deadwood" ? "border-yellow-500/40 bg-yellow-500/5" : "border-white/10 bg-white/5"} backdrop-blur transition`}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <div className="font-bold text-white">{p.playerName}</div>
+                    {/* Always-visible summary row — click to expand */}
+                    <button
+                      onClick={() => setExpandedCard(isExpanded ? null : p.ownershipId)}
+                      className="w-full flex items-center gap-3 p-4 text-left hover:bg-white/5 transition rounded-xl"
+                    >
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 ${positionColor}`}>{position}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-white truncate">{p.playerName}</div>
                         <div className="text-xs text-gray-400">{team?.short_name ?? "—"}</div>
                       </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${positionColor}`}>{position}</span>
-                    </div>
-                    <div className="space-y-1 text-xs text-gray-300">
-                      <div className="flex justify-between"><span>Purchase</span><span className="font-mono">{formatCurrency(p.purchasePrice)}</span></div>
-                      <div className="flex justify-between"><span>FMV</span><span className="font-mono text-white">{formatCurrency(p.fmv)}</span></div>
-                      <div className="flex justify-between">
-                        <span>P&amp;L</span>
-                        <span className={`font-mono ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {pnl >= 0 ? "+" : ""}{formatCurrency(pnl)}
-                        </span>
+                      <div className="text-right shrink-0">
+                        <div className="text-xs text-gray-400">Purchase</div>
+                        <div className="font-mono text-sm text-white">{formatCurrency(p.purchasePrice)}</div>
                       </div>
-                      <div className="flex justify-between"><span>Points</span><span className="font-mono text-[#00ff85]">{p.totalPoints}</span></div>
-                      <div className="flex justify-between"><span>Acquired</span><span className="font-mono">GW{p.acquiredGw}</span></div>
-                    </div>
-                    {p.status === "deadwood" && (
-                      <div className="mt-2 text-[10px] uppercase tracking-wider text-yellow-400 font-bold">Deadwood</div>
-                    )}
-                    {canRelease && p.status !== "released" && (
-                      <button
-                        onClick={() => handleRelease(p.ownershipId, p.playerName)}
-                        disabled={releasing === p.ownershipId}
-                        className="mt-3 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
-                      >
-                        {releasing === p.ownershipId ? "Releasing..." : `Release (+${formatCurrency(Math.floor(p.purchasePrice * 0.5))})`}
-                      </button>
+                      <span className={`text-gray-400 text-xs transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}>▼</span>
+                    </button>
+
+                    {/* Expanded details */}
+                    {isExpanded && (
+                      <div className="px-4 pb-4 space-y-1 text-xs text-gray-300 border-t border-white/10 pt-3">
+                        <div className="flex justify-between"><span>FMV</span><span className="font-mono text-white">{formatCurrency(p.fmv)}</span></div>
+                        <div className="flex justify-between">
+                          <span>P&amp;L</span>
+                          <span className={`font-mono ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                            {pnl >= 0 ? "+" : ""}{formatCurrency(pnl)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between"><span>Points</span><span className="font-mono text-[#00ff85]">{p.totalPoints}</span></div>
+                        <div className="flex justify-between"><span>Acquired</span><span className="font-mono">GW{p.acquiredGw}</span></div>
+                        {p.status === "deadwood" && (
+                          <div className="pt-1 text-[10px] uppercase tracking-wider text-yellow-400 font-bold">Deadwood</div>
+                        )}
+                        {canRelease && p.status !== "released" && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
+                            disabled={releasing === p.ownershipId}
+                            className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
+                          >
+                            {releasing === p.ownershipId ? "Releasing..." : `Release (+${formatCurrency(Math.floor(p.purchasePrice * 0.5))})`}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
@@ -497,17 +525,6 @@ export default function SquadPage() {
                 <p className="text-gray-400">No players in your squad yet. Head to the auction to bid on players.</p>
               </div>
             )}
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-lg font-bold text-white mb-4">Economy Summary</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 text-sm">
-                <div><div className="text-xs text-gray-400 uppercase">Initial Budget</div><div className="font-mono text-white">{formatCurrency(economy.initialBudget)}</div></div>
-                <div><div className="text-xs text-gray-400 uppercase">Total Spent</div><div className="font-mono text-red-300">{formatCurrency(economy.totalSpent)}</div></div>
-                <div><div className="text-xs text-gray-400 uppercase">Total Income</div><div className="font-mono text-green-300">{formatCurrency(economy.totalIncome)}</div></div>
-                <div><div className="text-xs text-gray-400 uppercase">Net P&amp;L</div><div className={`font-mono ${netPL >= 0 ? "text-green-300" : "text-red-300"}`}>{netPL >= 0 ? "+" : ""}{formatCurrency(netPL)}</div></div>
-                <div><div className="text-xs text-gray-400 uppercase">Squad Value</div><div className="font-mono text-white">{formatCurrency(squadValue)}</div></div>
-              </div>
-            </div>
             </>
             )}
           </>
