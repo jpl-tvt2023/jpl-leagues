@@ -133,14 +133,14 @@ export async function GET(request: NextRequest) {
 
             // Check if timer expired — resolve via shared logic
             if (new Date() > bid.expiresAt) {
-              const outcome = await resolveExpiredBid(bid);
+              await resolveExpiredBid(bid);
 
-              send(outcome, {
+              send("sold", {
                 bidId: bid.id,
                 fplElementId: bid.fplElementId,
                 playerName: bid.playerName,
                 finalBid: bid.currentHighBid,
-                winnerId: outcome === "sold" ? bid.currentHighBidderId : null,
+                winnerId: bid.currentHighBidderId,
               });
 
               // Advance to next nominator (sets 60s nomination deadline)
