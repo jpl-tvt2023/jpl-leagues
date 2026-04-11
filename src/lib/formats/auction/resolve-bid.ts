@@ -96,23 +96,13 @@ export async function resolveBidToUnsold(bid: BidRow): Promise<void> {
 }
 
 /**
- * Determine if an expired bid should be "sold" or "unsold" and resolve it.
- * Returns the outcome status.
+ * Resolve an expired bid. The nominator is always the floor bidder, so the
+ * player is always sold — either to the highest counter-bidder or, if no one
+ * counter-bid, to the nominator at the base price.
  */
-export async function resolveExpiredBid(
-  bid: BidRow
-): Promise<"sold" | "unsold"> {
-  const isSold =
-    bid.currentHighBid > bid.minBid ||
-    bid.currentHighBidderId !== bid.nominatorTeamId;
-
-  if (isSold) {
-    await resolveBidToSold(bid);
-  } else {
-    await resolveBidToUnsold(bid);
-  }
-
-  return isSold ? "sold" : "unsold";
+export async function resolveExpiredBid(bid: BidRow): Promise<"sold"> {
+  await resolveBidToSold(bid);
+  return "sold";
 }
 
 // ---- Nominator Advancement ----
