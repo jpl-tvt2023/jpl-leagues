@@ -69,8 +69,8 @@ export async function POST(request: NextRequest) {
 
     const currentBid = openBids[0];
 
-    // Check timer hasn't expired
-    if (new Date() > currentBid.expiresAt) {
+    // Check timer hasn't expired (2s grace for in-flight requests)
+    if (Date.now() > currentBid.expiresAt.getTime() + 2000) {
       return { error: "Auction timer has expired", status: 400 };
     }
 

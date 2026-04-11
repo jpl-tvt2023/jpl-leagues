@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { db, auctionSessions, auctionBids } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import {
   resolveExpiredBid,
   advanceNominator,
@@ -147,8 +147,8 @@ export async function GET(request: NextRequest) {
               lastHighBid = bid.currentHighBid;
             }
 
-            // Check if timer expired — resolve via shared logic
-            if (new Date() > bid.expiresAt) {
+            // Check if timer expired — 2s grace period for in-flight bids
+            if (Date.now() > bid.expiresAt.getTime() + 2000) {
               const outcome = await resolveExpiredBid(bid);
 
               if (outcome === "sold") {
