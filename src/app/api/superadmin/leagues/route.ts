@@ -4,6 +4,7 @@ import { leagues, teams, gameweeks } from "@/lib/db/schema";
 import { eq, and, max, count } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
+import bcrypt from "bcryptjs";
 
 export async function GET(request: NextRequest) {
   if (!isSuperAdmin(request)) {
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips } = body;
+  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget } = body;
 
   if (!slug || !name || !sport || !format || !season) {
     return NextResponse.json({ error: "slug, name, sport, format, and season are required" }, { status: 400 });
@@ -83,19 +84,53 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json({ error: "TVT enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)" }, { status: 400 });
     }
+  } else if (format === "auction") {
+    // JPL Auction: no groups, no playoffs, no chips
+    resolvedTeamSize = teamSize ?? 10;
+    resolvedGroupCount = 0;
+    resolvedPlayoffStartGw = 39; // effectively no playoffs
+    resolvedEnabledChips = [];
   } else {
     return NextResponse.json({ error: `Format "${format}" is not supported` }, { status: 400 });
   }
 
   try {
     const id = generateId();
+    const resolvedBudget = format === "auction" ? (initialBudget ?? 100_000_000) : 100_000_000;
+
     await db.insert(leagues).values({
       id, slug, name, sport, format, season, isActive: true,
       teamSize: resolvedTeamSize,
       groupCount: resolvedGroupCount,
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: JSON.stringify(resolvedEnabledChips),
+      initialBudget: resolvedBudget,
     });
+
+    // For auction format: auto-create placeholder manager accounts
+    let createdManagers = 0;
+    if (format === "auction") {
+      const managerCount = resolvedTeamSize; // teamSize = number of managers
+      for (let i = 1; i <= managerCount; i++) {
+        const loginId = `${slug}_Manager${i}`;
+        const plainPassword = `Manager${i}`;
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+        await db.insert(teams).values({
+          id: generateId(),
+          teamLoginId: loginId,
+          name: `Manager ${i}`,
+          leagueId: id,
+          abbreviation: `M${i}`,
+          password: hashedPassword,
+          mustChangePassword: true,
+          isProfileComplete: false,
+          purse: resolvedBudget,
+        });
+        createdManagers++;
+      }
+    }
+
     return NextResponse.json({
       success: true,
       id, slug, name, sport, format, season,
@@ -104,7 +139,7 @@ export async function POST(request: NextRequest) {
       groupCount: resolvedGroupCount,
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: resolvedEnabledChips,
-      teamCount: 0,
+      teamCount: createdManagers,
       currentGameweek: null,
     });
   } catch {

@@ -5,6 +5,7 @@ import { fetchBootstrapData } from "@/lib/fpl";
 import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
+import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
@@ -54,6 +55,11 @@ export async function GET(request: NextRequest) {
     const leagueSlug = leagueSlugRow[0]?.slug ?? "";
     const leagueGroupCount = leagueSlugRow[0]?.groupCount ?? 1;
     const leagueFormat = leagueSlugRow[0]?.format ?? "tvt";
+
+    // ===== Auction format: separate dashboard payload =====
+    if (leagueFormat === "auction" && teamLeagueId) {
+      return await getAuctionDashboard(teamId, teamLeagueId, leagueSlug);
+    }
 
     if (teamLeagueId) {
       try {
@@ -986,5 +992,125 @@ export async function GET(request: NextRequest) {
       { error: "Failed to fetch dashboard data" },
       { status: 500 }
     );
+  }
+}
+
+// ===== Auction format dashboard =====
+async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug: string) {
+  try {
+    // Get team info
+    const team = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
+    if (!team.length) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+    const t = team[0];
+
+    // Get squad (active players)
+    const squad = await db.select().from(auctionOwnership)
+      .where(and(eq(auctionOwnership.teamId, teamId), eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.status, "active")));
+
+    // Get all GW scores for this manager
+    const scores = await db.select({
+      totalPoints: auctionScores.totalPoints,
+      rank: auctionScores.rank,
+      payout: auctionScores.payout,
+      gwNumber: gameweeks.number,
+    })
+      .from(auctionScores)
+      .innerJoin(gameweeks, eq(auctionScores.gameweekId, gameweeks.id))
+      .where(and(eq(auctionScores.teamId, teamId), eq(auctionScores.leagueId, leagueId)))
+      .orderBy(asc(gameweeks.number));
+
+    const totalPoints = scores.reduce((sum, s) => sum + s.totalPoints, 0);
+    const totalIncome = scores.reduce((sum, s) => sum + s.payout, 0);
+
+    // Get all teams for standings
+    const allTeams = await db.select().from(teams).where(eq(teams.leagueId, leagueId));
+
+    // Compute simple standings: total points per team from auctionScores
+    const teamPointsMap = new Map<string, number>();
+    for (const at of allTeams) {
+      const tScores = await db.select({ totalPoints: auctionScores.totalPoints })
+        .from(auctionScores)
+        .where(and(eq(auctionScores.teamId, at.id), eq(auctionScores.leagueId, leagueId)));
+      teamPointsMap.set(at.id, tScores.reduce((sum, s) => sum + s.totalPoints, 0));
+    }
+
+    const standings = allTeams
+      .map(at => ({ id: at.id, name: at.name, abbreviation: at.abbreviation, totalPoints: teamPointsMap.get(at.id) || 0 }))
+      .sort((a, b) => b.totalPoints - a.totalPoints)
+      .map((s, i) => ({ ...s, rank: i + 1, isCurrentTeam: s.id === teamId }));
+
+    const myRank = standings.find(s => s.isCurrentTeam)?.rank ?? 0;
+
+    // Get active/pending auction sessions
+    const sessions = await db.select().from(auctionSessions)
+      .where(and(eq(auctionSessions.leagueId, leagueId)));
+    const activeSession = sessions.find(s => s.status === "active" || s.status === "paused");
+
+    // Squad value = sum of purchase prices
+    const squadValue = squad.reduce((sum, p) => sum + p.purchasePrice, 0);
+
+    // Last GW result
+    const lastGw = scores.length > 0 ? scores[scores.length - 1] : null;
+
+    // GW deadline (next upcoming gameweek)
+    const now = new Date();
+    const nextGw = await db.select().from(gameweeks)
+      .where(and(eq(gameweeks.leagueId, leagueId), gt(gameweeks.deadline, now)))
+      .orderBy(asc(gameweeks.number))
+      .limit(1);
+
+    return NextResponse.json({
+      leagueSlug,
+      leagueFormat: "auction",
+      team: {
+        id: t.id,
+        name: t.name,
+        abbreviation: t.abbreviation,
+      },
+      purse: t.purse ?? 0,
+      totalSpent: t.totalSpent ?? 0,
+      totalIncome,
+      totalPoints,
+      squadValue,
+      squadSize: squad.length,
+      squad: squad.map(p => ({
+        id: p.id,
+        fplElementId: p.fplElementId,
+        playerName: p.playerName,
+        purchasePrice: p.purchasePrice,
+        acquiredGw: p.acquiredGw,
+        status: p.status,
+      })),
+      rank: myRank,
+      totalManagers: allTeams.length,
+      standings: standings.slice(0, 10), // top 10 for mini-table
+      gwHistory: scores.map(s => ({
+        gameweek: s.gwNumber,
+        points: s.totalPoints,
+        rank: s.rank,
+        income: s.payout,
+      })),
+      lastGwResult: lastGw ? {
+        gameweek: lastGw.gwNumber,
+        points: lastGw.totalPoints,
+        rank: lastGw.rank,
+        income: lastGw.payout,
+      } : null,
+      auctionSession: activeSession ? {
+        id: activeSession.id,
+        type: activeSession.type,
+        status: activeSession.status,
+      } : null,
+      deadline: nextGw.length > 0 ? {
+        gameweek: nextGw[0].number,
+        timestamp: nextGw[0].deadline?.toISOString() ?? null,
+      } : { gameweek: 0, timestamp: null },
+      serverTime: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Auction dashboard error:", error);
+    return NextResponse.json({ error: "Failed to fetch auction dashboard" }, { status: 500 });
   }
 }

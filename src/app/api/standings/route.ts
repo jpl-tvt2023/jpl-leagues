@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, settings, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
+import { db, teams, groups, players, fixtures, results, gameweekChips, gameweeks, leagues, settings, auctionScores, auctionOwnership, type Team, type Group, type Player, type Fixture, type Result, type Gameweek } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { getAllCachedScores, getCachedStandings, setCachedStandings } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
+import { computeAuctionStandings } from "@/lib/formats/auction/standings";
+import { calculateFMV } from "@/lib/formats/auction/economy";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
 
@@ -101,6 +103,59 @@ export async function GET(request: NextRequest) {
       if (cached) return NextResponse.json(cached);
     } catch {
       // Cache miss or Redis error — fall through to DB computation
+    }
+
+    // ============================================
+    // JPL AUCTION FORMAT — separate standings computation
+    // ============================================
+    if (leagueFormat === "auction") {
+      const leagueTeams = await db
+        .select({ id: teams.id, name: teams.name, abbreviation: teams.abbreviation, purse: teams.purse })
+        .from(teams)
+        .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)));
+
+      const scores = await db
+        .select()
+        .from(auctionScores)
+        .where(eq(auctionScores.leagueId, leagueId));
+
+      // Build gameweekId -> gwNumber map
+      const gwRows = await db
+        .select({ id: gameweeks.id, number: gameweeks.number })
+        .from(gameweeks)
+        .where(eq(gameweeks.leagueId, leagueId));
+      const gwNumbers = new Map(gwRows.map((g) => [g.id, g.number]));
+
+      // Calculate squad value (sum of FMV) per team
+      const allOwnership = await db
+        .select()
+        .from(auctionOwnership)
+        .where(and(eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.status, "active")));
+
+      const squadValues = new Map<string, number>();
+      for (const owned of allOwnership) {
+        // FMV = purchasePrice + (totalPoints * 50,000) — totalPoints from accumulated GW scores
+        const playerTotalPoints = scores
+          .filter((s) => s.teamId === owned.teamId)
+          .reduce((sum, s) => {
+            const breakdown = JSON.parse(s.playerBreakdown || "[]") as { elementId: number; points: number }[];
+            const playerPts = breakdown.find((p) => p.elementId === owned.fplElementId)?.points ?? 0;
+            return sum + playerPts;
+          }, 0);
+        const fmv = calculateFMV(owned.purchasePrice, playerTotalPoints);
+        squadValues.set(owned.teamId, (squadValues.get(owned.teamId) ?? 0) + fmv);
+      }
+
+      const standings = computeAuctionStandings(leagueTeams, scores, gwNumbers, squadValues);
+
+      const responseData = {
+        format: "auction" as const,
+        standings,
+        totalTeams: leagueTeams.length,
+      };
+
+      setCachedStandings(leagueId, responseData).catch(() => {});
+      return NextResponse.json(responseData);
     }
 
     // Get all teams with their relations using relational query

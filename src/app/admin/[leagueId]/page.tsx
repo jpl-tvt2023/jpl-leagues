@@ -102,7 +102,50 @@ interface CacheStats {
   gameweeks: { gameweek: number; entries: number }[];
 }
 
-type TabType = "teams" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings";
+type TabType = "teams" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction";
+
+// Auction-specific interfaces
+interface AuctionSessionInfo {
+  id: string;
+  type: string;
+  cycleNumber: number;
+  status: string;
+  snakeOrder: string[];
+  currentNominatorIndex: number;
+  createdAt: string;
+}
+
+interface AuctionSquadPlayer {
+  ownershipId: string;
+  fplElementId: number;
+  playerName: string;
+  purchasePrice: number;
+  acquiredGw: number;
+  status: string;
+  totalPoints: number;
+  fmv: number;
+}
+
+interface AuctionTeamSquad {
+  teamId: string;
+  teamName: string;
+  squad: AuctionSquadPlayer[];
+  activeCount: number;
+  deadwoodCount: number;
+}
+
+interface AuctionTradeProposal {
+  id: string;
+  proposerTeamId: string;
+  targetTeamId: string;
+  offeredPlayerIds: string[];
+  requestedPlayerIds: string[];
+  cashOffered: number;
+  status: string;
+  vetoDeadline: string | null;
+  vetoVotes: Record<string, string>;
+  createdAt: string;
+}
 
 export default function AdminDashboard() {
   const params = useParams<{ leagueId: string }>();
@@ -110,7 +153,7 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<TabType>("teams");
   const [teams, setTeams] = useState<Team[]>([]);
-  const [leagueConfig, setLeagueConfig] = useState<{ teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string }>({
+  const [leagueConfig, setLeagueConfig] = useState<{ leagueDbId?: string; teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string }>({
     teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"],
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -198,6 +241,17 @@ export default function AdminDashboard() {
   const [groupsRevealed, setGroupsRevealed] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
+  // Auction Management State
+  const [auctionSessions, setAuctionSessions] = useState<AuctionSessionInfo[]>([]);
+  const [auctionActiveSession, setAuctionActiveSession] = useState<AuctionSessionInfo | null>(null);
+  const [auctionTeamSquads, setAuctionTeamSquads] = useState<AuctionTeamSquad[]>([]);
+  const [auctionTrades, setAuctionTrades] = useState<AuctionTradeProposal[]>([]);
+  const [auctionLoading, setAuctionLoading] = useState(false);
+  const [auctionSessionCreating, setAuctionSessionCreating] = useState(false);
+  const [auctionSessionAction, setAuctionSessionAction] = useState<string | null>(null);
+
+  const isAuctionFormat = leagueConfig.format === "auction";
+
   // Reset Season State
   const [resetPassword, setResetPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
@@ -251,6 +305,8 @@ export default function AdminDashboard() {
       fetchPlayoffStatus();
     } else if (activeTab === "settings") {
       fetchSettings();
+    } else if (activeTab === "auction") {
+      fetchAuctionData();
     }
   }, [activeTab]);
 
@@ -287,6 +343,7 @@ export default function AdminDashboard() {
           let enabledChips: string[] = ["D", "W", "C"];
           try { enabledChips = JSON.parse(league.enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
           setLeagueConfig({
+            leagueDbId: league.id,
             teamSize: league.teamSize ?? 32,
             groupCount: league.groupCount ?? 2,
             playoffStartGw: league.playoffStartGw ?? 31,
@@ -348,6 +405,23 @@ export default function AdminDashboard() {
   const fetchGameweekStatuses = async () => {
     setScoringLoading(true);
     try {
+      // Auction format: use dedicated scoring-status endpoint
+      if (isAuctionFormat && leagueConfig.leagueDbId) {
+        const response = await fetch(`/api/auction/scoring-status?leagueId=${leagueConfig.leagueDbId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const statuses: GameweekStatus[] = (data.statuses || []).map((s: { number: number; totalManagers: number; scored: number; isPending: boolean }) => ({
+            number: s.number,
+            fixturesCount: s.totalManagers,
+            resultsProcessed: s.scored,
+            isPending: s.isPending,
+          }));
+          setGameweekStatuses(statuses);
+        }
+        setScoringLoading(false);
+        return;
+      }
+
       const statuses: GameweekStatus[] = [];
       // Fetch status for GW1-38 (or until we find gameweeks with no fixtures)
       for (let gw = 1; gw <= 38; gw++) {
@@ -699,6 +773,91 @@ export default function AdminDashboard() {
       }
     } catch {
       setMessage({ type: "error", text: "Network error" });
+    }
+  };
+
+  // ============= Auction Management Functions =============
+
+  const fetchAuctionData = async () => {
+    setAuctionLoading(true);
+    try {
+      // Fetch sessions
+      const auctionDbId = leagueConfig.leagueDbId;
+      if (!auctionDbId) return;
+      const sessionRes = await fetch(`/api/auction/session?leagueId=${auctionDbId}`);
+      if (sessionRes.ok) {
+        const sessionData = await sessionRes.json();
+        setAuctionSessions(sessionData.sessions || []);
+        setAuctionActiveSession(sessionData.activeSession || null);
+      }
+
+      // Fetch all team squads
+      const squads: AuctionTeamSquad[] = [];
+      for (const team of teams) {
+        try {
+          const squadRes = await fetch(`/api/auction/squad?teamId=${team.id}`);
+          if (squadRes.ok) {
+            const squadData = await squadRes.json();
+            squads.push(squadData);
+          }
+        } catch { /* skip */ }
+      }
+      setAuctionTeamSquads(squads);
+
+      // Fetch trades
+      const tradeRes = await fetch(`/api/auction/trade?leagueId=${auctionDbId}`);
+      if (tradeRes.ok) {
+        const tradeData = await tradeRes.json();
+        setAuctionTrades(tradeData.proposals || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch auction data:", error);
+    } finally {
+      setAuctionLoading(false);
+    }
+  };
+
+  const createAuctionSession = async (type: string) => {
+    setAuctionSessionCreating(true);
+    try {
+      const res = await fetch("/api/auction/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leagueId: leagueConfig.leagueDbId, action: "create", type, cycleNumber: type === "initial" ? 0 : undefined }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: `Auction session created (${type})` });
+        fetchAuctionData();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to create session" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setAuctionSessionCreating(false);
+    }
+  };
+
+  const updateAuctionSession = async (sessionId: string, action: string) => {
+    setAuctionSessionAction(action);
+    try {
+      const res = await fetch("/api/auction/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leagueId: leagueConfig.leagueDbId, action, sessionId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: `Session ${action}ed successfully` });
+        fetchAuctionData();
+      } else {
+        setMessage({ type: "error", text: data.error || `Failed to ${action} session` });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setAuctionSessionAction(null);
     }
   };
 
@@ -1190,10 +1349,12 @@ export default function AdminDashboard() {
               <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-red-500/20 flex items-center justify-center">
                 <span className="text-2xl">⚠️</span>
               </div>
-              <h2 className="text-xl font-bold text-white mb-2">Delete Team</h2>
+              <h2 className="text-xl font-bold text-white mb-2">{isAuctionFormat ? "Remove Manager" : "Delete Team"}</h2>
               <p className="text-gray-400 mb-6">
-                Are you sure you want to delete <span className="text-white font-semibold">{deletingTeam.name}</span>? 
-                This will also delete all players, fixtures, results, and captain data associated with this team.
+                Are you sure you want to {isAuctionFormat ? "remove" : "delete"} <span className="text-white font-semibold">{deletingTeam.name}</span>?
+                {isAuctionFormat
+                  ? "This will remove the manager and all their auction ownership data."
+                  : "This will also delete all players, fixtures, results, and captain data associated with this team."}
               </p>
               <p className="text-red-400 text-sm mb-6">This action cannot be undone.</p>
               
@@ -1210,7 +1371,7 @@ export default function AdminDashboard() {
                   disabled={isDeleting}
                   className="flex-1 rounded-lg bg-red-600 px-6 py-3 font-semibold text-white hover:bg-red-700 transition disabled:opacity-50"
                 >
-                  {isDeleting ? "Deleting..." : "Delete Team"}
+                  {isDeleting ? "Deleting..." : isAuctionFormat ? "Remove Manager" : "Delete Team"}
                 </button>
               </div>
             </div>
@@ -1223,7 +1384,7 @@ export default function AdminDashboard() {
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-white">Edit Team</h2>
+              <h2 className="text-xl font-bold text-white">{isAuctionFormat ? "Edit Manager" : "Edit Team"}</h2>
               <button
                 onClick={() => setEditingTeam(null)}
                 className="text-gray-400 hover:text-white text-2xl"
@@ -1236,17 +1397,17 @@ export default function AdminDashboard() {
               {/* Team Details */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Login ID</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Login ID" : "Team Login ID"}</label>
                   <input
                     type="text"
                     disabled
                     value={editFormData.teamLoginId}
                     className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-3 text-gray-400 placeholder-gray-600 cursor-not-allowed opacity-60"
                   />
-                  <p className="text-gray-500 text-xs mt-1">Used for team login (cannot be changed)</p>
+                  <p className="text-gray-500 text-xs mt-1">{isAuctionFormat ? "Used for login (cannot be changed)" : "Used for team login (cannot be changed)"}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Name</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Manager Name" : "Team Name"}</label>
                   <input
                     type="text"
                     required
@@ -1254,14 +1415,14 @@ export default function AdminDashboard() {
                     onChange={(e) => setEditFormData({ ...editFormData, teamName: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                   />
-                  <p className="text-gray-500 text-xs mt-1">Display name. Unique within this league.</p>
+                  <p className="text-gray-500 text-xs mt-1">{isAuctionFormat ? "Manager display name. Unique within this league." : "Display name. Unique within this league."}</p>
                 </div>
               </div>
 
               {/* Abbreviation */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Team Abbreviation</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Abbreviation" : "Team Abbreviation"}</label>
                   <input
                     type="text"
                     required
@@ -1301,7 +1462,8 @@ export default function AdminDashboard() {
                 )}
               </div>
 
-              {/* Player 1 */}
+              {/* Player 1 — hidden for auction format */}
+              {!isAuctionFormat && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Player 1 Name</label>
@@ -1324,8 +1486,10 @@ export default function AdminDashboard() {
                   />
                 </div>
               </div>
+              )}
 
-              {/* Player 2 */}
+              {/* Player 2 — hidden for auction format */}
+              {!isAuctionFormat && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Player 2 Name</label>
@@ -1348,6 +1512,7 @@ export default function AdminDashboard() {
                   />
                 </div>
               </div>
+              )}
 
               <div className="flex gap-4">
                 <button
@@ -1405,6 +1570,12 @@ export default function AdminDashboard() {
                 Playoffs
               </Link>
             </>
+          ) : isAuctionFormat ? (
+            <>
+              <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+                Standings
+              </Link>
+            </>
           ) : (
             <>
               <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
@@ -1442,8 +1613,9 @@ export default function AdminDashboard() {
                 : "bg-white/5 text-gray-300 hover:bg-white/10"
             }`}
           >
-            Team Management
+            {isAuctionFormat ? "Manager Management" : "Team Management"}
           </button>
+          {!isAuctionFormat && (
           <button
             onClick={() => { setActiveTab("captain"); setMessage(null); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
@@ -1454,6 +1626,8 @@ export default function AdminDashboard() {
           >
             Captain Override
           </button>
+          )}
+          {!isAuctionFormat && (
           <button
             onClick={() => { setActiveTab("bulkUpload"); setMessage(null); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
@@ -1464,6 +1638,7 @@ export default function AdminDashboard() {
           >
             Bulk Upload
           </button>
+          )}
           <button
             onClick={() => { setActiveTab("scoring"); setMessage(null); setScoringResults([]); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
@@ -1474,6 +1649,19 @@ export default function AdminDashboard() {
           >
             Scoring
           </button>
+          {isAuctionFormat && (
+          <button
+            onClick={() => { setActiveTab("auction"); setMessage(null); }}
+            className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
+              activeTab === "auction"
+                ? "bg-yellow-500 text-slate-900"
+                : "bg-white/5 text-gray-300 hover:bg-white/10"
+            }`}
+          >
+            Auction
+          </button>
+          )}
+          {!isAuctionFormat && (
           <button
             onClick={() => { setActiveTab("playoffs"); setMessage(null); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
@@ -1484,6 +1672,7 @@ export default function AdminDashboard() {
           >
             Playoffs
           </button>
+          )}
           <button
             onClick={() => { setActiveTab("settings"); setMessage(null); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
@@ -1524,55 +1713,55 @@ export default function AdminDashboard() {
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h1 className="text-3xl font-bold text-white">Team Management</h1>
-                <p className="text-gray-400 mt-1">Create and manage teams in the league</p>
+                <h1 className="text-3xl font-bold text-white">{isAuctionFormat ? "Manager Management" : "Team Management"}</h1>
+                <p className="text-gray-400 mt-1">{isAuctionFormat ? "Create and manage managers in the league" : "Create and manage teams in the league"}</p>
               </div>
               <button
                 onClick={() => setShowCreateForm(!showCreateForm)}
                 className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
               >
-                {showCreateForm ? "Cancel" : "+ Create Team"}
+                {showCreateForm ? "Cancel" : isAuctionFormat ? "+ Add Manager" : "+ Create Team"}
               </button>
             </div>
 
             {/* Create Team Form */}
             {showCreateForm && (
               <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-                <h2 className="text-xl font-bold text-white mb-6">Create New Team</h2>
+                <h2 className="text-xl font-bold text-white mb-6">{isAuctionFormat ? "Add New Manager" : "Create New Team"}</h2>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Team Details */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Login ID</label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Login ID" : "Team Login ID"}</label>
                       <input
                         type="text"
                         required
                         value={formData.teamLoginId}
                         onChange={(e) => setFormData({ ...formData, teamLoginId: e.target.value })}
-                        placeholder="team-123"
+                        placeholder={isAuctionFormat ? "rahul-mgr" : "team-123"}
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                       />
                       <p className="text-xs text-gray-500 mt-1">Used for login. 3–20 alphanumeric/underscore/hyphen.</p>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Name</label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Manager Name" : "Team Name"}</label>
                       <input
                         type="text"
                         required
                         value={formData.teamName}
                         onChange={(e) => setFormData({ ...formData, teamName: e.target.value })}
-                        placeholder="DM — Rahul"
+                        placeholder={isAuctionFormat ? "Rahul" : "DM — Rahul"}
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Display name. Unique within this league.</p>
+                      <p className="text-xs text-gray-500 mt-1">{isAuctionFormat ? "Manager display name. Unique within this league." : "Display name. Unique within this league."}</p>
                     </div>
                   </div>
 
                   {/* Abbreviation */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Team Abbreviation</label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Abbreviation" : "Team Abbreviation"}</label>
                       <input
                         type="text"
                         required
@@ -1615,7 +1804,8 @@ export default function AdminDashboard() {
                 )}
               </div>
 
-              {/* Player 1 */}
+              {/* Player 1 — hidden for auction format (players acquired via auction) */}
+              {!isAuctionFormat && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Player 1 Name</label>
@@ -1640,8 +1830,10 @@ export default function AdminDashboard() {
                   />
                 </div>
               </div>
+              )}
 
-              {/* Player 2 */}
+              {/* Player 2 — hidden for auction format */}
+              {!isAuctionFormat && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Player 2 Name</label>
@@ -1666,13 +1858,14 @@ export default function AdminDashboard() {
                   />
                 </div>
               </div>
+              )}
 
               <button
                 type="submit"
                 disabled={isSubmitting}
                 className="w-full rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
               >
-                {isSubmitting ? "Creating..." : "Create Team"}
+                {isSubmitting ? "Creating..." : isAuctionFormat ? "Add Manager" : "Create Team"}
               </button>
             </form>
           </div>
@@ -1682,7 +1875,7 @@ export default function AdminDashboard() {
         <div className={`grid grid-cols-2 ${leagueConfig.groupCount === 2 ? "md:grid-cols-4" : "md:grid-cols-3"} gap-4 mb-8`}>
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
             <div className="text-3xl font-bold text-yellow-400">{teams.length}</div>
-            <div className="text-sm text-gray-400">Total Teams</div>
+            <div className="text-sm text-gray-400">{isAuctionFormat ? "Total Managers" : "Total Teams"}</div>
           </div>
           {leagueConfig.groupCount === 2 ? (
             <>
@@ -1740,7 +1933,7 @@ export default function AdminDashboard() {
               {/* Group A */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-blue-400">{leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{leagueConfig.groupCount === 2 ? teamsPerGroup : leagueConfig.teamSize})</h3>
+                  <h3 className="text-xl font-bold text-blue-400">{isAuctionFormat ? "Managers" : leagueConfig.groupCount === 2 ? "Group A" : "League"} ({groupATeams.length}/{leagueConfig.groupCount === 2 ? teamsPerGroup : leagueConfig.teamSize})</h3>
                   {groupATeams.length > 0 && (
                     <button
                       onClick={() => {
@@ -1795,8 +1988,10 @@ export default function AdminDashboard() {
                             </div>
                             <div className="text-xs text-gray-400">
                               {team.isProfileComplete
-                                ? team.players.map(p => p.name).join(" & ")
-                                : "Profile Setup Pending"}
+                                ? isAuctionFormat
+                                  ? "Squad via auction"
+                                  : team.players.map(p => p.name).join(" & ")
+                                : isAuctionFormat ? "Setup Pending" : "Profile Setup Pending"}
                             </div>
                           </div>
                         </div>
@@ -1892,8 +2087,10 @@ export default function AdminDashboard() {
                             </div>
                             <div className="text-xs text-gray-400">
                               {team.isProfileComplete
-                                ? team.players.map(p => p.name).join(" & ")
-                                : "Profile Setup Pending"}
+                                ? isAuctionFormat
+                                  ? "Squad via auction"
+                                  : team.players.map(p => p.name).join(" & ")
+                                : isAuctionFormat ? "Setup Pending" : "Profile Setup Pending"}
                             </div>
                           </div>
                         </div>
@@ -1934,8 +2131,8 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {/* Group Assignment — 32-team leagues only */}
-        {leagueConfig.teamSize === 32 && teams.length > 0 && (
+        {/* Group Assignment — 32-team leagues only, not for auction */}
+        {leagueConfig.teamSize === 32 && teams.length > 0 && !isAuctionFormat && (
           <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -1971,7 +2168,8 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Quick Actions */}
+        {/* Quick Actions — not shown for auction format (no fixtures) */}
+        {!isAuctionFormat && (
         <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
           <h3 className="text-lg font-bold text-white mb-4">Quick Actions</h3>
           <div className="flex flex-wrap gap-4">
@@ -2004,6 +2202,7 @@ export default function AdminDashboard() {
             </button>
           </div>
         </div>
+        )}
           </>
         )}
 
@@ -2436,7 +2635,7 @@ export default function AdminDashboard() {
               {scoringLoading ? (
                 <div className="text-center text-gray-400 py-8 text-sm">Loading gameweeks…</div>
               ) : gameweekStatuses.length === 0 ? (
-                <div className="text-center text-gray-400 py-8 text-sm">No gameweeks with fixtures found</div>
+                <div className="text-center text-gray-400 py-8 text-sm">{isAuctionFormat ? "No gameweeks found — create gameweeks first" : "No gameweeks with fixtures found"}</div>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-10 gap-2">
                   {gameweekStatuses.map((gw) => {
@@ -2707,9 +2906,200 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Auction Management Tab */}
+        {activeTab === "auction" && isAuctionFormat && (
+          <div className="space-y-6">
+            {/* Session Controls */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Auction Sessions</h2>
+                  <p className="text-sm text-gray-400 mt-0.5">Create and manage auction sessions</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => createAuctionSession("initial")}
+                    disabled={auctionSessionCreating}
+                    className="px-4 py-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 text-sm font-medium disabled:opacity-50 transition"
+                  >
+                    {auctionSessionCreating ? "Creating..." : "+ Initial Auction"}
+                  </button>
+                  <button
+                    onClick={() => createAuctionSession("mini-auction")}
+                    disabled={auctionSessionCreating}
+                    className="px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-sm font-medium disabled:opacity-50 transition"
+                  >
+                    {auctionSessionCreating ? "Creating..." : "+ Mini-Auction"}
+                  </button>
+                  <button
+                    onClick={fetchAuctionData}
+                    disabled={auctionLoading}
+                    className="px-4 py-2 rounded-lg bg-white/5 text-gray-400 hover:bg-white/10 text-sm disabled:opacity-50 transition"
+                  >
+                    {auctionLoading ? "Loading..." : "Refresh"}
+                  </button>
+                </div>
+              </div>
+
+              {auctionLoading ? (
+                <div className="text-center text-gray-400 py-8 text-sm">Loading sessions...</div>
+              ) : auctionSessions.length === 0 ? (
+                <div className="text-center text-gray-400 py-8 text-sm">No auction sessions created yet</div>
+              ) : (
+                <div className="space-y-3">
+                  {auctionSessions.map((session) => (
+                    <div key={session.id} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <span className="font-semibold text-white">
+                            {session.type === "initial" ? "Initial Auction" : `Mini-Auction #${session.cycleNumber}`}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            session.status === "active" ? "bg-green-500/20 text-green-400" :
+                            session.status === "paused" ? "bg-yellow-500/20 text-yellow-400" :
+                            session.status === "completed" ? "bg-gray-500/20 text-gray-400" :
+                            "bg-blue-500/20 text-blue-400"
+                          }`}>
+                            {session.status}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          Snake order: {session.snakeOrder.length} teams | Position: {session.currentNominatorIndex + 1}/{session.snakeOrder.length}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {(session.status === "pending" || session.status === "paused") && (
+                          <button
+                            onClick={() => updateAuctionSession(session.id, "start")}
+                            disabled={auctionSessionAction !== null}
+                            className="px-3 py-1.5 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 text-xs font-medium disabled:opacity-50 transition"
+                          >
+                            {auctionSessionAction === "start" ? "..." : session.status === "paused" ? "Resume" : "Start"}
+                          </button>
+                        )}
+                        {session.status === "active" && (
+                          <>
+                            <button
+                              onClick={() => updateAuctionSession(session.id, "pause")}
+                              disabled={auctionSessionAction !== null}
+                              className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-xs font-medium disabled:opacity-50 transition"
+                            >
+                              {auctionSessionAction === "pause" ? "..." : "Pause"}
+                            </button>
+                            <button
+                              onClick={() => updateAuctionSession(session.id, "complete")}
+                              disabled={auctionSessionAction !== null}
+                              className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-xs font-medium disabled:opacity-50 transition"
+                            >
+                              {auctionSessionAction === "complete" ? "..." : "Complete"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Squad Overview */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <h2 className="text-2xl font-bold text-white mb-4">Squad Overview</h2>
+              {auctionTeamSquads.length === 0 ? (
+                <div className="text-center text-gray-400 py-8 text-sm">No squad data available</div>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-4">
+                  {auctionTeamSquads.map((teamSquad) => (
+                    <div key={teamSquad.teamId} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-white">{teamSquad.teamName}</h3>
+                        <div className="flex gap-2">
+                          <span className="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400">
+                            {teamSquad.activeCount} active
+                          </span>
+                          {teamSquad.deadwoodCount > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400">
+                              {teamSquad.deadwoodCount} deadwood
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {teamSquad.squad.length === 0 ? (
+                        <p className="text-xs text-gray-500">No players yet</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {teamSquad.squad.map((player) => (
+                            <div key={player.ownershipId} className="flex items-center justify-between text-xs py-1 border-b border-white/5 last:border-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-1.5 h-1.5 rounded-full ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
+                                <span className="text-gray-300">{player.playerName}</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-gray-500">
+                                <span>{player.totalPoints} pts</span>
+                                <span>{(player.purchasePrice / 1_000_000).toFixed(1)}M</span>
+                                <span className="text-gray-600">FMV: {(player.fmv / 1_000_000).toFixed(1)}M</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Trade Proposals */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <h2 className="text-2xl font-bold text-white mb-4">Trade Proposals</h2>
+              {auctionTrades.length === 0 ? (
+                <div className="text-center text-gray-400 py-8 text-sm">No trade proposals</div>
+              ) : (
+                <div className="space-y-3">
+                  {auctionTrades.map((trade) => {
+                    const proposerName = teams.find(t => t.id === trade.proposerTeamId)?.name ?? trade.proposerTeamId;
+                    const targetName = teams.find(t => t.id === trade.targetTeamId)?.name ?? trade.targetTeamId;
+                    return (
+                      <div key={trade.id} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold text-white">{proposerName}</span>
+                            <span className="text-gray-500">&rarr;</span>
+                            <span className="font-semibold text-white">{targetName}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded ${
+                              trade.status === "pending" ? "bg-yellow-500/20 text-yellow-400" :
+                              trade.status === "accepted" ? "bg-green-500/20 text-green-400" :
+                              trade.status === "rejected" ? "bg-red-500/20 text-red-400" :
+                              trade.status === "vetoed" ? "bg-red-500/20 text-red-400" :
+                              "bg-gray-500/20 text-gray-400"
+                            }`}>
+                              {trade.status}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {trade.offeredPlayerIds.length} player(s) offered | {trade.requestedPlayerIds.length} requested
+                            {trade.cashOffered !== 0 && ` | Cash: ${(Math.abs(trade.cashOffered) / 1_000_000).toFixed(1)}M ${trade.cashOffered > 0 ? "(proposer pays)" : "(target pays)"}`}
+                          </div>
+                          {trade.vetoDeadline && (
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              Veto deadline: {new Date(trade.vetoDeadline).toLocaleString()}
+                              {" | "}Votes: {Object.values(trade.vetoVotes).filter(v => v === "veto").length} veto / {Object.values(trade.vetoVotes).filter(v => v === "approve").length} approve
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Settings Tab */}
         {activeTab === "settings" && (
           <div className="space-y-6">
+            {!isAuctionFormat && (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h3 className="text-lg font-bold text-white mb-4">Announcement Controls</h3>
               <p className="text-gray-400 text-sm mb-6">Toggle captain and chip announcements on or off. When disabled, teams cannot submit new announcements.</p>
@@ -2775,6 +3165,7 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
+            )}
 
             <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6 backdrop-blur">
               <h3 className="text-lg font-bold text-red-400 mb-2">Reset Season Data</h3>

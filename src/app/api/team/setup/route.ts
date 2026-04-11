@@ -5,6 +5,12 @@ import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
+/** Check if a league uses the auction format (no FPL player IDs needed at setup) */
+async function isAuctionLeague(leagueId: string): Promise<boolean> {
+  const row = await db.select({ format: leagues.format }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+  return row.length > 0 && row[0].format === "auction";
+}
+
 /**
  * GET /api/team/setup
  * Returns current team setup info (for prefilling) or checks team name uniqueness
@@ -150,6 +156,7 @@ export async function POST(request: NextRequest) {
     }
 
     const leagueId = team.leagueId;
+    const isAuction = await isAuctionLeague(leagueId);
 
     // Check per-league uniqueness (name must be unique within the league, unless it's the current team's name) - case-insensitive
     const existingName = await db
@@ -189,6 +196,35 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Auction format: only needs team name + abbreviation (players acquired via auction)
+    if (isAuction) {
+      // Update team: teamLoginId, name, abbreviation, isProfileComplete = true
+      // Also initialize purse from league's initial budget
+      const leagueRow = await db.select().from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+      const initialBudget = leagueRow[0]?.initialBudget ?? 100_000_000;
+
+      await db
+        .update(teams)
+        .set({
+          teamLoginId: trimmedLoginId,
+          name: trimmedTeamName,
+          abbreviation,
+          isProfileComplete: true,
+          purse: initialBudget,
+          updatedAt: new Date(),
+        })
+        .where(eq(teams.id, session.id));
+
+      await invalidateLeaguePageCache(leagueId);
+
+      return NextResponse.json({
+        success: true,
+        message: "Profile setup completed (auction format — players acquired via auction)",
+      });
+    }
+
+    // TVT / Triple Crown: require 2 FPL player IDs
 
     // Player 1: name and FPL ID
     if (!player1Name || typeof player1Name !== "string" || !player1Name.trim()) {

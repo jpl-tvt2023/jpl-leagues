@@ -7,6 +7,24 @@ import { StandingsTable } from "@/components/StandingsTable";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import type { TeamStanding } from "@/types/standings";
 
+interface AuctionStandingRow {
+  teamId: string;
+  teamName: string;
+  abbreviation: string;
+  totalPoints: number;
+  purse: number;
+  squadValue: number;
+  rank: number;
+}
+
+function formatCurrency(amount: number): string {
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}£${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}£${abs}`;
+}
+
 export default function LeagueStandingsPage() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
@@ -16,6 +34,7 @@ export default function LeagueStandingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [latestGameweek, setLatestGameweek] = useState<number>(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [leagueStageEnd, setLeagueStageEnd] = useState<number>(30);
   const [teamSize, setTeamSize] = useState<number>(32);
   const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
@@ -23,6 +42,7 @@ export default function LeagueStandingsPage() {
   const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
   const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
+  const [auctionStandings, setAuctionStandings] = useState<AuctionStandingRow[]>([]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -63,6 +83,12 @@ export default function LeagueStandingsPage() {
         const response = await fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`);
         if (!response.ok) throw new Error("Failed to fetch standings");
         const data = await response.json();
+
+        if (data.format === "auction") {
+          setAuctionStandings(data.standings || []);
+          return;
+        }
+
         setGroupA(data.groupA || []);
         setGroupB(data.groupB || []);
         if (data.leagueStageEnd) setLeagueStageEnd(data.leagueStageEnd);
@@ -71,8 +97,8 @@ export default function LeagueStandingsPage() {
         const stageEnd: number = data.leagueStageEnd ?? 30;
         const maxPlayed = Math.min(
           Math.max(
-            ...data.groupA.map((t: TeamStanding) => t.played),
-            ...data.groupB.map((t: TeamStanding) => t.played),
+            ...(data.groupA ?? []).map((t: TeamStanding) => t.played),
+            ...(data.groupB ?? []).map((t: TeamStanding) => t.played),
             0
           ),
           stageEnd
@@ -90,6 +116,7 @@ export default function LeagueStandingsPage() {
 
   const totalTeams = groupA.length + groupB.length;
   const isTripleCrown = leagueFormat === "triple-crown";
+  const isAuction = leagueFormat === "auction";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -106,23 +133,33 @@ export default function LeagueStandingsPage() {
           <Link href={`/${leagueSlug}/standings`} className="text-yellow-400 font-semibold transition">
             {isTripleCrown ? "PL Standings" : "Standings"}
           </Link>
-          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
-          </Link>
-          {isTripleCrown ? (
+          {isAuction ? (
             <>
-              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
-              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
-              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+              <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
+              <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
+              <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
             </>
           ) : (
-            <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
-              Playoffs
-            </Link>
+            <>
+              <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
+                {isTripleCrown ? "PL Fixtures" : "Fixtures"}
+              </Link>
+              {isTripleCrown ? (
+                <>
+                  <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
+                  <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+                  <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
+                </>
+              ) : (
+                <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
+                  Playoffs
+                </Link>
+              )}
+              <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
+                Winners
+              </Link>
+            </>
           )}
-          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
-            Winners
-          </Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">
             Rules
           </Link>
@@ -150,6 +187,56 @@ export default function LeagueStandingsPage() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
         {isLoading ? (
           <LoadingScreen variant="standings" fullScreen={false} />
+        ) : isAuction ? (
+          <>
+            <div className="text-center mb-10">
+              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">{leagueName || "Auction League"}</h1>
+              <p className="text-[#00ff85] text-sm font-semibold uppercase tracking-widest">Auction · Total Points Race</p>
+            </div>
+            {error ? (
+              <div className="text-center text-red-400 py-12">{error}</div>
+            ) : auctionStandings.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
+                  <h2 className="text-xl font-semibold text-white mb-2">No Standings Yet</h2>
+                  <p className="text-gray-400">Standings will appear here once the first gameweek has been scored.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="max-w-5xl mx-auto">
+                <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden backdrop-blur">
+                  <table className="w-full text-left">
+                    <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
+                      <tr>
+                        <th className="px-4 py-3">#</th>
+                        <th className="px-4 py-3">Team</th>
+                        <th className="px-4 py-3 text-right">Total Points</th>
+                        <th className="px-4 py-3 text-right">Purse</th>
+                        <th className="px-4 py-3 text-right">Squad Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auctionStandings.map((row) => (
+                        <tr key={row.teamId} className="border-t border-white/5 hover:bg-white/5 transition">
+                          <td className="px-4 py-3 font-bold text-white">{row.rank}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-white">{row.teamName}</div>
+                            <div className="text-xs text-gray-400">{row.abbreviation}</div>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-[#00ff85]">{row.totalPoints}</td>
+                          <td className="px-4 py-3 text-right font-mono text-green-300">{formatCurrency(row.purse)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-gray-200">{formatCurrency(row.squadValue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-6 text-center text-xs text-gray-500">
+                  Total Points = Cumulative sum of all 14 owned players&apos; gameweek scores · Squad Value = Sum of FMV (purchase price + points-based appreciation)
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <>
             <div className="text-center mb-12">

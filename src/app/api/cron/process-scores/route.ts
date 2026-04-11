@@ -3,6 +3,7 @@ import { db, gameweeks, fixtures, results, teams, gameweekCaptains, players, lea
 import { eq, asc, and } from "drizzle-orm";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { detectLiveGameweek, fetchTeamGameweekPicks } from "@/lib/fpl";
+import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 
 /**
  * GET /api/cron/process-scores
@@ -102,6 +103,43 @@ export async function GET(request: NextRequest) {
       processed: result.processed,
       failed: result.failed,
     });
+
+    // Process auction leagues separately (they don't use fixtures/results)
+    try {
+      const auctionLeagues = await db
+        .select()
+        .from(leagues)
+        .where(and(eq(leagues.isActive, true), eq(leagues.format, "auction")));
+
+      for (const league of auctionLeagues) {
+        if (targetGW) {
+          // Find the gameweek record for this league
+          const gwRow = await db
+            .select()
+            .from(gameweeks)
+            .where(and(eq(gameweeks.leagueId, league.id), eq(gameweeks.number, targetGW)))
+            .limit(1);
+
+          if (gwRow.length > 0) {
+            try {
+              const auctionResult = await processAuctionGameweek(
+                gwRow[0].id,
+                targetGW,
+                league.id,
+                true // force reprocess
+              );
+              console.log(`Cron: Processed auction league "${league.slug}" GW${targetGW}:`, {
+                teamsProcessed: auctionResult.teamsProcessed,
+              });
+            } catch (e) {
+              console.error(`Cron: Failed to process auction league "${league.slug}" GW${targetGW}:`, e);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Cron: Failed to process auction leagues:", e);
+    }
 
     // Pre-warm page caches for all active leagues so users get instant loads
     try {
