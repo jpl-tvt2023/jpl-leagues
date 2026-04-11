@@ -4,6 +4,7 @@ import { leagues, teams, gameweeks } from "@/lib/db/schema";
 import { eq, and, max, count } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
+import bcrypt from "bcryptjs";
 
 export async function GET(request: NextRequest) {
   if (!isSuperAdmin(request)) {
@@ -95,14 +96,41 @@ export async function POST(request: NextRequest) {
 
   try {
     const id = generateId();
+    const resolvedBudget = format === "auction" ? (initialBudget ?? 100_000_000) : 100_000_000;
+
     await db.insert(leagues).values({
       id, slug, name, sport, format, season, isActive: true,
       teamSize: resolvedTeamSize,
       groupCount: resolvedGroupCount,
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: JSON.stringify(resolvedEnabledChips),
-      initialBudget: format === "auction" ? (initialBudget ?? 100_000_000) : 100_000_000,
+      initialBudget: resolvedBudget,
     });
+
+    // For auction format: auto-create placeholder manager accounts
+    let createdManagers = 0;
+    if (format === "auction") {
+      const managerCount = resolvedTeamSize; // teamSize = number of managers
+      for (let i = 1; i <= managerCount; i++) {
+        const loginId = `${slug}_Manager${i}`;
+        const plainPassword = `Manager${i}`;
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+        await db.insert(teams).values({
+          id: generateId(),
+          teamLoginId: loginId,
+          name: `Manager ${i}`,
+          leagueId: id,
+          abbreviation: `M${i}`,
+          password: hashedPassword,
+          mustChangePassword: true,
+          isProfileComplete: false,
+          purse: resolvedBudget,
+        });
+        createdManagers++;
+      }
+    }
+
     return NextResponse.json({
       success: true,
       id, slug, name, sport, format, season,
@@ -111,7 +139,7 @@ export async function POST(request: NextRequest) {
       groupCount: resolvedGroupCount,
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: resolvedEnabledChips,
-      teamCount: 0,
+      teamCount: createdManagers,
       currentGameweek: null,
     });
   } catch {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, users, teams, leagueAdmins } from "@/lib/db";
+import { db, users, teams, leagueAdmins, leagues } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 
@@ -43,9 +43,14 @@ export async function GET(request: NextRequest) {
       const teamList = await db.select().from(teams).where(eq(teams.id, session.id));
       const team = teamList[0];
       if (team) {
+        // Fetch league format so the client knows which setup flow to use
+        const leagueRow = await db.select({ format: leagues.format }).from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
+        const leagueFormat = leagueRow[0]?.format ?? "tvt";
+
         return NextResponse.json({
           authenticated: true,
           type: "team",
+          leagueFormat,
           team: {
             id: team.id,
             name: team.name,

@@ -35,6 +35,10 @@ export default function SetupPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [nameCheckLoading, setNameCheckLoading] = useState(false);
+  const [leagueFormat, setLeagueFormat] = useState<string>("tvt");
+
+  const isAuction = leagueFormat === "auction";
+  const totalSteps = isAuction ? 1 : 3;
 
   const [formData, setFormData] = useState<SetupState>({
     teamLoginId: "",
@@ -62,6 +66,11 @@ export default function SetupPage() {
         if (!me.authenticated || me.type !== "team") {
           router.push("/signin");
           return;
+        }
+
+        // Store league format for conditional UI
+        if (me.leagueFormat) {
+          setLeagueFormat(me.leagueFormat);
         }
 
         // If already completed setup, redirect to dashboard
@@ -103,7 +112,7 @@ export default function SetupPage() {
       const res = await fetch(`/api/team/setup?checkLoginId=${encodeURIComponent(value)}`);
       const data = await res.json();
       if (!data.available) {
-        setErrors((prev) => ({ ...prev, teamLoginId: "Team ID is already taken" }));
+        setErrors((prev) => ({ ...prev, teamLoginId: isAuction ? "Username is already taken" : "Team ID is already taken" }));
       } else {
         setErrors((prev) => ({ ...prev, teamLoginId: undefined }));
       }
@@ -122,7 +131,7 @@ export default function SetupPage() {
       const res = await fetch(`/api/team/setup?checkName=${encodeURIComponent(value)}`);
       const data = await res.json();
       if (!data.available) {
-        setErrors((prev) => ({ ...prev, teamName: "Team name is already taken" }));
+        setErrors((prev) => ({ ...prev, teamName: isAuction ? "Name is already taken" : "Team name is already taken" }));
       } else {
         setErrors((prev) => ({ ...prev, teamName: undefined }));
       }
@@ -156,13 +165,13 @@ export default function SetupPage() {
     const newErrors: Errors = {};
 
     if (!formData.teamLoginId.trim()) {
-      newErrors.teamLoginId = "Team ID is required";
+      newErrors.teamLoginId = isAuction ? "Username is required" : "Team ID is required";
     } else if (!/^[A-Za-z0-9_-]{3,20}$/.test(formData.teamLoginId)) {
       newErrors.teamLoginId = "Must be 3–20 alphanumeric/underscore/hyphen characters";
     }
 
     if (!formData.teamName.trim()) {
-      newErrors.teamName = "Team name is required";
+      newErrors.teamName = isAuction ? "Name is required" : "Team name is required";
     }
 
     if (!formData.abbreviation.trim()) {
@@ -214,7 +223,7 @@ export default function SetupPage() {
     if (currentStep === 1) isValid = validateStep1();
     else if (currentStep === 2) isValid = validateStep2();
 
-    if (isValid && currentStep < 3) {
+    if (isValid && currentStep < totalSteps) {
       setCurrentStep((currentStep + 1) as Step);
       setErrors({});
     }
@@ -237,7 +246,11 @@ export default function SetupPage() {
   };
 
   const handleCompleteSetup = async () => {
-    if (!validateStep3()) return;
+    if (isAuction) {
+      if (!validateStep1()) return;
+    } else {
+      if (!validateStep3()) return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -274,10 +287,11 @@ export default function SetupPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Complete Your Profile</h1>
-          <p className="text-gray-400 text-sm">Step {currentStep} of 3</p>
+          <p className="text-gray-400 text-sm">{isAuction ? "Set up your manager profile" : `Step ${currentStep} of ${totalSteps}`}</p>
         </div>
 
         {/* Progress indicator */}
+        {!isAuction && (
         <div className="flex gap-2 mb-12">
           {[1, 2, 3].map((step) => (
             <div
@@ -288,6 +302,7 @@ export default function SetupPage() {
             />
           ))}
         </div>
+        )}
 
         {/* Error message */}
         {errors.global && (
@@ -301,33 +316,35 @@ export default function SetupPage() {
           {currentStep === 1 && (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-semibold text-white mb-2">Team Login ID</label>
+                <label className="block text-sm font-semibold text-white mb-2">{isAuction ? "Username" : "Team Login ID"}</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={formData.teamLoginId}
                     onChange={(e) => handleInputChange("teamLoginId", e.target.value)}
                     onBlur={(e) => handleLoginIdBlur(e.target.value)}
-                    placeholder={currentTeamLoginId}
+                    placeholder={currentTeamLoginId || (isAuction ? "rahul_mgr" : "")}
                     className="flex-1 rounded-lg border border-white/20 bg-black/40 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
                   />
                   {loginIdCheckLoading && <span className="text-xs text-gray-400">Checking...</span>}
                 </div>
                 {errors.teamLoginId && <p className="text-red-400 text-xs mt-1">{errors.teamLoginId}</p>}
                 <p className="text-gray-500 text-xs mt-2">
-                  Used to sign in. 3–20 chars: letters, numbers, underscore, hyphen.
+                  {isAuction
+                    ? "Choose a unique username. 3–20 chars: letters, numbers, underscore, hyphen. Must be unique across all leagues."
+                    : "Used to sign in. 3–20 chars: letters, numbers, underscore, hyphen."}
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-white mb-2">Team Name</label>
+                <label className="block text-sm font-semibold text-white mb-2">{isAuction ? "Your Name" : "Team Name"}</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={formData.teamName}
                     onChange={(e) => handleInputChange("teamName", e.target.value)}
                     onBlur={(e) => handleTeamNameBlur(e.target.value)}
-                    placeholder="DM — Rahul"
+                    placeholder={isAuction ? "Rahul Gupta" : "DM — Rahul"}
                     className="flex-1 rounded-lg border border-white/20 bg-black/40 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
                   />
                   {nameCheckLoading && <span className="text-xs text-gray-400">Checking...</span>}
@@ -358,7 +375,7 @@ export default function SetupPage() {
             </div>
           )}
 
-          {currentStep === 2 && (
+          {currentStep === 2 && !isAuction && (
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-white mb-2">Player 1 Name</label>
@@ -392,7 +409,7 @@ export default function SetupPage() {
             </div>
           )}
 
-          {currentStep === 3 && (
+          {currentStep === 3 && !isAuction && (
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-white mb-2">Player 2 Name</label>
@@ -429,6 +446,7 @@ export default function SetupPage() {
 
         {/* Navigation buttons */}
         <div className="mt-8 flex gap-4">
+          {!isAuction && (
           <button
             onClick={handleBack}
             disabled={currentStep === 1}
@@ -436,8 +454,9 @@ export default function SetupPage() {
           >
             Back
           </button>
+          )}
 
-          {currentStep < 3 ? (
+          {currentStep < totalSteps ? (
             <button
               onClick={handleNext}
               className="flex-1 px-6 py-3 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 transition"
