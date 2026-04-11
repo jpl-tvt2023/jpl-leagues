@@ -12,7 +12,6 @@ interface AuctionSession {
   status: "pending" | "active" | "paused" | "completed";
   snakeOrder: string[];
   currentNominatorIndex: number;
-  nominationDeadline: string | null;
 }
 
 interface WishlistEntry {
@@ -83,6 +82,7 @@ export default function AuctionRoomPage() {
   const [myPurse, setMyPurse] = useState<number>(0);
   const [leagueId, setLeagueId] = useState<string | null>(null);
   const [session, setSession] = useState<AuctionSession | null>(null);
+  const [nominationDeadline, setNominationDeadline] = useState<string | null>(null);
   const [currentBid, setCurrentBid] = useState<CurrentBid | null>(null);
   const [teamMap, setTeamMap] = useState<Map<string, StandingEntry>>(new Map());
   const [elements, setElements] = useState<BootstrapElement[]>([]);
@@ -102,6 +102,15 @@ export default function AuctionRoomPage() {
   const [nominationDeadlineSec, setNominationDeadlineSec] = useState<number>(0);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const teamMapRef = useRef<Map<string, StandingEntry>>(new Map());
+  const leagueIdRef = useRef<string | null>(null);
+  const myTeamIdRef = useRef<string | null>(null);
+  const currentBidRef = useRef<CurrentBid | null>(null);
+
+  useEffect(() => { teamMapRef.current = teamMap; }, [teamMap]);
+  useEffect(() => { leagueIdRef.current = leagueId; }, [leagueId]);
+  useEffect(() => { myTeamIdRef.current = myTeamId; }, [myTeamId]);
+  useEffect(() => { currentBidRef.current = currentBid; }, [currentBid]);
 
   const addFeed = useCallback((text: string, kind: BidFeedItem["kind"]) => {
     setBidFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now() }, ...prev].slice(0, 20));
@@ -162,15 +171,15 @@ export default function AuctionRoomPage() {
             status: active.status,
             snakeOrder: active.snakeOrder ?? [],
             currentNominatorIndex: active.currentNominatorIndex ?? 0,
-            nominationDeadline: active.nominationDeadline ?? null,
           });
+          setNominationDeadline(active.nominationDeadline ?? null);
           if (active.currentBid) setCurrentBid(active.currentBid);
         } else {
           // Fallback: find pending/paused session
           const fallback = (sessJson.sessions ?? []).find(
             (s: AuctionSession) => s.status === "pending" || s.status === "paused"
           );
-          if (fallback) setSession({ ...fallback, nominationDeadline: fallback.nominationDeadline ?? null });
+          if (fallback) setSession(fallback);
         }
       }
 
@@ -208,34 +217,60 @@ export default function AuctionRoomPage() {
     loadInitial();
   }, [loadInitial]);
 
-  // Helper to refetch the active session + currentBid from the REST endpoint
+  // Helper to refetch the active session + currentBid from the REST endpoint.
+  // Guards setSession behind a shallow compare so reference identity is stable
+  // when nothing meaningful changed — critical for SSE useEffect stability.
   const refreshSessionState = useCallback(async () => {
-    if (!leagueId) return;
-    const res = await fetch(`/api/auction/session?leagueId=${leagueId}`);
+    const lid = leagueIdRef.current;
+    if (!lid) return;
+    const res = await fetch(`/api/auction/session?leagueId=${lid}`);
     if (!res.ok) return;
     const json = await res.json();
-    if (json.activeSession) {
-      setSession((prev) => prev ? {
-        ...prev,
-        status: json.activeSession.status,
-        currentNominatorIndex: json.activeSession.currentNominatorIndex ?? 0,
-        snakeOrder: json.activeSession.snakeOrder ?? prev.snakeOrder,
-        nominationDeadline: json.activeSession.nominationDeadline ?? null,
-      } : prev);
-      if (json.activeSession.currentBid) {
-        setCurrentBid(json.activeSession.currentBid);
-      } else {
-        setCurrentBid(null);
+    if (!json.activeSession) return;
+
+    const a = json.activeSession;
+    setSession((prev) => {
+      if (!prev) return prev;
+      const snakeOrderChanged =
+        prev.snakeOrder.length !== (a.snakeOrder?.length ?? 0) ||
+        prev.snakeOrder.some((t, i) => t !== a.snakeOrder?.[i]);
+      if (
+        prev.status === a.status &&
+        prev.currentNominatorIndex === (a.currentNominatorIndex ?? 0) &&
+        !snakeOrderChanged
+      ) {
+        return prev; // no change — keep same reference
       }
+      return {
+        ...prev,
+        status: a.status,
+        currentNominatorIndex: a.currentNominatorIndex ?? 0,
+        snakeOrder: a.snakeOrder ?? prev.snakeOrder,
+      };
+    });
+
+    setNominationDeadline((prev) => (prev === (a.nominationDeadline ?? null) ? prev : (a.nominationDeadline ?? null)));
+
+    if (a.currentBid) {
+      setCurrentBid(a.currentBid);
+    } else {
+      setCurrentBid((prev) => (prev === null ? prev : null));
     }
-  }, [leagueId]);
+  }, []);
 
-  // SSE subscription
+  // SSE subscription — depends only on session id + status (primitives) so it
+  // doesn't tear down every time nominationDeadline or currentNominatorIndex
+  // ticks. Handlers read changing values via refs.
+  const sessionId = session?.id ?? null;
+  const sessionStatus = session?.status ?? null;
   useEffect(() => {
-    if (!session || session.status === "pending" || session.status === "completed") return;
+    if (!sessionId || sessionStatus === "pending" || sessionStatus === "completed" || !sessionStatus) return;
 
-    const es = new EventSource(`/api/auction/session/stream?sessionId=${session.id}`);
+    const es = new EventSource(`/api/auction/session/stream?sessionId=${sessionId}`);
     eventSourceRef.current = es;
+
+    // Fresh REST sync on connect — belt & braces against SSE initial-poll race
+    refreshSessionState();
 
     es.onopen = () => setSseConnected(true);
     es.onerror = () => setSseConnected(false);
@@ -247,20 +282,22 @@ export default function AuctionRoomPage() {
     es.addEventListener("bid-placed", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       setCurrentBid(data);
-      const bidderName = teamMap.get(data.currentHighBidderId)?.teamName ?? "Unknown";
+      const bidderName = teamMapRef.current.get(data.currentHighBidderId)?.teamName ?? "Unknown";
       addFeed(`${bidderName} bid ${formatCurrency(data.currentHighBid)} on ${data.playerName}`, "bid");
     });
     es.addEventListener("sold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      const winnerName = data.winnerId ? teamMap.get(data.winnerId)?.teamName ?? "Unknown" : "—";
+      const winnerName = data.winnerId ? teamMapRef.current.get(data.winnerId)?.teamName ?? "Unknown" : "—";
       addFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatCurrency(data.finalBid)}`, "sold");
       setCurrentBid(null);
       // Refresh owned + purse
-      if (leagueId) {
-        fetch(`/api/auction/league-owned?leagueId=${leagueId}`).then((r) => r.json()).then((d) => setOwnedElementIds(new Set(d.ownedElementIds ?? [])));
+      const lid = leagueIdRef.current;
+      const mtid = myTeamIdRef.current;
+      if (lid) {
+        fetch(`/api/auction/league-owned?leagueId=${lid}`).then((r) => r.json()).then((d) => setOwnedElementIds(new Set(d.ownedElementIds ?? [])));
       }
-      if (myTeamId) {
-        fetch(`/api/auction/economy?teamId=${myTeamId}`).then((r) => r.json()).then((d) => setMyPurse(d.computedPurse ?? 0));
+      if (mtid) {
+        fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => r.json()).then((d) => setMyPurse(d.computedPurse ?? 0));
       }
     });
     es.addEventListener("unsold", (e) => {
@@ -270,24 +307,30 @@ export default function AuctionRoomPage() {
     });
     es.addEventListener("session-status", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      setSession((prev) => prev ? { ...prev, status: data.status, currentNominatorIndex: data.currentNominatorIndex, snakeOrder: data.snakeOrder, nominationDeadline: data.nominationDeadline ?? null } : prev);
+      setSession((prev) => {
+        if (!prev) return prev;
+        if (prev.status === data.status && prev.currentNominatorIndex === data.currentNominatorIndex) return prev;
+        return { ...prev, status: data.status, currentNominatorIndex: data.currentNominatorIndex, snakeOrder: data.snakeOrder };
+      });
+      setNominationDeadline((prev) => (prev === (data.nominationDeadline ?? null) ? prev : (data.nominationDeadline ?? null)));
     });
     es.addEventListener("session-complete", () => {
       addFeed("Auction session completed", "info");
     });
     es.addEventListener("waiting", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      setCurrentBid(null);
-      setSession((prev) => prev ? { ...prev, nominationDeadline: data.nominationDeadline ?? null } : prev);
+      // Only clear currentBid if it was set — avoids spurious re-renders
+      if (currentBidRef.current !== null) setCurrentBid(null);
+      setNominationDeadline((prev) => (prev === (data.nominationDeadline ?? null) ? prev : (data.nominationDeadline ?? null)));
     });
     es.addEventListener("auto-nominated", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      const teamName = teamMap.get(data.teamId)?.teamName ?? "Team";
+      const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
       addFeed(`${teamName} auto-nominated from wishlist`, "info");
     });
     es.addEventListener("penalised", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      const teamName = teamMap.get(data.teamId)?.teamName ?? "Team";
+      const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
       addFeed(`${teamName} penalised — missed nomination (wishlist empty)`, "unsold");
     });
 
@@ -296,14 +339,14 @@ export default function AuctionRoomPage() {
       eventSourceRef.current = null;
       setSseConnected(false);
     };
-  }, [session, addFeed, teamMap, leagueId, myTeamId]);
+  }, [sessionId, sessionStatus, addFeed, refreshSessionState]);
 
   // Refetch session + currentBid on intervals (SSE fallback)
   useEffect(() => {
-    if (!leagueId || !session) return;
+    if (!leagueId || !sessionId) return;
     const t = setInterval(() => refreshSessionState(), 3000);
     return () => clearInterval(t);
-  }, [leagueId, session, refreshSessionState]);
+  }, [leagueId, sessionId, refreshSessionState]);
 
   // Timer countdown
   useEffect(() => {
@@ -322,18 +365,18 @@ export default function AuctionRoomPage() {
 
   // Nomination deadline countdown (only when no currentBid)
   useEffect(() => {
-    if (currentBid || !session?.nominationDeadline) {
+    if (currentBid || !nominationDeadline) {
       setNominationDeadlineSec(0);
       return;
     }
     const tick = () => {
-      const ms = new Date(session.nominationDeadline!).getTime() - Date.now();
+      const ms = new Date(nominationDeadline).getTime() - Date.now();
       setNominationDeadlineSec(Math.max(0, Math.ceil(ms / 1000)));
     };
     tick();
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
-  }, [currentBid, session?.nominationDeadline]);
+  }, [currentBid, nominationDeadline]);
 
   const currentNominatorId = useMemo(() => {
     if (!session?.snakeOrder?.length) return null;

@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
       let lastBidUpdatedAt: string | null = null;
       let lastSessionStatus: string | null = null;
       let lastNominatorIndex: number | null = null;
+      let lastWaitingSnapshot: string | null = null;
 
       const poll = async () => {
         if (isClosed) return;
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest) {
             .limit(1);
 
           if (openBids.length > 0) {
+            lastWaitingSnapshot = null;
             const bid = openBids[0];
             const updatedAtStr = bid.updatedAt.toISOString();
 
@@ -172,7 +174,7 @@ export async function GET(request: NextRequest) {
               await setNominationDeadline(sessionId);
             }
 
-            // Emit waiting state with deadline info
+            // Emit waiting state with deadline info — deduped via snapshot
             // Re-fetch session to get updated deadline
             const refreshed = await db
               .select({ nominationDeadline: auctionSessions.nominationDeadline, currentNominatorIndex: auctionSessions.currentNominatorIndex })
@@ -180,11 +182,18 @@ export async function GET(request: NextRequest) {
               .where(eq(auctionSessions.id, sessionId))
               .limit(1);
 
-            send("waiting", {
-              message: "Waiting for next nomination",
-              currentNominatorId: snakeOrder[refreshed[0]?.currentNominatorIndex ?? session.currentNominatorIndex],
-              nominationDeadline: refreshed[0]?.nominationDeadline?.toISOString() ?? null,
-            });
+            const waitingNominatorId = snakeOrder[refreshed[0]?.currentNominatorIndex ?? session.currentNominatorIndex];
+            const waitingDeadline = refreshed[0]?.nominationDeadline?.toISOString() ?? null;
+            const snapshot = `${waitingNominatorId}|${waitingDeadline}`;
+
+            if (snapshot !== lastWaitingSnapshot) {
+              lastWaitingSnapshot = snapshot;
+              send("waiting", {
+                message: "Waiting for next nomination",
+                currentNominatorId: waitingNominatorId,
+                nominationDeadline: waitingDeadline,
+              });
+            }
           }
         } catch (error) {
           console.error("SSE poll error:", error);
