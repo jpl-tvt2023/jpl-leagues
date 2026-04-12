@@ -185,19 +185,33 @@ export async function GET(request: NextRequest) {
             const now = new Date();
 
             if (session.nominationDeadline && now > session.nominationDeadline) {
-              // Nomination timeout — auto-nominate or penalise
-              const result = await handleNominationTimeout(
-                sessionId,
-                currentNominatorId,
-                session.leagueId
-              );
+              // Atomically claim the timeout — only one SSE stream wins the race.
+              // Without this, N connected clients all call handleNominationTimeout
+              // and advanceNominator N times, skipping turns.
+              const claimed = await db
+                .update(auctionSessions)
+                .set({ nominationDeadline: null })
+                .where(
+                  and(
+                    eq(auctionSessions.id, sessionId),
+                    isNotNull(auctionSessions.nominationDeadline)
+                  )
+                );
 
-              send(result, {
-                teamId: currentNominatorId,
-                message: result === "auto-nominated"
-                  ? "Auto-nominated from wishlist"
-                  : "Penalised for missed nomination — turn skipped",
-              });
+              if (claimed.rowsAffected > 0) {
+                const result = await handleNominationTimeout(
+                  sessionId,
+                  currentNominatorId,
+                  session.leagueId
+                );
+
+                send(result, {
+                  teamId: currentNominatorId,
+                  message: result === "auto-nominated"
+                    ? "Auto-nominated from wishlist"
+                    : "Penalised for missed nomination — turn skipped",
+                });
+              }
             } else if (!session.nominationDeadline) {
               // No deadline set yet (e.g. session just started) — set one
               await setNominationDeadline(sessionId);
