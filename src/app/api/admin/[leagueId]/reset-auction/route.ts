@@ -4,7 +4,6 @@ import {
   auctionBids,
   auctionSessions,
   auctionOwnership,
-  auctionWishlists,
   auctionScores,
   tradeProposals,
   teams,
@@ -38,7 +37,7 @@ export async function POST(request: NextRequest) {
     await db.delete(auctionBids).where(eq(auctionBids.leagueId, leagueId));
     await db.delete(auctionSessions).where(eq(auctionSessions.leagueId, leagueId));
     await db.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId));
-    await db.delete(auctionWishlists).where(eq(auctionWishlists.leagueId, leagueId));
+    // Wishlists are preserved across resets — they are user-curated
     await db.delete(auctionScores).where(eq(auctionScores.leagueId, leagueId));
     await db.delete(tradeProposals).where(eq(tradeProposals.leagueId, leagueId));
 
@@ -120,8 +119,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Clear wishlists (ephemeral)
-  await db.delete(auctionWishlists).where(eq(auctionWishlists.leagueId, leagueId));
+  // Wishlists are preserved across resets — they are user-curated
 
   // Recalculate team totalSpent from remaining active ownerships
   const leagueTeams = await db

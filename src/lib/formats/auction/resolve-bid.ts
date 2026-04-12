@@ -143,7 +143,7 @@ export async function resolveExpiredBid(
  */
 export async function advanceNominator(sessionId: string): Promise<void> {
   const sessionRow = await db
-    .select()
+    .select({ snakeOrder: auctionSessions.snakeOrder })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
@@ -152,14 +152,13 @@ export async function advanceNominator(sessionId: string): Promise<void> {
   const snakeOrder: string[] = JSON.parse(sessionRow[0].snakeOrder);
   if (snakeOrder.length === 0) return;
 
-  const nextIndex =
-    (sessionRow[0].currentNominatorIndex + 1) % snakeOrder.length;
   const deadline = new Date(Date.now() + NOMINATION_TIMEOUT_SECONDS * 1000);
 
+  // Atomic increment — prevents concurrent callers from computing the same nextIndex
   await db
     .update(auctionSessions)
     .set({
-      currentNominatorIndex: nextIndex,
+      currentNominatorIndex: sql`(${auctionSessions.currentNominatorIndex} + 1) % ${snakeOrder.length}`,
       nominationDeadline: deadline,
     })
     .where(eq(auctionSessions.id, sessionId));
