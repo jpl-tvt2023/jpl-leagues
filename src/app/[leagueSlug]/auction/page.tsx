@@ -84,6 +84,13 @@ function getIncrementLabel(currentHighBid: number): string {
   return "+£500K";
 }
 
+function getJumpBidOptions(currentHighBid: number): number[] {
+  const minNext = getNextBidAmount(currentHighBid);
+  const milestones = [2_000_000, 5_000_000, 10_000_000, 15_000_000, 20_000_000, 30_000_000, 50_000_000];
+  const jumps = milestones.filter((m) => m > minNext);
+  return [minNext, ...jumps.slice(0, 2)];
+}
+
 export default function AuctionRoomPage() {
   const params = useParams();
   const router = useRouter();
@@ -117,6 +124,7 @@ export default function AuctionRoomPage() {
   const leagueIdRef = useRef<string | null>(null);
   const myTeamIdRef = useRef<string | null>(null);
   const currentBidRef = useRef<CurrentBid | null>(null);
+  const lastBidIdRef = useRef<string | null>(null);
 
   useEffect(() => { teamMapRef.current = teamMap; }, [teamMap]);
   useEffect(() => { leagueIdRef.current = leagueId; }, [leagueId]);
@@ -315,6 +323,12 @@ export default function AuctionRoomPage() {
     es.addEventListener("auction-state", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       setCurrentBid(data);
+      // New nomination detected — bidId changed
+      if (data.bidId && data.bidId !== lastBidIdRef.current) {
+        lastBidIdRef.current = data.bidId;
+        const nominatorName = teamMapRef.current.get(data.nominatorTeamId)?.teamName ?? "Unknown";
+        addFeed(`${nominatorName} nominated ${data.playerName} — base ${formatCurrency(data.minBid)}`, "info");
+      }
     });
     es.addEventListener("bid-placed", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
@@ -427,9 +441,9 @@ export default function AuctionRoomPage() {
   const isMyTurn = currentNominatorId === myTeamId;
   const isHighBidder = currentBid?.currentHighBidderId === myTeamId;
 
-  const handlePlaceBid = async () => {
+  const handlePlaceBid = async (bidAmount?: number) => {
     if (!currentBid || !session) return;
-    const amount = getNextBidAmount(currentBid.currentHighBid);
+    const amount = bidAmount ?? getNextBidAmount(currentBid.currentHighBid);
     setPlacing(true);
     setBidError(null);
     try {
@@ -642,22 +656,24 @@ export default function AuctionRoomPage() {
                       </div>
                     ) : session.status === "active" && timerSec > 0 ? (
                       <div className="mt-2">
-                        <div className="mb-2 text-center text-sm text-gray-400">
-                          Your bid:{" "}
-                          <span className="font-mono font-bold text-white">
-                            {formatCurrency(getNextBidAmount(currentBid.currentHighBid))}
-                          </span>
-                          <span className="ml-2 text-xs text-gray-500">
-                            ({getIncrementLabel(currentBid.currentHighBid)})
-                          </span>
+                        <div className="mb-2 text-center text-xs text-gray-400">Place your bid</div>
+                        <div className="flex gap-2">
+                          {getJumpBidOptions(currentBid.currentHighBid).map((amount, i) => (
+                            <button
+                              key={amount}
+                              onClick={() => handlePlaceBid(amount)}
+                              disabled={placing || amount > myPurse}
+                              className={`flex-1 rounded-lg px-3 py-3 font-bold transition disabled:opacity-50 ${
+                                i === 0
+                                  ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 hover:from-yellow-300 hover:to-orange-400"
+                                  : "bg-white/10 text-white border border-white/20 hover:bg-white/20"
+                              }`}
+                            >
+                              <div className="text-sm">{formatCurrency(amount)}</div>
+                              {i === 0 && <div className="text-[10px] opacity-70">{getIncrementLabel(currentBid.currentHighBid)}</div>}
+                            </button>
+                          ))}
                         </div>
-                        <button
-                          onClick={handlePlaceBid}
-                          disabled={placing}
-                          className="w-full rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
-                        >
-                          {placing ? "Placing..." : `Place Bid — ${formatCurrency(getNextBidAmount(currentBid.currentHighBid))}`}
-                        </button>
                       </div>
                     ) : null}
                     {bidError && <div className="mt-3 text-sm text-red-400">{bidError}</div>}

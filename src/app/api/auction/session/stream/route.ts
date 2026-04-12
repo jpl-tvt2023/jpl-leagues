@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { db, auctionSessions, auctionBids } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import {
   resolveExpiredBid,
   advanceNominator,
@@ -147,8 +147,8 @@ export async function GET(request: NextRequest) {
               lastHighBid = bid.currentHighBid;
             }
 
-            // Check if timer expired — resolve via shared logic
-            if (new Date() > bid.expiresAt) {
+            // Check if timer expired — 2s grace period for in-flight bids
+            if (Date.now() > bid.expiresAt.getTime() + 2000) {
               const outcome = await resolveExpiredBid(bid);
 
               if (outcome === "sold") {
@@ -185,19 +185,33 @@ export async function GET(request: NextRequest) {
             const now = new Date();
 
             if (session.nominationDeadline && now > session.nominationDeadline) {
-              // Nomination timeout — auto-nominate or penalise
-              const result = await handleNominationTimeout(
-                sessionId,
-                currentNominatorId,
-                session.leagueId
-              );
+              // Atomically claim the timeout — only one SSE stream wins the race.
+              // Without this, N connected clients all call handleNominationTimeout
+              // and advanceNominator N times, skipping turns.
+              const claimed = await db
+                .update(auctionSessions)
+                .set({ nominationDeadline: null })
+                .where(
+                  and(
+                    eq(auctionSessions.id, sessionId),
+                    isNotNull(auctionSessions.nominationDeadline)
+                  )
+                );
 
-              send(result, {
-                teamId: currentNominatorId,
-                message: result === "auto-nominated"
-                  ? "Auto-nominated from wishlist"
-                  : "Penalised for missed nomination — turn skipped",
-              });
+              if (claimed.rowsAffected > 0) {
+                const result = await handleNominationTimeout(
+                  sessionId,
+                  currentNominatorId,
+                  session.leagueId
+                );
+
+                send(result, {
+                  teamId: currentNominatorId,
+                  message: result === "auto-nominated"
+                    ? "Auto-nominated from wishlist"
+                    : "Penalised for missed nomination — turn skipped",
+                });
+              }
             } else if (!session.nominationDeadline) {
               // No deadline set yet (e.g. session just started) — set one
               await setNominationDeadline(sessionId);

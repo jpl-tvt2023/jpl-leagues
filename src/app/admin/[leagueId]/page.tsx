@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -249,6 +249,32 @@ export default function AdminDashboard() {
   const [auctionLoading, setAuctionLoading] = useState(false);
   const [auctionSessionCreating, setAuctionSessionCreating] = useState(false);
   const [auctionSessionAction, setAuctionSessionAction] = useState<string | null>(null);
+
+  // Live Auction Monitor State
+  const [liveCurrentBid, setLiveCurrentBid] = useState<{
+    bidId: string; fplElementId: number; playerName: string;
+    currentHighBid: number; currentHighBidderId: string;
+    nominatorTeamId: string; minBid: number; expiresAt: string; status: string;
+  } | null>(null);
+  const [liveFeed, setLiveFeed] = useState<{ id: string; text: string; kind: string; ts: number }[]>([]);
+  const [liveTimerSec, setLiveTimerSec] = useState(0);
+  const [liveNominationDeadline, setLiveNominationDeadline] = useState<string | null>(null);
+  const liveEsRef = useRef<EventSource | null>(null);
+  const lastLiveBidIdRef = useRef<string | null>(null);
+  const liveCurrentBidRef = useRef<typeof liveCurrentBid>(null);
+  useEffect(() => { liveCurrentBidRef.current = liveCurrentBid; }, [liveCurrentBid]);
+
+  // Auction Reset State
+  const [auctionResetting, setAuctionResetting] = useState(false);
+  const [showAuctionResetConfirm, setShowAuctionResetConfirm] = useState(false);
+  const [auctionResetTarget, setAuctionResetTarget] = useState("initial");
+
+  // Auction Corrections State
+  const [undoingBid, setUndoingBid] = useState<string | null>(null);
+  const [soldBids, setSoldBids] = useState<{ id: string; playerName: string; currentHighBid: number; currentHighBidderId: string; fplElementId: number }[]>([]);
+  const [transferOwnershipId, setTransferOwnershipId] = useState<string | null>(null);
+  const [transferToTeamId, setTransferToTeamId] = useState("");
+  const [transferring, setTransferring] = useState(false);
 
   const isAuctionFormat = leagueConfig.format === "auction";
 
@@ -858,6 +884,194 @@ export default function AdminDashboard() {
       setMessage({ type: "error", text: "Network error" });
     } finally {
       setAuctionSessionAction(null);
+    }
+  };
+
+  // ---- Live Auction Monitor helpers ----
+
+  function formatAuctionCurrency(amount: number): string {
+    const abs = Math.abs(amount);
+    const sign = amount < 0 ? "-" : "";
+    if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
+    if (abs >= 1_000) return `${sign}£${(abs / 1_000).toFixed(0)}K`;
+    return `${sign}£${abs}`;
+  }
+
+  const addLiveFeed = useCallback((text: string, kind: string) => {
+    setLiveFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now() }, ...prev]);
+  }, []);
+
+  const teamNameById = useCallback((id: string) => {
+    return teams.find((t) => t.id === id)?.name ?? id;
+  }, [teams]);
+
+  // SSE connection for live monitor
+  useEffect(() => {
+    if (!isAuctionFormat || !auctionActiveSession || auctionActiveSession.status !== "active") {
+      if (liveEsRef.current) { liveEsRef.current.close(); liveEsRef.current = null; }
+      return;
+    }
+
+    const es = new EventSource(`/api/auction/session/stream?sessionId=${auctionActiveSession.id}`);
+    liveEsRef.current = es;
+
+    es.addEventListener("auction-state", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      setLiveCurrentBid(data);
+      if (data.bidId && data.bidId !== lastLiveBidIdRef.current) {
+        lastLiveBidIdRef.current = data.bidId;
+        const nominatorName = teams.find((t) => t.id === data.nominatorTeamId)?.name ?? "Unknown";
+        addLiveFeed(`${nominatorName} nominated ${data.playerName} — base ${formatAuctionCurrency(data.minBid)}`, "info");
+      }
+    });
+    es.addEventListener("bid-placed", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      setLiveCurrentBid(data);
+      const bidderName = teams.find((t) => t.id === data.currentHighBidderId)?.name ?? "Unknown";
+      addLiveFeed(`${bidderName} bid ${formatAuctionCurrency(data.currentHighBid)} on ${data.playerName}`, "bid");
+    });
+    es.addEventListener("sold", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      const winnerName = data.winnerId ? teams.find((t) => t.id === data.winnerId)?.name ?? "Unknown" : "—";
+      addLiveFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatAuctionCurrency(data.finalBid)}`, "sold");
+      setLiveCurrentBid(null);
+      fetchAuctionData();
+    });
+    es.addEventListener("unsold", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      addLiveFeed(`UNSOLD: ${data.playerName}`, "unsold");
+      setLiveCurrentBid(null);
+    });
+    es.addEventListener("auto-nominated", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      const tName = teams.find((t) => t.id === data.teamId)?.name ?? "Team";
+      addLiveFeed(`${tName} auto-nominated from wishlist`, "info");
+    });
+    es.addEventListener("penalised", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      const tName = teams.find((t) => t.id === data.teamId)?.name ?? "Team";
+      addLiveFeed(`${tName} penalised — missed nomination`, "unsold");
+    });
+    es.addEventListener("session-status", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      setAuctionActiveSession((prev) => prev ? { ...prev, status: data.status, currentNominatorIndex: data.currentNominatorIndex, snakeOrder: data.snakeOrder } : prev);
+      setLiveNominationDeadline(data.nominationDeadline ?? null);
+    });
+    es.addEventListener("session-complete", () => {
+      addLiveFeed("Auction session completed", "info");
+      setLiveCurrentBid(null);
+      fetchAuctionData();
+    });
+    es.addEventListener("waiting", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      if (liveCurrentBidRef.current !== null) setLiveCurrentBid(null);
+      setLiveNominationDeadline(data.nominationDeadline ?? null);
+    });
+
+    return () => { es.close(); liveEsRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuctionFormat, auctionActiveSession?.id, auctionActiveSession?.status]);
+
+  // Timer countdown for live monitor
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (liveCurrentBid?.expiresAt) {
+        const diff = Math.max(0, Math.ceil((new Date(liveCurrentBid.expiresAt).getTime() - Date.now()) / 1000));
+        setLiveTimerSec(diff);
+      } else {
+        setLiveTimerSec(0);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [liveCurrentBid?.expiresAt]);
+
+  // ---- Auction Corrections helpers ----
+
+  const fetchSoldBids = useCallback(async () => {
+    if (!auctionActiveSession) return;
+    try {
+      const res = await fetch(`/api/auction/bid-history?sessionId=${auctionActiveSession.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSoldBids((data.bids ?? []).filter((b: { status: string }) => b.status === "sold"));
+      }
+    } catch { /* ignore */ }
+  }, [auctionActiveSession]);
+
+  useEffect(() => {
+    if (isAuctionFormat && auctionActiveSession) fetchSoldBids();
+  }, [isAuctionFormat, auctionActiveSession, fetchSoldBids]);
+
+  const handleUndoSale = async (bidId: string) => {
+    if (!confirm("Are you sure you want to undo this sale? The player will become available for re-nomination.")) return;
+    setUndoingBid(bidId);
+    try {
+      const res = await fetch(`/api/admin/${params.leagueId}/auction-corrections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "undo-sale", bidId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: data.message });
+        fetchAuctionData();
+        fetchSoldBids();
+      } else {
+        setMessage({ type: "error", text: data.error });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setUndoingBid(null);
+    }
+  };
+
+  const handleManualTransfer = async (ownershipId: string, toTeamId: string) => {
+    if (!confirm("Are you sure you want to transfer this player?")) return;
+    setTransferring(true);
+    try {
+      const res = await fetch(`/api/admin/${params.leagueId}/auction-corrections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "manual-transfer", ownershipId, toTeamId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: data.message });
+        setTransferOwnershipId(null);
+        setTransferToTeamId("");
+        fetchAuctionData();
+      } else {
+        setMessage({ type: "error", text: data.error });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const handleAuctionReset = async () => {
+    setAuctionResetting(true);
+    try {
+      const res = await fetch(`/api/admin/${params.leagueId}/reset-auction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resetTo: auctionResetTarget }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: data.message });
+        setShowAuctionResetConfirm(false);
+        fetchAuctionData();
+        fetchSoldBids();
+      } else {
+        setMessage({ type: "error", text: data.error });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setAuctionResetting(false);
     }
   };
 
@@ -2932,6 +3146,120 @@ export default function AdminDashboard() {
         {/* Auction Management Tab */}
         {activeTab === "auction" && isAuctionFormat && (
           <div className="space-y-6">
+
+            {/* Live Auction Monitor — only when session is active */}
+            {auctionActiveSession && auctionActiveSession.status === "active" && (
+              <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-6 backdrop-blur">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                    <h2 className="text-xl font-bold text-white">Live Auction Monitor</h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateAuctionSession(auctionActiveSession.id, "pause")}
+                      disabled={auctionSessionAction !== null}
+                      className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-xs font-medium disabled:opacity-50 transition"
+                    >
+                      Pause
+                    </button>
+                    <button
+                      onClick={() => updateAuctionSession(auctionActiveSession.id, "complete")}
+                      disabled={auctionSessionAction !== null}
+                      className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-xs font-medium disabled:opacity-50 transition"
+                    >
+                      Complete
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  {/* Current Bid Card */}
+                  <div className="md:col-span-2 rounded-xl border border-white/10 bg-white/5 p-4">
+                    {liveCurrentBid ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-lg font-bold text-white">{liveCurrentBid.playerName}</div>
+                            <div className="text-xs text-gray-400">
+                              Nominated by {teamNameById(liveCurrentBid.nominatorTeamId)} — Base {formatAuctionCurrency(liveCurrentBid.minBid)}
+                            </div>
+                          </div>
+                          <div className={`text-3xl font-mono font-bold ${liveTimerSec <= 5 ? "text-red-400" : "text-white"}`}>
+                            {liveTimerSec}s
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg bg-white/5 px-4 py-2">
+                          <div>
+                            <div className="text-xs text-gray-400">High Bid</div>
+                            <div className="text-xl font-bold text-yellow-400">{formatAuctionCurrency(liveCurrentBid.currentHighBid)}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs text-gray-400">By</div>
+                            <div className="text-sm font-semibold text-white">{teamNameById(liveCurrentBid.currentHighBidderId)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <div className="text-sm text-gray-400">Waiting for nomination</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Current turn: {auctionActiveSession.snakeOrder[auctionActiveSession.currentNominatorIndex]
+                            ? teamNameById(auctionActiveSession.snakeOrder[auctionActiveSession.currentNominatorIndex])
+                            : "—"}
+                        </div>
+                        {liveNominationDeadline && (
+                          <div className="text-xs text-yellow-400 font-mono mt-2">
+                            Auto-nom in {Math.max(0, Math.ceil((new Date(liveNominationDeadline).getTime() - Date.now()) / 1000))}s
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Nomination Order */}
+                  <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Nomination Order</h3>
+                    <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
+                      {auctionActiveSession.snakeOrder.map((tid, idx) => {
+                        const isCurrent = idx === auctionActiveSession.currentNominatorIndex;
+                        return (
+                          <div key={tid} className={`flex items-center gap-2 px-2 py-1 rounded ${isCurrent ? "bg-yellow-500/20 text-yellow-300 font-semibold" : "text-gray-400"}`}>
+                            <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}</span>
+                            <span>{teamNameById(tid)}</span>
+                            {isCurrent && <span className="text-yellow-400 text-[10px]">◄</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Feed */}
+                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Live Feed</h3>
+                  <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
+                    {liveFeed.length === 0 ? (
+                      <div className="text-gray-500 py-2 text-center">No activity yet</div>
+                    ) : (
+                      liveFeed.map((item) => (
+                        <div key={item.id} className={`flex items-start gap-2 px-2 py-1 rounded ${
+                          item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
+                          item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
+                          item.kind === "bid" ? "text-white" : "text-gray-400"
+                        }`}>
+                          <span className="text-[10px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
+                            {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                          </span>
+                          <span>{item.text}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Session Controls */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -2960,6 +3288,12 @@ export default function AdminDashboard() {
                     className="px-4 py-2 rounded-lg bg-white/5 text-gray-400 hover:bg-white/10 text-sm disabled:opacity-50 transition"
                   >
                     {auctionLoading ? "Loading..." : "Refresh"}
+                  </button>
+                  <button
+                    onClick={() => setShowAuctionResetConfirm(true)}
+                    className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-sm font-medium transition"
+                  >
+                    Reset Auction
                   </button>
                 </div>
               </div>
@@ -3116,6 +3450,136 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Auction Corrections */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <h2 className="text-2xl font-bold text-white mb-4">Corrections</h2>
+
+              {/* Undo Sales */}
+              <div className="mb-6">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Undo Sale</h3>
+                {soldBids.length === 0 ? (
+                  <p className="text-xs text-gray-500">No sold bids to undo</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {soldBids.map((bid) => (
+                      <div key={bid.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                        <div>
+                          <span className="text-sm text-white font-medium">{bid.playerName}</span>
+                          <span className="text-xs text-gray-400 ml-2">
+                            → {teamNameById(bid.currentHighBidderId)} for {formatAuctionCurrency(bid.currentHighBid)}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleUndoSale(bid.id)}
+                          disabled={undoingBid === bid.id}
+                          className="px-3 py-1 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-xs font-medium disabled:opacity-50 transition"
+                        >
+                          {undoingBid === bid.id ? "Undoing..." : "Undo"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Manual Transfer */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Manual Transfer</h3>
+                <p className="text-xs text-gray-500 mb-3">Select a player from Squad Overview above, then transfer them.</p>
+                {auctionTeamSquads.flatMap((ts) => ts.squad.filter((p) => p.status === "active").map((p) => ({ ...p, teamName: ts.teamName, teamId: ts.teamId }))).length === 0 ? (
+                  <p className="text-xs text-gray-500">No active players to transfer</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {auctionTeamSquads.flatMap((ts) =>
+                      ts.squad.filter((p) => p.status === "active").map((p) => ({
+                        ...p, teamName: ts.teamName, teamId: ts.teamId,
+                      }))
+                    ).map((player) => (
+                      <div key={player.ownershipId} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                        <div>
+                          <span className="text-sm text-white font-medium">{player.playerName}</span>
+                          <span className="text-xs text-gray-400 ml-2">({player.teamName} — {formatAuctionCurrency(player.purchasePrice)})</span>
+                        </div>
+                        {transferOwnershipId === player.ownershipId ? (
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={transferToTeamId}
+                              onChange={(e) => setTransferToTeamId(e.target.value)}
+                              className="px-2 py-1 rounded bg-slate-800 text-white text-xs border border-white/20"
+                            >
+                              <option value="">Select team...</option>
+                              <option value="unowned">Remove (Refund)</option>
+                              {teams.filter((t) => t.id !== player.teamId).map((t) => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => handleManualTransfer(player.ownershipId, transferToTeamId)}
+                              disabled={!transferToTeamId || transferring}
+                              className="px-2 py-1 rounded bg-blue-500/20 text-blue-400 text-xs disabled:opacity-50"
+                            >
+                              {transferring ? "..." : "Go"}
+                            </button>
+                            <button
+                              onClick={() => { setTransferOwnershipId(null); setTransferToTeamId(""); }}
+                              className="px-2 py-1 rounded bg-white/10 text-gray-400 text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setTransferOwnershipId(player.ownershipId)}
+                            className="px-3 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs font-medium transition"
+                          >
+                            Transfer
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Reset Auction Modal */}
+            {showAuctionResetConfirm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowAuctionResetConfirm(false)}>
+                <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+                  <h3 className="text-xl font-bold text-red-400 mb-4">Reset Auction</h3>
+                  <p className="text-sm text-gray-400 mb-4">This will permanently delete auction data. This action cannot be undone.</p>
+                  <div className="mb-4">
+                    <label className="text-xs text-gray-400 mb-1 block">Reset to</label>
+                    <select
+                      value={auctionResetTarget}
+                      onChange={(e) => setAuctionResetTarget(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 text-sm"
+                    >
+                      <option value="initial">Before Initial Auction (full wipe)</option>
+                      <option value="mini-1">Before Mini-Auction 1</option>
+                      <option value="mini-2">Before Mini-Auction 2</option>
+                      <option value="mini-3">Before Mini-Auction 3</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleAuctionReset}
+                      disabled={auctionResetting}
+                      className="flex-1 px-4 py-2 rounded-lg bg-red-500 text-white font-bold hover:bg-red-600 disabled:opacity-50 transition"
+                    >
+                      {auctionResetting ? "Resetting..." : "Confirm Reset"}
+                    </button>
+                    <button
+                      onClick={() => setShowAuctionResetConfirm(false)}
+                      className="px-4 py-2 rounded-lg bg-white/10 text-gray-400 hover:bg-white/20 transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

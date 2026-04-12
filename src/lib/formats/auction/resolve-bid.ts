@@ -17,7 +17,7 @@ import {
   auctionWishlists,
   teams,
 } from "@/lib/db/schema";
-import { eq, and, asc, sql } from "drizzle-orm";
+import { eq, and, asc, sql, lte } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 
 const NOMINATION_TIMEOUT_SECONDS = 60;
@@ -51,34 +51,37 @@ interface BidRow {
  */
 export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
   const now = new Date();
+  const cutoff = new Date(Date.now() - 2000); // 2s grace period
 
-  // Atomically mark bid as sold ONLY if still open — prevents duplicate resolution
+  // Atomically mark bid as sold ONLY if still open AND timer genuinely expired.
+  // .returning() gives us fresh column values (including counter-bid updates)
+  // in the same atomic operation — no stale re-read risk from replication lag.
   const updated = await db
     .update(auctionBids)
     .set({ status: "sold", updatedAt: now })
-    .where(and(eq(auctionBids.id, bid.id), eq(auctionBids.status, "open")));
+    .where(
+      and(
+        eq(auctionBids.id, bid.id),
+        eq(auctionBids.status, "open"),
+        lte(auctionBids.expiresAt, cutoff)
+      )
+    )
+    .returning();
 
-  // If no row was updated, another caller already resolved this bid
-  if (updated.rowsAffected === 0) return false;
+  // If no row was returned, either already resolved or timer was extended
+  if (updated.length === 0) return false;
 
-  // Re-read the bid to get the freshest counter-bid values (the passed-in
-  // object may be stale if the safety-net fetched it before a counter-bid)
-  const freshRows = await db
-    .select()
-    .from(auctionBids)
-    .where(eq(auctionBids.id, bid.id))
-    .limit(1);
-  const fresh = freshRows[0];
-  const winnerId = fresh?.currentHighBidderId ?? bid.currentHighBidderId;
-  const winAmount = fresh?.currentHighBid ?? bid.currentHighBid;
+  const fresh = updated[0];
+  const winnerId = fresh.currentHighBidderId;
+  const winAmount = fresh.currentHighBid;
 
-  // Create ownership record
+  // Create ownership record (uses fresh values from RETURNING)
   await db.insert(auctionOwnership).values({
     id: generateId(),
     leagueId: bid.leagueId,
     teamId: winnerId,
-    fplElementId: bid.fplElementId,
-    playerName: bid.playerName,
+    fplElementId: fresh.fplElementId,
+    playerName: fresh.playerName,
     purchasePrice: winAmount,
     acquiredGw: 0,
     status: "active",
@@ -92,7 +95,7 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
     .where(
       and(
         eq(auctionWishlists.leagueId, bid.leagueId),
-        eq(auctionWishlists.fplElementId, bid.fplElementId)
+        eq(auctionWishlists.fplElementId, fresh.fplElementId)
       )
     );
 

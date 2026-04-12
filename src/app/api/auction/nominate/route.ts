@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
     .from(auctionBids)
     .where(and(eq(auctionBids.sessionId, sessionId), eq(auctionBids.status, "open")));
 
-  const now = new Date();
+  const nowMs = Date.now();
   for (const stale of staleOpenBids) {
-    if (now > stale.expiresAt) {
+    if (nowMs > stale.expiresAt.getTime() + 2000) {
       try {
         const outcome = await resolveExpiredBid(stale);
         if (outcome === "sold") {
