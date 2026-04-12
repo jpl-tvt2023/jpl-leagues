@@ -6,6 +6,7 @@ import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
+import { calculatePurse } from "@/lib/formats/auction/economy";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
@@ -998,6 +999,9 @@ export async function GET(request: NextRequest) {
 // ===== Auction format dashboard =====
 async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug: string) {
   try {
+    // Get league config (for initialBudget)
+    const leagueRow = await db.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+
     // Get team info
     const team = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
     if (!team.length) {
@@ -1069,7 +1073,7 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         name: t.name,
         abbreviation: t.abbreviation,
       },
-      purse: t.purse ?? 0,
+      purse: calculatePurse(leagueRow[0]?.initialBudget ?? 0, totalIncome, t.totalSpent ?? 0, t.totalRefunds ?? 0),
       totalSpent: t.totalSpent ?? 0,
       totalIncome,
       totalPoints,
