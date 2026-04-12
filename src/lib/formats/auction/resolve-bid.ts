@@ -277,16 +277,9 @@ export async function autoNominateFromWishlist(
  * Increments penaltySlots on the team.
  */
 export async function applyNominationPenalty(teamId: string): Promise<void> {
-  const teamRow = await db
-    .select({ penaltySlots: teams.penaltySlots })
-    .from(teams)
-    .where(eq(teams.id, teamId))
-    .limit(1);
-  if (!teamRow.length) return;
-
   await db
     .update(teams)
-    .set({ penaltySlots: teamRow[0].penaltySlots + 1 })
+    .set({ penaltySlots: sql`${teams.penaltySlots} + 1` })
     .where(eq(teams.id, teamId));
 }
 

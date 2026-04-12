@@ -59,6 +59,7 @@ interface BidFeedItem {
   text: string;
   kind: "bid" | "sold" | "unsold" | "waiting" | "info";
   ts: number;
+  bidId?: string; // Links feed entries to a specific auction item
 }
 
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -116,6 +117,7 @@ export default function AuctionRoomPage() {
   }>>({});
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [bidFeed, setBidFeed] = useState<BidFeedItem[]>([]);
+  const [expandedFeedBidId, setExpandedFeedBidId] = useState<string | null>(null);
   const [timerSec, setTimerSec] = useState<number>(0);
   const [placing, setPlacing] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
@@ -138,8 +140,8 @@ export default function AuctionRoomPage() {
   useEffect(() => { myTeamIdRef.current = myTeamId; }, [myTeamId]);
   useEffect(() => { currentBidRef.current = currentBid; }, [currentBid]);
 
-  const addFeed = useCallback((text: string, kind: BidFeedItem["kind"]) => {
-    setBidFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now() }, ...prev]);
+  const addFeed = useCallback((text: string, kind: BidFeedItem["kind"], bidId?: string) => {
+    setBidFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now(), bidId }, ...prev]);
   }, []);
 
   // Initial data load
@@ -244,17 +246,27 @@ export default function AuctionRoomPage() {
         const histRes = await fetch(`/api/auction/bid-history?sessionId=${activeSessionId}`);
         if (histRes.ok) {
           const histJson = await histRes.json();
-          const histFeed: BidFeedItem[] = (histJson.bids ?? []).map(
-            (b: { id: string; playerName: string; currentHighBid: number; currentHighBidderId: string; status: string; updatedAt: string }) => ({
+          const histFeed: BidFeedItem[] = [];
+          for (const b of histJson.bids ?? []) {
+            // Sold/unsold entry (shown in feed)
+            histFeed.push({
               id: b.id,
-              text:
-                b.status === "sold"
-                  ? `SOLD: ${b.playerName} → ${standingsMap.get(b.currentHighBidderId)?.teamName ?? "Unknown"} for ${formatCurrency(b.currentHighBid)}`
-                  : `UNSOLD: ${b.playerName}`,
+              text: b.status === "sold"
+                ? `SOLD: ${b.playerName} → ${standingsMap.get(b.currentHighBidderId)?.teamName ?? "Unknown"} for ${formatCurrency(b.currentHighBid)}`
+                : `UNSOLD: ${b.playerName}`,
               kind: (b.status === "sold" ? "sold" : "unsold") as BidFeedItem["kind"],
               ts: new Date(b.updatedAt).getTime(),
-            })
-          );
+              bidId: b.id,
+            });
+            // Nomination sub-entry (visible on expand)
+            histFeed.push({
+              id: `${b.id}-nom`,
+              text: `${standingsMap.get(b.nominatorTeamId)?.teamName ?? "Unknown"} nominated ${b.playerName} — base ${formatCurrency(b.minBid)}`,
+              kind: "info",
+              ts: new Date(b.updatedAt).getTime() - 1, // Slightly before sold entry
+              bidId: b.id,
+            });
+          }
           setBidFeed(histFeed);
         }
       }
@@ -336,7 +348,7 @@ export default function AuctionRoomPage() {
       if (data.bidId && data.bidId !== lastBidIdRef.current) {
         lastBidIdRef.current = data.bidId;
         const nominatorName = teamMapRef.current.get(data.nominatorTeamId)?.teamName ?? "Unknown";
-        addFeed(`${nominatorName} nominated ${data.playerName} — base ${formatCurrency(data.minBid)}`, "info");
+        addFeed(`${nominatorName} nominated ${data.playerName} — base ${formatCurrency(data.minBid)}`, "info", data.bidId);
       }
     });
     es.addEventListener("bid-placed", (e) => {
@@ -344,12 +356,12 @@ export default function AuctionRoomPage() {
       setCurrentBid(data);
       setBidError(null);
       const bidderName = teamMapRef.current.get(data.currentHighBidderId)?.teamName ?? "Unknown";
-      addFeed(`${bidderName} bid ${formatCurrency(data.currentHighBid)} on ${data.playerName}`, "bid");
+      addFeed(`${bidderName} bid ${formatCurrency(data.currentHighBid)} on ${data.playerName}`, "bid", data.bidId);
     });
     es.addEventListener("sold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       const winnerName = data.winnerId ? teamMapRef.current.get(data.winnerId)?.teamName ?? "Unknown" : "—";
-      addFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatCurrency(data.finalBid)}`, "sold");
+      addFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatCurrency(data.finalBid)}`, "sold", data.bidId);
       setCurrentBid(null);
       // Immediately sync session (advanceNominator already ran server-side before this event)
       refreshSessionState();
@@ -370,7 +382,7 @@ export default function AuctionRoomPage() {
     });
     es.addEventListener("unsold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      addFeed(`UNSOLD: ${data.playerName}`, "unsold");
+      addFeed(`UNSOLD: ${data.playerName}`, "unsold", data.bidId);
       setCurrentBid(null);
     });
     es.addEventListener("session-status", (e) => {
@@ -733,58 +745,78 @@ export default function AuctionRoomPage() {
                   </div>
                 )}
 
-                {/* Wishlist */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
-                    <span className="text-[10px] text-gray-500">{wishlist.length}</span>
-                  </div>
-                  {wishlist.length === 0 ? (
-                    <div className="text-[10px] text-gray-500 py-2 text-center">
-                      Empty — add players from the nomination modal.
+                {/* Wishlist + Live Feed side by side */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Wishlist (left) */}
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
+                      <span className="text-[10px] text-gray-500">{wishlist.length}</span>
                     </div>
-                  ) : (
-                    <div className="space-y-0.5 max-h-40 overflow-y-auto">
-                      {wishlist.map((entry, idx) => (
-                        <div
-                          key={entry.id}
-                          className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
-                        >
-                          <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}.</span>
-                          <span className="flex-1 truncate text-white">{entry.playerName}</span>
-                          <button onClick={() => handleReorderWishlist(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
-                          <button onClick={() => handleReorderWishlist(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
-                          <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Auction Feed — compact */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Live Feed</h3>
-                  <div className="space-y-0.5 max-h-48 overflow-y-auto text-[11px]">
-                    {bidFeed.length === 0 ? (
-                      <div className="text-gray-500 py-2 text-center text-[10px]">No activity yet</div>
+                    {wishlist.length === 0 ? (
+                      <div className="text-[10px] text-gray-500 py-2 text-center">
+                        Empty — add players from the nomination modal.
+                      </div>
                     ) : (
-                      bidFeed.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`flex items-start gap-1.5 px-1.5 py-1 rounded ${
-                            item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
-                            item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
-                            item.kind === "bid" ? "text-white" :
-                            "text-gray-400"
-                          }`}
-                        >
-                          <span className="text-[9px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
-                            {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                          </span>
-                          <span>{item.text}</span>
-                        </div>
-                      ))
+                      <div className="space-y-0.5 max-h-64 overflow-y-auto">
+                        {wishlist.map((entry, idx) => (
+                          <div
+                            key={entry.id}
+                            className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
+                          >
+                            <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}.</span>
+                            <span className="flex-1 truncate text-white">{entry.playerName}</span>
+                            <button onClick={() => handleReorderWishlist(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
+                            <button onClick={() => handleReorderWishlist(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
+                            <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
+                          </div>
+                        ))}
+                      </div>
                     )}
+                  </div>
+
+                  {/* Live Feed (right) — expandable sold/unsold entries */}
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Live Feed</h3>
+                    <div className="space-y-0.5 max-h-64 overflow-y-auto text-[11px]">
+                      {bidFeed.length === 0 ? (
+                        <div className="text-gray-500 py-2 text-center text-[10px]">No activity yet</div>
+                      ) : (
+                        bidFeed
+                          .filter((item) => {
+                            if (item.kind === "sold" || item.kind === "unsold") return true;
+                            if (!item.bidId) return true;
+                            return expandedFeedBidId === item.bidId;
+                          })
+                          .map((item) => {
+                            const isSoldOrUnsold = item.kind === "sold" || item.kind === "unsold";
+                            const isExpanded = isSoldOrUnsold && expandedFeedBidId === item.bidId;
+                            const hasSubEntries = isSoldOrUnsold && item.bidId && bidFeed.some((f) => f.bidId === item.bidId && f.id !== item.id);
+                            const isSubEntry = !isSoldOrUnsold && item.bidId && expandedFeedBidId === item.bidId;
+
+                            return (
+                              <div
+                                key={item.id}
+                                onClick={isSoldOrUnsold && hasSubEntries ? () => setExpandedFeedBidId(isExpanded ? null : item.bidId!) : undefined}
+                                className={`flex items-start gap-1.5 px-1.5 py-1 rounded ${
+                                  item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
+                                  item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
+                                  item.kind === "bid" ? "text-white" :
+                                  "text-gray-400"
+                                } ${isSoldOrUnsold && hasSubEntries ? "cursor-pointer hover:bg-white/5" : ""} ${isSubEntry ? "ml-4 border-l border-white/10 pl-2" : ""}`}
+                              >
+                                <span className="text-[9px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
+                                  {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                                </span>
+                                <span className="flex-1">{item.text}</span>
+                                {isSoldOrUnsold && hasSubEntries && (
+                                  <span className="text-[9px] text-gray-500 ml-1">{isExpanded ? "▾" : "▸"}</span>
+                                )}
+                              </div>
+                            );
+                          })
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
