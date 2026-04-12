@@ -654,12 +654,11 @@ export default function AuctionRoomPage() {
               </div>
             )}
 
+            {/* Row 1: Bid card + Nomination Order table */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-              {/* Left column: Bid card + Wishlist */}
-              <div className="lg:col-span-2 space-y-4">
-                {/* Bid card */}
+              <div className="lg:col-span-2">
                 {currentBid ? (
-                  <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 to-slate-900/40 p-5 backdrop-blur">
+                  <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 to-slate-900/40 p-5 backdrop-blur h-full">
                     <div className="text-center mb-4">
                       <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">On the Block</div>
                       <h2 className="text-2xl font-bold text-white mb-1">{currentBid.playerName}</h2>
@@ -712,7 +711,7 @@ export default function AuctionRoomPage() {
                     {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center">
                     <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Waiting for Nomination</div>
                     {isMyTurn && session.status === "active" ? (
                       <>
@@ -744,90 +743,15 @@ export default function AuctionRoomPage() {
                     {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
                   </div>
                 )}
-
-                {/* Wishlist + Live Feed side by side */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Wishlist (left) */}
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
-                      <span className="text-[10px] text-gray-500">{wishlist.length}</span>
-                    </div>
-                    {wishlist.length === 0 ? (
-                      <div className="text-[10px] text-gray-500 py-2 text-center">
-                        Empty — add players from the nomination modal.
-                      </div>
-                    ) : (
-                      <div className="space-y-0.5 max-h-64 overflow-y-auto">
-                        {wishlist.map((entry, idx) => (
-                          <div
-                            key={entry.id}
-                            className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
-                          >
-                            <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}.</span>
-                            <span className="flex-1 truncate text-white">{entry.playerName}</span>
-                            <button onClick={() => handleReorderWishlist(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
-                            <button onClick={() => handleReorderWishlist(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
-                            <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Live Feed (right) — expandable sold/unsold entries */}
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                    <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Live Feed</h3>
-                    <div className="space-y-0.5 max-h-64 overflow-y-auto text-[11px]">
-                      {bidFeed.length === 0 ? (
-                        <div className="text-gray-500 py-2 text-center text-[10px]">No activity yet</div>
-                      ) : (
-                        bidFeed
-                          .filter((item) => {
-                            if (item.kind === "sold" || item.kind === "unsold") return true;
-                            if (!item.bidId) return true;
-                            return expandedFeedBidId === item.bidId;
-                          })
-                          .map((item) => {
-                            const isSoldOrUnsold = item.kind === "sold" || item.kind === "unsold";
-                            const isExpanded = isSoldOrUnsold && expandedFeedBidId === item.bidId;
-                            const hasSubEntries = isSoldOrUnsold && item.bidId && bidFeed.some((f) => f.bidId === item.bidId && f.id !== item.id);
-                            const isSubEntry = !isSoldOrUnsold && item.bidId && expandedFeedBidId === item.bidId;
-
-                            return (
-                              <div
-                                key={item.id}
-                                onClick={isSoldOrUnsold && hasSubEntries ? () => setExpandedFeedBidId(isExpanded ? null : item.bidId!) : undefined}
-                                className={`flex items-start gap-1.5 px-1.5 py-1 rounded ${
-                                  item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
-                                  item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
-                                  item.kind === "bid" ? "text-white" :
-                                  "text-gray-400"
-                                } ${isSoldOrUnsold && hasSubEntries ? "cursor-pointer hover:bg-white/5" : ""} ${isSubEntry ? "ml-4 border-l border-white/10 pl-2" : ""}`}
-                              >
-                                <span className="text-[9px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
-                                  {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                                </span>
-                                <span className="flex-1">{item.text}</span>
-                                {isSoldOrUnsold && hasSubEntries && (
-                                  <span className="text-[9px] text-gray-500 ml-1">{isExpanded ? "▾" : "▸"}</span>
-                                )}
-                              </div>
-                            );
-                          })
-                      )}
-                    </div>
-                  </div>
-                </div>
               </div>
 
-              {/* Right column: Nomination Order Table */}
+              {/* Nomination Order Table */}
               <div className="lg:col-span-3">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Nomination Order</h3>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto max-h-80 overflow-y-auto">
                     <table className="w-full text-xs">
-                      <thead>
+                      <thead className="sticky top-0 bg-slate-900/95 z-10">
                         <tr className="text-gray-400 uppercase tracking-wider border-b border-white/10">
                           <th className="text-left py-2 px-2 w-8">#</th>
                           <th className="text-left py-2 px-2">Team</th>
@@ -848,7 +772,6 @@ export default function AuctionRoomPage() {
                           const players = summary?.players ?? [];
                           const isExpanded = expandedTeamId === tid;
 
-                          // Compute position counts from elements
                           const counts = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
                           for (const p of players) {
                             const el = elementById.get(p.fplElementId);
@@ -866,21 +789,21 @@ export default function AuctionRoomPage() {
                                   isCurrent ? "bg-yellow-400/10" : ""
                                 } ${isMe ? "bg-purple-500/10" : ""}`}
                               >
-                                <td className="py-2 px-2 text-gray-500">
+                                <td className="py-1.5 px-2 text-gray-500">
                                   {isCurrent ? <span className="text-yellow-400 font-bold">►</span> : <span>{idx + 1}</span>}
                                 </td>
-                                <td className={`py-2 px-2 font-semibold ${isCurrent ? "text-yellow-300" : isMe ? "text-purple-300" : "text-white"}`}>
+                                <td className={`py-1.5 px-2 font-semibold ${isCurrent ? "text-yellow-300" : isMe ? "text-purple-300" : "text-white"}`}>
                                   {team?.teamName ?? tid}
                                   {isMe && <span className="text-[10px] ml-1 text-purple-400">(you)</span>}
                                 </td>
-                                <td className="py-2 px-2 text-right font-mono text-green-300">
+                                <td className="py-1.5 px-2 text-right font-mono text-green-300">
                                   {summary ? formatCurrency(summary.purse) : "—"}
                                 </td>
-                                <td className="py-2 px-1 text-center text-gray-300">{counts.GK}</td>
-                                <td className="py-2 px-1 text-center text-gray-300">{counts.DEF}</td>
-                                <td className="py-2 px-1 text-center text-gray-300">{counts.MID}</td>
-                                <td className="py-2 px-1 text-center text-gray-300">{counts.FWD}</td>
-                                <td className="py-2 px-1 text-center text-white font-semibold">{players.length}</td>
+                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.GK}</td>
+                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.DEF}</td>
+                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.MID}</td>
+                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.FWD}</td>
+                                <td className="py-1.5 px-1 text-center text-white font-semibold">{players.length}</td>
                               </tr>
                               {isExpanded && players.length > 0 && (
                                 <tr>
@@ -921,6 +844,81 @@ export default function AuctionRoomPage() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Row 2: Wishlist + Live Feed — full width, side by side */}
+            <div className="mt-4 grid grid-cols-1 lg:grid-cols-5 gap-4">
+              {/* Wishlist (2 cols) */}
+              <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
+                  <span className="text-[10px] text-gray-500">{wishlist.length}</span>
+                </div>
+                {wishlist.length === 0 ? (
+                  <div className="text-[10px] text-gray-500 py-2 text-center">
+                    Empty — add players from the nomination modal.
+                  </div>
+                ) : (
+                  <div className="space-y-0.5 max-h-52 overflow-y-auto">
+                    {wishlist.map((entry, idx) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
+                      >
+                        <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}.</span>
+                        <span className="flex-1 truncate text-white">{entry.playerName}</span>
+                        <button onClick={() => handleReorderWishlist(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
+                        <button onClick={() => handleReorderWishlist(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
+                        <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Live Feed (3 cols) — expandable sold/unsold entries */}
+              <div className="lg:col-span-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Live Feed</h3>
+                <div className="space-y-0.5 max-h-52 overflow-y-auto text-[11px]">
+                  {bidFeed.length === 0 ? (
+                    <div className="text-gray-500 py-2 text-center text-[10px]">No activity yet</div>
+                  ) : (
+                    bidFeed
+                      .filter((item) => {
+                        if (item.kind === "sold" || item.kind === "unsold") return true;
+                        if (!item.bidId) return true;
+                        return expandedFeedBidId === item.bidId;
+                      })
+                      .map((item) => {
+                        const isSoldOrUnsold = item.kind === "sold" || item.kind === "unsold";
+                        const isExpanded = isSoldOrUnsold && expandedFeedBidId === item.bidId;
+                        const hasSubEntries = isSoldOrUnsold && item.bidId && bidFeed.some((f) => f.bidId === item.bidId && f.id !== item.id);
+                        const isSubEntry = !isSoldOrUnsold && item.bidId && expandedFeedBidId === item.bidId;
+
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={isSoldOrUnsold && hasSubEntries ? () => setExpandedFeedBidId(isExpanded ? null : item.bidId!) : undefined}
+                            className={`flex items-start gap-1.5 px-1.5 py-1 rounded ${
+                              item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
+                              item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
+                              item.kind === "bid" ? "text-white" :
+                              "text-gray-400"
+                            } ${isSoldOrUnsold && hasSubEntries ? "cursor-pointer hover:bg-white/5" : ""} ${isSubEntry ? "ml-4 border-l border-white/10 pl-2" : ""}`}
+                          >
+                            <span className="text-[9px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
+                              {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                            </span>
+                            <span className="flex-1">{item.text}</span>
+                            {isSoldOrUnsold && hasSubEntries && (
+                              <span className="text-[9px] text-gray-500 ml-1">{isExpanded ? "▾" : "▸"}</span>
+                            )}
+                          </div>
+                        );
+                      })
+                  )}
                 </div>
               </div>
             </div>
