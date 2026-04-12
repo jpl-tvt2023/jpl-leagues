@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, players, groups } from "@/lib/db";
+import { db, teams, players, groups, leagues } from "@/lib/db";
 import { eq, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/id";
@@ -47,8 +47,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Validate group (optional; if provided, must be A or B)
-    if (group && group !== "A" && group !== "B") {
+    // Check league format — auction leagues don't use groups
+    const leagueRow = await db.select({ format: leagues.format }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+    const isAuction = leagueRow[0]?.format === "auction";
+
+    // Validate group (optional; if provided, must be A or B — skip for auction format)
+    if (!isAuction && group && group !== "A" && group !== "B") {
       return NextResponse.json(
         { error: "Group must be either A or B" },
         { status: 400 }
@@ -86,9 +90,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Resolve group (null if not provided)
+    // Resolve group (null if not provided or auction format)
     let groupId: string | null = null;
-    if (group) {
+    if (!isAuction && group && group !== "Unassigned") {
       const groupRecords = await db.select().from(groups).where(
         and(eq(groups.name, group), eq(groups.leagueId, leagueId))
       );
@@ -107,8 +111,12 @@ export async function PUT(request: NextRequest) {
       teamLoginId,
       name: teamName,
       abbreviation: abbreviation.toUpperCase(),
-      groupId,
     };
+
+    // Only update groupId for non-auction formats
+    if (!isAuction) {
+      updateData.groupId = groupId;
+    }
 
     // Only update password if provided
     if (password && password.trim() !== "") {
