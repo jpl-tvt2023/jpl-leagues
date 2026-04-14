@@ -452,7 +452,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
         )}
 
         {/* Economy Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-6">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
             <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Purse</div>
             <div className="text-2xl font-bold text-green-400">{formatCurrency(data.purse)}</div>

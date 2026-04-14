@@ -33,7 +33,6 @@ interface PlayerRow {
   ownerTeamName: string | null;
   gwPoints: number;
   seasonPoints: number;
-  nowCost: number;
   status: string;
   minutes: number;
   purchasePrice: number | null;
@@ -42,10 +41,6 @@ interface PlayerRow {
 interface PLTeam {
   id: number;
   short_name: string;
-}
-
-function formatCost(value: number): string {
-  return `£${(value / 10).toFixed(1)}m`;
 }
 
 function formatPurchasePrice(value: number): string {
@@ -325,7 +320,6 @@ export default function PlayersPage() {
                   <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-right">GW{gameweek}</th>
                   <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-right">Season</th>
                   <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-right">Price</th>
-                  <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-right hidden sm:table-cell">Cost</th>
                   <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-center hidden md:table-cell">Status</th>
                 </tr>
               </thead>
@@ -395,11 +389,6 @@ export default function PlayersPage() {
                           ) : (
                             <span className="text-gray-600 text-xs">—</span>
                           )}
-                        </td>
-
-                        {/* FPL cost */}
-                        <td className="px-3 py-2.5 text-right text-gray-400 text-xs hidden sm:table-cell">
-                          {formatCost(p.nowCost)}
                         </td>
 
                         {/* Status */}
