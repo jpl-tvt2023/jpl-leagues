@@ -164,7 +164,7 @@ interface DashboardData {
 }
 
 // Countdown Timer Component
-function DeadlineTimer({ deadline, gameweek, serverTime }: { deadline: string | null; gameweek: number; serverTime?: string }) {
+function DeadlineTimer({ deadline, gameweek, serverTime, label, expiredLabel }: { deadline: string | null; gameweek: number; serverTime?: string; label?: string; expiredLabel?: string }) {
   const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
   const [isExpired, setIsExpired] = useState(false);
   // Compute server-client time offset once on mount so the countdown
@@ -212,7 +212,7 @@ function DeadlineTimer({ deadline, gameweek, serverTime }: { deadline: string | 
   if (isExpired) {
     return (
       <div className="text-center">
-        <div className="text-red-400 text-xl font-bold">GW{gameweek} Deadline Passed</div>
+        <div className="text-red-400 text-xl font-bold">{expiredLabel ?? `GW${gameweek} Deadline Passed`}</div>
         <div className="text-gray-400 text-sm mt-1">Waiting for results...</div>
       </div>
     );
@@ -220,7 +220,7 @@ function DeadlineTimer({ deadline, gameweek, serverTime }: { deadline: string | 
 
   return (
     <div className="text-center">
-      <div className="text-sm text-gray-400 mb-2">GW{gameweek} Deadline</div>
+      <div className="text-sm text-gray-400 mb-2">{label ?? `GW${gameweek} Deadline`}</div>
       <div className="flex justify-center gap-3">
         {timeLeft?.days !== undefined && timeLeft.days > 0 && (
           <div className="bg-white/10 rounded-lg px-4 py-2">
@@ -242,6 +242,71 @@ function DeadlineTimer({ deadline, gameweek, serverTime }: { deadline: string | 
         </div>
       </div>
     </div>
+  );
+}
+
+// Next Deadline card content — auction-aware
+function NextDeadlineContent({ data, leagueSlug }: { data: AuctionDashboardData; leagueSlug: string }) {
+  // 1. Auction live
+  if (data.auctionSession?.status === "active") {
+    return (
+      <div className="text-center">
+        <div className="flex items-center justify-center gap-2 mb-3">
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+          </span>
+          <span className="text-red-300 font-bold text-lg">🔨 Auction Live</span>
+        </div>
+        <Link href={`/${leagueSlug}/auction`} className="inline-block px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 font-semibold transition text-sm">
+          Join Room
+        </Link>
+      </div>
+    );
+  }
+
+  // 2. Auction paused
+  if (data.auctionSession?.status === "paused") {
+    return (
+      <div className="text-center">
+        <div className="text-gray-300 font-bold text-lg mb-2">⏸ Auction Paused</div>
+        <Link href={`/${leagueSlug}/auction`} className="text-yellow-300 hover:text-yellow-200 text-sm underline">
+          View room
+        </Link>
+      </div>
+    );
+  }
+
+  // 3. Compare GW deadline vs scheduled auction, pick the earlier one
+  const gwTs = data.deadline.timestamp ? new Date(data.deadline.timestamp).getTime() : null;
+  const auctionTs = data.nextAuction ? new Date(data.nextAuction.scheduledAt).getTime() : null;
+
+  const useAuction =
+    auctionTs !== null && (gwTs === null || auctionTs < gwTs);
+
+  if (useAuction && data.nextAuction) {
+    const typeLabel =
+      data.nextAuction.type === "initial"
+        ? "Initial Auction"
+        : `Mini-Auction #${data.nextAuction.cycleNumber}`;
+    return (
+      <DeadlineTimer
+        deadline={data.nextAuction.scheduledAt}
+        gameweek={0}
+        serverTime={data.serverTime}
+        label={typeLabel}
+        expiredLabel={`${typeLabel} starting...`}
+      />
+    );
+  }
+
+  // 4. Fall back to GW deadline (existing behavior)
+  return (
+    <DeadlineTimer
+      deadline={data.deadline.timestamp}
+      gameweek={data.deadline.gameweek}
+      serverTime={data.serverTime}
+    />
   );
 }
 
@@ -314,6 +379,7 @@ interface AuctionDashboardData {
   gwHistory: { gameweek: number; points: number; rank: number | null; income: number }[];
   lastGwResult: { gameweek: number; points: number; rank: number | null; income: number } | null;
   auctionSession: { id: string; type: string; status: string } | null;
+  nextAuction: { id: string; type: string; cycleNumber: number; scheduledAt: string } | null;
   deadline: { gameweek: number; timestamp: string | null };
   serverTime: string;
 }
@@ -476,7 +542,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
               <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <span className="text-yellow-400">⏱</span> Next Deadline
               </h2>
-              <DeadlineTimer deadline={data.deadline.timestamp} gameweek={data.deadline.gameweek} serverTime={data.serverTime} />
+              <NextDeadlineContent data={data} leagueSlug={leagueSlug} />
             </div>
 
             {/* Last GW */}

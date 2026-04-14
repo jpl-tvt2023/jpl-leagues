@@ -1051,6 +1051,10 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     const sessions = await db.select().from(auctionSessions)
       .where(and(eq(auctionSessions.leagueId, leagueId)));
     const activeSession = sessions.find(s => s.status === "active" || s.status === "paused");
+    const nowForAuction = new Date();
+    const nextScheduledAuction = sessions
+      .filter(s => s.status === "pending" && s.scheduledAt && s.scheduledAt > nowForAuction)
+      .sort((a, b) => (a.scheduledAt!.getTime() - b.scheduledAt!.getTime()))[0] ?? null;
 
     // Squad value = sum of purchase prices
     const squadValue = squad.reduce((sum, p) => sum + p.purchasePrice, 0);
@@ -1106,6 +1110,12 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         id: activeSession.id,
         type: activeSession.type,
         status: activeSession.status,
+      } : null,
+      nextAuction: nextScheduledAuction ? {
+        id: nextScheduledAuction.id,
+        type: nextScheduledAuction.type,
+        cycleNumber: nextScheduledAuction.cycleNumber,
+        scheduledAt: nextScheduledAuction.scheduledAt!.toISOString(),
       } : null,
       deadline: nextGw.length > 0 ? {
         gameweek: nextGw[0].number,
