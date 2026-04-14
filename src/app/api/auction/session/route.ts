@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
       status: s.status,
       snakeOrder: JSON.parse(s.snakeOrder),
       currentNominatorIndex: s.currentNominatorIndex,
+      scheduledAt: s.scheduledAt?.toISOString() ?? null,
       createdAt: s.createdAt,
     })),
     activeSession: activeSession
@@ -104,6 +105,7 @@ export async function GET(request: NextRequest) {
           snakeOrder: JSON.parse(activeSession.snakeOrder),
           currentNominatorIndex: activeSession.currentNominatorIndex,
           nominationDeadline: activeSession.nominationDeadline?.toISOString() ?? null,
+          scheduledAt: activeSession.scheduledAt?.toISOString() ?? null,
           currentBid,
         }
       : null,
@@ -123,7 +125,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { leagueId, action, sessionId, type, cycleNumber } = body;
+  const { leagueId, action, sessionId, type, cycleNumber, scheduledAt } = body;
 
   if (!leagueId || !action) {
     return NextResponse.json({ error: "leagueId and action are required" }, { status: 400 });
@@ -168,6 +170,7 @@ export async function POST(request: NextRequest) {
       status: "pending",
       snakeOrder: JSON.stringify(snakeOrder),
       currentNominatorIndex: 0,
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
     });
 
     return NextResponse.json({ success: true, id, snakeOrder });
@@ -189,6 +192,19 @@ export async function POST(request: NextRequest) {
   }
 
   const currentStatus = sessionRow[0].status;
+
+  // Allow updating schedule on pending sessions without a status transition
+  if (action === "schedule") {
+    if (currentStatus !== "pending") {
+      return NextResponse.json({ error: "Can only schedule pending sessions" }, { status: 400 });
+    }
+    await db
+      .update(auctionSessions)
+      .set({ scheduledAt: scheduledAt ? new Date(scheduledAt) : null })
+      .where(eq(auctionSessions.id, sessionId));
+    return NextResponse.json({ success: true, sessionId, scheduledAt: scheduledAt ?? null });
+  }
+
   const validTransitions: Record<string, string[]> = {
     start: ["pending", "paused"],
     pause: ["active"],

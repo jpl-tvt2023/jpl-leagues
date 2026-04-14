@@ -363,6 +363,7 @@ export const auctionSessions = sqliteTable("auction_sessions", {
   snakeOrder: text("snake_order").notNull().default("[]"), // JSON array of teamIds in nomination order
   currentNominatorIndex: integer("current_nominator_index").notNull().default(0),
   nominationDeadline: integer("nomination_deadline", { mode: "timestamp" }), // When current nominator must nominate by (null = no active deadline)
+  scheduledAt: integer("scheduled_at", { mode: "timestamp" }), // When the auction is scheduled to start (shown to users as countdown)
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 

@@ -12,6 +12,7 @@ interface AuctionSession {
   status: "pending" | "active" | "paused" | "completed";
   snakeOrder: string[];
   currentNominatorIndex: number;
+  scheduledAt?: string | null;
 }
 
 interface WishlistEntry {
@@ -91,6 +92,44 @@ function getJumpBidOptions(currentHighBid: number): number[] {
   const milestones = [2_000_000, 5_000_000];
   const jumps = milestones.filter((m) => m > minNext);
   return [minNext, ...jumps.slice(0, 2)];
+}
+
+function ScheduledCountdown({ scheduledAt }: { scheduledAt: string }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const target = new Date(scheduledAt).getTime();
+  const diff = target - now;
+  if (diff <= 0) {
+    return (
+      <div className="text-2xl font-bold text-green-300">
+        Starting any moment — waiting for admin to open the room
+      </div>
+    );
+  }
+  const totalSeconds = Math.floor(diff / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const Segment = ({ value, label }: { value: number; label: string }) => (
+    <div className="flex flex-col items-center px-4">
+      <div className="text-4xl sm:text-5xl font-mono font-bold text-white tabular-nums">{String(value).padStart(2, "0")}</div>
+      <div className="text-[10px] uppercase tracking-widest text-gray-400 mt-1">{label}</div>
+    </div>
+  );
+  return (
+    <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
+      {days > 0 && <><Segment value={days} label="Days" /><div className="text-3xl text-gray-600">:</div></>}
+      <Segment value={hours} label="Hours" />
+      <div className="text-3xl text-gray-600">:</div>
+      <Segment value={minutes} label="Minutes" />
+      <div className="text-3xl text-gray-600">:</div>
+      <Segment value={seconds} label="Seconds" />
+    </div>
+  );
 }
 
 export default function AuctionRoomPage() {
@@ -205,6 +244,7 @@ export default function AuctionRoomPage() {
             status: active.status,
             snakeOrder: active.snakeOrder ?? [],
             currentNominatorIndex: active.currentNominatorIndex ?? 0,
+            scheduledAt: active.scheduledAt ?? null,
           });
           setNominationDeadline(active.nominationDeadline ?? null);
           if (active.currentBid) setCurrentBid(active.currentBid);
@@ -694,6 +734,25 @@ export default function AuctionRoomPage() {
             {session.status === "paused" && (
               <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-center text-yellow-300 text-sm">
                 Auction paused by admin
+              </div>
+            )}
+
+            {session.status === "pending" && (
+              <div className="mb-4 rounded-2xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-6 text-center backdrop-blur">
+                <div className="text-[11px] uppercase tracking-widest text-blue-300 mb-2">Auction Scheduled</div>
+                {session.scheduledAt ? (
+                  <>
+                    <ScheduledCountdown scheduledAt={session.scheduledAt} />
+                    <div className="text-xs text-gray-400 mt-2">
+                      Starts {new Date(session.scheduledAt).toLocaleString([], { dateStyle: "full", timeStyle: "short" })}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-bold text-white mb-1">Awaiting Start</h2>
+                    <p className="text-sm text-gray-400">The admin has created this auction. It will begin when they click Start.</p>
+                  </>
+                )}
               </div>
             )}
 
