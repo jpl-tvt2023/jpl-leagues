@@ -394,6 +394,16 @@ export const auctionBids = sqliteTable("auction_bids", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
+// Auction bid logs — append-only event log for each bid lifecycle
+export const auctionBidLogs = sqliteTable("auction_bid_logs", {
+  id: text("id").primaryKey(),
+  bidId: text("bid_id").notNull().references(() => auctionBids.id),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  amount: integer("amount").notNull(),
+  type: text("type").notNull(), // "nomination" | "bid" | "sold" | "unsold"
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
 // Trade proposals — P2P marketplace with veto system
 export const tradeProposals = sqliteTable("trade_proposals", {
   id: text("id").primaryKey(),
