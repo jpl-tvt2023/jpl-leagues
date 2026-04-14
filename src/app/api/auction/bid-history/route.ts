@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, auctionBids } from "@/lib/db";
-import { eq, desc, ne } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 /**
  * GET /api/auction/bid-history?sessionId=xxx
@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
       currentHighBid: auctionBids.currentHighBid,
       currentHighBidderId: auctionBids.currentHighBidderId,
       nominatorTeamId: auctionBids.nominatorTeamId,
+      minBid: auctionBids.minBid,
       status: auctionBids.status,
       updatedAt: auctionBids.updatedAt,
     })

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -59,6 +59,7 @@ interface BidFeedItem {
   text: string;
   kind: "bid" | "sold" | "unsold" | "waiting" | "info";
   ts: number;
+  bidId?: string; // Links feed entries to a specific auction item
 }
 
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -86,7 +87,8 @@ function getIncrementLabel(currentHighBid: number): string {
 
 function getJumpBidOptions(currentHighBid: number): number[] {
   const minNext = getNextBidAmount(currentHighBid);
-  const milestones = [2_000_000, 5_000_000, 10_000_000, 15_000_000, 20_000_000, 30_000_000, 50_000_000];
+  if (currentHighBid >= 5_000_000) return [minNext]; // Only auto-increment after 5M
+  const milestones = [2_000_000, 5_000_000];
   const jumps = milestones.filter((m) => m > minNext);
   return [minNext, ...jumps.slice(0, 2)];
 }
@@ -108,7 +110,14 @@ export default function AuctionRoomPage() {
   const [elements, setElements] = useState<BootstrapElement[]>([]);
   const [plTeams, setPlTeams] = useState<Map<number, BootstrapTeam>>(new Map());
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
+  const [teamSummaries, setTeamSummaries] = useState<Record<string, {
+    purse: number;
+    penaltySlots: number;
+    players: { fplElementId: number; playerName: string; purchasePrice: number }[];
+  }>>({});
+  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [bidFeed, setBidFeed] = useState<BidFeedItem[]>([]);
+  const [expandedFeedBidId, setExpandedFeedBidId] = useState<string | null>(null);
   const [timerSec, setTimerSec] = useState<number>(0);
   const [placing, setPlacing] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
@@ -131,8 +140,8 @@ export default function AuctionRoomPage() {
   useEffect(() => { myTeamIdRef.current = myTeamId; }, [myTeamId]);
   useEffect(() => { currentBidRef.current = currentBid; }, [currentBid]);
 
-  const addFeed = useCallback((text: string, kind: BidFeedItem["kind"]) => {
-    setBidFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now() }, ...prev]);
+  const addFeed = useCallback((text: string, kind: BidFeedItem["kind"], bidId?: string) => {
+    setBidFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now(), bidId }, ...prev]);
   }, []);
 
   // Initial data load
@@ -219,6 +228,7 @@ export default function AuctionRoomPage() {
       if (ownedRes.ok) {
         const ownedJson = await ownedRes.json();
         setOwnedElementIds(new Set(ownedJson.ownedElementIds ?? []));
+        setTeamSummaries(ownedJson.teamSummaries ?? {});
       }
 
       if (economyRes.ok) {
@@ -236,17 +246,27 @@ export default function AuctionRoomPage() {
         const histRes = await fetch(`/api/auction/bid-history?sessionId=${activeSessionId}`);
         if (histRes.ok) {
           const histJson = await histRes.json();
-          const histFeed: BidFeedItem[] = (histJson.bids ?? []).map(
-            (b: { id: string; playerName: string; currentHighBid: number; currentHighBidderId: string; status: string; updatedAt: string }) => ({
+          const histFeed: BidFeedItem[] = [];
+          for (const b of histJson.bids ?? []) {
+            // Sold/unsold entry (shown in feed)
+            histFeed.push({
               id: b.id,
-              text:
-                b.status === "sold"
-                  ? `SOLD: ${b.playerName} → ${standingsMap.get(b.currentHighBidderId)?.teamName ?? "Unknown"} for ${formatCurrency(b.currentHighBid)}`
-                  : `UNSOLD: ${b.playerName}`,
+              text: b.status === "sold"
+                ? `SOLD: ${b.playerName} → ${standingsMap.get(b.currentHighBidderId)?.teamName ?? "Unknown"} for ${formatCurrency(b.currentHighBid)}`
+                : `UNSOLD: ${b.playerName}`,
               kind: (b.status === "sold" ? "sold" : "unsold") as BidFeedItem["kind"],
               ts: new Date(b.updatedAt).getTime(),
-            })
-          );
+              bidId: b.id,
+            });
+            // Nomination sub-entry (visible on expand)
+            histFeed.push({
+              id: `${b.id}-nom`,
+              text: `${standingsMap.get(b.nominatorTeamId)?.teamName ?? "Unknown"} nominated ${b.playerName} — base ${formatCurrency(b.minBid)}`,
+              kind: "info",
+              ts: new Date(b.updatedAt).getTime() - 1, // Slightly before sold entry
+              bidId: b.id,
+            });
+          }
           setBidFeed(histFeed);
         }
       }
@@ -323,23 +343,25 @@ export default function AuctionRoomPage() {
     es.addEventListener("auction-state", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       setCurrentBid(data);
+      setBidError(null); // Clear stale error — buttons re-render with correct amounts
       // New nomination detected — bidId changed
       if (data.bidId && data.bidId !== lastBidIdRef.current) {
         lastBidIdRef.current = data.bidId;
         const nominatorName = teamMapRef.current.get(data.nominatorTeamId)?.teamName ?? "Unknown";
-        addFeed(`${nominatorName} nominated ${data.playerName} — base ${formatCurrency(data.minBid)}`, "info");
+        addFeed(`${nominatorName} nominated ${data.playerName} — base ${formatCurrency(data.minBid)}`, "info", data.bidId);
       }
     });
     es.addEventListener("bid-placed", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       setCurrentBid(data);
+      setBidError(null);
       const bidderName = teamMapRef.current.get(data.currentHighBidderId)?.teamName ?? "Unknown";
-      addFeed(`${bidderName} bid ${formatCurrency(data.currentHighBid)} on ${data.playerName}`, "bid");
+      addFeed(`${bidderName} bid ${formatCurrency(data.currentHighBid)} on ${data.playerName}`, "bid", data.bidId);
     });
     es.addEventListener("sold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       const winnerName = data.winnerId ? teamMapRef.current.get(data.winnerId)?.teamName ?? "Unknown" : "—";
-      addFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatCurrency(data.finalBid)}`, "sold");
+      addFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatCurrency(data.finalBid)}`, "sold", data.bidId);
       setCurrentBid(null);
       // Immediately sync session (advanceNominator already ran server-side before this event)
       refreshSessionState();
@@ -347,7 +369,10 @@ export default function AuctionRoomPage() {
       const lid = leagueIdRef.current;
       const mtid = myTeamIdRef.current;
       if (lid) {
-        fetch(`/api/auction/league-owned?leagueId=${lid}`).then((r) => r.json()).then((d) => setOwnedElementIds(new Set(d.ownedElementIds ?? [])));
+        fetch(`/api/auction/league-owned?leagueId=${lid}`).then((r) => r.json()).then((d) => {
+          setOwnedElementIds(new Set(d.ownedElementIds ?? []));
+          setTeamSummaries(d.teamSummaries ?? {});
+        });
       }
       if (mtid) {
         fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => r.json()).then((d) => setMyPurse(d.computedPurse ?? 0));
@@ -357,7 +382,7 @@ export default function AuctionRoomPage() {
     });
     es.addEventListener("unsold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      addFeed(`UNSOLD: ${data.playerName}`, "unsold");
+      addFeed(`UNSOLD: ${data.playerName}`, "unsold", data.bidId);
       setCurrentBid(null);
     });
     es.addEventListener("session-status", (e) => {
@@ -441,6 +466,13 @@ export default function AuctionRoomPage() {
   const isMyTurn = currentNominatorId === myTeamId;
   const isHighBidder = currentBid?.currentHighBidderId === myTeamId;
 
+  // Map fplElementId → element for position lookups in nomination table
+  const elementById = useMemo(() => {
+    const m = new Map<number, BootstrapElement>();
+    for (const el of elements) m.set(el.id, el);
+    return m;
+  }, [elements]);
+
   const handlePlaceBid = async (bidAmount?: number) => {
     if (!currentBid || !session) return;
     const amount = bidAmount ?? getNextBidAmount(currentBid.currentHighBid);
@@ -498,6 +530,7 @@ export default function AuctionRoomPage() {
     const lc = searchTerm.trim().toLowerCase();
     const filtered = elements.filter((el) => {
       if (ownedElementIds.has(el.id)) return false;
+      if (currentBidRef.current?.fplElementId === el.id) return false; // Currently being auctioned
       if (positionFilter !== null && el.element_type !== positionFilter) return false;
       if (lc && !el.web_name.toLowerCase().includes(lc)) return false;
       return true;
@@ -621,49 +654,48 @@ export default function AuctionRoomPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Main auction card */}
+            {/* Row 1: Bid card + Nomination Order table */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
               <div className="lg:col-span-2">
                 {currentBid ? (
-                  <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 to-slate-900/40 p-8 backdrop-blur">
-                    <div className="text-center mb-6">
-                      <div className="text-xs uppercase tracking-widest text-gray-400 mb-1">On the Block</div>
-                      <h2 className="text-4xl font-bold text-white mb-2">{currentBid.playerName}</h2>
-                      <div className="text-sm text-gray-400">
-                        Nominated by {teamMap.get(currentBid.nominatorTeamId)?.teamName ?? "Unknown"}
+                  <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 to-slate-900/40 p-5 backdrop-blur h-full">
+                    <div className="text-center mb-4">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">On the Block</div>
+                      <h2 className="text-2xl font-bold text-white mb-1">{currentBid.playerName}</h2>
+                      <div className="text-xs text-gray-400">
+                        Nominated by {teamMap.get(currentBid.nominatorTeamId)?.teamName ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-4 mb-6 text-center">
+                    <div className="grid grid-cols-3 gap-3 mb-4 text-center">
                       <div>
-                        <div className="text-xs uppercase text-gray-400">Current Bid</div>
-                        <div className="text-2xl font-mono font-bold text-[#00ff85]">{formatCurrency(currentBid.currentHighBid)}</div>
+                        <div className="text-[10px] uppercase text-gray-400">Bid</div>
+                        <div className="text-xl font-mono font-bold text-[#00ff85]">{formatCurrency(currentBid.currentHighBid)}</div>
                       </div>
                       <div>
-                        <div className="text-xs uppercase text-gray-400">High Bidder</div>
-                        <div className={`text-lg font-bold ${isHighBidder ? "text-yellow-400" : "text-white"}`}>
+                        <div className="text-[10px] uppercase text-gray-400">Leader</div>
+                        <div className={`text-sm font-bold ${isHighBidder ? "text-yellow-400" : "text-white"}`}>
                           {teamMap.get(currentBid.currentHighBidderId)?.teamName ?? "—"}
                           {isHighBidder && " (YOU)"}
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs uppercase text-gray-400">Timer</div>
-                        <div className={`text-2xl font-mono font-bold ${timerSec <= 5 ? "text-red-400" : "text-white"}`}>{timerSec}s</div>
+                        <div className="text-[10px] uppercase text-gray-400">Timer</div>
+                        <div className={`text-xl font-mono font-bold ${timerSec <= 5 ? "text-red-400 animate-pulse" : "text-white"}`}>{timerSec}s</div>
                       </div>
                     </div>
                     {isHighBidder ? (
-                      <div className="mt-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 py-3 text-center text-sm font-semibold text-yellow-400">
+                      <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 py-2 text-center text-xs font-semibold text-yellow-400">
                         You are the high bidder
                       </div>
                     ) : session.status === "active" && timerSec > 0 ? (
-                      <div className="mt-2">
-                        <div className="mb-2 text-center text-xs text-gray-400">Place your bid</div>
+                      <div>
                         <div className="flex gap-2">
                           {getJumpBidOptions(currentBid.currentHighBid).map((amount, i) => (
                             <button
                               key={amount}
                               onClick={() => handlePlaceBid(amount)}
                               disabled={placing || amount > myPurse}
-                              className={`flex-1 rounded-lg px-3 py-3 font-bold transition disabled:opacity-50 ${
+                              className={`flex-1 rounded-lg px-2 py-2.5 font-bold transition disabled:opacity-50 ${
                                 i === 0
                                   ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 hover:from-yellow-300 hover:to-orange-400"
                                   : "bg-white/10 text-white border border-white/20 hover:bg-white/20"
@@ -676,141 +708,218 @@ export default function AuctionRoomPage() {
                         </div>
                       </div>
                     ) : null}
-                    {bidError && <div className="mt-3 text-sm text-red-400">{bidError}</div>}
+                    {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur text-center">
-                    <div className="text-xs uppercase tracking-widest text-gray-400 mb-2">Waiting for Nomination</div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Waiting for Nomination</div>
                     {isMyTurn && session.status === "active" ? (
                       <>
-                        <p className="text-white mb-2">It&apos;s your turn to nominate a player.</p>
+                        <p className="text-white text-sm mb-2">It&apos;s your turn to nominate a player.</p>
                         {nominationDeadlineSec > 0 && (
-                          <div className={`mb-4 text-sm font-mono ${nominationDeadlineSec <= 10 ? "text-red-400" : "text-yellow-300"}`}>
-                            Auto-nom from wishlist in {nominationDeadlineSec}s
+                          <div className={`mb-3 text-sm font-mono ${nominationDeadlineSec <= 10 ? "text-red-400" : "text-yellow-300"}`}>
+                            Auto-nom in {nominationDeadlineSec}s
                           </div>
                         )}
                         <button
                           onClick={() => setShowNominate(true)}
-                          className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
+                          className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm"
                         >
                           Nominate a Player
                         </button>
                       </>
                     ) : (
                       <>
-                        <p className="text-gray-400">
+                        <p className="text-gray-400 text-sm">
                           {currentNominatorId ? `Waiting for ${teamMap.get(currentNominatorId)?.teamName ?? "nominator"}...` : "Waiting for next nomination..."}
                         </p>
                         {nominationDeadlineSec > 0 && (
-                          <div className="mt-2 text-xs font-mono text-gray-500">
+                          <div className="mt-1 text-xs font-mono text-gray-500">
                             Auto-nom in {nominationDeadlineSec}s
                           </div>
                         )}
                       </>
                     )}
-                    {bidError && <div className="mt-3 text-sm text-red-400">{bidError}</div>}
+                    {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
                   </div>
                 )}
               </div>
 
-              {/* Sidebar */}
-              <div className="space-y-6">
-                {/* Snake order */}
+              {/* Nomination Order Table */}
+              <div className="lg:col-span-3">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Nomination Order</h3>
-                  <div className="space-y-1 max-h-60 overflow-y-auto">
-                    {session.snakeOrder.map((tid, idx) => {
-                      const team = teamMap.get(tid);
-                      const isCurrent = idx === session.currentNominatorIndex;
-                      return (
-                        <div
-                          key={`${tid}-${idx}`}
-                          className={`flex items-center gap-2 px-2 py-1 rounded text-sm ${isCurrent ? "bg-yellow-400/20 text-yellow-300 font-bold" : "text-gray-300"}`}
-                        >
-                          <span className="w-6 text-right text-xs text-gray-500">{idx + 1}.</span>
-                          <span>{team?.teamName ?? tid}</span>
-                          {isCurrent && <span className="ml-auto text-xs">◄</span>}
-                        </div>
-                      );
-                    })}
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Nomination Order</h3>
+                  <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-slate-900/95 z-10">
+                        <tr className="text-gray-400 uppercase tracking-wider border-b border-white/10">
+                          <th className="text-left py-2 px-2 w-8">#</th>
+                          <th className="text-left py-2 px-2">Team</th>
+                          <th className="text-right py-2 px-2">Purse</th>
+                          <th className="text-center py-2 px-1">GK</th>
+                          <th className="text-center py-2 px-1">DEF</th>
+                          <th className="text-center py-2 px-1">MID</th>
+                          <th className="text-center py-2 px-1">FWD</th>
+                          <th className="text-center py-2 px-1">Tot</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {session.snakeOrder.map((tid, idx) => {
+                          const team = teamMap.get(tid);
+                          const isCurrent = idx === session.currentNominatorIndex;
+                          const isMe = tid === myTeamId;
+                          const summary = teamSummaries[tid];
+                          const players = summary?.players ?? [];
+                          const isExpanded = expandedTeamId === tid;
+
+                          const counts = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+                          for (const p of players) {
+                            const el = elementById.get(p.fplElementId);
+                            if (el) {
+                              const pos = POSITION_LABELS[el.element_type];
+                              if (pos && pos in counts) counts[pos as keyof typeof counts]++;
+                            }
+                          }
+
+                          return (
+                            <React.Fragment key={`${tid}-${idx}`}>
+                              <tr
+                                onClick={() => setExpandedTeamId(isExpanded ? null : tid)}
+                                className={`cursor-pointer border-b border-white/5 transition hover:bg-white/5 ${
+                                  isCurrent ? "bg-yellow-400/10" : ""
+                                } ${isMe ? "bg-purple-500/10" : ""}`}
+                              >
+                                <td className="py-1.5 px-2 text-gray-500">
+                                  {isCurrent ? <span className="text-yellow-400 font-bold">►</span> : <span>{idx + 1}</span>}
+                                </td>
+                                <td className={`py-1.5 px-2 font-semibold ${isCurrent ? "text-yellow-300" : isMe ? "text-purple-300" : "text-white"}`}>
+                                  {team?.teamName ?? tid}
+                                  {isMe && <span className="text-[10px] ml-1 text-purple-400">(you)</span>}
+                                </td>
+                                <td className="py-1.5 px-2 text-right font-mono text-green-300">
+                                  {summary ? formatCurrency(summary.purse) : "—"}
+                                </td>
+                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.GK}</td>
+                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.DEF}</td>
+                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.MID}</td>
+                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.FWD}</td>
+                                <td className="py-1.5 px-1 text-center text-white font-semibold">{players.length}</td>
+                              </tr>
+                              {isExpanded && players.length > 0 && (
+                                <tr>
+                                  <td colSpan={8} className="px-2 py-2 bg-white/[0.02]">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                                      {players.map((p) => {
+                                        const el = elementById.get(p.fplElementId);
+                                        const pos = el ? POSITION_LABELS[el.element_type] : "—";
+                                        const plTeam = el ? plTeams.get(el.team) : null;
+                                        return (
+                                          <div key={p.fplElementId} className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 text-[11px]">
+                                            <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-white/15 text-gray-400">{pos}</span>
+                                            <span className="text-white truncate flex-1">{p.playerName}</span>
+                                            {plTeam && <span className="text-gray-500 text-[9px]">{plTeam.short_name}</span>}
+                                            <span className="text-green-400 font-mono text-[10px]">{formatCurrency(p.purchasePrice)}</span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    {summary && summary.penaltySlots > 0 && (
+                                      <div className="mt-1 text-[10px] text-red-400">
+                                        Penalty slots: {summary.penaltySlots} (max squad reduced)
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                              {isExpanded && players.length === 0 && (
+                                <tr>
+                                  <td colSpan={8} className="px-4 py-2 text-[10px] text-gray-500 bg-white/[0.02]">
+                                    No players owned yet
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-
-                {/* Wishlist */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
-                    <span className="text-xs text-gray-500">{wishlist.length}</span>
-                  </div>
-                  {wishlist.length === 0 ? (
-                    <div className="text-xs text-gray-500 py-3 text-center">
-                      Empty — add players from the nomination modal. If you miss your turn with an empty list, you&apos;ll lose a squad slot.
-                    </div>
-                  ) : (
-                    <div className="space-y-1 max-h-60 overflow-y-auto">
-                      {wishlist.map((entry, idx) => (
-                        <div
-                          key={entry.id}
-                          className="flex items-center gap-2 px-2 py-1 rounded text-sm bg-white/5"
-                        >
-                          <span className="w-5 text-right text-xs text-gray-500">{idx + 1}.</span>
-                          <span className="flex-1 truncate text-white">{entry.playerName}</span>
-                          <button
-                            onClick={() => handleReorderWishlist(idx, idx - 1)}
-                            disabled={idx === 0}
-                            className="text-gray-400 hover:text-white disabled:opacity-30 text-xs"
-                            title="Move up"
-                          >
-                            ▲
-                          </button>
-                          <button
-                            onClick={() => handleReorderWishlist(idx, idx + 1)}
-                            disabled={idx === wishlist.length - 1}
-                            className="text-gray-400 hover:text-white disabled:opacity-30 text-xs"
-                            title="Move down"
-                          >
-                            ▼
-                          </button>
-                          <button
-                            onClick={() => handleRemoveFromWishlist(entry.id)}
-                            className="text-red-400 hover:text-red-300 text-xs"
-                            title="Remove"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
               </div>
             </div>
 
-            {/* Live Auction Feed — always visible, full width */}
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Auction History</h3>
-              <div className="space-y-1 max-h-96 overflow-y-auto text-xs">
-                {bidFeed.length === 0 ? (
-                  <div className="text-gray-500 py-3 text-center">No activity yet</div>
+            {/* Row 2: Wishlist + Live Feed — full width, side by side */}
+            <div className="mt-4 grid grid-cols-1 lg:grid-cols-5 gap-4">
+              {/* Wishlist (2 cols) */}
+              <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
+                  <span className="text-[10px] text-gray-500">{wishlist.length}</span>
+                </div>
+                {wishlist.length === 0 ? (
+                  <div className="text-[10px] text-gray-500 py-2 text-center">
+                    Empty — add players from the nomination modal.
+                  </div>
                 ) : (
-                  bidFeed.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`flex items-start gap-2 px-2 py-1.5 rounded ${
-                        item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
-                        item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
-                        item.kind === "bid" ? "text-white" :
-                        "text-gray-400"
-                      }`}
-                    >
-                      <span className="text-[10px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
-                        {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                      </span>
-                      <span>{item.text}</span>
-                    </div>
-                  ))
+                  <div className="space-y-0.5 max-h-52 overflow-y-auto">
+                    {wishlist.map((entry, idx) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
+                      >
+                        <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}.</span>
+                        <span className="flex-1 truncate text-white">{entry.playerName}</span>
+                        <button onClick={() => handleReorderWishlist(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
+                        <button onClick={() => handleReorderWishlist(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
+                        <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
+                      </div>
+                    ))}
+                  </div>
                 )}
+              </div>
+
+              {/* Live Feed (3 cols) — expandable sold/unsold entries */}
+              <div className="lg:col-span-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Live Feed</h3>
+                <div className="space-y-0.5 max-h-52 overflow-y-auto text-[11px]">
+                  {bidFeed.length === 0 ? (
+                    <div className="text-gray-500 py-2 text-center text-[10px]">No activity yet</div>
+                  ) : (
+                    bidFeed
+                      .filter((item) => {
+                        if (item.kind === "sold" || item.kind === "unsold") return true;
+                        if (!item.bidId) return true;
+                        return expandedFeedBidId === item.bidId;
+                      })
+                      .map((item) => {
+                        const isSoldOrUnsold = item.kind === "sold" || item.kind === "unsold";
+                        const isExpanded = isSoldOrUnsold && expandedFeedBidId === item.bidId;
+                        const hasSubEntries = isSoldOrUnsold && item.bidId && bidFeed.some((f) => f.bidId === item.bidId && f.id !== item.id);
+                        const isSubEntry = !isSoldOrUnsold && item.bidId && expandedFeedBidId === item.bidId;
+
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={isSoldOrUnsold && hasSubEntries ? () => setExpandedFeedBidId(isExpanded ? null : item.bidId!) : undefined}
+                            className={`flex items-start gap-1.5 px-1.5 py-1 rounded ${
+                              item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
+                              item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
+                              item.kind === "bid" ? "text-white" :
+                              "text-gray-400"
+                            } ${isSoldOrUnsold && hasSubEntries ? "cursor-pointer hover:bg-white/5" : ""} ${isSubEntry ? "ml-4 border-l border-white/10 pl-2" : ""}`}
+                          >
+                            <span className="text-[9px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
+                              {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                            </span>
+                            <span className="flex-1">{item.text}</span>
+                            {isSoldOrUnsold && hasSubEntries && (
+                              <span className="text-[9px] text-gray-500 ml-1">{isExpanded ? "▾" : "▸"}</span>
+                            )}
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
               </div>
             </div>
 

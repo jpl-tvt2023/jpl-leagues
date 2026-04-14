@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auctionOwnership, leagues } from "@/lib/db/schema";
+import { auctionOwnership, leagues, teams } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { calculatePurse } from "@/lib/formats/auction/economy";
 
 /**
  * GET /api/auction/league-owned?leagueId=xxx
  *
  * Returns the set of FPL element IDs currently owned (status = "active") by any
- * team in the given auction league, plus a teamId map so the nomination modal
- * can show "owned by X" next to already-owned players.
+ * team in the given auction league, plus per-team ownership details for the
+ * nomination order table (purse, owned players with purchasePrice).
  */
 export async function GET(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
   }
 
   const leagueRow = await db
-    .select({ format: leagues.format })
+    .select({ format: leagues.format, initialBudget: leagues.initialBudget })
     .from(leagues)
     .where(eq(leagues.id, leagueId))
     .limit(1);
@@ -32,10 +33,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
   }
 
+  const initialBudget = leagueRow[0].initialBudget;
+
   const owned = await db
     .select({
       fplElementId: auctionOwnership.fplElementId,
       teamId: auctionOwnership.teamId,
+      playerName: auctionOwnership.playerName,
+      purchasePrice: auctionOwnership.purchasePrice,
     })
     .from(auctionOwnership)
     .where(
@@ -51,5 +56,41 @@ export async function GET(request: NextRequest) {
     ownerByElementId[o.fplElementId] = o.teamId;
   }
 
-  return NextResponse.json({ ownedElementIds, ownerByElementId });
+  // Per-team ownership details for nomination order table
+  const leagueTeams = await db
+    .select({
+      id: teams.id,
+      totalSpent: teams.totalSpent,
+      totalIncome: teams.totalIncome,
+      totalRefunds: teams.totalRefunds,
+      penaltySlots: teams.penaltySlots,
+    })
+    .from(teams)
+    .where(eq(teams.leagueId, leagueId));
+
+  const teamSummaries: Record<string, {
+    purse: number;
+    penaltySlots: number;
+    players: { fplElementId: number; playerName: string; purchasePrice: number }[];
+  }> = {};
+
+  for (const t of leagueTeams) {
+    teamSummaries[t.id] = {
+      purse: calculatePurse(initialBudget, t.totalIncome, t.totalSpent, t.totalRefunds),
+      penaltySlots: t.penaltySlots ?? 0,
+      players: [],
+    };
+  }
+
+  for (const o of owned) {
+    if (teamSummaries[o.teamId]) {
+      teamSummaries[o.teamId].players.push({
+        fplElementId: o.fplElementId,
+        playerName: o.playerName,
+        purchasePrice: o.purchasePrice,
+      });
+    }
+  }
+
+  return NextResponse.json({ ownedElementIds, ownerByElementId, teamSummaries });
 }

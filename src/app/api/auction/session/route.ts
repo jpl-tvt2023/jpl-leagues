@@ -28,8 +28,10 @@ async function resolveExpiredBids(sessionId: string) {
   const now = new Date();
   for (const bid of openBids) {
     if (now > bid.expiresAt) {
-      await resolveExpiredBid(bid);
-      await advanceNominator(sessionId);
+      const outcome = await resolveExpiredBid(bid);
+      if (outcome === "sold") {
+        await advanceNominator(sessionId);
+      }
     }
   }
 }

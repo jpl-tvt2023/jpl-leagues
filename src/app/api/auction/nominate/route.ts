@@ -5,7 +5,6 @@ import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import {
   resolveExpiredBid,
-  advanceNominator,
   clearNominationDeadline,
 } from "@/lib/formats/auction/resolve-bid";
 
@@ -70,11 +69,9 @@ export async function POST(request: NextRequest) {
   for (const stale of staleOpenBids) {
     if (nowMs > stale.expiresAt.getTime() + 2000) {
       try {
-        const outcome = await resolveExpiredBid(stale);
-        if (outcome === "sold") {
-          await advanceNominator(sessionId);
-        }
-        // else: already-resolved by SSE — skip advancement
+        await resolveExpiredBid(stale);
+        // Do NOT call advanceNominator — let SSE stream handle advancement
+        // to avoid double-advancing when both SSE and this safety-net resolve the same bid
       } catch (err) {
         // SSE may have already resolved this bid — log and continue
         console.error("[nominate] Safety-net resolution failed for bid", stale.id, err);
