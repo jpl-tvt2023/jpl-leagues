@@ -4,7 +4,7 @@
 
 import { fetchElementGameweekPoints } from "../../fpl";
 import { db, auctionOwnership } from "../../db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, lt, gte, or, isNull } from "drizzle-orm";
 
 export interface AuctionPlayerBreakdown {
   elementId: number;
@@ -27,7 +27,9 @@ export async function calculateAuctionTeamScore(
   teamId: string,
   gameweek: number
 ): Promise<AuctionTeamGwScore> {
-  // Get all active players owned by this team
+  // Get players owned by this team during the target GW.
+  // acquiredGw < gameweek: player was acquired before this GW (acquiredGw=0 earns from GW1)
+  // releasedGw IS NULL OR releasedGw >= gameweek: player hadn't been released yet
   const ownedPlayers = await db
     .select()
     .from(auctionOwnership)
@@ -35,7 +37,11 @@ export async function calculateAuctionTeamScore(
       and(
         eq(auctionOwnership.leagueId, leagueId),
         eq(auctionOwnership.teamId, teamId),
-        eq(auctionOwnership.status, "active")
+        lt(auctionOwnership.acquiredGw, gameweek),
+        or(
+          isNull(auctionOwnership.releasedGw),
+          gte(auctionOwnership.releasedGw, gameweek),
+        ),
       )
     );
 

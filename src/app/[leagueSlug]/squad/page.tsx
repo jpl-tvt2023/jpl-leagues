@@ -297,6 +297,7 @@ export default function SquadPage() {
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
           <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
           <Link href={`/${leagueSlug}/squad`} className="text-yellow-400 font-semibold transition">Squad</Link>
+          <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
           <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">Sign Out</button>

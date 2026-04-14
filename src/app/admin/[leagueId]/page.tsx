@@ -2909,6 +2909,8 @@ export default function AdminDashboard() {
               ) : gameweekStatuses.length === 0 ? (
                 <div className="text-center text-gray-400 py-8 text-sm">{isAuctionFormat ? "No gameweeks found — create gameweeks first" : "No gameweeks with fixtures found"}</div>
               ) : (
+                <>
+                <div className="text-xs text-gray-500 mb-3">Reprocessing uses historical ownership (acquiredGw / releasedGw) — safe to re-run any GW.</div>
                 <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-10 gap-2">
                   {gameweekStatuses.map((gw) => {
                     const cached = cacheStats?.gameweeks.find((c) => c.gameweek === gw.number);
@@ -2958,6 +2960,7 @@ export default function AdminDashboard() {
                     );
                   })}
                 </div>
+                </>
               )}
             </div>
 

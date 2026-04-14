@@ -367,8 +367,12 @@ interface AuctionDashboardData {
   leagueFormat: "auction";
   team: { id: string; name: string; abbreviation: string };
   purse: number;
+  initialBudget: number;
   totalSpent: number;
   totalIncome: number;
+  totalRefunds: number;
+  totalForfeit: number;
+  releases: { id: string; playerName: string; purchasePrice: number; refund: number; forfeit: number; releasedGw: number | null }[];
   totalPoints: number;
   squadValue: number;
   squadSize: number;
@@ -391,7 +395,7 @@ function formatCurrency(value: number): string {
 }
 
 function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashboardData; leagueSlug: string; onSignOut: () => void }) {
-  const netPnL = data.totalIncome - data.totalSpent;
+  const netPnL = data.initialBudget + data.totalIncome + data.totalRefunds - data.totalSpent;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -408,6 +412,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
           <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
+          <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
           <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <button onClick={onSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
@@ -468,7 +473,32 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
             <div className={`text-2xl font-bold ${netPnL >= 0 ? "text-green-400" : "text-red-400"}`}>
               {netPnL >= 0 ? "+" : ""}{formatCurrency(netPnL)}
             </div>
-            <div className="text-xs text-gray-500 mt-1">Income − Spent</div>
+            <div className="text-xs text-gray-500 mt-1">Budget + Income + Refunds − Spent</div>
+          </div>
+          <div className="group relative rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur cursor-default">
+            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Lost to Releases</div>
+            <div className={`text-2xl font-bold ${data.totalForfeit > 0 ? "text-red-400" : "text-gray-500"}`}>
+              {data.totalForfeit > 0 ? `-${formatCurrency(data.totalForfeit)}` : "£0"}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">{data.releases.length > 0 ? `${data.releases.length} released` : "No releases"}</div>
+            {data.releases.length > 0 && (
+              <div className="hidden group-hover:block absolute z-20 left-0 top-full mt-2 w-72 rounded-xl border border-white/10 bg-slate-800/95 backdrop-blur-xl shadow-xl p-3">
+                <div className="text-xs text-gray-400 font-semibold mb-2 uppercase tracking-wider">Release Breakdown</div>
+                {data.releases.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                    <div>
+                      <div className="text-sm text-white font-semibold">{r.playerName}</div>
+                      <div className="text-[10px] text-gray-500">{r.releasedGw != null ? `GW${r.releasedGw}` : "—"}</div>
+                    </div>
+                    <div className="text-right text-xs">
+                      <div className="text-gray-400">Bought {formatCurrency(r.purchasePrice)}</div>
+                      <div className="text-green-400">Refund {formatCurrency(r.refund)}</div>
+                      <div className="text-red-400 font-bold">Lost {formatCurrency(r.forfeit)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
