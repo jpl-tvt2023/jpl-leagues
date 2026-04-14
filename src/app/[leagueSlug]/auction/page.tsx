@@ -12,6 +12,7 @@ interface AuctionSession {
   status: "pending" | "active" | "paused" | "completed";
   snakeOrder: string[];
   currentNominatorIndex: number;
+  scheduledAt?: string | null;
 }
 
 interface WishlistEntry {
@@ -93,6 +94,44 @@ function getJumpBidOptions(currentHighBid: number): number[] {
   return [minNext, ...jumps.slice(0, 2)];
 }
 
+function ScheduledCountdown({ scheduledAt }: { scheduledAt: string }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const target = new Date(scheduledAt).getTime();
+  const diff = target - now;
+  if (diff <= 0) {
+    return (
+      <div className="text-2xl font-bold text-green-300">
+        Starting any moment — waiting for admin to open the room
+      </div>
+    );
+  }
+  const totalSeconds = Math.floor(diff / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const Segment = ({ value, label }: { value: number; label: string }) => (
+    <div className="flex flex-col items-center px-4">
+      <div className="text-4xl sm:text-5xl font-mono font-bold text-white tabular-nums">{String(value).padStart(2, "0")}</div>
+      <div className="text-[10px] uppercase tracking-widest text-gray-400 mt-1">{label}</div>
+    </div>
+  );
+  return (
+    <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
+      {days > 0 && <><Segment value={days} label="Days" /><div className="text-3xl text-gray-600">:</div></>}
+      <Segment value={hours} label="Hours" />
+      <div className="text-3xl text-gray-600">:</div>
+      <Segment value={minutes} label="Minutes" />
+      <div className="text-3xl text-gray-600">:</div>
+      <Segment value={seconds} label="Seconds" />
+    </div>
+  );
+}
+
 export default function AuctionRoomPage() {
   const params = useParams();
   const router = useRouter();
@@ -127,6 +166,8 @@ export default function AuctionRoomPage() {
   const [positionFilter, setPositionFilter] = useState<number | null>(null);
   const [nominating, setNominating] = useState<number | null>(null);
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
+  const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
+  const [wlTeamFilter, setWlTeamFilter] = useState<number | null>(null);
   const [nominationDeadlineSec, setNominationDeadlineSec] = useState<number>(0);
   const eventSourceRef = useRef<EventSource | null>(null);
   const teamMapRef = useRef<Map<string, StandingEntry>>(new Map());
@@ -203,6 +244,7 @@ export default function AuctionRoomPage() {
             status: active.status,
             snakeOrder: active.snakeOrder ?? [],
             currentNominatorIndex: active.currentNominatorIndex ?? 0,
+            scheduledAt: active.scheduledAt ?? null,
           });
           setNominationDeadline(active.nominationDeadline ?? null);
           if (active.currentBid) setCurrentBid(active.currentBid);
@@ -258,14 +300,32 @@ export default function AuctionRoomPage() {
               ts: new Date(b.updatedAt).getTime(),
               bidId: b.id,
             });
-            // Nomination sub-entry (visible on expand)
-            histFeed.push({
-              id: `${b.id}-nom`,
-              text: `${standingsMap.get(b.nominatorTeamId)?.teamName ?? "Unknown"} nominated ${b.playerName} — base ${formatCurrency(b.minBid)}`,
-              kind: "info",
-              ts: new Date(b.updatedAt).getTime() - 1, // Slightly before sold entry
-              bidId: b.id,
-            });
+            // Sub-entries from persisted logs (nomination + bids)
+            if (b.logs && b.logs.length > 0) {
+              for (const log of b.logs) {
+                if (log.type === "sold" || log.type === "unsold") continue; // already the main entry
+                const teamName = standingsMap.get(log.teamId)?.teamName ?? "Unknown";
+                const text = log.type === "nomination"
+                  ? `${teamName} nominated ${b.playerName} — base ${formatCurrency(log.amount)}`
+                  : `${teamName} bid ${formatCurrency(log.amount)} on ${b.playerName}`;
+                histFeed.push({
+                  id: log.id,
+                  text,
+                  kind: log.type === "nomination" ? "info" : "bid",
+                  ts: new Date(log.createdAt).getTime(),
+                  bidId: b.id,
+                });
+              }
+            } else {
+              // Legacy fallback: no logs persisted yet, synthesize nomination sub-entry
+              histFeed.push({
+                id: `${b.id}-nom`,
+                text: `${standingsMap.get(b.nominatorTeamId)?.teamName ?? "Unknown"} nominated ${b.playerName} — base ${formatCurrency(b.minBid)}`,
+                kind: "info",
+                ts: new Date(b.updatedAt).getTime() - 1,
+                bidId: b.id,
+              });
+            }
           }
           setBidFeed(histFeed);
         }
@@ -473,6 +533,29 @@ export default function AuctionRoomPage() {
     return m;
   }, [elements]);
 
+  const filteredWishlist = useMemo(() => {
+    return wishlist.filter((entry) => {
+      const el = elementById.get(entry.fplElementId);
+      if (!el) return true; // show if element data missing
+      if (wlPositionFilter !== null && el.element_type !== wlPositionFilter) return false;
+      if (wlTeamFilter !== null && el.team !== wlTeamFilter) return false;
+      return true;
+    });
+  }, [wishlist, wlPositionFilter, wlTeamFilter, elementById]);
+
+  const wlTeamOptions = useMemo(() => {
+    const teamIds = new Set<number>();
+    for (const entry of wishlist) {
+      const el = elementById.get(entry.fplElementId);
+      if (el) teamIds.add(el.team);
+    }
+    return Array.from(teamIds)
+      .map((id) => ({ id, name: plTeams.get(id)?.short_name ?? `Team ${id}` }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [wishlist, elementById, plTeams]);
+
+  const isWlFiltered = wlPositionFilter !== null || wlTeamFilter !== null;
+
   const handlePlaceBid = async (bidAmount?: number) => {
     if (!currentBid || !session) return;
     const amount = bidAmount ?? getNextBidAmount(currentBid.currentHighBid);
@@ -598,6 +681,7 @@ export default function AuctionRoomPage() {
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
           <Link href={`/${leagueSlug}/auction`} className="text-yellow-400 font-semibold transition">Auction</Link>
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
+          <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
           <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">Sign Out</button>
@@ -651,6 +735,25 @@ export default function AuctionRoomPage() {
             {session.status === "paused" && (
               <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-center text-yellow-300 text-sm">
                 Auction paused by admin
+              </div>
+            )}
+
+            {session.status === "pending" && (
+              <div className="mb-4 rounded-2xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-6 text-center backdrop-blur">
+                <div className="text-[11px] uppercase tracking-widest text-blue-300 mb-2">Auction Scheduled</div>
+                {session.scheduledAt ? (
+                  <>
+                    <ScheduledCountdown scheduledAt={session.scheduledAt} />
+                    <div className="text-xs text-gray-400 mt-2">
+                      Starts {new Date(session.scheduledAt).toLocaleString([], { dateStyle: "full", timeStyle: "short" })}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-bold text-white mb-1">Awaiting Start</h2>
+                    <p className="text-sm text-gray-400">The admin has created this auction. It will begin when they click Start.</p>
+                  </>
+                )}
               </div>
             )}
 
@@ -854,26 +957,65 @@ export default function AuctionRoomPage() {
               <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
-                  <span className="text-[10px] text-gray-500">{wishlist.length}</span>
+                  <span className="text-[10px] text-gray-500">{isWlFiltered ? `${filteredWishlist.length}/${wishlist.length}` : wishlist.length}</span>
                 </div>
+                {wishlist.length > 0 && (
+                  <div className="flex gap-1.5 mb-2">
+                    <select
+                      value={wlPositionFilter ?? ""}
+                      onChange={(e) => setWlPositionFilter(e.target.value ? Number(e.target.value) : null)}
+                      className="flex-1 bg-white/10 border border-white/20 text-white text-[10px] rounded px-1.5 py-1 outline-none"
+                    >
+                      <option value="">All Positions</option>
+                      <option value="1">GKP</option>
+                      <option value="2">DEF</option>
+                      <option value="3">MID</option>
+                      <option value="4">FWD</option>
+                    </select>
+                    <select
+                      value={wlTeamFilter ?? ""}
+                      onChange={(e) => setWlTeamFilter(e.target.value ? Number(e.target.value) : null)}
+                      className="flex-1 bg-white/10 border border-white/20 text-white text-[10px] rounded px-1.5 py-1 outline-none"
+                    >
+                      <option value="">All Teams</option>
+                      {wlTeamOptions.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {wishlist.length === 0 ? (
                   <div className="text-[10px] text-gray-500 py-2 text-center">
                     Empty — add players from the nomination modal.
                   </div>
+                ) : filteredWishlist.length === 0 ? (
+                  <div className="text-[10px] text-gray-500 py-2 text-center">
+                    No players match filters.
+                  </div>
                 ) : (
                   <div className="space-y-0.5 max-h-52 overflow-y-auto">
-                    {wishlist.map((entry, idx) => (
-                      <div
-                        key={entry.id}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
-                      >
-                        <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}.</span>
-                        <span className="flex-1 truncate text-white">{entry.playerName}</span>
-                        <button onClick={() => handleReorderWishlist(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
-                        <button onClick={() => handleReorderWishlist(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
-                        <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
-                      </div>
-                    ))}
+                    {filteredWishlist.map((entry) => {
+                      const el = elementById.get(entry.fplElementId);
+                      const realIdx = wishlist.findIndex((w) => w.id === entry.id);
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
+                        >
+                          <span className="w-4 text-right text-[10px] text-gray-500">{entry.priority}.</span>
+                          {el && <span className="text-[9px] text-gray-500 w-6">{POSITION_LABELS[el.element_type] ?? ""}</span>}
+                          <span className="flex-1 truncate text-white">{entry.playerName}</span>
+                          {el && <span className="text-[9px] text-gray-500">{plTeams.get(el.team)?.short_name ?? ""}</span>}
+                          {!isWlFiltered && (
+                            <>
+                              <button onClick={() => handleReorderWishlist(realIdx, realIdx - 1)} disabled={realIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
+                              <button onClick={() => handleReorderWishlist(realIdx, realIdx + 1)} disabled={realIdx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
+                            </>
+                          )}
+                          <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

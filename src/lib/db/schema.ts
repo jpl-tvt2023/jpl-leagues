@@ -363,6 +363,7 @@ export const auctionSessions = sqliteTable("auction_sessions", {
   snakeOrder: text("snake_order").notNull().default("[]"), // JSON array of teamIds in nomination order
   currentNominatorIndex: integer("current_nominator_index").notNull().default(0),
   nominationDeadline: integer("nomination_deadline", { mode: "timestamp" }), // When current nominator must nominate by (null = no active deadline)
+  scheduledAt: integer("scheduled_at", { mode: "timestamp" }), // When the auction is scheduled to start (shown to users as countdown)
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -392,6 +393,16 @@ export const auctionBids = sqliteTable("auction_bids", {
   expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+// Auction bid logs — append-only event log for each bid lifecycle
+export const auctionBidLogs = sqliteTable("auction_bid_logs", {
+  id: text("id").primaryKey(),
+  bidId: text("bid_id").notNull().references(() => auctionBids.id),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  amount: integer("amount").notNull(),
+  type: text("type").notNull(), // "nomination" | "bid" | "sold" | "unsold"
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
 // Trade proposals — P2P marketplace with veto system

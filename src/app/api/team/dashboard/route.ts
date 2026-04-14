@@ -6,7 +6,7 @@ import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
-import { calculatePurse } from "@/lib/formats/auction/economy";
+import { calculatePurse, calculateRefund } from "@/lib/formats/auction/economy";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
@@ -1013,6 +1013,24 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     const squad = await db.select().from(auctionOwnership)
       .where(and(eq(auctionOwnership.teamId, teamId), eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.status, "active")));
 
+    // Get released players for forfeit breakdown
+    const releasedPlayers = await db.select().from(auctionOwnership)
+      .where(and(eq(auctionOwnership.teamId, teamId), eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.status, "released")));
+
+    const releases = releasedPlayers.map(p => {
+      const refund = calculateRefund(p.purchasePrice);
+      return {
+        id: p.id,
+        playerName: p.playerName,
+        purchasePrice: p.purchasePrice,
+        refund,
+        forfeit: p.purchasePrice - refund,
+        releasedGw: p.releasedGw,
+      };
+    });
+    const totalForfeit = releases.reduce((sum, r) => sum + r.forfeit, 0);
+    const totalRefunds = releases.reduce((sum, r) => sum + r.refund, 0);
+
     // Get all GW scores for this manager
     const scores = await db.select({
       totalPoints: auctionScores.totalPoints,
@@ -1051,6 +1069,10 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     const sessions = await db.select().from(auctionSessions)
       .where(and(eq(auctionSessions.leagueId, leagueId)));
     const activeSession = sessions.find(s => s.status === "active" || s.status === "paused");
+    const nowForAuction = new Date();
+    const nextScheduledAuction = sessions
+      .filter(s => s.status === "pending" && s.scheduledAt && s.scheduledAt > nowForAuction)
+      .sort((a, b) => (a.scheduledAt!.getTime() - b.scheduledAt!.getTime()))[0] ?? null;
 
     // Squad value = sum of purchase prices
     const squadValue = squad.reduce((sum, p) => sum + p.purchasePrice, 0);
@@ -1074,8 +1096,12 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         abbreviation: t.abbreviation,
       },
       purse: calculatePurse(leagueRow[0]?.initialBudget ?? 0, totalIncome, t.totalSpent ?? 0, t.totalRefunds ?? 0),
+      initialBudget: leagueRow[0]?.initialBudget ?? 0,
       totalSpent: t.totalSpent ?? 0,
       totalIncome,
+      totalRefunds,
+      totalForfeit,
+      releases,
       totalPoints,
       squadValue,
       squadSize: squad.length,
@@ -1106,6 +1132,12 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         id: activeSession.id,
         type: activeSession.type,
         status: activeSession.status,
+      } : null,
+      nextAuction: nextScheduledAuction ? {
+        id: nextScheduledAuction.id,
+        type: nextScheduledAuction.type,
+        cycleNumber: nextScheduledAuction.cycleNumber,
+        scheduledAt: nextScheduledAuction.scheduledAt!.toISOString(),
       } : null,
       deadline: nextGw.length > 0 ? {
         gameweek: nextGw[0].number,

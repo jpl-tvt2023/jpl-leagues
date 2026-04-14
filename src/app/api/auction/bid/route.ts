@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, auctionBids, auctionSessions, auctionOwnership, teams, leagues } from "@/lib/db";
+import { db, auctionBids, auctionBidLogs, auctionSessions, auctionOwnership, teams, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
@@ -124,6 +124,15 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date(),
       })
       .where(eq(auctionBids.id, currentBid.id));
+
+    // Log the bid event
+    await tx.insert(auctionBidLogs).values({
+      id: generateId(),
+      bidId: currentBid.id,
+      teamId: session.id,
+      amount: bidAmount,
+      type: "bid",
+    });
 
     return {
       success: true,

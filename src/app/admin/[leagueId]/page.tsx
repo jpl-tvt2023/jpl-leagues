@@ -112,6 +112,7 @@ interface AuctionSessionInfo {
   status: string;
   snakeOrder: string[];
   currentNominatorIndex: number;
+  scheduledAt: string | null;
   createdAt: string;
 }
 
@@ -249,6 +250,8 @@ export default function AdminDashboard() {
   const [auctionLoading, setAuctionLoading] = useState(false);
   const [auctionSessionCreating, setAuctionSessionCreating] = useState(false);
   const [auctionSessionAction, setAuctionSessionAction] = useState<string | null>(null);
+  const [showCreateSessionModal, setShowCreateSessionModal] = useState<string | null>(null); // "initial" | "mini-auction" | null
+  const [newSessionScheduledAt, setNewSessionScheduledAt] = useState("");
 
   // Live Auction Monitor State
   const [liveCurrentBid, setLiveCurrentBid] = useState<{
@@ -843,17 +846,25 @@ export default function AdminDashboard() {
     }
   };
 
-  const createAuctionSession = async (type: string) => {
+  const createAuctionSession = async (type: string, scheduledAt?: string) => {
     setAuctionSessionCreating(true);
     try {
       const res = await fetch("/api/auction/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leagueId: leagueConfig.leagueDbId, action: "create", type, cycleNumber: type === "initial" ? 0 : undefined }),
+        body: JSON.stringify({
+          leagueId: leagueConfig.leagueDbId,
+          action: "create",
+          type,
+          cycleNumber: type === "initial" ? 0 : undefined,
+          scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: `Auction session created (${type})` });
+        setShowCreateSessionModal(null);
+        setNewSessionScheduledAt("");
         fetchAuctionData();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to create session" });
@@ -862,6 +873,30 @@ export default function AdminDashboard() {
       setMessage({ type: "error", text: "Network error" });
     } finally {
       setAuctionSessionCreating(false);
+    }
+  };
+
+  const rescheduleAuctionSession = async (sessionId: string, scheduledAt: string) => {
+    try {
+      const res = await fetch("/api/auction/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leagueId: leagueConfig.leagueDbId,
+          action: "schedule",
+          sessionId,
+          scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: "Schedule updated" });
+        fetchAuctionData();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to update schedule" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
     }
   };
 
@@ -2874,6 +2909,8 @@ export default function AdminDashboard() {
               ) : gameweekStatuses.length === 0 ? (
                 <div className="text-center text-gray-400 py-8 text-sm">{isAuctionFormat ? "No gameweeks found — create gameweeks first" : "No gameweeks with fixtures found"}</div>
               ) : (
+                <>
+                <div className="text-xs text-gray-500 mb-3">Reprocessing uses historical ownership (acquiredGw / releasedGw) — safe to re-run any GW.</div>
                 <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-10 gap-2">
                   {gameweekStatuses.map((gw) => {
                     const cached = cacheStats?.gameweeks.find((c) => c.gameweek === gw.number);
@@ -2923,6 +2960,7 @@ export default function AdminDashboard() {
                     );
                   })}
                 </div>
+                </>
               )}
             </div>
 
@@ -3261,37 +3299,40 @@ export default function AdminDashboard() {
             )}
 
             {/* Session Controls */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-6 backdrop-blur shadow-lg">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-white">Auction Sessions</h2>
-                  <p className="text-sm text-gray-400 mt-0.5">Create and manage auction sessions</p>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-slate-900 text-lg">🏷️</div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">Auction Sessions</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">Schedule, start, and manage auction windows</p>
+                  </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => createAuctionSession("initial")}
+                    onClick={() => { setShowCreateSessionModal("initial"); setNewSessionScheduledAt(""); }}
                     disabled={auctionSessionCreating}
-                    className="px-4 py-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 text-sm font-medium disabled:opacity-50 transition"
+                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-green-500/25 to-emerald-500/20 text-green-300 hover:from-green-500/40 hover:to-emerald-500/30 border border-green-500/30 text-sm font-medium disabled:opacity-50 transition shadow-sm"
                   >
-                    {auctionSessionCreating ? "Creating..." : "+ Initial Auction"}
+                    + Initial Auction
                   </button>
                   <button
-                    onClick={() => createAuctionSession("mini-auction")}
+                    onClick={() => { setShowCreateSessionModal("mini-auction"); setNewSessionScheduledAt(""); }}
                     disabled={auctionSessionCreating}
-                    className="px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-sm font-medium disabled:opacity-50 transition"
+                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500/25 to-indigo-500/20 text-blue-300 hover:from-blue-500/40 hover:to-indigo-500/30 border border-blue-500/30 text-sm font-medium disabled:opacity-50 transition shadow-sm"
                   >
-                    {auctionSessionCreating ? "Creating..." : "+ Mini-Auction"}
+                    + Mini-Auction
                   </button>
                   <button
                     onClick={fetchAuctionData}
                     disabled={auctionLoading}
-                    className="px-4 py-2 rounded-lg bg-white/5 text-gray-400 hover:bg-white/10 text-sm disabled:opacity-50 transition"
+                    className="px-4 py-2 rounded-lg bg-white/5 text-gray-300 hover:bg-white/10 border border-white/10 text-sm disabled:opacity-50 transition"
                   >
-                    {auctionLoading ? "Loading..." : "Refresh"}
+                    {auctionLoading ? "⟳ Loading..." : "↻ Refresh"}
                   </button>
                   <button
                     onClick={() => setShowAuctionResetConfirm(true)}
-                    className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-sm font-medium transition"
+                    className="px-4 py-2 rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 border border-red-500/30 text-sm font-medium transition"
                   >
                     Reset Auction
                   </button>
@@ -3301,63 +3342,148 @@ export default function AdminDashboard() {
               {auctionLoading ? (
                 <div className="text-center text-gray-400 py-8 text-sm">Loading sessions...</div>
               ) : auctionSessions.length === 0 ? (
-                <div className="text-center text-gray-400 py-8 text-sm">No auction sessions created yet</div>
+                <div className="text-center py-12 rounded-xl bg-white/[0.02] border border-dashed border-white/10">
+                  <div className="text-3xl mb-2">📅</div>
+                  <div className="text-sm text-gray-300 font-medium">No auction sessions yet</div>
+                  <div className="text-xs text-gray-500 mt-1">Click "+ Initial Auction" above to schedule one</div>
+                </div>
               ) : (
                 <div className="space-y-3">
-                  {auctionSessions.map((session) => (
-                    <div key={session.id} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <span className="font-semibold text-white">
-                            {session.type === "initial" ? "Initial Auction" : `Mini-Auction #${session.cycleNumber}`}
-                          </span>
-                          <span className={`text-xs px-2 py-0.5 rounded ${
-                            session.status === "active" ? "bg-green-500/20 text-green-400" :
-                            session.status === "paused" ? "bg-yellow-500/20 text-yellow-400" :
-                            session.status === "completed" ? "bg-gray-500/20 text-gray-400" :
-                            "bg-blue-500/20 text-blue-400"
-                          }`}>
-                            {session.status}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          Snake order: {session.snakeOrder.length} teams | Position: {session.currentNominatorIndex + 1}/{session.snakeOrder.length}
+                  {auctionSessions.map((session) => {
+                    const sched = session.scheduledAt ? new Date(session.scheduledAt) : null;
+                    const schedStr = sched ? sched.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : null;
+                    const schedInputVal = sched ? new Date(sched.getTime() - sched.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+                    const isPending = session.status === "pending";
+                    return (
+                      <div key={session.id} className="group p-4 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/20 transition">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-semibold text-white">
+                                {session.type === "initial" ? "Initial Auction" : `Mini-Auction #${session.cycleNumber}`}
+                              </span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider border ${
+                                session.status === "active" ? "bg-green-500/20 text-green-300 border-green-500/40" :
+                                session.status === "paused" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" :
+                                session.status === "completed" ? "bg-gray-500/20 text-gray-400 border-gray-500/40" :
+                                "bg-blue-500/20 text-blue-300 border-blue-500/40"
+                              }`}>
+                                {session.status}
+                              </span>
+                              {schedStr && (
+                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                                  📅 {schedStr}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-2 flex items-center gap-3">
+                              <span>👥 {session.snakeOrder.length} teams</span>
+                              <span className="text-gray-600">•</span>
+                              <span>Position: {session.currentNominatorIndex + 1}/{session.snakeOrder.length}</span>
+                            </div>
+                            {isPending && (
+                              <div className="mt-3 flex items-center gap-2">
+                                <label className="text-[10px] text-gray-500 uppercase tracking-wider">Scheduled for:</label>
+                                <input
+                                  type="datetime-local"
+                                  defaultValue={schedInputVal}
+                                  onBlur={(e) => {
+                                    const newVal = e.target.value;
+                                    if (newVal !== schedInputVal) rescheduleAuctionSession(session.id, newVal);
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-slate-800/60 text-white text-xs border border-white/15 focus:border-yellow-400 outline-none"
+                                />
+                                {schedStr && (
+                                  <button
+                                    onClick={() => rescheduleAuctionSession(session.id, "")}
+                                    className="text-[10px] text-gray-500 hover:text-red-400 transition"
+                                    title="Clear schedule"
+                                  >
+                                    ✕ clear
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            {(session.status === "pending" || session.status === "paused") && (
+                              <button
+                                onClick={() => updateAuctionSession(session.id, "start")}
+                                disabled={auctionSessionAction !== null}
+                                className="px-3 py-1.5 rounded-lg bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/30 text-xs font-medium disabled:opacity-50 transition"
+                              >
+                                {auctionSessionAction === "start" ? "..." : session.status === "paused" ? "▶ Resume" : "▶ Start"}
+                              </button>
+                            )}
+                            {session.status === "active" && (
+                              <>
+                                <button
+                                  onClick={() => updateAuctionSession(session.id, "pause")}
+                                  disabled={auctionSessionAction !== null}
+                                  className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 border border-yellow-500/30 text-xs font-medium disabled:opacity-50 transition"
+                                >
+                                  {auctionSessionAction === "pause" ? "..." : "⏸ Pause"}
+                                </button>
+                                <button
+                                  onClick={() => updateAuctionSession(session.id, "complete")}
+                                  disabled={auctionSessionAction !== null}
+                                  className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 text-xs font-medium disabled:opacity-50 transition"
+                                >
+                                  {auctionSessionAction === "complete" ? "..." : "■ Complete"}
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex gap-2">
-                        {(session.status === "pending" || session.status === "paused") && (
-                          <button
-                            onClick={() => updateAuctionSession(session.id, "start")}
-                            disabled={auctionSessionAction !== null}
-                            className="px-3 py-1.5 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 text-xs font-medium disabled:opacity-50 transition"
-                          >
-                            {auctionSessionAction === "start" ? "..." : session.status === "paused" ? "Resume" : "Start"}
-                          </button>
-                        )}
-                        {session.status === "active" && (
-                          <>
-                            <button
-                              onClick={() => updateAuctionSession(session.id, "pause")}
-                              disabled={auctionSessionAction !== null}
-                              className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-xs font-medium disabled:opacity-50 transition"
-                            >
-                              {auctionSessionAction === "pause" ? "..." : "Pause"}
-                            </button>
-                            <button
-                              onClick={() => updateAuctionSession(session.id, "complete")}
-                              disabled={auctionSessionAction !== null}
-                              className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-xs font-medium disabled:opacity-50 transition"
-                            >
-                              {auctionSessionAction === "complete" ? "..." : "Complete"}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
+
+            {/* Create Session Modal (with optional scheduled start time) */}
+            {showCreateSessionModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => !auctionSessionCreating && setShowCreateSessionModal(null)}>
+                <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-slate-900 text-lg">📅</div>
+                    <div>
+                      <h3 className="text-xl font-bold text-white">
+                        Create {showCreateSessionModal === "initial" ? "Initial Auction" : "Mini-Auction"}
+                      </h3>
+                      <p className="text-xs text-gray-400">Optionally schedule when it should start</p>
+                    </div>
+                  </div>
+                  <div className="mb-4">
+                    <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Scheduled Start (optional)</label>
+                    <input
+                      type="datetime-local"
+                      value={newSessionScheduledAt}
+                      onChange={(e) => setNewSessionScheduledAt(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 focus:border-yellow-400 outline-none text-sm"
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1.5">Teams will see a countdown to this time. You still need to click "Start" to begin the session.</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => createAuctionSession(showCreateSessionModal, newSessionScheduledAt || undefined)}
+                      disabled={auctionSessionCreating}
+                      className="flex-1 px-4 py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 disabled:opacity-50 transition shadow"
+                    >
+                      {auctionSessionCreating ? "Creating..." : "Create Session"}
+                    </button>
+                    <button
+                      onClick={() => { setShowCreateSessionModal(null); setNewSessionScheduledAt(""); }}
+                      disabled={auctionSessionCreating}
+                      className="px-4 py-2 rounded-lg bg-white/10 text-gray-300 hover:bg-white/20 transition disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Squad Overview */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, auctionBids, auctionSessions, auctionOwnership } from "@/lib/db";
+import { db, auctionBids, auctionBidLogs, auctionSessions, auctionOwnership } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
@@ -148,6 +148,15 @@ export async function POST(request: NextRequest) {
     minBid: startingBid,
     status: "open",
     expiresAt,
+  });
+
+  // Log the nomination event
+  await db.insert(auctionBidLogs).values({
+    id: generateId(),
+    bidId,
+    teamId: currentNominatorId,
+    amount: startingBid,
+    type: "nomination",
   });
 
   // Clear nomination deadline — the 30s bid timer takes over

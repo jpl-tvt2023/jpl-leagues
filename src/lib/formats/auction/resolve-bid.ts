@@ -12,6 +12,7 @@
 import { db } from "@/lib/db";
 import {
   auctionBids,
+  auctionBidLogs,
   auctionOwnership,
   auctionSessions,
   auctionWishlists,
@@ -87,6 +88,15 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
     status: "active",
     createdAt: now,
     updatedAt: now,
+  });
+
+  // Log the sold event
+  await db.insert(auctionBidLogs).values({
+    id: generateId(),
+    bidId: bid.id,
+    teamId: winnerId,
+    amount: winAmount,
+    type: "sold",
   });
 
   // Remove player from every team's wishlist in the league (they're no longer available)
@@ -214,6 +224,15 @@ async function createNomination(
     minBid: DEFAULT_MIN_BID,
     status: "open",
     expiresAt,
+  });
+
+  // Log the nomination event
+  await db.insert(auctionBidLogs).values({
+    id: generateId(),
+    bidId,
+    teamId: nominatorTeamId,
+    amount: DEFAULT_MIN_BID,
+    type: "nomination",
   });
 
   // Clear the nomination deadline — the bid timer now takes over
