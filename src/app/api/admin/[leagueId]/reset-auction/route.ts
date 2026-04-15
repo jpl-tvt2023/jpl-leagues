@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   db,
   auctionBids,
+  auctionBidLogs,
   auctionSessions,
   auctionOwnership,
   auctionScores,
   tradeProposals,
   teams,
+  leagues,
 } from "@/lib/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -33,13 +35,24 @@ export async function POST(request: NextRequest) {
 
   if (resetTo === "initial") {
     // Full wipe — delete everything auction-related for this league
-    // Order matters: delete bids before sessions (FK), ownership, wishlists, scores, trades
+    // Order matters: bid logs → bids → sessions (FK chain), then ownership, scores, trades
+
+    // Delete bid logs first (references auctionBids)
+    const allBids = await db.select({ id: auctionBids.id }).from(auctionBids).where(eq(auctionBids.leagueId, leagueId));
+    for (const bid of allBids) {
+      await db.delete(auctionBidLogs).where(eq(auctionBidLogs.bidId, bid.id));
+    }
+
     await db.delete(auctionBids).where(eq(auctionBids.leagueId, leagueId));
     await db.delete(auctionSessions).where(eq(auctionSessions.leagueId, leagueId));
     await db.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId));
     // Wishlists are preserved across resets — they are user-curated
     await db.delete(auctionScores).where(eq(auctionScores.leagueId, leagueId));
     await db.delete(tradeProposals).where(eq(tradeProposals.leagueId, leagueId));
+
+    // Get league's initial budget to restore purse
+    const leagueRow = await db.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+    const initialBudget = leagueRow[0]?.initialBudget ?? 0;
 
     // Reset team economy columns
     await db
@@ -49,7 +62,7 @@ export async function POST(request: NextRequest) {
         totalRefunds: 0,
         totalIncome: 0,
         penaltySlots: 0,
-        purse: 0,
+        purse: initialBudget,
       })
       .where(eq(teams.leagueId, leagueId));
 
@@ -108,8 +121,12 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    // Delete bids in these sessions
+    // Delete bid logs then bids in these sessions
     for (const sid of sessionIds) {
+      const bidsInSession = await db.select({ id: auctionBids.id }).from(auctionBids).where(eq(auctionBids.sessionId, sid));
+      for (const bid of bidsInSession) {
+        await db.delete(auctionBidLogs).where(eq(auctionBidLogs.bidId, bid.id));
+      }
       await db.delete(auctionBids).where(eq(auctionBids.sessionId, sid));
     }
 
