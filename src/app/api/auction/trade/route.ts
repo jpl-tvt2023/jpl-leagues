@@ -6,8 +6,6 @@ import { generateId } from "@/lib/id";
 import { validateTradeProposal, type TradePlayer } from "@/lib/formats/auction/marketplace";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 
-const VETO_WINDOW_HOURS = 12;
-
 /**
  * GET /api/auction/trade?leagueId=xxx&teamId=xxx
  * List trade proposals. If teamId provided, shows that team's proposals.
@@ -241,16 +239,14 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, status: "rejected" });
   }
 
-  // Accept — start veto window
-  const vetoDeadline = new Date(Date.now() + VETO_WINDOW_HOURS * 60 * 60 * 1000);
+  // Accept — awaits admin approval (no veto window)
   await db
     .update(tradeProposals)
     .set({
       status: "accepted",
-      vetoDeadline,
       updatedAt: new Date(),
     })
     .where(eq(tradeProposals.id, proposalId));
 
-  return NextResponse.json({ success: true, status: "accepted", vetoDeadline: vetoDeadline.toISOString() });
+  return NextResponse.json({ success: true, status: "accepted" });
 }

@@ -11,7 +11,7 @@ interface SquadPlayer {
   playerName: string;
   purchasePrice: number;
   acquiredGw: number;
-  status: "active" | "deadwood" | "released";
+  status: "active" | "deadwood" | "released" | "pending_release";
   totalPoints: number;
   fmv: number;
 }
@@ -188,7 +188,7 @@ export default function SquadPage() {
   const canRelease = session?.type === "mini-auction" && session?.status === "active";
 
   const handleRelease = async (ownershipId: string, playerName: string) => {
-    if (!confirm(`Release ${playerName}? You will receive a 50% refund of the purchase price.`)) return;
+    if (!confirm(`Mark ${playerName} for release? The player continues scoring for you until GW 10/20/30, when a 50% refund will be credited to your purse. You can cancel the release any time before then.`)) return;
     setReleasing(ownershipId);
     setReleaseError(null);
     try {
@@ -202,6 +202,26 @@ export default function SquadPage() {
       await loadAll();
     } catch (err) {
       setReleaseError(err instanceof Error ? err.message : "Release failed");
+    } finally {
+      setReleasing(null);
+    }
+  };
+
+  const handleCancelRelease = async (ownershipId: string, playerName: string) => {
+    if (!confirm(`Cancel pending release for ${playerName}?`)) return;
+    setReleasing(ownershipId);
+    setReleaseError(null);
+    try {
+      const res = await fetch("/api/auction/release", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownershipId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Cancel release failed");
+      await loadAll();
+    } catch (err) {
+      setReleaseError(err instanceof Error ? err.message : "Cancel release failed");
     } finally {
       setReleasing(null);
     }
@@ -299,6 +319,7 @@ export default function SquadPage() {
           <Link href={`/${leagueSlug}/squad`} className="text-yellow-400 font-semibold transition">Squad</Link>
           <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
           <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
+          <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">Sign Out</button>
         </div>
@@ -538,7 +559,13 @@ export default function SquadPage() {
                 return (
                   <div
                     key={p.ownershipId}
-                    className={`rounded-xl border ${p.status === "deadwood" ? "border-yellow-500/40 bg-yellow-500/5" : "border-white/10 bg-white/5"} backdrop-blur transition`}
+                    className={`rounded-xl border ${
+                      p.status === "pending_release"
+                        ? "border-orange-500/50 bg-orange-500/5 border-dashed"
+                        : p.status === "deadwood"
+                        ? "border-yellow-500/40 bg-yellow-500/5"
+                        : "border-white/10 bg-white/5"
+                    } backdrop-blur transition`}
                   >
                     {/* Always-visible summary row — click to expand */}
                     <button
@@ -572,13 +599,40 @@ export default function SquadPage() {
                         {p.status === "deadwood" && (
                           <div className="pt-1 text-[10px] uppercase tracking-wider text-yellow-400 font-bold">Deadwood</div>
                         )}
-                        {canRelease && p.status !== "released" && (
+                        {p.status === "pending_release" && (
+                          <div
+                            className="pt-1 text-[10px] uppercase tracking-wider text-orange-400 font-bold"
+                            title={`Finalizes at next GW 10/20/30 boundary. Projected refund: ${formatCurrency(Math.floor(p.purchasePrice * 0.5))}. Projected forfeit: ${formatCurrency(p.purchasePrice - Math.floor(p.purchasePrice * 0.5))}. Player continues scoring for you until finalization.`}
+                          >
+                            Pending Release — projected refund {formatCurrency(Math.floor(p.purchasePrice * 0.5))}
+                          </div>
+                        )}
+                        {canRelease && p.status === "active" && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
+                            disabled={releasing === p.ownershipId}
+                            title={`50% refund (${formatCurrency(Math.floor(p.purchasePrice * 0.5))}) credited at GW 10/20/30. Player keeps scoring until then. Cancellable before finalization.`}
+                            className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
+                          >
+                            {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.purchasePrice * 0.5))})`}
+                          </button>
+                        )}
+                        {canRelease && p.status === "deadwood" && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
                             disabled={releasing === p.ownershipId}
                             className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
                           >
-                            {releasing === p.ownershipId ? "Releasing..." : `Release (+${formatCurrency(Math.floor(p.purchasePrice * 0.5))})`}
+                            {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.purchasePrice * 0.5))})`}
+                          </button>
+                        )}
+                        {p.status === "pending_release" && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCancelRelease(p.ownershipId, p.playerName); }}
+                            disabled={releasing === p.ownershipId}
+                            className="mt-2 w-full rounded-lg bg-white/10 border border-white/20 text-white text-xs font-semibold py-1.5 hover:bg-white/20 transition disabled:opacity-50"
+                          >
+                            {releasing === p.ownershipId ? "..." : "Cancel Release"}
                           </button>
                         )}
                       </div>

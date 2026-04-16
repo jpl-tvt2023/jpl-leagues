@@ -208,6 +208,7 @@ export default function PlayersPage() {
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
           <Link href={`/${leagueSlug}/players`} className="text-yellow-400 font-semibold transition">Players</Link>
           <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
+          <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
         </div>
       </nav>

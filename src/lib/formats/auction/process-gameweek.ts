@@ -1,10 +1,10 @@
 // JPL Auction Gameweek Processor
 // Scores all teams, ranks them, assigns payouts, updates purses
 
-import { db, teams, auctionScores } from "../../db";
+import { db, teams, auctionScores, auctionOwnership } from "../../db";
 import { eq, and } from "drizzle-orm";
 import { calculateAuctionTeamScore } from "./scoring";
-import { getPayoutForRank } from "./economy";
+import { getPayoutForRank, calculateRefund } from "./economy";
 import { randomUUID } from "crypto";
 
 export interface AuctionProcessResult {
@@ -125,6 +125,51 @@ export async function processAuctionGameweek(
             updatedAt: new Date(),
           })
           .where(eq(teams.id, score.teamId));
+      }
+    }
+
+    // Finalize pending releases at cycle boundaries (GW 10, 20, 30)
+    if (gameweekNumber % 10 === 0) {
+      const pendingReleases = await tx
+        .select()
+        .from(auctionOwnership)
+        .where(
+          and(
+            eq(auctionOwnership.leagueId, leagueId),
+            eq(auctionOwnership.status, "pending_release")
+          )
+        );
+
+      // Aggregate refunds per team to avoid multiple round-trips
+      const refundByTeam = new Map<string, number>();
+      for (const p of pendingReleases) {
+        const refund = calculateRefund(p.purchasePrice);
+        await tx
+          .update(auctionOwnership)
+          .set({
+            status: "released",
+            releasedGw: gameweekNumber,
+            updatedAt: new Date(),
+          })
+          .where(eq(auctionOwnership.id, p.id));
+        refundByTeam.set(p.teamId, (refundByTeam.get(p.teamId) ?? 0) + refund);
+      }
+
+      for (const [teamId, totalRefund] of refundByTeam) {
+        const team = leagueTeams.find((t) => t.id === teamId);
+        if (!team) continue;
+        // Re-fetch the most recent purse (may have been updated above)
+        const current = await tx.select().from(teams).where(eq(teams.id, teamId)).limit(1);
+        const currentPurse = current[0]?.purse ?? team.purse;
+        const currentRefunds = current[0]?.totalRefunds ?? team.totalRefunds;
+        await tx
+          .update(teams)
+          .set({
+            purse: currentPurse + totalRefund,
+            totalRefunds: currentRefunds + totalRefund,
+            updatedAt: new Date(),
+          })
+          .where(eq(teams.id, teamId));
       }
     }
   });
