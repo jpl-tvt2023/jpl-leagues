@@ -33,7 +33,7 @@ interface StandingEntry {
   abbreviation: string;
 }
 
-type Tab = "incoming" | "outgoing" | "veto" | "history";
+type Tab = "incoming" | "outgoing" | "releases" | "history";
 
 function formatCurrency(amount: number): string {
   const abs = Math.abs(amount);
@@ -153,15 +153,21 @@ export default function MarketplacePage() {
 
   const filtered = useMemo(() => {
     if (!myTeamId) return [];
-    const now = Date.now();
     return proposals.filter((p) => {
-      if (tab === "incoming") return p.status === "pending" && p.targetTeamId === myTeamId;
-      if (tab === "outgoing") return p.status === "pending" && p.proposerTeamId === myTeamId;
-      if (tab === "veto") return p.status === "accepted" && p.vetoDeadline && new Date(p.vetoDeadline).getTime() > now;
-      return ["rejected", "vetoed", "expired", "completed"].includes(p.status) ||
-        (p.status === "accepted" && p.vetoDeadline && new Date(p.vetoDeadline).getTime() <= now);
+      if (tab === "incoming") return (p.status === "pending" || p.status === "accepted") && p.targetTeamId === myTeamId;
+      if (tab === "outgoing") return (p.status === "pending" || p.status === "accepted") && p.proposerTeamId === myTeamId;
+      if (tab === "releases") return false;
+      return ["rejected", "vetoed", "expired", "completed", "cancelled"].includes(p.status);
     });
   }, [proposals, myTeamId, tab]);
+
+  const pendingReleases = useMemo(() => {
+    const arr: (SquadPlayer & { teamId: string })[] = [];
+    for (const p of ownershipMap.values()) {
+      if (p.status === "pending_release") arr.push(p);
+    }
+    return arr;
+  }, [ownershipMap]);
 
   const teamName = (tid: string) => teamList.find((t) => t.teamId === tid)?.teamName ?? tid.slice(0, 6);
 
@@ -182,22 +188,6 @@ export default function MarketplacePage() {
       await load();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Action failed");
-    }
-  };
-
-  const handleVote = async (proposalId: string, vote: "veto" | "approve") => {
-    setActionError(null);
-    try {
-      const res = await fetch("/api/auction/trade/veto", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proposalId, vote }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Vote failed");
-      await load();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Vote failed");
     }
   };
 
@@ -253,11 +243,6 @@ export default function MarketplacePage() {
     const offeredFMV = offered.reduce((s, x) => s + x.fmv, 0);
     const requestedFMV = requested.reduce((s, x) => s + x.fmv, 0);
     const isIncoming = p.targetTeamId === myTeamId;
-    const isInvolved = p.proposerTeamId === myTeamId || p.targetTeamId === myTeamId;
-    const votesArr = Object.entries(p.vetoVotes);
-    const approves = votesArr.filter(([, v]) => v === "approve").length;
-    const vetos = votesArr.filter(([, v]) => v === "veto").length;
-    const myVote = myTeamId ? p.vetoVotes[myTeamId] : null;
 
     return (
       <div key={p.id} className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
@@ -315,34 +300,16 @@ export default function MarketplacePage() {
           </div>
         )}
 
-        {tab === "incoming" && p.status === "pending" && isIncoming && (
+        {p.status === "pending" && isIncoming && (
           <div className="flex gap-2">
             <button onClick={() => handleRespond(p.id, "accept")} className="flex-1 rounded-lg bg-green-500/20 border border-green-500/40 text-green-300 font-semibold py-2 hover:bg-green-500/30 transition">Accept</button>
             <button onClick={() => handleRespond(p.id, "reject")} className="flex-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 font-semibold py-2 hover:bg-red-500/30 transition">Reject</button>
           </div>
         )}
 
-        {tab === "veto" && p.status === "accepted" && !isInvolved && (
-          <div className="flex flex-col gap-2">
-            <div className="text-xs text-gray-400">
-              Votes: {approves} approve / {vetos} veto
-              {p.vetoDeadline && ` · Closes ${new Date(p.vetoDeadline).toLocaleString()}`}
-            </div>
-            {myVote ? (
-              <div className="text-xs text-yellow-400">You voted: {myVote}</div>
-            ) : (
-              <div className="flex gap-2">
-                <button onClick={() => handleVote(p.id, "approve")} className="flex-1 rounded-lg bg-green-500/20 border border-green-500/40 text-green-300 font-semibold py-2 hover:bg-green-500/30 transition text-sm">Approve</button>
-                <button onClick={() => handleVote(p.id, "veto")} className="flex-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 font-semibold py-2 hover:bg-red-500/30 transition text-sm">Veto</button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === "veto" && p.status === "accepted" && isInvolved && (
-          <div className="text-xs text-gray-400">
-            Awaiting veto vote ({approves} approve / {vetos} veto)
-            {p.vetoDeadline && ` · Closes ${new Date(p.vetoDeadline).toLocaleString()}`}
+        {p.status === "accepted" && (
+          <div className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2">
+            Awaiting admin approval
           </div>
         )}
       </div>
@@ -370,6 +337,7 @@ export default function MarketplacePage() {
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
           <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
           <Link href={`/${leagueSlug}/marketplace`} className="text-yellow-400 font-semibold transition">Marketplace</Link>
+          <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">Sign Out</button>
         </div>
@@ -393,28 +361,68 @@ export default function MarketplacePage() {
             </div>
 
             <div className="mb-6 flex gap-2 flex-wrap border-b border-white/10">
-              {(["incoming", "outgoing", "veto", "history"] as Tab[]).map((t) => (
+              {(["incoming", "outgoing", "releases", "history"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={`px-4 py-2 font-semibold capitalize transition ${tab === t ? "text-yellow-400 border-b-2 border-yellow-400" : "text-gray-400 hover:text-white"}`}
                 >
-                  {t}
+                  {t === "releases" ? `Pending Releases (${pendingReleases.length})` : t}
                 </button>
               ))}
             </div>
 
             {actionError && <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{actionError}</div>}
 
-            <div className="space-y-4">
-              {filtered.length === 0 ? (
-                <div className="text-center text-gray-400 py-12 rounded-2xl border border-white/10 bg-white/5">
-                  No {tab} proposals
-                </div>
-              ) : (
-                filtered.map(renderProposalCard)
-              )}
-            </div>
+            {tab === "releases" ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <p className="text-xs text-gray-400 mb-3">
+                  Players marked for release across the league. Release finalizes at the next GW 10/20/30 boundary — 50% refund is credited then. Player continues scoring for the owning team until then.
+                </p>
+                {pendingReleases.length === 0 ? (
+                  <div className="text-center text-gray-400 py-8">No pending releases</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-white/10 text-xs uppercase text-gray-400">
+                          <th className="text-left py-2 px-2">Player</th>
+                          <th className="text-left py-2 px-2">Owning Team</th>
+                          <th className="text-right py-2 px-2">Purchase Price</th>
+                          <th className="text-right py-2 px-2">Projected Refund</th>
+                          <th className="text-right py-2 px-2">Forfeit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingReleases.map((p) => {
+                          const refund = Math.floor(p.purchasePrice * 0.5);
+                          const forfeit = p.purchasePrice - refund;
+                          return (
+                            <tr key={p.ownershipId} className="border-b border-white/5">
+                              <td className="py-2 px-2 text-white font-semibold">{p.playerName}</td>
+                              <td className="py-2 px-2 text-gray-300">{teamName(p.teamId)}</td>
+                              <td className="py-2 px-2 text-right font-mono text-white">{formatCurrency(p.purchasePrice)}</td>
+                              <td className="py-2 px-2 text-right font-mono text-green-300">+{formatCurrency(refund)}</td>
+                              <td className="py-2 px-2 text-right font-mono text-red-300">-{formatCurrency(forfeit)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filtered.length === 0 ? (
+                  <div className="text-center text-gray-400 py-12 rounded-2xl border border-white/10 bg-white/5">
+                    No {tab} proposals
+                  </div>
+                ) : (
+                  filtered.map(renderProposalCard)
+                )}
+              </div>
+            )}
 
             {/* Create Proposal Modal */}
             {showCreate && (

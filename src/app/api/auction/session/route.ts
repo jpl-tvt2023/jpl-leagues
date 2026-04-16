@@ -9,6 +9,7 @@ import {
   advanceNominator,
   setNominationDeadline,
 } from "@/lib/formats/auction/resolve-bid";
+import { simulateAuction } from "@/lib/formats/auction/simulate";
 
 /**
  * Auto-resolve expired open bids that SSE may have missed.
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { leagueId, action, sessionId, type, cycleNumber, scheduledAt } = body;
+  const { leagueId, action, sessionId, type, cycleNumber, scheduledAt, bidTimerSeconds, nominationTimeoutSeconds } = body;
 
   if (!leagueId || !action) {
     return NextResponse.json({ error: "leagueId and action are required" }, { status: 400 });
@@ -171,6 +172,8 @@ export async function POST(request: NextRequest) {
       snakeOrder: JSON.stringify(snakeOrder),
       currentNominatorIndex: 0,
       scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      bidTimerSeconds: bidTimerSeconds ?? 20,
+      nominationTimeoutSeconds: nominationTimeoutSeconds ?? 60,
     });
 
     return NextResponse.json({ success: true, id, snakeOrder });
@@ -220,6 +223,31 @@ export async function POST(request: NextRequest) {
   }
 
   const newStatus = action === "start" || action === "resume" ? "active" : action === "pause" ? "paused" : "completed";
+
+  // If starting a session in a simulated league, run auto-draft instead of live auction
+  if (newStatus === "active" && (action === "start") && leagueRow[0].isSimulated) {
+    await db
+      .update(auctionSessions)
+      .set({ status: "active" })
+      .where(eq(auctionSessions.id, sessionId));
+
+    try {
+      const result = await simulateAuction(leagueId, sessionId);
+      return NextResponse.json({
+        success: true,
+        sessionId,
+        status: "completed",
+        simulated: true,
+        playersAssigned: result.playersAssigned,
+      });
+    } catch (err) {
+      console.error("[session] Simulation failed:", err);
+      return NextResponse.json(
+        { error: `Simulation failed: ${err instanceof Error ? err.message : "unknown error"}` },
+        { status: 500 }
+      );
+    }
+  }
 
   await db
     .update(auctionSessions)

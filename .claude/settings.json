@@ -4,7 +4,10 @@
       "Bash(cat d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/settings/route.ts)",
       "Bash(cat d:/JPL/JPL-Leagues/jpl-leagues/src/app/api/admin/[leagueId]/reset-season/route.ts)",
       "Bash(npx next:*)",
-      "Bash(npx drizzle-kit:*)"
+      "Bash(npx drizzle-kit:*)",
+      "Bash(node -e \"console.log\\('ok'\\)\")",
+      "Bash(grep -n \"Create Initial Auction\\\\|Create Mini-Auction\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/admin/[leagueId]/page.tsx)",
+      "Bash(grep -r \"completed\\\\|all teams\\\\|full squad\" /d/JPL/JPL-Leagues/jpl-leagues/src/lib/formats/auction/*.ts)"
     ],
     "additionalDirectories": [
       "d:\\JPL\\JPL-Leagues\\jpl-leagues\\src\\app\\[leagueSlug]"

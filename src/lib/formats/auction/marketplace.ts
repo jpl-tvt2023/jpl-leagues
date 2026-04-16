@@ -1,5 +1,5 @@
 // JPL Auction — Marketplace / Trade Logic
-// Validates trade proposals and handles veto voting
+// Validates trade proposals
 
 import { calculateFMV, calculateFMVFloor } from "./economy";
 
@@ -96,37 +96,3 @@ export function validateTradeProposal(
   return { valid: errors.length === 0, errors };
 }
 
-/**
- * Check if a trade veto has passed (majority of non-involved teams voted to veto).
- * Returns the veto result.
- */
-export function checkVetoResult(
-  vetoVotes: Record<string, "veto" | "approve">,
-  totalTeams: number,
-  proposerTeamId: string,
-  targetTeamId: string
-): { decided: boolean; vetoed: boolean; vetoCount: number; approveCount: number; required: number } {
-  // Only non-involved teams can vote
-  const eligibleVoters = totalTeams - 2;
-  const requiredForVeto = Math.ceil(eligibleVoters / 2); // simple majority
-
-  let vetoCount = 0;
-  let approveCount = 0;
-
-  for (const [teamId, vote] of Object.entries(vetoVotes)) {
-    if (teamId === proposerTeamId || teamId === targetTeamId) continue;
-    if (vote === "veto") vetoCount++;
-    else if (vote === "approve") approveCount++;
-  }
-
-  // Decided if majority veto OR enough approvals that veto is impossible
-  const decided = vetoCount >= requiredForVeto || approveCount > eligibleVoters - requiredForVeto;
-
-  return {
-    decided,
-    vetoed: vetoCount >= requiredForVeto,
-    vetoCount,
-    approveCount,
-    required: requiredForVeto,
-  };
-}

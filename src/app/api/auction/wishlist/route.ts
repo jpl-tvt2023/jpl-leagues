@@ -28,11 +28,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const wishlist = await db
+  const rawWishlist = await db
     .select()
     .from(auctionWishlists)
     .where(eq(auctionWishlists.teamId, teamId))
     .orderBy(asc(auctionWishlists.priority));
+
+  // Deduplicate by fplElementId — keep highest-priority (lowest number) entry, delete extras
+  const seen = new Set<number>();
+  const wishlist = [];
+  const toDelete: string[] = [];
+  for (const entry of rawWishlist) {
+    if (seen.has(entry.fplElementId)) {
+      toDelete.push(entry.id);
+    } else {
+      seen.add(entry.fplElementId);
+      wishlist.push(entry);
+    }
+  }
+  // Clean up duplicates in background
+  if (toDelete.length > 0) {
+    for (const id of toDelete) {
+      await db.delete(auctionWishlists).where(eq(auctionWishlists.id, id));
+    }
+  }
 
   return NextResponse.json({ wishlist });
 }

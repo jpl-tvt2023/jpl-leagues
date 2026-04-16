@@ -102,7 +102,7 @@ interface CacheStats {
   gameweeks: { gameweek: number; entries: number }[];
 }
 
-type TabType = "teams" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction";
+type TabType = "teams" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction" | "finance" | "marketplace";
 
 // Auction-specific interfaces
 interface AuctionSessionInfo {
@@ -252,6 +252,8 @@ export default function AdminDashboard() {
   const [auctionSessionAction, setAuctionSessionAction] = useState<string | null>(null);
   const [showCreateSessionModal, setShowCreateSessionModal] = useState<string | null>(null); // "initial" | "mini-auction" | null
   const [newSessionScheduledAt, setNewSessionScheduledAt] = useState("");
+  const [newSessionBidTimer, setNewSessionBidTimer] = useState("20");
+  const [newSessionNominationTimer, setNewSessionNominationTimer] = useState("60");
 
   // Live Auction Monitor State
   const [liveCurrentBid, setLiveCurrentBid] = useState<{
@@ -858,6 +860,8 @@ export default function AdminDashboard() {
           type,
           cycleNumber: type === "initial" ? 0 : undefined,
           scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+          bidTimerSeconds: parseInt(newSessionBidTimer) || 20,
+          nominationTimeoutSeconds: parseInt(newSessionNominationTimer) || 60,
         }),
       });
       const data = await res.json();
@@ -865,6 +869,8 @@ export default function AdminDashboard() {
         setMessage({ type: "success", text: `Auction session created (${type})` });
         setShowCreateSessionModal(null);
         setNewSessionScheduledAt("");
+        setNewSessionBidTimer("20");
+        setNewSessionNominationTimer("60");
         fetchAuctionData();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to create session" });
@@ -1916,6 +1922,30 @@ export default function AdminDashboard() {
             }`}
           >
             Auction
+          </button>
+          )}
+          {isAuctionFormat && (
+          <button
+            onClick={() => { setActiveTab("marketplace"); setMessage(null); }}
+            className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
+              activeTab === "marketplace"
+                ? "bg-yellow-500 text-slate-900"
+                : "bg-white/5 text-gray-300 hover:bg-white/10"
+            }`}
+          >
+            Marketplace
+          </button>
+          )}
+          {isAuctionFormat && (
+          <button
+            onClick={() => { setActiveTab("finance"); setMessage(null); }}
+            className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
+              activeTab === "finance"
+                ? "bg-yellow-500 text-slate-900"
+                : "bg-white/5 text-gray-300 hover:bg-white/10"
+            }`}
+          >
+            Finance
           </button>
           )}
           {!isAuctionFormat && (
@@ -3463,7 +3493,33 @@ export default function AdminDashboard() {
                       onChange={(e) => setNewSessionScheduledAt(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 focus:border-yellow-400 outline-none text-sm"
                     />
-                    <p className="text-[11px] text-gray-500 mt-1.5">Teams will see a countdown to this time. You still need to click "Start" to begin the session.</p>
+                    <p className="text-[11px] text-gray-500 mt-1.5">Teams will see a countdown to this time. You still need to click &quot;Start&quot; to begin the session.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Bid Timer (seconds)</label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="120"
+                        value={newSessionBidTimer}
+                        onChange={(e) => setNewSessionBidTimer(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 focus:border-yellow-400 outline-none text-sm"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-1">Time for each bid round. Default: 20s</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Nomination Timeout (seconds)</label>
+                      <input
+                        type="number"
+                        min="10"
+                        max="300"
+                        value={newSessionNominationTimer}
+                        onChange={(e) => setNewSessionNominationTimer(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 focus:border-yellow-400 outline-none text-sm"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-1">Time to nominate a player. Default: 60s</p>
+                    </div>
                   </div>
                   <div className="flex gap-3">
                     <button
@@ -3709,6 +3765,16 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Marketplace Tab (auction-only) */}
+        {activeTab === "marketplace" && isAuctionFormat && leagueConfig.leagueDbId && (
+          <AdminMarketplaceTab leagueId={leagueConfig.leagueDbId} />
+        )}
+
+        {/* Finance Tab (auction-only) */}
+        {activeTab === "finance" && isAuctionFormat && leagueConfig.leagueDbId && (
+          <AdminFinanceTab leagueId={leagueConfig.leagueDbId} />
+        )}
+
         {/* Settings Tab */}
         {activeTab === "settings" && (
           <div className="space-y-6">
@@ -3824,6 +3890,415 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// Admin Marketplace Tab
+// ============================================
+
+interface AdminMarketplaceProposal {
+  id: string;
+  proposerTeamId: string;
+  targetTeamId: string;
+  offeredPlayerIds: string[];
+  requestedPlayerIds: string[];
+  cashOffered: number;
+  status: string;
+  createdAt: number;
+}
+
+interface AdminMarketplacePendingRelease {
+  ownershipId: string;
+  teamId: string;
+  teamName: string;
+  playerName: string;
+  purchasePrice: number;
+}
+
+interface AdminSquadCache {
+  [teamId: string]: { teamName: string; squad: { ownershipId: string; playerName: string; status: string; purchasePrice: number }[] };
+}
+
+function fmtMoney(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}£${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}£${abs}`;
+}
+
+function AdminMarketplaceTab({ leagueId }: { leagueId: string }) {
+  const [proposals, setProposals] = useState<AdminMarketplaceProposal[]>([]);
+  const [pendingReleases, setPendingReleases] = useState<AdminMarketplacePendingRelease[]>([]);
+  const [squadCache, setSquadCache] = useState<AdminSquadCache>({});
+  const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setActionError(null);
+    try {
+      // Fetch summary to get team list
+      const summaryRes = await fetch(`/api/auction/finance?leagueId=${leagueId}&allTeams=true`);
+      const summaryJson = summaryRes.ok ? await summaryRes.json() : { teams: [] };
+      const teamList: { teamId: string; teamName: string }[] = summaryJson.teams ?? [];
+
+      // Fetch all squads in parallel
+      const squadsArr = await Promise.all(
+        teamList.map((t) =>
+          fetch(`/api/auction/squad?teamId=${t.teamId}`).then((r) => (r.ok ? r.json() : null))
+        )
+      );
+      const cache: AdminSquadCache = {};
+      const pr: AdminMarketplacePendingRelease[] = [];
+      squadsArr.forEach((sq, idx) => {
+        if (!sq) return;
+        const t = teamList[idx];
+        cache[t.teamId] = { teamName: t.teamName, squad: sq.squad ?? [] };
+        for (const p of sq.squad ?? []) {
+          if (p.status === "pending_release") {
+            pr.push({
+              ownershipId: p.ownershipId,
+              teamId: t.teamId,
+              teamName: t.teamName,
+              playerName: p.playerName,
+              purchasePrice: p.purchasePrice,
+            });
+          }
+        }
+      });
+      setSquadCache(cache);
+      setPendingReleases(pr);
+
+      const res = await fetch(`/api/auction/trade?leagueId=${leagueId}`);
+      if (res.ok) {
+        const json = await res.json();
+        setProposals(json.proposals ?? []);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Load failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [leagueId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleTradeAction = async (proposalId: string, action: "approve" | "reject" | "cancel") => {
+    const verb = action === "approve" ? "Approve" : action === "reject" ? "Reject" : "Cancel";
+    if (!confirm(`${verb} this trade proposal?`)) return;
+    setActionError(null);
+    try {
+      const res = await fetch("/api/auction/trade/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposalId, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Action failed");
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Action failed");
+    }
+  };
+
+  const teamName = (id: string) => squadCache[id]?.teamName ?? id.slice(0, 6);
+  const playerNames = (teamId: string, ownershipIds: string[]) => {
+    const squad = squadCache[teamId]?.squad ?? [];
+    return ownershipIds
+      .map((oid) => squad.find((p) => p.ownershipId === oid)?.playerName ?? "?")
+      .join(", ") || "—";
+  };
+
+  if (loading) return <div className="text-gray-400 py-8 text-center">Loading marketplace…</div>;
+
+  return (
+    <div className="space-y-6">
+      {actionError && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{actionError}</div>
+      )}
+
+      {/* Pending Releases */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+        <h3 className="text-lg font-bold text-white mb-3">Pending Releases ({pendingReleases.length})</h3>
+        <p className="text-xs text-gray-400 mb-3">Finalize automatically at GW 10/20/30.</p>
+        {pendingReleases.length === 0 ? (
+          <div className="text-center text-gray-500 py-6">None</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-xs uppercase text-gray-400">
+                  <th className="text-left py-2 px-2">Player</th>
+                  <th className="text-left py-2 px-2">Team</th>
+                  <th className="text-right py-2 px-2">Purchase</th>
+                  <th className="text-right py-2 px-2">Refund</th>
+                  <th className="text-right py-2 px-2">Forfeit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingReleases.map((p) => {
+                  const refund = Math.floor(p.purchasePrice * 0.5);
+                  return (
+                    <tr key={p.ownershipId} className="border-b border-white/5">
+                      <td className="py-2 px-2 text-white font-semibold">{p.playerName}</td>
+                      <td className="py-2 px-2 text-gray-300">{p.teamName}</td>
+                      <td className="py-2 px-2 text-right font-mono text-white">{fmtMoney(p.purchasePrice)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-green-300">+{fmtMoney(refund)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-red-300">-{fmtMoney(p.purchasePrice - refund)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Trade Proposals */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+        <h3 className="text-lg font-bold text-white mb-3">Trade Proposals ({proposals.length})</h3>
+        {proposals.length === 0 ? (
+          <div className="text-center text-gray-500 py-6">None</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-xs uppercase text-gray-400">
+                  <th className="text-left py-2 px-2">Date</th>
+                  <th className="text-left py-2 px-2">Proposer → Target</th>
+                  <th className="text-left py-2 px-2">Offered</th>
+                  <th className="text-left py-2 px-2">Requested</th>
+                  <th className="text-right py-2 px-2">Cash</th>
+                  <th className="text-center py-2 px-2">Status</th>
+                  <th className="text-center py-2 px-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...proposals]
+                  .sort((a, b) => b.createdAt - a.createdAt)
+                  .map((p) => (
+                    <tr key={p.id} className="border-b border-white/5 align-top">
+                      <td className="py-2 px-2 text-gray-400 text-xs whitespace-nowrap">
+                        {new Date(p.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="py-2 px-2 text-white text-xs">
+                        {teamName(p.proposerTeamId)} → {teamName(p.targetTeamId)}
+                      </td>
+                      <td className="py-2 px-2 text-gray-300 text-xs">{playerNames(p.proposerTeamId, p.offeredPlayerIds)}</td>
+                      <td className="py-2 px-2 text-gray-300 text-xs">{playerNames(p.targetTeamId, p.requestedPlayerIds)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-xs">
+                        {p.cashOffered === 0 ? "—" : (
+                          <span className={p.cashOffered > 0 ? "text-green-300" : "text-red-300"}>
+                            {p.cashOffered > 0 ? "+" : ""}{fmtMoney(p.cashOffered)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 px-2 text-center">
+                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
+                          p.status === "pending" ? "bg-blue-500/20 text-blue-300 border-blue-500/40" :
+                          p.status === "accepted" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" :
+                          p.status === "completed" ? "bg-green-500/20 text-green-300 border-green-500/40" :
+                          "bg-red-500/20 text-red-300 border-red-500/40"
+                        }`}>{p.status}</span>
+                      </td>
+                      <td className="py-2 px-2 text-center">
+                        <div className="flex gap-1 justify-center flex-wrap">
+                          {p.status === "accepted" && (
+                            <button
+                              onClick={() => handleTradeAction(p.id, "approve")}
+                              className="rounded bg-green-500/20 border border-green-500/40 text-green-300 text-xs px-2 py-1 hover:bg-green-500/30"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          {(p.status === "pending" || p.status === "accepted") && (
+                            <button
+                              onClick={() => handleTradeAction(p.id, "reject")}
+                              className="rounded bg-red-500/20 border border-red-500/40 text-red-300 text-xs px-2 py-1 hover:bg-red-500/30"
+                            >
+                              Reject
+                            </button>
+                          )}
+                          {p.status !== "completed" && p.status !== "cancelled" && p.status !== "rejected" && (
+                            <button
+                              onClick={() => handleTradeAction(p.id, "cancel")}
+                              className="rounded bg-white/10 border border-white/20 text-gray-300 text-xs px-2 py-1 hover:bg-white/20"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Admin Finance Tab
+// ============================================
+
+interface AdminTeamSummary {
+  teamId: string;
+  teamName: string;
+  purse: number;
+  totalSpent: number;
+  totalIncome: number;
+  totalRefunds: number;
+  totalForfeited: number;
+  releasedCount: number;
+  pendingReleaseCount: number;
+  activeCount: number;
+  netPnL: number;
+}
+
+interface AdminLedgerEntry {
+  id: string;
+  type: string;
+  date: string;
+  gw: number | null;
+  description: string;
+  amount: number;
+  runningBalance: number;
+  isPending: boolean;
+}
+
+interface AdminLedgerResponse {
+  teamId: string;
+  teamName: string;
+  initialBudget: number;
+  currentPurse: number;
+  summary: { totalSpent: number; totalIncome: number; totalRefunds: number; totalForfeited: number; netPnL: number };
+  ledger: AdminLedgerEntry[];
+}
+
+function AdminFinanceTab({ leagueId }: { leagueId: string }) {
+  const [summaries, setSummaries] = useState<AdminTeamSummary[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [ledger, setLedger] = useState<AdminLedgerResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const res = await fetch(`/api/auction/finance?leagueId=${leagueId}&allTeams=true`);
+      if (res.ok) {
+        const json = await res.json();
+        setSummaries(json.teams ?? []);
+      }
+      setLoading(false);
+    })();
+  }, [leagueId]);
+
+  useEffect(() => {
+    if (!selectedTeamId) { setLedger(null); return; }
+    (async () => {
+      setLedgerLoading(true);
+      const res = await fetch(`/api/auction/finance?teamId=${selectedTeamId}`);
+      if (res.ok) setLedger(await res.json()); else setLedger(null);
+      setLedgerLoading(false);
+    })();
+  }, [selectedTeamId]);
+
+  if (loading) return <div className="text-gray-400 py-8 text-center">Loading finance audit…</div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+        <h3 className="text-lg font-bold text-white mb-3">All Teams — Finance Summary</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-xs uppercase text-gray-400">
+                <th className="text-left py-2 px-2">Team</th>
+                <th className="text-right py-2 px-2">Purse</th>
+                <th className="text-right py-2 px-2">Spent</th>
+                <th className="text-right py-2 px-2">Income</th>
+                <th className="text-right py-2 px-2">Refunds</th>
+                <th className="text-right py-2 px-2">Forfeited</th>
+                <th className="text-right py-2 px-2">Net P&amp;L</th>
+                <th className="text-center py-2 px-2">Squad</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.map((s) => (
+                <tr
+                  key={s.teamId}
+                  onClick={() => setSelectedTeamId(s.teamId)}
+                  className={`border-b border-white/5 cursor-pointer hover:bg-white/5 ${selectedTeamId === s.teamId ? "bg-yellow-500/10" : ""}`}
+                >
+                  <td className="py-2 px-2 text-white font-semibold">{s.teamName}</td>
+                  <td className="py-2 px-2 text-right font-mono text-green-300">{fmtMoney(s.purse)}</td>
+                  <td className="py-2 px-2 text-right font-mono text-red-300">{fmtMoney(s.totalSpent)}</td>
+                  <td className="py-2 px-2 text-right font-mono text-blue-300">{fmtMoney(s.totalIncome)}</td>
+                  <td className="py-2 px-2 text-right font-mono text-green-300">{fmtMoney(s.totalRefunds)}</td>
+                  <td className="py-2 px-2 text-right font-mono text-red-300">{fmtMoney(s.totalForfeited)}</td>
+                  <td className={`py-2 px-2 text-right font-mono ${s.netPnL >= 0 ? "text-green-300" : "text-red-300"}`}>
+                    {s.netPnL >= 0 ? "+" : ""}{fmtMoney(s.netPnL)}
+                  </td>
+                  <td className="py-2 px-2 text-center text-xs text-gray-400">
+                    {s.activeCount}a / {s.pendingReleaseCount}p / {s.releasedCount}r
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedTeamId && (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+          <h3 className="text-lg font-bold text-white mb-3">
+            {ledger?.teamName ?? "Team"} — Ledger
+          </h3>
+          {ledgerLoading ? (
+            <div className="text-gray-400 py-4 text-center">Loading…</div>
+          ) : !ledger ? (
+            <div className="text-red-400 py-4 text-center">Ledger unavailable</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/10 text-xs uppercase text-gray-400">
+                    <th className="text-left py-2 px-2">GW</th>
+                    <th className="text-left py-2 px-2">Date</th>
+                    <th className="text-left py-2 px-2">Type</th>
+                    <th className="text-left py-2 px-2">Description</th>
+                    <th className="text-right py-2 px-2">Amount</th>
+                    <th className="text-right py-2 px-2">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledger.ledger.map((e) => (
+                    <tr key={e.id} className={`border-b border-white/5 ${e.isPending ? "opacity-60" : ""}`}>
+                      <td className="py-2 px-2 text-gray-400 font-mono">{e.gw ?? "—"}</td>
+                      <td className="py-2 px-2 text-gray-400 text-xs whitespace-nowrap">
+                        {new Date(e.date).toLocaleDateString()}
+                      </td>
+                      <td className="py-2 px-2 text-xs text-gray-300">{e.type.replace(/_/g, " ")}</td>
+                      <td className="py-2 px-2 text-white">{e.description}</td>
+                      <td className={`py-2 px-2 text-right font-mono ${e.amount > 0 ? "text-green-300" : e.amount < 0 ? "text-red-300" : "text-gray-500"}`}>
+                        {e.amount === 0 ? "—" : `${e.amount > 0 ? "+" : ""}${fmtMoney(e.amount)}`}
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono text-white">{fmtMoney(e.runningBalance)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

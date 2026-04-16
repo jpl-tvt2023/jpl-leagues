@@ -46,6 +46,7 @@ export const leagues = sqliteTable("leagues", {
 
   // JPL Auction config
   initialBudget: integer("initial_budget").notNull().default(100_000_000),
+  isSimulated: integer("is_simulated", { mode: "boolean" }).notNull().default(false), // Testing: auto-assign players via snake draft
 
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
@@ -364,6 +365,8 @@ export const auctionSessions = sqliteTable("auction_sessions", {
   currentNominatorIndex: integer("current_nominator_index").notNull().default(0),
   nominationDeadline: integer("nomination_deadline", { mode: "timestamp" }), // When current nominator must nominate by (null = no active deadline)
   scheduledAt: integer("scheduled_at", { mode: "timestamp" }), // When the auction is scheduled to start (shown to users as countdown)
+  bidTimerSeconds: integer("bid_timer_seconds").notNull().default(20), // Seconds per bid round (admin-configurable)
+  nominationTimeoutSeconds: integer("nomination_timeout_seconds").notNull().default(60), // Seconds to nominate (admin-configurable)
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 

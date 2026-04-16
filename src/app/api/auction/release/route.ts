@@ -6,7 +6,8 @@ import { calculateRefund } from "@/lib/formats/auction/economy";
 
 /**
  * POST /api/auction/release
- * Release a player from a team's squad. Refund = 50% of purchase price.
+ * Mark a player for pending release. The release only finalizes at GW 10/20/30 boundaries.
+ * Player continues scoring for the team until then. Refund is NOT credited yet.
  *
  * Body: { ownershipId }
  */
@@ -26,75 +27,118 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "ownershipId is required" }, { status: 400 });
   }
 
-  const result = await db.transaction(async (tx) => {
-    // Get the ownership record
-    const ownershipRow = await tx
-      .select()
-      .from(auctionOwnership)
-      .where(eq(auctionOwnership.id, ownershipId))
-      .limit(1);
+  // Get the ownership record
+  const ownershipRow = await db
+    .select()
+    .from(auctionOwnership)
+    .where(eq(auctionOwnership.id, ownershipId))
+    .limit(1);
 
-    if (ownershipRow.length === 0) {
-      return { error: "Ownership record not found", status: 404 };
-    }
-
-    const ownership = ownershipRow[0];
-
-    if (ownership.status === "released") {
-      return { error: "Player is already released", status: 400 };
-    }
-
-    // Verify the requesting team owns this player (unless admin)
-    if (!isAdmin && session?.id !== ownership.teamId) {
-      return { error: "You don't own this player", status: 403 };
-    }
-
-    // Verify it's an auction league
-    const leagueRow = await tx.select().from(leagues).where(eq(leagues.id, ownership.leagueId)).limit(1);
-    if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
-      return { error: "Not an auction league", status: 400 };
-    }
-
-    // Calculate refund (50% of purchase price)
-    const refund = calculateRefund(ownership.purchasePrice);
-
-    // Update ownership status
-    await tx
-      .update(auctionOwnership)
-      .set({
-        status: "released",
-        releasedGw: null, // will be set by admin to current GW if needed
-        updatedAt: new Date(),
-      })
-      .where(eq(auctionOwnership.id, ownershipId));
-
-    // Update team purse and refund tracking
-    const teamRow = await tx.select().from(teams).where(eq(teams.id, ownership.teamId)).limit(1);
-    if (teamRow.length > 0) {
-      const team = teamRow[0];
-      await tx
-        .update(teams)
-        .set({
-          purse: team.purse + refund,
-          totalRefunds: team.totalRefunds + refund,
-          updatedAt: new Date(),
-        })
-        .where(eq(teams.id, ownership.teamId));
-    }
-
-    return {
-      success: true,
-      ownershipId,
-      playerName: ownership.playerName,
-      fplElementId: ownership.fplElementId,
-      purchasePrice: ownership.purchasePrice,
-      refundAmount: refund,
-    };
-  });
-
-  if ("error" in result) {
-    return NextResponse.json({ error: result.error }, { status: result.status });
+  if (ownershipRow.length === 0) {
+    return NextResponse.json({ error: "Ownership record not found" }, { status: 404 });
   }
 
-  return NextResponse.json(result);
+  const ownership = ownershipRow[0];
+
+  if (ownership.status === "released") {
+    return NextResponse.json({ error: "Player is already released" }, { status: 400 });
+  }
+
+  if (ownership.status === "pending_release") {
+    return NextResponse.json({ error: "Player is already marked for release" }, { status: 400 });
+  }
+
+  // Verify the requesting team owns this player (unless admin)
+  if (!isAdmin && session?.id !== ownership.teamId) {
+    return NextResponse.json({ error: "You don't own this player" }, { status: 403 });
+  }
+
+  // Verify it's an auction league
+  const leagueRow = await db.select().from(leagues).where(eq(leagues.id, ownership.leagueId)).limit(1);
+  if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
+    return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
+  }
+
+  // Calculate projected refund (50% of purchase price) — for display only, not credited yet
+  const projectedRefund = calculateRefund(ownership.purchasePrice);
+
+  // Mark as pending release — do NOT update purse or totalRefunds
+  await db
+    .update(auctionOwnership)
+    .set({
+      status: "pending_release",
+      updatedAt: new Date(),
+    })
+    .where(eq(auctionOwnership.id, ownershipId));
+
+  return NextResponse.json({
+    success: true,
+    status: "pending_release",
+    ownershipId,
+    playerName: ownership.playerName,
+    fplElementId: ownership.fplElementId,
+    purchasePrice: ownership.purchasePrice,
+    projectedRefund,
+    projectedForfeit: ownership.purchasePrice - projectedRefund,
+  });
+}
+
+/**
+ * DELETE /api/auction/release
+ * Cancel a pending release — revert player status back to "active".
+ *
+ * Body: { ownershipId }
+ */
+export async function DELETE(request: NextRequest) {
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const session = token ? await verifySession(token) : null;
+  const isAdmin = isSuperAdmin(request);
+
+  if (!session && !isAdmin) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { ownershipId } = body;
+
+  if (!ownershipId) {
+    return NextResponse.json({ error: "ownershipId is required" }, { status: 400 });
+  }
+
+  const ownershipRow = await db
+    .select()
+    .from(auctionOwnership)
+    .where(eq(auctionOwnership.id, ownershipId))
+    .limit(1);
+
+  if (ownershipRow.length === 0) {
+    return NextResponse.json({ error: "Ownership record not found" }, { status: 404 });
+  }
+
+  const ownership = ownershipRow[0];
+
+  if (ownership.status !== "pending_release") {
+    return NextResponse.json({ error: "Player is not pending release" }, { status: 400 });
+  }
+
+  // Verify the requesting team owns this player (unless admin)
+  if (!isAdmin && session?.id !== ownership.teamId) {
+    return NextResponse.json({ error: "You don't own this player" }, { status: 403 });
+  }
+
+  // Revert to active
+  await db
+    .update(auctionOwnership)
+    .set({
+      status: "active",
+      updatedAt: new Date(),
+    })
+    .where(eq(auctionOwnership.id, ownershipId));
+
+  return NextResponse.json({
+    success: true,
+    status: "active",
+    ownershipId,
+    playerName: ownership.playerName,
+  });
 }

@@ -21,9 +21,7 @@ import {
 import { eq, and, asc, sql, lte } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 
-const NOMINATION_TIMEOUT_SECONDS = 60;
 const DEFAULT_MIN_BID = 500_000;
-const BID_TIMER_SECONDS = 20;
 
 // ---- Types ----
 
@@ -153,7 +151,7 @@ export async function resolveExpiredBid(
  */
 export async function advanceNominator(sessionId: string): Promise<void> {
   const sessionRow = await db
-    .select({ snakeOrder: auctionSessions.snakeOrder })
+    .select({ snakeOrder: auctionSessions.snakeOrder, nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
@@ -162,7 +160,8 @@ export async function advanceNominator(sessionId: string): Promise<void> {
   const snakeOrder: string[] = JSON.parse(sessionRow[0].snakeOrder);
   if (snakeOrder.length === 0) return;
 
-  const deadline = new Date(Date.now() + NOMINATION_TIMEOUT_SECONDS * 1000);
+  const nomTimeout = sessionRow[0].nominationTimeoutSeconds ?? 60;
+  const deadline = new Date(Date.now() + nomTimeout * 1000);
 
   // Atomic increment — prevents concurrent callers from computing the same nextIndex
   await db
@@ -178,7 +177,13 @@ export async function advanceNominator(sessionId: string): Promise<void> {
  * Set the nomination deadline for the current nominator (e.g. on session start).
  */
 export async function setNominationDeadline(sessionId: string): Promise<void> {
-  const deadline = new Date(Date.now() + NOMINATION_TIMEOUT_SECONDS * 1000);
+  const sessionRow = await db
+    .select({ nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+  const nomTimeout = sessionRow[0]?.nominationTimeoutSeconds ?? 60;
+  const deadline = new Date(Date.now() + nomTimeout * 1000);
   await db
     .update(auctionSessions)
     .set({ nominationDeadline: deadline })
@@ -209,8 +214,14 @@ async function createNomination(
   fplElementId: number,
   playerName: string
 ): Promise<string> {
+  const sessionRow = await db
+    .select({ bidTimerSeconds: auctionSessions.bidTimerSeconds })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+  const bidTimer = sessionRow[0]?.bidTimerSeconds ?? 20;
   const bidId = generateId();
-  const expiresAt = new Date(Date.now() + BID_TIMER_SECONDS * 1000);
+  const expiresAt = new Date(Date.now() + bidTimer * 1000);
 
   await db.insert(auctionBids).values({
     id: bidId,

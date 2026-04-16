@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget } = body;
+  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget, isSimulated } = body;
 
   if (!slug || !name || !sport || !format || !season) {
     return NextResponse.json({ error: "slug, name, sport, format, and season are required" }, { status: 400 });
@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: JSON.stringify(resolvedEnabledChips),
       initialBudget: resolvedBudget,
+      isSimulated: format === "auction" ? (isSimulated ?? false) : false,
     });
 
     // For auction format: auto-create placeholder manager accounts

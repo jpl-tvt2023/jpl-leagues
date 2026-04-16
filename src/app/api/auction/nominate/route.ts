@@ -8,7 +8,6 @@ import {
   clearNominationDeadline,
 } from "@/lib/formats/auction/resolve-bid";
 
-const BID_TIMER_SECONDS = 20;
 const DEFAULT_MIN_BID = 500_000; // 500K minimum starting bid
 
 /**
@@ -133,7 +132,8 @@ export async function POST(request: NextRequest) {
 
   // Create the auction bid item
   const startingBid = minBid ?? DEFAULT_MIN_BID;
-  const expiresAt = new Date(Date.now() + BID_TIMER_SECONDS * 1000);
+  const bidTimerSeconds = auctionSession.bidTimerSeconds ?? 20;
+  const expiresAt = new Date(Date.now() + bidTimerSeconds * 1000);
 
   const bidId = generateId();
   await db.insert(auctionBids).values({
