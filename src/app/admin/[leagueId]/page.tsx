@@ -252,6 +252,8 @@ export default function AdminDashboard() {
   const [auctionSessionAction, setAuctionSessionAction] = useState<string | null>(null);
   const [showCreateSessionModal, setShowCreateSessionModal] = useState<string | null>(null); // "initial" | "mini-auction" | null
   const [newSessionScheduledAt, setNewSessionScheduledAt] = useState("");
+  const [newSessionBidTimer, setNewSessionBidTimer] = useState("20");
+  const [newSessionNominationTimer, setNewSessionNominationTimer] = useState("60");
 
   // Live Auction Monitor State
   const [liveCurrentBid, setLiveCurrentBid] = useState<{
@@ -858,6 +860,8 @@ export default function AdminDashboard() {
           type,
           cycleNumber: type === "initial" ? 0 : undefined,
           scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+          bidTimerSeconds: parseInt(newSessionBidTimer) || 20,
+          nominationTimeoutSeconds: parseInt(newSessionNominationTimer) || 60,
         }),
       });
       const data = await res.json();
@@ -865,6 +869,8 @@ export default function AdminDashboard() {
         setMessage({ type: "success", text: `Auction session created (${type})` });
         setShowCreateSessionModal(null);
         setNewSessionScheduledAt("");
+        setNewSessionBidTimer("20");
+        setNewSessionNominationTimer("60");
         fetchAuctionData();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to create session" });
@@ -3487,7 +3493,33 @@ export default function AdminDashboard() {
                       onChange={(e) => setNewSessionScheduledAt(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 focus:border-yellow-400 outline-none text-sm"
                     />
-                    <p className="text-[11px] text-gray-500 mt-1.5">Teams will see a countdown to this time. You still need to click "Start" to begin the session.</p>
+                    <p className="text-[11px] text-gray-500 mt-1.5">Teams will see a countdown to this time. You still need to click &quot;Start&quot; to begin the session.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Bid Timer (seconds)</label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="120"
+                        value={newSessionBidTimer}
+                        onChange={(e) => setNewSessionBidTimer(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 focus:border-yellow-400 outline-none text-sm"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-1">Time for each bid round. Default: 20s</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Nomination Timeout (seconds)</label>
+                      <input
+                        type="number"
+                        min="10"
+                        max="300"
+                        value={newSessionNominationTimer}
+                        onChange={(e) => setNewSessionNominationTimer(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 focus:border-yellow-400 outline-none text-sm"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-1">Time to nominate a player. Default: 60s</p>
+                    </div>
                   </div>
                   <div className="flex gap-3">
                     <button

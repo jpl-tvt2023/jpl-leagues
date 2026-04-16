@@ -6,7 +6,6 @@ import { generateId } from "@/lib/id";
 import { calculatePurse } from "@/lib/formats/auction/economy";
 
 const BID_COUNTER_EXTENSION_MS = 5_000; // +5s per counter-bid
-const BID_MAX_TIMER_MS = 20_000; // cap at 20s from now
 const MIN_BID_INCREMENT = 100_000; // 100K minimum raise
 
 /**
@@ -111,9 +110,10 @@ export async function POST(request: NextRequest) {
       return { error: `Squad is full (${maxSquadSize} players)`, status: 400 };
     }
 
-    // Place the bid — extend timer by +5s, capped at 20s from now
+    // Place the bid — extend timer by +5s, capped at session's bidTimerSeconds from now
+    const bidMaxTimerMs = (sessionRow[0].bidTimerSeconds ?? 20) * 1000;
     const extended = currentBid.expiresAt.getTime() + BID_COUNTER_EXTENSION_MS;
-    const maxFromNow = Date.now() + BID_MAX_TIMER_MS;
+    const maxFromNow = Date.now() + bidMaxTimerMs;
     const newExpiry = new Date(Math.min(extended, maxFromNow));
     await tx
       .update(auctionBids)

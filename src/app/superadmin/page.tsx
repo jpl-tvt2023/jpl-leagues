@@ -83,6 +83,7 @@ export default function SuperAdminDashboard() {
     teamSize: 32, groupCount: 2, playoffStartGw: 31,
     enabledChips: ["D", "W", "C"] as string[],
     initialBudget: 100_000_000,
+    isSimulated: false,
   });
   const [wizardSelectedAdminIds, setWizardSelectedAdminIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -160,6 +161,7 @@ export default function SuperAdminDashboard() {
           playoffStartGw: leagueForm.playoffStartGw,
           enabledChips: leagueForm.enabledChips,
           initialBudget: leagueForm.initialBudget,
+          isSimulated: leagueForm.isSimulated,
         }),
       });
       const data = await res.json();
@@ -182,7 +184,7 @@ export default function SuperAdminDashboard() {
       setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
       setShowWizard(false);
       setWizardStep("sport");
-      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000 });
+      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false });
       setWizardSelectedAdminIds([]);
       setLeagues(prev => [...prev, { ...data, teamCount: 0, currentGameweek: null }]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
@@ -746,7 +748,7 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400 text-sm mt-1">Manage all leagues on the platform</p>
               </div>
               <button
-                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000 }); setMessage(null); }}
+                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false }); setMessage(null); }}
                 className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
               >
                 + Create League
@@ -824,6 +826,7 @@ export default function SuperAdminDashboard() {
                                   playoffStartGw: 39,
                                   enabledChips: [],
                                   initialBudget: 100_000_000,
+                                  isSimulated: false,
                                 });
                               } else {
                                 setLeagueForm({ ...leagueForm, format: opt.value });
@@ -1000,6 +1003,20 @@ export default function SuperAdminDashboard() {
                               />
                               <span className="text-gray-500 text-xs whitespace-nowrap">({(leagueForm.initialBudget / 1_000_000).toFixed(0)}M)</span>
                             </div>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3 cursor-pointer hover:bg-white/10 transition">
+                              <input
+                                type="checkbox"
+                                checked={leagueForm.isSimulated}
+                                onChange={e => setLeagueForm({ ...leagueForm, isSimulated: e.target.checked })}
+                                className="w-4 h-4 accent-yellow-400"
+                              />
+                              <div>
+                                <p className="text-white text-sm font-medium">Simulated Auction (Testing)</p>
+                                <p className="text-gray-500 text-xs">Auto-assigns players via snake draft when session starts. Skips live auction.</p>
+                              </div>
+                            </label>
                           </div>
                         </>
                       ) : (
