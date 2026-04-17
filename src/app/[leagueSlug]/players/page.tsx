@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { LeagueNav } from "@/components/LeagueNav";
 
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 const POSITION_COLORS: Record<number, string> = {
@@ -140,6 +141,11 @@ export default function PlayersPage() {
     init();
   }, [leagueSlug, router]);
 
+  const handleSignOut = async () => {
+    await fetch("/api/auth/signout", { method: "POST" });
+    window.location.href = "/signin";
+  };
+
   // Fetch players data when filters change
   const fetchPlayers = useCallback(async () => {
     if (!leagueId || gameweek < 1) return;
@@ -193,25 +199,15 @@ export default function PlayersPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            JPL
-          </div>
-          <span className="text-xl font-bold text-white hidden sm:inline">Players</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/dashboard" className="text-gray-300 hover:text-white transition">Dashboard</Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
-          <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
-          <Link href={`/${leagueSlug}/players`} className="text-yellow-400 font-semibold transition">Players</Link>
-          <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
-          <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
-          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
-        </div>
-      </nav>
+      <LeagueNav
+        leagueSlug={leagueSlug}
+        leagueName={leagueSlug}
+        currentPage="players"
+        format="auction"
+        isLoggedIn={true}
+        dashboardHref="/dashboard"
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
         {/* Header */}

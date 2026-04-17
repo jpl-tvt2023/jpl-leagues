@@ -7,7 +7,11 @@
       "Bash(npx drizzle-kit:*)",
       "Bash(node -e \"console.log\\('ok'\\)\")",
       "Bash(grep -n \"Create Initial Auction\\\\|Create Mini-Auction\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/admin/[leagueId]/page.tsx)",
-      "Bash(grep -r \"completed\\\\|all teams\\\\|full squad\" /d/JPL/JPL-Leagues/jpl-leagues/src/lib/formats/auction/*.ts)"
+      "Bash(grep -r \"completed\\\\|all teams\\\\|full squad\" /d/JPL/JPL-Leagues/jpl-leagues/src/lib/formats/auction/*.ts)",
+      "Bash(grep -n \"Session.*ed successfully\\\\|updateAuctionSession\\\\|simulated\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/admin/[leagueId]/page.tsx)",
+      "Bash(ls -la /d/JPL/JPL-Leagues/jpl-leagues/src/app/\\\\[leagueSlug\\\\]/page.*)",
+      "Bash(grep -n \"sort\\\\|ORDER\\\\|reverse\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/[leagueSlug]/finance/page.tsx)",
+      "Bash(grep -n \"scoring\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/admin/[leagueId]/page.tsx)"
     ],
     "additionalDirectories": [
       "d:\\JPL\\JPL-Leagues\\jpl-leagues\\src\\app\\[leagueSlug]"

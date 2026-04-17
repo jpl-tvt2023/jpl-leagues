@@ -186,3 +186,54 @@ export async function processAuctionGameweek(
     })),
   };
 }
+
+/**
+ * Finalize all pending releases for a league immediately.
+ * Called when a mini-auction session starts so players marked for release
+ * are freed up before the new auction begins.
+ *
+ * @param gwNumber - Current GW number used as the release GW marker
+ */
+export async function finalizePendingReleasesNow(
+  leagueId: string,
+  gwNumber: number
+): Promise<{ finalized: number }> {
+  const pendingReleases = await db
+    .select()
+    .from(auctionOwnership)
+    .where(
+      and(
+        eq(auctionOwnership.leagueId, leagueId),
+        eq(auctionOwnership.status, "pending_release")
+      )
+    );
+
+  if (pendingReleases.length === 0) return { finalized: 0 };
+
+  // Aggregate refunds per team
+  const refundByTeam = new Map<string, number>();
+  for (const p of pendingReleases) {
+    const refund = calculateRefund(p.purchasePrice);
+    await db
+      .update(auctionOwnership)
+      .set({ status: "released", releasedGw: gwNumber, updatedAt: new Date() })
+      .where(eq(auctionOwnership.id, p.id));
+    refundByTeam.set(p.teamId, (refundByTeam.get(p.teamId) ?? 0) + refund);
+  }
+
+  // Credit refunds to each team's purse
+  for (const [teamId, totalRefund] of refundByTeam) {
+    const current = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
+    if (current.length === 0) continue;
+    await db
+      .update(teams)
+      .set({
+        purse: current[0].purse + totalRefund,
+        totalRefunds: current[0].totalRefunds + totalRefund,
+        updatedAt: new Date(),
+      })
+      .where(eq(teams.id, teamId));
+  }
+
+  return { finalized: pendingReleases.length };
+}

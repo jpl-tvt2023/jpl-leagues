@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { LeagueNav } from "@/components/LeagueNav";
 
 interface LeagueConfig {
   teamSize: number;
@@ -430,6 +431,95 @@ function getTripleCrownRules(cfg: LeagueConfig) {
   );
 }
 
+// ─── Auction Format Rules ─────────────────────────────────────────────────────
+
+function getAuctionRules(config: LeagueConfig) {
+  return (
+    <div className="space-y-6">
+      {/* A — Budget & Purse */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="A" color="green" title="Budget & Purse" />
+        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+          <RuleItem>Each manager starts with an <strong className="text-white">initial budget</strong> (purse) set by the league.</RuleItem>
+          <RuleItem>Your purse increases via GW payouts, release refunds, and trade income.</RuleItem>
+          <RuleItem>Your purse decreases via player purchases and trade payments.</RuleItem>
+          <RuleItem>The purse is the currency of the league — manage it wisely across auctions and trades.</RuleItem>
+        </ul>
+      </section>
+
+      {/* B — Auction Sessions */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="B" color="purple" title="Auction Sessions" />
+        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+          <RuleItem>The <strong className="text-white">Initial Auction</strong> fills all squads before the season begins. Teams nominate players in snake-draft order.</RuleItem>
+          <RuleItem><strong className="text-white">Mini-Auctions</strong> occur at designated points during the season. Any released players return to the pool.</RuleItem>
+          <RuleItem>Each nominated player goes to the highest bidder. If only one bid is placed, it wins at the minimum bid price.</RuleItem>
+          <RuleItem>You cannot bid more than your remaining purse allows.</RuleItem>
+          <RuleItem>The snake order for nominations reverses each round: bottom-ranked teams nominate first in mini-auctions.</RuleItem>
+        </ul>
+      </section>
+
+      {/* C — Squad Requirements */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="C" color="yellow" title="Squad Requirements" />
+        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+          <RuleItem>Each squad must have <strong className="text-white">11–14 active players</strong> at all times.</RuleItem>
+          <RuleItem>Minimum position requirements: <strong className="text-white">1 GK, 3 DEF, 3 MID, 1 FWD</strong>.</RuleItem>
+          <RuleItem>No FPL player can be owned by more than one team in the same league simultaneously.</RuleItem>
+          <RuleItem>Players marked as <strong className="text-yellow-400">deadwood</strong> remain in your squad but do not score. They still count toward your squad size.</RuleItem>
+        </ul>
+      </section>
+
+      {/* D — Scoring & Payouts */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="D" color="blue" title="Scoring & Payouts" />
+        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+          <RuleItem>Each gameweek, your squad score is the <strong className="text-white">sum of all active FPL points</strong> earned by your owned players (deadwood excluded).</RuleItem>
+          <RuleItem>Teams are <strong className="text-white">ranked each GW</strong> by their squad score. Top-ranked teams earn the highest payouts.</RuleItem>
+          <RuleItem>Payout amounts are credited to your purse at the end of each gameweek.</RuleItem>
+          <RuleItem>The <strong className="text-white">overall standings</strong> are determined by cumulative total FPL points scored across all gameweeks.</RuleItem>
+        </ul>
+      </section>
+
+      {/* E — Player Trades */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="E" color="orange" title="Player Trades" />
+        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+          <RuleItem>Any manager can <strong className="text-white">propose a trade</strong> to another team — offering players and/or cash in exchange for players.</RuleItem>
+          <RuleItem>The target team must <strong className="text-white">accept</strong> the trade, after which it awaits admin approval before executing.</RuleItem>
+          <RuleItem>Trades are subject to an <strong className="text-white">80% Fair Market Value (FMV) floor</strong>: the total value given by each side must be at least 80% of what they receive.</RuleItem>
+          <RuleItem>FMV is calculated based on purchase price and cumulative points earned.</RuleItem>
+          <RuleItem>A <strong className="text-white">5% transfer tax</strong> is charged on all cash received in a trade. If you receive £10M, you keep £9.5M.</RuleItem>
+          <RuleItem>Both squads must maintain valid size (11–14 players) and position minimums after any trade.</RuleItem>
+        </ul>
+      </section>
+
+      {/* F — Player Releases */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="F" color="red" title="Player Releases" />
+        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+          <RuleItem>You can <strong className="text-white">request a release</strong> for any active player at any time from your squad page.</RuleItem>
+          <RuleItem>The released player continues scoring for your team until the release is finalized.</RuleItem>
+          <RuleItem>Releases are finalized at the <strong className="text-white">start of the next mini-auction</strong>. Upon finalization, you receive a <strong className="text-white">50% refund</strong> of the player's purchase price.</RuleItem>
+          <RuleItem>The other 50% is forfeited — releasing is a cost, not a full recovery.</RuleItem>
+          <RuleItem>You can <strong className="text-white">cancel a pending release</strong> any time before the mini-auction begins.</RuleItem>
+          <RuleItem>Released players re-enter the player pool and are available in the next mini-auction.</RuleItem>
+        </ul>
+      </section>
+
+      {/* G — Standings */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="G" color="green" title="Standings" />
+        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+          <RuleItem>Teams are ranked by <strong className="text-white">total cumulative FPL points</strong> scored by their squad across all gameweeks.</RuleItem>
+          <RuleItem>In case of a tie, teams with a higher average GW score rank higher.</RuleItem>
+          <RuleItem>Purse size and trade activity do not affect standings — only on-pitch performance counts.</RuleItem>
+        </ul>
+      </section>
+    </div>
+  );
+}
+
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
 function SectionHeader({ letter, color, title }: { letter: string; color: string; title: string }) {
@@ -649,8 +739,11 @@ export default function LeagueRulesPage() {
   };
 
   const isTripleCrown = leagueFormat === "triple-crown";
+  const isAuction = leagueFormat === "auction";
 
-  const variantLabel = isTripleCrown
+  const variantLabel = isAuction
+    ? "Auction Format"
+    : isTripleCrown
     ? "Triple Crown (20 Teams)"
     : config?.teamSize === 8
     ? "8-Team Format"
@@ -660,55 +753,19 @@ export default function LeagueRulesPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            JPL
-          </div>
-          <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">{isLoggedIn ? "Dashboard" : "All Leagues"}</Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
-            {isTripleCrown ? "PL Standings" : "Standings"}
-          </Link>
-          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            {isTripleCrown ? "PL Fixtures" : "Fixtures"}
-          </Link>
-          {isTripleCrown ? (
-            <>
-              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
-              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
-              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
-            </>
-          ) : (
-            <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
-          )}
-          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
-          <Link href={`/${leagueSlug}/rules`} className="text-yellow-400 font-semibold transition">Rules</Link>
-          <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
-          {isLoggedIn ? (
-            <button
-              onClick={handleSignOut}
-              className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition"
-            >
-              Sign Out
-            </button>
-          ) : (
-            <Link
-              href="/signin"
-              className="rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-2 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
-            >
-              Sign In
-            </Link>
-          )}
-        </div>
-      </nav>
+      <LeagueNav
+        leagueSlug={leagueSlug}
+        leagueName={leagueName}
+        currentPage="rules"
+        format={leagueFormat === "auction" ? "auction" : leagueFormat === "triple-crown" ? "triple-crown" : "tvt"}
+        isLoggedIn={isLoggedIn}
+        dashboardHref={dashboardHref}
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-12">
         <div className="text-center mb-10">
-          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-3">{isTripleCrown ? "Triple Crown Rules & Regulations" : "TVT Rules & Regulations"}</h1>
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-3">{isAuction ? "Auction League Rules & Regulations" : isTripleCrown ? "Triple Crown Rules & Regulations" : "TVT Rules & Regulations"}</h1>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <p className="text-gray-400">{leagueName || leagueSlug}</p>
             {!isLoading && config && (
@@ -722,7 +779,9 @@ export default function LeagueRulesPage() {
         {isLoading ? (
           <LoadingScreen variant="rules" fullScreen={false} />
         ) : config ? (
-          isTripleCrown
+          isAuction
+            ? getAuctionRules(config)
+            : isTripleCrown
             ? getTripleCrownRules(config)
             : config.teamSize === 8
             ? get8TeamRules(config)

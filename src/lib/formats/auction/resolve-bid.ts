@@ -20,6 +20,7 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, asc, sql, lte } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { fetchElementInfo } from "@/lib/fpl";
 
 const DEFAULT_MIN_BID = 500_000;
 
@@ -74,6 +75,16 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
   const winnerId = fresh.currentHighBidderId;
   const winAmount = fresh.currentHighBid;
 
+  // Look up element type from FPL cache for position quota tracking
+  let elementType: number | null = null;
+  try {
+    const elements = await fetchElementInfo();
+    const player = elements.find((e) => e.id === fresh.fplElementId);
+    elementType = player?.element_type ?? null;
+  } catch {
+    // Non-critical — ownership still created without position type
+  }
+
   // Create ownership record (uses fresh values from RETURNING)
   await db.insert(auctionOwnership).values({
     id: generateId(),
@@ -81,6 +92,7 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
     teamId: winnerId,
     fplElementId: fresh.fplElementId,
     playerName: fresh.playerName,
+    elementType,
     purchasePrice: winAmount,
     acquiredGw: 0,
     status: "active",
