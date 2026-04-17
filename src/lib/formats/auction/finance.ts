@@ -12,7 +12,10 @@ export type TransactionType =
   | "pending_release"
   | "gw_payout"
   | "trade_cash_out"
-  | "trade_cash_in";
+  | "trade_cash_in"
+  | "transfer_fee";
+
+const TRANSFER_FEE_RATE = 0.05;
 
 export interface TransactionEntry {
   id: string;
@@ -201,41 +204,62 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     const counterparty = isProposer ? t.targetTeamId : t.proposerTeamId;
     const counterpartyName = teamNameById.get(counterparty) ?? counterparty.slice(0, 6);
     // cashOffered: positive = proposer pays target; negative = proposer receives
-    let amount: number;
+    let grossAmount: number;
     if (isProposer) {
-      amount = -t.cashOffered; // proposer: pays positive, receives if negative
+      grossAmount = -t.cashOffered; // proposer: pays positive, receives if negative
     } else {
-      amount = t.cashOffered; // target: receives positive, pays if negative
+      grossAmount = t.cashOffered; // target: receives positive, pays if negative
     }
+
+    // For cash-in, the actual amount received is net of the 5% transfer fee
+    const isReceiver = grossAmount > 0;
+    const feeAmount = isReceiver ? Math.round(grossAmount * TRANSFER_FEE_RATE) : 0;
+    const netAmount = isReceiver ? grossAmount - feeAmount : grossAmount;
+
     entries.push({
       id: `trade-${t.id}`,
-      type: amount >= 0 ? "trade_cash_in" : "trade_cash_out",
+      type: netAmount >= 0 ? "trade_cash_in" : "trade_cash_out",
       date: t.updatedAt.toISOString(),
       gw: null,
-      description: `Trade ${amount >= 0 ? "from" : "with"} ${counterpartyName}`,
-      amount,
+      description: `Trade ${netAmount >= 0 ? "from" : "with"} ${counterpartyName}`,
+      amount: netAmount,
       isPending: false,
       metadata: {
         counterpartyTeam: counterpartyName,
         tradeId: t.id,
       },
     });
+
+    // Add transfer_fee entry for receiver
+    if (isReceiver && feeAmount > 0) {
+      entries.push({
+        id: `trade-${t.id}-fee`,
+        type: "transfer_fee",
+        date: t.updatedAt.toISOString(),
+        gw: null,
+        description: `Transfer tax (5%) — trade with ${counterpartyName}`,
+        amount: -feeAmount,
+        isPending: false,
+        metadata: {
+          counterpartyTeam: counterpartyName,
+          tradeId: t.id,
+        },
+      });
+    }
   }
 
-  // Sort chronologically
-  entries.sort((a, b) => {
-    // Initial budget always first
-    if (a.type === "initial_budget" && b.type !== "initial_budget") return -1;
-    if (b.type === "initial_budget" && a.type !== "initial_budget") return 1;
-    return new Date(a.date).getTime() - new Date(b.date).getTime();
-  });
+  // Sort ascending first (needed to compute correct running balance)
+  entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  // Compute running balance (pending entries don't affect balance)
+  // Compute running balance forward (pending entries don't affect balance)
   let balance = 0;
-  const ledger: TransactionEntry[] = entries.map((e) => {
+  const withBalance = entries.map((e) => {
     if (!e.isPending) balance += e.amount;
     return { ...e, runningBalance: balance };
   });
+
+  // Reverse to show newest transactions first (descending order)
+  const ledger: TransactionEntry[] = withBalance.reverse();
 
   // Summary
   const totalSpent = ownership.reduce((s, o) => s + o.purchasePrice, 0);

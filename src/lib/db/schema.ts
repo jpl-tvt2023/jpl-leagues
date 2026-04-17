@@ -329,6 +329,7 @@ export const auctionOwnership = sqliteTable("auction_ownership", {
   teamId: text("team_id").notNull().references(() => teams.id),
   fplElementId: integer("fpl_element_id").notNull(), // FPL element ID (the actual PL player)
   playerName: text("player_name").notNull(), // Cached web_name from bootstrap
+  elementType: integer("element_type"), // 1=GK, 2=DEF, 3=MID, 4=FWD — nullable for legacy records
   purchasePrice: integer("purchase_price").notNull(),
   acquiredGw: integer("acquired_gw").notNull(), // GW in which player was acquired (0 = pre-season)
   releasedGw: integer("released_gw"), // GW in which player was released (null if active)

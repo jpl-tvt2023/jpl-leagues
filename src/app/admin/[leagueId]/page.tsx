@@ -584,6 +584,24 @@ export default function AdminDashboard() {
     });
   };
 
+  const createGameweeks = async () => {
+    setScoringLoading(true);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/create-gameweeks`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: `Created ${data.created} gameweeks (${data.skipped} already existed)` });
+        fetchGameweekStatuses();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to create gameweeks" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setScoringLoading(false);
+    }
+  };
+
   // Playoff functions
   const fetchPlayoffStatus = async () => {
     setPlayoffsLoading(true);
@@ -916,7 +934,11 @@ export default function AdminDashboard() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: `Session ${action}ed successfully` });
+        if (data.simulated) {
+          setMessage({ type: "success", text: `Simulation complete! ${data.playersAssigned} players auto-assigned via snake draft.` });
+        } else {
+          setMessage({ type: "success", text: `Session ${action}ed successfully` });
+        }
         fetchAuctionData();
       } else {
         setMessage({ type: "error", text: data.error || `Failed to ${action} session` });
@@ -2937,7 +2959,20 @@ export default function AdminDashboard() {
               {scoringLoading ? (
                 <div className="text-center text-gray-400 py-8 text-sm">Loading gameweeks…</div>
               ) : gameweekStatuses.length === 0 ? (
-                <div className="text-center text-gray-400 py-8 text-sm">{isAuctionFormat ? "No gameweeks found — create gameweeks first" : "No gameweeks with fixtures found"}</div>
+                isAuctionFormat ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-400 text-sm mb-3">No gameweeks found</p>
+                    <button
+                      onClick={createGameweeks}
+                      disabled={scoringLoading}
+                      className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-sm font-medium disabled:opacity-50 transition"
+                    >
+                      Create Gameweeks (GW 1–38)
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-400 py-8 text-sm">No gameweeks with fixtures found</div>
+                )
               ) : (
                 <>
                 <div className="text-xs text-gray-500 mb-3">Reprocessing uses historical ownership (acquiredGw / releasedGw) — safe to re-run any GW.</div>

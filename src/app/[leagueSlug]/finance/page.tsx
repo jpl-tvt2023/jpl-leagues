@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 type TransactionType =
@@ -12,7 +13,8 @@ type TransactionType =
   | "pending_release"
   | "gw_payout"
   | "trade_cash_out"
-  | "trade_cash_in";
+  | "trade_cash_in"
+  | "transfer_fee";
 
 interface TransactionEntry {
   id: string;
@@ -67,6 +69,7 @@ const TYPE_STYLES: Record<TransactionType, { label: string; badge: string }> = {
   gw_payout: { label: "GW Payout", badge: "bg-blue-500/20 text-blue-300 border-blue-500/40" },
   trade_cash_out: { label: "Trade Out", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
   trade_cash_in: { label: "Trade In", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
+  transfer_fee: { label: "Trade Tax", badge: "bg-red-500/20 text-red-300 border-red-500/40" },
 };
 
 export default function FinancePage() {
@@ -133,23 +136,15 @@ export default function FinancePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
-      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">JPL</div>
-          <span className="text-xl font-bold text-white hidden sm:inline">Finance</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/dashboard" className="text-gray-300 hover:text-white transition">Dashboard</Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
-          <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
-          <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
-          <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
-          <Link href={`/${leagueSlug}/finance`} className="text-yellow-400 font-semibold transition">Finance</Link>
-          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
-          <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">Sign Out</button>
-        </div>
-      </nav>
+      <LeagueNav
+        leagueSlug={leagueSlug}
+        leagueName={leagueSlug}
+        currentPage="finance"
+        format="auction"
+        isLoggedIn={true}
+        dashboardHref="/dashboard"
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
         {isLoading ? (

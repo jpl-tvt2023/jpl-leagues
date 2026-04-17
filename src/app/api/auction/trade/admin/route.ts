@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tradeProposals } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { db, tradeProposals, auctionOwnership, teams } from "@/lib/db";
+import { eq, and } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { executeTrade } from "@/lib/formats/auction/trade";
+import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
 
 /**
  * POST /api/auction/trade/admin
@@ -43,6 +44,50 @@ export async function POST(request: NextRequest) {
     if (proposal.status !== "accepted") {
       return NextResponse.json(
         { error: "Only accepted proposals can be approved. Current status: " + proposal.status },
+        { status: 400 }
+      );
+    }
+
+    // Re-validate with fresh squad/purse data before executing
+    const [proposerSquad, targetSquad, proposerTeam, targetTeam] = await Promise.all([
+      db.select().from(auctionOwnership).where(
+        and(eq(auctionOwnership.leagueId, proposal.leagueId), eq(auctionOwnership.teamId, proposal.proposerTeamId), eq(auctionOwnership.status, "active"))
+      ),
+      db.select().from(auctionOwnership).where(
+        and(eq(auctionOwnership.leagueId, proposal.leagueId), eq(auctionOwnership.teamId, proposal.targetTeamId), eq(auctionOwnership.status, "active"))
+      ),
+      db.select().from(teams).where(eq(teams.id, proposal.proposerTeamId)).limit(1),
+      db.select().from(teams).where(eq(teams.id, proposal.targetTeamId)).limit(1),
+    ]);
+
+    const offeredIds: string[] = JSON.parse(proposal.offeredPlayerIds);
+    const requestedIds: string[] = JSON.parse(proposal.requestedPlayerIds);
+    const offeredFresh: TradePlayer[] = offeredIds.map((id) => {
+      const o = proposerSquad.find((p) => p.id === id);
+      return o ? { ownershipId: o.id, fplElementId: o.fplElementId, playerName: o.playerName, purchasePrice: o.purchasePrice, totalPoints: 0, elementType: o.elementType } : null;
+    }).filter(Boolean) as TradePlayer[];
+    const requestedFresh: TradePlayer[] = requestedIds.map((id) => {
+      const o = targetSquad.find((p) => p.id === id);
+      return o ? { ownershipId: o.id, fplElementId: o.fplElementId, playerName: o.playerName, purchasePrice: o.purchasePrice, totalPoints: 0, elementType: o.elementType } : null;
+    }).filter(Boolean) as TradePlayer[];
+
+    const revalidation = validateTradeProposal(
+      offeredFresh,
+      requestedFresh,
+      proposal.cashOffered,
+      proposerSquad.length,
+      targetSquad.length,
+      proposerTeam[0]?.purse ?? 0,
+      targetTeam[0]?.purse ?? 0,
+      proposerTeam[0]?.penaltySlots ?? 0,
+      targetTeam[0]?.penaltySlots ?? 0,
+      buildPositionMap(proposerSquad),
+      buildPositionMap(targetSquad)
+    );
+
+    if (!revalidation.valid) {
+      return NextResponse.json(
+        { error: "Trade is no longer valid (squads may have changed since acceptance)", details: revalidation.errors },
         { status: 400 }
       );
     }

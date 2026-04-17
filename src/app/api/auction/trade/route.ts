@@ -3,7 +3,7 @@ import { db, teams, leagues, auctionOwnership, tradeProposals, auctionScores } f
 import { eq, and, or } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
-import { validateTradeProposal, type TradePlayer } from "@/lib/formats/auction/marketplace";
+import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 
 /**
@@ -158,6 +158,9 @@ export async function POST(request: NextRequest) {
   const proposerTeam = await db.select().from(teams).where(eq(teams.id, session.id)).limit(1);
   const targetTeam = await db.select().from(teams).where(eq(teams.id, targetTeamId)).limit(1);
 
+  const proposerPositions = buildPositionMap(proposerSquad);
+  const targetPositions = buildPositionMap(targetSquad);
+
   const validation = validateTradeProposal(
     offered,
     requested,
@@ -167,7 +170,9 @@ export async function POST(request: NextRequest) {
     proposerTeam[0]?.purse ?? 0,
     targetTeam[0]?.purse ?? 0,
     proposerTeam[0]?.penaltySlots ?? 0,
-    targetTeam[0]?.penaltySlots ?? 0
+    targetTeam[0]?.penaltySlots ?? 0,
+    proposerPositions,
+    targetPositions
   );
 
   if (!validation.valid) {
@@ -239,13 +244,54 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, status: "rejected" });
   }
 
-  // Accept — awaits admin approval (no veto window)
+  // Accept — re-validate with fresh squad/purse data before accepting
+  const [proposerSquadFresh, targetSquadFresh, proposerTeamFresh, targetTeamFresh] = await Promise.all([
+    db.select().from(auctionOwnership).where(
+      and(eq(auctionOwnership.leagueId, proposal.leagueId), eq(auctionOwnership.teamId, proposal.proposerTeamId), eq(auctionOwnership.status, "active"))
+    ),
+    db.select().from(auctionOwnership).where(
+      and(eq(auctionOwnership.leagueId, proposal.leagueId), eq(auctionOwnership.teamId, proposal.targetTeamId), eq(auctionOwnership.status, "active"))
+    ),
+    db.select().from(teams).where(eq(teams.id, proposal.proposerTeamId)).limit(1),
+    db.select().from(teams).where(eq(teams.id, proposal.targetTeamId)).limit(1),
+  ]);
+
+  // Rebuild offered/requested as TradePlayer arrays from the stored ownership IDs
+  const offeredIds: string[] = JSON.parse(proposal.offeredPlayerIds);
+  const requestedIds: string[] = JSON.parse(proposal.requestedPlayerIds);
+  const offeredFresh: TradePlayer[] = offeredIds.map((id) => {
+    const o = proposerSquadFresh.find((p) => p.id === id);
+    return o ? { ownershipId: o.id, fplElementId: o.fplElementId, playerName: o.playerName, purchasePrice: o.purchasePrice, totalPoints: 0, elementType: o.elementType } : null;
+  }).filter(Boolean) as TradePlayer[];
+  const requestedFresh: TradePlayer[] = requestedIds.map((id) => {
+    const o = targetSquadFresh.find((p) => p.id === id);
+    return o ? { ownershipId: o.id, fplElementId: o.fplElementId, playerName: o.playerName, purchasePrice: o.purchasePrice, totalPoints: 0, elementType: o.elementType } : null;
+  }).filter(Boolean) as TradePlayer[];
+
+  const revalidation = validateTradeProposal(
+    offeredFresh,
+    requestedFresh,
+    proposal.cashOffered,
+    proposerSquadFresh.length,
+    targetSquadFresh.length,
+    proposerTeamFresh[0]?.purse ?? 0,
+    targetTeamFresh[0]?.purse ?? 0,
+    proposerTeamFresh[0]?.penaltySlots ?? 0,
+    targetTeamFresh[0]?.penaltySlots ?? 0,
+    buildPositionMap(proposerSquadFresh),
+    buildPositionMap(targetSquadFresh)
+  );
+
+  if (!revalidation.valid) {
+    return NextResponse.json(
+      { error: "Trade is no longer valid (squads may have changed)", details: revalidation.errors },
+      { status: 400 }
+    );
+  }
+
   await db
     .update(tradeProposals)
-    .set({
-      status: "accepted",
-      updatedAt: new Date(),
-    })
+    .set({ status: "accepted", updatedAt: new Date() })
     .where(eq(tradeProposals.id, proposalId));
 
   return NextResponse.json({ success: true, status: "accepted" });

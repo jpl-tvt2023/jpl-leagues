@@ -5,6 +5,9 @@ import { db } from "@/lib/db";
 import { auctionOwnership, teams, tradeProposals } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+// 5% of cash received is charged to the receiving team
+const TRANSFER_FEE_RATE = 0.05;
+
 export interface TradeProposalForExecution {
   id: string;
   leagueId: string;
@@ -46,29 +49,58 @@ export async function executeTrade(proposal: TradeProposalForExecution): Promise
         .where(eq(auctionOwnership.id, id));
     }
 
-    // Transfer cash
+    // Transfer cash with 5% fee on the receiving team
     if (proposal.cashOffered !== 0) {
       const proposerTeam = await tx.select().from(teams).where(eq(teams.id, proposal.proposerTeamId)).limit(1);
       const targetTeam = await tx.select().from(teams).where(eq(teams.id, proposal.targetTeamId)).limit(1);
 
       if (proposerTeam.length > 0 && targetTeam.length > 0) {
-        await tx
-          .update(teams)
-          .set({
-            purse: proposerTeam[0].purse - proposal.cashOffered,
-            totalSpent: proposerTeam[0].totalSpent + Math.max(0, proposal.cashOffered),
-            updatedAt: new Date(),
-          })
-          .where(eq(teams.id, proposal.proposerTeamId));
+        if (proposal.cashOffered > 0) {
+          // Target receives cash — charge 5% fee on received amount
+          const fee = Math.round(proposal.cashOffered * TRANSFER_FEE_RATE);
+          const netReceived = proposal.cashOffered - fee;
 
-        await tx
-          .update(teams)
-          .set({
-            purse: targetTeam[0].purse + proposal.cashOffered,
-            totalIncome: targetTeam[0].totalIncome + Math.max(0, proposal.cashOffered),
-            updatedAt: new Date(),
-          })
-          .where(eq(teams.id, proposal.targetTeamId));
+          await tx
+            .update(teams)
+            .set({
+              purse: proposerTeam[0].purse - proposal.cashOffered,
+              totalSpent: proposerTeam[0].totalSpent + proposal.cashOffered,
+              updatedAt: new Date(),
+            })
+            .where(eq(teams.id, proposal.proposerTeamId));
+
+          await tx
+            .update(teams)
+            .set({
+              purse: targetTeam[0].purse + netReceived,
+              totalIncome: targetTeam[0].totalIncome + netReceived,
+              updatedAt: new Date(),
+            })
+            .where(eq(teams.id, proposal.targetTeamId));
+        } else {
+          // Proposer receives cash (cashOffered < 0) — charge 5% fee on received amount
+          const grossReceived = -proposal.cashOffered;
+          const fee = Math.round(grossReceived * TRANSFER_FEE_RATE);
+          const netReceived = grossReceived - fee;
+
+          await tx
+            .update(teams)
+            .set({
+              purse: targetTeam[0].purse - grossReceived,
+              totalSpent: targetTeam[0].totalSpent + grossReceived,
+              updatedAt: new Date(),
+            })
+            .where(eq(teams.id, proposal.targetTeamId));
+
+          await tx
+            .update(teams)
+            .set({
+              purse: proposerTeam[0].purse + netReceived,
+              totalIncome: proposerTeam[0].totalIncome + netReceived,
+              updatedAt: new Date(),
+            })
+            .where(eq(teams.id, proposal.proposerTeamId));
+        }
       }
     }
 

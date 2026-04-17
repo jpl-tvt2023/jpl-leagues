@@ -81,6 +81,9 @@ export async function simulateAuction(
   // Track cumulative spend per team for batch DB update
   const teamSpend = new Map<string, number>();
 
+  // Collect all ownership records — bulk insert after loop to avoid Vercel timeout
+  const ownershipRecords: (typeof auctionOwnership.$inferInsert)[] = [];
+
   // Snake draft: 14 rounds
   for (let round = 0; round < SQUAD_SIZE; round++) {
     // Snake: even rounds go forward, odd rounds go reverse
@@ -112,13 +115,13 @@ export async function simulateAuction(
         // If even floor price exceeds purse, skip (shouldn't happen with reasonable budgets)
         if (price > purse) continue;
 
-        // Assign player
-        await db.insert(auctionOwnership).values({
+        ownershipRecords.push({
           id: generateId(),
           leagueId,
           teamId,
           fplElementId: player.id,
           playerName: player.web_name,
+          elementType: player.element_type,
           purchasePrice: price,
           acquiredGw: 0,
           status: "active",
@@ -141,6 +144,11 @@ export async function simulateAuction(
         );
       }
     }
+  }
+
+  // Single bulk insert — one DB round trip instead of 140 sequential awaits
+  if (ownershipRecords.length > 0) {
+    await db.insert(auctionOwnership).values(ownershipRecords);
   }
 
   // Update each team's purse and totalSpent in DB

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { LeagueNav } from "@/components/LeagueNav";
 
 interface SquadPlayer {
   ownershipId: string;
@@ -185,10 +186,11 @@ export default function SquadPage() {
     window.location.href = "/signin";
   };
 
-  const canRelease = session?.type === "mini-auction" && session?.status === "active";
+  // Release is always available in auction leagues — refund credited at next mini-auction start
+  const canRelease = true;
 
   const handleRelease = async (ownershipId: string, playerName: string) => {
-    if (!confirm(`Mark ${playerName} for release? The player continues scoring for you until GW 10/20/30, when a 50% refund will be credited to your purse. You can cancel the release any time before then.`)) return;
+    if (!confirm(`Mark ${playerName} for release? You will receive a 50% refund, credited to your purse at the start of the next mini-auction. You can cancel the release any time before then.`)) return;
     setReleasing(ownershipId);
     setReleaseError(null);
     try {
@@ -307,23 +309,15 @@ export default function SquadPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
-      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">JPL</div>
-          <span className="text-xl font-bold text-white hidden sm:inline">Squad</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/dashboard" className="text-gray-300 hover:text-white transition">Dashboard</Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
-          <Link href={`/${leagueSlug}/squad`} className="text-yellow-400 font-semibold transition">Squad</Link>
-          <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
-          <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
-          <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
-          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
-          <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">Sign Out</button>
-        </div>
-      </nav>
+      <LeagueNav
+        leagueSlug={leagueSlug}
+        leagueName={leagueSlug}
+        currentPage="squad"
+        format="auction"
+        isLoggedIn={true}
+        dashboardHref="/dashboard"
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
         {isLoading ? (
@@ -345,11 +339,9 @@ export default function SquadPage() {
                         {squadData.deadwoodCount} deadwood
                       </span>
                     )}
-                    {canRelease && (
-                      <span className="rounded-full bg-blue-500/20 text-blue-300 px-3 py-1 border border-blue-500/30">
-                        Release window open
-                      </span>
-                    )}
+                    <span className="rounded-full bg-blue-500/20 text-blue-300 px-3 py-1 border border-blue-500/30 text-xs">
+                      Releases finalized at next mini-auction
+                    </span>
                   </div>
                 </div>
                 <div className="text-right">

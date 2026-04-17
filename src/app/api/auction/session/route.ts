@@ -10,6 +10,7 @@ import {
   setNominationDeadline,
 } from "@/lib/formats/auction/resolve-bid";
 import { simulateAuction } from "@/lib/formats/auction/simulate";
+import { finalizePendingReleasesNow } from "@/lib/formats/auction/process-gameweek";
 
 /**
  * Auto-resolve expired open bids that SSE may have missed.
@@ -253,6 +254,12 @@ export async function POST(request: NextRequest) {
     .update(auctionSessions)
     .set({ status: newStatus })
     .where(eq(auctionSessions.id, sessionId));
+
+  // When starting a mini-auction, finalize any pending player releases first
+  if (newStatus === "active" && action === "start" && sessionRow[0].type === "mini-auction") {
+    const gwNumber = sessionRow[0].cycleNumber ?? 0;
+    await finalizePendingReleasesNow(leagueId, gwNumber);
+  }
 
   // When starting/resuming, set the nomination deadline for the current nominator
   if (newStatus === "active") {

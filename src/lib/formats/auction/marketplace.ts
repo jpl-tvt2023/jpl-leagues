@@ -9,6 +9,25 @@ export interface TradePlayer {
   playerName: string;
   purchasePrice: number;
   totalPoints: number; // cumulative season points for FMV calculation
+  elementType?: number | null; // 1=GK, 2=DEF, 3=MID, 4=FWD
+}
+
+// Minimum players required at each position after any trade
+const MIN_POSITIONS: Record<number, number> = { 1: 1, 2: 3, 3: 3, 4: 1 };
+const POSITION_NAMES: Record<number, string> = { 1: "GK", 2: "DEF", 3: "MID", 4: "FWD" };
+
+/**
+ * Build a position count map from a squad array.
+ * Only counts players with a known elementType.
+ */
+export function buildPositionMap(squad: { elementType?: number | null }[]): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const p of squad) {
+    if (p.elementType != null) {
+      map.set(p.elementType, (map.get(p.elementType) ?? 0) + 1);
+    }
+  }
+  return map;
 }
 
 /**
@@ -16,6 +35,7 @@ export interface TradePlayer {
  * 1. Both teams must remain with valid squad sizes (max 14 - penalty slots, min 11)
  * 2. Cash offered must not exceed available purse
  * 3. Trade value must meet the 80% FMV floor
+ * 4. Both squads must maintain minimum position quotas after trade
  */
 export function validateTradeProposal(
   offeredPlayers: TradePlayer[],
@@ -26,7 +46,9 @@ export function validateTradeProposal(
   proposerPurse: number,
   targetPurse: number,
   proposerPenaltySlots: number = 0,
-  targetPenaltySlots: number = 0
+  targetPenaltySlots: number = 0,
+  proposerPositions?: Map<number, number>, // optional: current position counts for proposer
+  targetPositions?: Map<number, number>    // optional: current position counts for target
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -58,7 +80,6 @@ export function validateTradeProposal(
   }
 
   // FMV floor enforcement: total value given must be >= 80% of total value received
-  // For each side: sum of (player FMVs + cash)
   const offeredFMV = offeredPlayers.reduce(
     (sum, p) => sum + calculateFMV(p.purchasePrice, p.totalPoints),
     0
@@ -91,6 +112,40 @@ export function validateTradeProposal(
   // Must trade at least 1 player
   if (offeredPlayers.length === 0 && requestedPlayers.length === 0) {
     errors.push("Trade must involve at least one player");
+  }
+
+  // Position quota checks (only when position data is available)
+  if (proposerPositions && targetPositions) {
+    // Proposer loses offered players, gains requested players
+    const proposerAfterPos = new Map(proposerPositions);
+    for (const p of offeredPlayers) {
+      if (p.elementType != null) proposerAfterPos.set(p.elementType, (proposerAfterPos.get(p.elementType) ?? 0) - 1);
+    }
+    for (const p of requestedPlayers) {
+      if (p.elementType != null) proposerAfterPos.set(p.elementType, (proposerAfterPos.get(p.elementType) ?? 0) + 1);
+    }
+
+    // Target loses requested players, gains offered players
+    const targetAfterPos = new Map(targetPositions);
+    for (const p of requestedPlayers) {
+      if (p.elementType != null) targetAfterPos.set(p.elementType, (targetAfterPos.get(p.elementType) ?? 0) - 1);
+    }
+    for (const p of offeredPlayers) {
+      if (p.elementType != null) targetAfterPos.set(p.elementType, (targetAfterPos.get(p.elementType) ?? 0) + 1);
+    }
+
+    for (const [pos, min] of Object.entries(MIN_POSITIONS)) {
+      const posNum = Number(pos);
+      const name = POSITION_NAMES[posNum];
+      const proposerCount = proposerAfterPos.get(posNum) ?? 0;
+      const targetCount = targetAfterPos.get(posNum) ?? 0;
+      if (proposerCount < min) {
+        errors.push(`Proposer would have only ${proposerCount} ${name}(s) — minimum is ${min}`);
+      }
+      if (targetCount < min) {
+        errors.push(`Target would have only ${targetCount} ${name}(s) — minimum is ${min}`);
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors };
