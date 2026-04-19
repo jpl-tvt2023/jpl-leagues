@@ -1,12 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { LeagueNav } from "@/components/LeagueNav";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { StandingsTable } from "@/components/StandingsTable";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import type { TeamStanding } from "@/types/standings";
+
+interface AuctionGwHistoryEntry {
+  gw: number;
+  points: number;
+  rank: number;
+  payout: number;
+}
 
 interface AuctionStandingRow {
   teamId: string;
@@ -16,6 +23,7 @@ interface AuctionStandingRow {
   purse: number;
   squadValue: number;
   rank: number;
+  gwHistory: AuctionGwHistoryEntry[];
 }
 
 function formatCurrency(amount: number): string {
@@ -28,7 +36,10 @@ function formatCurrency(amount: number): string {
 
 export default function LeagueStandingsPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const leagueSlug = params.leagueSlug as string;
+  const gwParam = searchParams.get("gw");
+  const selectedGw = gwParam ? parseInt(gwParam, 10) : null;
 
   const [groupA, setGroupA] = useState<TeamStanding[]>([]);
   const [groupB, setGroupB] = useState<TeamStanding[]>([]);
@@ -119,6 +130,33 @@ export default function LeagueStandingsPage() {
   const isTripleCrown = leagueFormat === "triple-crown";
   const isAuction = leagueFormat === "auction";
 
+  // Per-GW leaderboard for auction format (when ?gw=N is set)
+  const perGwRows = useMemo(() => {
+    if (!isAuction || !selectedGw) return [];
+    const rows = auctionStandings
+      .map((s) => {
+        const entry = s.gwHistory?.find((g) => g.gw === selectedGw);
+        if (!entry) return null;
+        return {
+          teamId: s.teamId,
+          teamName: s.teamName,
+          abbreviation: s.abbreviation,
+          points: entry.points,
+          payout: entry.payout,
+          gwRank: entry.rank,
+          squadValue: s.squadValue,
+          purse: s.purse,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+    rows.sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (a.squadValue !== b.squadValue) return a.squadValue - b.squadValue;
+      return b.purse - a.purse;
+    });
+    return rows.map((r, i) => ({ ...r, rank: i + 1 }));
+  }, [isAuction, selectedGw, auctionStandings]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
       <LeagueNav
@@ -150,7 +188,54 @@ export default function LeagueStandingsPage() {
                 </div>
               </div>
             ) : (
-              <div className="max-w-5xl mx-auto">
+              <div className="max-w-5xl mx-auto space-y-8">
+                {selectedGw && perGwRows.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-bold text-white">Gameweek {selectedGw} Leaderboard</h2>
+                      <Link href={`/${leagueSlug}/standings`} className="text-xs text-yellow-400 hover:text-yellow-300">
+                        Clear filter →
+                      </Link>
+                    </div>
+                    <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/5 overflow-hidden backdrop-blur">
+                      <table className="w-full text-left">
+                        <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
+                          <tr>
+                            <th className="px-4 py-3">#</th>
+                            <th className="px-4 py-3">Team</th>
+                            <th className="px-4 py-3 text-right">GW Points</th>
+                            <th className="px-4 py-3 text-right">Payout</th>
+                            <th className="px-4 py-3 text-right">Squad Value</th>
+                            <th className="px-4 py-3 text-right">Purse</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {perGwRows.map((r) => (
+                            <tr key={r.teamId} className="border-t border-white/5 hover:bg-white/5 transition">
+                              <td className="px-4 py-3 font-bold text-white">{r.rank}</td>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-white">{r.teamName}</div>
+                                <div className="text-xs text-gray-400">{r.abbreviation}</div>
+                              </td>
+                              <td className="px-4 py-3 text-right font-mono font-bold text-[#00ff85]">{r.points}</td>
+                              <td className="px-4 py-3 text-right font-mono text-green-300">{formatCurrency(r.payout)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-gray-200">{formatCurrency(r.squadValue)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-gray-200">{formatCurrency(r.purse)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500 text-center">
+                      Tiebreakers: GW points → squad value (lower wins) → purse (higher wins)
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  {selectedGw && (
+                    <h2 className="text-lg font-bold text-white mb-3">Season Standings</h2>
+                  )}
                 <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden backdrop-blur">
                   <table className="w-full text-left">
                     <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
@@ -180,6 +265,7 @@ export default function LeagueStandingsPage() {
                 </div>
                 <div className="mt-6 text-center text-xs text-gray-500">
                   Total Points = Cumulative sum of all 14 owned players&apos; gameweek scores · Squad Value = Sum of FMV (purchase price + points-based appreciation)
+                </div>
                 </div>
               </div>
             )}

@@ -87,6 +87,7 @@ export function LeagueNav({
         {isAuction ? (
           <>
             <NavLink href={`/${leagueSlug}/standings`} active={currentPage === "standings"}>Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/teams`} active={currentPage === "teams"}>Teams</NavLink>
             <NavLink href={`/${leagueSlug}/auction`} active={currentPage === "auction"}>Auction</NavLink>
             <NavLink href={`/${leagueSlug}/squad`} active={currentPage === "squad"}>Squad</NavLink>
             <NavLink href={`/${leagueSlug}/players`} active={currentPage === "players"}>Players</NavLink>

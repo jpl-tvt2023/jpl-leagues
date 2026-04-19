@@ -14,14 +14,46 @@ const POSITION_COLORS: Record<number, string> = {
   4: "bg-red-500/20 text-red-300 border-red-500/30",
 };
 
-const STATUS_ICONS: Record<string, { icon: string; color: string; label: string }> = {
-  a: { icon: "", color: "", label: "" },
-  i: { icon: "🏥", color: "text-orange-400", label: "Injured" },
-  s: { icon: "🟥", color: "text-red-400", label: "Suspended" },
-  u: { icon: "❌", color: "text-red-400", label: "Unavailable" },
-  d: { icon: "❓", color: "text-yellow-400", label: "Doubtful" },
-  n: { icon: "📰", color: "text-blue-400", label: "News" },
-};
+type SortKey = "webName" | "ownerTeamName" | "position" | "plTeamShort" | "seasonPoints" | "purchasePrice";
+type SortDir = "asc" | "desc";
+
+function SortableTh({
+  label,
+  k,
+  sortKey,
+  sortDir,
+  setSortKey,
+  setSortDir,
+  className = "",
+  align = "left",
+}: {
+  label: string;
+  k: SortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  setSortKey: (k: SortKey) => void;
+  setSortDir: (d: SortDir) => void;
+  className?: string;
+  align?: "left" | "right";
+}) {
+  const active = sortKey === k;
+  const onClick = () => {
+    if (active) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else { setSortKey(k); setSortDir(k === "webName" || k === "ownerTeamName" || k === "plTeamShort" || k === "position" ? "asc" : "desc"); }
+  };
+  return (
+    <th className={`${className} py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1 hover:text-white transition ${active ? "text-yellow-300" : ""}`}
+      >
+        {label}
+        <span className="text-[9px]">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
 
 interface PlayerRow {
   elementId: number;
@@ -75,6 +107,10 @@ export default function PlayersPage() {
   const [ownershipFilter, setOwnershipFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Sort state
+  const [sortKey, setSortKey] = useState<SortKey>("seasonPoints");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const pageSize = 50;
 
@@ -188,6 +224,22 @@ export default function PlayersPage() {
     [plTeams]
   );
 
+  // Client-side sort for the visible page
+  const sortedRows = useMemo(() => {
+    const copy = [...rows];
+    const dir = sortDir === "asc" ? 1 : -1;
+    copy.sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+    return copy;
+  }, [rows, sortKey, sortDir]);
+
   if (isLoading) return <LoadingScreen />;
   if (error) {
     return (
@@ -213,10 +265,6 @@ export default function PlayersPage() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Player Stats</h1>
-          <p className="text-sm text-gray-400">
-            All FPL players with per-gameweek points and JPL ownership.
-            Team score = sum of all owned players&apos; individual GW points (no captain, no chips).
-          </p>
         </div>
 
         {/* Filters bar */}
@@ -300,7 +348,7 @@ export default function PlayersPage() {
 
           <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
             <span>{totalCount} players</span>
-            <span>Sorted by GW{gameweek} points</span>
+            <span>Sorted by {sortKey === "webName" ? "name" : sortKey === "ownerTeamName" ? "owner" : sortKey === "plTeamShort" ? "PL team" : sortKey === "seasonPoints" ? "season points" : sortKey === "purchasePrice" ? "price" : "position"} ({sortDir})</span>
           </div>
         </div>
 
@@ -310,26 +358,23 @@ export default function PlayersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-left">
-                  <th className="px-4 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold">Player</th>
-                  <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold">Owned By</th>
-                  <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold">Pos</th>
-                  <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold">PL Team</th>
-                  <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-right">GW{gameweek}</th>
-                  <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-right">Season</th>
-                  <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-right">Price</th>
-                  <th className="px-3 py-3 text-xs text-gray-400 uppercase tracking-wider font-semibold text-center hidden md:table-cell">Status</th>
+                  <SortableTh label="Player" k="webName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-4" />
+                  <SortableTh label="Owned By" k="ownerTeamName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" />
+                  <SortableTh label="Pos" k="position" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" />
+                  <SortableTh label="PL Team" k="plTeamShort" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" />
+                  <SortableTh label="Season" k="seasonPoints" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" align="right" />
+                  <SortableTh label="Price" k="purchasePrice" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" align="right" />
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
+                {sortedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                       No players found
                     </td>
                   </tr>
                 ) : (
-                  rows.map((p) => {
-                    const st = STATUS_ICONS[p.status] ?? STATUS_ICONS.a;
+                  sortedRows.map((p) => {
                     const isMine = p.ownerTeamId === myTeamId;
                     return (
                       <tr
@@ -343,12 +388,12 @@ export default function PlayersPage() {
 
                         {/* Owned by */}
                         <td className="px-3 py-2.5">
-                          {p.ownerAbbreviation ? (
+                          {p.ownerTeamName ? (
                             <span
-                              className={`px-2 py-0.5 rounded text-xs font-bold ${isMine ? "bg-yellow-500/20 text-yellow-300" : "bg-purple-500/20 text-purple-300"}`}
-                              title={p.ownerTeamName ?? ""}
+                              className={`text-xs font-semibold ${isMine ? "text-yellow-300" : "text-purple-300"}`}
+                              title={p.ownerAbbreviation ?? ""}
                             >
-                              {p.ownerAbbreviation}
+                              {p.ownerTeamName}
                             </span>
                           ) : (
                             <span className="text-gray-600 text-xs">—</span>
@@ -367,13 +412,6 @@ export default function PlayersPage() {
                           {p.plTeamShort}
                         </td>
 
-                        {/* GW points */}
-                        <td className="px-3 py-2.5 text-right">
-                          <span className={`font-bold ${p.gwPoints > 0 ? "text-green-400" : p.gwPoints < 0 ? "text-red-400" : "text-gray-400"}`}>
-                            {p.gwPoints}
-                          </span>
-                        </td>
-
                         {/* Season points */}
                         <td className="px-3 py-2.5 text-right text-gray-300">
                           {p.seasonPoints}
@@ -385,15 +423,6 @@ export default function PlayersPage() {
                             <span className="text-yellow-400 font-mono text-xs">{formatPurchasePrice(p.purchasePrice)}</span>
                           ) : (
                             <span className="text-gray-600 text-xs">—</span>
-                          )}
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-3 py-2.5 text-center hidden md:table-cell">
-                          {st.icon && (
-                            <span className={st.color} title={st.label}>
-                              {st.icon}
-                            </span>
                           )}
                         </td>
                       </tr>

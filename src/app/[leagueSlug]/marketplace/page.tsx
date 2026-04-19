@@ -36,6 +36,26 @@ interface StandingEntry {
 
 type Tab = "incoming" | "outgoing" | "live" | "releases" | "history";
 
+const TRADE_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+function ExpiryCountdown({ createdAt }: { createdAt: number | string }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const created = typeof createdAt === "string" ? new Date(createdAt).getTime() : createdAt;
+  const remaining = created + TRADE_EXPIRY_MS - now;
+  if (remaining <= 0) return <span className="text-[10px] text-red-300 uppercase tracking-wider font-bold">Expiring…</span>;
+  const hrs = Math.floor(remaining / (60 * 60 * 1000));
+  const mins = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+  return (
+    <span className="text-[10px] text-gray-400 uppercase tracking-wider" title={`Created ${new Date(created).toLocaleString()}`}>
+      Expires in {hrs}h {mins}m
+    </span>
+  );
+}
+
 function formatCurrency(amount: number): string {
   const abs = Math.abs(amount);
   const sign = amount < 0 ? "-" : "";
@@ -264,20 +284,23 @@ export default function MarketplacePage() {
     const isIncoming = p.targetTeamId === myTeamId;
 
     return (
-      <div key={p.id} className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+      <div key={p.id} className={`rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur ${p.status === "expired" ? "opacity-60" : ""}`}>
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm text-gray-400">
             <span className="text-white font-semibold">{teamName(p.proposerTeamId)}</span>
             {" → "}
             <span className="text-white font-semibold">{teamName(p.targetTeamId)}</span>
           </div>
-          <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border ${
-            p.status === "pending" ? "bg-blue-500/20 text-blue-300 border-blue-500/40" :
-            p.status === "accepted" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" :
-            p.status === "completed" ? "bg-green-500/20 text-green-300 border-green-500/40" :
-            p.status === "rejected" || p.status === "vetoed" || p.status === "expired" ? "bg-red-500/20 text-red-300 border-red-500/40" :
-            "bg-white/10 text-gray-300 border-white/20"
-          }`}>{p.status}</span>
+          <div className="flex items-center gap-2">
+            {p.status === "pending" && <ExpiryCountdown createdAt={p.createdAt} />}
+            <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border ${
+              p.status === "pending" ? "bg-blue-500/20 text-blue-300 border-blue-500/40" :
+              p.status === "accepted" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" :
+              p.status === "completed" ? "bg-green-500/20 text-green-300 border-green-500/40" :
+              p.status === "rejected" || p.status === "vetoed" || p.status === "expired" ? "bg-red-500/20 text-red-300 border-red-500/40" :
+              "bg-white/10 text-gray-300 border-white/20"
+            }`}>{p.status}</span>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-4">

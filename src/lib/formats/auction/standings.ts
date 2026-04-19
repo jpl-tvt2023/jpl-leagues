@@ -57,13 +57,12 @@ export function computeAuctionStandings(
     };
   });
 
-  // Sort by total points descending, then by most recent GW score as tiebreaker
+  // Sort by total points desc, then squad value asc (lower = better),
+  // then purse desc (higher = better).
   standings.sort((a, b) => {
     if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-    // Tiebreaker: highest most-recent GW score
-    const aLatest = a.gwHistory.length > 0 ? a.gwHistory[a.gwHistory.length - 1].points : 0;
-    const bLatest = b.gwHistory.length > 0 ? b.gwHistory[b.gwHistory.length - 1].points : 0;
-    return bLatest - aLatest;
+    if (a.squadValue !== b.squadValue) return a.squadValue - b.squadValue;
+    return b.purse - a.purse;
   });
 
   // Assign ranks

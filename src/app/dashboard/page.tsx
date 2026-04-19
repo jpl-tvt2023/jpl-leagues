@@ -385,6 +385,7 @@ function formatCurrency(value: number): string {
 }
 
 function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashboardData; leagueSlug: string; onSignOut: () => void }) {
+  const router = useRouter();
   const netPnL = data.initialBudget + data.totalIncome + data.totalRefunds - data.totalSpent;
 
   const POS_LABEL: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -392,9 +393,11 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
   for (const p of data.squad) {
     if (p.elementType && positionCounts[p.elementType] !== undefined) positionCounts[p.elementType]++;
   }
-  const topPerformers = [...data.squad]
-    .sort((a, b) => b.totalPoints - a.totalPoints)
-    .slice(0, 4);
+  const sortedByPoints = [...data.squad].sort((a, b) => b.totalPoints - a.totalPoints);
+  const topPerformers = sortedByPoints.slice(0, 4);
+  const leastPerformers = data.squad.length > 4
+    ? [...sortedByPoints].reverse().slice(0, 4)
+    : [];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -409,6 +412,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           <Link href="/dashboard" className="text-yellow-400 font-semibold transition">Dashboard</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
+          <Link href={`/${leagueSlug}/teams`} className="text-gray-300 hover:text-white transition">Teams</Link>
           <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
           <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
@@ -509,11 +513,8 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Left column: Squad + GW History */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Squad */}
+            {/* Squad summary */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <span className="text-yellow-400">👥</span> Squad ({data.squadSize}/14)
-              </h2>
               {data.squad.length === 0 ? (
                 <div className="text-center text-gray-400 py-8">
                   <p>No players yet.</p>
@@ -534,54 +535,18 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                     ))}
                   </div>
 
-                  {/* Top 4 performers */}
-                  {topPerformers.length > 0 && (
-                    <div className="mb-4">
-                      <div className="text-xs uppercase tracking-wider text-gray-400 mb-2">Top Performers</div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left text-xs uppercase text-gray-500 border-b border-white/10">
-                              <th className="py-2">Player</th>
-                              <th className="py-2 text-right">Cost</th>
-                              <th className="py-2 text-right">Points</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {topPerformers.map((p) => (
-                              <tr key={p.id} className="border-b border-white/5">
-                                <td className="py-2 text-white font-semibold">
-                                  {p.playerName}
-                                  {p.elementType && (
-                                    <span className="ml-2 text-[10px] text-gray-500 uppercase">{POS_LABEL[p.elementType]}</span>
-                                  )}
-                                </td>
-                                <td className="py-2 text-right text-yellow-400 font-mono">{formatCurrency(p.purchasePrice)}</td>
-                                <td className="py-2 text-right text-white font-mono">{p.totalPoints}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <PerformerPanel title="Top Performers" accent="text-green-400" players={topPerformers} posLabels={POS_LABEL} formatCurrency={formatCurrency} />
+                    <PerformerPanel title="Least Performers" accent="text-red-400" players={leastPerformers} posLabels={POS_LABEL} formatCurrency={formatCurrency} emptyHint="Need 5+ players" />
+                  </div>
 
-                  {/* Full squad list */}
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {data.squad.map(p => (
-                      <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
-                        <div>
-                          <div className="text-sm font-semibold text-white">
-                            {p.playerName}
-                            {p.elementType && (
-                              <span className="ml-2 text-[10px] text-gray-500 uppercase">{POS_LABEL[p.elementType]}</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500">Acquired GW{p.acquiredGw} · {p.totalPoints} pts</div>
-                        </div>
-                        <div className="text-sm text-yellow-400 font-mono">{formatCurrency(p.purchasePrice)}</div>
-                      </div>
-                    ))}
+                  <div className="mt-4 text-right">
+                    <Link
+                      href={`/${leagueSlug}/squad`}
+                      className="inline-flex items-center gap-1 text-sm text-yellow-400 hover:text-yellow-300 font-semibold transition"
+                    >
+                      View Full Squad ({data.squadSize}/14) →
+                    </Link>
                   </div>
                 </>
               )}
@@ -607,7 +572,11 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                     </thead>
                     <tbody>
                       {[...data.gwHistory].reverse().map(gw => (
-                        <tr key={gw.gameweek} className="border-b border-white/5">
+                        <tr
+                          key={gw.gameweek}
+                          onClick={() => router.push(`/${leagueSlug}/standings?gw=${gw.gameweek}`)}
+                          className="border-b border-white/5 cursor-pointer hover:bg-white/10 transition"
+                        >
                           <td className="py-2 text-white font-semibold">GW{gw.gameweek}</td>
                           <td className="py-2 text-right text-white">{gw.points}</td>
                           <td className="py-2 text-right text-gray-400">{gw.rank ?? "—"}</td>
@@ -673,6 +642,48 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PerformerPanel({
+  title,
+  accent,
+  players,
+  posLabels,
+  formatCurrency,
+  emptyHint,
+}: {
+  title: string;
+  accent: string;
+  players: AuctionDashboardData["squad"];
+  posLabels: Record<number, string>;
+  formatCurrency: (n: number) => string;
+  emptyHint?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+      <div className={`text-xs uppercase tracking-wider mb-2 font-semibold ${accent}`}>{title}</div>
+      {players.length === 0 ? (
+        <div className="text-sm text-gray-500 py-4 text-center">{emptyHint ?? "No data"}</div>
+      ) : (
+        <table className="w-full text-sm">
+          <tbody>
+            {players.map((p) => (
+              <tr key={p.id} className="border-b border-white/5 last:border-0">
+                <td className="py-1.5 text-white font-semibold">
+                  {p.playerName}
+                  {p.elementType && (
+                    <span className="ml-2 text-[10px] text-gray-500 uppercase">{posLabels[p.elementType]}</span>
+                  )}
+                </td>
+                <td className="py-1.5 text-right text-yellow-400 font-mono text-xs">{formatCurrency(p.purchasePrice)}</td>
+                <td className="py-1.5 text-right text-white font-mono w-12">{p.totalPoints}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
