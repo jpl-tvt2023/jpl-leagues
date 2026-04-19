@@ -4,7 +4,7 @@
 import { db, teams, auctionScores, auctionOwnership } from "../../db";
 import { eq, and } from "drizzle-orm";
 import { calculateAuctionTeamScore } from "./scoring";
-import { getPayoutForRank, calculateRefund } from "./economy";
+import { getPayoutForRank, calculateRefund, calculateFMV } from "./economy";
 import { randomUUID } from "crypto";
 
 export interface AuctionProcessResult {
@@ -72,8 +72,32 @@ export async function processAuctionGameweek(
     })
   );
 
-  // Rank by GW score (descending)
-  teamScores.sort((a, b) => b.totalPoints - a.totalPoints);
+  // Build per-team squadValue snapshot at this GW (FMV of currently-owned players,
+  // FMV uses purchasePrice + (player's accumulated GW points × 50K from this score's
+  // breakdown — for tie-breaking purposes a snapshot derived from the just-computed
+  // GW breakdown is a fair approximation).
+  const allOwnership = await db
+    .select()
+    .from(auctionOwnership)
+    .where(and(eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.status, "active")));
+
+  const squadValueByTeam = new Map<string, number>();
+  for (const owned of allOwnership) {
+    const score = teamScores.find((s) => s.teamId === owned.teamId);
+    const playerPts = score?.playerBreakdown.find((p) => p.elementId === owned.fplElementId)?.points ?? 0;
+    const fmv = calculateFMV(owned.purchasePrice, playerPts);
+    squadValueByTeam.set(owned.teamId, (squadValueByTeam.get(owned.teamId) ?? 0) + fmv);
+  }
+  const purseByTeam = new Map(leagueTeams.map((t) => [t.id, t.purse]));
+
+  // Rank: GW points desc → squad value asc (lower wins) → purse desc (higher wins)
+  teamScores.sort((a, b) => {
+    if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+    const aSv = squadValueByTeam.get(a.teamId) ?? 0;
+    const bSv = squadValueByTeam.get(b.teamId) ?? 0;
+    if (aSv !== bSv) return aSv - bSv;
+    return (purseByTeam.get(b.teamId) ?? 0) - (purseByTeam.get(a.teamId) ?? 0);
+  });
 
   // Assign ranks and payouts
   const rankedScores = teamScores.map((score, index) => {

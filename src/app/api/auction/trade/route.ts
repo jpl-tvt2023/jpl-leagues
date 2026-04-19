@@ -1,12 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, leagues, auctionOwnership, tradeProposals, auctionScores } from "@/lib/db";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and, or, lt } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { isAuctionLive } from "@/lib/formats/auction/live-session";
 import { createNotification } from "@/lib/notifications";
+
+const TRADE_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Mark pending proposals older than 24h as "expired". Called lazily on every read.
+ */
+async function expireStaleProposals(leagueId: string) {
+  const cutoff = new Date(Date.now() - TRADE_EXPIRY_MS);
+  await db
+    .update(tradeProposals)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(
+      and(
+        eq(tradeProposals.leagueId, leagueId),
+        eq(tradeProposals.status, "pending"),
+        lt(tradeProposals.createdAt, cutoff)
+      )
+    );
+}
 
 /**
  * GET /api/auction/trade?leagueId=xxx&teamId=xxx
@@ -28,6 +47,9 @@ export async function GET(request: NextRequest) {
   if (!leagueId) {
     return NextResponse.json({ error: "leagueId is required" }, { status: 400 });
   }
+
+  // Lazy expiry — mark pending proposals older than 24h as "expired" before reading.
+  await expireStaleProposals(leagueId);
 
   let proposals;
   if (scope === "public") {
@@ -256,6 +278,15 @@ export async function PATCH(request: NextRequest) {
   }
 
   const proposal = proposalRow[0];
+
+  // Lazy expiry: if pending but past 24h, flip to expired and refuse.
+  const ageMs = Date.now() - new Date(proposal.createdAt).getTime();
+  if (proposal.status === "pending" && ageMs > TRADE_EXPIRY_MS) {
+    await db.update(tradeProposals)
+      .set({ status: "expired", updatedAt: new Date() })
+      .where(eq(tradeProposals.id, proposalId));
+    return NextResponse.json({ error: "Proposal expired (24h limit)" }, { status: 410 });
+  }
 
   if (proposal.status !== "pending") {
     return NextResponse.json({ error: "Proposal is no longer pending" }, { status: 400 });
