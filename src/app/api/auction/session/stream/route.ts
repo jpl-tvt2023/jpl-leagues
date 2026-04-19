@@ -205,11 +205,14 @@ export async function GET(request: NextRequest) {
                   session.leagueId
                 );
 
+                const messageMap: Record<string, string> = {
+                  "auto-nominated": "Auto-nominated from wishlist",
+                  "penalised": "Penalised for missed nomination — turn skipped",
+                  "skipped-full": "Squad full — nomination turn skipped",
+                };
                 send(result, {
                   teamId: currentNominatorId,
-                  message: result === "auto-nominated"
-                    ? "Auto-nominated from wishlist"
-                    : "Penalised for missed nomination — turn skipped",
+                  message: messageMap[result] ?? "Nomination turn resolved",
                 });
               }
             } else if (!session.nominationDeadline) {

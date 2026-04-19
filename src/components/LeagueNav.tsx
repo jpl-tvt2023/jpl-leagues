@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { NotificationBell } from "./NotificationBell";
 
 export interface LeagueNavProps {
   leagueSlug: string;
@@ -47,6 +49,26 @@ export function LeagueNav({
   const isAuction = format === "auction";
   const isTripleCrown = format === "triple-crown";
 
+  const [auctionLive, setAuctionLive] = useState(false);
+
+  useEffect(() => {
+    if (!isAuction) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch(`/api/auction/live-status?leagueSlug=${encodeURIComponent(leagueSlug)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setAuctionLive(!!data.live);
+      } catch {
+        // ignore
+      }
+    };
+    check();
+    const t = setInterval(check, 15000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [isAuction, leagueSlug]);
+
   return (
     <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
       <Link href="/" className="flex items-center gap-2">
@@ -68,7 +90,9 @@ export function LeagueNav({
             <NavLink href={`/${leagueSlug}/auction`} active={currentPage === "auction"}>Auction</NavLink>
             <NavLink href={`/${leagueSlug}/squad`} active={currentPage === "squad"}>Squad</NavLink>
             <NavLink href={`/${leagueSlug}/players`} active={currentPage === "players"}>Players</NavLink>
-            <NavLink href={`/${leagueSlug}/marketplace`} active={currentPage === "marketplace"}>Marketplace</NavLink>
+            {!auctionLive && (
+              <NavLink href={`/${leagueSlug}/marketplace`} active={currentPage === "marketplace"}>Marketplace</NavLink>
+            )}
             <NavLink href={`/${leagueSlug}/finance`} active={currentPage === "finance"}>Finance</NavLink>
             <NavLink href={`/${leagueSlug}/rules`} active={currentPage === "rules"}>Rules</NavLink>
           </>
@@ -93,6 +117,9 @@ export function LeagueNav({
             <NavLink href={`/${leagueSlug}/help`} active={currentPage === "help"}>Help</NavLink>
           </>
         )}
+
+        {/* Notifications */}
+        {isLoggedIn && <NotificationBell />}
 
         {/* Sign In / Sign Out */}
         {isLoggedIn ? (

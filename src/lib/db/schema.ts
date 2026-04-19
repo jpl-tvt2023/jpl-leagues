@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex, primaryKey, index } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
 // ============================================
@@ -409,6 +409,19 @@ export const auctionBidLogs = sqliteTable("auction_bid_logs", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
+// Team penalties — per-row ledger of nomination-miss penalties so we can price
+// each redemption based on whether the penalty's cycle has ended yet.
+export const teamPenalties = sqliteTable("team_penalties", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  sessionId: text("session_id").references(() => auctionSessions.id),
+  incurredCycle: integer("incurred_cycle").notNull(), // cycleNumber of the session that issued the penalty
+  redeemedAt: integer("redeemed_at", { mode: "timestamp" }), // null = not yet redeemed
+  redemptionPrice: integer("redemption_price"), // price paid at redemption (null until redeemed)
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
 // Trade proposals — P2P marketplace with veto system
 export const tradeProposals = sqliteTable("trade_proposals", {
   id: text("id").primaryKey(),
@@ -424,6 +437,21 @@ export const tradeProposals = sqliteTable("trade_proposals", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
+
+// Notifications — per-team in-app notifications (trade lifecycle, etc.)
+export const notifications = sqliteTable("notifications", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  type: text("type").notNull(), // "trade_proposed" | "trade_accepted" | "trade_rejected" | "trade_approved" | "trade_admin_rejected"
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  link: text("link"),
+  readAt: integer("read_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  teamUnread: index("notifications_team_unread").on(table.teamId, table.readAt),
+}));
 
 // ============================================
 // Relations
@@ -735,3 +763,6 @@ export type NewAuctionBid = typeof auctionBids.$inferInsert;
 
 export type TradeProposal = typeof tradeProposals.$inferSelect;
 export type NewTradeProposal = typeof tradeProposals.$inferInsert;
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;

@@ -34,7 +34,7 @@ interface StandingEntry {
   abbreviation: string;
 }
 
-type Tab = "incoming" | "outgoing" | "releases" | "history";
+type Tab = "incoming" | "outgoing" | "live" | "releases" | "history";
 
 function formatCurrency(amount: number): string {
   const abs = Math.abs(amount);
@@ -53,7 +53,9 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null);
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [leagueId, setLeagueId] = useState<string | null>(null);
+  const [auctionLive, setAuctionLive] = useState(false);
   const [proposals, setProposals] = useState<TradeProposal[]>([]);
+  const [liveOffers, setLiveOffers] = useState<TradeProposal[]>([]);
   const [teamList, setTeamList] = useState<StandingEntry[]>([]);
   const [ownershipMap, setOwnershipMap] = useState<Map<string, SquadPlayer & { teamId: string }>>(new Map());
   const [tab, setTab] = useState<Tab>("incoming");
@@ -93,14 +95,30 @@ export default function MarketplacePage() {
       if (!league) throw new Error("League not found");
       setLeagueId(league.id);
 
-      const [proposalsRes, standingsRes] = await Promise.all([
+      try {
+        const liveRes = await fetch(`/api/auction/live-status?leagueId=${league.id}`);
+        if (liveRes.ok) {
+          const liveJson = await liveRes.json();
+          setAuctionLive(!!liveJson.live);
+        }
+      } catch {
+        // ignore
+      }
+
+      const [proposalsRes, liveOffersRes, standingsRes] = await Promise.all([
         fetch(`/api/auction/trade?leagueId=${league.id}`),
+        fetch(`/api/auction/trade?leagueId=${league.id}&scope=public`),
         fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`),
       ]);
 
       if (proposalsRes.ok) {
         const json = await proposalsRes.json();
         setProposals(json.proposals ?? []);
+      }
+
+      if (liveOffersRes.ok) {
+        const json = await liveOffersRes.json();
+        setLiveOffers(json.proposals ?? []);
       }
 
       let teams: StandingEntry[] = [];
@@ -341,6 +359,23 @@ export default function MarketplacePage() {
           <LoadingScreen variant="dashboard" fullScreen={false} />
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
+        ) : auctionLive ? (
+          <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-8 text-center">
+            <h1 className="text-2xl sm:text-3xl font-bold text-yellow-300 mb-2">Marketplace closed</h1>
+            <p className="text-gray-300">
+              The marketplace is locked while a live auction is in progress. Trades and proposals will reopen
+              once the current auction session ends.
+            </p>
+            <p className="text-xs text-gray-500 mt-4">
+              All previously pending trades were cancelled when the auction started.
+            </p>
+            <Link
+              href={`/${leagueSlug}/auction`}
+              className="mt-6 inline-block rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
+            >
+              Go to Auction
+            </Link>
+          </div>
         ) : (
           <>
             <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
@@ -354,20 +389,37 @@ export default function MarketplacePage() {
             </div>
 
             <div className="mb-6 flex gap-2 flex-wrap border-b border-white/10">
-              {(["incoming", "outgoing", "releases", "history"] as Tab[]).map((t) => (
+              {(["incoming", "outgoing", "live", "releases", "history"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={`px-4 py-2 font-semibold capitalize transition ${tab === t ? "text-yellow-400 border-b-2 border-yellow-400" : "text-gray-400 hover:text-white"}`}
                 >
-                  {t === "releases" ? `Pending Releases (${pendingReleases.length})` : t}
+                  {t === "releases"
+                    ? `Pending Releases (${pendingReleases.length})`
+                    : t === "live"
+                      ? `Live Offers (${liveOffers.length})`
+                      : t}
                 </button>
               ))}
             </div>
 
             {actionError && <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{actionError}</div>}
 
-            {tab === "releases" ? (
+            {tab === "live" ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-gray-400">
+                  League-wide trades currently in progress (read-only). Use this to see which players other teams are negotiating over.
+                </div>
+                {liveOffers.length === 0 ? (
+                  <div className="text-center text-gray-400 py-12 rounded-2xl border border-white/10 bg-white/5">
+                    No live offers between other teams
+                  </div>
+                ) : (
+                  liveOffers.map(renderProposalCard)
+                )}
+              </div>
+            ) : tab === "releases" ? (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-xs text-gray-400 mb-3">
                   Players marked for release across the league. Release finalizes at the next GW 10/20/30 boundary — 50% refund is credited then. Player continues scoring for the owning team until then.

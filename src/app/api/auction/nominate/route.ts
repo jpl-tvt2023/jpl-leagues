@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, auctionBids, auctionBidLogs, auctionSessions, auctionOwnership } from "@/lib/db";
+import { db, auctionBids, auctionBidLogs, auctionSessions, auctionOwnership, teams, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
@@ -7,6 +7,9 @@ import {
   resolveExpiredBid,
   clearNominationDeadline,
 } from "@/lib/formats/auction/resolve-bid";
+import { calculatePurse } from "@/lib/formats/auction/economy";
+import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
+import { fetchElementInfo } from "@/lib/fpl";
 
 const DEFAULT_MIN_BID = 500_000; // 500K minimum starting bid
 
@@ -130,8 +133,58 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Player is already owned" }, { status: 400 });
   }
 
-  // Create the auction bid item
+  // Compose starting bid first so subsequent guards can use it
   const startingBid = minBid ?? DEFAULT_MIN_BID;
+
+  // Squad-rule + purse pre-checks for the nominator (skipped for admin override)
+  if (!isAdmin) {
+    const [teamRow, leagueRow, ownership, elements] = await Promise.all([
+      db.select().from(teams).where(eq(teams.id, currentNominatorId)).limit(1),
+      db.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1),
+      db
+        .select({ elementType: auctionOwnership.elementType })
+        .from(auctionOwnership)
+        .where(
+          and(
+            eq(auctionOwnership.leagueId, leagueId),
+            eq(auctionOwnership.teamId, currentNominatorId),
+            eq(auctionOwnership.status, "active")
+          )
+        ),
+      fetchElementInfo(),
+    ]);
+
+    if (teamRow.length === 0 || leagueRow.length === 0) {
+      return NextResponse.json({ error: "Team or league not found" }, { status: 404 });
+    }
+
+    // Purse must cover at least the starting bid
+    const availablePurse = calculatePurse(
+      leagueRow[0].initialBudget,
+      teamRow[0].totalIncome,
+      teamRow[0].totalSpent,
+      teamRow[0].totalRefunds
+    );
+    if (availablePurse < startingBid) {
+      return NextResponse.json(
+        { error: `Insufficient purse (${availablePurse.toLocaleString()}) — minimum bid is ${startingBid.toLocaleString()}` },
+        { status: 400 }
+      );
+    }
+
+    // Squad-full + position-feasibility check
+    const counts = countsFromOwnership(ownership);
+    const el = elements.find((e) => e.id === fplElementId);
+    if (!el) {
+      return NextResponse.json({ error: "Unknown FPL element" }, { status: 400 });
+    }
+    const check = validateAddPlayer(counts, teamRow[0].penaltySlots ?? 0, el.element_type);
+    if (!check.ok) {
+      return NextResponse.json({ error: check.error }, { status: 400 });
+    }
+  }
+
+  // Create the auction bid item
   const bidTimerSeconds = auctionSession.bidTimerSeconds ?? 20;
   const expiresAt = new Date(Date.now() + bidTimerSeconds * 1000);
 

@@ -5,7 +5,7 @@
  * Weekly GW payout based on rank (in currency units).
  * Ranks 1-10 have fixed payouts; ranks 11+ get a minimum floor.
  */
-const GW_PAYOUTS: Record<number, number> = {
+export const GW_PAYOUTS: Record<number, number> = {
   1: 2_500_000,
   2: 2_100_000,
   3: 1_800_000,
@@ -18,7 +18,7 @@ const GW_PAYOUTS: Record<number, number> = {
   10: 800_000,
 };
 
-const MINIMUM_FLOOR_PAYOUT = 500_000;
+export const MINIMUM_FLOOR_PAYOUT = 500_000;
 
 /**
  * Get the payout amount for a given GW rank.

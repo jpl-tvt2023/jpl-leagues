@@ -89,10 +89,10 @@ function getIncrementLabel(currentHighBid: number): string {
 
 function getJumpBidOptions(currentHighBid: number): number[] {
   const minNext = getNextBidAmount(currentHighBid);
-  if (currentHighBid >= 5_000_000) return [minNext]; // Only auto-increment after 5M
-  const milestones = [2_000_000, 5_000_000];
+  if (currentHighBid >= 10_000_000) return [minNext]; // No more jumps once we're past £10M
+  const milestones = [2_000_000, 5_000_000, 10_000_000];
   const jumps = milestones.filter((m) => m > minNext);
-  return [minNext, ...jumps.slice(0, 2)];
+  return [minNext, ...jumps.slice(0, 3)];
 }
 
 function ScheduledCountdown({ scheduledAt }: { scheduledAt: string }) {
@@ -129,6 +129,77 @@ function ScheduledCountdown({ scheduledAt }: { scheduledAt: string }) {
       <Segment value={minutes} label="Minutes" />
       <div className="text-3xl text-gray-600">:</div>
       <Segment value={seconds} label="Seconds" />
+    </div>
+  );
+}
+
+function RedeemPenaltyButton({ teamId, onRedeemed }: { teamId: string; onRedeemed: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [cost, setCost] = useState<number | null>(null);
+  const [penaltyId, setPenaltyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/auction/redeem-slot?teamId=${teamId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.penalties && data.penalties.length > 0) {
+          const cheapest = [...data.penalties].sort((a, b) => a.cost - b.cost)[0];
+          setCost(cheapest.cost);
+          setPenaltyId(cheapest.id);
+        } else if (data.legacyUnledgeredSlots > 0) {
+          setCost(data.legacyCost);
+          setPenaltyId(null);
+        } else {
+          setCost(null);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    load();
+    const t = setInterval(load, 10000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [teamId]);
+
+  const redeem = async () => {
+    if (cost === null) return;
+    if (!confirm(`Redeem one penalty slot for £${(cost / 1_000_000).toFixed(2)}M?`)) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auction/redeem-slot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId, penaltyId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Redemption failed");
+      onRedeemed();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Redemption failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (cost === null) return null;
+
+  return (
+    <div className="flex flex-col items-end">
+      <button
+        onClick={redeem}
+        disabled={loading}
+        className="rounded-lg bg-red-500/20 border border-red-500/40 text-red-200 text-xs font-semibold px-3 py-1 hover:bg-red-500/30 transition disabled:opacity-50"
+        title="Buy back one penalty slot to restore squad capacity"
+      >
+        {loading ? "Redeeming…" : `Redeem Penalty Slot (£${(cost / 1_000_000).toFixed(2)}M)`}
+      </button>
+      {error && <div className="text-[10px] text-red-300 mt-1">{error}</div>}
     </div>
   );
 }
@@ -176,11 +247,24 @@ export default function AuctionRoomPage() {
   const myTeamIdRef = useRef<string | null>(null);
   const currentBidRef = useRef<CurrentBid | null>(null);
   const lastBidIdRef = useRef<string | null>(null);
+  const elementByIdRef = useRef<Map<number, BootstrapElement>>(new Map());
+  const plTeamsRef = useRef<Map<number, BootstrapTeam>>(new Map());
 
   useEffect(() => { teamMapRef.current = teamMap; }, [teamMap]);
   useEffect(() => { leagueIdRef.current = leagueId; }, [leagueId]);
   useEffect(() => { myTeamIdRef.current = myTeamId; }, [myTeamId]);
   useEffect(() => { currentBidRef.current = currentBid; }, [currentBid]);
+
+  /** Build "[POS·TEAM]" suffix from an FPL element id, or empty string. */
+  const playerTag = useCallback((fplElementId: number | undefined | null): string => {
+    if (!fplElementId) return "";
+    const el = elementByIdRef.current.get(fplElementId);
+    if (!el) return "";
+    const pos = POSITION_LABELS[el.element_type];
+    const plTeam = plTeamsRef.current.get(el.team);
+    const parts = [pos, plTeam?.short_name].filter(Boolean);
+    return parts.length ? ` [${parts.join("·")}]` : "";
+  }, []);
 
   const addFeed = useCallback((text: string, kind: BidFeedItem["kind"], bidId?: string) => {
     setBidFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now(), bidId }, ...prev]);
@@ -409,7 +493,7 @@ export default function AuctionRoomPage() {
       if (data.bidId && data.bidId !== lastBidIdRef.current) {
         lastBidIdRef.current = data.bidId;
         const nominatorName = teamMapRef.current.get(data.nominatorTeamId)?.teamName ?? "Unknown";
-        addFeed(`${nominatorName} nominated ${data.playerName} — base ${formatCurrency(data.minBid)}`, "info", data.bidId);
+        addFeed(`${nominatorName} nominated ${data.playerName}${playerTag(data.fplElementId)} — base ${formatCurrency(data.minBid)}`, "info", data.bidId);
       }
     });
     es.addEventListener("bid-placed", (e) => {
@@ -417,12 +501,12 @@ export default function AuctionRoomPage() {
       setCurrentBid(data);
       setBidError(null);
       const bidderName = teamMapRef.current.get(data.currentHighBidderId)?.teamName ?? "Unknown";
-      addFeed(`${bidderName} bid ${formatCurrency(data.currentHighBid)} on ${data.playerName}`, "bid", data.bidId);
+      addFeed(`${bidderName} bid ${formatCurrency(data.currentHighBid)} on ${data.playerName}${playerTag(data.fplElementId)}`, "bid", data.bidId);
     });
     es.addEventListener("sold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       const winnerName = data.winnerId ? teamMapRef.current.get(data.winnerId)?.teamName ?? "Unknown" : "—";
-      addFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatCurrency(data.finalBid)}`, "sold", data.bidId);
+      addFeed(`SOLD: ${data.playerName}${playerTag(data.fplElementId)} → ${winnerName} for ${formatCurrency(data.finalBid)}`, "sold", data.bidId);
       setCurrentBid(null);
       // Immediately sync session (advanceNominator already ran server-side before this event)
       refreshSessionState();
@@ -443,7 +527,7 @@ export default function AuctionRoomPage() {
     });
     es.addEventListener("unsold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      addFeed(`UNSOLD: ${data.playerName}`, "unsold", data.bidId);
+      addFeed(`UNSOLD: ${data.playerName}${playerTag(data.fplElementId)}`, "unsold", data.bidId);
       setCurrentBid(null);
     });
     es.addEventListener("session-status", (e) => {
@@ -474,6 +558,11 @@ export default function AuctionRoomPage() {
       const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
       addFeed(`${teamName} penalised — missed nomination (wishlist empty)`, "unsold");
     });
+    es.addEventListener("skipped-full", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
+      addFeed(`${teamName} skipped — squad full`, "info");
+    });
 
     return () => {
       es.close();
@@ -482,10 +571,33 @@ export default function AuctionRoomPage() {
     };
   }, [sessionId, sessionStatus, addFeed, refreshSessionState]);
 
-  // Refetch session + currentBid on intervals (SSE fallback)
+  // Refetch session + currentBid on intervals (SSE fallback). Also refresh
+  // cross-team summaries and my purse so penalty/spend changes from other
+  // teams (e.g. SOLD events on other clients) propagate without a hard reload.
   useEffect(() => {
     if (!leagueId || !sessionId) return;
-    const t = setInterval(() => refreshSessionState(), 3000);
+    const tick = () => {
+      refreshSessionState();
+      const lid = leagueIdRef.current;
+      const mtid = myTeamIdRef.current;
+      if (lid) {
+        fetch(`/api/auction/league-owned?leagueId=${lid}`)
+          .then((r) => r.ok ? r.json() : null)
+          .then((d) => {
+            if (!d) return;
+            setOwnedElementIds(new Set(d.ownedElementIds ?? []));
+            setTeamSummaries(d.teamSummaries ?? {});
+          })
+          .catch(() => {});
+      }
+      if (mtid) {
+        fetch(`/api/auction/economy?teamId=${mtid}`)
+          .then((r) => r.ok ? r.json() : null)
+          .then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); })
+          .catch(() => {});
+      }
+    };
+    const t = setInterval(tick, 3000);
     return () => clearInterval(t);
   }, [leagueId, sessionId, refreshSessionState]);
 
@@ -527,12 +639,30 @@ export default function AuctionRoomPage() {
   const isMyTurn = currentNominatorId === myTeamId;
   const isHighBidder = currentBid?.currentHighBidderId === myTeamId;
 
+  // For the "Nominate a Player" CTA: gate the button on squad-full / purse so
+  // the user gets the same answer the server would give (avoids click → 400).
+  const NOMINATE_MIN_BID = 500_000;
+  const mySummary = myTeamId ? teamSummaries[myTeamId] : null;
+  const myActiveCount = mySummary?.players?.length ?? 0;
+  const myPenaltySlots = mySummary?.penaltySlots ?? 0;
+  const mySquadFull = myActiveCount >= 14 - myPenaltySlots;
+  const cannotAffordNomination = myPurse < NOMINATE_MIN_BID;
+  const nominateBlockedReason = mySquadFull
+    ? "Squad full"
+    : cannotAffordNomination
+      ? `Need ${formatCurrency(NOMINATE_MIN_BID)} purse`
+      : null;
+
   // Map fplElementId → element for position lookups in nomination table
   const elementById = useMemo(() => {
     const m = new Map<number, BootstrapElement>();
     for (const el of elements) m.set(el.id, el);
     return m;
   }, [elements]);
+
+  // Mirror into refs so SSE handlers (registered once) can read the latest maps
+  useEffect(() => { elementByIdRef.current = elementById; }, [elementById]);
+  useEffect(() => { plTeamsRef.current = plTeams; }, [plTeams]);
 
   const filteredWishlist = useMemo(() => {
     return wishlist.filter((entry) => {
@@ -723,6 +853,9 @@ export default function AuctionRoomPage() {
                   <div className="text-xs text-gray-400 uppercase">Your Purse</div>
                   <div className="font-mono font-bold text-green-300">{formatCurrency(myPurse)}</div>
                 </div>
+                {myPenaltySlots > 0 && (
+                  <RedeemPenaltyButton teamId={myTeamId!} onRedeemed={refreshSessionState} />
+                )}
               </div>
             </div>
 
@@ -756,13 +889,24 @@ export default function AuctionRoomPage() {
               <div className="lg:col-span-2">
                 {currentBid ? (
                   <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 to-slate-900/40 p-5 backdrop-blur h-full">
-                    <div className="text-center mb-4">
-                      <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">On the Block</div>
-                      <h2 className="text-2xl font-bold text-white mb-1">{currentBid.playerName}</h2>
-                      <div className="text-xs text-gray-400">
-                        Nominated by {teamMap.get(currentBid.nominatorTeamId)?.teamName ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
-                      </div>
-                    </div>
+                    {(() => {
+                      const el = elementById.get(currentBid.fplElementId);
+                      const pos = el ? POSITION_LABELS[el.element_type] : null;
+                      const plTeam = el ? plTeams.get(el.team) : null;
+                      return (
+                        <div className="text-center mb-4">
+                          <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">On the Block</div>
+                          <h2 className="text-2xl font-bold text-white mb-1">{currentBid.playerName}</h2>
+                          <div className="flex items-center justify-center gap-1.5 mb-1">
+                            {pos && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-white/20 text-gray-300">{pos}</span>}
+                            {plTeam && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">{plTeam.short_name}</span>}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            Nominated by {teamMap.get(currentBid.nominatorTeamId)?.teamName ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div className="grid grid-cols-3 gap-3 mb-4 text-center">
                       <div>
                         <div className="text-[10px] uppercase text-gray-400">Bid</div>
@@ -820,10 +964,14 @@ export default function AuctionRoomPage() {
                         )}
                         <button
                           onClick={() => setShowNominate(true)}
-                          className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm"
+                          disabled={!!nominateBlockedReason}
+                          className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Nominate a Player
                         </button>
+                        {nominateBlockedReason && (
+                          <div className="mt-2 text-[11px] text-red-400">{nominateBlockedReason} — you can't nominate</div>
+                        )}
                       </>
                     ) : (
                       <>
@@ -853,7 +1001,7 @@ export default function AuctionRoomPage() {
                           <th className="text-left py-2 px-2 w-8">#</th>
                           <th className="text-left py-2 px-2">Team</th>
                           <th className="text-right py-2 px-2">Purse</th>
-                          <th className="text-center py-2 px-1">GK</th>
+                          <th className="text-center py-2 px-1">GKP</th>
                           <th className="text-center py-2 px-1">DEF</th>
                           <th className="text-center py-2 px-1">MID</th>
                           <th className="text-center py-2 px-1">FWD</th>
@@ -869,7 +1017,7 @@ export default function AuctionRoomPage() {
                           const players = summary?.players ?? [];
                           const isExpanded = expandedTeamId === tid;
 
-                          const counts = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+                          const counts = { GKP: 0, DEF: 0, MID: 0, FWD: 0 };
                           for (const p of players) {
                             const el = elementById.get(p.fplElementId);
                             if (el) {
@@ -877,6 +1025,9 @@ export default function AuctionRoomPage() {
                               if (pos && pos in counts) counts[pos as keyof typeof counts]++;
                             }
                           }
+                          const MIN_QUOTA: Record<keyof typeof counts, number> = { GKP: 1, DEF: 3, MID: 3, FWD: 1 };
+                          const cellClass = (pos: keyof typeof counts) =>
+                            counts[pos] >= MIN_QUOTA[pos] ? "text-green-400" : "text-red-400";
 
                           return (
                             <React.Fragment key={`${tid}-${idx}`}>
@@ -896,10 +1047,10 @@ export default function AuctionRoomPage() {
                                 <td className="py-1.5 px-2 text-right font-mono text-green-300">
                                   {summary ? formatCurrency(summary.purse) : "—"}
                                 </td>
-                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.GK}</td>
-                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.DEF}</td>
-                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.MID}</td>
-                                <td className="py-1.5 px-1 text-center text-gray-300">{counts.FWD}</td>
+                                <td className={`py-1.5 px-1 text-center font-mono ${cellClass("GKP")}`}>{counts.GKP}<span className="text-gray-500">/{MIN_QUOTA.GKP}</span></td>
+                                <td className={`py-1.5 px-1 text-center font-mono ${cellClass("DEF")}`}>{counts.DEF}<span className="text-gray-500">/{MIN_QUOTA.DEF}</span></td>
+                                <td className={`py-1.5 px-1 text-center font-mono ${cellClass("MID")}`}>{counts.MID}<span className="text-gray-500">/{MIN_QUOTA.MID}</span></td>
+                                <td className={`py-1.5 px-1 text-center font-mono ${cellClass("FWD")}`}>{counts.FWD}<span className="text-gray-500">/{MIN_QUOTA.FWD}</span></td>
                                 <td className="py-1.5 px-1 text-center text-white font-semibold">{players.length}</td>
                               </tr>
                               {isExpanded && players.length > 0 && (

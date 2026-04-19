@@ -1,9 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tradeProposals, auctionOwnership, teams } from "@/lib/db";
+import { db, tradeProposals, auctionOwnership, teams, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { executeTrade } from "@/lib/formats/auction/trade";
 import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
+import { createNotification, type NotificationType } from "@/lib/notifications";
+
+async function notifyBothParties(
+  proposal: { leagueId: string; proposerTeamId: string; targetTeamId: string },
+  type: NotificationType,
+  title: string,
+  body: string,
+  tab: "outgoing" | "incoming" | "history"
+) {
+  const leagueRow = await db
+    .select({ slug: leagues.slug })
+    .from(leagues)
+    .where(eq(leagues.id, proposal.leagueId))
+    .limit(1);
+  const link = leagueRow[0] ? `/${leagueRow[0].slug}/marketplace?tab=${tab}` : undefined;
+  await Promise.all([
+    createNotification({ teamId: proposal.proposerTeamId, leagueId: proposal.leagueId, type, title, body, link }),
+    createNotification({ teamId: proposal.targetTeamId, leagueId: proposal.leagueId, type, title, body, link }),
+  ]);
+}
 
 /**
  * POST /api/auction/trade/admin
@@ -102,6 +122,14 @@ export async function POST(request: NextRequest) {
       cashOffered: proposal.cashOffered,
     });
 
+    await notifyBothParties(
+      proposal,
+      "trade_approved",
+      "Trade approved",
+      "Admin approved the trade — players & cash have been transferred",
+      "history"
+    );
+
     return NextResponse.json({ success: true, status: "completed" });
   }
 
@@ -118,6 +146,14 @@ export async function POST(request: NextRequest) {
       .set({ status: "rejected", updatedAt: new Date() })
       .where(eq(tradeProposals.id, proposalId));
 
+    await notifyBothParties(
+      proposal,
+      "trade_admin_rejected",
+      "Trade rejected by admin",
+      "Admin rejected the trade",
+      "history"
+    );
+
     return NextResponse.json({ success: true, status: "rejected" });
   }
 
@@ -130,6 +166,14 @@ export async function POST(request: NextRequest) {
     .update(tradeProposals)
     .set({ status: "cancelled", updatedAt: new Date() })
     .where(eq(tradeProposals.id, proposalId));
+
+  await notifyBothParties(
+    proposal,
+    "trade_cancelled",
+    "Trade cancelled",
+    "Admin cancelled the trade",
+    "history"
+  );
 
   return NextResponse.json({ success: true, status: "cancelled" });
 }

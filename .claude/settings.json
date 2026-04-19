@@ -11,7 +11,9 @@
       "Bash(grep -n \"Session.*ed successfully\\\\|updateAuctionSession\\\\|simulated\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/admin/[leagueId]/page.tsx)",
       "Bash(ls -la /d/JPL/JPL-Leagues/jpl-leagues/src/app/\\\\[leagueSlug\\\\]/page.*)",
       "Bash(grep -n \"sort\\\\|ORDER\\\\|reverse\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/[leagueSlug]/finance/page.tsx)",
-      "Bash(grep -n \"scoring\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/admin/[leagueId]/page.tsx)"
+      "Bash(grep -n \"scoring\" /d/JPL/JPL-Leagues/jpl-leagues/src/app/admin/[leagueId]/page.tsx)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(npx dotenv *)"
     ],
     "additionalDirectories": [
       "d:\\JPL\\JPL-Leagues\\jpl-leagues\\src\\app\\[leagueSlug]"
