@@ -14,6 +14,7 @@ type TransactionType =
   | "gw_payout"
   | "trade_cash_out"
   | "trade_cash_in"
+  | "trade_swap"
   | "transfer_fee";
 
 interface TransactionEntry {
@@ -69,6 +70,7 @@ const TYPE_STYLES: Record<TransactionType, { label: string; badge: string }> = {
   gw_payout: { label: "GW Payout", badge: "bg-blue-500/20 text-blue-300 border-blue-500/40" },
   trade_cash_out: { label: "Trade Out", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
   trade_cash_in: { label: "Trade In", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
+  trade_swap: { label: "Trade Swap", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
   transfer_fee: { label: "Trade Tax", badge: "bg-red-500/20 text-red-300 border-red-500/40" },
 };
 
@@ -126,7 +128,7 @@ export default function FinancePage() {
       if (filter === "purchase") return e.type === "purchase";
       if (filter === "release") return e.type === "release_refund" || e.type === "pending_release";
       if (filter === "gw_payout") return e.type === "gw_payout";
-      if (filter === "trade") return e.type === "trade_cash_in" || e.type === "trade_cash_out";
+      if (filter === "trade") return e.type === "trade_cash_in" || e.type === "trade_cash_out" || e.type === "trade_swap" || e.type === "transfer_fee";
       return true;
     });
   }, [data, filter]);

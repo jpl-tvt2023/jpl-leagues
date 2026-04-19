@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { NotificationBell } from "./NotificationBell";
 
 export interface LeagueNavProps {
   leagueSlug: string;
@@ -116,6 +117,9 @@ export function LeagueNav({
             <NavLink href={`/${leagueSlug}/help`} active={currentPage === "help"}>Help</NavLink>
           </>
         )}
+
+        {/* Notifications */}
+        {isLoggedIn && <NotificationBell />}
 
         {/* Sign In / Sign Out */}
         {isLoggedIn ? (

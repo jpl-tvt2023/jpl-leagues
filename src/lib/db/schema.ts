@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex, primaryKey, index } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
 // ============================================
@@ -438,6 +438,21 @@ export const tradeProposals = sqliteTable("trade_proposals", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
+// Notifications — per-team in-app notifications (trade lifecycle, etc.)
+export const notifications = sqliteTable("notifications", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  type: text("type").notNull(), // "trade_proposed" | "trade_accepted" | "trade_rejected" | "trade_approved" | "trade_admin_rejected"
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  link: text("link"),
+  readAt: integer("read_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  teamUnread: index("notifications_team_unread").on(table.teamId, table.readAt),
+}));
+
 // ============================================
 // Relations
 // ============================================
@@ -748,3 +763,6 @@ export type NewAuctionBid = typeof auctionBids.$inferInsert;
 
 export type TradeProposal = typeof tradeProposals.$inferSelect;
 export type NewTradeProposal = typeof tradeProposals.$inferInsert;
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;

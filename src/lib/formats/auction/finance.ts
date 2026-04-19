@@ -13,6 +13,7 @@ export type TransactionType =
   | "gw_payout"
   | "trade_cash_out"
   | "trade_cash_in"
+  | "trade_swap"
   | "transfer_fee";
 
 const TRANSFER_FEE_RATE = 0.05;
@@ -181,10 +182,13 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
   for (const s of scores) {
     if (s.payout === 0) continue;
     const gw = gwById.get(s.gameweekId);
+    // Use s.createdAt (when admin processed the payout) so the entry sorts to the
+    // top of the descending ledger. gw.deadline is the historical FPL date and
+    // would push payouts to the bottom of the table.
     entries.push({
       id: `payout-${s.id}`,
       type: "gw_payout",
-      date: (gw?.deadline ?? s.createdAt).toISOString(),
+      date: s.createdAt.toISOString(),
       gw: gw?.number ?? null,
       description: `GW${gw?.number ?? "?"} payout (rank ${s.rank ?? "—"})`,
       amount: s.payout,
@@ -196,13 +200,61 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     });
   }
 
-  // 4. Completed trades with cash movement
+  // 4. Completed trades — emit a swap entry (with player details) plus cash entries when applicable
+  // Build a lookup of every ownership row in the league so we can resolve player names + prices
+  // for both pre- and post-trade snapshots (trades reassign ownership rows).
+  const allOwnership = await db
+    .select({
+      id: auctionOwnership.id,
+      playerName: auctionOwnership.playerName,
+      purchasePrice: auctionOwnership.purchasePrice,
+    })
+    .from(auctionOwnership)
+    .where(eq(auctionOwnership.leagueId, leagueId));
+  const ownershipById = new Map<string, { playerName: string; purchasePrice: number }>();
+  for (const o of allOwnership) ownershipById.set(o.id, { playerName: o.playerName, purchasePrice: o.purchasePrice });
+
+  function describePlayers(ids: string[]): string {
+    if (ids.length === 0) return "—";
+    return ids
+      .map((id) => {
+        const o = ownershipById.get(id);
+        return o ? `${o.playerName} (${formatShort(o.purchasePrice)})` : "?";
+      })
+      .join(", ");
+  }
+
   for (const t of trades) {
     if (t.status !== "completed") continue;
-    if (t.cashOffered === 0) continue;
     const isProposer = t.proposerTeamId === teamId;
     const counterparty = isProposer ? t.targetTeamId : t.proposerTeamId;
     const counterpartyName = teamNameById.get(counterparty) ?? counterparty.slice(0, 6);
+
+    // Player swap summary (always emitted, even when cashOffered is 0).
+    // From this team's perspective: outgoing players = ones we offered (if proposer) or ones requested from us (if target).
+    const offeredIds: string[] = JSON.parse(t.offeredPlayerIds ?? "[]");
+    const requestedIds: string[] = JSON.parse(t.requestedPlayerIds ?? "[]");
+    const myOutgoing = isProposer ? offeredIds : requestedIds;
+    const myIncoming = isProposer ? requestedIds : offeredIds;
+
+    if (myOutgoing.length > 0 || myIncoming.length > 0) {
+      entries.push({
+        id: `trade-swap-${t.id}`,
+        type: "trade_swap",
+        date: t.updatedAt.toISOString(),
+        gw: null,
+        description: `Trade with ${counterpartyName}: out ${describePlayers(myOutgoing)} ↔ in ${describePlayers(myIncoming)}`,
+        amount: 0,
+        isPending: false,
+        metadata: {
+          counterpartyTeam: counterpartyName,
+          tradeId: t.id,
+        },
+      });
+    }
+
+    if (t.cashOffered === 0) continue;
+
     // cashOffered: positive = proposer pays target; negative = proposer receives
     let grossAmount: number;
     if (isProposer) {

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { NotificationBell } from "@/components/NotificationBell";
 
 // Types
 interface DashboardData {
@@ -245,7 +246,8 @@ function DeadlineTimer({ deadline, gameweek, serverTime, label, expiredLabel }: 
   );
 }
 
-// Next Deadline card content — auction-aware
+// Next Deadline card content — auction-only.
+// Returns null when there's no live, paused, or scheduled auction so the card collapses.
 function NextDeadlineContent({ data, leagueSlug }: { data: AuctionDashboardData; leagueSlug: string }) {
   // 1. Auction live
   if (data.auctionSession?.status === "active") {
@@ -277,14 +279,8 @@ function NextDeadlineContent({ data, leagueSlug }: { data: AuctionDashboardData;
     );
   }
 
-  // 3. Compare GW deadline vs scheduled auction, pick the earlier one
-  const gwTs = data.deadline.timestamp ? new Date(data.deadline.timestamp).getTime() : null;
-  const auctionTs = data.nextAuction ? new Date(data.nextAuction.scheduledAt).getTime() : null;
-
-  const useAuction =
-    auctionTs !== null && (gwTs === null || auctionTs < gwTs);
-
-  if (useAuction && data.nextAuction) {
+  // 3. Scheduled upcoming auction
+  if (data.nextAuction) {
     const typeLabel =
       data.nextAuction.type === "initial"
         ? "Initial Auction"
@@ -300,14 +296,8 @@ function NextDeadlineContent({ data, leagueSlug }: { data: AuctionDashboardData;
     );
   }
 
-  // 4. Fall back to GW deadline (existing behavior)
-  return (
-    <DeadlineTimer
-      deadline={data.deadline.timestamp}
-      gameweek={data.deadline.gameweek}
-      serverTime={data.serverTime}
-    />
-  );
+  // 4. No auction scheduled — collapse the card
+  return null;
 }
 
 // Form Result Badge
@@ -425,7 +415,9 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           {!data.auctionSession && (
             <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
           )}
+          <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
+          <NotificationBell />
           <button onClick={onSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
             Sign Out
           </button>
@@ -631,13 +623,15 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
 
           {/* Right column: Deadline + Standings */}
           <div className="space-y-6">
-            {/* Deadline */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <span className="text-yellow-400">⏱</span> Next Deadline
-              </h2>
-              <NextDeadlineContent data={data} leagueSlug={leagueSlug} />
-            </div>
+            {/* Deadline — only render when there's an auction (live, paused, or scheduled) */}
+            {(data.auctionSession || data.nextAuction) && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                  <span className="text-yellow-400">⏱</span> Next Deadline
+                </h2>
+                <NextDeadlineContent data={data} leagueSlug={leagueSlug} />
+              </div>
+            )}
 
             {/* Last GW */}
             {data.lastGwResult && (

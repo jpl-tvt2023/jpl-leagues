@@ -5,6 +5,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { GW_PAYOUTS, MINIMUM_FLOOR_PAYOUT } from "@/lib/formats/auction/economy";
+
+function formatPayout(amount: number): string {
+  if (amount >= 1_000_000) return `£${(amount / 1_000_000).toFixed(amount % 1_000_000 === 0 ? 0 : 1)}M`;
+  return `£${(amount / 1_000).toFixed(0)}K`;
+}
 
 interface LeagueConfig {
   teamSize: number;
@@ -479,6 +485,35 @@ function getAuctionRules(config: LeagueConfig) {
           <RuleItem>Payout amounts are credited to your purse at the end of each gameweek.</RuleItem>
           <RuleItem>The <strong className="text-white">overall standings</strong> are determined by cumulative total FPL points scored across all gameweeks.</RuleItem>
         </ul>
+
+        <div className="mt-5 rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+          <div className="px-4 py-2 text-xs uppercase tracking-wider text-gray-400 border-b border-white/10">
+            GW Payout Schedule
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase text-gray-400">
+                <th className="text-left py-2 px-4">Rank</th>
+                <th className="text-right py-2 px-4">Payout</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(GW_PAYOUTS)
+                .map(([rank, amount]) => [Number(rank), amount] as const)
+                .sort((a, b) => a[0] - b[0])
+                .map(([rank, amount]) => (
+                  <tr key={rank} className="border-t border-white/5">
+                    <td className="py-2 px-4 text-white font-mono">#{rank}</td>
+                    <td className="py-2 px-4 text-right font-mono text-green-300">{formatPayout(amount)}</td>
+                  </tr>
+                ))}
+              <tr className="border-t border-white/5">
+                <td className="py-2 px-4 text-white font-mono">#11+</td>
+                <td className="py-2 px-4 text-right font-mono text-gray-300">{formatPayout(MINIMUM_FLOOR_PAYOUT)} <span className="text-xs text-gray-500">(floor)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {/* E — Player Trades */}

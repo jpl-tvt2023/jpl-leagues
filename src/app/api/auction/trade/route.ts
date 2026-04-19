@@ -6,6 +6,7 @@ import { generateId } from "@/lib/id";
 import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { isAuctionLive } from "@/lib/formats/auction/live-session";
+import { createNotification } from "@/lib/notifications";
 
 /**
  * GET /api/auction/trade?leagueId=xxx&teamId=xxx
@@ -22,13 +23,25 @@ export async function GET(request: NextRequest) {
 
   const leagueId = request.nextUrl.searchParams.get("leagueId");
   const teamId = request.nextUrl.searchParams.get("teamId");
+  const scope = request.nextUrl.searchParams.get("scope");
 
   if (!leagueId) {
     return NextResponse.json({ error: "leagueId is required" }, { status: 400 });
   }
 
   let proposals;
-  if (teamId) {
+  if (scope === "public") {
+    // League-wide live offers (pending or accepted only); excludes the caller's own trades.
+    const baseRows = await db
+      .select()
+      .from(tradeProposals)
+      .where(eq(tradeProposals.leagueId, leagueId));
+    proposals = baseRows.filter((p) => {
+      if (p.status !== "pending" && p.status !== "accepted") return false;
+      if (session.type === "team" && (p.proposerTeamId === session.id || p.targetTeamId === session.id)) return false;
+      return true;
+    });
+  } else if (teamId) {
     proposals = await db
       .select()
       .from(tradeProposals)
@@ -199,6 +212,15 @@ export async function POST(request: NextRequest) {
     status: "pending",
   });
 
+  await createNotification({
+    teamId: targetTeamId,
+    leagueId,
+    type: "trade_proposed",
+    title: "New trade proposal",
+    body: `${proposerTeam[0]?.name ?? "A team"} sent you a trade proposal`,
+    link: `/${leagueRow[0].slug}/marketplace?tab=incoming`,
+  });
+
   return NextResponse.json({ success: true, proposalId: id });
 }
 
@@ -256,6 +278,19 @@ export async function PATCH(request: NextRequest) {
       .update(tradeProposals)
       .set({ status: "rejected", updatedAt: new Date() })
       .where(eq(tradeProposals.id, proposalId));
+
+    const [leagueRow, targetRow] = await Promise.all([
+      db.select({ slug: leagues.slug }).from(leagues).where(eq(leagues.id, proposal.leagueId)).limit(1),
+      db.select({ name: teams.name }).from(teams).where(eq(teams.id, proposal.targetTeamId)).limit(1),
+    ]);
+    await createNotification({
+      teamId: proposal.proposerTeamId,
+      leagueId: proposal.leagueId,
+      type: "trade_rejected",
+      title: "Trade rejected",
+      body: `${targetRow[0]?.name ?? "The other team"} rejected your trade proposal`,
+      link: leagueRow[0] ? `/${leagueRow[0].slug}/marketplace?tab=outgoing` : undefined,
+    });
     return NextResponse.json({ success: true, status: "rejected" });
   }
 
@@ -308,6 +343,19 @@ export async function PATCH(request: NextRequest) {
     .update(tradeProposals)
     .set({ status: "accepted", updatedAt: new Date() })
     .where(eq(tradeProposals.id, proposalId));
+
+  const [leagueAcceptRow, targetAcceptRow] = await Promise.all([
+    db.select({ slug: leagues.slug }).from(leagues).where(eq(leagues.id, proposal.leagueId)).limit(1),
+    db.select({ name: teams.name }).from(teams).where(eq(teams.id, proposal.targetTeamId)).limit(1),
+  ]);
+  await createNotification({
+    teamId: proposal.proposerTeamId,
+    leagueId: proposal.leagueId,
+    type: "trade_accepted",
+    title: "Trade accepted",
+    body: `${targetAcceptRow[0]?.name ?? "The other team"} accepted your trade — awaiting admin approval`,
+    link: leagueAcceptRow[0] ? `/${leagueAcceptRow[0].slug}/marketplace?tab=outgoing` : undefined,
+  });
 
   return NextResponse.json({ success: true, status: "accepted" });
 }
