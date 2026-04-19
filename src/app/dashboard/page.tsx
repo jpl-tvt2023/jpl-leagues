@@ -376,7 +376,7 @@ interface AuctionDashboardData {
   totalPoints: number;
   squadValue: number;
   squadSize: number;
-  squad: { id: string; fplElementId: number; playerName: string; purchasePrice: number; acquiredGw: number; status: string }[];
+  squad: { id: string; fplElementId: number; playerName: string; purchasePrice: number; acquiredGw: number; status: string; elementType: number | null; totalPoints: number }[];
   rank: number;
   totalManagers: number;
   standings: { id: string; name: string; abbreviation: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
@@ -397,6 +397,15 @@ function formatCurrency(value: number): string {
 function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashboardData; leagueSlug: string; onSignOut: () => void }) {
   const netPnL = data.initialBudget + data.totalIncome + data.totalRefunds - data.totalSpent;
 
+  const POS_LABEL: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+  const positionCounts = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<number, number>;
+  for (const p of data.squad) {
+    if (p.elementType && positionCounts[p.elementType] !== undefined) positionCounts[p.elementType]++;
+  }
+  const topPerformers = [...data.squad]
+    .sort((a, b) => b.totalPoints - a.totalPoints)
+    .slice(0, 4);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
@@ -413,7 +422,9 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
           <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
-          <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
+          {!data.auctionSession && (
+            <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
+          )}
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <button onClick={onSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
             Sign Out
@@ -517,17 +528,70 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                   <p className="text-sm mt-2">Join the auction to acquire players.</p>
                 </div>
               ) : (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {data.squad.map(p => (
-                    <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
-                      <div>
-                        <div className="text-sm font-semibold text-white">{p.playerName}</div>
-                        <div className="text-xs text-gray-500">Acquired GW{p.acquiredGw}</div>
+                <>
+                  {/* Position summary */}
+                  <div className="mb-4 flex flex-wrap gap-2 text-xs sm:text-sm">
+                    {[1, 2, 3, 4].map((pos) => (
+                      <span
+                        key={pos}
+                        className="rounded-full bg-white/10 border border-white/10 px-3 py-1 font-mono text-gray-200"
+                      >
+                        <span className="font-semibold text-yellow-400">{positionCounts[pos]}</span>
+                        <span className="text-gray-400"> {POS_LABEL[pos]}</span>
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Top 4 performers */}
+                  {topPerformers.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-xs uppercase tracking-wider text-gray-400 mb-2">Top Performers</div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-xs uppercase text-gray-500 border-b border-white/10">
+                              <th className="py-2">Player</th>
+                              <th className="py-2 text-right">Cost</th>
+                              <th className="py-2 text-right">Points</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {topPerformers.map((p) => (
+                              <tr key={p.id} className="border-b border-white/5">
+                                <td className="py-2 text-white font-semibold">
+                                  {p.playerName}
+                                  {p.elementType && (
+                                    <span className="ml-2 text-[10px] text-gray-500 uppercase">{POS_LABEL[p.elementType]}</span>
+                                  )}
+                                </td>
+                                <td className="py-2 text-right text-yellow-400 font-mono">{formatCurrency(p.purchasePrice)}</td>
+                                <td className="py-2 text-right text-white font-mono">{p.totalPoints}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                      <div className="text-sm text-yellow-400 font-mono">{formatCurrency(p.purchasePrice)}</div>
                     </div>
-                  ))}
-                </div>
+                  )}
+
+                  {/* Full squad list */}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {data.squad.map(p => (
+                      <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
+                        <div>
+                          <div className="text-sm font-semibold text-white">
+                            {p.playerName}
+                            {p.elementType && (
+                              <span className="ml-2 text-[10px] text-gray-500 uppercase">{POS_LABEL[p.elementType]}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500">Acquired GW{p.acquiredGw} · {p.totalPoints} pts</div>
+                        </div>
+                        <div className="text-sm text-yellow-400 font-mono">{formatCurrency(p.purchasePrice)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 

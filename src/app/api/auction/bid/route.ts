@@ -4,8 +4,13 @@ import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { calculatePurse } from "@/lib/formats/auction/economy";
+import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
+import { fetchElementInfo } from "@/lib/fpl";
 
-const BID_COUNTER_EXTENSION_MS = 5_000; // +5s per counter-bid
+// Anti-snipe: only extend the timer when a bid lands inside the closing window,
+// and then bump it by ANTI_SNIPE_EXTENSION_MS (capped at the admin's bidTimerSeconds).
+const ANTI_SNIPE_WINDOW_MS = 5_000;
+const ANTI_SNIPE_EXTENSION_MS = 10_000;
 const MIN_BID_INCREMENT = 100_000; // 100K minimum raise
 
 /**
@@ -105,16 +110,29 @@ export async function POST(request: NextRequest) {
         )
       );
 
-    const maxSquadSize = 14 - (teamRow[0].penaltySlots ?? 0);
-    if (activeOwned.length >= maxSquadSize) {
-      return { error: `Squad is full (${maxSquadSize} players)`, status: 400 };
+    // Squad-rule check: cap + position-feasibility for the player being bid on
+    const elements = await fetchElementInfo();
+    const el = elements.find((e) => e.id === currentBid.fplElementId);
+    if (!el) {
+      return { error: "Unknown FPL element", status: 400 };
+    }
+    const counts = countsFromOwnership(activeOwned);
+    const check = validateAddPlayer(counts, teamRow[0].penaltySlots ?? 0, el.element_type);
+    if (!check.ok) {
+      return { error: check.error, status: 400 };
     }
 
-    // Place the bid — extend timer by +5s, capped at session's bidTimerSeconds from now
+    // Anti-snipe: only extend the bid timer when the bid lands inside the
+    // closing window (≤ ANTI_SNIPE_WINDOW_MS remaining). Outside that window
+    // the existing expiry stands. Always cap at the admin's bidTimerSeconds.
+    const remainingMs = currentBid.expiresAt.getTime() - Date.now();
     const bidMaxTimerMs = (sessionRow[0].bidTimerSeconds ?? 20) * 1000;
-    const extended = currentBid.expiresAt.getTime() + BID_COUNTER_EXTENSION_MS;
-    const maxFromNow = Date.now() + bidMaxTimerMs;
-    const newExpiry = new Date(Math.min(extended, maxFromNow));
+    let newExpiry = currentBid.expiresAt;
+    if (remainingMs <= ANTI_SNIPE_WINDOW_MS) {
+      const extended = currentBid.expiresAt.getTime() + ANTI_SNIPE_EXTENSION_MS;
+      const maxFromNow = Date.now() + bidMaxTimerMs;
+      newExpiry = new Date(Math.min(extended, maxFromNow));
+    }
     await tx
       .update(auctionBids)
       .set({

@@ -16,11 +16,15 @@ import {
   auctionOwnership,
   auctionSessions,
   auctionWishlists,
+  teamPenalties,
   teams,
 } from "@/lib/db/schema";
 import { eq, and, asc, sql, lte } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchElementInfo } from "@/lib/fpl";
+import { leagues } from "@/lib/db/schema";
+import { calculatePurse } from "./economy";
+import { countsFromOwnership, validateAddPlayer, effectiveMaxSquadSize } from "./squad-rules";
 
 const DEFAULT_MIN_BID = 500_000;
 
@@ -274,19 +278,50 @@ export async function autoNominateFromWishlist(
   teamId: string,
   leagueId: string
 ): Promise<boolean> {
-  const wishlist = await db
-    .select()
-    .from(auctionWishlists)
-    .where(
-      and(
-        eq(auctionWishlists.leagueId, leagueId),
-        eq(auctionWishlists.teamId, teamId)
+  const [wishlist, teamRow, leagueRow, ownership, elements] = await Promise.all([
+    db
+      .select()
+      .from(auctionWishlists)
+      .where(
+        and(
+          eq(auctionWishlists.leagueId, leagueId),
+          eq(auctionWishlists.teamId, teamId)
+        )
       )
-    )
-    .orderBy(asc(auctionWishlists.priority));
+      .orderBy(asc(auctionWishlists.priority)),
+    db.select().from(teams).where(eq(teams.id, teamId)).limit(1),
+    db.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1),
+    db
+      .select({ elementType: auctionOwnership.elementType, fplElementId: auctionOwnership.fplElementId })
+      .from(auctionOwnership)
+      .where(
+        and(
+          eq(auctionOwnership.leagueId, leagueId),
+          eq(auctionOwnership.teamId, teamId),
+          eq(auctionOwnership.status, "active")
+        )
+      ),
+    fetchElementInfo(),
+  ]);
+
+  if (teamRow.length === 0 || leagueRow.length === 0) return false;
+
+  const counts = countsFromOwnership(ownership);
+  const penaltySlots = teamRow[0].penaltySlots ?? 0;
+  // If the squad is already full, don't even try.
+  if (counts.total >= effectiveMaxSquadSize(penaltySlots)) return false;
+
+  const availablePurse = calculatePurse(
+    leagueRow[0].initialBudget,
+    teamRow[0].totalIncome,
+    teamRow[0].totalSpent,
+    teamRow[0].totalRefunds
+  );
+
+  const elementById = new Map(elements.map((e) => [e.id, e]));
 
   for (const entry of wishlist) {
-    // Check if this player is still unowned
+    // Skip if player is already owned by anyone
     const owned = await db
       .select({ id: auctionOwnership.id })
       .from(auctionOwnership)
@@ -298,8 +333,16 @@ export async function autoNominateFromWishlist(
         )
       )
       .limit(1);
+    if (owned.length > 0) continue;
 
-    if (owned.length > 0) continue; // Already owned, try next
+    // Skip if we can't afford even the minimum bid
+    if (availablePurse < DEFAULT_MIN_BID) return false;
+
+    // Skip if adding this player would break squad rules / position feasibility
+    const el = elementById.get(entry.fplElementId);
+    if (!el) continue;
+    const check = validateAddPlayer(counts, penaltySlots, el.element_type);
+    if (!check.ok) continue;
 
     await createNomination(
       sessionId,
@@ -311,14 +354,34 @@ export async function autoNominateFromWishlist(
     return true;
   }
 
-  return false; // All wishlist entries already owned or wishlist empty
+  return false; // All wishlist entries already owned, unaffordable, or infeasible
 }
 
 /**
  * Apply a penalty for missed nomination (empty wishlist + timeout).
- * Increments penaltySlots on the team.
+ * Increments penaltySlots on the team and records a per-row penalty ledger
+ * entry so redemption pricing can know which cycle issued it.
  */
-export async function applyNominationPenalty(teamId: string): Promise<void> {
+export async function applyNominationPenalty(
+  teamId: string,
+  sessionId: string,
+  leagueId: string
+): Promise<void> {
+  const sessionRow = await db
+    .select({ cycleNumber: auctionSessions.cycleNumber })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+  const cycleNumber = sessionRow[0]?.cycleNumber ?? 0;
+
+  await db.insert(teamPenalties).values({
+    id: generateId(),
+    leagueId,
+    teamId,
+    sessionId,
+    incurredCycle: cycleNumber,
+  });
+
   await db
     .update(teams)
     .set({ penaltySlots: sql`${teams.penaltySlots} + 1` })
@@ -334,7 +397,31 @@ export async function handleNominationTimeout(
   sessionId: string,
   nominatorTeamId: string,
   leagueId: string
-): Promise<"auto-nominated" | "penalised"> {
+): Promise<"auto-nominated" | "penalised" | "skipped-full"> {
+  // If the team's squad is already full (or full minus penalty slots), skip
+  // them without penalty — they have nothing left to bid on.
+  const [teamRow, ownership] = await Promise.all([
+    db.select().from(teams).where(eq(teams.id, nominatorTeamId)).limit(1),
+    db
+      .select({ elementType: auctionOwnership.elementType })
+      .from(auctionOwnership)
+      .where(
+        and(
+          eq(auctionOwnership.leagueId, leagueId),
+          eq(auctionOwnership.teamId, nominatorTeamId),
+          eq(auctionOwnership.status, "active")
+        )
+      ),
+  ]);
+  if (teamRow.length > 0) {
+    const counts = countsFromOwnership(ownership);
+    const maxSize = effectiveMaxSquadSize(teamRow[0].penaltySlots ?? 0);
+    if (counts.total >= maxSize) {
+      await advanceNominator(sessionId);
+      return "skipped-full";
+    }
+  }
+
   const autoNominated = await autoNominateFromWishlist(
     sessionId,
     nominatorTeamId,
@@ -346,7 +433,7 @@ export async function handleNominationTimeout(
   }
 
   // Wishlist empty/exhausted — penalise and skip
-  await applyNominationPenalty(nominatorTeamId);
+  await applyNominationPenalty(nominatorTeamId, sessionId, leagueId);
   await advanceNominator(sessionId);
   return "penalised";
 }

@@ -5,6 +5,7 @@ import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
 import { calculateFMV } from "@/lib/formats/auction/economy";
+import { isAuctionLive } from "@/lib/formats/auction/live-session";
 
 /**
  * GET /api/auction/trade?leagueId=xxx&teamId=xxx
@@ -92,6 +93,13 @@ export async function POST(request: NextRequest) {
   const leagueRow = await db.select().from(leagues).where(eq(leagues.id, leagueId)).limit(1);
   if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
+  }
+
+  if (await isAuctionLive(leagueId)) {
+    return NextResponse.json(
+      { error: "Marketplace is closed during a live auction" },
+      { status: 409 }
+    );
   }
 
   // Build TradePlayer arrays with cumulative points for FMV
@@ -229,6 +237,13 @@ export async function PATCH(request: NextRequest) {
 
   if (proposal.status !== "pending") {
     return NextResponse.json({ error: "Proposal is no longer pending" }, { status: 400 });
+  }
+
+  if (await isAuctionLive(proposal.leagueId)) {
+    return NextResponse.json(
+      { error: "Marketplace is closed during a live auction" },
+      { status: 409 }
+    );
   }
 
   // Only the target team can accept/reject

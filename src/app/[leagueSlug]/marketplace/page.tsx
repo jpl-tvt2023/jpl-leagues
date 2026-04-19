@@ -53,6 +53,7 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null);
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [leagueId, setLeagueId] = useState<string | null>(null);
+  const [auctionLive, setAuctionLive] = useState(false);
   const [proposals, setProposals] = useState<TradeProposal[]>([]);
   const [teamList, setTeamList] = useState<StandingEntry[]>([]);
   const [ownershipMap, setOwnershipMap] = useState<Map<string, SquadPlayer & { teamId: string }>>(new Map());
@@ -92,6 +93,16 @@ export default function MarketplacePage() {
       const league = (leaguesJson.leagues || []).find((l: { slug: string; id: string }) => l.slug === leagueSlug);
       if (!league) throw new Error("League not found");
       setLeagueId(league.id);
+
+      try {
+        const liveRes = await fetch(`/api/auction/live-status?leagueId=${league.id}`);
+        if (liveRes.ok) {
+          const liveJson = await liveRes.json();
+          setAuctionLive(!!liveJson.live);
+        }
+      } catch {
+        // ignore
+      }
 
       const [proposalsRes, standingsRes] = await Promise.all([
         fetch(`/api/auction/trade?leagueId=${league.id}`),
@@ -341,6 +352,23 @@ export default function MarketplacePage() {
           <LoadingScreen variant="dashboard" fullScreen={false} />
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
+        ) : auctionLive ? (
+          <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-8 text-center">
+            <h1 className="text-2xl sm:text-3xl font-bold text-yellow-300 mb-2">Marketplace closed</h1>
+            <p className="text-gray-300">
+              The marketplace is locked while a live auction is in progress. Trades and proposals will reopen
+              once the current auction session ends.
+            </p>
+            <p className="text-xs text-gray-500 mt-4">
+              All previously pending trades were cancelled when the auction started.
+            </p>
+            <Link
+              href={`/${leagueSlug}/auction`}
+              className="mt-6 inline-block rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
+            >
+              Go to Auction
+            </Link>
+          </div>
         ) : (
           <>
             <div className="flex items-center justify-between mb-6 flex-wrap gap-3">

@@ -1046,6 +1046,23 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     const totalPoints = scores.reduce((sum, s) => sum + s.totalPoints, 0);
     const totalIncome = scores.reduce((sum, s) => sum + s.payout, 0);
 
+    // Per-player totalPoints across the season for the squad summary / top-4
+    const myScoreRows = await db
+      .select({ playerBreakdown: auctionScores.playerBreakdown })
+      .from(auctionScores)
+      .where(and(eq(auctionScores.teamId, teamId), eq(auctionScores.leagueId, leagueId)));
+    const playerPointsMap = new Map<number, number>();
+    for (const row of myScoreRows) {
+      try {
+        const breakdown: { elementId: number; points: number }[] = JSON.parse(row.playerBreakdown);
+        for (const entry of breakdown) {
+          playerPointsMap.set(entry.elementId, (playerPointsMap.get(entry.elementId) ?? 0) + entry.points);
+        }
+      } catch {
+        // ignore malformed rows
+      }
+    }
+
     // Get all teams for standings
     const allTeams = await db.select().from(teams).where(eq(teams.leagueId, leagueId));
 
@@ -1112,6 +1129,8 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         purchasePrice: p.purchasePrice,
         acquiredGw: p.acquiredGw,
         status: p.status,
+        elementType: p.elementType ?? null,
+        totalPoints: playerPointsMap.get(p.fplElementId) ?? 0,
       })),
       rank: myRank,
       totalManagers: allTeams.length,

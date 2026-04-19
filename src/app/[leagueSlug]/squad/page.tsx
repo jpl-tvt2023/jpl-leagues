@@ -229,7 +229,7 @@ export default function SquadPage() {
     }
   };
 
-  const netPL = economy ? economy.totalIncome - economy.totalSpent + economy.totalRefunds : 0;
+  const netPL = economy ? economy.initialBudget + economy.totalIncome + economy.totalRefunds - economy.totalSpent : 0;
   const squadValue = squadData?.squad.reduce((sum, p) => sum + p.fmv, 0) ?? 0;
 
   const wishlistElementIds = new Set(wishlist.map((w) => w.fplElementId));
@@ -540,15 +540,29 @@ export default function SquadPage() {
               </div>
             ) : (
             <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-10">
-              {squadData.squad.map((p) => {
+            {([1, 2, 3, 4] as const).map((posType) => {
+              const playersInPos = squadData.squad.filter((p) => {
                 const el = elements.get(p.fplElementId);
-                const position = el ? POSITION_LABELS[el.element_type] : "—";
-                const positionColor = el ? POSITION_COLORS[el.element_type] : "bg-white/10 text-gray-300 border-white/20";
-                const team = el ? teamsMap.get(el.team) : null;
-                const pnl = p.fmv - p.purchasePrice;
-                const isExpanded = expandedCard === p.ownershipId;
-                return (
+                return el?.element_type === posType;
+              });
+              if (playersInPos.length === 0) return null;
+              return (
+                <div key={posType} className="mb-8">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${POSITION_COLORS[posType]}`}>
+                      {POSITION_LABELS[posType]}
+                    </span>
+                    <span className="text-xs text-gray-500">{playersInPos.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {playersInPos.map((p) => {
+                      const el = elements.get(p.fplElementId);
+                      const position = el ? POSITION_LABELS[el.element_type] : "—";
+                      const positionColor = el ? POSITION_COLORS[el.element_type] : "bg-white/10 text-gray-300 border-white/20";
+                      const team = el ? teamsMap.get(el.team) : null;
+                      const pnl = p.fmv - p.purchasePrice;
+                      const isExpanded = expandedCard === p.ownershipId;
+                      return (
                   <div
                     key={p.ownershipId}
                     className={`rounded-xl border ${
@@ -629,10 +643,13 @@ export default function SquadPage() {
                         )}
                       </div>
                     )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
 
             {squadData.squad.length === 0 && (
               <div className="text-center py-12 rounded-2xl border border-white/10 bg-white/5">

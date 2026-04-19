@@ -281,7 +281,7 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
       totalIncome,
       totalRefunds,
       totalForfeited,
-      netPnL: totalIncome + totalRefunds - totalSpent,
+      netPnL: initialBudget + totalIncome + totalRefunds - totalSpent,
     },
     ledger,
   };
@@ -291,11 +291,13 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
  * Build a summary row for every team in the league — for the admin audit overview.
  */
 export async function buildAllTeamsSummary(leagueId: string): Promise<TeamSummary[]> {
-  const [leagueTeams, allOwnership, allScores] = await Promise.all([
+  const [leagueRow, leagueTeams, allOwnership, allScores] = await Promise.all([
+    db.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1),
     db.select().from(teams).where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false))),
     db.select().from(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId)),
     db.select().from(auctionScores).where(eq(auctionScores.leagueId, leagueId)),
   ]);
+  const initialBudget = leagueRow[0]?.initialBudget ?? 0;
 
   const ownByTeam = new Map<string, typeof allOwnership>();
   for (const o of allOwnership) {
@@ -330,7 +332,7 @@ export async function buildAllTeamsSummary(leagueId: string): Promise<TeamSummar
       releasedCount: released.length,
       pendingReleaseCount: own.filter((o) => o.status === "pending_release").length,
       activeCount: own.filter((o) => o.status === "active" || o.status === "deadwood").length,
-      netPnL: totalIncome + totalRefunds - totalSpent,
+      netPnL: initialBudget + totalIncome + totalRefunds - totalSpent,
     };
   });
 }

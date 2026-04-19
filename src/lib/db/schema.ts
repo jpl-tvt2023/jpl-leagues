@@ -409,6 +409,19 @@ export const auctionBidLogs = sqliteTable("auction_bid_logs", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
+// Team penalties — per-row ledger of nomination-miss penalties so we can price
+// each redemption based on whether the penalty's cycle has ended yet.
+export const teamPenalties = sqliteTable("team_penalties", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id),
+  teamId: text("team_id").notNull().references(() => teams.id),
+  sessionId: text("session_id").references(() => auctionSessions.id),
+  incurredCycle: integer("incurred_cycle").notNull(), // cycleNumber of the session that issued the penalty
+  redeemedAt: integer("redeemed_at", { mode: "timestamp" }), // null = not yet redeemed
+  redemptionPrice: integer("redemption_price"), // price paid at redemption (null until redeemed)
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
 // Trade proposals — P2P marketplace with veto system
 export const tradeProposals = sqliteTable("trade_proposals", {
   id: text("id").primaryKey(),

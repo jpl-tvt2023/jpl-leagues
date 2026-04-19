@@ -11,6 +11,7 @@ import {
 } from "@/lib/formats/auction/resolve-bid";
 import { simulateAuction } from "@/lib/formats/auction/simulate";
 import { finalizePendingReleasesNow } from "@/lib/formats/auction/process-gameweek";
+import { purgePendingTrades } from "@/lib/formats/auction/live-session";
 
 /**
  * Auto-resolve expired open bids that SSE may have missed.
@@ -264,6 +265,12 @@ export async function POST(request: NextRequest) {
   // When starting/resuming, set the nomination deadline for the current nominator
   if (newStatus === "active") {
     await setNominationDeadline(sessionId);
+  }
+
+  // First-time start (not resume): purge any non-completed trade proposals so
+  // the marketplace is fully locked down for the duration of the auction.
+  if (newStatus === "active" && action === "start") {
+    await purgePendingTrades(leagueId);
   }
 
   return NextResponse.json({ success: true, sessionId, status: newStatus });
