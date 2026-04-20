@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { useLeague } from "@/lib/league-context";
 
 type UserRole = "public" | "team" | "admin";
 type ActiveTab = "faqs" | "scenarios";
@@ -64,63 +65,28 @@ export default function LeagueHelpPage() {
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
 
-  const [userRole, setUserRole] = useState<UserRole>("public");
-  const [teamSize, setTeamSize] = useState<number>(32);
-  const [enabledChips, setEnabledChips] = useState<string[]>(["D", "W", "C"]);
-  const [leagueStageEnd, setLeagueStageEnd] = useState<number>(30);
-  const [leagueName, setLeagueName] = useState<string>("");
-  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [dashboardHref, setDashboardHref] = useState("/dashboard");
+  const { league, viewer } = useLeague();
+  const leagueName = league.name;
+  const leagueFormat = league.format;
+  const isLoggedIn = viewer.authenticated;
+  const dashboardHref = viewer.dashboardHref;
+  const teamSize = league.teamSize;
+  const enabledChips = league.enabledChips.length ? league.enabledChips : ["D", "W", "C"];
+  const leagueStageEnd = league.playoffStartGw - 1;
+  const userRole: UserRole =
+    viewer.type === "admin" || viewer.type === "superadmin"
+      ? "admin"
+      : viewer.type === "team"
+      ? "team"
+      : "public";
+
   const [activeTab, setActiveTab] = useState<ActiveTab>("faqs");
   const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const isLoading = false;
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => {
-        if (!d.authenticated) {
-          router.push("/signin");
-          return;
-        }
-        if (d.type === "admin" || d.type === "superadmin") {
-          setUserRole("admin");
-          setIsLoggedIn(true);
-          if (d.type === "admin" && d.adminLeagueId) setDashboardHref(`/admin/${d.adminLeagueId}`);
-          else if (d.type === "superadmin") setDashboardHref("/admin");
-        } else if (d.type === "team") {
-          setUserRole("team");
-          setIsLoggedIn(true);
-        }
-      })
-      .catch(() => router.push("/signin"));
-  }, [router]);
-
-  useEffect(() => {
-    fetch("/api/leagues")
-      .then((r) => r.json())
-      .then((data) => {
-        const league = (data.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
-        if (league) {
-          setLeagueName(league.name);
-          setLeagueFormat(league.format ?? null);
-        }
-      })
-      .catch(() => {});
-  }, [leagueSlug]);
-
-  useEffect(() => {
-    fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.teamSize) setTeamSize(data.teamSize);
-        if (data.enabledChips) setEnabledChips(data.enabledChips);
-        if (data.leagueStageEnd) setLeagueStageEnd(data.leagueStageEnd);
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, [leagueSlug]);
+    if (!viewer.authenticated) router.push("/signin");
+  }, [viewer.authenticated, router]);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });

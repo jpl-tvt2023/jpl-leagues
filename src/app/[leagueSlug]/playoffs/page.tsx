@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { useLeague } from "@/lib/league-context";
 
 interface LiveFixtureScore {
   fixtureId: string;
@@ -726,14 +727,16 @@ export default function LeaguePlayoffsPage() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
+  const { league, viewer } = useLeague();
+  const leagueName = league.name;
+  const leagueFormat = league.format;
+  const isLoggedIn = viewer.authenticated;
+  const dashboardHref = viewer.dashboardHref;
+
   const [data, setData] = useState<BracketData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("tvt");
   const [tcTab, setTcTab] = useState<"ucl" | "uel">("ucl");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [dashboardHref, setDashboardHref] = useState("/dashboard");
-  const [leagueName, setLeagueName] = useState<string>("");
-  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<number | null>(null);
   const [tempLiveScores, setTempLiveScores] = useState<Record<number, LiveFixtureScore[]>>({});
 
@@ -774,31 +777,7 @@ export default function LeaguePlayoffsPage() {
       }
     };
 
-    const checkAuth = async () => {
-      try {
-        const res = await fetch("/api/auth/me");
-        const me = await res.json();
-        if (res.ok && me.authenticated && (me.type === "team" || me.type === "admin" || me.type === "superadmin")) {
-          setIsLoggedIn(true);
-          if (me.type === "admin" && me.adminLeagueId) setDashboardHref(`/admin/${me.adminLeagueId}`);
-          else if (me.type === "superadmin") setDashboardHref("/admin");
-        }
-      } catch {}
-    };
-
-    fetch("/api/leagues")
-      .then((r) => r.json())
-      .then((d) => {
-        const league = (d.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
-        if (league) {
-          setLeagueName(league.name);
-          setLeagueFormat(league.format ?? null);
-        }
-      })
-      .catch(() => {});
-
     fetchData();
-    checkAuth();
   }, [leagueSlug, fetchLiveScores]);
 
   const handleSignOut = async () => {

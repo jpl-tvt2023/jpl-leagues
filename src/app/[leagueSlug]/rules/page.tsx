@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { useLeague } from "@/lib/league-context";
 import { GW_PAYOUTS, MINIMUM_FLOOR_PAYOUT } from "@/lib/formats/auction/economy";
 
 function formatPayout(amount: number): string {
@@ -106,9 +107,7 @@ function get32TeamRules(cfg: LeagueConfig) {
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Negative hits reduce the score directly.</RuleItem>
           <RuleItem><strong>Captain:</strong> One player is nominated as captain per GW. Their net score (FPL score minus hits) is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captain Deadline:</strong> Captain must be announced in the WhatsApp group 1 second before the official FPL deadline (e.g., 4:29:59 PM).</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> Each player has 15 captain chips. Once used up, they cannot be captain again until the Play-offs.</RuleItem>
-          <RuleItem><strong>Announcement Penalty:</strong> Spamming or modifying other teams&apos; entries = −1 league point (GW1–30) or −8 score (GW31+).</RuleItem>
         </ul>
       </section>
 
@@ -204,9 +203,7 @@ function get16TeamRules(cfg: LeagueConfig) {
         <ul className="space-y-4 text-gray-300">
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captain Deadline:</strong> Announced in WhatsApp 1 second before official FPL deadline.</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> 15 captain chips per player. Exhausted players cannot captain again until the Play-offs.</RuleItem>
-          <RuleItem><strong>Announcement Penalty:</strong> Spamming = −1 league point (GW1–30) or −8 score (GW31+).</RuleItem>
         </ul>
       </section>
 
@@ -300,9 +297,7 @@ function get8TeamRules(cfg: LeagueConfig) {
         <ul className="space-y-4 text-gray-300">
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captain Deadline:</strong> Announced in WhatsApp 1 second before official FPL deadline.</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> 15 captain chips per player. Once exhausted, that player cannot captain again until Play-offs.</RuleItem>
-          <RuleItem><strong>Announcement Penalty:</strong> Spamming = −1 league point (GW1–35) or −8 score (GW36+).</RuleItem>
         </ul>
       </section>
 
@@ -696,77 +691,22 @@ export default function LeagueRulesPage() {
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
 
-  const [config, setConfig] = useState<LeagueConfig | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [dashboardHref, setDashboardHref] = useState("/dashboard");
-  const [leagueName, setLeagueName] = useState<string>("");
-  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
+  const { league, viewer } = useLeague();
+  const leagueName = league.name;
+  const leagueFormat = league.format;
+  const isLoggedIn = viewer.authenticated;
+  const dashboardHref = viewer.dashboardHref;
+
+  const config: LeagueConfig = {
+    teamSize: league.teamSize,
+    leagueStageEnd: league.playoffStartGw - 1,
+    leagueName: league.name,
+    enabledChips: league.enabledChips.length ? league.enabledChips : ["D", "W", "C"],
+  };
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const res = await fetch("/api/auth/me");
-        const data = await res.json();
-        if (!res.ok || !data.authenticated) {
-          router.push("/signin");
-          return;
-        }
-        setIsLoggedIn(true);
-        if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
-        else if (data.type === "superadmin") setDashboardHref("/admin");
-      } catch {
-        router.push("/signin");
-      }
-    };
-    checkAuth();
-  }, [router]);
-
-  useEffect(() => {
-    if (!leagueSlug) return;
-
-    const fetchConfig = async () => {
-      try {
-        // Fetch leagues to get league config (name, chips, playoffStartGw, teamSize)
-        const leaguesRes = await fetch("/api/leagues");
-        const leaguesData = await leaguesRes.json();
-        const league = (leaguesData.leagues || []).find((l: any) => l.slug === leagueSlug);
-
-        if (league) {
-          setLeagueName(league.name);
-          setLeagueFormat(league.format ?? null);
-
-          // Parse enabledChips from league (it's stored as JSON string)
-          let enabledChips: string[] = ["D", "W", "C"];
-          try {
-            if (league.enabledChips) {
-              enabledChips = JSON.parse(league.enabledChips);
-            }
-          } catch { /* keep default */ }
-
-          const leagueStageEnd = (league.playoffStartGw ?? 31) - 1;
-          const teamSize = league.teamSize ?? 32;
-
-          setConfig({ teamSize, leagueStageEnd, leagueName: league.name, enabledChips });
-        } else {
-          // Fallback to standings API if league not found (shouldn't happen)
-          const standingsRes = await fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`);
-          const standingsData = await standingsRes.json();
-          const teamSize = standingsData.teamSize ?? 32;
-          const leagueStageEnd = standingsData.leagueStageEnd ?? 30;
-          const enabledChips = standingsData.enabledChips ?? ["D", "W", "C"];
-          setConfig({ teamSize, leagueStageEnd, leagueName: "", enabledChips });
-        }
-      } catch (error) {
-        console.error("Failed to fetch league config:", error);
-        setConfig({ teamSize: 32, leagueStageEnd: 30, leagueName: "", enabledChips: ["D", "W", "C"] });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchConfig();
-  }, [leagueSlug]);
+    if (!viewer.authenticated) router.push("/signin");
+  }, [viewer.authenticated, router]);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -803,29 +743,21 @@ export default function LeagueRulesPage() {
           <h1 className="text-2xl sm:text-4xl font-bold text-white mb-3">{isAuction ? "Auction League Rules & Regulations" : isTripleCrown ? "Triple Crown Rules & Regulations" : "TVT Rules & Regulations"}</h1>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <p className="text-gray-400">{leagueName || leagueSlug}</p>
-            {!isLoading && config && (
-              <span className="rounded-full bg-purple-500/20 border border-purple-500/30 px-3 py-0.5 text-purple-300 text-xs font-semibold">
-                {variantLabel}
-              </span>
-            )}
+            <span className="rounded-full bg-purple-500/20 border border-purple-500/30 px-3 py-0.5 text-purple-300 text-xs font-semibold">
+              {variantLabel}
+            </span>
           </div>
         </div>
 
-        {isLoading ? (
-          <LoadingScreen variant="rules" fullScreen={false} />
-        ) : config ? (
-          isAuction
-            ? getAuctionRules(config)
-            : isTripleCrown
-            ? getTripleCrownRules(config)
-            : config.teamSize === 8
-            ? get8TeamRules(config)
-            : config.teamSize === 16
-            ? get16TeamRules(config)
-            : get32TeamRules(config)
-        ) : (
-          <div className="text-center text-red-400 py-12">Could not load league configuration.</div>
-        )}
+        {isAuction
+          ? getAuctionRules(config)
+          : isTripleCrown
+          ? getTripleCrownRules(config)
+          : config.teamSize === 8
+          ? get8TeamRules(config)
+          : config.teamSize === 16
+          ? get16TeamRules(config)
+          : get32TeamRules(config)}
       </div>
     </div>
   );

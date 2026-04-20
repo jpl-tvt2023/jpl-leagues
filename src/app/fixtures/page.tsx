@@ -449,7 +449,7 @@ export default function FixturesPage() {
             Playoffs
           </Link>
           {isLoggedIn && (
-            <Link href="/rules" className="text-gray-300 hover:text-white transition">
+            <Link href={adminLeagueId ? `/rules?adminLeague=${adminLeagueId}` : "/rules"} className="text-gray-300 hover:text-white transition">
               Rules
             </Link>
           )}
