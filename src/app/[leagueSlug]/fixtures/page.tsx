@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { useLeague } from "@/lib/league-context";
 
 interface LivePlayerScore {
   name: string;
@@ -243,19 +244,21 @@ export default function LeagueFixturesPage() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
+  const { league, viewer } = useLeague();
+  const leagueName = league.name;
+  const leagueFormat = league.format;
+  const isLoggedIn = viewer.authenticated;
+  const dashboardHref = viewer.dashboardHref;
+
   const [fixtures, setFixtures] = useState<GameweekFixtures>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [dashboardHref, setDashboardHref] = useState("/dashboard");
-  const [leagueName, setLeagueName] = useState<string>("");
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
   const [availableGWs, setAvailableGWs] = useState<number[]>([]);
   const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
   const [isLive, setIsLive] = useState(false);
   const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
   const [isManuallyRefreshed, setIsManuallyRefreshed] = useState(false);
-  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchLiveScores = useCallback(async (gw: number) => {
@@ -301,31 +304,6 @@ export default function LeagueFixturesPage() {
     return () => clearInterval(interval);
   }, [selectedGW, fetchLiveScores]);
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const res = await fetch("/api/auth/me");
-        const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
-        if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
-        else if (data.type === "superadmin") setDashboardHref("/admin");
-      } catch {
-        setIsLoggedIn(false);
-      }
-    };
-    checkAuth();
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/leagues")
-      .then((r) => r.json())
-      .then((data) => {
-        const league = (data.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
-      })
-      .catch(() => {});
-  }, [leagueSlug]);
-
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
     window.location.href = "/signin";
@@ -338,10 +316,8 @@ export default function LeagueFixturesPage() {
         if (!response.ok) throw new Error("Failed to fetch fixtures");
         const data = await response.json();
         const fixturesData = data.fixtures || {};
-        const format = data.format || "tvt";
-        setLeagueFormat(format);
         // For Triple Crown, show all 38 GWs; for TVT, show up to playoffStartGw - 1
-        const leaguePhaseEnd: number = format === "triple-crown" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : Infinity);
+        const leaguePhaseEnd: number = leagueFormat === "triple-crown" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : league.playoffStartGw - 1);
         setFixtures(fixturesData);
 
         const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
@@ -373,7 +349,7 @@ export default function LeagueFixturesPage() {
       }
     };
     if (leagueSlug) fetchFixtures();
-  }, [leagueSlug]);
+  }, [leagueSlug, leagueFormat, league.playoffStartGw]);
 
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
   const isTripleCrown = leagueFormat === "triple-crown";

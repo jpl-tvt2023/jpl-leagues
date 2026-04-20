@@ -837,7 +837,7 @@ export default function PlayoffsPage() {
           <Link href={adminLeagueId ? `/standings?adminLeague=${adminLeagueId}` : "/standings"} className="text-gray-300 hover:text-white transition">Standings</Link>
           <Link href={adminLeagueId ? `/fixtures?adminLeague=${adminLeagueId}` : "/fixtures"} className="text-gray-300 hover:text-white transition">Fixtures</Link>
           <Link href={adminLeagueId ? `/playoffs?adminLeague=${adminLeagueId}` : "/playoffs"} className="text-yellow-400 font-semibold transition">Playoffs</Link>
-          {isLoggedIn && <Link href="/rules" className="text-gray-300 hover:text-white transition">Rules</Link>}
+          {isLoggedIn && <Link href={adminLeagueId ? `/rules?adminLeague=${adminLeagueId}` : "/rules"} className="text-gray-300 hover:text-white transition">Rules</Link>}
           {isLoggedIn ? (
             <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
               Sign Out

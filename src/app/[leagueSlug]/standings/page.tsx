@@ -6,6 +6,7 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { useParams, useSearchParams } from "next/navigation";
 import { StandingsTable } from "@/components/StandingsTable";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { useLeague } from "@/lib/league-context";
 import type { TeamStanding } from "@/types/standings";
 
 interface AuctionGwHistoryEntry {
@@ -41,6 +42,12 @@ export default function LeagueStandingsPage() {
   const gwParam = searchParams.get("gw");
   const selectedGw = gwParam ? parseInt(gwParam, 10) : null;
 
+  const { league, viewer } = useLeague();
+  const leagueName = league.name;
+  const leagueFormat = league.format;
+  const isLoggedIn = viewer.authenticated;
+  const dashboardHref = viewer.dashboardHref;
+
   const [groupA, setGroupA] = useState<TeamStanding[]>([]);
   const [groupB, setGroupB] = useState<TeamStanding[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,41 +55,9 @@ export default function LeagueStandingsPage() {
   const [latestGameweek, setLatestGameweek] = useState<number>(0);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [leagueStageEnd, setLeagueStageEnd] = useState<number>(30);
-  const [teamSize, setTeamSize] = useState<number>(32);
+  const [teamSize, setTeamSize] = useState<number>(league.teamSize);
   const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [dashboardHref, setDashboardHref] = useState("/dashboard");
-  const [leagueName, setLeagueName] = useState<string>("");
-  const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
   const [auctionStandings, setAuctionStandings] = useState<AuctionStandingRow[]>([]);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const res = await fetch("/api/auth/me");
-        const data = await res.json();
-        setIsLoggedIn(res.ok && data.authenticated && (data.type === "team" || data.type === "admin" || data.type === "superadmin"));
-        if (data.type === "admin" && data.adminLeagueId) setDashboardHref(`/admin/${data.adminLeagueId}`);
-        else if (data.type === "superadmin") setDashboardHref("/admin");
-      } catch {
-        setIsLoggedIn(false);
-      }
-    };
-    checkAuth();
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/leagues")
-      .then((r) => r.json())
-      .then((data) => {
-        const league = (data.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
-        if (league) {
-          setLeagueName(league.name);
-          setLeagueFormat(league.format ?? null);
-        }
-      })
-      .catch(() => {});
-  }, [leagueSlug]);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
