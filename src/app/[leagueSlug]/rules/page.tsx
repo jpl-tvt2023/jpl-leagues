@@ -106,9 +106,7 @@ function get32TeamRules(cfg: LeagueConfig) {
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Negative hits reduce the score directly.</RuleItem>
           <RuleItem><strong>Captain:</strong> One player is nominated as captain per GW. Their net score (FPL score minus hits) is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captain Deadline:</strong> Captain must be announced in the WhatsApp group 1 second before the official FPL deadline (e.g., 4:29:59 PM).</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> Each player has 15 captain chips. Once used up, they cannot be captain again until the Play-offs.</RuleItem>
-          <RuleItem><strong>Announcement Penalty:</strong> Spamming or modifying other teams&apos; entries = −1 league point (GW1–30) or −8 score (GW31+).</RuleItem>
         </ul>
       </section>
 
@@ -204,9 +202,7 @@ function get16TeamRules(cfg: LeagueConfig) {
         <ul className="space-y-4 text-gray-300">
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captain Deadline:</strong> Announced in WhatsApp 1 second before official FPL deadline.</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> 15 captain chips per player. Exhausted players cannot captain again until the Play-offs.</RuleItem>
-          <RuleItem><strong>Announcement Penalty:</strong> Spamming = −1 league point (GW1–30) or −8 score (GW31+).</RuleItem>
         </ul>
       </section>
 
@@ -300,9 +296,7 @@ function get8TeamRules(cfg: LeagueConfig) {
         <ul className="space-y-4 text-gray-300">
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captain Deadline:</strong> Announced in WhatsApp 1 second before official FPL deadline.</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> 15 captain chips per player. Once exhausted, that player cannot captain again until Play-offs.</RuleItem>
-          <RuleItem><strong>Announcement Penalty:</strong> Spamming = −1 league point (GW1–35) or −8 score (GW36+).</RuleItem>
         </ul>
       </section>
 

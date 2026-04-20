@@ -20,14 +20,22 @@ export async function GET(request: NextRequest) {
       const user = userList[0];
       if (user) {
         let adminLeagueId: string | null = null;
+        let leagueSlug: string | null = null;
         if (session.type === "admin") {
-          const leagueRow = await db.select().from(leagueAdmins).where(eq(leagueAdmins.userId, user.id)).limit(1);
+          const leagueRow = await db
+            .select({ leagueId: leagueAdmins.leagueId, slug: leagues.slug })
+            .from(leagueAdmins)
+            .innerJoin(leagues, eq(leagueAdmins.leagueId, leagues.id))
+            .where(eq(leagueAdmins.userId, user.id))
+            .limit(2);
           adminLeagueId = leagueRow[0]?.leagueId ?? null;
+          leagueSlug = leagueRow.length === 1 ? leagueRow[0].slug ?? null : null;
         }
         return NextResponse.json({
           authenticated: true,
           type: session.type,
           adminLeagueId,
+          leagueSlug,
           user: {
             id: user.id,
             email: user.email,
@@ -44,13 +52,15 @@ export async function GET(request: NextRequest) {
       const team = teamList[0];
       if (team) {
         // Fetch league format so the client knows which setup flow to use
-        const leagueRow = await db.select({ format: leagues.format }).from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
+        const leagueRow = await db.select({ format: leagues.format, slug: leagues.slug }).from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
         const leagueFormat = leagueRow[0]?.format ?? "tvt";
+        const leagueSlug = leagueRow[0]?.slug ?? null;
 
         return NextResponse.json({
           authenticated: true,
           type: "team",
           leagueFormat,
+          leagueSlug,
           team: {
             id: team.id,
             name: team.name,
