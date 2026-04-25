@@ -142,9 +142,6 @@ export function ChipsSection({ enabledChips, chipSets, note }: { enabledChips: s
           {note}
         </div>
       )}
-      <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-        <strong>Chip Penalty:</strong> Claiming a chip you do not have results in a −8 point deduction.
-      </div>
     </section>
   );
 }
