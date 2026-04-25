@@ -513,6 +513,12 @@ function placeholder(label: string): { teamId: null; name: string; abbr: string;
   return { teamId: null, name: label, abbr: label, leg1Score: null, leg2Score: null, aggregate: null };
 }
 
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 /** 8-team bracket: SF (GW36, single-leg) → 3rd place (GW37) + Final (GW37+38, 2-legged). No challenger. */
 function buildTentative8Team(
   latestCompletedGw: number,
@@ -520,15 +526,11 @@ function buildTentative8Team(
   standings: { groupA: { teamId: string; name: string; abbreviation: string; groupRank: number }[]; groupB: { teamId: string; name: string; abbreviation: string; groupRank: number }[] },
   playoffStartGw: number,
 ) {
-  const all = standings.groupA; // 8-team has 1 group
-  const ts = (rank: number) => {
-    const t = all.find(x => x.groupRank === rank);
-    return t ? { teamId: t.teamId, name: t.name, abbr: t.abbreviation, leg1Score: null, leg2Score: null, aggregate: null } : null;
-  };
+  void standings;
   const gw1 = playoffStartGw;
   const sf: TieDisplay[] = [
-    { tieId: "SF-A", roundName: "SF", status: "projected", gw1, gw2: null, home: ts(1), away: ts(4), winnerId: null, loserId: null },
-    { tieId: "SF-B", roundName: "SF", status: "projected", gw1, gw2: null, home: ts(2), away: ts(3), winnerId: null, loserId: null },
+    { tieId: "SF-A", roundName: "SF", status: "projected", gw1, gw2: null, home: placeholder("1st"), away: placeholder("4th"), winnerId: null, loserId: null },
+    { tieId: "SF-B", roundName: "SF", status: "projected", gw1, gw2: null, home: placeholder("2nd"), away: placeholder("3rd"), winnerId: null, loserId: null },
   ];
   const thirdPlace: TieDisplay = {
     tieId: "3rd", roundName: "3rd Place", status: "projected", gw1: gw1 + 1, gw2: gw1 + 2,
@@ -556,10 +558,10 @@ function buildTentative16Team(
   const gw1 = playoffStartGw;
   // QF: bracket-paired — 1v8 and 4v5 feed into SF-A; 2v7 and 3v6 feed into SF-B
   const qf: TieDisplay[] = [
-    { tieId: "QF-A", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(1), away: ts(8), winnerId: null, loserId: null },
-    { tieId: "QF-D", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(4), away: ts(5), winnerId: null, loserId: null },
-    { tieId: "QF-B", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(2), away: ts(7), winnerId: null, loserId: null },
-    { tieId: "QF-C", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(3), away: ts(6), winnerId: null, loserId: null },
+    { tieId: "QF-A", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("1st"), away: placeholder("8th"), winnerId: null, loserId: null },
+    { tieId: "QF-D", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("4th"), away: placeholder("5th"), winnerId: null, loserId: null },
+    { tieId: "QF-B", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("2nd"), away: placeholder("7th"), winnerId: null, loserId: null },
+    { tieId: "QF-C", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("3rd"), away: placeholder("6th"), winnerId: null, loserId: null },
   ];
   const sf: TieDisplay[] = [
     { tieId: "SF-A", roundName: "SF", status: "projected", gw1: gw1 + 2, gw2: gw1 + 3, home: placeholder("Winner of QF-A"), away: placeholder("Winner of QF-D"), winnerId: null, loserId: null },
@@ -675,11 +677,13 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
   };
 
   // Build tentative RO16 (in bracket-paired order)
+  // Show ordinal+group placeholders until admin generates fixtures.
   const ro16Map = new Map<string, TieDisplay>();
   for (const [tieId, hg, hr, ag, ar] of RO16_SEEDING) {
     ro16Map.set(tieId, {
       tieId, roundName: "RO16", status: "projected", gw1: 31, gw2: 32,
-      home: teamSide(hg, hr), away: teamSide(ag, ar),
+      home: placeholder(`${ordinal(hr)} (Group ${hg})`),
+      away: placeholder(`${ordinal(ar)} (Group ${ag})`),
       winnerId: null, loserId: null,
     });
   }
