@@ -58,8 +58,6 @@ function isPublicRoute(pathname: string, method: string): boolean {
     if (PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"))) return true;
     // GET /api/gameweeks/[gw] is public read
     if (/^\/api\/gameweeks\/\d+$/.test(pathname)) return true;
-    // GET /api/fixtures/generate (status check) is public
-    if (pathname === "/api/fixtures/generate") return true;
   }
 
   return false;
@@ -68,7 +66,6 @@ function isPublicRoute(pathname: string, method: string): boolean {
 function isAdminRoute(pathname: string, method: string): boolean {
   if (pathname.startsWith("/api/admin/")) return true;
   // POST to these are admin-only
-  if (method === "POST" && pathname === "/api/fixtures/generate") return true;
   if (method === "POST" && /^\/api\/gameweeks\/\d+$/.test(pathname)) return true;
   return false;
 }
