@@ -7,6 +7,7 @@ export interface LivePlayerScore {
   transferHits: number;
   isCaptain: boolean;
   isAutoAssigned?: boolean;
+  isTempCaptain?: boolean;
   finalScore: number;
 }
 
@@ -86,12 +87,24 @@ export function PlayerBreakdownSide({
               >
                 {p.name}
               </a>
-              {p.isCaptain && !p.isAutoAssigned && (
+              {p.isCaptain && p.isTempCaptain && (
+                <span
+                  className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 shrink-0"
+                  title="Auto-assigned: lowest current scorer. Locks at GW close unless admin overrides."
+                >
+                  TEMP CAP
+                </span>
+              )}
+              {p.isCaptain && !p.isTempCaptain && !p.isAutoAssigned && (
                 <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
               )}
             </div>
             <div className="text-right shrink-0 ml-2">
-              {p.isCaptain && !p.isAutoAssigned ? (
+              {p.isCaptain && p.isTempCaptain ? (
+                <span className="text-amber-400 font-semibold">
+                  {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
+                </span>
+              ) : p.isCaptain && !p.isAutoAssigned ? (
                 <span className="text-yellow-400 font-semibold">
                   {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                 </span>

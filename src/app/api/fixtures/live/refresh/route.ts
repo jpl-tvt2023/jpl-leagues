@@ -4,6 +4,7 @@ import { fixtures, gameweeks, gameweekCaptains, leagues } from "@/lib/db/schema"
 import { eq, and } from "drizzle-orm";
 import { fetchTeamGameweekPicks, fetchLiveGameweek } from "@/lib/fpl";
 import type { LiveFixtureScore, LiveGameweekData } from "@/lib/fpl-cache";
+import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 
 /**
  * GET /api/fixtures/live/refresh?gameweek=N
@@ -68,6 +69,23 @@ export async function GET(request: NextRequest) {
       captainByTeam.set(pick.player.teamId, pick.player.id);
     }
 
+    // Previous-GW captains for temp-cap tiebreak rotation
+    const prevCaptainByTeam = new Map<string, string>();
+    if (gwNumber > 1) {
+      const prevGw = await db.query.gameweeks.findFirst({
+        where: leagueId
+          ? and(eq(gameweeks.number, gwNumber - 1), eq(gameweeks.leagueId, leagueId))
+          : eq(gameweeks.number, gwNumber - 1),
+      });
+      if (prevGw) {
+        const prevPicks = await db.query.gameweekCaptains.findMany({
+          where: eq(gameweekCaptains.gameweekId, prevGw.id),
+          with: { player: true },
+        });
+        for (const p of prevPicks) prevCaptainByTeam.set(p.player.teamId, p.player.id);
+      }
+    }
+
     // Fetch fresh scores from FPL API (always fresh, never cached)
     const liveFixtures: LiveFixtureScore[] = [];
 
@@ -76,11 +94,13 @@ export async function GET(request: NextRequest) {
         const homeScore = await calculateLiveTeamScore(
           fixture.homeTeam.players,
           captainByTeam.get(fixture.homeTeamId),
+          prevCaptainByTeam.get(fixture.homeTeamId) ?? null,
           gwNumber
         );
         const awayScore = await calculateLiveTeamScore(
           fixture.awayTeam.players,
           captainByTeam.get(fixture.awayTeamId),
+          prevCaptainByTeam.get(fixture.awayTeamId) ?? null,
           gwNumber
         );
 
@@ -132,89 +152,77 @@ export async function GET(request: NextRequest) {
 async function calculateLiveTeamScore(
   teamPlayers: { id: string; name: string; fplId: string }[],
   captainPlayerId: string | undefined,
+  prevCaptainPlayerId: string | null,
   gameweek: number
 ): Promise<{
   total: number;
-  players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
+  players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
 }> {
   // Fetch live gameweek data once (reused for all players)
   const liveData = await fetchLiveGameweek(gameweek);
   const liveElementsMap = new Map(liveData.elements.map((e) => [e.id, e]));
 
-  const playerScores = [];
-  let total = 0;
+  // First pass: compute net scores for each player (no captain doubling yet).
+  const rawScores: { id: string; name: string; fplId: string; fplScore: number; transferHits: number; netScore: number }[] = [];
 
   for (const player of teamPlayers) {
     try {
-      // Fetch picks for this FPL team to see which 15 FPL players they own
       const picks = await fetchTeamGameweekPicks(player.fplId, gameweek);
-      
-      // Get transfer cost
       const transferHits = picks.entry_history.event_transfers_cost;
-      
-      // Determine effective multipliers with proper VC activation
-      // FPL multiplier values: 0 = bench, 1 = starting, 2 = captain, 3 = triple captain
+
       const captainPick = picks.picks.find((p) => p.is_captain);
-      const viceCaptainPick = picks.picks.find((p) => p.is_vice_captain);
-      
-      // Check if captain actually played (has minutes > 0)
       const captainLive = captainPick ? liveElementsMap.get(captainPick.element) : null;
       const captainPlayed = captainLive ? captainLive.stats.minutes > 0 : false;
-      
-      // Calculate total from live FPL player scores using multiplier
+
       let teamScore = 0;
-      
       for (const pick of picks.picks) {
         const liveElement = liveElementsMap.get(pick.element);
         if (!liveElement) continue;
-        
+
         let multiplier = pick.multiplier;
-        
-        // Handle VC activation: if captain didn't play, VC gets captain's multiplier
         if (!captainPlayed) {
           if (pick.is_captain) {
-            multiplier = 0; // Captain didn't play, gets 0
+            multiplier = 0;
           } else if (pick.is_vice_captain) {
-            // VC inherits captain multiplier (2 normally, 3 for triple captain)
             multiplier = captainPick?.multiplier ?? 2;
           }
         }
-        
-        // Only count players with multiplier > 0 (excludes bench unless bench boost)
         if (multiplier > 0) {
           teamScore += liveElement.stats.total_points * multiplier;
         }
       }
-      
-      // Deduct transfer hits
+
       const netScore = teamScore - transferHits;
-      
-      // Apply TVT captain doubling (separate from FPL captaincy)
-      const isCaptain = captainPlayerId === player.id;
-      const finalScore = isCaptain ? netScore * 2 : netScore;
-
-      playerScores.push({
-        name: player.name,
-        fplId: player.fplId,
-        fplScore: netScore, // Net FPL score after transfer hits
-        transferHits,
-        isCaptain,
-        finalScore,
-      });
-
-      total += finalScore;
+      rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore: netScore, transferHits, netScore });
     } catch (err) {
       console.error(`Failed to fetch live FPL data for team ${player.fplId} in GW${gameweek}:`, err);
-      playerScores.push({
-        name: player.name,
-        fplId: player.fplId,
-        fplScore: 0,
-        transferHits: 0,
-        isCaptain: false,
-        finalScore: 0,
-      });
+      rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore: 0, transferHits: 0, netScore: 0 });
     }
   }
 
-  return { total, players: playerScores };
+  // Resolve captain: announced > temp (lowest net, rotate-on-tie).
+  let resolvedCaptainId: string | null = captainPlayerId ?? null;
+  let isTemp = false;
+  if (!resolvedCaptainId) {
+    resolvedCaptainId = pickTempCaptain(rawScores, prevCaptainPlayerId);
+    isTemp = !!resolvedCaptainId;
+  }
+
+  let total = 0;
+  const players = rawScores.map(r => {
+    const isCaptain = resolvedCaptainId === r.id;
+    const finalScore = isCaptain ? r.netScore * 2 : r.netScore;
+    total += finalScore;
+    return {
+      name: r.name,
+      fplId: r.fplId,
+      fplScore: r.fplScore,
+      transferHits: r.transferHits,
+      isCaptain,
+      ...(isCaptain && isTemp ? { isTempCaptain: true } : {}),
+      finalScore,
+    };
+  });
+
+  return { total, players };
 }

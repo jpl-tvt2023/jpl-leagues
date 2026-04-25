@@ -9,6 +9,7 @@ import { generateId } from "@/lib/id";
 import { leagues } from "@/lib/db/schema";
 import { processTripleCrownGameweek } from "@/lib/formats/triple-crown/process-gameweek";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
+import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 
 interface RouteParams {
   params: Promise<{ gw: string }>;
@@ -170,41 +171,30 @@ async function autoAssignDefaultCaptain(
 ): Promise<GameweekCaptain | undefined> {
   if (team.players.length === 0) return undefined;
 
-  // Find the lowest scorer (penalty for not announcing)
-  const sorted = [...scores].sort((a, b) => a.netScore - b.netScore);
-  let defaultPlayerId: string;
-
-  if (sorted.length >= 2 && sorted[0].netScore === sorted[1].netScore) {
-    // Tiebreak: use previous GW's captain for this team
-    let prevCaptainPlayerId: string | null = null;
-    if (gameweekNumber > 1) {
-      const prevGw = await db.query.gameweeks.findFirst({
-        where: leagueId
-          ? and(eq(gameweeks.number, gameweekNumber - 1), eq(gameweeks.leagueId, leagueId))
-          : eq(gameweeks.number, gameweekNumber - 1),
+  // Look up the previous GW's captain for this team (used for tiebreak rotation).
+  let prevCaptainPlayerId: string | null = null;
+  if (gameweekNumber > 1) {
+    const prevGw = await db.query.gameweeks.findFirst({
+      where: leagueId
+        ? and(eq(gameweeks.number, gameweekNumber - 1), eq(gameweeks.leagueId, leagueId))
+        : eq(gameweeks.number, gameweekNumber - 1),
+    });
+    if (prevGw) {
+      const prevCaptains = await db.query.gameweekCaptains.findMany({
+        where: eq(gameweekCaptains.gameweekId, prevGw.id),
+        with: { player: true },
       });
-      if (prevGw) {
-        const prevCaptains = await db.query.gameweekCaptains.findMany({
-          where: eq(gameweekCaptains.gameweekId, prevGw.id),
-          with: { player: true },
-        });
-        const prevTeamCaptain = prevCaptains.find(c => c.player.teamId === team.id);
-        if (prevTeamCaptain) {
-          prevCaptainPlayerId = prevTeamCaptain.playerId;
-        }
-      }
+      const prevTeamCaptain = prevCaptains.find(c => c.player.teamId === team.id);
+      if (prevTeamCaptain) prevCaptainPlayerId = prevTeamCaptain.playerId;
     }
-    // Use previous captain if found, otherwise first alphabetically
-    if (prevCaptainPlayerId && team.players.some(p => p.id === prevCaptainPlayerId)) {
-      defaultPlayerId = prevCaptainPlayerId;
-    } else {
-      const alphabetical = [...team.players].sort((a, b) => a.name.localeCompare(b.name));
-      defaultPlayerId = alphabetical[0].id;
-    }
-  } else {
-    // Lowest scorer becomes captain
-    defaultPlayerId = sorted[0].playerId;
   }
+
+  const candidates = team.players.map(p => {
+    const s = scores.find(s => s.playerId === p.id);
+    return { id: p.id, name: p.name, netScore: s?.netScore ?? 0 };
+  });
+  const defaultPlayerId = pickTempCaptain(candidates, prevCaptainPlayerId);
+  if (!defaultPlayerId) return undefined;
 
   // Create a gameweekCaptains record marked as auto-assigned (isValid: false)
   const captainId = generateId();
