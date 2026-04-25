@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { useEnforceFormat } from "@/lib/league-context";
 
 interface TradeProposal {
   id: string;
@@ -65,6 +66,7 @@ function formatCurrency(amount: number): string {
 }
 
 export default function MarketplacePage() {
+  useEnforceFormat(["auction"]);
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;

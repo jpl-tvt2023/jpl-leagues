@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { useEnforceFormat } from "@/lib/league-context";
 
 interface AuctionSession {
   id: string;
@@ -205,6 +206,7 @@ function RedeemPenaltyButton({ teamId, onRedeemed }: { teamId: string; onRedeeme
 }
 
 export default function AuctionRoomPage() {
+  useEnforceFormat(["auction"]);
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;

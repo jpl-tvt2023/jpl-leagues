@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { useState, useEffect } from "react";
 
-interface LiveFixtureScore {
+export interface LiveFixtureScore {
   fixtureId: string;
   gameweek: number;
   homeTeamName: string;
@@ -17,7 +15,7 @@ interface LiveFixtureScore {
   awayPlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
 }
 
-interface TeamSide {
+export interface TeamSide {
   teamId: string | null;
   name: string;
   abbr: string;
@@ -26,7 +24,7 @@ interface TeamSide {
   aggregate: number | null;
 }
 
-interface TieDisplay {
+export interface TieDisplay {
   tieId: string;
   roundName: string;
   status: string;
@@ -38,7 +36,7 @@ interface TieDisplay {
   loserId: string | null;
 }
 
-interface SurvivalDisplay {
+export interface SurvivalDisplay {
   teamId: string;
   name: string;
   abbr: string;
@@ -47,7 +45,7 @@ interface SurvivalDisplay {
   advanced: boolean;
 }
 
-interface GroupStanding {
+export interface GroupStanding {
   teamId: string;
   name: string;
   abbr: string;
@@ -60,20 +58,18 @@ interface GroupStanding {
   advanced: boolean;
 }
 
-interface GroupData {
+export interface GroupData {
   name: string;
   roundPrefix: string;
   standings: GroupStanding[];
   fixtures: TieDisplay[];
 }
 
-interface BracketData {
+export interface BracketData {
   mode: "tentative" | "projected" | "live";
   latestCompletedGw: number;
   teamSize?: number;
-  groupStage?: {
-    groups: GroupData[];
-  };
+  groupStage?: { groups: GroupData[] };
   tvt: {
     ro16?: TieDisplay[];
     qf?: TieDisplay[];
@@ -94,14 +90,12 @@ interface BracketData {
   liveScores?: Record<number, LiveFixtureScore[]>;
 }
 
-type TabType = "tvt" | "challenger" | "groupStage";
-
-function PlayerBreakdown({ 
-  label, 
-  players, 
-  gameweek 
-}: { 
-  label: string; 
+function PlayerBreakdown({
+  label,
+  players,
+  gameweek,
+}: {
+  label: string;
   players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
   gameweek: number;
 }) {
@@ -139,7 +133,7 @@ function PlayerBreakdown({
   );
 }
 
-function MatchCard({
+export function MatchCard({
   tie,
   compact,
   liveScores,
@@ -176,7 +170,6 @@ function MatchCard({
   const showLiveLeg2 = !!liveScoreLeg2;
   const showLive = showLiveLeg1 || showLiveLeg2;
 
-  // Check if bifurcation data exists for any leg
   const hasPlayerData = (liveScoreLeg1?.homePlayers?.length ?? 0) > 0 || (liveScoreLeg2?.homePlayers?.length ?? 0) > 0;
 
   const teamLabel = (side: TeamSide | null) => {
@@ -198,7 +191,6 @@ function MatchCard({
     return null;
   };
 
-  // Get players for a given side (home/away in the TIE) from a live fixture
   const getPlayersForSide = (side: TeamSide | null, liveFixture: LiveFixtureScore | undefined) => {
     if (!liveFixture || !side?.abbr) return [];
     if (liveFixture.homeTeamAbbr === side.abbr) return liveFixture.homePlayers;
@@ -207,7 +199,7 @@ function MatchCard({
   };
 
   return (
-    <div 
+    <div
       className={`bg-slate-800/80 border rounded-lg ${compact ? "p-2" : "p-3"} text-sm ${
         showLive ? "border-green-500/30" : "border-white/10"
       } ${hasPlayerData ? "cursor-pointer hover:bg-slate-700/80 transition-colors" : ""}`}
@@ -232,7 +224,6 @@ function MatchCard({
         </div>
       </div>
 
-      {/* Home team row */}
       <div className={`flex items-center justify-between gap-2 py-1 ${teamClass(tie.home)}`}>
         <span className="truncate flex-1">{teamLabel(tie.home)}</span>
         {!isPlaceholder(tie.home) && (
@@ -260,7 +251,6 @@ function MatchCard({
         )}
       </div>
 
-      {/* Away team row */}
       <div className={`flex items-center justify-between gap-2 py-1 ${teamClass(tie.away)}`}>
         <span className="truncate flex-1">{teamLabel(tie.away)}</span>
         {!isPlaceholder(tie.away) && (
@@ -296,10 +286,8 @@ function MatchCard({
         </div>
       )}
 
-      {/* Expandable Player Bifurcation */}
       {expanded && hasPlayerData && (
         <div className="mt-2 pt-2 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
-          {/* Leg 1 bifurcation */}
           {showLiveLeg1 && liveScoreLeg1 && (liveScoreLeg1.homePlayers?.length ?? 0) > 0 && (
             <div>
               {is2Leg && <div className="text-[10px] text-gray-500 font-semibold mb-1">Leg 1 (GW{tie.gw1})</div>}
@@ -317,7 +305,6 @@ function MatchCard({
               </div>
             </div>
           )}
-          {/* Leg 2 bifurcation */}
           {showLiveLeg2 && liveScoreLeg2 && (liveScoreLeg2.homePlayers?.length ?? 0) > 0 && (
             <div className={showLiveLeg1 ? "mt-2" : ""}>
               <div className="text-[10px] text-gray-500 font-semibold mb-1">Leg 2 (GW{tie.gw2})</div>
@@ -341,37 +328,34 @@ function MatchCard({
   );
 }
 
-function RoundColumn({ 
-  title, 
-  ties, 
-  className, 
+export function RoundColumn({
+  title,
+  ties,
+  className,
   liveScores,
   refreshingGw,
   tempLiveScores,
-  onRefreshRound
-}: { 
-  title: string; 
-  ties: TieDisplay[]; 
-  className?: string; 
+  onRefreshRound,
+}: {
+  title: string;
+  ties: TieDisplay[];
+  className?: string;
   liveScores?: Record<number, LiveFixtureScore[]>;
   refreshingGw?: number | null;
   tempLiveScores?: Record<number, LiveFixtureScore[]>;
   onRefreshRound?: (gw: number) => void;
 }) {
   if (ties.length === 0) return null;
-  
-  // Merge cached and temporary live scores (temp takes priority)
+
   const tempScores = tempLiveScores ? Object.values(tempLiveScores).flat() : [];
   const cachedScores = liveScores ? Object.values(liveScores).flat() : [];
   const mergedScores = [...tempScores, ...cachedScores];
 
-  // Determine the GW for this round (from the first tie)
   const roundGw = ties[0].gw1;
-  const hasLiveData = mergedScores.some(s => s.gameweek === roundGw);
+  const hasLiveData = mergedScores.some((s) => s.gameweek === roundGw);
   const isRefreshing = refreshingGw === roundGw;
-  // Fresh = temp scores exist for this GW (user just refreshed)
   const isFreshlyRefreshed = (tempLiveScores ? Object.keys(tempLiveScores).map(Number) : []).includes(roundGw);
-  
+
   return (
     <div className={`flex flex-col gap-3 ${className || ""}`}>
       <div className="flex items-center justify-center gap-2">
@@ -389,9 +373,9 @@ function RoundColumn({
       </div>
       <div className="flex flex-col gap-2 justify-around flex-1">
         {ties.map((tie) => (
-          <MatchCard 
-            key={tie.tieId} 
-            tie={tie} 
+          <MatchCard
+            key={tie.tieId}
+            tie={tie}
             liveScores={mergedScores}
             isFreshlyRefreshed={isFreshlyRefreshed}
           />
@@ -401,7 +385,7 @@ function RoundColumn({
   );
 }
 
-function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
+export function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
   if (entries.length === 0) return null;
   return (
     <div>
@@ -410,41 +394,41 @@ function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
       </h3>
       <div className="bg-slate-800/80 border border-white/10 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-gray-400 text-xs border-b border-white/10">
-              <th className="text-left px-3 py-2 w-10">#</th>
-              <th className="text-left px-3 py-2">Team</th>
-              <th className="text-right px-3 py-2">Score</th>
-              <th className="text-center px-3 py-2 w-16">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e, i) => (
-              <tr key={e.teamId || `placeholder-${i}`} className={`border-b border-white/5 ${e.advanced ? "bg-green-900/20" : i >= 8 ? "bg-red-900/10" : ""}`}>
-                <td className="px-3 py-2 text-gray-400">{e.rank ?? i + 1}</td>
-                <td className={`px-3 py-2 ${e.advanced ? "text-green-400 font-semibold" : "text-white"}`}>{e.abbr}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-white">{e.score || "–"}</td>
-                <td className="px-3 py-2 text-center">
-                  {e.advanced ? (
-                    <span className="text-green-400 text-xs">✓</span>
-                  ) : e.rank && e.rank > 8 ? (
-                    <span className="text-red-400 text-xs">✗</span>
-                  ) : (
-                    <span className="text-gray-500 text-xs">—</span>
-                  )}
-                </td>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-400 text-xs border-b border-white/10">
+                <th className="text-left px-3 py-2 w-10">#</th>
+                <th className="text-left px-3 py-2">Team</th>
+                <th className="text-right px-3 py-2">Score</th>
+                <th className="text-center px-3 py-2 w-16">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((e, i) => (
+                <tr key={e.teamId || `placeholder-${i}`} className={`border-b border-white/5 ${e.advanced ? "bg-green-900/20" : i >= 8 ? "bg-red-900/10" : ""}`}>
+                  <td className="px-3 py-2 text-gray-400">{e.rank ?? i + 1}</td>
+                  <td className={`px-3 py-2 ${e.advanced ? "text-green-400 font-semibold" : "text-white"}`}>{e.abbr}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-white">{e.score || "–"}</td>
+                  <td className="px-3 py-2 text-center">
+                    {e.advanced ? (
+                      <span className="text-green-400 text-xs">✓</span>
+                    ) : e.rank && e.rank > 8 ? (
+                      <span className="text-red-400 text-xs">✗</span>
+                    ) : (
+                      <span className="text-gray-500 text-xs">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   );
 }
 
-function GroupStageView({
+export function GroupStageView({
   groups,
   liveScores,
   refreshingGw,
@@ -463,21 +447,19 @@ function GroupStageView({
 }) {
   const [expandedGws, setExpandedGws] = useState<Record<string, Set<number>>>({});
 
-  // Initialize expanded state: default to current GW
   useEffect(() => {
     const currentGw = latestCompletedGw ? (latestCompletedGw < 33 ? latestCompletedGw + 1 : 33) : 31;
     const newExpanded: Record<string, Set<number>> = {};
-    groups.forEach(g => {
+    groups.forEach((g) => {
       newExpanded[g.roundPrefix] = new Set([currentGw]);
     });
     setExpandedGws(newExpanded);
   }, [groups, latestCompletedGw]);
 
   const toggleGwExpanded = (groupPrefix: string, gw: number) => {
-    setExpandedGws(prev => {
+    setExpandedGws((prev) => {
       const newState = { ...prev };
       if (!newState[groupPrefix]) newState[groupPrefix] = new Set();
-
       if (newState[groupPrefix].has(gw)) {
         newState[groupPrefix].delete(gw);
       } else {
@@ -487,22 +469,18 @@ function GroupStageView({
     });
   };
 
-  const isGwExpanded = (groupPrefix: string, gw: number) => {
-    return expandedGws[groupPrefix]?.has(gw) ?? false;
-  };
+  const isGwExpanded = (groupPrefix: string, gw: number) => expandedGws[groupPrefix]?.has(gw) ?? false;
 
   const mergedScores = [
     ...(tempLiveScores ? Object.values(tempLiveScores).flat() : []),
     ...(liveScores ? Object.values(liveScores).flat() : []),
   ];
 
-  // Determine group type (Championship vs Challenger)
-  const champGroups = groups.filter(g => g.roundPrefix.includes('C') && !g.roundPrefix.includes('XA') && !g.roundPrefix.includes('XB'));
-  const challGroups = groups.filter(g => g.roundPrefix.includes('X'));
+  const champGroups = groups.filter((g) => g.roundPrefix.includes("C") && !g.roundPrefix.includes("XA") && !g.roundPrefix.includes("XB"));
+  const challGroups = groups.filter((g) => g.roundPrefix.includes("X"));
 
   return (
     <div className="space-y-6">
-      {/* Tournament Flow Info */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-gradient-to-br from-blue-900/40 to-blue-900/20 border border-blue-400/30 rounded-xl p-4">
           <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider mb-2">🏆 Championship Groups</p>
@@ -516,24 +494,19 @@ function GroupStageView({
         </div>
       </div>
 
-      {/* All 4 Groups in one grid */}
       {(champGroups.length > 0 || challGroups.length > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Championship Groups */}
           {champGroups.map((group) => {
-            const groupLetter = group.roundPrefix.includes('CA') ? 'A' : 'B';
+            const groupLetter = group.roundPrefix.includes("CA") ? "A" : "B";
             return (
               <div key={group.roundPrefix} className="bg-slate-800/40 border border-blue-500/20 rounded-xl overflow-hidden shadow-lg hover:shadow-blue-500/10 transition-shadow">
-                {/* Group header with gradient */}
                 <div className="bg-gradient-to-r from-blue-900/60 to-blue-800/40 border-b border-blue-500/20 px-4 py-3">
                   <p className="text-xs text-blue-400 uppercase tracking-wider font-semibold mb-1">Championship</p>
                   <h3 className="text-base font-bold text-blue-200 uppercase tracking-wider">Group {groupLetter}</h3>
                 </div>
-
                 <div className="p-3">
-                  {/* Standings table */}
-                  <div className="mb-4 rounded-lg overflow-hidden border border-blue-500/10">
-                    <table className="w-full text-xs">
+                  <div className="mb-4 rounded-lg overflow-x-auto border border-blue-500/10">
+                    <table className="w-full text-xs min-w-[300px]">
                       <thead>
                         <tr className="text-blue-300 bg-slate-900/50 border-b border-blue-500/10">
                           <th className="text-left px-2 py-1.5">Pos</th>
@@ -565,36 +538,37 @@ function GroupStageView({
                       </tbody>
                     </table>
                   </div>
-
-                  {/* Fixtures by GW - Collapsible */}
                   <div className="space-y-1">
                     <p className="text-xs text-blue-300/60 uppercase tracking-wider font-semibold">Matches</p>
                     {[31, 32, 33].map((gw) => {
                       const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
                       if (gwFixtures.length === 0) return null;
-
                       const isExpanded = isGwExpanded(group.roundPrefix, gw);
-
                       return (
                         <div key={gw}>
                           <button
                             onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
                             className="w-full flex items-center justify-between text-xs font-semibold text-blue-300 hover:text-blue-200 transition py-1 px-1.5 rounded hover:bg-blue-500/10"
                           >
-                            <span>GW{gw}</span>
+                            <div className="flex items-center gap-2">
+                              <span>GW{gw}</span>
+                              {mergedScores.some((s) => s.gameweek === gw) && onRefreshRound && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onRefreshRound(gw); }}
+                                  disabled={refreshingGw === gw}
+                                  className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-xs ${refreshingGw === gw ? "animate-spin" : ""}`}
+                                  title="Refresh live scores"
+                                >
+                                  ⟳
+                                </button>
+                              )}
+                            </div>
                             <span className="text-blue-500/60">{isExpanded ? "▼" : "▶"}</span>
                           </button>
-
                           {isExpanded && (
                             <div className="space-y-1 mt-1">
                               {gwFixtures.map((tie) => (
-                                <MatchCard
-                                  key={tie.tieId}
-                                  tie={tie}
-                                  compact
-                                  liveScores={mergedScores}
-                                  useFullName={true}
-                                />
+                                <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} useFullName={true} />
                               ))}
                             </div>
                           )}
@@ -607,21 +581,17 @@ function GroupStageView({
             );
           })}
 
-          {/* Challenger Groups */}
           {challGroups.map((group) => {
-            const groupLetter = group.roundPrefix.includes('XA') ? 'A' : 'B';
+            const groupLetter = group.roundPrefix.includes("XA") ? "A" : "B";
             return (
               <div key={group.roundPrefix} className="bg-slate-800/40 border border-purple-500/20 rounded-xl overflow-hidden shadow-lg hover:shadow-purple-500/10 transition-shadow">
-                {/* Group header with gradient */}
                 <div className="bg-gradient-to-r from-purple-900/60 to-purple-800/40 border-b border-purple-500/20 px-4 py-3">
                   <p className="text-xs text-purple-400 uppercase tracking-wider font-semibold mb-1">Challenger</p>
                   <h3 className="text-base font-bold text-purple-200 uppercase tracking-wider">Group {groupLetter}</h3>
                 </div>
-
                 <div className="p-3">
-                  {/* Standings table */}
-                  <div className="mb-4 rounded-lg overflow-hidden border border-purple-500/10">
-                    <table className="w-full text-xs">
+                  <div className="mb-4 rounded-lg overflow-x-auto border border-purple-500/10">
+                    <table className="w-full text-xs min-w-[300px]">
                       <thead>
                         <tr className="text-purple-300 bg-slate-900/50 border-b border-purple-500/10">
                           <th className="text-left px-2 py-1.5">Pos</th>
@@ -653,36 +623,37 @@ function GroupStageView({
                       </tbody>
                     </table>
                   </div>
-
-                  {/* Fixtures by GW - Collapsible */}
                   <div className="space-y-1">
                     <p className="text-xs text-purple-300/60 uppercase tracking-wider font-semibold">Matches</p>
                     {[31, 32, 33].map((gw) => {
                       const gwFixtures = group.fixtures.filter((f) => f.gw1 === (playoffStartGw ? playoffStartGw + (gw - 31) : gw));
                       if (gwFixtures.length === 0) return null;
-
                       const isExpanded = isGwExpanded(group.roundPrefix, gw);
-
                       return (
                         <div key={gw}>
                           <button
                             onClick={() => toggleGwExpanded(group.roundPrefix, gw)}
                             className="w-full flex items-center justify-between text-xs font-semibold text-purple-300 hover:text-purple-200 transition py-1 px-1.5 rounded hover:bg-purple-500/10"
                           >
-                            <span>GW{gw}</span>
+                            <div className="flex items-center gap-2">
+                              <span>GW{gw}</span>
+                              {mergedScores.some((s) => s.gameweek === gw) && onRefreshRound && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onRefreshRound(gw); }}
+                                  disabled={refreshingGw === gw}
+                                  className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-xs ${refreshingGw === gw ? "animate-spin" : ""}`}
+                                  title="Refresh live scores"
+                                >
+                                  ⟳
+                                </button>
+                              )}
+                            </div>
                             <span className="text-purple-500/60">{isExpanded ? "▼" : "▶"}</span>
                           </button>
-
                           {isExpanded && (
                             <div className="space-y-1 mt-1">
                               {gwFixtures.map((tie) => (
-                                <MatchCard
-                                  key={tie.tieId}
-                                  tie={tie}
-                                  compact
-                                  liveScores={mergedScores}
-                                  useFullName={true}
-                                />
+                                <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} useFullName={true} />
                               ))}
                             </div>
                           )}
@@ -700,54 +671,30 @@ function GroupStageView({
   );
 }
 
-export default function PlayoffsPage() {
+export function usePlayoffsBracket(leagueSlug: string) {
   const [data, setData] = useState<BracketData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>("tvt");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminLeagueId, setAdminLeagueId] = useState<string | null>(null);
-  const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
-  const [refreshing, setRefreshing] = useState<number | null>(null);  // GW number being refreshed
-  const [tempLiveScores, setTempLiveScores] = useState<Record<number, LiveFixtureScore[]>>({});  // Temp fresh scores
-
-  const fetchLiveScores = useCallback(async (latestGw: number) => {
-    // Try fetching live scores for the current GW and next (in case we're between legs)
-    // latestGw is the latest GW with any result, may be partially complete
-    // Playoff GWs are 31-38
-    for (let gw = latestGw; gw <= Math.min(latestGw + 1, 38); gw++) {
-      if (gw < 31) continue;
-      try {
-        const leagueParam = adminLeagueId ? `&leagueSlug=${encodeURIComponent(adminLeagueId)}` : "";
-        const res = await fetch(`/api/fixtures/live?gameweek=${gw}${leagueParam}`);
-        if (res.ok) {
-          const liveData = await res.json();
-          if (liveData.isLive && liveData.fixtures?.length > 0) {
-            setLiveScores(liveData.fixtures);
-            return;
-          }
-        }
-      } catch {}
-    }
-    setLiveScores([]);
-  }, [adminLeagueId]);
+  const [refreshing, setRefreshing] = useState<number | null>(null);
+  const [tempLiveScores, setTempLiveScores] = useState<Record<number, LiveFixtureScore[]>>({});
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const adminLeague = new URLSearchParams(window.location.search).get("adminLeague");
-        const bracketUrl = adminLeague ? `/api/playoffs/bracket?leagueSlug=${encodeURIComponent(adminLeague)}` : "/api/playoffs/bracket";
-        const res = await fetch(bracketUrl);
+        const res = await fetch(`/api/playoffs/bracket?leagueSlug=${encodeURIComponent(leagueSlug)}`);
         if (res.ok) {
           const bracket = await res.json();
           setData(bracket);
-          // Smart default tab for 16-team: show group stage if still in progress
-          if (bracket.teamSize === 16 && bracket.latestCompletedGw < 34) {
-            setActiveTab("groupStage");
-          }
-          // Fetch live scores for playoff GWs
           if (bracket.latestCompletedGw >= 30) {
-            fetchLiveScores(bracket.latestCompletedGw);
+            for (let gw = bracket.latestCompletedGw; gw <= Math.min(bracket.latestCompletedGw + 1, 38); gw++) {
+              if (gw < 31) continue;
+              try {
+                const liveRes = await fetch(`/api/fixtures/live?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
+                if (liveRes.ok) {
+                  const liveData = await liveRes.json();
+                  if (liveData.isLive && liveData.fixtures?.length > 0) break;
+                }
+              } catch {}
+            }
           }
         }
       } catch (err) {
@@ -756,46 +703,16 @@ export default function PlayoffsPage() {
         setIsLoading(false);
       }
     };
-
-    const urlParam = new URLSearchParams(window.location.search).get("adminLeague");
-    if (urlParam) setAdminLeagueId(urlParam);
-
-    const checkAuth = async () => {
-      try {
-        const res = await fetch("/api/auth/me");
-        const me = await res.json();
-        if (res.ok && me.authenticated) {
-          setIsLoggedIn(true);
-          if (me.type === "admin" || me.type === "superadmin") {
-            setIsAdmin(true);
-            if (!urlParam && me.adminLeagueId) {
-              setAdminLeagueId(me.adminLeagueId);
-            }
-          }
-        }
-      } catch {}
-    };
-
     fetchData();
-    checkAuth();
-  }, []);
-
-  const handleSignOut = async () => {
-    await fetch("/api/auth/signout", { method: "POST" });
-    window.location.href = "/signin";
-  };
+  }, [leagueSlug]);
 
   const handleRefreshRound = async (gwNumber: number) => {
     setRefreshing(gwNumber);
     try {
-      const leagueParam = adminLeagueId ? `&leagueSlug=${encodeURIComponent(adminLeagueId)}` : "";
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${gwNumber}${leagueParam}`);
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${gwNumber}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
       if (res.ok) {
         const freshData = await res.json();
-        setTempLiveScores(prev => ({
-          ...prev,
-          [gwNumber]: freshData.fixtures || []
-        }));
+        setTempLiveScores((prev) => ({ ...prev, [gwNumber]: freshData.fixtures || [] }));
       }
     } catch (err) {
       console.error("Refresh failed:", err);
@@ -804,310 +721,5 @@ export default function PlayoffsPage() {
     }
   };
 
-  if (isLoading) {
-    return <LoadingScreen variant="playoffs" />;
-  }
-
-  if (!data) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-red-400 text-xl">Failed to load playoffs bracket</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href={isAdmin ? (adminLeagueId ? `/admin/${adminLeagueId}` : "/admin") : isLoggedIn ? "/dashboard" : "/"} className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            TVT
-          </div>
-          <span className="text-xl font-bold text-white hidden sm:inline">Fantasy Super League</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          {isAdmin ? (
-            <Link href={adminLeagueId ? `/admin/${adminLeagueId}` : "/admin"} className="text-gray-300 hover:text-white transition">← Admin</Link>
-          ) : isLoggedIn ? (
-            <Link href="/dashboard" className="text-gray-300 hover:text-white transition">Dashboard</Link>
-          ) : (
-            <Link href="/" className="text-gray-300 hover:text-white transition">Home</Link>
-          )}
-          <Link href={adminLeagueId ? `/standings?adminLeague=${adminLeagueId}` : "/standings"} className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href={adminLeagueId ? `/fixtures?adminLeague=${adminLeagueId}` : "/fixtures"} className="text-gray-300 hover:text-white transition">Fixtures</Link>
-          <Link href={adminLeagueId ? `/playoffs?adminLeague=${adminLeagueId}` : "/playoffs"} className="text-yellow-400 font-semibold transition">Playoffs</Link>
-          {isLoggedIn && <Link href={adminLeagueId ? `/rules?adminLeague=${adminLeagueId}` : "/rules"} className="text-gray-300 hover:text-white transition">Rules</Link>}
-          {isLoggedIn ? (
-            <button onClick={handleSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
-              Sign Out
-            </button>
-          ) : (
-            <Link href="/signin" className="rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-2 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition">
-              Sign In
-            </Link>
-          )}
-        </div>
-      </nav>
-
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Playoffs Bracket</h1>
-          {data.mode === "tentative" && (
-            <div className="inline-flex items-center gap-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-4 py-2">
-              <span className="text-yellow-400 text-sm font-semibold">&#9888; TENTATIVE</span>
-              <span className="text-yellow-200/80 text-sm">Projected from current standings. Fixtures lock after GW30.</span>
-            </div>
-          )}
-          {data.mode === "projected" && (
-            <div className="inline-flex items-center gap-2 bg-blue-500/20 border border-blue-500/40 rounded-lg px-4 py-2">
-              <span className="text-blue-400 text-sm font-semibold">Based on final group standings</span>
-              <span className="text-blue-200/80 text-sm">Fixtures will be generated by admin shortly.</span>
-            </div>
-          )}
-        </div>
-
-        {/* Tab toggle */}
-        {data.teamSize === 16 && (
-          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
-            <button
-              onClick={() => setActiveTab("groupStage")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-                activeTab === "groupStage" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              Group Stage
-            </button>
-            <button
-              onClick={() => setActiveTab("tvt")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-                activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              TVT Main Draw
-            </button>
-            <button
-              onClick={() => setActiveTab("challenger")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-                activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              Challenger Series
-            </button>
-          </div>
-        )}
-        {data.teamSize === 32 && (
-          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit">
-            <button
-              onClick={() => setActiveTab("tvt")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-                activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              TVT Main Draw
-            </button>
-            <button
-              onClick={() => setActiveTab("challenger")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
-                activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              Challenger Series
-            </button>
-          </div>
-        )}
-
-        {/* Group Stage — 16-team only */}
-        {activeTab === "groupStage" && data.teamSize === 16 && data.groupStage && (
-          <GroupStageView
-            groups={data.groupStage.groups}
-            liveScores={data.liveScores}
-            refreshingGw={refreshing}
-            tempLiveScores={tempLiveScores}
-            onRefreshRound={handleRefreshRound}
-            playoffStartGw={31}
-          />
-        )}
-
-        {/* TVT Main Draw Bracket */}
-        {(activeTab === "tvt" || data.teamSize === 8) && (
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-            {data.teamSize === 8 ? (
-              /* 8-team: SF → 3rd Place + Final */
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
-                <RoundColumn
-                  title="Semi-Finals"
-                  ties={data.tvt.sf ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-                <RoundColumn
-                  title="3rd Place"
-                  ties={data.tvt.thirdPlace ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-                <RoundColumn
-                  title="Final"
-                  ties={data.tvt.final ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-              </div>
-            ) : data.teamSize === 16 ? (
-              /* 16-team: QF → SF → Final */
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[600px] min-h-[500px]">
-                <RoundColumn
-                  title="Seeding Round"
-                  ties={data.tvt.qf ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-                <RoundColumn
-                  title="Semi-Finals"
-                  ties={data.tvt.sf ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-                <RoundColumn
-                  title="Grand Finale"
-                  ties={data.tvt.final ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-              </div>
-            ) : (
-              /* 32-team: RO16 → QF → SF → Final */
-              <div className="grid grid-cols-4 gap-3 sm:gap-4 min-w-[700px] min-h-[600px]">
-                <RoundColumn
-                  title="Round of 16"
-                  ties={data.tvt.ro16 ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-                <RoundColumn
-                  title="Quarter-Finals"
-                  ties={data.tvt.qf ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-                <RoundColumn
-                  title="Semi-Finals"
-                  ties={data.tvt.sf ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-                <RoundColumn
-                  title="Grand Finale"
-                  ties={data.tvt.final ?? []}
-                  liveScores={data.liveScores}
-                  refreshingGw={refreshing}
-                  tempLiveScores={tempLiveScores}
-                  onRefreshRound={handleRefreshRound}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Challenger Series — 16/32-team only */}
-        {activeTab === "challenger" && data.teamSize !== 8 && (
-          <div className="space-y-6">
-            {(() => {
-              const allLiveScores = data.liveScores ? Object.values(data.liveScores).flat() : [];
-              const tempScores = tempLiveScores ? Object.values(tempLiveScores).flat() : [];
-              const mergedScores = [...tempScores, ...allLiveScores];
-
-              // Determine challenger rounds based on team size
-              const challengerRounds = data.teamSize === 16 ? [
-                { key: "c34", label: "Challenger QFs (GW34)", gw: 34, data: data.challenger.c34 },
-                { key: "c35", label: "Challenger Semi-Finals (GW35–36)", gw: 35, data: data.challenger.c35 },
-                { key: "c36", label: "Challenger Final (GW37–38)", gw: 37, data: data.challenger.c36 },
-              ] : [
-                { key: "c31", label: "C-31 (GW31) — Round of 12", gw: 31, data: data.challenger.c31 },
-                { key: "c32", label: "C-32 (GW32) — Round of 6", gw: 32, data: data.challenger.c32 },
-                { key: "c34", label: "C-34 (GW34) — Quarter-Finals", gw: 34, data: data.challenger.c34 },
-                { key: "c35", label: "C-35 (GW35) — QF Losers vs C-34 Winners", gw: 35, data: data.challenger.c35 },
-                { key: "c36", label: "C-36 (GW36) — Round of 4", gw: 36, data: data.challenger.c36 },
-                { key: "c37", label: "C-37 (GW37) — Challenger Semi-Finals", gw: 37, data: data.challenger.c37 },
-                { key: "c38", label: "C-38 (GW38) — Challenger Final", gw: 38, data: data.challenger.c38 },
-              ];
-
-              const hasAnyChallengerRound = challengerRounds.some(r => (r.data as TieDisplay[])?.length > 0);
-
-              return (
-                <>
-                  {/* Show C-33 survival table only for 32-team */}
-                  {data.teamSize === 32 && (data.challenger.c33?.length ?? 0) > 0 && (
-                    <SurvivalTable entries={data.challenger.c33 as SurvivalDisplay[]} />
-                  )}
-
-                  {/* Empty state message for 16-team during group stage */}
-                  {data.teamSize === 16 && !hasAnyChallengerRound && (
-                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 text-center">
-                      <p className="text-gray-400 text-sm mb-2">⏳ Challenger fixtures will be available after group stage (GW33) completes.</p>
-                      <p className="text-gray-500 text-xs">Once admin advances playoffs, Top 2 from each Challenger Group will play QFs in GW34.</p>
-                    </div>
-                  )}
-
-                  {challengerRounds.map(({ key, label, gw, data: roundData }) => {
-                    const ties = roundData as TieDisplay[];
-                    if (!ties || ties.length === 0) return null;
-                    const hasLive = mergedScores.some(s => s.gameweek === gw);
-                    const isRoundRefreshing = refreshing === gw;
-                    return (
-                      <div key={key}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider">{label}</h3>
-                          {hasLive && (
-                            <button
-                              onClick={() => handleRefreshRound(gw)}
-                              disabled={isRoundRefreshing}
-                              className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRoundRefreshing ? "animate-spin" : ""}`}
-                              title="Refresh live scores"
-                            >
-                              ⟳
-                            </button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {ties.map(tie => (
-                            <MatchCard
-                              key={tie.tieId}
-                              tie={tie}
-                              compact
-                              liveScores={mergedScores}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  return { data, isLoading, refreshing, tempLiveScores, handleRefreshRound };
 }

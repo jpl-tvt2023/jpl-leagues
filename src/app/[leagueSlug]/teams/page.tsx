@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { useEnforceFormat } from "@/lib/league-context";
 
 interface TeamCard {
   teamId: string;
@@ -36,6 +37,7 @@ function rankStyle(rank: number): { badge: string; ring: string } {
 }
 
 export default function TeamsPage() {
+  useEnforceFormat(["auction"]);
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 

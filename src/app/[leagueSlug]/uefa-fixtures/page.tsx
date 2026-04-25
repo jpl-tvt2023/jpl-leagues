@@ -4,47 +4,16 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
-
-interface LivePlayerScore {
-  name: string;
-  fplId: string;
-  fplScore: number;
-  transferHits: number;
-  isCaptain: boolean;
-  finalScore: number;
-}
-
-interface LiveFixtureScore {
-  fixtureId: string;
-  gameweek: number;
-  homeTeamName: string;
-  awayTeamName: string;
-  homeScore: number;
-  awayScore: number;
-  homePlayers: LivePlayerScore[];
-  awayPlayers: LivePlayerScore[];
-}
-
-interface Fixture {
-  id: string;
-  homeTeam: { name: string; abbreviation: string; isGhost?: boolean };
-  awayTeam: { name: string; abbreviation: string; isGhost?: boolean };
-  competitionType?: string | null;
-  gameweek: { number: number };
-  group?: { name: string } | null;
-  result?: {
-    homeScore: number;
-    awayScore: number;
-    homePlayerScores?: string | null;
-    awayPlayerScores?: string | null;
-  } | null;
-}
-
-interface GameweekFixtures {
-  [key: number]: Fixture[];
-}
+import { useEnforceFormat } from "@/lib/league-context";
+import {
+  type Fixture,
+  type GameweekFixtures,
+  type LiveFixtureScore,
+  PlayerBreakdown,
+} from "../_components/fixtures/shared";
 
 export default function UEFAFixturesPage() {
+  useEnforceFormat(["triple-crown"]);
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
@@ -350,13 +319,6 @@ export default function UEFAFixturesPage() {
                         const isGhostFixture = !!(fixture.homeTeam.isGhost || fixture.awayTeam.isGhost);
                         const hasPlayerData = (live?.homePlayers?.length ?? 0) > 0 || !!(fixture.result?.homePlayerScores) || hasResult;
                         const isExpanded = expandedFixtures.has(fixture.id);
-                        const gwNumber = live?.gameweek ?? fixture.gameweek.number;
-                        const homePlayers: LivePlayerScore[] = (live?.homePlayers?.length ?? 0) > 0
-                          ? (live!.homePlayers ?? [])
-                          : fixture.result?.homePlayerScores ? JSON.parse(fixture.result.homePlayerScores) : [];
-                        const awayPlayers: LivePlayerScore[] = (live?.awayPlayers?.length ?? 0) > 0
-                          ? (live!.awayPlayers ?? [])
-                          : fixture.result?.awayPlayerScores ? JSON.parse(fixture.result.awayPlayerScores) : [];
 
                         return (
                           <div
@@ -414,88 +376,7 @@ export default function UEFAFixturesPage() {
                                 >
                                   {isExpanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
                                 </button>
-                                {isExpanded && (
-                                  <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
-                                      {fixture.homeTeam.isGhost ? (
-                                        <div className="text-center py-3">
-                                          <span className="text-purple-400 italic text-xs">Ghost (Group Avg)</span>
-                                          {hasResult && <div className="text-purple-300 font-bold mt-1">{fixture.result!.homeScore}</div>}
-                                        </div>
-                                      ) : homePlayers.length > 0 ? homePlayers.map((p, i) => (
-                                        <div key={i} className="flex items-center justify-between py-1">
-                                          <div className="flex items-center gap-1 min-w-0">
-                                            <a
-                                              href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-blue-400 hover:text-blue-300 underline truncate"
-                                              onClick={(e) => e.stopPropagation()}
-                                            >
-                                              {p.name}
-                                            </a>
-                                            {p.isCaptain && (
-                                              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
-                                            )}
-                                          </div>
-                                          <div className="text-right shrink-0 ml-2">
-                                            {p.isCaptain ? (
-                                              <span className="text-yellow-400 font-semibold">
-                                                {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
-                                              </span>
-                                            ) : (
-                                              <span className="text-white">
-                                                {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )) : (
-                                        <div className="text-center text-gray-500 italic text-[10px] py-2">No breakdown available</div>
-                                      )}
-                                    </div>
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
-                                      {fixture.awayTeam.isGhost ? (
-                                        <div className="text-center py-3">
-                                          <span className="text-purple-400 italic text-xs">Ghost (Group Avg)</span>
-                                          {hasResult && <div className="text-purple-300 font-bold mt-1">{fixture.result!.awayScore}</div>}
-                                        </div>
-                                      ) : awayPlayers.length > 0 ? awayPlayers.map((p, i) => (
-                                        <div key={i} className="flex items-center justify-between py-1">
-                                          <div className="flex items-center gap-1 min-w-0">
-                                            <a
-                                              href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-blue-400 hover:text-blue-300 underline truncate"
-                                              onClick={(e) => e.stopPropagation()}
-                                            >
-                                              {p.name}
-                                            </a>
-                                            {p.isCaptain && (
-                                              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
-                                            )}
-                                          </div>
-                                          <div className="text-right shrink-0 ml-2">
-                                            {p.isCaptain ? (
-                                              <span className="text-yellow-400 font-semibold">
-                                                {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
-                                              </span>
-                                            ) : (
-                                              <span className="text-white">
-                                                {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )) : (
-                                        <div className="text-center text-gray-500 italic text-[10px] py-2">No breakdown available</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
+                                {isExpanded && <PlayerBreakdown fixture={fixture} liveData={live} />}
                               </div>
                             )}
                           </div>

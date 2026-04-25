@@ -6,50 +6,12 @@ import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { useLeague } from "@/lib/league-context";
-
-interface LivePlayerScore {
-  name: string;
-  fplId: string;
-  fplScore: number;
-  transferHits: number;
-  isCaptain: boolean;
-  isAutoAssigned?: boolean;
-  finalScore: number;
-}
-
-interface LiveFixtureScore {
-  fixtureId: string;
-  gameweek: number;
-  homeTeamName: string;
-  awayTeamName: string;
-  homeTeamAbbr: string;
-  awayTeamAbbr: string;
-  homeScore: number;
-  awayScore: number;
-  homePlayers: LivePlayerScore[];
-  awayPlayers: LivePlayerScore[];
-}
-
-interface Fixture {
-  id: string;
-  homeTeam: { name: string; abbreviation: string };
-  awayTeam: { name: string; abbreviation: string };
-  group: { name: string } | null;
-  competitionType?: string | null;
-  gameweek: { number: number; deadline: Date };
-  result?: {
-    homeScore: number;
-    awayScore: number;
-    homeMatchPoints: number;
-    awayMatchPoints: number;
-    homePlayerScores?: string | null;
-    awayPlayerScores?: string | null;
-  } | null;
-}
-
-interface GameweekFixtures {
-  [key: number]: Fixture[];
-}
+import {
+  type Fixture,
+  type GameweekFixtures,
+  type LiveFixtureScore,
+  PlayerBreakdown,
+} from "../_components/fixtures/shared";
 
 function FixtureCard({
   fixture,
@@ -138,104 +100,17 @@ function FixtureCard({
         </div>
       </div>
 
-      {(() => {
-        const homePlayers: LivePlayerScore[] = (liveData?.homePlayers?.length ?? 0) > 0
-          ? (liveData!.homePlayers ?? [])
-          : fixture.result?.homePlayerScores
-            ? JSON.parse(fixture.result.homePlayerScores)
-            : [];
-        const awayPlayers: LivePlayerScore[] = (liveData?.awayPlayers?.length ?? 0) > 0
-          ? (liveData!.awayPlayers ?? [])
-          : fixture.result?.awayPlayerScores
-            ? JSON.parse(fixture.result.awayPlayerScores)
-            : [];
-        const gwNumber = liveData?.gameweek ?? fixture.gameweek.number;
-        if (!hasPlayerData) return null;
-        return (
-          <div className="mt-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-              className="w-full text-center text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
-            >
-              {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
-            </button>
-            {expanded && (
-              homePlayers.length === 0 && awayPlayers.length === 0 ? (
-                <div className="mt-1 pt-2 border-t border-white/10 text-center text-gray-500 italic text-[10px] py-2">
-                  Player breakdown not available for this gameweek
-                </div>
-              ) : (
-                <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
-                  <div>
-                    <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.homeTeam.name}</div>
-                    {homePlayers.map((p, i) => (
-                      <div key={i} className="flex items-center justify-between py-1">
-                        <div className="flex items-center gap-1 min-w-0">
-                          <a
-                            href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 underline truncate"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {p.name}
-                          </a>
-                          {p.isCaptain && !p.isAutoAssigned && (
-                            <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
-                          )}
-                        </div>
-                        <div className="text-right shrink-0 ml-2">
-                          {p.isCaptain && !p.isAutoAssigned ? (
-                            <span className="text-yellow-400 font-semibold">
-                              {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
-                            </span>
-                          ) : (
-                            <span className="text-white">
-                              {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-400 mb-1 text-center">{fixture.awayTeam.name}</div>
-                    {awayPlayers.map((p, i) => (
-                      <div key={i} className="flex items-center justify-between py-1">
-                        <div className="flex items-center gap-1 min-w-0">
-                          <a
-                            href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 underline truncate"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {p.name}
-                          </a>
-                          {p.isCaptain && !p.isAutoAssigned && (
-                            <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
-                          )}
-                        </div>
-                        <div className="text-right shrink-0 ml-2">
-                          {p.isCaptain && !p.isAutoAssigned ? (
-                            <span className="text-yellow-400 font-semibold">
-                              {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
-                            </span>
-                          ) : (
-                            <span className="text-white">
-                              {p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            )}
-          </div>
-        );
-      })()}
+      {hasPlayerData && (
+        <div className="mt-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            className="w-full text-center text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
+          >
+            {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
+          </button>
+          {expanded && <PlayerBreakdown fixture={fixture} liveData={liveData} />}
+        </div>
+      )}
     </div>
   );
 }

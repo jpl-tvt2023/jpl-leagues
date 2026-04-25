@@ -54,8 +54,8 @@ export const leagues = sqliteTable("leagues", {
 // Maps non-superadmin users to leagues they can administer
 export const leagueAdmins = sqliteTable("league_admins", {
   id: text("id").primaryKey(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
-  userId: text("user_id").notNull().references(() => users.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
 }, (table) => ({
   leagueUserUnique: uniqueIndex("league_admins_league_user_unique").on(table.leagueId, table.userId),
 }));
@@ -64,7 +64,7 @@ export const leagueAdmins = sqliteTable("league_admins", {
 export const groups = sqliteTable("groups", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   groupType: text("group_type").default("pl"), // "pl" | "cup" (Triple Crown uses "cup" for cup groups)
 }, (table) => ({
   leagueNameUnique: uniqueIndex("groups_league_name_unique").on(table.leagueId, table.name),
@@ -75,11 +75,11 @@ export const teams = sqliteTable("teams", {
   id: text("id").primaryKey(),
   teamLoginId: text("team_login_id"), // Global login credential (set by admin, editable by team during setup)
   name: text("name").notNull(), // Team display name (set by team during setup, unique per league)
-  leagueId: text("league_id").notNull().references(() => leagues.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   abbreviation: text("abbreviation").notNull(), // e.g., "DM"
   password: text("password").notNull(), // Hashed password for team login
   mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
-  groupId: text("group_id").references(() => groups.id), // Optional: null if group not assigned
+  groupId: text("group_id").references(() => groups.id, { onDelete: "set null" }), // Optional: null if group not assigned
   
   // League points (separate from match scores)
   leaguePoints: integer("league_points").notNull().default(0),
@@ -131,7 +131,7 @@ export const players = sqliteTable("players", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   fplId: text("fpl_id").notNull(), // Official FPL Team ID for fetching scores
-  teamId: text("team_id").notNull().references(() => teams.id),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   
   // Captaincy tracking (15 chips per player in League Stage)
   captaincyChipsUsed: integer("captaincy_chips_used").notNull().default(0),
@@ -144,7 +144,7 @@ export const players = sqliteTable("players", {
 export const gameweeks = sqliteTable("gameweeks", {
   id: text("id").primaryKey(),
   number: integer("number").notNull(), // 1-38, unique per league
-  leagueId: text("league_id").notNull().references(() => leagues.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   deadline: integer("deadline", { mode: "timestamp" }).notNull(),
   
   // Phase classification
@@ -159,10 +159,10 @@ export const gameweeks = sqliteTable("gameweeks", {
 // Fixture (match between two teams)
 export const fixtures = sqliteTable("fixtures", {
   id: text("id").primaryKey(),
-  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
-  homeTeamId: text("home_team_id").notNull().references(() => teams.id),
-  awayTeamId: text("away_team_id").notNull().references(() => teams.id),
-  groupId: text("group_id").references(() => groups.id), // Optional: can be null if team has no group
+  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id, { onDelete: "cascade" }),
+  homeTeamId: text("home_team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  awayTeamId: text("away_team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  groupId: text("group_id").references(() => groups.id, { onDelete: "set null" }), // Optional: can be null if team has no group
   
   // Fixture type
   isChallenge: integer("is_challenge", { mode: "boolean" }).notNull().default(false), // Challenge Chip fixture
@@ -182,8 +182,8 @@ export const fixtures = sqliteTable("fixtures", {
 // Result of a fixture
 export const results = sqliteTable("results", {
   id: text("id").primaryKey(),
-  fixtureId: text("fixture_id").notNull().unique().references(() => fixtures.id),
-  teamId: text("team_id").notNull().references(() => teams.id),
+  fixtureId: text("fixture_id").notNull().unique().references(() => fixtures.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   
   // Scores (combined FPL scores minus transfer hits)
   homeScore: integer("home_score").notNull(),
@@ -213,8 +213,8 @@ export const results = sqliteTable("results", {
 // Captain selection per gameweek  
 export const gameweekCaptains = sqliteTable("gameweek_captains", {
   id: text("id").primaryKey(),
-  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
-  playerId: text("player_id").notNull().references(() => players.id),
+  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id, { onDelete: "cascade" }),
+  playerId: text("player_id").notNull().references(() => players.id, { onDelete: "cascade" }),
   
   // FPL scores for the captain
   fplScore: integer("fpl_score").notNull().default(0),
@@ -232,15 +232,15 @@ export const gameweekCaptains = sqliteTable("gameweek_captains", {
 // TVT Chip usage per gameweek
 export const gameweekChips = sqliteTable("gameweek_chips", {
   id: text("id").primaryKey(),
-  teamId: text("team_id").notNull().references(() => teams.id),
-  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
-  
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id, { onDelete: "cascade" }),
+
   // Chip type: "W" = Win-Win, "D" = Double Pointer, "C" = Challenge,
   //            "SL" = Score Lock, "CB" = Comeback, "UD" = Underdog
   chipType: text("chip_type").notNull(), // "W" | "D" | "C" | "SL" | "CB" | "UD"
-  
+
   // For Challenge Chip: the team being challenged (top-2 from opposite group)
-  challengedTeamId: text("challenged_team_id").references(() => teams.id),
+  challengedTeamId: text("challenged_team_id").references(() => teams.id, { onDelete: "set null" }),
   
   // Validation status
   isValid: integer("is_valid", { mode: "boolean" }).notNull().default(true),
@@ -271,15 +271,15 @@ export const gameweekChips = sqliteTable("gameweek_chips", {
 // Playoff ties — one row per matchup (links 2-legged or single-leg encounters)
 export const playoffTies = sqliteTable("playoff_ties", {
   tieId: text("tie_id").primaryKey(), // e.g. "RO16-A", "C-31-A", "QF-B"
-  leagueId: text("league_id").notNull().references(() => leagues.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   roundName: text("round_name").notNull(), // Display label: "RO16", "QF", "SF", "Final", "C-31", etc.
   roundType: text("round_type").notNull(), // "tvt" | "challenger-ko" | "challenger-survival"
-  homeTeamId: text("home_team_id").references(() => teams.id),
-  awayTeamId: text("away_team_id").references(() => teams.id),
+  homeTeamId: text("home_team_id").references(() => teams.id, { onDelete: "set null" }),
+  awayTeamId: text("away_team_id").references(() => teams.id, { onDelete: "set null" }),
   homeAggregate: integer("home_aggregate").notNull().default(0),
   awayAggregate: integer("away_aggregate").notNull().default(0),
-  winnerId: text("winner_id").references(() => teams.id),
-  loserId: text("loser_id").references(() => teams.id),
+  winnerId: text("winner_id").references(() => teams.id, { onDelete: "set null" }),
+  loserId: text("loser_id").references(() => teams.id, { onDelete: "set null" }),
   gw1: integer("gw1").notNull(), // First leg / single-leg GW number
   gw2: integer("gw2"), // Second leg GW number (null for single-leg)
   status: text("status").notNull().default("pending"), // "pending" | "leg1_done" | "complete"
@@ -289,8 +289,8 @@ export const playoffTies = sqliteTable("playoff_ties", {
 // Challenger Survival entries (GW33) — individual team scores, not head-to-head
 export const challengerSurvivalEntries = sqliteTable("challenger_survival_entries", {
   id: text("id").primaryKey(),
-  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
-  teamId: text("team_id").notNull().references(() => teams.id),
+  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   score: integer("score").notNull().default(0),
   rank: integer("rank"),
   advanced: integer("advanced", { mode: "boolean" }).notNull().default(false),
@@ -300,7 +300,7 @@ export const challengerSurvivalEntries = sqliteTable("challenger_survival_entrie
 // Admin-configurable settings (key-value store, scoped per league)
 export const settings = sqliteTable("settings", {
   key: text("key").notNull(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   value: text("value").notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
@@ -325,8 +325,8 @@ export const auditLogs = sqliteTable("audit_logs", {
 // Auction ownership — which PL player (FPL element) is owned by which team
 export const auctionOwnership = sqliteTable("auction_ownership", {
   id: text("id").primaryKey(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
-  teamId: text("team_id").notNull().references(() => teams.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   fplElementId: integer("fpl_element_id").notNull(), // FPL element ID (the actual PL player)
   playerName: text("player_name").notNull(), // Cached web_name from bootstrap
   elementType: integer("element_type"), // 1=GK, 2=DEF, 3=MID, 4=FWD — nullable for legacy records
@@ -343,9 +343,9 @@ export const auctionOwnership = sqliteTable("auction_ownership", {
 // Auction scores — per-GW team totals (replaces results for auction format)
 export const auctionScores = sqliteTable("auction_scores", {
   id: text("id").primaryKey(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
-  teamId: text("team_id").notNull().references(() => teams.id),
-  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id, { onDelete: "cascade" }),
   totalPoints: integer("total_points").notNull(), // Sum of all owned players' GW points
   playerBreakdown: text("player_breakdown").notNull(), // JSON: [{elementId, name, points}]
   rank: integer("rank"), // GW rank (computed after all teams scored)
@@ -358,7 +358,7 @@ export const auctionScores = sqliteTable("auction_scores", {
 // Auction sessions — tracks auction windows (pausable/resumable, can span multiple days)
 export const auctionSessions = sqliteTable("auction_sessions", {
   id: text("id").primaryKey(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   type: text("type").notNull(), // "initial" | "mini-auction"
   cycleNumber: integer("cycle_number").notNull().default(0), // 0=initial, 1/2/3 for 10-GW cycles
   status: text("status").notNull().default("pending"), // "pending" | "active" | "paused" | "completed"
@@ -374,8 +374,8 @@ export const auctionSessions = sqliteTable("auction_sessions", {
 // Auction wishlists — priority-ordered player lists per team for auto-nomination
 export const auctionWishlists = sqliteTable("auction_wishlists", {
   id: text("id").primaryKey(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
-  teamId: text("team_id").notNull().references(() => teams.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   fplElementId: integer("fpl_element_id").notNull(),
   playerName: text("player_name").notNull(),
   priority: integer("priority").notNull(), // 1 = highest priority
@@ -385,13 +385,13 @@ export const auctionWishlists = sqliteTable("auction_wishlists", {
 // Auction bids — live auction item state per nomination
 export const auctionBids = sqliteTable("auction_bids", {
   id: text("id").primaryKey(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
-  sessionId: text("session_id").notNull().references(() => auctionSessions.id),
-  nominatorTeamId: text("nominator_team_id").notNull().references(() => teams.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  sessionId: text("session_id").notNull().references(() => auctionSessions.id, { onDelete: "cascade" }),
+  nominatorTeamId: text("nominator_team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   fplElementId: integer("fpl_element_id").notNull(),
   playerName: text("player_name").notNull(),
   currentHighBid: integer("current_high_bid").notNull(),
-  currentHighBidderId: text("current_high_bidder_id").notNull().references(() => teams.id),
+  currentHighBidderId: text("current_high_bidder_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   minBid: integer("min_bid").notNull(),
   status: text("status").notNull().default("open"), // "open" | "sold" | "unsold" | "cancelled"
   expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
@@ -402,8 +402,8 @@ export const auctionBids = sqliteTable("auction_bids", {
 // Auction bid logs — append-only event log for each bid lifecycle
 export const auctionBidLogs = sqliteTable("auction_bid_logs", {
   id: text("id").primaryKey(),
-  bidId: text("bid_id").notNull().references(() => auctionBids.id),
-  teamId: text("team_id").notNull().references(() => teams.id),
+  bidId: text("bid_id").notNull().references(() => auctionBids.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   amount: integer("amount").notNull(),
   type: text("type").notNull(), // "nomination" | "bid" | "sold" | "unsold"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
@@ -413,9 +413,9 @@ export const auctionBidLogs = sqliteTable("auction_bid_logs", {
 // each redemption based on whether the penalty's cycle has ended yet.
 export const teamPenalties = sqliteTable("team_penalties", {
   id: text("id").primaryKey(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
-  teamId: text("team_id").notNull().references(() => teams.id),
-  sessionId: text("session_id").references(() => auctionSessions.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  sessionId: text("session_id").references(() => auctionSessions.id, { onDelete: "set null" }),
   incurredCycle: integer("incurred_cycle").notNull(), // cycleNumber of the session that issued the penalty
   redeemedAt: integer("redeemed_at", { mode: "timestamp" }), // null = not yet redeemed
   redemptionPrice: integer("redemption_price"), // price paid at redemption (null until redeemed)
@@ -425,9 +425,9 @@ export const teamPenalties = sqliteTable("team_penalties", {
 // Trade proposals — P2P marketplace with veto system
 export const tradeProposals = sqliteTable("trade_proposals", {
   id: text("id").primaryKey(),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
-  proposerTeamId: text("proposer_team_id").notNull().references(() => teams.id),
-  targetTeamId: text("target_team_id").notNull().references(() => teams.id),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  proposerTeamId: text("proposer_team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  targetTeamId: text("target_team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   offeredPlayerIds: text("offered_player_ids").notNull().default("[]"), // JSON array of auctionOwnership IDs
   requestedPlayerIds: text("requested_player_ids").notNull().default("[]"), // JSON array of auctionOwnership IDs
   cashOffered: integer("cash_offered").notNull().default(0), // Positive = proposer pays target, negative = target pays
@@ -441,8 +441,8 @@ export const tradeProposals = sqliteTable("trade_proposals", {
 // Notifications — per-team in-app notifications (trade lifecycle, etc.)
 export const notifications = sqliteTable("notifications", {
   id: text("id").primaryKey(),
-  teamId: text("team_id").notNull().references(() => teams.id),
-  leagueId: text("league_id").notNull().references(() => leagues.id),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   type: text("type").notNull(), // "trade_proposed" | "trade_accepted" | "trade_rejected" | "trade_approved" | "trade_admin_rejected"
   title: text("title").notNull(),
   body: text("body").notNull(),

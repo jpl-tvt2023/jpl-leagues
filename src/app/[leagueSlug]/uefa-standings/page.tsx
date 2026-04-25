@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { useEnforceFormat } from "@/lib/league-context";
 
 interface CupGroupStanding {
   rank: number;
@@ -30,6 +31,7 @@ interface CupStandingsData {
 }
 
 export default function UEFAStandingsPage() {
+  useEnforceFormat(["triple-crown"]);
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
