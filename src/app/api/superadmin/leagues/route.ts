@@ -108,28 +108,27 @@ export async function POST(request: NextRequest) {
       isSimulated: format === "auction" ? (isSimulated ?? false) : false,
     });
 
-    // For auction format: auto-create placeholder manager accounts
-    let createdManagers = 0;
-    if (format === "auction") {
-      const managerCount = resolvedTeamSize; // teamSize = number of managers
-      for (let i = 1; i <= managerCount; i++) {
-        const loginId = `${slug}_Manager${i}`;
-        const plainPassword = `Manager${i}`;
-        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+    // Auto-create placeholder team accounts for every format. Teams complete
+    // their own profile (name, abbreviation, players) on first login via /setup.
+    let createdTeams = 0;
+    for (let i = 1; i <= resolvedTeamSize; i++) {
+      const padded = String(i).padStart(2, "0");
+      const loginId = `${slug}Team${i}`;
+      const plainPassword = `Team@${padded}`;
+      const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-        await db.insert(teams).values({
-          id: generateId(),
-          teamLoginId: loginId,
-          name: `Manager ${i}`,
-          leagueId: id,
-          abbreviation: `M${i}`,
-          password: hashedPassword,
-          mustChangePassword: true,
-          isProfileComplete: false,
-          purse: resolvedBudget,
-        });
-        createdManagers++;
-      }
+      await db.insert(teams).values({
+        id: generateId(),
+        teamLoginId: loginId,
+        name: `Team ${i}`,
+        leagueId: id,
+        abbreviation: `T${i}`,
+        password: hashedPassword,
+        mustChangePassword: true,
+        isProfileComplete: false,
+        ...(format === "auction" ? { purse: resolvedBudget } : {}),
+      });
+      createdTeams++;
     }
 
     return NextResponse.json({
@@ -140,7 +139,7 @@ export async function POST(request: NextRequest) {
       groupCount: resolvedGroupCount,
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: resolvedEnabledChips,
-      teamCount: createdManagers,
+      teamCount: createdTeams,
       currentGameweek: null,
     });
   } catch {
