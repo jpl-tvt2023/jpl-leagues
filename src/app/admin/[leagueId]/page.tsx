@@ -1330,16 +1330,16 @@ export default function AdminDashboard() {
 
     try {
       const rows = teamsData.map(row => ({
-        teamLoginId: String(row["teamLoginId"] ?? row["Team Login ID"] ?? row["TeamLoginId"] ?? "").trim(),
-        teamName: String(row["teamName"] ?? row["Team Name"] ?? row["TeamName"] ?? "").trim(),
-        abbreviation: String(row["abbreviation"] ?? row["Abbreviation"] ?? row["Abbr"] ?? "").trim(),
-        password: String(row["password"] ?? row["Password"] ?? "").trim(),
-        player1Name: String(row["player1Name"] ?? row["Player 1 Name"] ?? row["Player1Name"] ?? "").trim(),
-        player1FplId: String(row["player1FplId"] ?? row["Player 1 FPL ID"] ?? row["Player1FplId"] ?? "").trim(),
-        player2Name: String(row["player2Name"] ?? row["Player 2 Name"] ?? row["Player2Name"] ?? "").trim(),
-        player2FplId: String(row["player2FplId"] ?? row["Player 2 FPL ID"] ?? row["Player2FplId"] ?? "").trim(),
+        teamLoginId: String(row["Team ID"] ?? row["teamLoginId"] ?? row["Team Login ID"] ?? row["TeamLoginId"] ?? "").trim(),
+        teamName: String(row["Team Name"] ?? row["teamName"] ?? row["TeamName"] ?? "").trim(),
+        abbreviation: String(row["Abbreviation"] ?? row["abbreviation"] ?? row["Abbr"] ?? "").trim(),
+        password: String(row["Password"] ?? row["password"] ?? "").trim(),
+        player1Name: String(row["Player1 Name"] ?? row["Player 1 Name"] ?? row["player1Name"] ?? row["Player1Name"] ?? "").trim(),
+        player1FplId: String(row["Player1 FPL ID"] ?? row["Player 1 FPL ID"] ?? row["player1FplId"] ?? row["Player1FplId"] ?? "").trim(),
+        player2Name: String(row["Player2 Name"] ?? row["Player 2 Name"] ?? row["player2Name"] ?? row["Player2Name"] ?? "").trim(),
+        player2FplId: String(row["Player2 FPL ID"] ?? row["Player 2 FPL ID"] ?? row["player2FplId"] ?? row["Player2FplId"] ?? "").trim(),
         group: (() => {
-          const raw = String(row["group"] ?? row["Group"] ?? "").trim().toUpperCase();
+          const raw = String(row["Group"] ?? row["group"] ?? "").trim().toUpperCase();
           return raw === "A" || raw === "B" ? raw : null;
         })(),
       }));
@@ -1352,8 +1352,11 @@ export default function AdminDashboard() {
       const data = await response.json();
 
       if (!response.ok) {
-        const detail = Array.isArray(data.details) ? `\n${data.details.slice(0, 10).join("\n")}` : "";
-        setMessage({ type: "error", text: `${data.error || "Failed to upload teams"}${detail}` });
+        const header = data.error || "Failed to upload teams";
+        const detail = Array.isArray(data.details) && data.details.length > 0
+          ? `\n\n${data.details.join("\n")}`
+          : "";
+        setMessage({ type: "error", text: `${header}${detail}` });
       } else {
         setMessage({ type: "success", text: data.message || `Uploaded ${data.created} teams` });
         setTeamsData([]);
