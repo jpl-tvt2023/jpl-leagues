@@ -53,8 +53,8 @@ function FixtureCard({
     <div
       className={`rounded-xl border p-4 backdrop-blur transition ${
         isLive ? "border-green-500/30 bg-green-500/5" : "border-white/10 bg-white/5"
-      } ${hasPlayerData ? "cursor-pointer" : ""}`}
-      onClick={() => hasPlayerData && setExpanded(!expanded)}
+      } cursor-pointer`}
+      onClick={() => setExpanded(!expanded)}
     >
       <div className="flex justify-end mb-2">
         {isResult && (
@@ -100,17 +100,21 @@ function FixtureCard({
         </div>
       </div>
 
-      {hasPlayerData && (
-        <div className="mt-2">
-          <button
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-            className="w-full text-center text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
-          >
-            {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
-          </button>
-          {expanded && <PlayerBreakdown fixture={fixture} liveData={liveData} />}
-        </div>
-      )}
+      <div className="mt-2">
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          className="w-full text-center text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
+        >
+          {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
+        </button>
+        {expanded && (
+          hasPlayerData
+            ? <PlayerBreakdown fixture={fixture} liveData={liveData} />
+            : <div className="mt-2 p-3 rounded-lg bg-white/5 border border-white/10 text-center text-xs text-gray-400">
+                Player breakdown not yet available — FPL data will appear once the gameweek begins.
+              </div>
+        )}
+      </div>
     </div>
   );
 }

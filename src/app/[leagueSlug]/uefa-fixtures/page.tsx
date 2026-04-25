@@ -331,8 +331,8 @@ export default function UEFAFixturesPage() {
                                 : hasResult
                                 ? "border-white/10 bg-white/5"
                                 : "border-blue-500/15 bg-blue-950/20"
-                            } ${hasPlayerData ? "cursor-pointer" : ""}`}
-                            onClick={() => hasPlayerData && toggleExpand(fixture.id)}
+                            } ${isGhostFixture ? "" : "cursor-pointer"}`}
+                            onClick={() => !isGhostFixture && toggleExpand(fixture.id)}
                           >
                             <div className="flex items-center gap-3">
                               {/* Home team */}
@@ -368,7 +368,7 @@ export default function UEFAFixturesPage() {
                             </div>
 
                             {/* Player breakdown toggle */}
-                            {hasPlayerData && (
+                            {!isGhostFixture && (
                               <div className="mt-2">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); toggleExpand(fixture.id); }}
@@ -376,7 +376,13 @@ export default function UEFAFixturesPage() {
                                 >
                                   {isExpanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
                                 </button>
-                                {isExpanded && <PlayerBreakdown fixture={fixture} liveData={live} />}
+                                {isExpanded && (
+                                  hasPlayerData
+                                    ? <PlayerBreakdown fixture={fixture} liveData={live} />
+                                    : <div className="mt-2 p-3 rounded-lg bg-white/5 border border-white/10 text-center text-xs text-gray-400">
+                                        Player breakdown not yet available — FPL data will appear once the gameweek begins.
+                                      </div>
+                                )}
                               </div>
                             )}
                           </div>

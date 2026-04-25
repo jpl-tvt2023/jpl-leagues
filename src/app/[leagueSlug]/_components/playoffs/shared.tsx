@@ -171,6 +171,8 @@ export function MatchCard({
   const showLive = showLiveLeg1 || showLiveLeg2;
 
   const hasPlayerData = (liveScoreLeg1?.homePlayers?.length ?? 0) > 0 || (liveScoreLeg2?.homePlayers?.length ?? 0) > 0;
+  const bothPlaceholder = isPlaceholder(tie.home) && isPlaceholder(tie.away);
+  const expandable = !bothPlaceholder;
 
   const teamLabel = (side: TeamSide | null) => {
     if (!side) return "TBD";
@@ -202,8 +204,8 @@ export function MatchCard({
     <div
       className={`bg-slate-800/80 border rounded-lg ${compact ? "p-2" : "p-3"} text-sm ${
         showLive ? "border-green-500/30" : "border-white/10"
-      } ${hasPlayerData ? "cursor-pointer hover:bg-slate-700/80 transition-colors" : ""}`}
-      onClick={hasPlayerData ? () => setExpanded(!expanded) : undefined}
+      } ${expandable ? "cursor-pointer hover:bg-slate-700/80 transition-colors" : ""}`}
+      onClick={expandable ? () => setExpanded(!expanded) : undefined}
     >
       <div className="flex items-center justify-between text-[10px] text-gray-500 uppercase tracking-wide mb-1">
         <span>{tie.tieId} {is2Leg ? `(GW${tie.gw1}+${tie.gw2})` : `(GW${tie.gw1})`}</span>
@@ -218,7 +220,7 @@ export function MatchCard({
               LIVE
             </span>
           )}
-          {hasPlayerData && (
+          {expandable && (
             <span className="text-gray-500 text-[10px]">{expanded ? "▲" : "▼"}</span>
           )}
         </div>
@@ -283,6 +285,12 @@ export function MatchCard({
           <span className="w-5 text-center">L1</span>
           <span className="w-5 text-center">L2</span>
           <span className="w-6 text-center pl-1">Agg</span>
+        </div>
+      )}
+
+      {expanded && expandable && !hasPlayerData && (
+        <div className="mt-2 pt-2 border-t border-white/10 text-center text-[11px] text-gray-400" onClick={(e) => e.stopPropagation()}>
+          Player breakdown not yet available — FPL data will appear once the gameweek begins.
         </div>
       )}
 

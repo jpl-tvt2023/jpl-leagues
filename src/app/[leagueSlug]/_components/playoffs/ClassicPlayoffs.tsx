@@ -69,7 +69,7 @@ export function ClassicPlayoffs() {
           {data.mode === "tentative" && (
             <div className="inline-flex items-center gap-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-4 py-2">
               <span className="text-yellow-400 text-sm font-semibold">&#9888; TENTATIVE</span>
-              <span className="text-yellow-200/80 text-sm">Projected from current standings. Fixtures lock after GW30.</span>
+              <span className="text-yellow-200/80 text-sm">Projected from current standings. Fixtures lock after GW{league.playoffStartGw - 1}.</span>
             </div>
           )}
           {data.mode === "projected" && (
@@ -144,10 +144,20 @@ export function ClassicPlayoffs() {
         {(activeTab === "tvt" || data.teamSize === 8) && (
           <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
             {data.teamSize === 8 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
-                <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="3rd Place" ties={data.tvt.thirdPlace ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Final" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+              <div className="space-y-8 min-w-[320px]">
+                <div>
+                  <h2 className="text-xs font-bold text-yellow-400 uppercase tracking-wider mb-3">GW36 — Semi-Finals</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                  </div>
+                </div>
+                <div>
+                  <h2 className="text-xs font-bold text-yellow-400 uppercase tracking-wider mb-3">GW37–38 — Final &amp; 3rd Place</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <RoundColumn title="Final" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                    <RoundColumn title="3rd Place" ties={data.tvt.thirdPlace ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                  </div>
+                </div>
               </div>
             ) : data.teamSize === 16 ? (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[600px] min-h-[500px]">

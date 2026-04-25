@@ -205,9 +205,11 @@ export default function AdminDashboard() {
   const [fixturesData, setFixturesData] = useState<Record<string, string>[]>([]);
   const [captainsData, setCaptainsData] = useState<Record<string, string>[]>([]);
   const [chipsData, setChipsData] = useState<Record<string, string>[]>([]);
+  const [teamsData, setTeamsData] = useState<Record<string, string>[]>([]);
   const [fixturesFileName, setFixturesFileName] = useState("");
   const [captainsFileName, setCaptainsFileName] = useState("");
   const [chipsFileName, setChipsFileName] = useState("");
+  const [teamsFileName, setTeamsFileName] = useState("");
   const [bulkUploadResult, setBulkUploadResult] = useState<BulkUploadResult | null>(null);
   const [bulkUploading, setBulkUploading] = useState(false);
 
@@ -1312,7 +1314,60 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: "fixtures" | "captains" | "chips") => {
+  const handleBulkUploadTeams = async () => {
+    if (teamsData.length === 0) {
+      setMessage({ type: "error", text: "Please upload an Excel file with teams data" });
+      return;
+    }
+    const confirmed = window.confirm(
+      `WARNING: This will permanently delete ALL existing teams in this league (and all their players, fixtures, results, chip plays, and captain assignments) and replace them with ${teamsData.length} team(s) from the uploaded file. This cannot be undone. Continue?`
+    );
+    if (!confirmed) return;
+
+    setBulkUploading(true);
+    setBulkUploadResult(null);
+    setMessage(null);
+
+    try {
+      const rows = teamsData.map(row => ({
+        teamLoginId: String(row["teamLoginId"] ?? row["Team Login ID"] ?? row["TeamLoginId"] ?? "").trim(),
+        teamName: String(row["teamName"] ?? row["Team Name"] ?? row["TeamName"] ?? "").trim(),
+        abbreviation: String(row["abbreviation"] ?? row["Abbreviation"] ?? row["Abbr"] ?? "").trim(),
+        password: String(row["password"] ?? row["Password"] ?? "").trim(),
+        player1Name: String(row["player1Name"] ?? row["Player 1 Name"] ?? row["Player1Name"] ?? "").trim(),
+        player1FplId: String(row["player1FplId"] ?? row["Player 1 FPL ID"] ?? row["Player1FplId"] ?? "").trim(),
+        player2Name: String(row["player2Name"] ?? row["Player 2 Name"] ?? row["Player2Name"] ?? "").trim(),
+        player2FplId: String(row["player2FplId"] ?? row["Player 2 FPL ID"] ?? row["Player2FplId"] ?? "").trim(),
+        group: (() => {
+          const raw = String(row["group"] ?? row["Group"] ?? "").trim().toUpperCase();
+          return raw === "A" || raw === "B" ? raw : null;
+        })(),
+      }));
+
+      const response = await fetch(`/api/admin/${leagueId}/bulk-upload-teams`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teams: rows }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        const detail = Array.isArray(data.details) ? `\n${data.details.slice(0, 10).join("\n")}` : "";
+        setMessage({ type: "error", text: `${data.error || "Failed to upload teams"}${detail}` });
+      } else {
+        setMessage({ type: "success", text: data.message || `Uploaded ${data.created} teams` });
+        setTeamsData([]);
+        setTeamsFileName("");
+        await fetchTeams();
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error. Please try again." });
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: "fixtures" | "captains" | "chips" | "teams") => {
     const file = e.target.files?.[0];
     if (!file) return;
     
@@ -1340,6 +1395,9 @@ export default function AdminDashboard() {
         } else if (type === "chips") {
           setChipsData(jsonData);
           setChipsFileName(file.name);
+        } else if (type === "teams") {
+          setTeamsData(jsonData);
+          setTeamsFileName(file.name);
         }
       } catch {
         setMessage({ type: "error", text: "Failed to parse Excel file. Please check the format." });
@@ -2636,6 +2694,50 @@ export default function AdminDashboard() {
             </div>
 
             <div className="grid gap-8">
+              {/* Teams Upload — full-details, recovery / dev-test only. Hidden for auction leagues. */}
+              {leagueConfig?.format !== "auction" && (
+                <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-6 backdrop-blur">
+                  <div className="flex items-start justify-between gap-4 mb-2">
+                    <h3 className="text-xl font-bold text-white">Upload Teams (Full Details)</h3>
+                    <span className="text-[10px] uppercase tracking-wide text-red-400 bg-red-500/10 border border-red-500/30 rounded px-2 py-0.5 shrink-0">
+                      Recovery / Dev Only
+                    </span>
+                  </div>
+                  <p className="text-red-300 text-sm mb-2">
+                    ⚠ Destructive: replaces ALL existing teams in this league (and cascades to players, fixtures, results, chip plays, captain assignments).
+                  </p>
+                  <p className="text-gray-400 text-sm mb-4">
+                    Excel columns: <code className="text-gray-300">teamLoginId, teamName, abbreviation, password, player1Name, player1FplId, player2Name, player2FplId, group</code> (group is optional: A, B, or blank).
+                  </p>
+
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => handleFileUpload(e, "teams")}
+                      className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-red-500/20 file:text-red-300 hover:file:bg-red-500/30"
+                    />
+                  </div>
+
+                  {teamsFileName && (
+                    <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                      <p className="text-green-400 text-sm">
+                        ✓ Loaded: {teamsFileName} ({teamsData.length} rows)
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleBulkUploadTeams}
+                    disabled={bulkUploading || teamsData.length === 0}
+                    className="w-full rounded-lg bg-gradient-to-r from-red-500 to-red-700 px-6 py-3 font-semibold text-white hover:from-red-400 hover:to-red-600 transition disabled:opacity-50"
+                  >
+                    {bulkUploading ? "Uploading..." : "Replace All Teams"}
+                  </button>
+                </div>
+              )}
+
               {/* Fixtures Upload */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                 <h3 className="text-xl font-bold text-white mb-4">Upload Fixtures</h3>

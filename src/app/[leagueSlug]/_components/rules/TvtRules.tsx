@@ -18,6 +18,7 @@ export function TvtRules({ config }: { config: LeagueConfig }) {
 
 function Tvt32({ config }: { config: LeagueConfig }) {
   const chipSets = getChipSetLabel(config.teamSize, config.leagueStageEnd);
+  const captaincyLimit = Math.ceil(config.leagueStageEnd / 2);
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
@@ -28,12 +29,6 @@ function Tvt32({ config }: { config: LeagueConfig }) {
           </RuleItem>
           <RuleItem>
             <strong>Squad:</strong> 2 FPL managers per team. Teams play every other team in their group twice (home &amp; away) — 30 matches in the League Stage.
-          </RuleItem>
-          <RuleItem>
-            <strong>Naming:</strong> Team name must follow <code className="bg-white/10 px-2 py-0.5 rounded text-xs">Abbreviation — Player Name</code> (e.g., DM — Rahul).
-          </RuleItem>
-          <RuleItem>
-            <strong>Penalty:</strong> Incorrect naming forces the lowest-scoring partner as captain that GW.
           </RuleItem>
           <RuleItem>
             <strong>FPL League:</strong> Both players must join the official admin FPL league before the first deadline.
@@ -47,7 +42,7 @@ function Tvt32({ config }: { config: LeagueConfig }) {
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Negative hits reduce the score directly.</RuleItem>
           <RuleItem><strong>Captain:</strong> One player is nominated as captain per GW. Their net score (FPL score minus hits) is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captaincy Limit (League Stage):</strong> Each player has 15 captain chips. Once used up, they cannot be captain again until the Play-offs.</RuleItem>
+          <RuleItem><strong>Captaincy Limit (League Stage):</strong> Each player has {captaincyLimit} captain chips. Once used up, they cannot be captain again until the Play-offs.</RuleItem>
         </ul>
       </section>
 
@@ -110,6 +105,7 @@ function Tvt32({ config }: { config: LeagueConfig }) {
 
 function Tvt16({ config }: { config: LeagueConfig }) {
   const chipSets = getChipSetLabel(config.teamSize, config.leagueStageEnd);
+  const captaincyLimit = Math.ceil(config.leagueStageEnd / 2);
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
@@ -122,9 +118,6 @@ function Tvt16({ config }: { config: LeagueConfig }) {
             <strong>Squad:</strong> 2 FPL managers per team. Each team plays every other team twice — 30 matches in the League Stage.
           </RuleItem>
           <RuleItem>
-            <strong>Naming:</strong> Team name must follow <code className="bg-white/10 px-2 py-0.5 rounded text-xs">Abbreviation — Player Name</code>.
-          </RuleItem>
-          <RuleItem>
             <strong>FPL League:</strong> Both players must join the official admin FPL league before the first deadline.
           </RuleItem>
         </ul>
@@ -135,7 +128,7 @@ function Tvt16({ config }: { config: LeagueConfig }) {
         <ul className="space-y-4 text-gray-300">
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captaincy Limit (League Stage):</strong> 15 captain chips per player. Exhausted players cannot captain again until the Play-offs.</RuleItem>
+          <RuleItem><strong>Captaincy Limit (League Stage):</strong> {captaincyLimit} captain chips per player. Exhausted players cannot captain again until the Play-offs.</RuleItem>
         </ul>
       </section>
 
@@ -196,6 +189,7 @@ function Tvt16({ config }: { config: LeagueConfig }) {
 
 function Tvt8({ config }: { config: LeagueConfig }) {
   const chipSets = getChipSetLabel(config.teamSize, config.leagueStageEnd);
+  const captaincyLimit = Math.ceil(config.leagueStageEnd / 2);
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
@@ -208,9 +202,6 @@ function Tvt8({ config }: { config: LeagueConfig }) {
             <strong>Squad:</strong> 2 FPL managers per team. A 5× round-robin is played — every team faces every other team 5 times, for 35 matches across the League Stage.
           </RuleItem>
           <RuleItem>
-            <strong>Naming:</strong> Team name must follow <code className="bg-white/10 px-2 py-0.5 rounded text-xs">Abbreviation — Player Name</code>.
-          </RuleItem>
-          <RuleItem>
             <strong>FPL League:</strong> Both players must join the official admin FPL league before the first deadline.
           </RuleItem>
         </ul>
@@ -221,7 +212,7 @@ function Tvt8({ config }: { config: LeagueConfig }) {
         <ul className="space-y-4 text-gray-300">
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is <strong>doubled</strong>.</RuleItem>
-          <RuleItem><strong>Captaincy Limit (League Stage):</strong> 15 captain chips per player. Once exhausted, that player cannot captain again until Play-offs.</RuleItem>
+          <RuleItem><strong>Captaincy Limit (League Stage):</strong> {captaincyLimit} captain chips per player. Once exhausted, that player cannot captain again until Play-offs.</RuleItem>
         </ul>
       </section>
 
@@ -275,7 +266,7 @@ function Tvt8({ config }: { config: LeagueConfig }) {
         </div>
       </section>
 
-      <ChipsSection enabledChips={config.enabledChips} chipSets={chipSets} note="No chips can be played during the playoff phase (GW36–38). Challenge Chip is not available in the 8-team format." />
+      <ChipsSection enabledChips={config.enabledChips} chipSets={chipSets} note="No chips can be played during the playoff phase (GW36–38)." />
       <HitsAndBonusSection />
       <TiebreakerSection />
     </div>
