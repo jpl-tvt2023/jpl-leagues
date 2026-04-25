@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "name, email, and password are required" }, { status: 400 });
   }
 
+  const normalizedEmail = email.trim().toLowerCase();
   const hashedPassword = await bcrypt.hash(password, 12);
   const id = generateId();
 
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
     await db.insert(users).values({
       id,
       name,
-      email,
+      email: normalizedEmail,
       password: hashedPassword,
       role: "admin",
       mustChangePassword: true,
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
       success: true,
       id,
       name,
-      email,
+      email: normalizedEmail,
       role: "admin",
       mustChangePassword: true,
       assignedLeagueIds: [],
