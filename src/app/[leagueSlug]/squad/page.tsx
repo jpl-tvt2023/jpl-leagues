@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { useEnforceFormat } from "@/lib/league-context";
 
 interface SquadPlayer {
   ownershipId: string;
@@ -82,6 +83,7 @@ function formatCurrency(amount: number): string {
 }
 
 export default function SquadPage() {
+  useEnforceFormat(["auction"]);
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;

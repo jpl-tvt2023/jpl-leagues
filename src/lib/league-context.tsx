@@ -1,6 +1,9 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
+import { notFound } from "next/navigation";
+
+export type LeagueFormat = "tvt" | "triple-crown" | "auction";
 
 export interface LeagueInfo {
   id: string;
@@ -48,4 +51,15 @@ export function useLeague(): LeagueContextValue {
     throw new Error("useLeague must be used within a LeagueProvider (under /[leagueSlug]/*)");
   }
   return ctx;
+}
+
+// Guard for pages that only make sense for specific league formats. Renders
+// the 404 page if the current league's format isn't in the allowed list.
+// Call at the top of a page component, before any other hooks that depend
+// on the format being valid.
+export function useEnforceFormat(allowed: readonly LeagueFormat[]): void {
+  const { league } = useLeague();
+  if (!allowed.includes(league.format as LeagueFormat)) {
+    notFound();
+  }
 }

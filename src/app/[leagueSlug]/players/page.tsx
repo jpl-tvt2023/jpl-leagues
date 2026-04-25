@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { useEnforceFormat } from "@/lib/league-context";
 
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 const POSITION_COLORS: Record<number, string> = {
@@ -83,6 +84,7 @@ function formatPurchasePrice(value: number): string {
 }
 
 export default function PlayersPage() {
+  useEnforceFormat(["auction"]);
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
