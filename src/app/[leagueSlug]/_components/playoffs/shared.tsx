@@ -11,8 +11,8 @@ export interface LiveFixtureScore {
   awayTeamAbbr: string;
   homeScore: number;
   awayScore: number;
-  homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
-  awayPlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
+  homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
+  awayPlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
 }
 
 export interface TeamSide {
@@ -96,7 +96,7 @@ function PlayerBreakdown({
   gameweek,
 }: {
   label: string;
-  players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
+  players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
   gameweek: number;
 }) {
   if (players.length === 0) return null;
@@ -114,13 +114,21 @@ function PlayerBreakdown({
             >
               {p.name}
             </a>
-            {p.isCaptain && (
+            {p.isCaptain && p.isTempCaptain && (
+              <span
+                className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400"
+                title="Auto-assigned: lowest current scorer. Locks at GW close unless admin overrides."
+              >
+                TEMP CAP
+              </span>
+            )}
+            {p.isCaptain && !p.isTempCaptain && (
               <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400">C</span>
             )}
           </div>
           <div className="text-right">
             {p.isCaptain ? (
-              <span className="text-yellow-400 font-semibold">
+              <span className={p.isTempCaptain ? "text-amber-400 font-semibold" : "text-yellow-400 font-semibold"}>
                 {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} × 2 = {p.finalScore}
               </span>
             ) : (
