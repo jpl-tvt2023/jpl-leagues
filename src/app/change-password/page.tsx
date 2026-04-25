@@ -48,7 +48,7 @@ export default function ChangePasswordPage() {
 
       setMessage({ type: "success", text: "Password changed successfully! Redirecting..." });
       setTimeout(() => {
-        window.location.href = data.redirectTo || "/standings";
+        window.location.href = data.redirectTo || "/";
       }, 2000);
     } catch {
       setMessage({ type: "error", text: "Network error. Please try again." });

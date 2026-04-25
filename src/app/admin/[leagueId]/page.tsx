@@ -1859,19 +1859,19 @@ export default function AdminDashboard() {
             </>
           ) : isAuctionFormat ? (
             <>
-              <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+              <Link href={`/${leagueId}/standings`} className="text-gray-300 hover:text-white transition">
                 Standings
               </Link>
             </>
           ) : (
             <>
-              <Link href={`/standings?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+              <Link href={`/${leagueId}/standings`} className="text-gray-300 hover:text-white transition">
                 Standings
               </Link>
-              <Link href={`/fixtures?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+              <Link href={`/${leagueId}/fixtures`} className="text-gray-300 hover:text-white transition">
                 Fixtures
               </Link>
-              <Link href={`/playoffs?adminLeague=${leagueId}`} className="text-gray-300 hover:text-white transition">
+              <Link href={`/${leagueId}/playoffs`} className="text-gray-300 hover:text-white transition">
                 Playoffs
               </Link>
             </>
