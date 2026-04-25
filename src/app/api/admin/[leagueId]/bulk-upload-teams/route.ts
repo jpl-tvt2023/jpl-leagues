@@ -62,30 +62,60 @@ export async function POST(request: NextRequest) {
     const seenAbbrs = new Set<string>();
     const seenNames = new Set<string>();
 
+    const REQUIRED_FIELDS: (keyof TeamRow)[] = [
+      "teamLoginId", "teamName", "abbreviation", "password",
+      "player1Name", "player1FplId", "player2Name", "player2FplId",
+    ];
+    const FIELD_LABELS: Record<string, string> = {
+      teamLoginId: "Team ID",
+      teamName: "Team Name",
+      abbreviation: "Abbreviation",
+      password: "Password",
+      player1Name: "Player1 Name",
+      player1FplId: "Player1 FPL ID",
+      player2Name: "Player2 Name",
+      player2FplId: "Player2 FPL ID",
+    };
+
     rows.forEach((r, i) => {
       const rowNum = i + 1;
-      if (!r.teamLoginId || !r.teamName || !r.abbreviation || !r.password ||
-          !r.player1Name || !r.player1FplId || !r.player2Name || !r.player2FplId) {
-        errors.push(`Row ${rowNum}: missing required fields`);
+      const missing = REQUIRED_FIELDS.filter(f => {
+        const v = r[f];
+        return v === undefined || v === null || String(v).trim() === "";
+      });
+      if (missing.length > 0) {
+        errors.push(`Row ${rowNum}: missing ${missing.map(f => FIELD_LABELS[f]).join(", ")}`);
         return;
       }
       if (!LOGIN_ID_RE.test(r.teamLoginId)) {
-        errors.push(`Row ${rowNum}: teamLoginId "${r.teamLoginId}" must be 3–30 chars (alphanumeric, _, -)`);
+        errors.push(`Row ${rowNum}: Team ID "${r.teamLoginId}" must be 3–30 chars (letters, digits, _ or -)`);
+      }
+      if (!/^[A-Za-z0-9]{1,5}$/.test(r.abbreviation)) {
+        errors.push(`Row ${rowNum}: Abbreviation "${r.abbreviation}" must be 1–5 alphanumeric chars`);
+      }
+      if (String(r.password).length < 4) {
+        errors.push(`Row ${rowNum}: Password must be at least 4 characters`);
+      }
+      if (!/^\d+$/.test(String(r.player1FplId).trim())) {
+        errors.push(`Row ${rowNum}: Player1 FPL ID "${r.player1FplId}" must be numeric`);
+      }
+      if (!/^\d+$/.test(String(r.player2FplId).trim())) {
+        errors.push(`Row ${rowNum}: Player2 FPL ID "${r.player2FplId}" must be numeric`);
       }
       const loginKey = r.teamLoginId.toLowerCase();
-      if (seenLoginIds.has(loginKey)) errors.push(`Row ${rowNum}: duplicate teamLoginId "${r.teamLoginId}" in upload`);
+      if (seenLoginIds.has(loginKey)) errors.push(`Row ${rowNum}: duplicate Team ID "${r.teamLoginId}" appears earlier in the file`);
       seenLoginIds.add(loginKey);
 
       const abbrKey = r.abbreviation.toUpperCase();
-      if (seenAbbrs.has(abbrKey)) errors.push(`Row ${rowNum}: duplicate abbreviation "${abbrKey}" in upload`);
+      if (seenAbbrs.has(abbrKey)) errors.push(`Row ${rowNum}: duplicate Abbreviation "${abbrKey}" appears earlier in the file`);
       seenAbbrs.add(abbrKey);
 
       const nameKey = r.teamName.replace(/\s+/g, "").toLowerCase();
-      if (seenNames.has(nameKey)) errors.push(`Row ${rowNum}: duplicate teamName "${r.teamName}" in upload`);
+      if (seenNames.has(nameKey)) errors.push(`Row ${rowNum}: duplicate Team Name "${r.teamName}" appears earlier in the file`);
       seenNames.add(nameKey);
 
       if (r.group && r.group !== "A" && r.group !== "B") {
-        errors.push(`Row ${rowNum}: group must be "A", "B", or empty`);
+        errors.push(`Row ${rowNum}: Group "${r.group}" must be "A", "B", or empty`);
       }
     });
 
