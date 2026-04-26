@@ -78,25 +78,25 @@ function FixtureCard({
         )}
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="flex-1 text-left text-white">
-          <div className="font-semibold text-sm">{fixture.homeTeam.name}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex-1 min-w-0 text-left text-white">
+          <div className="font-semibold text-xs sm:text-sm truncate">{fixture.homeTeam.name}</div>
         </div>
 
-        <div className="flex items-center gap-2 px-3">
+        <div className="flex items-center gap-1.5 sm:gap-2 px-1 sm:px-3 shrink-0">
           {hasScore ? (
             <>
-              <span className={`text-xl font-bold ${homeScoreClass}`}>{homeScore}</span>
+              <span className={`text-lg sm:text-xl font-bold ${homeScoreClass}`}>{homeScore}</span>
               <span className="text-gray-500">-</span>
-              <span className={`text-xl font-bold ${awayScoreClass}`}>{awayScore}</span>
+              <span className={`text-lg sm:text-xl font-bold ${awayScoreClass}`}>{awayScore}</span>
             </>
           ) : (
-            <span className="text-gray-500 font-medium text-sm">VS</span>
+            <span className="text-gray-500 font-medium text-xs sm:text-sm">VS</span>
           )}
         </div>
 
-        <div className="flex-1 text-right text-white">
-          <div className="font-semibold text-sm">{fixture.awayTeam.name}</div>
+        <div className="flex-1 min-w-0 text-right text-white">
+          <div className="font-semibold text-xs sm:text-sm truncate">{fixture.awayTeam.name}</div>
         </div>
       </div>
 
@@ -271,8 +271,8 @@ export default function LeagueFixturesPage() {
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-4">Fixtures &amp; Results</h1>
-          <p className="text-gray-400">View upcoming matches and past results</p>
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2 sm:mb-4">Fixtures &amp; Results</h1>
+          <p className="text-sm sm:text-base text-gray-400">View upcoming matches and past results</p>
         </div>
 
         {isLoading ? (
@@ -281,15 +281,15 @@ export default function LeagueFixturesPage() {
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : availableGWs.length === 0 ? (
           <div className="text-center py-12">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-              <h2 className="text-xl font-semibold text-white mb-2">No Fixtures Yet</h2>
-              <p className="text-gray-400">Fixtures will appear here once the league admin generates them.</p>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
+              <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">No Fixtures Yet</h2>
+              <p className="text-sm sm:text-base text-gray-400">Fixtures will appear here once the league admin generates them.</p>
             </div>
           </div>
         ) : (
           <>
             {/* Gameweek Filter */}
-            <div className="flex items-center justify-center gap-4 mb-8">
+            <div className="flex items-center justify-center gap-2 sm:gap-4 mb-6 sm:mb-8">
               <button
                 onClick={() => setSelectedGW(prev => {
                   const idx = availableGWs.indexOf(prev!);
@@ -306,7 +306,7 @@ export default function LeagueFixturesPage() {
               <select
                 value={selectedGW || ""}
                 onChange={(e) => setSelectedGW(Number(e.target.value))}
-                className={`border rounded-lg px-4 py-2 font-semibold min-w-[180px] text-center appearance-none cursor-pointer transition ${isTripleCrown ? "bg-[#00ff85]/10 border-[#00ff85]/30 text-[#00ff85] hover:bg-[#00ff85]/20" : "bg-white/10 border-white/20 text-white hover:bg-white/20"}`}
+                className={`border rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base font-semibold min-w-[140px] sm:min-w-[180px] text-center appearance-none cursor-pointer transition ${isTripleCrown ? "bg-[#00ff85]/10 border-[#00ff85]/30 text-[#00ff85] hover:bg-[#00ff85]/20" : "bg-white/10 border-white/20 text-white hover:bg-white/20"}`}
               >
                 {availableGWs.map((gw) => (
                   <option key={gw} value={gw} className="bg-slate-800 text-white">
@@ -376,9 +376,9 @@ export default function LeagueFixturesPage() {
 
             {hasGroupB ? (
               /* Two-Column Layout: Group A | Group B */
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                  <h2 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4 flex items-center gap-2">
                     <span className="h-3 w-3 rounded-full bg-blue-500"></span>
                     Group A
                   </h2>

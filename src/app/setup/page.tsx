@@ -245,17 +245,17 @@ export default function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 px-4 py-8 sm:px-6 lg:px-12">
-      <div className="mx-auto max-w-md">
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 px-4 py-6 sm:py-8 sm:px-6 lg:px-12">
+      <div className="mx-auto max-w-md w-full">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Complete Your Profile</h1>
-          <p className="text-gray-400 text-sm">{isAuction ? "Set up your manager profile" : `Step ${currentStep} of ${totalSteps}`}</p>
+        <div className="text-center mb-6 sm:mb-8">
+          <h1 className="text-xl sm:text-3xl font-bold text-white mb-2">Complete Your Profile</h1>
+          <p className="text-gray-400 text-xs sm:text-sm">{isAuction ? "Set up your manager profile" : `Step ${currentStep} of ${totalSteps}`}</p>
         </div>
 
         {/* Progress indicator */}
         {!isAuction && (
-        <div className="flex gap-2 mb-12">
+        <div className="flex gap-2 mb-8 sm:mb-12">
           {[1, 2, 3].map((step) => (
             <div
               key={step}
@@ -275,7 +275,7 @@ export default function SetupPage() {
         )}
 
         {/* Form */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
           {currentStep === 1 && (
             <div className="space-y-6">
               <div>
@@ -391,7 +391,7 @@ export default function SetupPage() {
         </div>
 
         {/* Navigation buttons */}
-        <div className="mt-8 flex gap-4">
+        <div className="mt-6 sm:mt-8 flex gap-3 sm:gap-4">
           {!isAuction && (
           <button
             onClick={handleBack}

@@ -70,15 +70,15 @@ export function LeagueNav({
   }, [isAuction, leagueSlug]);
 
   return (
-    <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
-      <Link href="/" className="flex items-center gap-2">
-        <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
+    <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
+      <Link href="/" className="flex items-center gap-2 shrink-0">
+        <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-xs sm:text-base font-bold text-slate-900 shrink-0">
           JPL
         </div>
-        <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
+        <span className="text-base sm:text-xl font-bold text-white hidden sm:inline truncate max-w-[180px] lg:max-w-none">{leagueName || "League"}</span>
       </Link>
 
-      <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
+      <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm lg:text-base overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-white/10 max-w-full -mx-1 px-1 [&>*]:shrink-0">
         {/* Dashboard / All Leagues */}
         <NavLink href={isLoggedIn ? dashboardHref : "/"} active={currentPage === "dashboard"}>
           {isLoggedIn ? "Dashboard" : "All Leagues"}
@@ -126,14 +126,14 @@ export function LeagueNav({
         {isLoggedIn ? (
           <button
             onClick={onSignOut}
-            className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition"
+            className="rounded-full bg-white/10 px-4 sm:px-6 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white hover:bg-white/20 transition"
           >
             Sign Out
           </button>
         ) : (
           <Link
             href="/signin"
-            className="rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-2 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
+            className="rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-4 sm:px-6 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
           >
             Sign In
           </Link>

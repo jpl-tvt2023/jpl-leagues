@@ -69,16 +69,16 @@ export default function ChangePasswordPage() {
         </Link>
       </nav>
 
-      <div className="mx-auto max-w-md px-6 py-24">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-white mb-4">Change Password</h1>
-          <p className="text-gray-400">
+      <div className="mx-auto max-w-md px-4 sm:px-6 py-10 sm:py-24">
+        <div className="text-center mb-8 sm:mb-12">
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2 sm:mb-4">Change Password</h1>
+          <p className="text-sm sm:text-base text-gray-400">
             Please set a new password for your account.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
             {message && (
               <div
                 className={`mb-6 rounded-lg p-4 ${

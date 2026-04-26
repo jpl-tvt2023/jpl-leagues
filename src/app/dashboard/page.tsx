@@ -218,24 +218,24 @@ function DeadlineTimer({ deadline, gameweek, serverTime, label, expiredLabel }: 
   return (
     <div className="text-center">
       <div className="text-sm text-gray-400 mb-2">{label ?? `GW${gameweek} Deadline`}</div>
-      <div className="flex justify-center gap-3">
+      <div className="flex justify-center gap-2 sm:gap-3 flex-wrap">
         {timeLeft?.days !== undefined && timeLeft.days > 0 && (
-          <div className="bg-white/10 rounded-lg px-4 py-2">
-            <div className="text-2xl font-bold text-white">{timeLeft.days}</div>
-            <div className="text-xs text-gray-400">days</div>
+          <div className="bg-white/10 rounded-lg px-3 sm:px-4 py-2">
+            <div className="text-lg sm:text-2xl font-bold text-white">{timeLeft.days}</div>
+            <div className="text-[10px] sm:text-xs text-gray-400">days</div>
           </div>
         )}
-        <div className="bg-white/10 rounded-lg px-4 py-2">
-          <div className="text-2xl font-bold text-white">{timeLeft?.hours.toString().padStart(2, "0")}</div>
-          <div className="text-xs text-gray-400">hrs</div>
+        <div className="bg-white/10 rounded-lg px-3 sm:px-4 py-2">
+          <div className="text-lg sm:text-2xl font-bold text-white">{timeLeft?.hours.toString().padStart(2, "0")}</div>
+          <div className="text-[10px] sm:text-xs text-gray-400">hrs</div>
         </div>
-        <div className="bg-white/10 rounded-lg px-4 py-2">
-          <div className="text-2xl font-bold text-white">{timeLeft?.minutes.toString().padStart(2, "0")}</div>
-          <div className="text-xs text-gray-400">mins</div>
+        <div className="bg-white/10 rounded-lg px-3 sm:px-4 py-2">
+          <div className="text-lg sm:text-2xl font-bold text-white">{timeLeft?.minutes.toString().padStart(2, "0")}</div>
+          <div className="text-[10px] sm:text-xs text-gray-400">mins</div>
         </div>
-        <div className="bg-white/10 rounded-lg px-4 py-2">
-          <div className="text-2xl font-bold text-yellow-400">{timeLeft?.seconds.toString().padStart(2, "0")}</div>
-          <div className="text-xs text-gray-400">secs</div>
+        <div className="bg-white/10 rounded-lg px-3 sm:px-4 py-2">
+          <div className="text-lg sm:text-2xl font-bold text-yellow-400">{timeLeft?.seconds.toString().padStart(2, "0")}</div>
+          <div className="text-[10px] sm:text-xs text-gray-400">secs</div>
         </div>
       </div>
     </div>
@@ -455,31 +455,31 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
 
         {/* Economy Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-6">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur">
             <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Purse</div>
-            <div className="text-2xl font-bold text-green-400">{formatCurrency(data.purse)}</div>
+            <div className="text-xl sm:text-2xl font-bold text-green-400">{formatCurrency(data.purse)}</div>
             <div className="text-xs text-gray-500 mt-1">Available to bid</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur">
             <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Squad Value</div>
-            <div className="text-2xl font-bold text-white">{formatCurrency(data.squadValue)}</div>
+            <div className="text-xl sm:text-2xl font-bold text-white">{formatCurrency(data.squadValue)}</div>
             <div className="text-xs text-gray-500 mt-1">{data.squadSize}/14 players</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur">
             <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Income Earned</div>
-            <div className="text-2xl font-bold text-blue-400">{formatCurrency(data.totalIncome)}</div>
+            <div className="text-xl sm:text-2xl font-bold text-blue-400">{formatCurrency(data.totalIncome)}</div>
             <div className="text-xs text-gray-500 mt-1">From GW payouts</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur">
             <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Net P&amp;L</div>
-            <div className={`text-2xl font-bold ${netPnL >= 0 ? "text-green-400" : "text-red-400"}`}>
+            <div className={`text-xl sm:text-2xl font-bold ${netPnL >= 0 ? "text-green-400" : "text-red-400"}`}>
               {netPnL >= 0 ? "+" : ""}{formatCurrency(netPnL)}
             </div>
             <div className="text-xs text-gray-500 mt-1">Budget + Income + Refunds − Spent</div>
           </div>
-          <div className="group relative rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur cursor-default">
+          <div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur cursor-default">
             <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Lost to Releases</div>
-            <div className={`text-2xl font-bold ${data.totalForfeit > 0 ? "text-red-400" : "text-gray-500"}`}>
+            <div className={`text-xl sm:text-2xl font-bold ${data.totalForfeit > 0 ? "text-red-400" : "text-gray-500"}`}>
               {data.totalForfeit > 0 ? `-${formatCurrency(data.totalForfeit)}` : "£0"}
             </div>
             <div className="text-xs text-gray-500 mt-1">{data.releases.length > 0 ? `${data.releases.length} released` : "No releases"}</div>
@@ -509,7 +509,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           {/* Left column: Squad + GW History */}
           <div className="lg:col-span-2 space-y-6">
             {/* Squad summary */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               {data.squad.length === 0 ? (
                 <div className="text-center text-gray-400 py-8">
                   <p>No players yet.</p>
@@ -548,7 +548,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
             </div>
 
             {/* GW History */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <span className="text-yellow-400">📊</span> Gameweek History
               </h2>
@@ -589,7 +589,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <div className="space-y-6">
             {/* Deadline — only render when there's an auction (live, paused, or scheduled) */}
             {(data.auctionSession || data.nextAuction) && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                   <span className="text-yellow-400">⏱</span> Next Deadline
                 </h2>
@@ -599,10 +599,10 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
 
             {/* Last GW */}
             {data.lastGwResult && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 <h2 className="text-lg font-bold text-white mb-3">Last Gameweek</h2>
                 <div className="text-sm text-gray-400 mb-2">GW{data.lastGwResult.gameweek}</div>
-                <div className="text-3xl font-bold text-white mb-1">{data.lastGwResult.points} pts</div>
+                <div className="text-2xl sm:text-3xl font-bold text-white mb-1">{data.lastGwResult.points} pts</div>
                 <div className="text-sm text-gray-400">
                   Rank #{data.lastGwResult.rank ?? "—"} • Income: <span className="text-green-400">{formatCurrency(data.lastGwResult.income)}</span>
                 </div>
@@ -610,7 +610,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
             )}
 
             {/* Mini Standings */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <span className="text-yellow-400">🏆</span> Standings
               </h2>
@@ -1008,7 +1008,7 @@ export default function DashboardPage() {
   if (error || !data) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-red-400 text-xl">{error || "Failed to load dashboard"}</div>
+        <div className="text-red-400 text-lg sm:text-xl px-4 text-center">{error || "Failed to load dashboard"}</div>
       </div>
     );
   }
@@ -1101,7 +1101,7 @@ export default function DashboardPage() {
               /* TVT: Deadline + Upcoming Fixture side by side */
               <div className="grid md:grid-cols-2 gap-6">
                 {/* Deadline Timer */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                   <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                     <span className="text-yellow-400">⏱</span> Deadline
                   </h2>
@@ -1109,7 +1109,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Upcoming Fixture */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                   <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                     <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} PL Fixture
                   </h2>
@@ -1162,7 +1162,7 @@ export default function DashboardPage() {
 
             {/* TC: Merged Deadline + Captain card */}
             {leagueFormat === "triple-crown" && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 {data.deadline.gameweek === 0 ? (
                   <div className="text-center py-6">
                     <p className="text-gray-400 text-sm">Captain and chip submissions will be available once the admin generates fixtures.</p>
@@ -1249,7 +1249,7 @@ export default function DashboardPage() {
 
             {/* TC: Next Fixture card — full width for single, half-half for double header */}
             {leagueFormat === "triple-crown" && data.upcomingFixture && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                   <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} Fixture{DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture ? "s" : ""}
                   {DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture && (
@@ -1488,7 +1488,7 @@ export default function DashboardPage() {
 
             {/* Last GW Result with navigation */}
             {data.lastGwResult && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 <div className="flex items-center justify-between mb-4">
                   <button
                     onClick={handlePrevGw}
@@ -1676,7 +1676,7 @@ export default function DashboardPage() {
               const prevCupGw = currentCupIdx > 0 ? cupGws[currentCupIdx - 1] : null;
               const nextCupGw = currentCupIdx >= 0 && currentCupIdx < cupGws.length - 1 ? cupGws[currentCupIdx + 1] : null;
               return (
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 backdrop-blur">
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 sm:p-6 backdrop-blur">
                   {/* Header with independent nav arrows */}
                   <div className="flex items-center justify-between mb-4">
                     <button
@@ -1777,8 +1777,8 @@ export default function DashboardPage() {
             {/* Recent Form & Stats */}
             <div className="grid md:grid-cols-2 gap-6">
               {/* Recent Form */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h2 className="text-lg font-bold text-white mb-4">Recent Form</h2>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Recent Form</h2>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {data.recentForm.map((f, i) => (
                     <div key={i} className="text-center">
@@ -1803,19 +1803,19 @@ export default function DashboardPage() {
               </div>
 
               {/* Season Stats */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h2 className="text-lg font-bold text-white mb-4">Season Stats</h2>
-                <div className="grid grid-cols-3 gap-4 text-center mb-4">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Season Stats</h2>
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center mb-3 sm:mb-4">
                   <div>
-                    <div className="text-2xl font-bold text-green-400">{data.seasonStats.wins}</div>
+                    <div className="text-xl sm:text-2xl font-bold text-green-400">{data.seasonStats.wins}</div>
                     <div className="text-xs text-gray-400">Wins</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-gray-400">{data.seasonStats.draws}</div>
+                    <div className="text-xl sm:text-2xl font-bold text-gray-400">{data.seasonStats.draws}</div>
                     <div className="text-xs text-gray-400">Draws</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-red-400">{data.seasonStats.losses}</div>
+                    <div className="text-xl sm:text-2xl font-bold text-red-400">{data.seasonStats.losses}</div>
                     <div className="text-xs text-gray-400">Losses</div>
                   </div>
                 </div>
@@ -1837,8 +1837,8 @@ export default function DashboardPage() {
             </div>
 
             {/* Team Members */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-lg font-bold text-white mb-4">Team Members</h2>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Team Members</h2>
               <div className="grid md:grid-cols-2 gap-4">
                 {data.teamMembers.map((member, i) => (
                   <div key={i} className="p-4 rounded-xl bg-white/5">
@@ -1876,7 +1876,7 @@ export default function DashboardPage() {
             {leagueFormat === "triple-crown" ? (
               <>
                 {/* PL Mini Table */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-bold text-white">PL Table</h2>
                     {data.plPosition && (
@@ -1942,7 +1942,7 @@ export default function DashboardPage() {
 
                 {/* Cup Group Mini Table */}
                 {data.cupProgress && (
-                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 backdrop-blur">
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 sm:p-6 backdrop-blur">
                     <h2 className="text-lg font-bold text-white mb-1">
                       Cup Group {data.cupProgress.groupName}
                     </h2>
@@ -2007,8 +2007,8 @@ export default function DashboardPage() {
 
                 {/* TC: Upcoming Fixtures in right column */}
                 {data.upcomingFixtures.length > 0 && (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                    <h2 className="text-lg font-bold text-white mb-4">Upcoming Fixtures</h2>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                    <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
                     <div className="space-y-3">
                       {(() => {
                         const byGw = new Map<number, typeof data.upcomingFixtures>();
@@ -2051,8 +2051,8 @@ export default function DashboardPage() {
                 )}
               </>
             ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-lg font-bold text-white mb-4">Group {data.team.group} Table</h2>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Group {data.team.group} Table</h2>
               <div className="space-y-2">
                 {data.leaguePosition.miniTable.map((t) => (
                   <div
@@ -2087,7 +2087,7 @@ export default function DashboardPage() {
 
             {/* Next 5 Fixtures — grouped by GW (TVT only; TC shows these above results) */}
             {leagueFormat !== "triple-crown" && <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-lg font-bold text-white mb-4">Upcoming Fixtures</h2>
+              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
               {data.upcomingFixtures.length === 0 ? (
                 <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
               ) : (
@@ -2142,8 +2142,8 @@ export default function DashboardPage() {
             </div>}
 
             {/* Highs & Lows */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-lg font-bold text-white mb-4">Highs & Lows</h2>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Highs & Lows</h2>
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-3 rounded-lg bg-green-500/10">
                   <div className="text-sm text-gray-400">Highest Score</div>
@@ -2171,8 +2171,8 @@ export default function DashboardPage() {
             </div>
 
             {/* Recent Captains */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-lg font-bold text-white mb-4">Captain History</h2>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Captain History</h2>
               <div className="space-y-2">
                 {(showAllCaptains
                   ? data.captaincyStatus.recentCaptains

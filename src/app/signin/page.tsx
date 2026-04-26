@@ -68,16 +68,16 @@ export default function SignInPage() {
         </div>
       </nav>
 
-      <div className="mx-auto max-w-md px-6 py-24">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-white mb-4">Welcome Back</h1>
-          <p className="text-gray-400">
+      <div className="mx-auto max-w-md px-4 sm:px-6 py-10 sm:py-24">
+        <div className="text-center mb-8 sm:mb-12">
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2 sm:mb-4">Welcome Back</h1>
+          <p className="text-sm sm:text-base text-gray-400">
             Sign in with your team ID or admin email.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
             {message && (
               <div
                 className={`mb-6 rounded-lg p-4 ${
@@ -123,7 +123,7 @@ export default function SignInPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="mt-6 w-full rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="mt-6 w-full rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 text-sm sm:text-base font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Signing in..." : "Sign In"}
             </button>

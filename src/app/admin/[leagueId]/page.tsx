@@ -1993,7 +1993,7 @@ export default function AdminDashboard() {
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h1 className="text-3xl font-bold text-white">{isAuctionFormat ? "Manager Management" : "Team Management"}</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white">{isAuctionFormat ? "Manager Management" : "Team Management"}</h1>
                 <p className="text-gray-400 mt-1">{isAuctionFormat ? "Create and manage managers in the league" : "Create and manage teams in the league"}</p>
               </div>
               <button
@@ -2137,28 +2137,28 @@ export default function AdminDashboard() {
         {/* Stats */}
         <div className={`grid grid-cols-2 ${leagueConfig.groupCount === 2 ? "md:grid-cols-4" : "md:grid-cols-3"} gap-4 mb-8`}>
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-yellow-400">{teams.length}</div>
+            <div className="text-2xl sm:text-3xl font-bold text-yellow-400">{teams.length}</div>
             <div className="text-sm text-gray-400">{isAuctionFormat ? "Total Managers" : "Total Teams"}</div>
           </div>
           {leagueConfig.groupCount === 2 ? (
             <>
               <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-                <div className="text-3xl font-bold text-blue-400">{groupATeams.length}/{teamsPerGroup}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-blue-400">{groupATeams.length}/{teamsPerGroup}</div>
                 <div className="text-sm text-gray-400">Group A</div>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-                <div className="text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-purple-400">{groupBTeams.length}/{teamsPerGroup}</div>
                 <div className="text-sm text-gray-400">Group B</div>
               </div>
             </>
           ) : (
             <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-              <div className="text-3xl font-bold text-blue-400">{setupCompleteCount}/{teams.length}</div>
+              <div className="text-2xl sm:text-3xl font-bold text-blue-400">{setupCompleteCount}/{teams.length}</div>
               <div className="text-sm text-gray-400">Setup Complete</div>
             </div>
           )}
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
-            <div className="text-3xl font-bold text-green-400">{leagueConfig.groupCount === 2 ? setupCompleteCount : leagueConfig.teamSize - teams.length}</div>
+            <div className="text-2xl sm:text-3xl font-bold text-green-400">{leagueConfig.groupCount === 2 ? setupCompleteCount : leagueConfig.teamSize - teams.length}</div>
             <div className="text-sm text-gray-400">{leagueConfig.groupCount === 2 ? "Setup Complete" : "Spots Left"}</div>
           </div>
         </div>
@@ -2472,7 +2472,7 @@ export default function AdminDashboard() {
         {activeTab === "captain" && (
           <>
             <div className="mb-8">
-              <h1 className="text-3xl font-bold text-white">Captain Override</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white">Captain Override</h1>
               <p className="text-gray-400 mt-1">Override captain picks for teams in case of technical issues</p>
             </div>
 
@@ -2652,7 +2652,7 @@ export default function AdminDashboard() {
         {activeTab === "bulkUpload" && (
           <>
             <div className="mb-8">
-              <h1 className="text-3xl font-bold text-white">Bulk Upload</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white">Bulk Upload</h1>
               <p className="text-gray-400 mt-1">Upload teams and fixtures via Excel (.xlsx)</p>
             </div>
 

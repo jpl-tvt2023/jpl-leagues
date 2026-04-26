@@ -113,7 +113,7 @@ export default function TeamsPage() {
           <>
             <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <h1 className="text-3xl sm:text-4xl font-bold text-white">League Teams</h1>
+                <h1 className="text-2xl sm:text-4xl font-bold text-white">League Teams</h1>
                 <p className="text-sm text-gray-400 mt-1">
                   {teamList.length} {teamList.length === 1 ? "team" : "teams"} competing
                 </p>

@@ -198,9 +198,9 @@ export function LoadingScreen({ variant = "default", fullScreen = true }: Loadin
   const { Icon } = cfg;
 
   const spinner = (
-    <div className="flex flex-col items-center gap-5">
+    <div className="flex flex-col items-center gap-4 sm:gap-5 px-4">
       {/* Double counter-rotating rings + centered icon */}
-      <div className="relative w-20 h-20">
+      <div className="relative w-16 h-16 sm:w-20 sm:h-20">
         {/* outer ring — clockwise, 1 s */}
         <div
           className="absolute inset-0 rounded-full border-4 animate-spin"
@@ -227,7 +227,7 @@ export function LoadingScreen({ variant = "default", fullScreen = true }: Loadin
       </div>
 
       {/* label */}
-      <p className={`text-sm font-semibold tracking-wide ${cfg.textColor}`}>{cfg.label}</p>
+      <p className={`text-xs sm:text-sm font-semibold tracking-wide text-center ${cfg.textColor}`}>{cfg.label}</p>
 
       {/* staggered bouncing dots */}
       <div className="flex gap-1.5">
@@ -251,7 +251,7 @@ export function LoadingScreen({ variant = "default", fullScreen = true }: Loadin
   }
 
   return (
-    <div className="flex items-center justify-center py-28">
+    <div className="flex items-center justify-center py-16 sm:py-28">
       {spinner}
     </div>
   );

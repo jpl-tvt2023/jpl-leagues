@@ -126,17 +126,17 @@ export default function LeagueWinnersPage() {
       />
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
-        <div className="text-center mb-12">
-          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">Hall of Champions</h1>
-          <p className="text-gray-400">Season winners and finalists</p>
+        <div className="text-center mb-8 sm:mb-12">
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">Hall of Champions</h1>
+          <p className="text-sm sm:text-base text-gray-400">Season winners and finalists</p>
         </div>
 
         {!data?.concluded ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="text-center max-w-md">
               <div className="text-6xl mb-4">⏳</div>
-              <h2 className="text-2xl font-bold text-white mb-2">Tournament in Progress</h2>
-              <p className="text-gray-400">
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Tournament in Progress</h2>
+              <p className="text-sm sm:text-base text-gray-400">
                 Winners will be crowned once the championship finals are concluded.
               </p>
             </div>
@@ -146,11 +146,11 @@ export default function LeagueWinnersPage() {
             <table className="w-full min-w-[500px]">
               <thead>
                 <tr className="border-b border-white/10">
-                  <th className="px-4 py-3 text-left text-gray-400 text-sm font-semibold">Rank</th>
-                  <th className="px-4 py-3 text-left text-gray-400 text-sm font-semibold">Position</th>
-                  <th className="px-4 py-3 text-left text-gray-400 text-sm font-semibold">Team</th>
-                  <th className="px-4 py-3 text-left text-gray-400 text-sm font-semibold">Players</th>
-                  <th className="px-4 py-3 text-left text-gray-400 text-sm font-semibold">Category</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Rank</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Position</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Team</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Players</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Category</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,15 +159,15 @@ export default function LeagueWinnersPage() {
                     key={winner.position}
                     className={`border-b border-white/5 transition ${getCategoryBg(winner.category, winner.position)}`}
                   >
-                    <td className="px-4 py-4 text-center text-2xl">{getTrophyEmoji(winner.position)}</td>
-                    <td className="px-4 py-4">
+                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-center text-xl sm:text-2xl">{getTrophyEmoji(winner.position)}</td>
+                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
                       <div className="text-white font-bold">{winner.label}</div>
                       <div className="text-xs text-gray-400 mt-1"># {winner.position}</div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
                       <div className="text-white font-semibold">{winner.teamName}</div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
                       <div className="space-y-1">
                         {winner.players.map((player, idx) => (
                           <div key={idx} className="text-sm">
@@ -183,7 +183,7 @@ export default function LeagueWinnersPage() {
                         ))}
                       </div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
                       <span
                         className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
                           winner.category === "championship"

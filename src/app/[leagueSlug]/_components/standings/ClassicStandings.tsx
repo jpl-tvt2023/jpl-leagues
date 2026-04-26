@@ -81,7 +81,7 @@ export function ClassicStandings() {
           <LoadingScreen variant="standings" fullScreen={false} />
         ) : (
           <>
-            <div className="text-center mb-12">
+            <div className="text-center mb-8 sm:mb-12">
               <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">
                 {isTripleCrown ? leagueName || "League" : "League Standings"}
               </h1>
@@ -103,7 +103,7 @@ export function ClassicStandings() {
             </div>
 
             {!isTripleCrown && (
-              <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
+              <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mb-6 sm:mb-8 text-xs sm:text-sm">
                 <div className="flex items-center gap-2">
                   <span className="h-3 w-3 rounded-full bg-green-500"></span>
                   <span className="text-gray-400">Title Play-offs (1-{teamSize === 8 ? 4 : 8})</span>
@@ -125,15 +125,15 @@ export function ClassicStandings() {
               <div className="text-center text-red-400 py-12">{error}</div>
             ) : totalTeams === 0 ? (
               <div className="text-center py-12">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-                  <h2 className="text-xl font-semibold text-white mb-2">No Teams Yet</h2>
-                  <p className="text-gray-400">Standings will appear here once teams are registered and matches are played.</p>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
+                  <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">No Teams Yet</h2>
+                  <p className="text-sm sm:text-base text-gray-400">Standings will appear here once teams are registered and matches are played.</p>
                 </div>
               </div>
             ) : latestGameweek === 0 && totalTeams > 0 ? (
               <div className="text-center py-12">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-                  <h2 className="text-xl font-semibold text-white mb-2">Standings Coming Soon</h2>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
+                  <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">Standings Coming Soon</h2>
                   <p className="text-gray-400 mb-4">Standings will be updated once:</p>
                   <ul className="text-gray-400 text-sm space-y-2">
                     <li>✓ {teamSize === 32 ? "Admin assigns teams to groups" : "Teams are registered"}</li>
@@ -151,13 +151,13 @@ export function ClassicStandings() {
                 <StandingsTable teams={[...groupA, ...groupB]} group={undefined} isTripleCrown={isTripleCrown} />
               </div>
             ) : (
-              <div className={`grid gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
+              <div className={`grid gap-6 sm:gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
                 <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} isTripleCrown={isTripleCrown} />
                 {groupB.length > 0 && <StandingsTable teams={groupB} group="B" isTripleCrown={isTripleCrown} />}
               </div>
             )}
 
-            <div className="mt-8 text-center text-sm text-gray-500">
+            <div className="mt-6 sm:mt-8 text-center text-xs sm:text-sm text-gray-500 px-2">
               MP = Matches Played · W = Won · D = Drawn · L = Lost{!isTripleCrown && " · CP/BP = Chips & Bonus Points"} · Pts = League Points · Scores = Total FPL Score
             </div>
           </>

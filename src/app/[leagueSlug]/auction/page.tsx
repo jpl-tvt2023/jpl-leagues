@@ -897,7 +897,7 @@ export default function AuctionRoomPage() {
                       return (
                         <div className="text-center mb-4">
                           <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">On the Block</div>
-                          <h2 className="text-2xl font-bold text-white mb-1">{currentBid.playerName}</h2>
+                          <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 break-words">{currentBid.playerName}</h2>
                           <div className="flex items-center justify-center gap-1.5 mb-1">
                             {pos && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-white/20 text-gray-300">{pos}</span>}
                             {plTeam && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">{plTeam.short_name}</span>}
@@ -911,7 +911,7 @@ export default function AuctionRoomPage() {
                     <div className="grid grid-cols-3 gap-3 mb-4 text-center">
                       <div>
                         <div className="text-[10px] uppercase text-gray-400">Bid</div>
-                        <div className="text-xl font-mono font-bold text-[#00ff85]">{formatCurrency(currentBid.currentHighBid)}</div>
+                        <div className="text-lg sm:text-2xl font-mono font-bold text-[#00ff85]">{formatCurrency(currentBid.currentHighBid)}</div>
                       </div>
                       <div>
                         <div className="text-[10px] uppercase text-gray-400">Leader</div>
@@ -922,7 +922,7 @@ export default function AuctionRoomPage() {
                       </div>
                       <div>
                         <div className="text-[10px] uppercase text-gray-400">Timer</div>
-                        <div className={`text-xl font-mono font-bold ${timerSec <= 5 ? "text-red-400 animate-pulse" : "text-white"}`}>{timerSec}s</div>
+                        <div className={`text-lg sm:text-2xl font-mono font-bold ${timerSec <= 5 ? "text-red-400 animate-pulse" : "text-white"}`}>{timerSec}s</div>
                       </div>
                     </div>
                     {isHighBidder ? (
@@ -931,13 +931,13 @@ export default function AuctionRoomPage() {
                       </div>
                     ) : session.status === "active" && timerSec > 0 ? (
                       <div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           {getJumpBidOptions(currentBid.currentHighBid).map((amount, i) => (
                             <button
                               key={amount}
                               onClick={() => handlePlaceBid(amount)}
                               disabled={placing || amount > myPurse}
-                              className={`flex-1 rounded-lg px-2 py-2.5 font-bold transition disabled:opacity-50 ${
+                              className={`flex-1 min-w-[80px] rounded-lg px-2 py-2.5 font-bold transition disabled:opacity-50 ${
                                 i === 0
                                   ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 hover:from-yellow-300 hover:to-orange-400"
                                   : "bg-white/10 text-white border border-white/20 hover:bg-white/20"

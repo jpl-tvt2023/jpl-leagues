@@ -223,12 +223,12 @@ export default function UEFAFixturesPage() {
 
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-12">
         {/* Hero */}
-        <div className="text-center mb-10">
+        <div className="text-center mb-6 sm:mb-10">
           <div className="inline-flex items-center gap-2 bg-[#0066cc]/20 border border-[#0066cc]/30 rounded-full px-4 py-1.5 mb-4">
             <span className="text-[#4da6ff] text-xs font-semibold uppercase tracking-widest">UEFA · Triple Crown</span>
           </div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-2">Group Stage Fixtures</h1>
-          <p className="text-gray-400">Cup group stage · 2025/26 Season</p>
+          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-2">Group Stage Fixtures</h1>
+          <p className="text-sm sm:text-base text-gray-400">Cup group stage · 2025/26 Season</p>
         </div>
 
         {availableGWs.length === 0 ? (
@@ -334,14 +334,14 @@ export default function UEFAFixturesPage() {
                             } ${isGhostFixture ? "" : "cursor-pointer"}`}
                             onClick={() => !isGhostFixture && toggleExpand(fixture.id)}
                           >
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 sm:gap-3">
                               {/* Home team */}
-                              <div className="flex-1 text-right">
-                                <span className={`font-semibold text-sm ${fixture.homeTeam.isGhost ? "text-purple-400 italic" : "text-white"}`}>{fixture.homeTeam.name}</span>
+                              <div className="flex-1 min-w-0 text-right">
+                                <span className={`font-semibold text-xs sm:text-sm truncate inline-block max-w-full ${fixture.homeTeam.isGhost ? "text-purple-400 italic" : "text-white"}`}>{fixture.homeTeam.name}</span>
                               </div>
 
                               {/* Score box */}
-                              <div className={`min-w-[72px] text-center rounded-lg px-3 py-2 border ${
+                              <div className={`shrink-0 min-w-[60px] sm:min-w-[72px] text-center rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 border ${
                                 isFixtureLive
                                   ? "bg-amber-900/40 border-amber-500/40"
                                   : hasResult
@@ -362,8 +362,8 @@ export default function UEFAFixturesPage() {
                               </div>
 
                               {/* Away team */}
-                              <div className="flex-1 text-left">
-                                <span className={`font-semibold text-sm ${fixture.awayTeam.isGhost ? "text-purple-400 italic" : "text-white"}`}>{fixture.awayTeam.name}</span>
+                              <div className="flex-1 min-w-0 text-left">
+                                <span className={`font-semibold text-xs sm:text-sm truncate inline-block max-w-full ${fixture.awayTeam.isGhost ? "text-purple-400 italic" : "text-white"}`}>{fixture.awayTeam.name}</span>
                               </div>
                             </div>
 
