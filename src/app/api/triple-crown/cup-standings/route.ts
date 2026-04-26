@@ -78,7 +78,6 @@ export async function GET(request: NextRequest) {
         groupTeams.map(t => ({
           id: t.id,
           name: t.name,
-          abbreviation: t.abbreviation,
           isGhost: t.isGhost,
         })),
         fixtureResults
@@ -93,7 +92,6 @@ export async function GET(request: NextRequest) {
           rank: humanStandings.indexOf(s) + 1,
           teamId: s.teamId,
           teamName: s.name,
-          teamAbbr: s.abbreviation,
           wins: s.wins,
           draws: s.draws,
           losses: s.losses,

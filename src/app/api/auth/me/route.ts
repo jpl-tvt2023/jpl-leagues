@@ -64,7 +64,6 @@ export async function GET(request: NextRequest) {
           team: {
             id: team.id,
             name: team.name,
-            abbreviation: team.abbreviation,
             groupId: team.groupId,
             mustChangePassword: team.mustChangePassword,
             isProfileComplete: team.isProfileComplete,

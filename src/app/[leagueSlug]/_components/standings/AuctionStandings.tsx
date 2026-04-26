@@ -17,7 +17,6 @@ interface AuctionGwHistoryEntry {
 interface AuctionStandingRow {
   teamId: string;
   teamName: string;
-  abbreviation: string;
   totalPoints: number;
   purse: number;
   squadValue: number;
@@ -80,7 +79,6 @@ export function AuctionStandings() {
         return {
           teamId: s.teamId,
           teamName: s.teamName,
-          abbreviation: s.abbreviation,
           points: entry.points,
           payout: entry.payout,
           gwRank: entry.rank,
@@ -122,51 +120,52 @@ export function AuctionStandings() {
               <div className="text-center text-red-400 py-12">{error}</div>
             ) : auctionStandings.length === 0 ? (
               <div className="text-center py-12">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-                  <h2 className="text-xl font-semibold text-white mb-2">No Standings Yet</h2>
-                  <p className="text-gray-400">Standings will appear here once the first gameweek has been scored.</p>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
+                  <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">No Standings Yet</h2>
+                  <p className="text-sm sm:text-base text-gray-400">Standings will appear here once the first gameweek has been scored.</p>
                 </div>
               </div>
             ) : (
-              <div className="max-w-5xl mx-auto space-y-8">
+              <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8">
                 {selectedGw && perGwRows.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-lg font-bold text-white">Gameweek {selectedGw} Leaderboard</h2>
+                      <h2 className="text-base sm:text-lg font-bold text-white">Gameweek {selectedGw} Leaderboard</h2>
                       <Link href={`/${leagueSlug}/standings`} className="text-xs text-yellow-400 hover:text-yellow-300">
                         Clear filter →
                       </Link>
                     </div>
                     <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/5 overflow-hidden backdrop-blur">
-                      <table className="w-full text-left">
+                      <div className="overflow-x-auto">
+                      <table className="w-full text-left min-w-[520px]">
                         <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
                           <tr>
-                            <th className="px-4 py-3">#</th>
-                            <th className="px-4 py-3">Team</th>
-                            <th className="px-4 py-3 text-right">GW Points</th>
-                            <th className="px-4 py-3 text-right">Payout</th>
-                            <th className="px-4 py-3 text-right">Squad Value</th>
-                            <th className="px-4 py-3 text-right">Purse</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">GW Points</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Squad Value</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Purse</th>
                           </tr>
                         </thead>
                         <tbody>
                           {perGwRows.map((r) => (
                             <tr key={r.teamId} className="border-t border-white/5 hover:bg-white/5 transition">
-                              <td className="px-4 py-3 font-bold text-white">{r.rank}</td>
-                              <td className="px-4 py-3">
+                              <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{r.rank}</td>
+                              <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
                                 <div className="font-semibold text-white">{r.teamName}</div>
-                                <div className="text-xs text-gray-400">{r.abbreviation}</div>
                               </td>
-                              <td className="px-4 py-3 text-right font-mono font-bold text-[#00ff85]">{r.points}</td>
-                              <td className="px-4 py-3 text-right font-mono text-green-300">{formatCurrency(r.payout)}</td>
-                              <td className="px-4 py-3 text-right font-mono text-gray-200">{formatCurrency(r.squadValue)}</td>
-                              <td className="px-4 py-3 text-right font-mono text-gray-200">{formatCurrency(r.purse)}</td>
+                              <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{r.points}</td>
+                              <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">{formatCurrency(r.payout)}</td>
+                              <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(r.squadValue)}</td>
+                              <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(r.purse)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                      </div>
                     </div>
-                    <div className="mt-2 text-xs text-gray-500 text-center">
+                    <div className="mt-2 text-xs text-gray-500 text-center px-2">
                       Tiebreakers: GW points → squad value (lower wins) → purse (higher wins)
                     </div>
                   </div>
@@ -174,36 +173,37 @@ export function AuctionStandings() {
 
                 <div>
                   {selectedGw && (
-                    <h2 className="text-lg font-bold text-white mb-3">Season Standings</h2>
+                    <h2 className="text-base sm:text-lg font-bold text-white mb-3">Season Standings</h2>
                   )}
                   <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden backdrop-blur">
-                    <table className="w-full text-left">
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-left min-w-[480px]">
                       <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
                         <tr>
-                          <th className="px-4 py-3">#</th>
-                          <th className="px-4 py-3">Team</th>
-                          <th className="px-4 py-3 text-right">Total Points</th>
-                          <th className="px-4 py-3 text-right">Purse</th>
-                          <th className="px-4 py-3 text-right">Squad Value</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Total Points</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Purse</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Squad Value</th>
                         </tr>
                       </thead>
                       <tbody>
                         {auctionStandings.map((row) => (
                           <tr key={row.teamId} className="border-t border-white/5 hover:bg-white/5 transition">
-                            <td className="px-4 py-3 font-bold text-white">{row.rank}</td>
-                            <td className="px-4 py-3">
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{row.rank}</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
                               <div className="font-semibold text-white">{row.teamName}</div>
-                              <div className="text-xs text-gray-400">{row.abbreviation}</div>
                             </td>
-                            <td className="px-4 py-3 text-right font-mono font-bold text-[#00ff85]">{row.totalPoints}</td>
-                            <td className="px-4 py-3 text-right font-mono text-green-300">{formatCurrency(row.purse)}</td>
-                            <td className="px-4 py-3 text-right font-mono text-gray-200">{formatCurrency(row.squadValue)}</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{row.totalPoints}</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">{formatCurrency(row.purse)}</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(row.squadValue)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
-                  <div className="mt-6 text-center text-xs text-gray-500">
+                  <div className="mt-4 sm:mt-6 text-center text-xs text-gray-500 px-2">
                     Total Points = Cumulative sum of all 14 owned players&apos; gameweek scores · Squad Value = Sum of FMV (purchase price + points-based appreciation)
                   </div>
                 </div>

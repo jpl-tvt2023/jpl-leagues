@@ -16,8 +16,8 @@ export interface LiveFixtureScore {
   gameweek: number;
   homeTeamName: string;
   awayTeamName: string;
-  homeTeamAbbr?: string;
-  awayTeamAbbr?: string;
+  homeTeamId: string;
+  awayTeamId: string;
   homeScore: number;
   awayScore: number;
   homePlayers: LivePlayerScore[];
@@ -25,8 +25,8 @@ export interface LiveFixtureScore {
 }
 
 export interface FixtureTeam {
+  id?: string;
   name: string;
-  abbreviation: string;
   isGhost?: boolean;
 }
 

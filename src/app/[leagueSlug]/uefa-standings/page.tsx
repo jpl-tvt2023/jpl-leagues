@@ -10,7 +10,6 @@ interface CupGroupStanding {
   rank: number;
   teamId: string;
   teamName: string;
-  teamAbbr: string;
   wins: number;
   draws: number;
   losses: number;
@@ -156,14 +155,14 @@ export default function UEFAStandingsPage() {
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
         {/* Hero */}
-        <div className="text-center mb-10">
+        <div className="text-center mb-8 sm:mb-10">
           <div className="inline-flex items-center gap-2 bg-[#0066cc]/20 border border-[#0066cc]/30 rounded-full px-4 py-1.5 mb-4">
             <span className="text-[#4da6ff] text-xs font-semibold uppercase tracking-widest">UEFA · Triple Crown</span>
           </div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-2">
+          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-2">
             Group Stage Standings
           </h1>
-          <p className="text-gray-400">Cup group stage · 2025/26 Season</p>
+          <p className="text-sm sm:text-base text-gray-400">Cup group stage · 2025/26 Season</p>
         </div>
 
         {/* Unseeded banner */}
@@ -175,7 +174,7 @@ export default function UEFAStandingsPage() {
         )}
 
         {/* Legend */}
-        <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-sm">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mb-6 sm:mb-8 text-xs sm:text-sm">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-blue-500"></span>
             <span className="text-gray-400">UCL Knockouts (Top 2 per group)</span>
@@ -187,7 +186,7 @@ export default function UEFAStandingsPage() {
         </div>
 
         {/* Group Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
           {groupOrder.map((groupLetter) => {
             const groupKey = `Cup-${groupLetter}`;
             const group = cupStandings[groupKey];
@@ -204,7 +203,7 @@ export default function UEFAStandingsPage() {
                 </div>
 
                 {/* Column headers */}
-                <div className="px-4 py-2 grid grid-cols-[auto_1fr_repeat(7,auto)] gap-x-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 border-b border-white/5">
+                <div className="px-3 sm:px-4 py-2 grid grid-cols-[auto_1fr_repeat(7,auto)] gap-x-2 sm:gap-x-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 border-b border-white/5">
                   <span className="w-5 text-center">#</span>
                   <span>Team</span>
                   <span className="w-6 text-center">P</span>
@@ -231,7 +230,7 @@ export default function UEFAStandingsPage() {
                       return (
                         <div
                           key={team.teamId}
-                          className={`px-4 py-2.5 grid grid-cols-[auto_1fr_repeat(7,auto)] gap-x-3 items-center text-sm border-b border-white/5 last:border-0 ${rowBg}`}
+                          className={`px-3 sm:px-4 py-2 sm:py-2.5 grid grid-cols-[auto_1fr_repeat(7,auto)] gap-x-2 sm:gap-x-3 items-center text-xs sm:text-sm border-b border-white/5 last:border-0 ${rowBg}`}
                         >
                           <span className="w-5 text-center font-bold text-gray-400 text-xs">{idx + 1}</span>
                           <div className="flex items-center gap-2 min-w-0">

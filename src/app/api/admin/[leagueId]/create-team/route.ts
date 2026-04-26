@@ -18,7 +18,6 @@ export async function POST(request: NextRequest) {
     const {
       teamLoginId,
       teamName,
-      abbreviation,
       password,
       player1Name,
       player1FplId,
@@ -28,7 +27,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields (group is optional, defaults to "A")
-    if (!teamLoginId || !teamName || !abbreviation || !password || !player1Name || !player1FplId || !player2Name || !player2FplId) {
+    if (!teamLoginId || !teamName || !password || !player1Name || !player1FplId || !player2Name || !player2FplId) {
       return NextResponse.json(
         { error: "All fields except group are required" },
         { status: 400 }
@@ -98,7 +97,6 @@ export async function POST(request: NextRequest) {
       id: teamId,
       teamLoginId,
       name: teamName,
-      abbreviation: abbreviation.toUpperCase(),
       password: hashedPassword,
       mustChangePassword: true,
       groupId,
@@ -118,7 +116,6 @@ export async function POST(request: NextRequest) {
         id: teamId,
         teamLoginId,
         name: teamName,
-        abbreviation: abbreviation.toUpperCase(),
         group: group || null,
       },
     });
@@ -153,7 +150,6 @@ export async function GET(request: NextRequest) {
         id: t.id,
         teamLoginId: t.teamLoginId,
         name: t.name,
-        abbreviation: t.abbreviation,
         group: t.group?.name || "Unassigned",
         players: t.players.map(p => ({ name: p.name, fplId: p.fplId, id: p.id })),
         needsPasswordChange: t.mustChangePassword,

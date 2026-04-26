@@ -130,10 +130,10 @@ export default function AdminHelpPage() {
         <ol className="list-decimal list-inside space-y-1.5">
           <li>Go to your Admin Dashboard and click the <strong className="text-white">Teams</strong> tab.</li>
           <li>Click <strong className="text-white">Add Team</strong>.</li>
-          <li>Fill in: team name, abbreviation (e.g., DM), group assignment{teamSize === 32 ? " (A or B)" : ""}, and two players (name + FPL ID each).</li>
+          <li>Fill in: team name, group assignment{teamSize === 32 ? " (A or B)" : ""}, and two players (name + FPL ID each).</li>
           <li>Set a temporary password for the team&apos;s login.</li>
           <li>Submit — the team login ID and temporary password are shown. Share these with the team.</li>
-          <li>The team&apos;s login ID is their abbreviation (e.g., DM). They can log in at the Sign In page.</li>
+          <li>The team can log in at the Sign In page using the assigned team login ID.</li>
         </ol>
       ),
     },
@@ -142,7 +142,7 @@ export default function AdminHelpPage() {
       answer: (
         <div className="space-y-2">
           <p>Go to the <strong className="text-white">Bulk Upload</strong> tab. Prepare an Excel or CSV file with the following columns:</p>
-          <p className="font-mono text-xs bg-white/5 rounded p-2">TeamName · Abbreviation · Group · Player1Name · Player1FplId · Player2Name · Player2FplId · Password</p>
+          <p className="font-mono text-xs bg-white/5 rounded p-2">TeamName · Group · Player1Name · Player1FplId · Player2Name · Player2FplId · Password</p>
           <ol className="list-decimal list-inside space-y-1.5 mt-2">
             <li>Upload the file in the Bulk Upload tab.</li>
             <li>Review the preview table — errors are highlighted in red (e.g., duplicate names, missing FPL IDs).</li>
@@ -367,7 +367,7 @@ export default function AdminHelpPage() {
       number: 5,
       title: "Bulk importing teams from Excel",
       steps: [
-        "Prepare your Excel file with columns: TeamName, Abbreviation, Group, Player1Name, Player1FplId, Player2Name, Player2FplId, Password.",
+        "Prepare your Excel file with columns: TeamName, Group, Player1Name, Player1FplId, Player2Name, Player2FplId, Password.",
         teamSize === 32
           ? "Group column must be A or B — ensure teams are split correctly between the two groups."
           : "Group column should be A for all teams (single group league).",

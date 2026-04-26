@@ -115,7 +115,6 @@ export async function POST(request: NextRequest) {
       await db.insert(teams).values({
         id: ghostTeamId,
         name: `The Ghost (${groupName.displayName})`,
-        abbreviation: `GH${groupName.displayName}`,
         password: "", // Ghost teams don't login
         mustChangePassword: false,
         leagueId,

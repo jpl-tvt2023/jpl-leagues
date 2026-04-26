@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Auto-create placeholder team accounts for every format. Teams complete
-    // their own profile (name, abbreviation, players) on first login via /setup.
+    // their own profile (name, players) on first login via /setup.
     let createdTeams = 0;
     for (let i = 1; i <= resolvedTeamSize; i++) {
       const padded = String(i).padStart(2, "0");
@@ -122,7 +122,6 @@ export async function POST(request: NextRequest) {
         teamLoginId: loginId,
         name: `Team ${i}`,
         leagueId: id,
-        abbreviation: `T${i}`,
         password: hashedPassword,
         mustChangePassword: true,
         isProfileComplete: false,

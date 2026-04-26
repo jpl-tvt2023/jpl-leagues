@@ -19,7 +19,6 @@ async function main() {
       id: randomUUID(),
       name: "Orphan Test",
       leagueId: "non-existent-league-id",
-      abbreviation: "OT",
       password: "x",
     });
     console.error("FAIL: orphan insert succeeded; FK constraint not enforced");
@@ -48,7 +47,6 @@ async function main() {
     id: teamId,
     name: "Verify Team",
     leagueId,
-    abbreviation: "VT",
     password: "x",
   });
   await db.delete(leagues).where(sql`id = ${leagueId}`);

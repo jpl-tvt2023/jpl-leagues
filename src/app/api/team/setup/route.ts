@@ -32,10 +32,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Check if this is a teamLoginId, team name, or abbreviation uniqueness check
+    // Check if this is a teamLoginId or team name uniqueness check
     const checkLoginId = request.nextUrl.searchParams.get("checkLoginId");
     const checkName = request.nextUrl.searchParams.get("checkName");
-    const checkAbbr = request.nextUrl.searchParams.get("checkAbbr");
 
     if (checkLoginId) {
       // Global uniqueness check on teamLoginId
@@ -57,22 +56,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (checkAbbr) {
-      // Per-league uniqueness check: query teams in this league for this abbreviation
-      const existing = await db.select().from(teams).where(
-        and(eq(teams.leagueId, team.leagueId), eq(teams.abbreviation, checkAbbr))
-      ).limit(1);
-      // Available if: no team with this abbreviation in league, OR this is the current team's abbreviation
-      return NextResponse.json({
-        available: existing.length === 0 || existing[0].id === session.id,
-      });
-    }
-
     return NextResponse.json({
       teamId: team.id,
       currentLoginId: team.teamLoginId,
       currentName: team.name,
-      currentAbbreviation: team.abbreviation,
     });
   } catch (error) {
     console.error("Setup GET error:", error);
@@ -82,7 +69,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/team/setup
- * Completes team profile setup: updates team name/abbreviation, creates 2 players
+ * Completes team profile setup: updates team name, creates 2 players
  */
 export async function POST(request: NextRequest) {
   try {
@@ -97,7 +84,6 @@ export async function POST(request: NextRequest) {
     const {
       teamLoginId,
       teamName,
-      abbreviation,
       player1Name,
       player1FplId,
       player2Name,
@@ -170,36 +156,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Abbreviation: 2-4 uppercase letters only
-    if (!abbreviation || typeof abbreviation !== "string") {
-      return NextResponse.json(
-        { error: "Abbreviation is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!/^[A-Z]{2,4}$/.test(abbreviation)) {
-      return NextResponse.json(
-        { error: "Abbreviation must be 2-4 uppercase letters" },
-        { status: 400 }
-      );
-    }
-
-    // Check per-league uniqueness for abbreviation
-    const existingAbbr = await db
-      .select()
-      .from(teams)
-      .where(and(eq(teams.leagueId, leagueId), eq(teams.abbreviation, abbreviation)));
-    if (existingAbbr.length > 0 && existingAbbr[0].id !== session.id) {
-      return NextResponse.json(
-        { error: "Abbreviation is already taken in this league" },
-        { status: 400 }
-      );
-    }
-
-    // Auction format: only needs team name + abbreviation (players acquired via auction)
+    // Auction format: only needs team name (players acquired via auction)
     if (isAuction) {
-      // Update team: teamLoginId, name, abbreviation, isProfileComplete = true
+      // Update team: teamLoginId, name, isProfileComplete = true
       // Also initialize purse from league's initial budget
       const leagueRow = await db.select().from(leagues).where(eq(leagues.id, leagueId)).limit(1);
       const initialBudget = leagueRow[0]?.initialBudget ?? 100_000_000;
@@ -209,7 +168,6 @@ export async function POST(request: NextRequest) {
         .set({
           teamLoginId: trimmedLoginId,
           name: trimmedTeamName,
-          abbreviation,
           isProfileComplete: true,
           purse: initialBudget,
           updatedAt: new Date(),
@@ -272,13 +230,12 @@ export async function POST(request: NextRequest) {
 
     // ============= Update Team =============
 
-    // Update team: teamLoginId, name, abbreviation, isProfileComplete = true
+    // Update team: teamLoginId, name, isProfileComplete = true
     await db
       .update(teams)
       .set({
         teamLoginId: trimmedLoginId,
         name: trimmedTeamName,
-        abbreviation,
         isProfileComplete: true,
         updatedAt: new Date(),
       })

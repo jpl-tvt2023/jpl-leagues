@@ -46,16 +46,16 @@ export function TripleCrownPlayoffs() {
         onSignOut={handleSignOut}
       />
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Knockout Stage</h1>
-          <p className="text-gray-400 text-sm">UEFA Champions League &amp; Europa League · Triple Crown</p>
+      <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 sm:py-8">
+        <div className="mb-4 sm:mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Knockout Stage</h1>
+          <p className="text-gray-400 text-xs sm:text-sm">UEFA Champions League &amp; Europa League · Triple Crown</p>
         </div>
 
-        <div className="flex gap-1 mb-8 bg-slate-800/50 rounded-lg p-1 w-fit">
+        <div className="flex gap-1 mb-6 sm:mb-8 bg-slate-800/50 rounded-lg p-1 w-full sm:w-fit">
           <button
             onClick={() => setTcTab("ucl")}
-            className={`px-5 py-2 rounded-md text-sm font-semibold transition ${
+            className={`flex-1 sm:flex-none px-4 sm:px-5 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
               tcTab === "ucl" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
             }`}
           >
@@ -63,7 +63,7 @@ export function TripleCrownPlayoffs() {
           </button>
           <button
             onClick={() => setTcTab("uel")}
-            className={`px-5 py-2 rounded-md text-sm font-semibold transition ${
+            className={`flex-1 sm:flex-none px-4 sm:px-5 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
               tcTab === "uel" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-white"
             }`}
           >
@@ -73,11 +73,11 @@ export function TripleCrownPlayoffs() {
 
         {tcTab === "ucl" && (
           <div>
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4 sm:mb-6">
               <div className="h-8 w-1 rounded-full bg-blue-500" />
               <div>
-                <h2 className="text-xl font-bold text-white">UCL Knockouts</h2>
-                <p className="text-blue-400 text-xs font-semibold uppercase tracking-wider">UEFA Champions League</p>
+                <h2 className="text-lg sm:text-xl font-bold text-white">UCL Knockouts</h2>
+                <p className="text-blue-400 text-[10px] sm:text-xs font-semibold uppercase tracking-wider">UEFA Champions League</p>
               </div>
             </div>
             {(data.tvt.qf?.length || data.tvt.sf?.length || data.tvt.final?.length) ? (

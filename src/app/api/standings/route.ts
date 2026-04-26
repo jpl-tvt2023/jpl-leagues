@@ -35,7 +35,6 @@ interface CbpTooltip {
 interface TeamStanding {
   teamId: string;
   name: string;
-  abbreviation: string;
   group: string | null;
   played: number;
   wins: number;
@@ -110,7 +109,7 @@ export async function GET(request: NextRequest) {
     // ============================================
     if (leagueFormat === "auction") {
       const leagueTeams = await db
-        .select({ id: teams.id, name: teams.name, abbreviation: teams.abbreviation, purse: teams.purse })
+        .select({ id: teams.id, name: teams.name, purse: teams.purse })
         .from(teams)
         .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)));
 
@@ -178,8 +177,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Build a map of teamId → abbreviation (from ALL teams, needed for CC opponent lookup)
-    const teamAbbrMap = new Map<string, string>(allTeamsUnfiltered.map(t => [t.id, t.abbreviation]));
+    // Build a map of teamId → name (from ALL teams, needed for CC opponent lookup)
+    const teamNameMap = new Map<string, string>(allTeamsUnfiltered.map(t => [t.id, t.name]));
 
     // Build per-GW, per-player hits map for hit penalty calculation (-1 league pt per GW a player exceeds 12 hits)
     // First try Redis cache; if empty, fetch from FPL API for processed GWs
@@ -382,15 +381,15 @@ export async function GET(request: NextRequest) {
           } else {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const gwNumber = (chip as any).gameweek.number as number;
-            const oppAbbr: string | undefined = type === "C" && chip.challengedTeamId
-              ? (teamAbbrMap.get(chip.challengedTeamId) ?? undefined)
+            const oppName: string | undefined = type === "C" && chip.challengedTeamId
+              ? (teamNameMap.get(chip.challengedTeamId) ?? undefined)
               : undefined;
             chipTooltipEntries.push({
               label,
               status: chip.isProcessed ? "used" : "pending",
               points: chip.pointsAwarded || 0,
               gameweek: gwNumber,
-              opponent: oppAbbr,
+              opponent: oppName,
             });
           }
         }
@@ -408,7 +407,6 @@ export async function GET(request: NextRequest) {
       return {
         teamId: team.id,
         name: team.name,
-        abbreviation: team.abbreviation,
         group: team.group?.name || null,
         played,
         wins,

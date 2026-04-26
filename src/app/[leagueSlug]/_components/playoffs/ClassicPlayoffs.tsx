@@ -63,9 +63,9 @@ export function ClassicPlayoffs() {
         onSignOut={handleSignOut}
       />
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Playoffs Bracket</h1>
+      <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 sm:py-8">
+        <div className="mb-4 sm:mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Playoffs Bracket</h1>
           {data.mode === "tentative" && (
             <div className="inline-flex items-center gap-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-4 py-2">
               <span className="text-yellow-400 text-sm font-semibold">&#9888; TENTATIVE</span>
@@ -81,10 +81,10 @@ export function ClassicPlayoffs() {
         </div>
 
         {data.teamSize === 16 && (
-          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
+          <div className="flex gap-1 mb-4 sm:mb-6 bg-slate-800/50 rounded-lg p-1 w-full sm:w-fit overflow-x-auto whitespace-nowrap [&>*]:shrink-0">
             <button
               onClick={() => setActiveTab("groupStage")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
                 activeTab === "groupStage" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
               }`}
             >
@@ -92,7 +92,7 @@ export function ClassicPlayoffs() {
             </button>
             <button
               onClick={() => setActiveTab("tvt")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
                 activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
               }`}
             >
@@ -100,7 +100,7 @@ export function ClassicPlayoffs() {
             </button>
             <button
               onClick={() => setActiveTab("challenger")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
                 activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
               }`}
             >
@@ -109,10 +109,10 @@ export function ClassicPlayoffs() {
           </div>
         )}
         {data.teamSize === 32 && (
-          <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
+          <div className="flex gap-1 mb-4 sm:mb-6 bg-slate-800/50 rounded-lg p-1 w-full sm:w-fit overflow-x-auto whitespace-nowrap [&>*]:shrink-0">
             <button
               onClick={() => setActiveTab("tvt")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
                 activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
               }`}
             >
@@ -120,7 +120,7 @@ export function ClassicPlayoffs() {
             </button>
             <button
               onClick={() => setActiveTab("challenger")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
                 activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
               }`}
             >

@@ -92,7 +92,6 @@ export async function POST(request: NextRequest) {
         team: {
           id: team.id,
           name: team.name,
-          abbreviation: team.abbreviation,
           groupId: team.groupId,
           isAdmin: false,
           mustChangePassword: team.mustChangePassword,

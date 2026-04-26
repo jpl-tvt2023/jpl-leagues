@@ -20,7 +20,6 @@ export async function PUT(request: NextRequest) {
       teamId,
       teamLoginId,
       teamName,
-      abbreviation,
       password, // Optional - only update if provided
       player1Id,
       player1Name,
@@ -32,9 +31,9 @@ export async function PUT(request: NextRequest) {
     } = body;
 
     // Validate required fields (player fields, password, and group are optional)
-    if (!teamId || !teamLoginId || !teamName || !abbreviation) {
+    if (!teamId || !teamLoginId || !teamName) {
       return NextResponse.json(
-        { error: "Team ID, Login ID, Name, and Abbreviation are required" },
+        { error: "Team ID, Login ID, and Name are required" },
         { status: 400 }
       );
     }
@@ -110,7 +109,6 @@ export async function PUT(request: NextRequest) {
     const updateData: Record<string, unknown> = {
       teamLoginId,
       name: teamName,
-      abbreviation: abbreviation.toUpperCase(),
     };
 
     // Only update groupId for non-auction formats

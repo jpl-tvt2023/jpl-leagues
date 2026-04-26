@@ -9,7 +9,6 @@ export interface ChipTooltipEntry {
 export interface TeamStanding {
   teamId: string;
   name: string;
-  abbreviation: string;
   group: string;
   played: number;
   wins: number;

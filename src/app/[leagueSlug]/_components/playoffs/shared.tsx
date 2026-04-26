@@ -7,8 +7,8 @@ export interface LiveFixtureScore {
   gameweek: number;
   homeTeamName: string;
   awayTeamName: string;
-  homeTeamAbbr: string;
-  awayTeamAbbr: string;
+  homeTeamId: string;
+  awayTeamId: string;
   homeScore: number;
   awayScore: number;
   homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
@@ -18,7 +18,6 @@ export interface LiveFixtureScore {
 export interface TeamSide {
   teamId: string | null;
   name: string;
-  abbr: string;
   leg1Score: number | null;
   leg2Score: number | null;
   aggregate: number | null;
@@ -39,7 +38,6 @@ export interface TieDisplay {
 export interface SurvivalDisplay {
   teamId: string;
   name: string;
-  abbr: string;
   score: number;
   rank: number | null;
   advanced: boolean;
@@ -48,7 +46,6 @@ export interface SurvivalDisplay {
 export interface GroupStanding {
   teamId: string;
   name: string;
-  abbr: string;
   played: number;
   won: number;
   drawn: number;
@@ -146,27 +143,25 @@ export function MatchCard({
   compact,
   liveScores,
   isFreshlyRefreshed,
-  useFullName,
 }: {
   tie: TieDisplay;
   compact?: boolean;
   liveScores?: LiveFixtureScore[];
   isFreshlyRefreshed?: boolean;
-  useFullName?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const is2Leg = tie.gw2 !== null;
   const isPlaceholder = (side: TeamSide | null) => !side?.teamId;
 
   const getLiveScoreForGW = (gwNumber: number): LiveFixtureScore | undefined => {
-    if (!liveScores || !tie.home?.abbr || !tie.away?.abbr) return undefined;
+    if (!liveScores || !tie.home?.teamId || !tie.away?.teamId) return undefined;
     return liveScores.find((l) => {
-      const homeAbbr = tie.home!.abbr;
-      const awayAbbr = tie.away!.abbr;
+      const homeId = tie.home!.teamId!;
+      const awayId = tie.away!.teamId!;
       return (
         l.gameweek === gwNumber &&
-        ((l.homeTeamAbbr === homeAbbr && l.awayTeamAbbr === awayAbbr) ||
-         (l.homeTeamAbbr === awayAbbr && l.awayTeamAbbr === homeAbbr))
+        ((l.homeTeamId === homeId && l.awayTeamId === awayId) ||
+         (l.homeTeamId === awayId && l.awayTeamId === homeId))
       );
     });
   };
@@ -184,8 +179,7 @@ export function MatchCard({
 
   const teamLabel = (side: TeamSide | null) => {
     if (!side) return "TBD";
-    if (useFullName) return side.name || side.abbr || "TBD";
-    return side.abbr || side.name || "TBD";
+    return side.name || "TBD";
   };
 
   const teamClass = (side: TeamSide | null) => {
@@ -195,16 +189,16 @@ export function MatchCard({
   };
 
   const getLiveScore = (side: TeamSide | null, liveFixture: LiveFixtureScore | undefined): number | null => {
-    if (!liveFixture || !side?.abbr) return null;
-    if (liveFixture.homeTeamAbbr === side.abbr) return liveFixture.homeScore;
-    if (liveFixture.awayTeamAbbr === side.abbr) return liveFixture.awayScore;
+    if (!liveFixture || !side?.teamId) return null;
+    if (liveFixture.homeTeamId === side.teamId) return liveFixture.homeScore;
+    if (liveFixture.awayTeamId === side.teamId) return liveFixture.awayScore;
     return null;
   };
 
   const getPlayersForSide = (side: TeamSide | null, liveFixture: LiveFixtureScore | undefined) => {
-    if (!liveFixture || !side?.abbr) return [];
-    if (liveFixture.homeTeamAbbr === side.abbr) return liveFixture.homePlayers;
-    if (liveFixture.awayTeamAbbr === side.abbr) return liveFixture.awayPlayers;
+    if (!liveFixture || !side?.teamId) return [];
+    if (liveFixture.homeTeamId === side.teamId) return liveFixture.homePlayers;
+    if (liveFixture.awayTeamId === side.teamId) return liveFixture.awayPlayers;
     return [];
   };
 
@@ -309,12 +303,12 @@ export function MatchCard({
               {is2Leg && <div className="text-[10px] text-gray-500 font-semibold mb-1">Leg 1 (GW{tie.gw1})</div>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <PlayerBreakdown
-                  label={`${tie.home?.abbr || "Home"} Players`}
+                  label={`${tie.home?.name || "Home"} Players`}
                   players={getPlayersForSide(tie.home, liveScoreLeg1)}
                   gameweek={tie.gw1}
                 />
                 <PlayerBreakdown
-                  label={`${tie.away?.abbr || "Away"} Players`}
+                  label={`${tie.away?.name || "Away"} Players`}
                   players={getPlayersForSide(tie.away, liveScoreLeg1)}
                   gameweek={tie.gw1}
                 />
@@ -326,12 +320,12 @@ export function MatchCard({
               <div className="text-[10px] text-gray-500 font-semibold mb-1">Leg 2 (GW{tie.gw2})</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <PlayerBreakdown
-                  label={`${tie.home?.abbr || "Home"} Players`}
+                  label={`${tie.home?.name || "Home"} Players`}
                   players={getPlayersForSide(tie.home, liveScoreLeg2)}
                   gameweek={tie.gw2!}
                 />
                 <PlayerBreakdown
-                  label={`${tie.away?.abbr || "Away"} Players`}
+                  label={`${tie.away?.name || "Away"} Players`}
                   players={getPlayersForSide(tie.away, liveScoreLeg2)}
                   gameweek={tie.gw2!}
                 />
@@ -423,7 +417,7 @@ export function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
               {entries.map((e, i) => (
                 <tr key={e.teamId || `placeholder-${i}`} className={`border-b border-white/5 ${e.advanced ? "bg-green-900/20" : i >= 8 ? "bg-red-900/10" : ""}`}>
                   <td className="px-3 py-2 text-gray-400">{e.rank ?? i + 1}</td>
-                  <td className={`px-3 py-2 ${e.advanced ? "text-green-400 font-semibold" : "text-white"}`}>{e.abbr}</td>
+                  <td className={`px-3 py-2 ${e.advanced ? "text-green-400 font-semibold" : "text-white"}`}>{e.name}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-white">{e.score || "–"}</td>
                   <td className="px-3 py-2 text-center">
                     {e.advanced ? (
@@ -584,7 +578,7 @@ export function GroupStageView({
                           {isExpanded && (
                             <div className="space-y-1 mt-1">
                               {gwFixtures.map((tie) => (
-                                <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} useFullName={true} />
+                                <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} />
                               ))}
                             </div>
                           )}
@@ -669,7 +663,7 @@ export function GroupStageView({
                           {isExpanded && (
                             <div className="space-y-1 mt-1">
                               {gwFixtures.map((tie) => (
-                                <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} useFullName={true} />
+                                <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} />
                               ))}
                             </div>
                           )}

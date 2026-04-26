@@ -6,7 +6,6 @@
 export interface CupGroupStanding {
   teamId: string;
   name: string;
-  abbreviation: string;
   isGhost: boolean;
   wins: number;
   draws: number;
@@ -31,7 +30,7 @@ export interface CupGroupStandings {
  * @returns Sorted standings (by cupGroupPoints, then by GF, then by GA)
  */
 export function computeCupGroupStandings(
-  groupTeams: Array<{ id: string; name: string; abbreviation: string; isGhost: boolean }>,
+  groupTeams: Array<{ id: string; name: string; isGhost: boolean }>,
   results: Array<{
     fixtureId: string;
     homeTeamId: string;
@@ -49,7 +48,6 @@ export function computeCupGroupStandings(
     standingsMap.set(team.id, {
       teamId: team.id,
       name: team.name,
-      abbreviation: team.abbreviation,
       isGhost: team.isGhost,
       wins: 0,
       draws: 0,

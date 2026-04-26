@@ -31,10 +31,10 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
       {/* Fixed-position tooltip — outside any overflow container */}
       {tooltip && (
         <div
-          className="fixed z-50 bg-slate-900 border border-white/20 rounded-lg p-3 shadow-xl w-64 text-left pointer-events-none"
+          className="fixed z-50 bg-slate-900 border border-white/20 rounded-lg p-3 shadow-xl w-[90vw] max-w-xs text-left pointer-events-none"
           style={{
             top: Math.max(8, Math.min(tooltip.y - 120, window.innerHeight - 320)),
-            left: Math.max(8, tooltip.x - 268),
+            left: Math.max(8, Math.min(tooltip.x - 268, window.innerWidth - 280)),
           }}
         >
           <p className="text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wide">CP/BP Breakdown</p>
@@ -109,23 +109,23 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
 
       <div className="rounded-2xl border border-purple-500/20 bg-purple-950/20 backdrop-blur overflow-hidden">
         {group && (
-          <div className="bg-gradient-to-r from-purple-700/40 to-purple-900/40 px-4 py-3 border-b border-purple-500/20">
-            <h2 className="text-lg font-bold text-white">Group {group}</h2>
+          <div className="bg-gradient-to-r from-purple-700/40 to-purple-900/40 px-3 py-2 sm:px-4 sm:py-3 border-b border-purple-500/20">
+            <h2 className="text-base sm:text-lg font-bold text-white">Group {group}</h2>
           </div>
         )}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[500px]">
+          <table className="w-full text-xs sm:text-sm">
             <thead>
-              <tr className="border-b border-purple-500/20 bg-purple-900/30 text-xs text-gray-300">
-                <th className="px-3 py-2 text-left font-medium w-10">Rank</th>
+              <tr className="border-b border-purple-500/20 bg-purple-900/30 text-[10px] sm:text-xs text-gray-300">
+                <th className="px-2 py-2 sm:px-3 text-left font-medium w-10">Rank</th>
                 <th className="px-2 py-2 text-left font-medium">Team</th>
-                <th className="px-2 py-2 text-center font-medium w-9">MP</th>
-                <th className="px-2 py-2 text-center font-medium w-8">W</th>
-                <th className="px-2 py-2 text-center font-medium w-8">D</th>
-                <th className="px-2 py-2 text-center font-medium w-8">L</th>
-                {!isTripleCrown && <th className="px-2 py-2 text-center font-medium w-12" title="Chips and Bonus Points">CP/BP</th>}
-                <th className="px-2 py-2 text-center font-medium w-14">Pts</th>
-                <th className="px-2 py-2 text-center font-medium w-16">Scores</th>
+                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-9">MP</th>
+                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">W</th>
+                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">D</th>
+                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">L</th>
+                {!isTripleCrown && <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-12" title="Chips and Bonus Points">CP/BP</th>}
+                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-14">Pts</th>
+                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-16">Scores</th>
               </tr>
             </thead>
             <tbody>
@@ -149,9 +149,9 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
                           : "bg-red-500/5"
                     }`}
                   >
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-2 sm:px-3">
                       <span
-                        className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                        className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] sm:text-xs font-bold ${
                           isTripleCrown
                             ? team.groupRank <= 4 ? "bg-green-500/20 text-green-400" : "bg-white/10 text-gray-400"
                             : team.zone === "playoffs"
@@ -164,14 +164,14 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
                         {team.groupRank}
                       </span>
                     </td>
-                    <td className="px-2 py-2 font-medium text-white leading-tight">{team.name}</td>
-                    <td className="px-2 py-2 text-center text-gray-400">{team.played}</td>
-                    <td className="px-2 py-2 text-center text-green-400">{team.wins}</td>
-                    <td className="px-2 py-2 text-center text-gray-400">{team.draws}</td>
-                    <td className="px-2 py-2 text-center text-red-400">{team.losses}</td>
+                    <td className="px-2 py-2 font-medium text-white leading-tight min-w-0 max-w-[140px] sm:max-w-none truncate">{team.name}</td>
+                    <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.played}</td>
+                    <td className="px-1.5 py-2 sm:px-2 text-center text-green-400">{team.wins}</td>
+                    <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.draws}</td>
+                    <td className="px-1.5 py-2 sm:px-2 text-center text-red-400">{team.losses}</td>
                     {!isTripleCrown && (
                       <td
-                        className="px-2 py-2 text-center text-purple-400"
+                        className="px-1.5 py-2 sm:px-2 text-center text-purple-400"
                         onMouseEnter={(e) => handleMouseEnter(e, team)}
                         onMouseLeave={handleMouseLeave}
                         onClick={(e) => handleClick(e, team)}
@@ -181,8 +181,8 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
                         </span>
                       </td>
                     )}
-                    <td className="px-2 py-2 text-center font-bold text-white">{team.leaguePoints}</td>
-                    <td className="px-2 py-2 text-center text-gray-400">{team.pointsFor}</td>
+                    <td className="px-1.5 py-2 sm:px-2 text-center font-bold text-white">{team.leaguePoints}</td>
+                    <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.pointsFor}</td>
                   </tr>
                 ))
               )}

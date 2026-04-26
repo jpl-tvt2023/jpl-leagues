@@ -32,7 +32,6 @@ interface SquadPlayer {
 interface StandingEntry {
   teamId: string;
   teamName: string;
-  abbreviation: string;
 }
 
 type Tab = "incoming" | "outgoing" | "live" | "releases" | "history";
@@ -385,7 +384,7 @@ export default function MarketplacePage() {
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : auctionLive ? (
-          <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-8 text-center">
+          <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5 sm:p-8 text-center">
             <h1 className="text-2xl sm:text-3xl font-bold text-yellow-300 mb-2">Marketplace closed</h1>
             <p className="text-gray-300">
               The marketplace is locked while a live auction is in progress. Trades and proposals will reopen
@@ -404,7 +403,7 @@ export default function MarketplacePage() {
         ) : (
           <>
             <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-              <h1 className="text-3xl sm:text-4xl font-bold text-white">Marketplace</h1>
+              <h1 className="text-2xl sm:text-4xl font-bold text-white">Marketplace</h1>
               <button
                 onClick={() => setShowCreate(true)}
                 className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
@@ -413,12 +412,12 @@ export default function MarketplacePage() {
               </button>
             </div>
 
-            <div className="mb-6 flex gap-2 flex-wrap border-b border-white/10">
+            <div className="mb-6 flex gap-1 sm:gap-2 overflow-x-auto whitespace-nowrap border-b border-white/10 [&>*]:shrink-0">
               {(["incoming", "outgoing", "live", "releases", "history"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
-                  className={`px-4 py-2 font-semibold capitalize transition ${tab === t ? "text-yellow-400 border-b-2 border-yellow-400" : "text-gray-400 hover:text-white"}`}
+                  className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold capitalize transition ${tab === t ? "text-yellow-400 border-b-2 border-yellow-400" : "text-gray-400 hover:text-white"}`}
                 >
                   {t === "releases"
                     ? `Pending Releases (${pendingReleases.length})`
@@ -497,7 +496,7 @@ export default function MarketplacePage() {
             {/* Create Proposal Modal */}
             {showCreate && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowCreate(false)}>
-                <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-slate-900 p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-slate-900 p-4 sm:p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xl font-bold text-white">New Trade Proposal</h3>
                     <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-white">✕</button>

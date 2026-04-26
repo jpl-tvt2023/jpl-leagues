@@ -79,20 +79,20 @@ export default function Home() {
       </nav>
 
       {/* Hero */}
-      <section className="mx-auto max-w-4xl px-6 py-20 text-center">
-        <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-yellow-400">
+      <section className="mx-auto max-w-4xl px-4 sm:px-6 py-12 sm:py-20 text-center">
+        <p className="mb-2 sm:mb-3 text-xs sm:text-sm font-semibold uppercase tracking-widest text-yellow-400">
           JPL Sports
         </p>
-        <h1 className="text-5xl font-extrabold tracking-tight text-white sm:text-6xl">
+        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white">
           Fantasy League Hub
         </h1>
-        <p className="mx-auto mt-5 max-w-xl text-gray-400">
+        <p className="mx-auto mt-3 sm:mt-5 max-w-xl text-sm sm:text-base text-gray-400">
           Choose your league and compete. Multiple formats, one platform.
         </p>
       </section>
 
       {/* League Cards */}
-      <section className="mx-auto max-w-5xl px-4 pb-24 sm:px-6">
+      <section className="mx-auto max-w-5xl px-4 pb-12 sm:pb-24 sm:px-6">
         {isLoading ? (
           <div className="grid gap-6 sm:grid-cols-2">
             {[1, 2].map((i) => (
@@ -112,15 +112,15 @@ export default function Home() {
               return (
                 <div
                   key={league.id}
-                  className={`relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br ${gradient} p-8 shadow-xl h-full flex flex-col`}
+                  className={`relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br ${gradient} p-5 sm:p-8 shadow-xl h-full flex flex-col`}
                 >
-                  <div className={`absolute -right-8 -top-8 h-40 w-40 rounded-full ${glow} blur-2xl`} />
+                  <div className={`absolute -right-8 -top-8 h-32 w-32 sm:h-40 sm:w-40 rounded-full ${glow} blur-2xl`} />
                   <div className="relative flex flex-col flex-1">
-                    <div className="mb-5 flex items-center gap-3">
-                      <span className="text-4xl">{icon}</span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-2xl font-extrabold text-white">{league.name}</h2>
+                    <div className="mb-4 sm:mb-5 flex items-center gap-3">
+                      <span className="text-3xl sm:text-4xl">{icon}</span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h2 className="text-lg sm:text-2xl font-extrabold text-white truncate">{league.name}</h2>
                           {league.isActive ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-semibold text-green-400">
                               <span className="relative flex h-1.5 w-1.5">
@@ -135,7 +135,7 @@ export default function Home() {
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-xs sm:text-sm text-gray-400">
                           {league.sport.toUpperCase()} · {league.format.toUpperCase()} · {league.season}
                         </p>
                       </div>
@@ -144,17 +144,17 @@ export default function Home() {
                     <div className="flex flex-wrap gap-3 mt-auto">
                       {league.format === "triple-crown" ? (
                         <>
-                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}>PL Standings</Link>
-                          <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">PL Fixtures</Link>
-                          <Link href={`/${league.slug}/uefa-standings`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">UEFA Standings</Link>
-                          <Link href={`/${league.slug}/uefa-fixtures`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">UEFA Fixtures</Link>
-                          <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
+                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition ${standingsBtn}`}>PL Standings</Link>
+                          <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">PL Fixtures</Link>
+                          <Link href={`/${league.slug}/uefa-standings`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">UEFA Standings</Link>
+                          <Link href={`/${league.slug}/uefa-fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">UEFA Fixtures</Link>
+                          <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
                         </>
                       ) : (
                         <>
-                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${standingsBtn}`}>Standings</Link>
-                          <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">Fixtures</Link>
-                          <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
+                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition ${standingsBtn}`}>Standings</Link>
+                          <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Fixtures</Link>
+                          <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
                         </>
                       )}
                     </div>

@@ -50,8 +50,8 @@ interface TieDisplay {
   status: string;
   gw1: number;
   gw2: number | null;
-  home: { teamId: string | null; name: string; abbr: string; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
-  away: { teamId: string | null; name: string; abbr: string; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
+  home: { teamId: string | null; name: string; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
+  away: { teamId: string | null; name: string; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
   winnerId: string | null;
   loserId: string | null;
 }
@@ -59,7 +59,6 @@ interface TieDisplay {
 interface SurvivalDisplay {
   teamId: string;
   name: string;
-  abbr: string;
   score: number;
   rank: number | null;
   advanced: boolean;
@@ -68,7 +67,6 @@ interface SurvivalDisplay {
 interface GroupStanding {
   teamId: string;
   name: string;
-  abbr: string;
   played: number;
   won: number;
   drawn: number;
@@ -354,8 +352,8 @@ async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | nu
           gameweek: gameweek,
           homeTeamName: fixture.homeTeam.name,
           awayTeamName: fixture.awayTeam.name,
-          homeTeamAbbr: fixture.homeTeam.abbreviation,
-          awayTeamAbbr: fixture.awayTeam.abbreviation,
+          homeTeamId: fixture.homeTeamId,
+          awayTeamId: fixture.awayTeamId,
           homeScore: result.homeScore,
           awayScore: result.awayScore,
           homePlayers,
@@ -429,8 +427,8 @@ async function fetchAndCacheLiveScoresForGw(gameweek: number, leagueId: string |
           gameweek: gameweek,  // Track which GW this score is from
           homeTeamName: fixture.homeTeam.name,
           awayTeamName: fixture.awayTeam.name,
-          homeTeamAbbr: fixture.homeTeam.abbreviation,
-          awayTeamAbbr: fixture.awayTeam.abbreviation,
+          homeTeamId: fixture.homeTeamId,
+          awayTeamId: fixture.awayTeamId,
           homeScore: homeScore.total,
           awayScore: awayScore.total,
           homePlayers: homeScore.players,
@@ -509,26 +507,28 @@ async function calculateLiveTeamScore(
 // ============================================
 // TENTATIVE / PROJECTED MODE
 // ============================================
-function placeholder(label: string): { teamId: null; name: string; abbr: string; leg1Score: null; leg2Score: null; aggregate: null } {
-  return { teamId: null, name: label, abbr: label, leg1Score: null, leg2Score: null, aggregate: null };
+function placeholder(label: string): { teamId: null; name: string; leg1Score: null; leg2Score: null; aggregate: null } {
+  return { teamId: null, name: label, leg1Score: null, leg2Score: null, aggregate: null };
+}
+
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 /** 8-team bracket: SF (GW36, single-leg) → 3rd place (GW37) + Final (GW37+38, 2-legged). No challenger. */
 function buildTentative8Team(
   latestCompletedGw: number,
   mode: "tentative" | "projected",
-  standings: { groupA: { teamId: string; name: string; abbreviation: string; groupRank: number }[]; groupB: { teamId: string; name: string; abbreviation: string; groupRank: number }[] },
+  standings: { groupA: { teamId: string; name: string; groupRank: number }[]; groupB: { teamId: string; name: string; groupRank: number }[] },
   playoffStartGw: number,
 ) {
-  const all = standings.groupA; // 8-team has 1 group
-  const ts = (rank: number) => {
-    const t = all.find(x => x.groupRank === rank);
-    return t ? { teamId: t.teamId, name: t.name, abbr: t.abbreviation, leg1Score: null, leg2Score: null, aggregate: null } : null;
-  };
+  void standings;
   const gw1 = playoffStartGw;
   const sf: TieDisplay[] = [
-    { tieId: "SF-A", roundName: "SF", status: "projected", gw1, gw2: null, home: ts(1), away: ts(4), winnerId: null, loserId: null },
-    { tieId: "SF-B", roundName: "SF", status: "projected", gw1, gw2: null, home: ts(2), away: ts(3), winnerId: null, loserId: null },
+    { tieId: "SF-A", roundName: "SF", status: "projected", gw1, gw2: null, home: placeholder("1st"), away: placeholder("4th"), winnerId: null, loserId: null },
+    { tieId: "SF-B", roundName: "SF", status: "projected", gw1, gw2: null, home: placeholder("2nd"), away: placeholder("3rd"), winnerId: null, loserId: null },
   ];
   const thirdPlace: TieDisplay = {
     tieId: "3rd", roundName: "3rd Place", status: "projected", gw1: gw1 + 1, gw2: gw1 + 2,
@@ -545,21 +545,21 @@ function buildTentative8Team(
 function buildTentative16Team(
   latestCompletedGw: number,
   mode: "tentative" | "projected",
-  standings: { groupA: { teamId: string; name: string; abbreviation: string; groupRank: number }[]; groupB: { teamId: string; name: string; abbreviation: string; groupRank: number }[] },
+  standings: { groupA: { teamId: string; name: string; groupRank: number }[]; groupB: { teamId: string; name: string; groupRank: number }[] },
   playoffStartGw: number,
 ) {
   const all = standings.groupA; // 16-team has 1 group
   const ts = (rank: number) => {
     const t = all.find(x => x.groupRank === rank);
-    return t ? { teamId: t.teamId, name: t.name, abbr: t.abbreviation, leg1Score: null, leg2Score: null, aggregate: null } : null;
+    return t ? { teamId: t.teamId, name: t.name, leg1Score: null, leg2Score: null, aggregate: null } : null;
   };
   const gw1 = playoffStartGw;
   // QF: bracket-paired — 1v8 and 4v5 feed into SF-A; 2v7 and 3v6 feed into SF-B
   const qf: TieDisplay[] = [
-    { tieId: "QF-A", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(1), away: ts(8), winnerId: null, loserId: null },
-    { tieId: "QF-D", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(4), away: ts(5), winnerId: null, loserId: null },
-    { tieId: "QF-B", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(2), away: ts(7), winnerId: null, loserId: null },
-    { tieId: "QF-C", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: ts(3), away: ts(6), winnerId: null, loserId: null },
+    { tieId: "QF-A", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("1st"), away: placeholder("8th"), winnerId: null, loserId: null },
+    { tieId: "QF-D", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("4th"), away: placeholder("5th"), winnerId: null, loserId: null },
+    { tieId: "QF-B", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("2nd"), away: placeholder("7th"), winnerId: null, loserId: null },
+    { tieId: "QF-C", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("3rd"), away: placeholder("6th"), winnerId: null, loserId: null },
   ];
   const sf: TieDisplay[] = [
     { tieId: "SF-A", roundName: "SF", status: "projected", gw1: gw1 + 2, gw2: gw1 + 3, home: placeholder("Winner of QF-A"), away: placeholder("Winner of QF-D"), winnerId: null, loserId: null },
@@ -577,8 +577,8 @@ function buildTentative16Team(
   ];
   // C-33 survival: 3 C-31 winners + 4 QF losers = 7 teams
   const c33Placeholder: SurvivalDisplay[] = [
-    ...["C-31-A", "C-31-B", "C-31-C"].map(id => ({ teamId: "", name: `Winner of ${id}`, abbr: `Winner of ${id}`, score: 0, rank: null, advanced: false })),
-    ...["QF-A", "QF-B", "QF-C", "QF-D"].map(id => ({ teamId: "", name: `Loser of ${id}`, abbr: `Loser of ${id}`, score: 0, rank: null, advanced: false })),
+    ...["C-31-A", "C-31-B", "C-31-C"].map(id => ({ teamId: "", name: `Winner of ${id}`, score: 0, rank: null, advanced: false })),
+    ...["QF-A", "QF-B", "QF-C", "QF-D"].map(id => ({ teamId: "", name: `Loser of ${id}`, score: 0, rank: null, advanced: false })),
   ];
   // C-34: top 4 from survival
   const c34: TieDisplay[] = [
@@ -605,9 +605,9 @@ async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "
   void leagueId; // reserved for future projected seed lookup
 
   const rankLabel = (rank: number) => rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : "4th";
-  const tcSide = (group: string, rank: number): { teamId: null; name: string; abbr: string; leg1Score: null; leg2Score: null; aggregate: null } => {
+  const tcSide = (group: string, rank: number): { teamId: null; name: string; leg1Score: null; leg2Score: null; aggregate: null } => {
     const label = `${rankLabel(rank)} Cup-${group}`;
-    return { teamId: null, name: label, abbr: `${group}${rank}`, leg1Score: null, leg2Score: null, aggregate: null };
+    return { teamId: null, name: label, leg1Score: null, leg2Score: null, aggregate: null };
   };
 
   const uclQF: TieDisplay[] = [
@@ -663,23 +663,25 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
   if (teamSize === 20) return buildTentativeTC(latestCompletedGw, mode, leagueId);
 
   const { groupA, groupB } = standings;
-  const rankMap: Record<string, Record<number, { teamId: string; name: string; abbr: string }>> = { A: {}, B: {} };
-  for (const t of groupA) rankMap["A"][t.groupRank] = { teamId: t.teamId, name: t.name, abbr: t.abbreviation };
-  for (const t of groupB) rankMap["B"][t.groupRank] = { teamId: t.teamId, name: t.name, abbr: t.abbreviation };
+  const rankMap: Record<string, Record<number, { teamId: string; name: string }>> = { A: {}, B: {} };
+  for (const t of groupA) rankMap["A"][t.groupRank] = { teamId: t.teamId, name: t.name };
+  for (const t of groupB) rankMap["B"][t.groupRank] = { teamId: t.teamId, name: t.name };
 
   const lookup = (group: string, rank: number) => rankMap[group]?.[rank] || null;
 
   const teamSide = (group: string, rank: number) => {
     const t = lookup(group, rank);
-    return t ? { teamId: t.teamId, name: t.name, abbr: t.abbr, leg1Score: null, leg2Score: null, aggregate: null } : null;
+    return t ? { teamId: t.teamId, name: t.name, leg1Score: null, leg2Score: null, aggregate: null } : null;
   };
 
   // Build tentative RO16 (in bracket-paired order)
+  // Show ordinal+group placeholders until admin generates fixtures.
   const ro16Map = new Map<string, TieDisplay>();
   for (const [tieId, hg, hr, ag, ar] of RO16_SEEDING) {
     ro16Map.set(tieId, {
       tieId, roundName: "RO16", status: "projected", gw1: 31, gw2: 32,
-      home: teamSide(hg, hr), away: teamSide(ag, ar),
+      home: placeholder(`${ordinal(hr)} (Group ${hg})`),
+      away: placeholder(`${ordinal(ar)} (Group ${ag})`),
       winnerId: null, loserId: null,
     });
   }
@@ -725,8 +727,8 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
 
   // C-33 survival: placeholder list of 11 teams (3 C-32 winners + 8 RO16 losers)
   const c33Placeholder: SurvivalDisplay[] = [
-    ...C32_SEEDING.map(([tieId]) => ({ teamId: "", name: `Winner of ${tieId}`, abbr: `Winner of ${tieId}`, score: 0, rank: null, advanced: false })),
-    ...RO16_SEEDING.map(([tieId]) => ({ teamId: "", name: `Loser of ${tieId}`, abbr: `Loser of ${tieId}`, score: 0, rank: null, advanced: false })),
+    ...C32_SEEDING.map(([tieId]) => ({ teamId: "", name: `Winner of ${tieId}`, score: 0, rank: null, advanced: false })),
+    ...RO16_SEEDING.map(([tieId]) => ({ teamId: "", name: `Loser of ${tieId}`, score: 0, rank: null, advanced: false })),
   ];
 
   // C-34: top 8 from survival, seeded 1v8, 2v7, 3v6, 4v5
@@ -789,9 +791,9 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
   const allTies = leagueId ? allTiesRaw.filter(t => t.leagueId === leagueId) : allTiesRaw;
 
   // Build team name map for quick lookup
-  const teamMap = new Map<string, { name: string; abbr: string }>();
-  const allTeams = await db.select({ id: teams.id, name: teams.name, abbr: teams.abbreviation }).from(teams);
-  for (const t of allTeams) teamMap.set(t.id, { name: t.name, abbr: t.abbr });
+  const teamMap = new Map<string, { name: string }>();
+  const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams);
+  for (const t of allTeams) teamMap.set(t.id, { name: t.name });
 
   // Fetch all playoff fixture results in one query
   const playoffFixtures = await db.select()
@@ -844,7 +846,6 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       home: tie.homeTeamId ? {
         teamId: tie.homeTeamId,
         name: homeInfo?.name || "TBD",
-        abbr: homeInfo?.abbr || "?",
         leg1Score: homeLeg1,
         leg2Score: homeLeg2,
         aggregate: tie.status === "complete" ? tie.homeAggregate : null,
@@ -852,7 +853,6 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       away: tie.awayTeamId ? {
         teamId: tie.awayTeamId,
         name: awayInfo?.name || "TBD",
-        abbr: awayInfo?.abbr || "?",
         leg1Score: awayLeg1,
         leg2Score: awayLeg2,
         aggregate: tie.status === "complete" ? tie.awayAggregate : null,
@@ -868,8 +868,8 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     .sort((a, b) => a.tieId.localeCompare(b.tieId));
 
   // Build winner/loser maps from completed ties for placeholder resolution
-  const winnerMap = new Map<string, { teamId: string; name: string; abbr: string }>();
-  const loserMap = new Map<string, { teamId: string; name: string; abbr: string }>();
+  const winnerMap = new Map<string, { teamId: string; name: string }>();
+  const loserMap = new Map<string, { teamId: string; name: string }>();
   for (const tie of allTies) {
     if (tie.winnerId) {
       const info = teamMap.get(tie.winnerId);
@@ -886,7 +886,7 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     const resolveWinnerTC = (srcTieId: string) => {
       const w = winnerMap.get(srcTieId);
       return w
-        ? { teamId: w.teamId, name: w.name, abbr: w.abbr, leg1Score: null, leg2Score: null, aggregate: null }
+        ? { teamId: w.teamId, name: w.name, leg1Score: null, leg2Score: null, aggregate: null }
         : placeholder(`W ${srcTieId}`);
     };
 
@@ -951,13 +951,13 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
   const resolveWinner = (srcTieId: string) => {
     const w = winnerMap.get(srcTieId);
     return w
-      ? { teamId: w.teamId, name: w.name, abbr: w.abbr, leg1Score: null, leg2Score: null, aggregate: null }
+      ? { teamId: w.teamId, name: w.name, leg1Score: null, leg2Score: null, aggregate: null }
       : placeholder(`Winner of ${srcTieId}`);
   };
   const resolveLoser = (srcTieId: string) => {
     const l = loserMap.get(srcTieId);
     return l
-      ? { teamId: l.teamId, name: l.name, abbr: l.abbr, leg1Score: null, leg2Score: null, aggregate: null }
+      ? { teamId: l.teamId, name: l.name, leg1Score: null, leg2Score: null, aggregate: null }
       : placeholder(`Loser of ${srcTieId}`);
   };
 
@@ -1005,7 +1005,6 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       survivalEntries.push({
         teamId: e.teamId,
         name: info?.name || "Unknown",
-        abbr: info?.abbr || "?",
         score: e.score,
         rank: e.rank,
         advanced: e.advanced,
@@ -1017,11 +1016,11 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
   const c33: SurvivalDisplay[] = survivalEntries.length > 0 ? survivalEntries : [
     ...C32_SEEDING.map(([tieId]) => {
       const w = winnerMap.get(tieId);
-      return { teamId: w?.teamId || "", name: w?.name || `Winner of ${tieId}`, abbr: w?.abbr || `Winner of ${tieId}`, score: 0, rank: null, advanced: false };
+      return { teamId: w?.teamId || "", name: w?.name || `Winner of ${tieId}`, score: 0, rank: null, advanced: false };
     }),
     ...RO16_SEEDING.map(([tieId]) => {
       const l = loserMap.get(tieId);
-      return { teamId: l?.teamId || "", name: l?.name || `Loser of ${tieId}`, abbr: l?.abbr || `Loser of ${tieId}`, score: 0, rank: null, advanced: false };
+      return { teamId: l?.teamId || "", name: l?.name || `Loser of ${tieId}`, score: 0, rank: null, advanced: false };
     }),
   ];
 
@@ -1076,7 +1075,6 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
         teamStats.set(tie.home.teamId, {
           teamId: tie.home.teamId,
           name: tie.home.name,
-          abbr: tie.home.abbr,
           played: 0,
           won: 0,
           drawn: 0,
@@ -1090,7 +1088,6 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
         teamStats.set(tie.away.teamId, {
           teamId: tie.away.teamId,
           name: tie.away.name,
-          abbr: tie.away.abbr,
           played: 0,
           won: 0,
           drawn: 0,
@@ -1307,7 +1304,6 @@ async function getGroupStandings(leagueId?: string | null) {
       return {
         teamId: team.id,
         name: team.name,
-        abbreviation: team.abbreviation,
         group: team.group?.name ?? null,
         leaguePoints: (wins * 2) + draws + cbpPts,
         pointsFor,

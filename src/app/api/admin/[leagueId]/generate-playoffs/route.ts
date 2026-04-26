@@ -142,15 +142,15 @@ export async function POST(request: NextRequest) {
   const gwCache = await ensurePlayoffGws(playoffStartGw, leagueId);
 
   // Build rank maps (group letter → rank number → team info)
-  const rankMap: Record<string, Record<number, { teamId: string; name: string; abbreviation: string }>> = {
+  const rankMap: Record<string, Record<number, { teamId: string; name: string }>> = {
     A: {},
     B: {},
   };
   for (const team of groupA) {
-    rankMap["A"][team.groupRank] = { teamId: team.teamId, name: team.name, abbreviation: team.abbreviation };
+    rankMap["A"][team.groupRank] = { teamId: team.teamId, name: team.name };
   }
   for (const team of groupB) {
-    rankMap["B"][team.groupRank] = { teamId: team.teamId, name: team.name, abbreviation: team.abbreviation };
+    rankMap["B"][team.groupRank] = { teamId: team.teamId, name: team.name };
   }
 
   const createdTies: string[] = [];
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    type GroupEntry = { teamId: string; name: string; abbreviation: string };
+    type GroupEntry = { teamId: string; name: string };
     const groupsMap: [GSMatch16[], GroupEntry[]][] = [
       [CHAMP_GA_MATCHES, champGA],
       [CHAMP_GB_MATCHES, champGB],

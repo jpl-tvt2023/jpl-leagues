@@ -115,13 +115,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         homeTeam: {
           id: f.homeTeam.id,
           name: f.homeTeam.name,
-          abbreviation: f.homeTeam.abbreviation,
           players: f.homeTeam.players.map((p: Player) => ({ name: p.name, fplId: p.fplId })),
         },
         awayTeam: {
           id: f.awayTeam.id,
           name: f.awayTeam.name,
-          abbreviation: f.awayTeam.abbreviation,
           players: f.awayTeam.players.map((p: Player) => ({ name: p.name, fplId: p.fplId })),
         },
         group: f.group?.name ?? null,
