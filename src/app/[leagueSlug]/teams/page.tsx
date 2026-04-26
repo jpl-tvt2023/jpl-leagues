@@ -9,7 +9,6 @@ import { useEnforceFormat } from "@/lib/league-context";
 interface TeamCard {
   teamId: string;
   name: string;
-  abbreviation: string;
   rank: number;
   totalPoints: number;
   purse: number;
@@ -162,9 +161,6 @@ export default function TeamsPage() {
                         <div className="flex items-center gap-2">
                           <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold ${rs.badge}`}>
                             #{t.rank}
-                          </span>
-                          <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-gray-200">
-                            {t.abbreviation}
                           </span>
                         </div>
                         <h3 className="mt-2 text-base font-semibold text-white truncate">{t.name}</h3>

@@ -8,7 +8,7 @@ import { getAuthorizedLeagueId } from "@/lib/league-auth";
 interface TeamRow {
   teamLoginId: string;
   teamName: string;
-  abbreviation: string;
+  abbreviation?: string; // Legacy column — accepted but ignored
   password: string;
   player1Name: string;
   player1FplId: string | number;
@@ -59,17 +59,15 @@ export async function POST(request: NextRequest) {
     // ---- Validate every row up-front; reject the whole upload on any error ----
     const errors: string[] = [];
     const seenLoginIds = new Set<string>();
-    const seenAbbrs = new Set<string>();
     const seenNames = new Set<string>();
 
     const REQUIRED_FIELDS: (keyof TeamRow)[] = [
-      "teamLoginId", "teamName", "abbreviation", "password",
+      "teamLoginId", "teamName", "password",
       "player1Name", "player1FplId", "player2Name", "player2FplId",
     ];
     const FIELD_LABELS: Record<string, string> = {
       teamLoginId: "Team ID",
       teamName: "Team Name",
-      abbreviation: "Abbreviation",
       password: "Password",
       player1Name: "Player1 Name",
       player1FplId: "Player1 FPL ID",
@@ -90,9 +88,6 @@ export async function POST(request: NextRequest) {
       if (!LOGIN_ID_RE.test(r.teamLoginId)) {
         errors.push(`Row ${rowNum}: Team ID "${r.teamLoginId}" must be 3–30 chars (letters, digits, _ or -)`);
       }
-      if (!/^[A-Za-z0-9]{1,5}$/.test(r.abbreviation)) {
-        errors.push(`Row ${rowNum}: Abbreviation "${r.abbreviation}" must be 1–5 alphanumeric chars`);
-      }
       if (String(r.password).length < 4) {
         errors.push(`Row ${rowNum}: Password must be at least 4 characters`);
       }
@@ -105,10 +100,6 @@ export async function POST(request: NextRequest) {
       const loginKey = r.teamLoginId.toLowerCase();
       if (seenLoginIds.has(loginKey)) errors.push(`Row ${rowNum}: duplicate Team ID "${r.teamLoginId}" appears earlier in the file`);
       seenLoginIds.add(loginKey);
-
-      const abbrKey = r.abbreviation.toUpperCase();
-      if (seenAbbrs.has(abbrKey)) errors.push(`Row ${rowNum}: duplicate Abbreviation "${abbrKey}" appears earlier in the file`);
-      seenAbbrs.add(abbrKey);
 
       const nameKey = r.teamName.replace(/\s+/g, "").toLowerCase();
       if (seenNames.has(nameKey)) errors.push(`Row ${rowNum}: duplicate Team Name "${r.teamName}" appears earlier in the file`);
@@ -176,7 +167,6 @@ export async function POST(request: NextRequest) {
         id: teamId,
         teamLoginId: r.teamLoginId,
         name: r.teamName,
-        abbreviation: r.abbreviation.toUpperCase(),
         password: hashed,
         mustChangePassword: true,
         isProfileComplete: true,

@@ -83,15 +83,13 @@ export async function GET(request: NextRequest) {
       ownerMap.set(o.fplElementId, { teamId: o.teamId, purchasePrice: o.purchasePrice });
     }
 
-    // Fetch team abbreviations
+    // Fetch team names
     const leagueTeams = await db
-      .select({ id: teams.id, abbreviation: teams.abbreviation, name: teams.name })
+      .select({ id: teams.id, name: teams.name })
       .from(teams)
       .where(eq(teams.leagueId, leagueId));
-    const teamAbbrMap = new Map<string, string>();
     const teamNameMap = new Map<string, string>();
     for (const t of leagueTeams) {
-      teamAbbrMap.set(t.id, t.abbreviation);
       teamNameMap.set(t.id, t.name);
     }
 
@@ -106,7 +104,6 @@ export async function GET(request: NextRequest) {
       plTeamId: number;
       plTeamShort: string;
       ownerTeamId: string | null;
-      ownerAbbreviation: string | null;
       ownerTeamName: string | null;
       gwPoints: number;
       seasonPoints: number;
@@ -141,7 +138,6 @@ export async function GET(request: NextRequest) {
         plTeamId: el.team,
         plTeamShort: plTeamMap.get(el.team) ?? `Team ${el.team}`,
         ownerTeamId,
-        ownerAbbreviation: ownerTeamId ? (teamAbbrMap.get(ownerTeamId) ?? null) : null,
         ownerTeamName: ownerTeamId ? (teamNameMap.get(ownerTeamId) ?? null) : null,
         gwPoints: gwPoints[el.id] ?? 0,
         seasonPoints: el.total_points,

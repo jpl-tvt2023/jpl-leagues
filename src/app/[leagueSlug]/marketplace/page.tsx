@@ -32,7 +32,6 @@ interface SquadPlayer {
 interface StandingEntry {
   teamId: string;
   teamName: string;
-  abbreviation: string;
 }
 
 type Tab = "incoming" | "outgoing" | "live" | "releases" | "history";

@@ -9,7 +9,6 @@ interface Winner {
   category: "championship" | "challenger" | "pl" | "ucl" | "uel";
   teamId: string;
   teamName: string;
-  teamAbbr: string;
   players: { name: string; fplId: string }[];
 }
 
@@ -301,7 +300,6 @@ async function getTeamData(teamId: string): Promise<Omit<Winner, "position" | "l
   return {
     teamId: team.id,
     teamName: team.name,
-    teamAbbr: team.abbreviation,
     players: teamPlayers.map((p) => ({
       name: p.name,
       fplId: p.fplId,

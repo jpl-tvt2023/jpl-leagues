@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
     const allTeams = await db.query.teams.findMany({
       where: eq(teams.leagueId, leagueId),
       with: { group: true },
-      columns: { id: true, name: true, abbreviation: true, groupId: true },
+      columns: { id: true, name: true, groupId: true },
     });
 
     return NextResponse.json({
@@ -113,7 +113,6 @@ export async function GET(request: NextRequest) {
         .map(t => ({
           id: t.id,
           name: t.name,
-          abbreviation: t.abbreviation,
           group: (t as { group: { name: string } }).group.name,
         })),
     });

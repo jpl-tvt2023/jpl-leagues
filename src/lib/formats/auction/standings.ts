@@ -13,7 +13,6 @@ export interface AuctionGwHistory {
 export interface AuctionStanding {
   teamId: string;
   teamName: string;
-  abbreviation: string;
   totalPoints: number;
   purse: number;
   squadValue: number; // sum of FMV of all owned players
@@ -26,7 +25,7 @@ export interface AuctionStanding {
  * Teams are ranked by cumulative total points (descending).
  */
 export function computeAuctionStandings(
-  teams: Pick<Team, "id" | "name" | "abbreviation" | "purse">[],
+  teams: Pick<Team, "id" | "name" | "purse">[],
   scores: Pick<AuctionScore, "teamId" | "gameweekId" | "totalPoints" | "rank" | "payout">[],
   gwNumbers: Map<string, number>, // gameweekId -> gwNumber
   squadValues: Map<string, number> // teamId -> total FMV
@@ -48,7 +47,6 @@ export function computeAuctionStandings(
     return {
       teamId: team.id,
       teamName: team.name,
-      abbreviation: team.abbreviation,
       totalPoints,
       purse: team.purse,
       squadValue: squadValues.get(team.id) ?? 0,

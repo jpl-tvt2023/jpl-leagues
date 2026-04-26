@@ -156,7 +156,6 @@ export async function GET(request: NextRequest) {
           opponent: {
             id: homeFixture.awayTeam.id,
             name: homeFixture.awayTeam.name,
-            abbreviation: homeFixture.awayTeam.abbreviation,
             players: homeFixture.awayTeam.players.map(p => ({
               name: p.name,
               fplId: p.fplId,
@@ -172,7 +171,6 @@ export async function GET(request: NextRequest) {
           opponent: {
             id: awayFixture.homeTeam.id,
             name: awayFixture.homeTeam.name,
-            abbreviation: awayFixture.homeTeam.abbreviation,
             players: awayFixture.homeTeam.players.map(p => ({
               name: p.name,
               fplId: p.fplId,
@@ -345,10 +343,10 @@ export async function GET(request: NextRequest) {
         oppScore,
         gotBonus,
         isHome,
+        myTeamId: teamId,
         myTeamName: team.name,
-        myTeamAbbr: team.abbreviation,
+        opponentTeamId: opponentTeam?.id ?? null,
         opponent: opponentTeam?.name || "Unknown",
-        opponentAbbr: opponentTeam?.abbreviation || "??",
         hasMyCaptainData,
         hasOppCaptainData,
         myPlayerScores,
@@ -653,8 +651,8 @@ export async function GET(request: NextRequest) {
     // ============================================
     // HIGHEST / LOWEST SCORING GW
     // ============================================
-    let highestGw: { gameweek: number; score: number; opponent?: string; opponentAbbr?: string } | null = null;
-    let lowestGw: { gameweek: number; score: number; opponent?: string; opponentAbbr?: string } | null = null;
+    let highestGw: { gameweek: number; score: number; opponent?: string } | null = null;
+    let lowestGw: { gameweek: number; score: number; opponent?: string } | null = null;
 
     // Only consider fixtures from gameweeks strictly before the latest completed GW (ignore current and upcoming)
     const concludedFixtures = allFixtures.filter(f =>
@@ -666,12 +664,11 @@ export async function GET(request: NextRequest) {
       const myScore = isHome ? f.result!.homeScore : f.result!.awayScore;
       const oppTeam = isHome ? (f as any).awayTeam : (f as any).homeTeam;
       const opponent = oppTeam?.name as string | undefined;
-      const opponentAbbr = oppTeam?.abbreviation as string | undefined;
       if (!highestGw || myScore > highestGw.score) {
-        highestGw = { gameweek: f.gameweek.number, score: myScore, opponent, opponentAbbr };
+        highestGw = { gameweek: f.gameweek.number, score: myScore, opponent };
       }
       if (!lowestGw || myScore < lowestGw.score) {
-        lowestGw = { gameweek: f.gameweek.number, score: myScore, opponent, opponentAbbr };
+        lowestGw = { gameweek: f.gameweek.number, score: myScore, opponent };
       }
     }
 
@@ -697,7 +694,7 @@ export async function GET(request: NextRequest) {
     // ============================================
     // OPPOSITE GROUP TOP-2 (for Challenge Chip target selection)
     // ============================================
-    let oppositeGroupTeams: { id: string; name: string; abbreviation: string }[] = [];
+    let oppositeGroupTeams: { id: string; name: string }[] = [];
     try {
       const allGroups = await db.query.groups.findMany();
       const oppositeGroup = allGroups.find(g => g.id !== team.groupId);
@@ -708,7 +705,7 @@ export async function GET(request: NextRequest) {
         oppositeGroupTeams = top2Teams
           .filter(t => top2Ids.includes(t.id))
           .sort((a, b) => top2Ids.indexOf(a.id) - top2Ids.indexOf(b.id))
-          .map(t => ({ id: t.id, name: t.name, abbreviation: t.abbreviation }));
+          .map(t => ({ id: t.id, name: t.name }));
       }
     } catch {
       // Non-critical — leave empty if standings not yet available
@@ -763,7 +760,6 @@ export async function GET(request: NextRequest) {
         competitionType: string;
         competitionLabel: string;
         opponent: string;
-        opponentAbbr: string;
         isHome: boolean;
         myScore: number;
         oppScore: number;
@@ -804,7 +800,7 @@ export async function GET(request: NextRequest) {
           awayMatchPoints: f.result!.awayMatchPoints,
         }));
         const standings = computeCupGroupStandings(
-          cupGroupTeams.map(t => ({ id: t.id, name: t.name, abbreviation: t.abbreviation, isGhost: t.isGhost ?? false })),
+          cupGroupTeams.map(t => ({ id: t.id, name: t.name, isGhost: t.isGhost ?? false })),
           fixtureResults
         );
         const humanStandings = standings.filter(s => !s.isGhost);
@@ -903,9 +899,6 @@ export async function GET(request: NextRequest) {
             opponent: lastCupF.homeTeamId === teamId
               ? (lastCupF.awayTeam?.name || "Unknown")
               : (lastCupF.homeTeam?.name || "Unknown"),
-            opponentAbbr: lastCupF.homeTeamId === teamId
-              ? (lastCupF.awayTeam?.abbreviation || "??")
-              : (lastCupF.homeTeam?.abbreviation || "??"),
             isHome: lastCupF.homeTeamId === teamId,
             myScore: lastCupF.homeTeamId === teamId ? lastCupF.result.homeScore : lastCupF.result.awayScore,
             oppScore: lastCupF.homeTeamId === teamId ? lastCupF.result.awayScore : lastCupF.result.homeScore,
@@ -938,7 +931,6 @@ export async function GET(request: NextRequest) {
       team: {
         id: team.id,
         name: team.name,
-        abbreviation: team.abbreviation,
         group: team.group?.name || null,
         leaguePoints: team.leaguePoints,
         bonusPoints: team.bonusPoints,
@@ -1076,7 +1068,7 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     }
 
     const standings = allTeams
-      .map(at => ({ id: at.id, name: at.name, abbreviation: at.abbreviation, totalPoints: teamPointsMap.get(at.id) || 0 }))
+      .map(at => ({ id: at.id, name: at.name, totalPoints: teamPointsMap.get(at.id) || 0 }))
       .sort((a, b) => b.totalPoints - a.totalPoints)
       .map((s, i) => ({ ...s, rank: i + 1, isCurrentTeam: s.id === teamId }));
 
@@ -1110,7 +1102,6 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
       team: {
         id: t.id,
         name: t.name,
-        abbreviation: t.abbreviation,
       },
       purse: calculatePurse(leagueRow[0]?.initialBudget ?? 0, totalIncome, t.totalSpent ?? 0, t.totalRefunds ?? 0),
       initialBudget: leagueRow[0]?.initialBudget ?? 0,

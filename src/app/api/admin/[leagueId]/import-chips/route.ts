@@ -71,12 +71,11 @@ export async function POST(request: NextRequest) {
     if (!leagueRecord.length) return NextResponse.json({ error: "League not found" }, { status: 404 });
     const { playoffStartGw } = leagueRecord[0];
 
-    // Get all teams for this league — index by teamLoginId, with abbreviation as fallback
+    // Get all teams for this league — index by teamLoginId
     const allTeams = await db.select().from(teams).where(eq(teams.leagueId, leagueId));
     const teamMap = new Map<string, typeof allTeams[0]>();
     for (const t of allTeams) {
       if (t.teamLoginId) teamMap.set(t.teamLoginId.toLowerCase(), t);
-      if (t.abbreviation) teamMap.set(t.abbreviation.toLowerCase(), t);
     }
 
     // Get all gameweeks for this league

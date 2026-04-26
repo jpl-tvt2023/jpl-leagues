@@ -11,7 +11,6 @@ interface DashboardData {
   team: {
     id: string;
     name: string;
-    abbreviation: string;
     group: string;
     leaguePoints: number;
     bonusPoints: number;
@@ -26,7 +25,6 @@ interface DashboardData {
     opponent: {
       id: string;
       name: string;
-      abbreviation: string;
       players: { name: string; fplId: string; fplUrl: string }[];
     };
     gameweek: number;
@@ -41,10 +39,10 @@ interface DashboardData {
     oppScore: number;
     gotBonus: boolean;
     isHome: boolean;
+    myTeamId: string;
     myTeamName: string;
-    myTeamAbbr: string;
+    opponentTeamId: string | null;
     opponent: string;
-    opponentAbbr: string;
     hasMyCaptainData: boolean;
     hasOppCaptainData: boolean;
     myPlayerScores: { name: string; isCaptain: boolean; fplScore: number; transferHits: number; finalScore: number; isInferred?: boolean; fplId?: string; fplUrl?: string }[];
@@ -68,8 +66,8 @@ interface DashboardData {
     pointsDiff: number;
     bonusPointsEarned: number;
     chipPointsEarned: number;
-    highestScoringGW: { gameweek: number; score: number; opponent?: string; opponentAbbr?: string } | null;
-    lowestScoringGW: { gameweek: number; score: number; opponent?: string; opponentAbbr?: string } | null;
+    highestScoringGW: { gameweek: number; score: number; opponent?: string } | null;
+    lowestScoringGW: { gameweek: number; score: number; opponent?: string } | null;
     currentStreak: { type: "W" | "D" | "L"; count: number } | null;
   };
   leaguePosition: {
@@ -97,7 +95,7 @@ interface DashboardData {
     recentCaptains: { gameweek: number; playerName: string; score: number }[];
   };
   upcomingFixtures: { gameweek: number; opponent: string; isHome: boolean; competitionType?: string; competitionLabel?: string }[];
-  oppositeGroupTeams: { id: string; name: string; abbreviation: string }[];
+  oppositeGroupTeams: { id: string; name: string }[];
   announcementSettings: {
     captainAnnouncementEnabled: boolean;
     chipAnnouncementEnabled: boolean;
@@ -128,7 +126,6 @@ interface DashboardData {
       competitionType: string;
       competitionLabel: string;
       opponent: string | undefined;
-      opponentAbbr?: string;
       isHome: boolean;
       myScore: number;
       oppScore: number;
@@ -154,9 +151,8 @@ interface DashboardData {
     myScore: number;
     oppScore: number;
     isHome: boolean;
-    myTeamAbbr: string;
+    myTeamName: string;
     opponent: string;
-    opponentAbbr: string;
     hasMyCaptainData: boolean;
     hasOppCaptainData: boolean;
     myPlayerScores: any[];
@@ -355,7 +351,7 @@ const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35,
 interface AuctionDashboardData {
   leagueSlug: string;
   leagueFormat: "auction";
-  team: { id: string; name: string; abbreviation: string };
+  team: { id: string; name: string };
   purse: number;
   initialBudget: number;
   totalSpent: number;
@@ -369,7 +365,7 @@ interface AuctionDashboardData {
   squad: { id: string; fplElementId: number; playerName: string; purchasePrice: number; acquiredGw: number; status: string; elementType: number | null; totalPoints: number }[];
   rank: number;
   totalManagers: number;
-  standings: { id: string; name: string; abbreviation: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
+  standings: { id: string; name: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
   gwHistory: { gameweek: number; points: number; rank: number | null; income: number }[];
   lastGwResult: { gameweek: number; points: number; rank: number | null; income: number } | null;
   auctionSession: { id: string; type: string; status: string } | null;
@@ -432,8 +428,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
         {/* Header */}
         <div className="mb-8">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
-            <h1 className="text-2xl sm:text-4xl font-bold text-white">{data.team.name}</h1>
-            <span className="text-sm sm:text-lg text-gray-400">({data.team.abbreviation})</span>
+            <h1 className="text-2xl sm:text-4xl font-bold text-white truncate">{data.team.name}</h1>
             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-300">
               Rank #{data.rank} of {data.totalManagers}
             </span>
@@ -814,15 +809,15 @@ export default function DashboardPage() {
       if (res.ok) {
         const freshData = await res.json();
         // Find the fixture matching this user's team
-        const myAbbr = data.lastGwResult?.myTeamAbbr;
-        const oppAbbr = data.lastGwResult?.opponentAbbr;
-        if (myAbbr && oppAbbr && freshData.fixtures) {
-          const fixture = freshData.fixtures.find((f: { homeTeamAbbr: string; awayTeamAbbr: string }) =>
-            (f.homeTeamAbbr === myAbbr && f.awayTeamAbbr === oppAbbr) ||
-            (f.homeTeamAbbr === oppAbbr && f.awayTeamAbbr === myAbbr)
+        const myId = data.lastGwResult?.myTeamId;
+        const oppId = data.lastGwResult?.opponentTeamId;
+        if (myId && oppId && freshData.fixtures) {
+          const fixture = freshData.fixtures.find((f: { homeTeamId: string; awayTeamId: string }) =>
+            (f.homeTeamId === myId && f.awayTeamId === oppId) ||
+            (f.homeTeamId === oppId && f.awayTeamId === myId)
           );
           if (fixture) {
-            const isMyHome = fixture.homeTeamAbbr === myAbbr;
+            const isMyHome = fixture.homeTeamId === myId;
             setLiveScoreOverride({
               myScore: isMyHome ? fixture.homeScore : fixture.awayScore,
               oppScore: isMyHome ? fixture.awayScore : fixture.homeScore,
@@ -1070,8 +1065,7 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="mb-8">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
-            <h1 className="text-2xl sm:text-4xl font-bold text-white">{data.team.name}</h1>
-            <span className="text-sm sm:text-lg text-gray-400">({data.team.abbreviation})</span>
+            <h1 className="text-2xl sm:text-4xl font-bold text-white truncate">{data.team.name}</h1>
             {leagueFormat === "triple-crown" ? (
               <>
                 {data.plPosition && (
@@ -1459,7 +1453,7 @@ export default function DashboardPage() {
                           >
                             <option value="">Select opponent...</option>
                             {(data.oppositeGroupTeams ?? []).map((t) => (
-                              <option key={t.id} value={t.id}>{t.name} ({t.abbreviation})</option>
+                              <option key={t.id} value={t.id}>{t.name}</option>
                             ))}
                           </select>
                         </div>
@@ -1582,7 +1576,7 @@ export default function DashboardPage() {
                   {/* My Team Players */}
                   <div className={`p-3 rounded-lg ${liveScoreOverride ? "bg-green-900/10 border border-green-500/20" : "bg-white/5"}`}>
                     <div className="text-xs text-gray-400 mb-2 text-center">
-                      {data.lastGwResult.myTeamAbbr} Players
+                      {data.lastGwResult.myTeamName} Players
                       {!liveScoreOverride && !data.lastGwResult.hasMyCaptainData && (
                         <span className="text-orange-400 ml-1">(estimated)</span>
                       )}
@@ -1625,7 +1619,7 @@ export default function DashboardPage() {
                   {/* Opponent Players */}
                   <div className={`p-3 rounded-lg ${liveScoreOverride ? "bg-green-900/10 border border-green-500/20" : "bg-white/5"}`}>
                     <div className="text-xs text-gray-400 mb-2 text-center">
-                      {data.lastGwResult.opponentAbbr} Players
+                      {data.lastGwResult.opponent} Players
                       {!liveScoreOverride && !data.lastGwResult.hasOppCaptainData && (
                         <span className="text-orange-400 ml-1">(estimated)</span>
                       )}
@@ -1674,8 +1668,8 @@ export default function DashboardPage() {
               if (!cupResult) return null;
               const cupPlayerScores = cupResult.myPlayerScores ?? [];
               const cupOppPlayerScores = cupResult.oppPlayerScores ?? [];
-              const myAbbr = (cupResult as any).myTeamAbbr ?? data.team.abbreviation;
-              const oppAbbr = (cupResult as any).opponentAbbr ?? "OPP";
+              const myName = (cupResult as any).myTeamName ?? data.team.name;
+              const oppName = cupResult.opponent ?? "OPP";
               const currentCupGw = cupViewedGw ?? cupResult.gameweek;
               const cupGws = data.cupProgress?.completedCupGws ?? [];
               const currentCupIdx = cupGws.indexOf(currentCupGw);
@@ -1717,7 +1711,7 @@ export default function DashboardPage() {
                   <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-2">
                     <div className="flex-1 text-center">
                       <div className="text-xs text-gray-400 mb-1">{cupResult.isHome ? "HOME" : "AWAY"}</div>
-                      <div className="text-base sm:text-lg font-bold text-white">{myAbbr}</div>
+                      <div className="text-base sm:text-lg font-bold text-white truncate">{myName}</div>
                     </div>
                     <div className="px-4 sm:px-6 text-center">
                       <div className={`text-3xl sm:text-4xl font-bold ${cupResult.result === "W" ? "text-green-400" : "text-red-400"}`}>
@@ -1739,12 +1733,12 @@ export default function DashboardPage() {
                   {cupPlayerScores.length > 0 && (
                     <div className="grid md:grid-cols-2 gap-4">
                       {[
-                        { scores: cupPlayerScores, abbr: myAbbr, hasCaptainData: !!(cupResult as any).hasMyCaptainData },
-                        { scores: cupOppPlayerScores, abbr: oppAbbr, hasCaptainData: !!(cupResult as any).hasOppCaptainData },
-                      ].map(({ scores, abbr, hasCaptainData }) => (
-                        <div key={abbr} className="p-3 rounded-lg bg-blue-900/10 border border-blue-500/20">
+                        { scores: cupPlayerScores, label: myName, hasCaptainData: !!(cupResult as any).hasMyCaptainData },
+                        { scores: cupOppPlayerScores, label: oppName, hasCaptainData: !!(cupResult as any).hasOppCaptainData },
+                      ].map(({ scores, label, hasCaptainData }) => (
+                        <div key={label} className="p-3 rounded-lg bg-blue-900/10 border border-blue-500/20">
                           <div className="text-xs text-gray-400 mb-2 text-center">
-                            {abbr} Players
+                            {label} Players
                             {!hasCaptainData && <span className="text-orange-400 ml-1">(estimated)</span>}
                           </div>
                           {scores.map((p: any, i: number) => (

@@ -10,7 +10,6 @@ interface Team {
   id: string;
   teamLoginId?: string;
   name: string;
-  abbreviation: string;
   group: string;
   players: { id: string; name: string; fplId: string }[];
   needsPasswordChange: boolean;
@@ -162,7 +161,6 @@ export default function AdminDashboard() {
   const [formData, setFormData] = useState({
     teamLoginId: "",
     teamName: "",
-    abbreviation: "",
     password: "",
     player1Name: "",
     player1FplId: "",
@@ -293,7 +291,6 @@ export default function AdminDashboard() {
     teamId: "",
     teamLoginId: "",
     teamName: "",
-    abbreviation: "",
     password: "",
     player1Id: "",
     player1Name: "",
@@ -1193,7 +1190,6 @@ export default function AdminDashboard() {
       setFormData({
         teamLoginId: "",
         teamName: "",
-        abbreviation: "",
         password: "",
         player1Name: "",
         player1FplId: "",
@@ -1332,7 +1328,6 @@ export default function AdminDashboard() {
       const rows = teamsData.map(row => ({
         teamLoginId: String(row["Team ID"] ?? row["teamLoginId"] ?? row["Team Login ID"] ?? row["TeamLoginId"] ?? "").trim(),
         teamName: String(row["Team Name"] ?? row["teamName"] ?? row["TeamName"] ?? "").trim(),
-        abbreviation: String(row["Abbreviation"] ?? row["abbreviation"] ?? row["Abbr"] ?? "").trim(),
         password: String(row["Password"] ?? row["password"] ?? "").trim(),
         player1Name: String(row["Player1 Name"] ?? row["Player 1 Name"] ?? row["player1Name"] ?? row["Player1Name"] ?? "").trim(),
         player1FplId: String(row["Player1 FPL ID"] ?? row["Player 1 FPL ID"] ?? row["player1FplId"] ?? row["Player1FplId"] ?? "").trim(),
@@ -1494,7 +1489,6 @@ export default function AdminDashboard() {
       teamId: team.id,
       teamLoginId: team.teamLoginId || "",
       teamName: team.name,
-      abbreviation: team.abbreviation,
       password: "",
       player1Id: team.players[0]?.id || "",
       player1Name: team.players[0]?.name || "",
@@ -1696,22 +1690,6 @@ export default function AdminDashboard() {
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                   />
                   <p className="text-gray-500 text-xs mt-1">{isAuctionFormat ? "Manager display name. Unique within this league." : "Display name. Unique within this league."}</p>
-                </div>
-              </div>
-
-              {/* Abbreviation */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Abbreviation" : "Team Abbreviation"}</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={4}
-                    value={editFormData.abbreviation}
-                    onChange={(e) => setEditFormData({ ...editFormData, abbreviation: e.target.value.toUpperCase() })}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none uppercase"
-                  />
-                  <p className="text-gray-500 text-xs mt-1">2–4 uppercase letters. Unique within this league.</p>
                 </div>
               </div>
 
@@ -2057,23 +2035,6 @@ export default function AdminDashboard() {
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                       />
                       <p className="text-xs text-gray-500 mt-1">{isAuctionFormat ? "Manager display name. Unique within this league." : "Display name. Unique within this league."}</p>
-                    </div>
-                  </div>
-
-                  {/* Abbreviation */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Abbreviation" : "Team Abbreviation"}</label>
-                      <input
-                        type="text"
-                        required
-                        maxLength={4}
-                        value={formData.abbreviation}
-                        onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
-                        placeholder="DM"
-                        className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none uppercase"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">2–4 uppercase letters. Unique within this league.</p>
                     </div>
                   </div>
 
@@ -2454,7 +2415,6 @@ export default function AdminDashboard() {
                 <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
                   <div>
                     <div className="font-semibold text-white text-sm">{team.name}</div>
-                    <div className="text-xs text-gray-400">{team.abbreviation}</div>
                   </div>
                   <select
                     value={groupAssignments[team.id] || "A"}
@@ -2710,7 +2670,7 @@ export default function AdminDashboard() {
                     ⚠ Destructive: replaces ALL existing teams in this league (and cascades to players, fixtures, results, chip plays, captain assignments).
                   </p>
                   <p className="text-gray-400 text-sm mb-4">
-                    Excel columns: <code className="text-gray-300">teamLoginId, teamName, abbreviation, password, player1Name, player1FplId, player2Name, player2FplId, group</code> (group is optional: A, B, or blank).
+                    Excel columns: <code className="text-gray-300">teamLoginId, teamName, password, player1Name, player1FplId, player2Name, player2FplId, group</code> (group is optional: A, B, or blank). The legacy <code className="text-gray-300">abbreviation</code> column is accepted but ignored.
                   </p>
 
                   <div className="mb-4">

@@ -17,7 +17,6 @@ interface AuctionGwHistoryEntry {
 interface AuctionStandingRow {
   teamId: string;
   teamName: string;
-  abbreviation: string;
   totalPoints: number;
   purse: number;
   squadValue: number;
@@ -80,7 +79,6 @@ export function AuctionStandings() {
         return {
           teamId: s.teamId,
           teamName: s.teamName,
-          abbreviation: s.abbreviation,
           points: entry.points,
           payout: entry.payout,
           gwRank: entry.rank,
@@ -155,7 +153,6 @@ export function AuctionStandings() {
                               <td className="px-4 py-3 font-bold text-white">{r.rank}</td>
                               <td className="px-4 py-3">
                                 <div className="font-semibold text-white">{r.teamName}</div>
-                                <div className="text-xs text-gray-400">{r.abbreviation}</div>
                               </td>
                               <td className="px-4 py-3 text-right font-mono font-bold text-[#00ff85]">{r.points}</td>
                               <td className="px-4 py-3 text-right font-mono text-green-300">{formatCurrency(r.payout)}</td>
@@ -193,7 +190,6 @@ export function AuctionStandings() {
                             <td className="px-4 py-3 font-bold text-white">{row.rank}</td>
                             <td className="px-4 py-3">
                               <div className="font-semibold text-white">{row.teamName}</div>
-                              <div className="text-xs text-gray-400">{row.abbreviation}</div>
                             </td>
                             <td className="px-4 py-3 text-right font-mono font-bold text-[#00ff85]">{row.totalPoints}</td>
                             <td className="px-4 py-3 text-right font-mono text-green-300">{formatCurrency(row.purse)}</td>

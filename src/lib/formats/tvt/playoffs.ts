@@ -91,7 +91,6 @@ export const CHALL_GB_MATCHES: GSMatch16[] = [
 export interface RankedTeam {
   teamId: string;
   name: string;
-  abbreviation: string;
   group: string;
   groupRank: number;
   leaguePoints: number;
@@ -218,7 +217,6 @@ export async function getGroupStandings(leagueId: string, leagueStageEnd: number
       return {
         teamId: team.id,
         name: team.name,
-        abbreviation: team.abbreviation,
         group: team.group?.name || "Unknown",
         leaguePoints,
         pointsFor,

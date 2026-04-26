@@ -76,7 +76,6 @@ export const teams = sqliteTable("teams", {
   teamLoginId: text("team_login_id"), // Global login credential (set by admin, editable by team during setup)
   name: text("name").notNull(), // Team display name (set by team during setup, unique per league)
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
-  abbreviation: text("abbreviation").notNull(), // e.g., "DM"
   password: text("password").notNull(), // Hashed password for team login
   mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
   groupId: text("group_id").references(() => groups.id, { onDelete: "set null" }), // Optional: null if group not assigned
@@ -116,7 +115,7 @@ export const teams = sqliteTable("teams", {
   comebackSet2Used: integer("comeback_set2_used", { mode: "boolean" }).notNull().default(false),
   underdogSet2Used: integer("underdog_set2_used", { mode: "boolean" }).notNull().default(false),
 
-  // Team onboarding: set to true when team completes setup wizard (team name, abbreviation, 2 players)
+  // Team onboarding: set to true when team completes setup wizard (team name, 2 players)
   isProfileComplete: integer("is_profile_complete", { mode: "boolean" }).notNull().default(false),
 
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),

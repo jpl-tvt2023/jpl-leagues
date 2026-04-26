@@ -54,7 +54,6 @@ interface BootstrapTeam {
 interface StandingEntry {
   teamId: string;
   teamName: string;
-  abbreviation: string;
 }
 
 interface BidFeedItem {

@@ -31,7 +31,6 @@ export async function GET(request: NextRequest) {
     .select({
       id: teams.id,
       name: teams.name,
-      abbreviation: teams.abbreviation,
       purse: teams.purse,
     })
     .from(teams)
@@ -92,7 +91,6 @@ export async function GET(request: NextRequest) {
     return {
       teamId: s.teamId,
       name: s.teamName,
-      abbreviation: s.abbreviation,
       rank: s.rank,
       totalPoints: s.totalPoints,
       purse: s.purse,

@@ -60,10 +60,6 @@ export async function POST(request: NextRequest) {
       with: { group: true },
     });
     const teamMap = new Map(allTeams.map(t => [t.teamLoginId?.toLowerCase() || "", t]));
-    // Also add by abbreviation as fallback
-    for (const t of allTeams) {
-      if (t.abbreviation) teamMap.set(t.abbreviation.toLowerCase(), t);
-    }
 
     // Get all gameweeks for this league for lookup
     const allGameweeks = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));

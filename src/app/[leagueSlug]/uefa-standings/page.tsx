@@ -10,7 +10,6 @@ interface CupGroupStanding {
   rank: number;
   teamId: string;
   teamName: string;
-  teamAbbr: string;
   wins: number;
   draws: number;
   losses: number;

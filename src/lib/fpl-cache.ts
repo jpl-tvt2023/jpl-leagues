@@ -301,8 +301,8 @@ export interface LiveFixtureScore {
   gameweek: number;          // Track which GW this score is from
   homeTeamName: string;
   awayTeamName: string;
-  homeTeamAbbr: string;
-  awayTeamAbbr: string;
+  homeTeamId: string;
+  awayTeamId: string;
   homeScore: number;
   awayScore: number;
   homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];

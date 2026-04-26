@@ -12,7 +12,6 @@ interface Winner {
   category: "championship" | "challenger" | "pl" | "ucl" | "uel";
   teamId: string;
   teamName: string;
-  teamAbbr: string;
   players: { name: string; fplId: string }[];
 }
 
@@ -167,7 +166,6 @@ export default function LeagueWinnersPage() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="text-white font-semibold">{winner.teamName}</div>
-                      <div className="text-xs text-gray-400">{winner.teamAbbr}</div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="space-y-1">
