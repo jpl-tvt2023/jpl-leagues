@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leagues, teams, gameweeks } from "@/lib/db/schema";
+import { leagues, teams, gameweeks, groups } from "@/lib/db/schema";
 import { eq, and, max, count } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
@@ -117,6 +117,20 @@ export async function POST(request: NextRequest) {
         isSimulated: format === "auction" ? (isSimulated ?? false) : false,
       });
 
+      // For TVT, pre-create the PL groups and split teams across them so the
+      // admin doesn't have to assign every team manually. groupCount=1 → all
+      // teams in Group A; groupCount=2 → first half in A, second half in B.
+      const tvtGroupIds: string[] = [];
+      if (format === "tvt" && resolvedGroupCount > 0) {
+        const groupNames = resolvedGroupCount === 2 ? ["A", "B"] : ["A"];
+        for (const gn of groupNames) {
+          const gid = generateId();
+          await tx.insert(groups).values({ id: gid, name: gn, leagueId: id, groupType: "pl" });
+          tvtGroupIds.push(gid);
+        }
+      }
+      const teamsPerGroup = tvtGroupIds.length > 0 ? Math.ceil(resolvedTeamSize / tvtGroupIds.length) : 0;
+
       // Auto-create placeholder team accounts for every format. Teams complete
       // their own profile (name, players) on first login via /setup.
       for (let i = 1; i <= resolvedTeamSize; i++) {
@@ -124,6 +138,9 @@ export async function POST(request: NextRequest) {
         const loginId = `${slug}Team${i}`;
         const plainPassword = `Team@${padded}`;
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
+        const groupId = tvtGroupIds.length > 0
+          ? tvtGroupIds[Math.min(Math.floor((i - 1) / teamsPerGroup), tvtGroupIds.length - 1)]
+          : undefined;
 
         await tx.insert(teams).values({
           id: generateId(),
@@ -133,6 +150,7 @@ export async function POST(request: NextRequest) {
           password: hashedPassword,
           mustChangePassword: true,
           isProfileComplete: false,
+          ...(groupId ? { groupId } : {}),
           ...(format === "auction" ? { purse: resolvedBudget } : {}),
         });
         createdTeams++;
