@@ -129,7 +129,23 @@ export async function POST(request: NextRequest) {
           tvtGroupIds.push(gid);
         }
       }
-      const teamsPerGroup = tvtGroupIds.length > 0 ? Math.ceil(resolvedTeamSize / tvtGroupIds.length) : 0;
+
+      // Random initial allocation: shuffle team indices (Fisher-Yates), then
+      // slice evenly across groups. Admin can re-shuffle or move teams from
+      // the Groups tab before revealing to teams.
+      const teamIndexToGroupId = new Map<number, string>();
+      if (tvtGroupIds.length > 0) {
+        const order = Array.from({ length: resolvedTeamSize }, (_, k) => k + 1);
+        for (let k = order.length - 1; k > 0; k--) {
+          const j = Math.floor(Math.random() * (k + 1));
+          [order[k], order[j]] = [order[j], order[k]];
+        }
+        const perGroup = Math.ceil(resolvedTeamSize / tvtGroupIds.length);
+        order.forEach((teamNum, idx) => {
+          const gIdx = Math.min(Math.floor(idx / perGroup), tvtGroupIds.length - 1);
+          teamIndexToGroupId.set(teamNum, tvtGroupIds[gIdx]);
+        });
+      }
 
       // Auto-create placeholder team accounts for every format. Teams complete
       // their own profile (name, players) on first login via /setup.
@@ -138,9 +154,7 @@ export async function POST(request: NextRequest) {
         const loginId = `${slug}Team${i}`;
         const plainPassword = `Team@${padded}`;
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
-        const groupId = tvtGroupIds.length > 0
-          ? tvtGroupIds[Math.min(Math.floor((i - 1) / teamsPerGroup), tvtGroupIds.length - 1)]
-          : undefined;
+        const groupId = teamIndexToGroupId.get(i);
 
         await tx.insert(teams).values({
           id: generateId(),
