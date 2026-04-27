@@ -152,7 +152,20 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("[superadmin/leagues POST] failed:", err);
-    const msg = err instanceof Error ? err.message : String(err);
+    // Drizzle wraps the real DB error in `cause` and only puts the SQL in `.message`.
+    // Walk the cause chain so the actual SQLite/libsql reason surfaces to the client.
+    const parts: string[] = [];
+    let cur: unknown = err;
+    while (cur && parts.length < 5) {
+      if (cur instanceof Error) {
+        parts.push(cur.message);
+        cur = (cur as { cause?: unknown }).cause;
+      } else {
+        parts.push(String(cur));
+        break;
+      }
+    }
+    const msg = parts.join(" | ");
 
     if (/UNIQUE constraint failed:\s*teams\.team_login_id/i.test(msg) || /teams_login_id_global_unique/i.test(msg)) {
       return NextResponse.json({
