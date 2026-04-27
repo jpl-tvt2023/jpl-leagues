@@ -2513,26 +2513,69 @@ export default function AdminDashboard() {
 
             {teams.length === 0 ? (
               <div className="text-gray-400 italic text-sm">No teams yet.</div>
-            ) : (
-              <div className="grid sm:grid-cols-2 gap-3">
-                {teams.map((team) => (
-                  <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                    <div>
-                      <div className="font-semibold text-white text-sm">{team.name}</div>
+            ) : (() => {
+              const target = Math.ceil(teams.length / 2);
+              const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+              const sorted = [...teams].sort((a, b) => collator.compare(a.name, b.name));
+              const inGroup = (g: "A" | "B") => sorted.filter(t => (groupAssignments[t.id] || "A") === g);
+              const groupA = inGroup("A");
+              const groupB = inGroup("B");
+              const flip = (teamId: string) => {
+                if (groupsRevealed) return;
+                setGroupAssignments(prev => ({ ...prev, [teamId]: (prev[teamId] || "A") === "A" ? "B" : "A" }));
+              };
+              const Column = ({ label, accent, members, moveLabel }: {
+                label: "A" | "B"; accent: { border: string; text: string; chipHover: string }; members: typeof sorted; moveLabel: string;
+              }) => {
+                const over = members.length > target;
+                return (
+                  <div className={`rounded-xl border ${accent.border} bg-white/5 p-4`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className={`font-bold ${accent.text}`}>Group {label}</h4>
+                      <span className={`text-sm font-mono ${over ? "text-red-400" : "text-gray-300"}`} title={over ? "Over the balanced size" : ""}>
+                        {members.length} / {target}
+                      </span>
                     </div>
-                    <select
-                      value={groupAssignments[team.id] || "A"}
-                      onChange={(e) => setGroupAssignments(prev => ({ ...prev, [team.id]: e.target.value }))}
-                      disabled={groupsRevealed}
-                      className="rounded-lg bg-black/40 border border-white/20 text-white text-sm px-3 py-1.5 focus:border-yellow-400 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="A">Group A</option>
-                      {leagueConfig.groupCount >= 2 && <option value="B">Group B</option>}
-                    </select>
+                    {members.length === 0 ? (
+                      <div className="text-gray-500 italic text-sm py-6 text-center">No teams assigned</div>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {members.map(team => (
+                          <button
+                            key={team.id}
+                            onClick={() => flip(team.id)}
+                            disabled={groupsRevealed}
+                            title={groupsRevealed ? "Groups are revealed — toggle off to edit" : `Move to Group ${moveLabel}`}
+                            className={`group flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-left text-sm text-white transition ${groupsRevealed ? "opacity-60 cursor-not-allowed" : `${accent.chipHover} cursor-pointer`}`}
+                          >
+                            <span className="font-medium truncate">{team.name}</span>
+                            <span className={`ml-2 text-xs text-gray-400 ${groupsRevealed ? "" : "group-hover:text-white"}`}>
+                              → {moveLabel}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
+                );
+              };
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Column
+                    label="A"
+                    accent={{ border: "border-blue-500/40", text: "text-blue-400", chipHover: "hover:bg-blue-500/10 hover:border-blue-500/40" }}
+                    members={groupA}
+                    moveLabel="B"
+                  />
+                  <Column
+                    label="B"
+                    accent={{ border: "border-purple-500/40", text: "text-purple-400", chipHover: "hover:bg-purple-500/10 hover:border-purple-500/40" }}
+                    members={groupB}
+                    moveLabel="A"
+                  />
+                </div>
+              );
+            })()}
           </div>
         )}
 
