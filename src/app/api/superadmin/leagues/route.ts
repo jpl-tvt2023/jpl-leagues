@@ -94,41 +94,50 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Format "${format}" is not supported` }, { status: 400 });
   }
 
+  // Pre-check slug to give a precise error before doing any inserts.
+  const existing = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, slug)).limit(1);
+  if (existing.length > 0) {
+    return NextResponse.json({ error: `A league with slug "${slug}" already exists` }, { status: 409 });
+  }
+
+  const id = generateId();
+  const resolvedBudget = format === "auction" ? (initialBudget ?? 100_000_000) : 100_000_000;
+
   try {
-    const id = generateId();
-    const resolvedBudget = format === "auction" ? (initialBudget ?? 100_000_000) : 100_000_000;
-
-    await db.insert(leagues).values({
-      id, slug, name, sport, format, season, isActive: true,
-      teamSize: resolvedTeamSize,
-      groupCount: resolvedGroupCount,
-      playoffStartGw: resolvedPlayoffStartGw,
-      enabledChips: JSON.stringify(resolvedEnabledChips),
-      initialBudget: resolvedBudget,
-      isSimulated: format === "auction" ? (isSimulated ?? false) : false,
-    });
-
-    // Auto-create placeholder team accounts for every format. Teams complete
-    // their own profile (name, players) on first login via /setup.
     let createdTeams = 0;
-    for (let i = 1; i <= resolvedTeamSize; i++) {
-      const padded = String(i).padStart(2, "0");
-      const loginId = `${slug}Team${i}`;
-      const plainPassword = `Team@${padded}`;
-      const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-      await db.insert(teams).values({
-        id: generateId(),
-        teamLoginId: loginId,
-        name: `Team ${i}`,
-        leagueId: id,
-        password: hashedPassword,
-        mustChangePassword: true,
-        isProfileComplete: false,
-        ...(format === "auction" ? { purse: resolvedBudget } : {}),
+    await db.transaction(async (tx) => {
+      await tx.insert(leagues).values({
+        id, slug, name, sport, format, season, isActive: true,
+        teamSize: resolvedTeamSize,
+        groupCount: resolvedGroupCount,
+        playoffStartGw: resolvedPlayoffStartGw,
+        enabledChips: JSON.stringify(resolvedEnabledChips),
+        initialBudget: resolvedBudget,
+        isSimulated: format === "auction" ? (isSimulated ?? false) : false,
       });
-      createdTeams++;
-    }
+
+      // Auto-create placeholder team accounts for every format. Teams complete
+      // their own profile (name, players) on first login via /setup.
+      for (let i = 1; i <= resolvedTeamSize; i++) {
+        const padded = String(i).padStart(2, "0");
+        const loginId = `${slug}Team${i}`;
+        const plainPassword = `Team@${padded}`;
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+        await tx.insert(teams).values({
+          id: generateId(),
+          teamLoginId: loginId,
+          name: `Team ${i}`,
+          leagueId: id,
+          password: hashedPassword,
+          mustChangePassword: true,
+          isProfileComplete: false,
+          ...(format === "auction" ? { purse: resolvedBudget } : {}),
+        });
+        createdTeams++;
+      }
+    });
 
     return NextResponse.json({
       success: true,
@@ -141,7 +150,18 @@ export async function POST(request: NextRequest) {
       teamCount: createdTeams,
       currentGameweek: null,
     });
-  } catch {
-    return NextResponse.json({ error: "League with that slug already exists" }, { status: 409 });
+  } catch (err) {
+    console.error("[superadmin/leagues POST] failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+
+    if (/UNIQUE constraint failed:\s*teams\.team_login_id/i.test(msg) || /teams_login_id_global_unique/i.test(msg)) {
+      return NextResponse.json({
+        error: `Cannot create league: team login IDs like "${slug}Team1" are already in use globally. This usually means a previous creation attempt with this slug partially failed and left orphan team rows. Run scripts/cleanup-orphan-teams.ts or pick a different slug.`,
+      }, { status: 409 });
+    }
+    if (/UNIQUE constraint failed:\s*leagues\.slug/i.test(msg)) {
+      return NextResponse.json({ error: `A league with slug "${slug}" already exists` }, { status: 409 });
+    }
+    return NextResponse.json({ error: `Failed to create league: ${msg}` }, { status: 500 });
   }
 }
