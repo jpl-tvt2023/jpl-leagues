@@ -95,7 +95,7 @@ export function PlayerBreakdownSide({
                   TEMP CAP
                 </span>
               )}
-              {p.isCaptain && !p.isTempCaptain && !p.isAutoAssigned && (
+              {p.isCaptain && !p.isTempCaptain && (
                 <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
               )}
             </div>
@@ -104,7 +104,7 @@ export function PlayerBreakdownSide({
                 <span className="text-amber-400 font-semibold">
                   {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                 </span>
-              ) : p.isCaptain && !p.isAutoAssigned ? (
+              ) : p.isCaptain ? (
                 <span className="text-yellow-400 font-semibold">
                   {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} ×2 = {p.finalScore}
                 </span>

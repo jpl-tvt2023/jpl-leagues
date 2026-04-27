@@ -101,7 +101,7 @@ interface CacheStats {
   gameweeks: { gameweek: number; entries: number }[];
 }
 
-type TabType = "teams" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction" | "finance" | "marketplace";
+type TabType = "teams" | "groups" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction" | "finance" | "marketplace";
 
 // Auction-specific interfaces
 interface AuctionSessionInfo {
@@ -331,6 +331,8 @@ export default function AdminDashboard() {
     } else if (activeTab === "playoffs") {
       fetchPlayoffStatus();
     } else if (activeTab === "settings") {
+      fetchSettings();
+    } else if (activeTab === "groups") {
       fetchSettings();
     } else if (activeTab === "auction") {
       fetchAuctionData();
@@ -1873,6 +1875,18 @@ export default function AdminDashboard() {
           >
             {isAuctionFormat ? "Manager Management" : "Team Management"}
           </button>
+          {leagueConfig.format === "tvt" && leagueConfig.groupCount >= 2 && (
+          <button
+            onClick={() => { setActiveTab("groups"); setMessage(null); }}
+            className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
+              activeTab === "groups"
+                ? "bg-yellow-500 text-slate-900"
+                : "bg-white/5 text-gray-300 hover:bg-white/10"
+            }`}
+          >
+            Groups
+          </button>
+          )}
           {!isAuctionFormat && (
           <button
             onClick={() => { setActiveTab("captain"); setMessage(null); }}
@@ -2394,42 +2408,6 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {/* Group Assignment — 32-team leagues only, not for auction */}
-        {leagueConfig.teamSize === 32 && teams.length > 0 && !isAuctionFormat && (
-          <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-white">Group Assignments</h3>
-                <p className="text-gray-400 text-sm">Assign each team to Group A or B. Teams won't see their group until you reveal groups in Settings.</p>
-              </div>
-              <button
-                onClick={saveGroupAssignments}
-                disabled={savingGroups}
-                className="px-5 py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 disabled:opacity-50 transition text-sm"
-              >
-                {savingGroups ? "Saving..." : "Save Groups"}
-              </button>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-3">
-              {teams.map((team) => (
-                <div key={team.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                  <div>
-                    <div className="font-semibold text-white text-sm">{team.name}</div>
-                  </div>
-                  <select
-                    value={groupAssignments[team.id] || "A"}
-                    onChange={(e) => setGroupAssignments(prev => ({ ...prev, [team.id]: e.target.value }))}
-                    className="rounded-lg bg-black/40 border border-white/20 text-white text-sm px-3 py-1.5 focus:border-yellow-400 focus:outline-none"
-                  >
-                    <option value="A">Group A</option>
-                    <option value="B">Group B</option>
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Quick Actions — not shown for auction format (no fixtures) */}
         {!isAuctionFormat && (
         <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
@@ -2466,6 +2444,139 @@ export default function AdminDashboard() {
         </div>
         )}
           </>
+        )}
+
+        {/* Groups Tab — TVT multi-group leagues only */}
+        {activeTab === "groups" && leagueConfig.format === "tvt" && leagueConfig.groupCount >= 2 && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
+              <div>
+                <h3 className="text-lg font-bold text-white">Group Assignments</h3>
+                <p className="text-gray-400 text-sm">Assign each team to a group. Teams won&apos;t see their group until you reveal groups below.</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => {
+                    const teamIds = teams.map(t => t.id);
+                    const shuffled = [...teamIds];
+                    for (let i = shuffled.length - 1; i > 0; i--) {
+                      const j = Math.floor(Math.random() * (i + 1));
+                      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                    }
+                    const groupNames = leagueConfig.groupCount === 2 ? ["A", "B"] : ["A"];
+                    const perGroup = Math.ceil(shuffled.length / groupNames.length);
+                    const next: Record<string, string> = {};
+                    shuffled.forEach((tid, idx) => {
+                      const gIdx = Math.min(Math.floor(idx / perGroup), groupNames.length - 1);
+                      next[tid] = groupNames[gIdx];
+                    });
+                    setGroupAssignments(next);
+                  }}
+                  disabled={groupsRevealed || savingGroups}
+                  className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  title={groupsRevealed ? "Groups are revealed — toggle off to edit" : "Randomize allocation"}
+                >
+                  Re-shuffle
+                </button>
+                <button
+                  onClick={saveGroupAssignments}
+                  disabled={savingGroups || groupsRevealed}
+                  className="px-5 py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-bold hover:from-yellow-300 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm"
+                >
+                  {savingGroups ? "Saving..." : "Save Groups"}
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-6 flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+              <div>
+                <div className="font-semibold text-white">Reveal Groups to Teams</div>
+                <div className="text-sm text-gray-400">When enabled, teams can see their group assignment and group standings. Edits and re-shuffle are locked while revealed.</div>
+              </div>
+              <button
+                onClick={() => toggleSetting("groupsRevealed", !groupsRevealed)}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                  groupsRevealed ? "bg-green-500" : "bg-gray-600"
+                }`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                  groupsRevealed ? "translate-x-6" : "translate-x-1"
+                }`} />
+              </button>
+            </div>
+
+            {groupsRevealed && (
+              <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
+                Groups are revealed to teams. Toggle off above to edit assignments or re-shuffle.
+              </div>
+            )}
+
+            {teams.length === 0 ? (
+              <div className="text-gray-400 italic text-sm">No teams yet.</div>
+            ) : (() => {
+              const target = Math.ceil(teams.length / 2);
+              const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+              const sorted = [...teams].sort((a, b) => collator.compare(a.name, b.name));
+              const inGroup = (g: "A" | "B") => sorted.filter(t => (groupAssignments[t.id] || "A") === g);
+              const groupA = inGroup("A");
+              const groupB = inGroup("B");
+              const flip = (teamId: string) => {
+                if (groupsRevealed) return;
+                setGroupAssignments(prev => ({ ...prev, [teamId]: (prev[teamId] || "A") === "A" ? "B" : "A" }));
+              };
+              const Column = ({ label, accent, members, moveLabel }: {
+                label: "A" | "B"; accent: { border: string; text: string; chipHover: string }; members: typeof sorted; moveLabel: string;
+              }) => {
+                const over = members.length > target;
+                return (
+                  <div className={`rounded-xl border ${accent.border} bg-white/5 p-4`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className={`font-bold ${accent.text}`}>Group {label}</h4>
+                      <span className={`text-sm font-mono ${over ? "text-red-400" : "text-gray-300"}`} title={over ? "Over the balanced size" : ""}>
+                        {members.length} / {target}
+                      </span>
+                    </div>
+                    {members.length === 0 ? (
+                      <div className="text-gray-500 italic text-sm py-6 text-center">No teams assigned</div>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {members.map(team => (
+                          <button
+                            key={team.id}
+                            onClick={() => flip(team.id)}
+                            disabled={groupsRevealed}
+                            title={groupsRevealed ? "Groups are revealed — toggle off to edit" : `Move to Group ${moveLabel}`}
+                            className={`group flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-left text-sm text-white transition ${groupsRevealed ? "opacity-60 cursor-not-allowed" : `${accent.chipHover} cursor-pointer`}`}
+                          >
+                            <span className="font-medium truncate">{team.name}</span>
+                            <span className={`ml-2 text-xs text-gray-400 ${groupsRevealed ? "" : "group-hover:text-white"}`}>
+                              → {moveLabel}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Column
+                    label="A"
+                    accent={{ border: "border-blue-500/40", text: "text-blue-400", chipHover: "hover:bg-blue-500/10 hover:border-blue-500/40" }}
+                    members={groupA}
+                    moveLabel="B"
+                  />
+                  <Column
+                    label="B"
+                    accent={{ border: "border-purple-500/40", text: "text-purple-400", chipHover: "hover:bg-purple-500/10 hover:border-purple-500/40" }}
+                    members={groupB}
+                    moveLabel="A"
+                  />
+                </div>
+              );
+            })()}
+          </div>
         )}
 
         {/* Captain Override Tab */}
@@ -3773,24 +3884,6 @@ export default function AdminDashboard() {
                   </div>
                   )}
 
-                  {leagueConfig.groupCount >= 2 && (
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">
-                      <div>
-                        <div className="font-semibold text-white">Reveal Groups to Teams</div>
-                        <div className="text-sm text-gray-400">When enabled, teams can see their group assignment and group standings. Keep disabled until you are ready to announce groups.</div>
-                      </div>
-                      <button
-                        onClick={() => toggleSetting("groupsRevealed", !groupsRevealed)}
-                        className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                          groupsRevealed ? "bg-green-500" : "bg-gray-600"
-                        }`}
-                      >
-                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          groupsRevealed ? "translate-x-6" : "translate-x-1"
-                        }`} />
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
             </div>

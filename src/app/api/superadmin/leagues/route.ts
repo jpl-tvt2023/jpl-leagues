@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leagues, teams, gameweeks } from "@/lib/db/schema";
+import { leagues, teams, gameweeks, groups } from "@/lib/db/schema";
 import { eq, and, max, count } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
@@ -117,6 +117,36 @@ export async function POST(request: NextRequest) {
         isSimulated: format === "auction" ? (isSimulated ?? false) : false,
       });
 
+      // For TVT, pre-create the PL groups and split teams across them so the
+      // admin doesn't have to assign every team manually. groupCount=1 → all
+      // teams in Group A; groupCount=2 → first half in A, second half in B.
+      const tvtGroupIds: string[] = [];
+      if (format === "tvt" && resolvedGroupCount > 0) {
+        const groupNames = resolvedGroupCount === 2 ? ["A", "B"] : ["A"];
+        for (const gn of groupNames) {
+          const gid = generateId();
+          await tx.insert(groups).values({ id: gid, name: gn, leagueId: id, groupType: "pl" });
+          tvtGroupIds.push(gid);
+        }
+      }
+
+      // Random initial allocation: shuffle team indices (Fisher-Yates), then
+      // slice evenly across groups. Admin can re-shuffle or move teams from
+      // the Groups tab before revealing to teams.
+      const teamIndexToGroupId = new Map<number, string>();
+      if (tvtGroupIds.length > 0) {
+        const order = Array.from({ length: resolvedTeamSize }, (_, k) => k + 1);
+        for (let k = order.length - 1; k > 0; k--) {
+          const j = Math.floor(Math.random() * (k + 1));
+          [order[k], order[j]] = [order[j], order[k]];
+        }
+        const perGroup = Math.ceil(resolvedTeamSize / tvtGroupIds.length);
+        order.forEach((teamNum, idx) => {
+          const gIdx = Math.min(Math.floor(idx / perGroup), tvtGroupIds.length - 1);
+          teamIndexToGroupId.set(teamNum, tvtGroupIds[gIdx]);
+        });
+      }
+
       // Auto-create placeholder team accounts for every format. Teams complete
       // their own profile (name, players) on first login via /setup.
       for (let i = 1; i <= resolvedTeamSize; i++) {
@@ -124,6 +154,7 @@ export async function POST(request: NextRequest) {
         const loginId = `${slug}Team${i}`;
         const plainPassword = `Team@${padded}`;
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
+        const groupId = teamIndexToGroupId.get(i);
 
         await tx.insert(teams).values({
           id: generateId(),
@@ -133,6 +164,7 @@ export async function POST(request: NextRequest) {
           password: hashedPassword,
           mustChangePassword: true,
           isProfileComplete: false,
+          ...(groupId ? { groupId } : {}),
           ...(format === "auction" ? { purse: resolvedBudget } : {}),
         });
         createdTeams++;
@@ -152,7 +184,20 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("[superadmin/leagues POST] failed:", err);
-    const msg = err instanceof Error ? err.message : String(err);
+    // Drizzle wraps the real DB error in `cause` and only puts the SQL in `.message`.
+    // Walk the cause chain so the actual SQLite/libsql reason surfaces to the client.
+    const parts: string[] = [];
+    let cur: unknown = err;
+    while (cur && parts.length < 5) {
+      if (cur instanceof Error) {
+        parts.push(cur.message);
+        cur = (cur as { cause?: unknown }).cause;
+      } else {
+        parts.push(String(cur));
+        break;
+      }
+    }
+    const msg = parts.join(" | ");
 
     if (/UNIQUE constraint failed:\s*teams\.team_login_id/i.test(msg) || /teams_login_id_global_unique/i.test(msg)) {
       return NextResponse.json({
