@@ -112,8 +112,8 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
       question: "How do I submit my captain?",
       answer: (
         <div className="space-y-2">
-          <p>Announce your captain in the WhatsApp group <strong className="text-white">before the FPL deadline</strong>. The captain&apos;s net score is doubled for all three competitions that GW.</p>
-          <p className="text-yellow-300 text-xs">Late or missing submissions: the lowest-scoring player is auto-assigned as captain (penalty).</p>
+          <p>Open your team dashboard, choose your captain in the <em>Captain</em> section, and click <strong className="text-white">Announce Captain</strong> (or <strong className="text-white">Switch Captain</strong> if you&apos;re changing your pick) <strong className="text-white">before the FPL deadline</strong>. The captain&apos;s net score is doubled for all three competitions that GW. Selections lock the moment the deadline passes.</p>
+          <p className="text-yellow-300 text-xs">Late or missing submissions: the lower-scoring player is auto-assigned as captain (penalty).</p>
         </div>
       ),
     },
@@ -161,7 +161,7 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
           title: "Submitting your captain in Triple Crown",
           steps: [
             "Decide which player to nominate as captain for the upcoming GW.",
-            `Post in the WhatsApp group before the deadline — e.g., "GW12 Captain: Rahul".`,
+            "Open your dashboard's *Captain* section, pick the player, and click **Announce Captain** before the FPL deadline.",
             "The same captain applies to PL, Cup Group, and any Knockout match that GW.",
             "After processing, your dashboard shows the captain's doubled contribution.",
           ],

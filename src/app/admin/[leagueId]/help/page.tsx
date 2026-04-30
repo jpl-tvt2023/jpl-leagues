@@ -296,7 +296,7 @@ export default function AdminHelpPage() {
       question: "How do I handle a team dispute?",
       answer: (
         <ol className="list-decimal list-inside space-y-1.5">
-          <li>Listen to both sides calmly and collect evidence (WhatsApp timestamps, dashboard screenshots).</li>
+          <li>Listen to both sides calmly and collect evidence (dashboard captain/chip submission timestamps and screenshots).</li>
           <li>Check the <strong className="text-white">Captain</strong> tab — verify who was submitted as captain and whether it was before the deadline.</li>
           <li>Check the <strong className="text-white">Chips</strong> tab if the dispute involves chip points or chip eligibility.</li>
           <li>If an override is warranted, apply it (Captain or Chip Override form) with a clear reason.</li>
@@ -344,8 +344,8 @@ export default function AdminHelpPage() {
       title: "Handling a captain override dispute",
       steps: [
         "A team claims their captain was submitted on time but was not recorded.",
-        "Check the WhatsApp group logs for the exact timestamp of the announcement.",
-        "If the announcement was before the FPL deadline: go to Captain tab → find the team → select the correct player → submit override with reason (e.g., 'Captain submitted on time per WhatsApp log at 4:27 PM').",
+        "Check the Captain tab in the admin dashboard — every captain submission is logged with a timestamp.",
+        "If the submission was before the FPL deadline: go to Captain tab → find the team → select the correct player → submit override with reason (e.g., 'Captain submitted on time per dashboard log at 4:27 PM').",
         "If the announcement was after the deadline: the default rule applies — lower-scoring player is captain. Explain this to the team politely.",
         "After applying any valid override, go to Scoring tab and Force Reprocess the affected GW.",
         "Notify both teams of the outcome with your reasoning.",
