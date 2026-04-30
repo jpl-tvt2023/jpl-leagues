@@ -18,6 +18,7 @@ export interface LiveFixtureScore {
 export interface TeamSide {
   teamId: string | null;
   name: string;
+  seedLabel?: string | null;
   leg1Score: number | null;
   leg2Score: number | null;
   aggregate: number | null;
@@ -229,7 +230,12 @@ export function MatchCard({
       </div>
 
       <div className={`flex items-center justify-between gap-2 py-1 ${teamClass(tie.home)}`}>
-        <span className="truncate flex-1">{teamLabel(tie.home)}</span>
+        <span className="truncate flex-1">
+          <span className="block truncate">{teamLabel(tie.home)}</span>
+          {tie.home?.seedLabel && tie.home?.teamId && (
+            <span className="block text-[10px] text-gray-500 normal-case font-normal">{tie.home.seedLabel}</span>
+          )}
+        </span>
         {!isPlaceholder(tie.home) && (
           is2Leg ? (
             <div className="flex gap-2 text-xs tabular-nums">
@@ -256,7 +262,12 @@ export function MatchCard({
       </div>
 
       <div className={`flex items-center justify-between gap-2 py-1 ${teamClass(tie.away)}`}>
-        <span className="truncate flex-1">{teamLabel(tie.away)}</span>
+        <span className="truncate flex-1">
+          <span className="block truncate">{teamLabel(tie.away)}</span>
+          {tie.away?.seedLabel && tie.away?.teamId && (
+            <span className="block text-[10px] text-gray-500 normal-case font-normal">{tie.away.seedLabel}</span>
+          )}
+        </span>
         {!isPlaceholder(tie.away) && (
           is2Leg ? (
             <div className="flex gap-2 text-xs tabular-nums">
