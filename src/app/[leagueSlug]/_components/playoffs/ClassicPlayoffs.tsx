@@ -199,11 +199,10 @@ export function ClassicPlayoffs() {
 
               const hasAnyChallengerRound = challengerRounds.some((r) => (r.data as TieDisplay[])?.length > 0);
 
+              const showSurvival = data.teamSize === 32 && (data.challenger.c33?.length ?? 0) > 0;
+
               return (
                 <>
-                  {data.teamSize === 32 && (data.challenger.c33?.length ?? 0) > 0 && (
-                    <SurvivalTable entries={data.challenger.c33 as SurvivalDisplay[]} />
-                  )}
                   {data.teamSize === 16 && !hasAnyChallengerRound && (
                     <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 text-center">
                       <p className="text-gray-400 text-sm mb-2">⏳ Challenger fixtures will be available after group stage (GW33) completes.</p>
@@ -212,29 +211,37 @@ export function ClassicPlayoffs() {
                   )}
                   {challengerRounds.map(({ key, label, gw, data: roundData }) => {
                     const ties = roundData as TieDisplay[];
-                    if (!ties || ties.length === 0) return null;
+                    const insertSurvivalBefore = key === "c34" && showSurvival;
+                    if ((!ties || ties.length === 0) && !insertSurvivalBefore) return null;
                     const hasLive = mergedScores.some((s) => s.gameweek === gw);
                     const isRoundRefreshing = refreshing === gw;
                     return (
-                      <div key={key}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider">{label}</h3>
-                          {hasLive && (
-                            <button
-                              onClick={() => handleRefreshRound(gw)}
-                              disabled={isRoundRefreshing}
-                              className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRoundRefreshing ? "animate-spin" : ""}`}
-                              title="Refresh live scores"
-                            >
-                              ⟳
-                            </button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {ties.map((tie) => (
-                            <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} />
-                          ))}
-                        </div>
+                      <div key={key} className="space-y-6">
+                        {insertSurvivalBefore && (
+                          <SurvivalTable entries={data.challenger.c33 as SurvivalDisplay[]} />
+                        )}
+                        {ties && ties.length > 0 && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider">{label}</h3>
+                              {hasLive && (
+                                <button
+                                  onClick={() => handleRefreshRound(gw)}
+                                  disabled={isRoundRefreshing}
+                                  className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRoundRefreshing ? "animate-spin" : ""}`}
+                                  title="Refresh live scores"
+                                >
+                                  ⟳
+                                </button>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {ties.map((tie) => (
+                                <MatchCard key={tie.tieId} tie={tie} compact liveScores={mergedScores} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -35,8 +35,8 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
     teamSize === 8
       ? `GW36: Semi-Finals (1v4, 2v3, single-leg). GW37–38: Final + 3rd Place (2-legged aggregate). Ranks 5–8 are eliminated after the league stage.`
       : teamSize === 16
-      ? `JPL-TVT Merged Funnel — All 16 teams play GW31–38. GW31–33: Group sprints (Championship ranks 1–8, Challenger ranks 9–16). GW34: Merger QFs (4 relegated Champs vs 4 surviving Challengers) + Elite Seeding (top 4) + Wooden Spoon Seeding (bottom 4). GW35–36: SFs across all 3 brackets. GW37–38: Finals + 3rd Place ties. Only the 4 Challenger QF losers (GW34) are eliminated.`
-      : `GW31–32: Round of 16 (cross-group seeding, 2-legged). GW33–34: Quarter-Finals. GW35–36: Semi-Finals. GW37–38: Final. Ranks 9–14 per group enter the Challenger Series. Ranks 15–16 per group are eliminated.`;
+      ? `JPL-TVT Merged Funnel — All 16 teams play GW31–38. GW31–33: Playoff Groups (Championship: ranks 1, 4, 5, 8 / 2, 3, 6, 7; Challenger: ranks 9, 12, 13, 16 / 10, 11, 14, 15). GW34: The Great Cut — Elite Seeding (top 4 of Champ groups) + Challenger QFs (Champ 3rd/4th vs Chall 1st/2nd) + Wooden Spoon Seeding (bottom 4 of Chall groups). GW35–36: SFs across Championship, Challenger, and Wooden Spoon brackets (2-legged). GW37–38: Finals + 3rd Place ties (2-legged). Final placings: 1st–4th from Championship, 5th–8th from Challenger, 9th–12th from Challenger QF (losers), 13th–16th from Wooden Spoon.`
+      : `GW31: RO16 Leg 1 + C-31 (Round of 12 KO, ranks 9–14 cross-group). GW32: RO16 Leg 2 + C-32 (Round of 6 KO). GW33: QF Leg 1 + Challenger Survival (RO16 losers + C-32 winners ranked by FPL points; top 8 advance). GW34: QF Leg 2 + C-34 (Survival top-8 KO). GW35: SF Leg 1 + C-35 (QF losers vs C-34 winners). GW36: SF Leg 2 + C-36. GW37: Final Leg 1 + C-37. GW38: Final Leg 2 + C-38 Challenger Final. Ranks 15–16 per group are eliminated after the league stage.`;
 
   const generalFaqs: FaqEntry[] = [
     {
@@ -75,7 +75,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
               <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500 shrink-0" /><span><strong className="text-red-400">Red (Rank {eliminatedRange}):</strong> Eliminated — no further play after the league stage.</span></li>
             )}
             {teamSize === 16 && (
-              <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500 shrink-0" /><span><strong className="text-red-400">Red ({eliminatedRange}):</strong> Eliminated after GW34 Challenger QFs — only these 4 teams are knocked out in the entire playoff series.</span></li>
+              <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500 shrink-0" /><span><strong className="text-red-400">No eliminations in the league stage:</strong> all 16 teams continue into the playoffs (Championship/Challenger/Wooden Spoon brackets). Final placings 9th–12th are decided by the Challenger QF losers in GW34.</span></li>
             )}
           </ul>
           <p className="text-xs text-gray-400 mt-2">These are live projections based on current standings. Final positions are determined after GW{leagueStageEnd}.</p>
@@ -160,8 +160,8 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
       answer: (
         <div className="space-y-2">
           <p>Each gameweek, you nominate one of your two players as <strong className="text-white">captain</strong>. Their net FPL score (score minus hits) is doubled when calculating your team score.</p>
-          <p><strong className="text-white">How to submit:</strong> Announce your captain&apos;s name in the designated WhatsApp group at least 1 second before the official FPL deadline. For a 4:30 PM deadline, that means by 4:29:59 PM at the latest.</p>
-          <p className="text-yellow-300 text-xs">Late submissions are treated as invalid — your admin will assign the lower-scoring player as captain automatically.</p>
+          <p><strong className="text-white">How to submit:</strong> Open your team dashboard, choose your captain in the <em>Captain</em> section, and click <strong className="text-white">Announce Captain</strong> (or <strong className="text-white">Switch Captain</strong> if you&apos;re changing your pick). Submit before the official FPL deadline — selections lock the moment the deadline passes.</p>
+          <p className="text-yellow-300 text-xs">If no captain is submitted before the deadline, the system auto-assigns the lower-scoring player as captain (a temporary &quot;TEMP CAP&quot; tag is shown until the GW closes; admins can override in exceptional cases).</p>
         </div>
       ),
     },
@@ -169,7 +169,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
       question: "What happens if I miss the captain deadline?",
       answer: (
         <p>
-          If no valid captain announcement is made before the deadline, your admin will automatically assign the <strong className="text-white">lower-scoring player</strong> as captain for that gameweek — the worst possible outcome for your score. This cannot be reversed retroactively. Always set a phone reminder ahead of the FPL deadline.
+          If no captain is submitted before the deadline, the system auto-assigns the <strong className="text-white">lower-scoring player</strong> as captain for that gameweek — the worst possible outcome for your score. This cannot be reversed retroactively. Always set a phone reminder ahead of the FPL deadline and submit through your dashboard early.
         </p>
       ),
     },
@@ -239,7 +239,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
             <li><strong className="text-white">Set 1:</strong> {set1Label} — one use of each chip.</li>
             <li><strong className="text-white">Set 2:</strong> {set2Label} — one use of each chip again.</li>
           </ul>
-          <p>Declare your chip in the WhatsApp group before the GW deadline — ideally in the same message as your captain announcement. Once used in a set, that chip is gone for that set. You cannot cancel or swap a chip after the deadline.</p>
+          <p>Activate your chip from your team dashboard&apos;s <em>Chips</em> section before the GW deadline. Once submitted and the deadline passes, the chip is locked — you cannot cancel or swap it. Captain selection is separate from chip activation; submit both before the deadline.</p>
           <p className="text-xs text-gray-400">Chips cannot be used in the playoff stage (GW{playoffStartGw}+).</p>
         </div>
       ),
@@ -313,19 +313,20 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
             ]
           : teamSize === 16
           ? [
-              `After GW30, the top 8 teams advance and ranks 9–14 enter the Challenger Series.`,
-              "GW31–32: Quarter-Finals (2-legged) — seeded 1v8, 2v7, 3v6, 4v5.",
-              "GW33–34: Semi-Finals (2-legged) — QF winners advance.",
-              "GW35–36: Final (2-legged) — SF winners compete for the title.",
-              "In each 2-legged tie, the higher seed plays at home in the first leg. Aggregate score decides the winner.",
+              `After GW30, all 16 teams continue into a 3-bracket playoff (Championship, Challenger, Wooden Spoon). No one is eliminated yet.`,
+              "GW31–33: Playoff Groups — 4 groups of 4, single-leg round-robin. Snake-seeded so top meets bottom inside each group.",
+              "GW34 — The Great Cut: Elite Seeding for top 4, Challenger QFs blend Champ 3rd/4th with Chall 1st/2nd, Wooden Spoon Seeding for bottom 4.",
+              "GW35–36: Semi-Finals across all 3 brackets (2-legged aggregate).",
+              "GW37–38: Finals + 3rd Place ties (2-legged) decide every position from 1st to 16th. Only the 4 Challenger QF losers have no further matches (they finish 9th–12th).",
             ]
           : [
-              `After GW30, top 8 per group advance to the Title Play-offs; ranks 9–14 enter the Challenger Series.`,
-              "GW31–32: Round of 16 (cross-group seeding, 2-legged) — A1 vs B8, A2 vs B7, etc.",
-              "GW33–34: Quarter-Finals (2-legged).",
-              "GW35–36: Semi-Finals (2-legged).",
-              "GW37–38: Final (2-legged).",
-              "In each 2-legged tie, the higher seed plays at home in the first leg.",
+              `After GW30, top 8 per group advance to the Title Play-offs; ranks 9–14 per group enter the Challenger Series; ranks 15–16 are eliminated.`,
+              "GW31–32: Title — Round of 16 (cross-group, 2-legged: A1vB8 … A8vB1). Challenger — C-31 (Round of 12 KO) → C-32 (Round of 6).",
+              "GW33: Title — QF Leg 1. Challenger — Survival GW: 8 RO16 losers + 3 C-32 winners ranked by FPL points; top 8 advance.",
+              "GW34: Title — QF Leg 2. Challenger — C-34 (Survival top-8 KO).",
+              "GW35–36: Title — Semi-Finals (2-legged). Challenger — C-35 (QF losers vs C-34 winners) → C-36.",
+              "GW37–38: Title — Final (2-legged, leg 2 in GW38). Challenger — C-37 → C-38 Challenger Final (single-leg, GW38).",
+              "In each 2-legged title tie, the higher seed plays at home in Leg 1. Aggregate FPL score decides the winner; on a draw, higher Leg 2 score advances.",
             ],
     },
   ];
@@ -348,9 +349,9 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
           title: "Submitting your captain before the deadline",
           steps: [
             "Decide which of your two players to nominate as captain for the upcoming GW.",
-            "Check the FPL deadline time (shown on the FPL website or app).",
-            `Post your announcement in the WhatsApp group at least 1 second before the deadline — e.g., "GW12 Captain: Rahul".`,
-            "Your admin will record the captain selection.",
+            "Check the FPL deadline time (shown on the FPL website, app, or your dashboard).",
+            "Open your team dashboard and find the Captain section.",
+            "Select the player you want as captain and click Announce Captain (or Switch Captain to change your pick) before the deadline.",
             "After the GW is processed, your dashboard will show which player was captain and their doubled score.",
           ],
         },
@@ -360,8 +361,8 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
           steps: [
             "Confirm the chip is available — check your dashboard to see which chips remain in the current set.",
             "Decide which chip to use and the gameweek you want to play it.",
-            `Declare in the WhatsApp group before the GW deadline — e.g., "GW12 Chip: Win-Win". Include your captain announcement too.`,
-            "Your admin registers the chip before processing.",
+            "From your dashboard's Chips section, select the chip and submit it before the GW deadline.",
+            "Once the deadline passes, the chip is locked for that GW.",
             "After GW processing, your dashboard will show the chip outcome and any bonus points earned.",
           ],
         },
