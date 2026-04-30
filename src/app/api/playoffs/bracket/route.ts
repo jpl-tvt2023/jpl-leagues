@@ -50,8 +50,8 @@ interface TieDisplay {
   status: string;
   gw1: number;
   gw2: number | null;
-  home: { teamId: string | null; name: string; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
-  away: { teamId: string | null; name: string; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
+  home: { teamId: string | null; name: string; seedLabel?: string | null; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
+  away: { teamId: string | null; name: string; seedLabel?: string | null; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
   winnerId: string | null;
   loserId: string | null;
 }
@@ -511,6 +511,75 @@ function placeholder(label: string): { teamId: null; name: string; leg1Score: nu
   return { teamId: null, name: label, leg1Score: null, leg2Score: null, aggregate: null };
 }
 
+/**
+ * Tentative-only side builder: returns the projected team (with seedLabel attached) when
+ * standings have a team at that rank, else falls back to a placeholder labelled with the
+ * seed text. The frontend only renders seedLabel when teamId is also present.
+ */
+/**
+ * Projected cup-group seeds for Triple Crown tentative bracket. Returns
+ * { groupName: { rank: { teamId, name } } } based on currently-recorded
+ * cup-group fixture results. Empty object when leagueId is missing, no cup
+ * groups exist, or no results have been entered yet.
+ */
+async function getCupGroupProjectedSeeds(
+  leagueId: string | null,
+): Promise<Record<string, Record<number, { teamId: string; name: string }>>> {
+  if (!leagueId) return {};
+  try {
+    const { computeCupGroupStandings } = await import("@/lib/formats/triple-crown/standings");
+    const cupGroups = await db.select().from(groups).where(
+      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "cup")),
+    );
+    const seeds: Record<string, Record<number, { teamId: string; name: string }>> = {};
+    for (const cupGroup of cupGroups) {
+      const groupTeams = await db.select().from(teams).where(eq(teams.groupId, cupGroup.id));
+      if (groupTeams.length === 0) continue;
+      const cupFixtures = await db.query.fixtures.findMany({
+        where: and(
+          eq(fixtures.groupId, cupGroup.id),
+          eq(fixtures.competitionType, "cup-group"),
+        ),
+        with: { result: true },
+      });
+      const fixtureResults = cupFixtures
+        .filter((f) => f.result)
+        .map((f) => ({
+          fixtureId: f.id,
+          homeTeamId: f.homeTeamId,
+          awayTeamId: f.awayTeamId,
+          homeScore: f.result!.homeScore,
+          awayScore: f.result!.awayScore,
+          homeMatchPoints: f.result!.homeMatchPoints,
+          awayMatchPoints: f.result!.awayMatchPoints,
+        }));
+      const standings = computeCupGroupStandings(
+        groupTeams.map((t) => ({ id: t.id, name: t.name, isGhost: t.isGhost })),
+        fixtureResults,
+      ).filter((s) => !s.isGhost);
+      const perRank: Record<number, { teamId: string; name: string }> = {};
+      standings.forEach((s, idx) => {
+        perRank[idx + 1] = { teamId: s.teamId, name: s.name };
+      });
+      seeds[cupGroup.name] = perRank;
+    }
+    return seeds;
+  } catch (err) {
+    console.error("getCupGroupProjectedSeeds failed:", err);
+    return {};
+  }
+}
+
+function seededSide(
+  team: { teamId: string; name: string } | null | undefined,
+  label: string,
+): { teamId: string | null; name: string; seedLabel: string; leg1Score: null; leg2Score: null; aggregate: null } {
+  if (team) {
+    return { teamId: team.teamId, name: team.name, seedLabel: label, leg1Score: null, leg2Score: null, aggregate: null };
+  }
+  return { teamId: null, name: label, seedLabel: label, leg1Score: null, leg2Score: null, aggregate: null };
+}
+
 function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
@@ -524,11 +593,12 @@ function buildTentative8Team(
   standings: { groupA: { teamId: string; name: string; groupRank: number }[]; groupB: { teamId: string; name: string; groupRank: number }[] },
   playoffStartGw: number,
 ) {
-  void standings;
+  const all = standings.groupA;
+  const ts = (rank: number) => all.find(x => x.groupRank === rank);
   const gw1 = playoffStartGw;
   const sf: TieDisplay[] = [
-    { tieId: "SF-A", roundName: "SF", status: "projected", gw1, gw2: null, home: placeholder("1st"), away: placeholder("4th"), winnerId: null, loserId: null },
-    { tieId: "SF-B", roundName: "SF", status: "projected", gw1, gw2: null, home: placeholder("2nd"), away: placeholder("3rd"), winnerId: null, loserId: null },
+    { tieId: "SF-A", roundName: "SF", status: "projected", gw1, gw2: null, home: seededSide(ts(1), "1st"), away: seededSide(ts(4), "4th"), winnerId: null, loserId: null },
+    { tieId: "SF-B", roundName: "SF", status: "projected", gw1, gw2: null, home: seededSide(ts(2), "2nd"), away: seededSide(ts(3), "3rd"), winnerId: null, loserId: null },
   ];
   const thirdPlace: TieDisplay = {
     tieId: "3rd", roundName: "3rd Place", status: "projected", gw1: gw1 + 1, gw2: gw1 + 2,
@@ -549,17 +619,14 @@ function buildTentative16Team(
   playoffStartGw: number,
 ) {
   const all = standings.groupA; // 16-team has 1 group
-  const ts = (rank: number) => {
-    const t = all.find(x => x.groupRank === rank);
-    return t ? { teamId: t.teamId, name: t.name, leg1Score: null, leg2Score: null, aggregate: null } : null;
-  };
+  const ts = (rank: number) => all.find(x => x.groupRank === rank);
   const gw1 = playoffStartGw;
   // QF: bracket-paired — 1v8 and 4v5 feed into SF-A; 2v7 and 3v6 feed into SF-B
   const qf: TieDisplay[] = [
-    { tieId: "QF-A", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("1st"), away: placeholder("8th"), winnerId: null, loserId: null },
-    { tieId: "QF-D", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("4th"), away: placeholder("5th"), winnerId: null, loserId: null },
-    { tieId: "QF-B", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("2nd"), away: placeholder("7th"), winnerId: null, loserId: null },
-    { tieId: "QF-C", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: placeholder("3rd"), away: placeholder("6th"), winnerId: null, loserId: null },
+    { tieId: "QF-A", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: seededSide(ts(1), "1st"), away: seededSide(ts(8), "8th"), winnerId: null, loserId: null },
+    { tieId: "QF-D", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: seededSide(ts(4), "4th"), away: seededSide(ts(5), "5th"), winnerId: null, loserId: null },
+    { tieId: "QF-B", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: seededSide(ts(2), "2nd"), away: seededSide(ts(7), "7th"), winnerId: null, loserId: null },
+    { tieId: "QF-C", roundName: "QF", status: "projected", gw1, gw2: gw1 + 1, home: seededSide(ts(3), "3rd"), away: seededSide(ts(6), "6th"), winnerId: null, loserId: null },
   ];
   const sf: TieDisplay[] = [
     { tieId: "SF-A", roundName: "SF", status: "projected", gw1: gw1 + 2, gw2: gw1 + 3, home: placeholder("Winner of QF-A"), away: placeholder("Winner of QF-D"), winnerId: null, loserId: null },
@@ -571,9 +638,9 @@ function buildTentative16Team(
   };
   // Challenger (ranks 9-14, single group)
   const c31: TieDisplay[] = [
-    { tieId: "C-31-A", roundName: "C-31", status: "projected", gw1, gw2: null, home: ts(9), away: ts(14), winnerId: null, loserId: null },
-    { tieId: "C-31-B", roundName: "C-31", status: "projected", gw1, gw2: null, home: ts(10), away: ts(13), winnerId: null, loserId: null },
-    { tieId: "C-31-C", roundName: "C-31", status: "projected", gw1, gw2: null, home: ts(11), away: ts(12), winnerId: null, loserId: null },
+    { tieId: "C-31-A", roundName: "C-31", status: "projected", gw1, gw2: null, home: seededSide(ts(9), "9th"), away: seededSide(ts(14), "14th"), winnerId: null, loserId: null },
+    { tieId: "C-31-B", roundName: "C-31", status: "projected", gw1, gw2: null, home: seededSide(ts(10), "10th"), away: seededSide(ts(13), "13th"), winnerId: null, loserId: null },
+    { tieId: "C-31-C", roundName: "C-31", status: "projected", gw1, gw2: null, home: seededSide(ts(11), "11th"), away: seededSide(ts(12), "12th"), winnerId: null, loserId: null },
   ];
   // C-33 survival: 3 C-31 winners + 4 QF losers = 7 teams
   const c33Placeholder: SurvivalDisplay[] = [
@@ -602,19 +669,24 @@ async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "
   // TC seeding: UCL = rank 1-2 per cup group, UEL = rank 3-4 per cup group
   // Cross-group QF pairing: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1 (UCL)
   //                          A3 vs C4, A4 vs C3, B3 vs D4, B4 vs D3 (UEL)
-  void leagueId; // reserved for future projected seed lookup
-
   const rankLabel = (rank: number) => rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : "4th";
-  const tcSide = (group: string, rank: number): { teamId: null; name: string; leg1Score: null; leg2Score: null; aggregate: null } => {
-    const label = `${rankLabel(rank)} Cup-${group}`;
-    return { teamId: null, name: label, leg1Score: null, leg2Score: null, aggregate: null };
-  };
+
+  // Project current cup-group seeds from any completed cup-group fixtures so the
+  // tentative bracket can show projected team names alongside the seed labels.
+  // If no leagueId or no cup-group results yet, projectedSeed returns null and
+  // seededSide falls back to a label-only placeholder.
+  const cupSeeds = await getCupGroupProjectedSeeds(leagueId ?? null);
+  const projectedSeed = (group: string, rank: number) =>
+    cupSeeds[group]?.[rank] ?? null;
+
+  const tcSeed = (group: string, rank: number) =>
+    seededSide(projectedSeed(group, rank), `${rankLabel(rank)} Cup-${group}`);
 
   const uclQF: TieDisplay[] = [
-    { tieId: "UCL-QF-1", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 1), away: tcSide("C", 2), winnerId: null, loserId: null },
-    { tieId: "UCL-QF-2", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 2), away: tcSide("C", 1), winnerId: null, loserId: null },
-    { tieId: "UCL-QF-3", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 1), away: tcSide("D", 2), winnerId: null, loserId: null },
-    { tieId: "UCL-QF-4", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 2), away: tcSide("D", 1), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-1", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 1), away: tcSeed("C", 2), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-2", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 2), away: tcSeed("C", 1), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-3", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 1), away: tcSeed("D", 2), winnerId: null, loserId: null },
+    { tieId: "UCL-QF-4", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 2), away: tcSeed("D", 1), winnerId: null, loserId: null },
   ];
 
   const uclSF: TieDisplay[] = [
@@ -627,10 +699,10 @@ async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "
   ];
 
   const uelQF: TieDisplay[] = [
-    { tieId: "UEL-QF-1", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 3), away: tcSide("C", 4), winnerId: null, loserId: null },
-    { tieId: "UEL-QF-2", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("A", 4), away: tcSide("C", 3), winnerId: null, loserId: null },
-    { tieId: "UEL-QF-3", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 3), away: tcSide("D", 4), winnerId: null, loserId: null },
-    { tieId: "UEL-QF-4", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSide("B", 4), away: tcSide("D", 3), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-1", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 3), away: tcSeed("C", 4), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-2", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 4), away: tcSeed("C", 3), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-3", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 3), away: tcSeed("D", 4), winnerId: null, loserId: null },
+    { tieId: "UEL-QF-4", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 4), away: tcSeed("D", 3), winnerId: null, loserId: null },
   ];
 
   const uelSF: TieDisplay[] = [
@@ -669,19 +741,14 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
 
   const lookup = (group: string, rank: number) => rankMap[group]?.[rank] || null;
 
-  const teamSide = (group: string, rank: number) => {
-    const t = lookup(group, rank);
-    return t ? { teamId: t.teamId, name: t.name, leg1Score: null, leg2Score: null, aggregate: null } : null;
-  };
-
   // Build tentative RO16 (in bracket-paired order)
-  // Show ordinal+group placeholders until admin generates fixtures.
+  // Show projected team names with ordinal+group seed labels.
   const ro16Map = new Map<string, TieDisplay>();
   for (const [tieId, hg, hr, ag, ar] of RO16_SEEDING) {
     ro16Map.set(tieId, {
       tieId, roundName: "RO16", status: "projected", gw1: 31, gw2: 32,
-      home: placeholder(`${ordinal(hr)} (Group ${hg})`),
-      away: placeholder(`${ordinal(ar)} (Group ${ag})`),
+      home: seededSide(lookup(hg, hr), `${ordinal(hr)} (Group ${hg})`),
+      away: seededSide(lookup(ag, ar), `${ordinal(ar)} (Group ${ag})`),
       winnerId: null, loserId: null,
     });
   }
@@ -714,7 +781,8 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
   // --- Challenger placeholders ---
   const c31: TieDisplay[] = C31_SEEDING.map(([tieId, hg, hr, ag, ar]) => ({
     tieId, roundName: "C-31", status: "projected", gw1: 31, gw2: null,
-    home: teamSide(hg, hr), away: teamSide(ag, ar),
+    home: seededSide(lookup(hg, hr), `${ordinal(hr)} (Group ${hg})`),
+    away: seededSide(lookup(ag, ar), `${ordinal(ar)} (Group ${ag})`),
     winnerId: null, loserId: null,
   }));
 
