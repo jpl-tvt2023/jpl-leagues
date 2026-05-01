@@ -114,17 +114,17 @@ function PlayerBreakdown({
             </a>
             {p.isCaptain && p.isTempCaptain && (
               <span
-                className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400"
+                className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 shrink-0"
                 title="Auto-assigned: lowest current scorer. Locks at GW close unless admin overrides."
               >
-                TEMP CAP
+                C*
               </span>
             )}
             {p.isCaptain && !p.isTempCaptain && (
-              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400">C</span>
+              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
             )}
           </div>
-          <div className="text-right">
+          <div className="text-right shrink-0 ml-2 whitespace-nowrap">
             {p.isCaptain ? (
               <span className={p.isTempCaptain ? "text-amber-400 font-semibold" : "text-yellow-400 font-semibold"}>
                 {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} × 2 = {p.finalScore}
@@ -341,6 +341,11 @@ export function MatchCard({
                   gameweek={tie.gw2!}
                 />
               </div>
+            </div>
+          )}
+          {[liveScoreLeg1, liveScoreLeg2].some(s => s && [...(s.homePlayers ?? []), ...(s.awayPlayers ?? [])].some(p => p.isTempCaptain)) && (
+            <div className="mt-2 text-[10px] text-amber-400/70">
+              C* = auto-assigned temp captain (lowest scorer)
             </div>
           )}
         </div>
