@@ -21,6 +21,7 @@ export interface TeamSide {
   seedLabel?: string | null;
   leg1Score: number | null;
   leg2Score: number | null;
+  leg3Score?: number | null;
   aggregate: number | null;
 }
 
@@ -30,6 +31,7 @@ export interface TieDisplay {
   status: string;
   gw1: number;
   gw2: number | null;
+  gw3?: number | null;
   home: TeamSide | null;
   away: TeamSide | null;
   winnerId: string | null;
@@ -88,6 +90,47 @@ export interface BracketData {
   liveScores?: Record<number, LiveFixtureScore[]>;
 }
 
+// Renders the player's score formula consistently across all fixture/playoff cards.
+// Captain: `{net} × 2 = {final}` and a trailing `(−{hits} hit applied)` note when hits > 0.
+// Non-captain: bare `{final}`, with `(−{hits} hit applied)` when hits > 0.
+export function PlayerScoreFormula({
+  fplScore,
+  transferHits,
+  finalScore,
+  isCaptain,
+  isTempCaptain,
+  captainColorClass,
+  nonCaptainColorClass,
+}: {
+  fplScore: number;
+  transferHits: number;
+  finalScore: number;
+  isCaptain: boolean;
+  isTempCaptain?: boolean;
+  captainColorClass?: string;
+  nonCaptainColorClass?: string;
+}) {
+  const hitNote = transferHits > 0
+    ? <div className="text-gray-400 font-normal text-[10px] leading-tight">(−{transferHits} hit applied)</div>
+    : null;
+  if (isCaptain) {
+    const net = fplScore - transferHits;
+    const colour = captainColorClass ?? (isTempCaptain ? "text-amber-400" : "text-yellow-400");
+    return (
+      <div className="inline-flex flex-col items-end leading-tight">
+        <span className={`${colour} font-semibold`}>{net} × 2 = {finalScore}</span>
+        {hitNote}
+      </div>
+    );
+  }
+  return (
+    <div className="inline-flex flex-col items-end leading-tight">
+      <span className={nonCaptainColorClass ?? "text-white"}>{finalScore}</span>
+      {hitNote}
+    </div>
+  );
+}
+
 function PlayerBreakdown({
   label,
   players,
@@ -125,13 +168,13 @@ function PlayerBreakdown({
             )}
           </div>
           <div className="text-right shrink-0 ml-2 whitespace-nowrap">
-            {p.isCaptain ? (
-              <span className={p.isTempCaptain ? "text-amber-400 font-semibold" : "text-yellow-400 font-semibold"}>
-                {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} × 2 = {p.finalScore}
-              </span>
-            ) : (
-              <span className="text-white">{p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}</span>
-            )}
+            <PlayerScoreFormula
+              fplScore={p.fplScore}
+              transferHits={p.transferHits}
+              finalScore={p.finalScore}
+              isCaptain={p.isCaptain}
+              isTempCaptain={p.isTempCaptain}
+            />
           </div>
         </div>
       ))}
@@ -151,7 +194,8 @@ export function MatchCard({
   isFreshlyRefreshed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const is2Leg = tie.gw2 !== null;
+  const is3Leg = (tie.gw3 ?? null) !== null;
+  const is2Leg = tie.gw2 !== null && !is3Leg;
   const isPlaceholder = (side: TeamSide | null) => !side?.teamId;
 
   const getLiveScoreForGW = (gwNumber: number): LiveFixtureScore | undefined => {
@@ -168,13 +212,15 @@ export function MatchCard({
   };
 
   const liveScoreLeg1 = getLiveScoreForGW(tie.gw1);
-  const liveScoreLeg2 = is2Leg ? getLiveScoreForGW(tie.gw2!) : undefined;
+  const liveScoreLeg2 = (is2Leg || is3Leg) ? getLiveScoreForGW(tie.gw2!) : undefined;
+  const liveScoreLeg3 = is3Leg ? getLiveScoreForGW(tie.gw3!) : undefined;
 
   const showLiveLeg1 = !!liveScoreLeg1;
   const showLiveLeg2 = !!liveScoreLeg2;
-  const showLive = showLiveLeg1 || showLiveLeg2;
+  const showLiveLeg3 = !!liveScoreLeg3;
+  const showLive = showLiveLeg1 || showLiveLeg2 || showLiveLeg3;
 
-  const hasPlayerData = (liveScoreLeg1?.homePlayers?.length ?? 0) > 0 || (liveScoreLeg2?.homePlayers?.length ?? 0) > 0;
+  const hasPlayerData = (liveScoreLeg1?.homePlayers?.length ?? 0) > 0 || (liveScoreLeg2?.homePlayers?.length ?? 0) > 0 || (liveScoreLeg3?.homePlayers?.length ?? 0) > 0;
   const bothPlaceholder = isPlaceholder(tie.home) && isPlaceholder(tie.away);
   const expandable = !bothPlaceholder;
 
@@ -211,7 +257,7 @@ export function MatchCard({
       onClick={expandable ? () => setExpanded(!expanded) : undefined}
     >
       <div className="flex items-center justify-between text-[10px] text-gray-500 uppercase tracking-wide mb-1">
-        <span>{tie.tieId} {is2Leg ? `(GW${tie.gw1}+${tie.gw2})` : `(GW${tie.gw1})`}</span>
+        <span>{tie.tieId} {is3Leg ? `(GW${tie.gw1}+${tie.gw2}+${tie.gw3})` : is2Leg ? `(GW${tie.gw1}+${tie.gw2})` : `(GW${tie.gw1})`}</span>
         <div className="flex items-center gap-2">
           {showLive && (
             <span className={`flex items-center gap-1 normal-case ${
@@ -237,7 +283,27 @@ export function MatchCard({
           )}
         </span>
         {!isPlaceholder(tie.home) && (
-          is2Leg ? (
+          is3Leg ? (
+            <div className="flex gap-2 text-xs tabular-nums">
+              <span className={`w-5 text-center ${showLiveLeg1 ? (isFreshlyRefreshed ? "text-amber-400 animate-pulse" : "text-white") : ""}`}>
+                {showLiveLeg1 ? getLiveScore(tie.home, liveScoreLeg1) ?? "–" : (tie.home?.leg1Score ?? "–")}
+              </span>
+              <span className={`w-5 text-center ${showLiveLeg2 ? (isFreshlyRefreshed ? "text-amber-400 animate-pulse" : "text-white") : ""}`}>
+                {showLiveLeg2 ? getLiveScore(tie.home, liveScoreLeg2) ?? "–" : (tie.home?.leg2Score ?? "–")}
+              </span>
+              <span className={`w-5 text-center ${showLiveLeg3 ? (isFreshlyRefreshed ? "text-amber-400 animate-pulse" : "text-white") : ""}`}>
+                {showLiveLeg3 ? getLiveScore(tie.home, liveScoreLeg3) ?? "–" : (tie.home?.leg3Score ?? "–")}
+              </span>
+              <span className="w-6 text-center font-bold border-l border-white/20 pl-1">
+                {(() => {
+                  const leg1Val = showLiveLeg1 ? (getLiveScore(tie.home, liveScoreLeg1) ?? 0) : (tie.home?.leg1Score ?? 0);
+                  const leg2Val = showLiveLeg2 ? (getLiveScore(tie.home, liveScoreLeg2) ?? 0) : (tie.home?.leg2Score ?? 0);
+                  const leg3Val = showLiveLeg3 ? (getLiveScore(tie.home, liveScoreLeg3) ?? 0) : (tie.home?.leg3Score ?? 0);
+                  return leg1Val + leg2Val + leg3Val;
+                })()}
+              </span>
+            </div>
+          ) : is2Leg ? (
             <div className="flex gap-2 text-xs tabular-nums">
               <span className={`w-5 text-center ${showLiveLeg1 ? (isFreshlyRefreshed ? "text-amber-400 animate-pulse" : "text-white") : ""}`}>
                 {showLiveLeg1 ? getLiveScore(tie.home, liveScoreLeg1) ?? "–" : (tie.home?.leg1Score ?? "–")}
@@ -269,7 +335,27 @@ export function MatchCard({
           )}
         </span>
         {!isPlaceholder(tie.away) && (
-          is2Leg ? (
+          is3Leg ? (
+            <div className="flex gap-2 text-xs tabular-nums">
+              <span className={`w-5 text-center ${showLiveLeg1 ? (isFreshlyRefreshed ? "text-amber-400 animate-pulse" : "text-white") : ""}`}>
+                {showLiveLeg1 ? getLiveScore(tie.away, liveScoreLeg1) ?? "–" : (tie.away?.leg1Score ?? "–")}
+              </span>
+              <span className={`w-5 text-center ${showLiveLeg2 ? (isFreshlyRefreshed ? "text-amber-400 animate-pulse" : "text-white") : ""}`}>
+                {showLiveLeg2 ? getLiveScore(tie.away, liveScoreLeg2) ?? "–" : (tie.away?.leg2Score ?? "–")}
+              </span>
+              <span className={`w-5 text-center ${showLiveLeg3 ? (isFreshlyRefreshed ? "text-amber-400 animate-pulse" : "text-white") : ""}`}>
+                {showLiveLeg3 ? getLiveScore(tie.away, liveScoreLeg3) ?? "–" : (tie.away?.leg3Score ?? "–")}
+              </span>
+              <span className="w-6 text-center font-bold border-l border-white/20 pl-1">
+                {(() => {
+                  const leg1Val = showLiveLeg1 ? (getLiveScore(tie.away, liveScoreLeg1) ?? 0) : (tie.away?.leg1Score ?? 0);
+                  const leg2Val = showLiveLeg2 ? (getLiveScore(tie.away, liveScoreLeg2) ?? 0) : (tie.away?.leg2Score ?? 0);
+                  const leg3Val = showLiveLeg3 ? (getLiveScore(tie.away, liveScoreLeg3) ?? 0) : (tie.away?.leg3Score ?? 0);
+                  return leg1Val + leg2Val + leg3Val;
+                })()}
+              </span>
+            </div>
+          ) : is2Leg ? (
             <div className="flex gap-2 text-xs tabular-nums">
               <span className={`w-5 text-center ${showLiveLeg1 ? (isFreshlyRefreshed ? "text-amber-400 animate-pulse" : "text-white") : ""}`}>
                 {showLiveLeg1 ? getLiveScore(tie.away, liveScoreLeg1) ?? "–" : (tie.away?.leg1Score ?? "–")}
@@ -292,6 +378,15 @@ export function MatchCard({
           )
         )}
       </div>
+
+      {is3Leg && !isPlaceholder(tie.home) && (
+        <div className="flex justify-end text-[10px] text-gray-500 gap-2 mt-0.5">
+          <span className="w-5 text-center">L1</span>
+          <span className="w-5 text-center">L2</span>
+          <span className="w-5 text-center">L3</span>
+          <span className="w-6 text-center pl-1">Agg</span>
+        </div>
+      )}
 
       {is2Leg && !isPlaceholder(tie.home) && (
         <div className="flex justify-end text-[10px] text-gray-500 gap-2 mt-0.5">
@@ -343,7 +438,24 @@ export function MatchCard({
               </div>
             </div>
           )}
-          {[liveScoreLeg1, liveScoreLeg2].some(s => s && [...(s.homePlayers ?? []), ...(s.awayPlayers ?? [])].some(p => p.isTempCaptain)) && (
+          {showLiveLeg3 && liveScoreLeg3 && (liveScoreLeg3.homePlayers?.length ?? 0) > 0 && (
+            <div className={(showLiveLeg1 || showLiveLeg2) ? "mt-2" : ""}>
+              <div className="text-[10px] text-gray-500 font-semibold mb-1">Leg 3 (GW{tie.gw3})</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <PlayerBreakdown
+                  label={`${tie.home?.name || "Home"} Players`}
+                  players={getPlayersForSide(tie.home, liveScoreLeg3)}
+                  gameweek={tie.gw3!}
+                />
+                <PlayerBreakdown
+                  label={`${tie.away?.name || "Away"} Players`}
+                  players={getPlayersForSide(tie.away, liveScoreLeg3)}
+                  gameweek={tie.gw3!}
+                />
+              </div>
+            </div>
+          )}
+          {[liveScoreLeg1, liveScoreLeg2, liveScoreLeg3].some(s => s && [...(s.homePlayers ?? []), ...(s.awayPlayers ?? [])].some(p => p.isTempCaptain)) && (
             <div className="mt-2 text-[10px] text-amber-400/70">
               C* = auto-assigned temp captain (lowest scorer)
             </div>
@@ -377,10 +489,13 @@ export function RoundColumn({
   const cachedScores = liveScores ? Object.values(liveScores).flat() : [];
   const mergedScores = [...tempScores, ...cachedScores];
 
-  const roundGw = ties[0].gw1;
-  const hasLiveData = mergedScores.some((s) => s.gameweek === roundGw);
-  const isRefreshing = refreshingGw === roundGw;
-  const isFreshlyRefreshed = (tempLiveScores ? Object.keys(tempLiveScores).map(Number) : []).includes(roundGw);
+  const roundGws = Array.from(new Set(
+    ties.flatMap(t => [t.gw1, t.gw2, t.gw3].filter((x): x is number => x != null))
+  ));
+  const hasLiveData = mergedScores.some((s) => roundGws.includes(s.gameweek));
+  const isRefreshing = refreshingGw != null && roundGws.includes(refreshingGw);
+  const refreshedKeys = tempLiveScores ? Object.keys(tempLiveScores).map(Number) : [];
+  const isFreshlyRefreshed = roundGws.some(gw => refreshedKeys.includes(gw));
 
   return (
     <div className={`flex flex-col gap-3 ${className || ""}`}>
@@ -388,7 +503,7 @@ export function RoundColumn({
         <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider text-center">{title}</h3>
         {hasLiveData && onRefreshRound && (
           <button
-            onClick={() => onRefreshRound(roundGw)}
+            onClick={() => roundGws.forEach(gw => onRefreshRound(gw))}
             disabled={isRefreshing}
             className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRefreshing ? "animate-spin" : ""}`}
             title="Refresh live scores"

@@ -3001,7 +3001,9 @@ export default function AdminDashboard() {
                 )
               ) : (
                 <>
-                <div className="text-xs text-gray-500 mb-3">Reprocessing uses historical ownership (acquiredGw / releasedGw) — safe to re-run any GW.</div>
+                {isAuctionFormat && (
+                  <div className="text-xs text-gray-500 mb-3">Reprocessing uses historical ownership (acquiredGw / releasedGw) — safe to re-run any GW.</div>
+                )}
                 <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-10 gap-2">
                   {gameweekStatuses.map((gw) => {
                     const cached = cacheStats?.gameweeks.find((c) => c.gameweek === gw.number);

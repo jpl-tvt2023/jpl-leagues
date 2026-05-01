@@ -54,8 +54,9 @@ interface TieDisplay {
   status: string;
   gw1: number;
   gw2: number | null;
-  home: { teamId: string | null; name: string; seedLabel?: string | null; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
-  away: { teamId: string | null; name: string; seedLabel?: string | null; leg1Score: number | null; leg2Score: number | null; aggregate: number | null } | null;
+  gw3?: number | null;
+  home: { teamId: string | null; name: string; seedLabel?: string | null; leg1Score: number | null; leg2Score: number | null; leg3Score?: number | null; aggregate: number | null } | null;
+  away: { teamId: string | null; name: string; seedLabel?: string | null; leg1Score: number | null; leg2Score: number | null; leg3Score?: number | null; aggregate: number | null } | null;
   winnerId: string | null;
   loserId: string | null;
 }
@@ -911,10 +912,21 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
     const homeInfo = tie.homeTeamId ? teamMap.get(tie.homeTeamId) : null;
     const awayInfo = tie.awayTeamId ? teamMap.get(tie.awayTeamId) : null;
 
-    let homeLeg1: number | null = null, homeLeg2: number | null = null;
-    let awayLeg1: number | null = null, awayLeg2: number | null = null;
+    let homeLeg1: number | null = null, homeLeg2: number | null = null, homeLeg3: number | null = null;
+    let awayLeg1: number | null = null, awayLeg2: number | null = null, awayLeg3: number | null = null;
 
-    if (tie.gw2) {
+    if (tie.gw3) {
+      // Triple-legged: leg1 H/A original, leg2 swapped, leg3 original
+      const leg1FixId = fixtureByTieLeg.get(`${tie.tieId}-leg1`) ?? `playoff-${tie.tieId}-leg1`;
+      const leg2FixId = fixtureByTieLeg.get(`${tie.tieId}-leg2`) ?? `playoff-${tie.tieId}-leg2`;
+      const leg3FixId = fixtureByTieLeg.get(`${tie.tieId}-leg3`) ?? `playoff-${tie.tieId}-leg3`;
+      const l1 = fixtureResults.get(leg1FixId);
+      const l2 = fixtureResults.get(leg2FixId);
+      const l3 = fixtureResults.get(leg3FixId);
+      if (l1) { homeLeg1 = l1.homeScore; awayLeg1 = l1.awayScore; }
+      if (l2) { homeLeg2 = l2.awayScore; awayLeg2 = l2.homeScore; } // Swapped in leg2
+      if (l3) { homeLeg3 = l3.homeScore; awayLeg3 = l3.awayScore; }
+    } else if (tie.gw2) {
       // 2-legged: try tieId+leg index first (TC), fall back to playoff-tieId-legN pattern (TVT)
       const leg1FixId = fixtureByTieLeg.get(`${tie.tieId}-leg1`) ?? `playoff-${tie.tieId}-leg1`;
       const leg2FixId = fixtureByTieLeg.get(`${tie.tieId}-leg2`) ?? `playoff-${tie.tieId}-leg2`;
@@ -935,11 +947,13 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       status: tie.status,
       gw1: tie.gw1,
       gw2: tie.gw2,
+      gw3: tie.gw3 ?? null,
       home: tie.homeTeamId ? {
         teamId: tie.homeTeamId,
         name: homeInfo?.name || "TBD",
         leg1Score: homeLeg1,
         leg2Score: homeLeg2,
+        leg3Score: homeLeg3,
         aggregate: tie.status === "complete" ? tie.homeAggregate : null,
       } : null,
       away: tie.awayTeamId ? {
@@ -947,6 +961,7 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
         name: awayInfo?.name || "TBD",
         leg1Score: awayLeg1,
         leg2Score: awayLeg2,
+        leg3Score: awayLeg3,
         aggregate: tie.status === "complete" ? tie.awayAggregate : null,
       } : null,
       winnerId: tie.winnerId,
@@ -1271,11 +1286,10 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
   }
 
   if (teamSize === 16) {
-    // 16T championship path: Group Stage → Elite Seeding (GW34) → SF (GW35-36) → Final (GW37-38)
-    // "qf" slot maps to the 2 Elite Seeding matches (16T-ES-M1/M2)
-    const qfLive = tiesByRound("16T-ES");
+    // 16T championship path: Group Stage (GW31-33) → SF (GW34+35, 2-leg) → Final/3rd (GW36+37+38, 3-leg agg)
     const sfLive = tiesByRound("16T-SF");
     const finalLive = tiesByRound("16T-FINAL");
+    const thirdPlaceLive = tiesByRound("16T-3RD");
 
     // Build group stage data
     const groupStageData = [
@@ -1294,17 +1308,17 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       mode: "live", latestCompletedGw, teamSize: 16,
       groupStage: { groups: groupStageData },
       tvt: {
-        qf: qfLive.length > 0 ? qfLive : [
-          { tieId: "16T-ES-M1", roundName: "16T-ES", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A1"), away: placeholder("Champ B1"), winnerId: null, loserId: null },
-          { tieId: "16T-ES-M2", roundName: "16T-ES", status: "projected", gw1: playoffStartGw + 3, gw2: null, home: placeholder("Champ A2"), away: placeholder("Champ B2"), winnerId: null, loserId: null },
-        ],
-        // SF-A: ES-M1 winner vs ES-M2 loser (Seed#1 vs Seed#4), SF-B: ES-M1 loser vs ES-M2 winner (Seed#2 vs Seed#3)
+        // SFs are positionally seeded from group standings (no Elite Seeding match)
+        // SF-A: Champ A 1st vs Champ B 2nd, SF-B: Champ B 1st vs Champ A 2nd
         sf: sfLive.length > 0 ? sfLive : [
-          { tieId: "16T-SF-A", roundName: "16T-SF", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveWinner("16T-ES-M1"), away: resolveLoser("16T-ES-M2"), winnerId: null, loserId: null },
-          { tieId: "16T-SF-B", roundName: "16T-SF", status: "projected", gw1: playoffStartGw + 4, gw2: playoffStartGw + 5, home: resolveLoser("16T-ES-M1"), away: resolveWinner("16T-ES-M2"), winnerId: null, loserId: null },
+          { tieId: "16T-SF-A", roundName: "16T-SF", status: "projected", gw1: playoffStartGw + 3, gw2: playoffStartGw + 4, home: placeholder("Champ A 1st"), away: placeholder("Champ B 2nd"), winnerId: null, loserId: null },
+          { tieId: "16T-SF-B", roundName: "16T-SF", status: "projected", gw1: playoffStartGw + 3, gw2: playoffStartGw + 4, home: placeholder("Champ B 1st"), away: placeholder("Champ A 2nd"), winnerId: null, loserId: null },
         ],
         final: finalLive.length > 0 ? finalLive : [
-          { tieId: "16T-FINAL", roundName: "16T-FINAL", status: "projected", gw1: playoffStartGw + 6, gw2: playoffStartGw + 7, home: resolveWinner("16T-SF-A"), away: resolveWinner("16T-SF-B"), winnerId: null, loserId: null },
+          { tieId: "16T-FINAL", roundName: "16T-FINAL", status: "projected", gw1: playoffStartGw + 5, gw2: playoffStartGw + 6, gw3: playoffStartGw + 7, home: resolveWinner("16T-SF-A"), away: resolveWinner("16T-SF-B"), winnerId: null, loserId: null },
+        ],
+        thirdPlace: thirdPlaceLive.length > 0 ? thirdPlaceLive : [
+          { tieId: "16T-3RD", roundName: "16T-3RD", status: "projected", gw1: playoffStartGw + 5, gw2: playoffStartGw + 6, gw3: playoffStartGw + 7, home: resolveLoser("16T-SF-A"), away: resolveLoser("16T-SF-B"), winnerId: null, loserId: null },
         ],
       },
       challenger: {

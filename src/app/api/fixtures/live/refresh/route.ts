@@ -193,7 +193,7 @@ async function calculateLiveTeamScore(
       }
 
       const netScore = teamScore - transferHits;
-      rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore: netScore, transferHits, netScore });
+      rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore: teamScore, transferHits, netScore });
     } catch (err) {
       console.error(`Failed to fetch live FPL data for team ${player.fplId} in GW${gameweek}:`, err);
       rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore: 0, transferHits: 0, netScore: 0 });

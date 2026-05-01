@@ -167,9 +167,11 @@ function Tvt16({ config }: { config: LeagueConfig }) {
               <tbody>
                 {[
                   ["GW31–33", "Playoff Groups — CA (1,4,5,8) & CB (2,3,6,7), single-leg round-robin", "Playoff Groups — XA (9,12,13,16) & XB (10,11,14,15), single-leg round-robin", "—"],
-                  ["GW34", "Elite Seeding (top 2 of CA & CB)", "Challenger QFs (Champ 3rd/4th vs Chall 1st/2nd)", "WS Seeding (bottom 2 of XA & XB)"],
-                  ["GW35–36", "Semi-Finals — #1 v #4, #2 v #3 (2-legged)", "Semi-Finals — QF winners (2-legged)", "Semi-Finals — #1 v #4, #2 v #3 (2-legged)"],
-                  ["GW37–38", "Final + 3rd Place (2-legged)", "Final (5th) + 3rd (7th) (2-legged)", "Final (13th) + 3rd (15th) (2-legged)"],
+                  ["GW34", "Semi-Finals Leg 1 (CA1 v CB2, CB1 v CA2)", "Challenger QFs (Champ 3rd/4th vs Chall 1st/2nd)", "WS Seeding (bottom 2 of XA & XB)"],
+                  ["GW35", "Semi-Finals Leg 2 (2-legged aggregate)", "Semi-Finals Leg 1 — QF winners", "Semi-Finals Leg 1 — #1 v #4, #2 v #3"],
+                  ["GW36", "Final + 3rd Place — Leg 1 (triple-legged)", "Semi-Finals Leg 2 (2-legged aggregate)", "Semi-Finals Leg 2 (2-legged aggregate)"],
+                  ["GW37", "Final + 3rd Place — Leg 2 (triple-legged)", "Final (5th) + 3rd (7th) Leg 1", "Final (13th) + 3rd (15th) Leg 1"],
+                  ["GW38", "Final + 3rd Place — Leg 3 (triple aggregate decides)", "Final + 3rd Leg 2 (2-legged)", "Final + 3rd Leg 2 (2-legged)"],
                 ].map(([gw, champ, chal, ws]) => (
                   <tr key={gw} className="border-b border-white/5">
                     <td className="px-3 py-2 text-yellow-400 font-mono text-xs whitespace-nowrap">{gw}</td>
@@ -183,8 +185,9 @@ function Tvt16({ config }: { config: LeagueConfig }) {
           </div>
           <ul className="mt-4 space-y-2 text-gray-300 ml-2">
             <RuleItem accent="purple"><strong>Snake-seeded playoff groups:</strong> Each track is split into two sub-groups so the top of the track meets the bottom inside the same playoff group (e.g. Championship A = ranks 1, 4, 5, 8).</RuleItem>
-            <RuleItem accent="purple"><strong>The Great Cut (GW34):</strong> Top 2 of each Championship group lock into the Championship SFs (via Elite Seeding). Bottom 2 of each Championship group drop down and play the top 2 of each Challenger group in the Challenger QFs. Bottom 2 of each Challenger group play the Wooden Spoon Seeding.</RuleItem>
+            <RuleItem accent="purple"><strong>The Great Cut (GW34):</strong> Top 2 of each Championship group go straight into the Championship Semi-Finals — positionally seeded (Group A 1st vs Group B 2nd, Group B 1st vs Group A 2nd) over GW34–35 (2-legged). Bottom 2 of each Championship group drop down and play the top 2 of each Challenger group in the Challenger QFs. Bottom 2 of each Challenger group play the Wooden Spoon Seeding.</RuleItem>
             <RuleItem accent="purple"><strong>2-legged ties:</strong> Higher aggregate advances; on aggregate draw, higher Leg 2 score advances.</RuleItem>
+            <RuleItem accent="purple"><strong>Triple-legged Championship Final + 3rd Place (GW36–38):</strong> The two SF winners (and two SF losers) play three legs across GW36, GW37, GW38. Higher aggregate FPL score across all three legs wins; on aggregate draw, the home team (higher seed) advances.</RuleItem>
             <RuleItem accent="purple"><strong>Playoffs captaincy:</strong> Unlimited — any player can captain any number of times.</RuleItem>
             <RuleItem accent="purple"><strong>Final placings:</strong> 1st–4th from Championship Final + 3rd; 5th–8th from Challenger Final + 3rd; 9th–12th decided by Challenger QFs (losers finish here); 13th–16th from Wooden Spoon Final + 3rd.</RuleItem>
           </ul>
