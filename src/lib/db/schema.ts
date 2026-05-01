@@ -294,6 +294,7 @@ export const challengerSurvivalEntries = sqliteTable("challenger_survival_entrie
   score: integer("score").notNull().default(0),
   rank: integer("rank"),
   advanced: integer("advanced", { mode: "boolean" }).notNull().default(false),
+  playerScores: text("player_scores"), // JSON: [{ name, fplId, fplScore, transferHits, isCaptain, isTempCaptain?, finalScore }]
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 

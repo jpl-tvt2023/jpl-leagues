@@ -61,12 +61,23 @@ interface TieDisplay {
   loserId: string | null;
 }
 
+interface SurvivalPlayerScore {
+  name: string;
+  fplId: string;
+  fplScore: number;
+  transferHits: number;
+  isCaptain: boolean;
+  isTempCaptain?: boolean;
+  finalScore: number;
+}
+
 interface SurvivalDisplay {
   teamId: string;
   name: string;
   score: number;
   rank: number | null;
   advanced: boolean;
+  playerScores?: SurvivalPlayerScore[] | null;
 }
 
 interface GroupStanding {
@@ -1109,12 +1120,18 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       .where(eq(challengerSurvivalEntries.gameweekId, gw33.id));
     for (const e of entries) {
       const info = teamMap.get(e.teamId);
+      let playerScores: SurvivalPlayerScore[] | null = null;
+      if (e.playerScores) {
+        try { playerScores = JSON.parse(e.playerScores) as SurvivalPlayerScore[]; }
+        catch { playerScores = null; }
+      }
       survivalEntries.push({
         teamId: e.teamId,
         name: info?.name || "Unknown",
         score: e.score,
         rank: e.rank,
         advanced: e.advanced,
+        playerScores,
       });
     }
     survivalEntries.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));

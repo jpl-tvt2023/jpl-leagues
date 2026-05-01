@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 
 export interface LiveFixtureScore {
   fixtureId: string;
@@ -38,12 +38,23 @@ export interface TieDisplay {
   loserId: string | null;
 }
 
+export interface SurvivalPlayerScore {
+  name: string;
+  fplId: string;
+  fplScore: number;
+  transferHits: number;
+  isCaptain: boolean;
+  isTempCaptain?: boolean;
+  finalScore: number;
+}
+
 export interface SurvivalDisplay {
   teamId: string;
   name: string;
   score: number;
   rank: number | null;
   advanced: boolean;
+  playerScores?: SurvivalPlayerScore[] | null;
 }
 
 export interface GroupStanding {
@@ -522,7 +533,10 @@ export function RoundColumn({
 }
 
 export function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
+  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   if (entries.length === 0) return null;
+  // Render in descending score order so admin/users see leaders first.
+  const sorted = [...entries].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   return (
     <div>
       <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider mb-2">
@@ -540,22 +554,79 @@ export function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
               </tr>
             </thead>
             <tbody>
-              {entries.map((e, i) => (
-                <tr key={e.teamId || `placeholder-${i}`} className={`border-b border-white/5 ${e.advanced ? "bg-green-900/20" : i >= 8 ? "bg-red-900/10" : ""}`}>
-                  <td className="px-3 py-2 text-gray-400">{e.rank ?? i + 1}</td>
-                  <td className={`px-3 py-2 ${e.advanced ? "text-green-400 font-semibold" : "text-white"}`}>{e.name}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-white">{e.score || "–"}</td>
-                  <td className="px-3 py-2 text-center">
-                    {e.advanced ? (
-                      <span className="text-green-400 text-xs">✓</span>
-                    ) : e.rank && e.rank > 8 ? (
-                      <span className="text-red-400 text-xs">✗</span>
-                    ) : (
-                      <span className="text-gray-500 text-xs">—</span>
+              {sorted.map((e, i) => {
+                const isAdvanced = e.advanced;
+                const isEliminated = e.rank != null && e.rank > 8;
+                const rowTint = isAdvanced ? "bg-green-900/20" : isEliminated ? "bg-red-900/10" : "";
+                const expandable = !!(e.playerScores && e.playerScores.length > 0);
+                const isExpanded = expandable && expandedTeamId === e.teamId;
+                return (
+                  <Fragment key={e.teamId || `placeholder-${i}`}>
+                    <tr
+                      className={`border-b border-white/5 ${rowTint} ${expandable ? "cursor-pointer hover:bg-white/5" : ""}`}
+                      onClick={expandable ? () => setExpandedTeamId(isExpanded ? null : e.teamId) : undefined}
+                    >
+                      <td className="px-3 py-2 text-gray-400">{e.rank ?? i + 1}</td>
+                      <td className={`px-3 py-2 ${isAdvanced ? "text-green-400 font-semibold" : isEliminated ? "text-red-300" : "text-white"}`}>
+                        <span className="inline-flex items-center gap-1.5">
+                          {expandable && <span className="text-gray-500 text-[10px]">{isExpanded ? "▼" : "▶"}</span>}
+                          {e.name}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-white">{e.score || "–"}</td>
+                      <td className="px-3 py-2 text-center">
+                        {isAdvanced ? (
+                          <span className="text-green-400 text-xs">✓</span>
+                        ) : isEliminated ? (
+                          <span className="text-red-400 text-xs">✗</span>
+                        ) : (
+                          <span className="text-gray-500 text-xs">—</span>
+                        )}
+                      </td>
+                    </tr>
+                    {isExpanded && e.playerScores && (
+                      <tr className={rowTint}>
+                        <td colSpan={4} className="px-3 py-2">
+                          <div className="flex flex-col gap-1 bg-slate-900/40 rounded p-2">
+                            {e.playerScores.map((p, idx) => (
+                              <div key={idx} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <a
+                                    href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/33`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-400 hover:text-blue-300 underline truncate"
+                                  >
+                                    {p.name}
+                                  </a>
+                                  {p.isCaptain && p.isTempCaptain && (
+                                    <span
+                                      className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 shrink-0"
+                                      title="Auto-assigned: lowest current scorer."
+                                    >
+                                      C*
+                                    </span>
+                                  )}
+                                  {p.isCaptain && !p.isTempCaptain && (
+                                    <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
+                                  )}
+                                </div>
+                                <PlayerScoreFormula
+                                  fplScore={p.fplScore}
+                                  transferHits={p.transferHits}
+                                  finalScore={p.finalScore}
+                                  isCaptain={p.isCaptain}
+                                  isTempCaptain={p.isTempCaptain}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                </tr>
-              ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

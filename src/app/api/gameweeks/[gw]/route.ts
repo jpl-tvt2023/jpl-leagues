@@ -6,7 +6,7 @@ import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { eq, and, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
-import { leagues } from "@/lib/db/schema";
+import { leagues, challengerSurvivalEntries } from "@/lib/db/schema";
 import { processTripleCrownGameweek } from "@/lib/formats/triple-crown/process-gameweek";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
@@ -102,6 +102,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Challenger Survival counters (32T GW33 only — empty for other GWs / formats)
+    const survivalEntries = await db.select().from(challengerSurvivalEntries)
+      .where(eq(challengerSurvivalEntries.gameweekId, gameweek.id));
+    const survivalRanked = survivalEntries.filter(e => e.rank != null).length;
+
     return NextResponse.json({
       gameweek: {
         number: gameweek.number,
@@ -109,6 +114,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         isPlayoffs: gameweek.isPlayoffs,
         fixturesCount: gameweek.fixtures.length,
         resultsProcessed: gameweek.fixtures.filter((f: FixtureWithRelations) => f.result).length,
+        survivalCount: survivalEntries.length,
+        survivalRanked,
       },
       fixtures: gameweek.fixtures.map((f: FixtureWithRelations) => ({
         id: f.id,

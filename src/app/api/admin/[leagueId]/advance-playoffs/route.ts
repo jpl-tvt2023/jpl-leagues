@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { fixtures, playoffTies, gameweeks, results, groups, challengerSurvivalEntries, leagues } from "@/lib/db/schema";
+import { fixtures, playoffTies, gameweeks, gameweekCaptains, results, groups, challengerSurvivalEntries, leagues } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -1266,39 +1266,89 @@ async function advanceGW33(groupId: string, leagueId: string, actions: string[])
   const survivalEntries = await db.select().from(challengerSurvivalEntries)
     .where(eq(challengerSurvivalEntries.gameweekId, gw33.id));
 
-  const { getAllCachedScores } = await import("@/lib/fpl-cache");
   const { players: playersTable } = await import("@/lib/db/schema");
+  const { calculateTeamGameweekScore } = await import("@/lib/fpl");
+  const { pickTempCaptain } = await import("@/lib/scoring/temp-captain");
 
-  const gw33Cache = await getAllCachedScores(33, leagueId);
+  // Lookup announced captains for GW33 and GW32 (for temp-cap rotation tiebreak)
+  const gw32 = await db.query.gameweeks.findFirst({ where: and(eq(gameweeks.number, 32), eq(gameweeks.leagueId, leagueId)) });
+  const gw33Captains = await db.query.gameweekCaptains.findMany({
+    where: eq(gameweekCaptains.gameweekId, gw33.id),
+    with: { player: true },
+  });
+  const captainByTeam33 = new Map<string, string>();
+  for (const pick of gw33Captains) captainByTeam33.set(pick.player.teamId, pick.player.id);
+
+  const prevCaptainByTeam = new Map<string, string>();
+  if (gw32) {
+    const gw32Captains = await db.query.gameweekCaptains.findMany({
+      where: eq(gameweekCaptains.gameweekId, gw32.id),
+      with: { player: true },
+    });
+    for (const pick of gw32Captains) prevCaptainByTeam.set(pick.player.teamId, pick.player.id);
+  }
+
+  const computed: { entryId: string; total: number; playerScores: unknown[] | null }[] = [];
 
   for (const entry of survivalEntries) {
     const teamPlayers = await db.select().from(playersTable)
       .where(eq(playersTable.teamId, entry.teamId));
 
-    let teamScore = 0;
-    for (const player of teamPlayers) {
-      const cacheKey = `${player.fplId}_gw33`;
-      const cached = gw33Cache[cacheKey];
-      if (cached) teamScore += cached.netScore;
+    try {
+      // Cache-first; FPL fallback for teams not covered by any GW33 fixture.
+      const raw = await Promise.all(teamPlayers.map(async (p) => {
+        const s = await calculateTeamGameweekScore(p.fplId, 33, leagueId);
+        return { id: p.id, name: p.name, fplId: p.fplId, fplScore: s.points, transferHits: s.transferHits, netScore: s.netScore };
+      }));
+
+      // Resolve captain: announced > temp-cap fallback (lowest net, rotate on tie).
+      const announcedCaptainId = captainByTeam33.get(entry.teamId) ?? null;
+      const prevCaptainId = prevCaptainByTeam.get(entry.teamId) ?? null;
+      let resolvedCaptainId: string | null = announcedCaptainId;
+      let isTemp = false;
+      if (!resolvedCaptainId) {
+        resolvedCaptainId = pickTempCaptain(raw, prevCaptainId);
+        isTemp = !!resolvedCaptainId;
+      }
+
+      let total = 0;
+      const playerScores = raw.map((r) => {
+        const isCaptain = resolvedCaptainId === r.id;
+        const finalScore = isCaptain ? r.netScore * 2 : r.netScore;
+        total += finalScore;
+        return {
+          name: r.name,
+          fplId: r.fplId,
+          fplScore: r.fplScore,
+          transferHits: r.transferHits,
+          isCaptain,
+          ...(isCaptain && isTemp ? { isTempCaptain: true } : {}),
+          finalScore,
+        };
+      });
+
+      computed.push({ entryId: entry.id, total, playerScores });
+    } catch (err) {
+      console.error(`Survival GW33 fetch failed for team ${entry.teamId}:`, err);
+      actions.push(`Survival GW33: failed to fetch FPL data for team ${entry.teamId} — re-run advance`);
+      computed.push({ entryId: entry.id, total: 0, playerScores: null });
     }
-
-    await db.update(challengerSurvivalEntries)
-      .set({ score: teamScore })
-      .where(eq(challengerSurvivalEntries.id, entry.id));
   }
 
-  const updatedEntries = await db.select().from(challengerSurvivalEntries)
-    .where(eq(challengerSurvivalEntries.gameweekId, gw33.id));
-
-  updatedEntries.sort((a, b) => b.score - a.score);
-
-  for (let i = 0; i < updatedEntries.length; i++) {
-    const advanced = i < 8;
+  // Sort descending by total; assign rank + advanced flag (top 8 advance, bottom 3 eliminated)
+  computed.sort((a, b) => b.total - a.total);
+  for (let i = 0; i < computed.length; i++) {
+    const c = computed[i];
     await db.update(challengerSurvivalEntries)
-      .set({ rank: i + 1, advanced })
-      .where(eq(challengerSurvivalEntries.id, updatedEntries[i].id));
+      .set({
+        score: c.total,
+        rank: i + 1,
+        advanced: i < 8,
+        playerScores: c.playerScores ? JSON.stringify(c.playerScores) : null,
+      })
+      .where(eq(challengerSurvivalEntries.id, c.entryId));
   }
-  actions.push(`Ranked ${updatedEntries.length} survival teams, top 8 advance`);
+  actions.push(`Ranked ${computed.length} survival teams, top 8 advance`);
 }
 
 async function advanceGW34(groupId: string, leagueId: string, actions: string[]) {
