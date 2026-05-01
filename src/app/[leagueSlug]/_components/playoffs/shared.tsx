@@ -357,6 +357,8 @@ export function RoundColumn({
   refreshingGw,
   tempLiveScores,
   onRefreshRound,
+  pairConnector,
+  incomingConnector,
 }: {
   title: string;
   ties: TieDisplay[];
@@ -365,6 +367,12 @@ export function RoundColumn({
   refreshingGw?: number | null;
   tempLiveScores?: Record<number, LiveFixtureScore[]>;
   onRefreshRound?: (gw: number) => void;
+  /** Group cards in pairs and draw a right-facing "]" bracket joining each pair's midpoint
+   *  toward the next column. Use on RO16, QF, SF columns where two ties feed one. */
+  pairConnector?: boolean;
+  /** Draw a short horizontal stub on the LEFT of every card (visual receiver of the
+   *  feeder column's pair bracket). Use on QF, SF, Final. */
+  incomingConnector?: boolean;
 }) {
   if (ties.length === 0) return null;
 
@@ -392,15 +400,44 @@ export function RoundColumn({
           </button>
         )}
       </div>
-      <div className="flex flex-col gap-2 justify-around flex-1">
-        {ties.map((tie) => (
-          <MatchCard
-            key={tie.tieId}
-            tie={tie}
-            liveScores={mergedScores}
-            isFreshlyRefreshed={isFreshlyRefreshed}
-          />
-        ))}
+      <div className={`flex flex-col gap-2 justify-around flex-1 ${pairConnector ? "pr-3 sm:pr-4" : ""}`}>
+        {pairConnector
+          ? Array.from({ length: Math.ceil(ties.length / 2) }).map((_, pairIdx) => {
+              const a = ties[pairIdx * 2];
+              const b = ties[pairIdx * 2 + 1];
+              return (
+                <div key={a?.tieId ?? `pair-${pairIdx}`} className="relative flex flex-col gap-2">
+                  {a && (
+                    <div className={incomingConnector ? "relative pl-3 sm:pl-4 before:content-[''] before:absolute before:left-0 before:top-1/2 before:w-3 sm:before:w-4 before:border-t before:border-white/25" : ""}>
+                      <MatchCard tie={a} liveScores={mergedScores} isFreshlyRefreshed={isFreshlyRefreshed} />
+                    </div>
+                  )}
+                  {b && (
+                    <div className={incomingConnector ? "relative pl-3 sm:pl-4 before:content-[''] before:absolute before:left-0 before:top-1/2 before:w-3 sm:before:w-4 before:border-t before:border-white/25" : ""}>
+                      <MatchCard tie={b} liveScores={mergedScores} isFreshlyRefreshed={isFreshlyRefreshed} />
+                    </div>
+                  )}
+                  {/* Right-facing "]" bracket: top stub from card A, bottom stub from card B,
+                      vertical bar joining them, horizontal stub at the midpoint exiting right. */}
+                  {b && (
+                    <>
+                      <div className="pointer-events-none absolute right-[-0.75rem] sm:right-[-1rem] top-1/4 bottom-1/4 border-r border-white/25" />
+                      <div className="pointer-events-none absolute right-[-0.75rem] sm:right-[-1rem] top-1/4 w-3 sm:w-4 border-t border-white/25 -translate-x-full" />
+                      <div className="pointer-events-none absolute right-[-0.75rem] sm:right-[-1rem] bottom-1/4 w-3 sm:w-4 border-t border-white/25 -translate-x-full" />
+                      <div className="pointer-events-none absolute right-[-1.5rem] sm:right-[-2rem] top-1/2 w-3 sm:w-4 border-t border-white/25" />
+                    </>
+                  )}
+                </div>
+              );
+            })
+          : ties.map((tie) => (
+              <div
+                key={tie.tieId}
+                className={incomingConnector ? "relative pl-3 sm:pl-4 before:content-[''] before:absolute before:left-0 before:top-1/2 before:w-3 sm:before:w-4 before:border-t before:border-white/25" : ""}
+              >
+                <MatchCard tie={tie} liveScores={mergedScores} isFreshlyRefreshed={isFreshlyRefreshed} />
+              </div>
+            ))}
       </div>
     </div>
   );

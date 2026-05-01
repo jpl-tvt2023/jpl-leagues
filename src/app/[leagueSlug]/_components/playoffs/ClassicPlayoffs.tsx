@@ -161,16 +161,16 @@ export function ClassicPlayoffs() {
               </div>
             ) : data.teamSize === 16 ? (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[600px] min-h-[500px]">
-                <RoundColumn title="Seeding Round" ties={data.tvt.qf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Grand Finale" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                <RoundColumn title="Seeding Round" ties={data.tvt.qf ?? []} pairConnector liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} pairConnector incomingConnector liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                <RoundColumn title="Grand Finale" ties={data.tvt.final ?? []} incomingConnector liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
               </div>
             ) : (
               <div className="grid grid-cols-4 gap-3 sm:gap-4 min-w-[700px] min-h-[600px]">
-                <RoundColumn title="Round of 16" ties={data.tvt.ro16 ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Grand Finale" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                <RoundColumn title="Round of 16" ties={data.tvt.ro16 ?? []} pairConnector liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []} pairConnector incomingConnector liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} pairConnector incomingConnector liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                <RoundColumn title="Grand Finale" ties={data.tvt.final ?? []} incomingConnector liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
               </div>
             )}
           </div>
