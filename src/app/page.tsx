@@ -154,7 +154,9 @@ export default function Home() {
                         <>
                           <Link href={`/${league.slug}/standings`} className={`rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition ${standingsBtn}`}>Standings</Link>
                           <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Fixtures</Link>
-                          <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
+                          {league.format !== "auction" && (
+                            <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
+                          )}
                         </>
                       )}
                     </div>
