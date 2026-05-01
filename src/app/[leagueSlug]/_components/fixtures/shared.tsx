@@ -92,7 +92,7 @@ export function PlayerBreakdownSide({
                   className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 shrink-0"
                   title="Auto-assigned: lowest current scorer. Locks at GW close unless admin overrides."
                 >
-                  TEMP CAP
+                  C*
                 </span>
               )}
               {p.isCaptain && !p.isTempCaptain && (
@@ -152,22 +152,31 @@ export function PlayerBreakdown({
     );
   }
 
+  const hasTempCaptain = [...homePlayers, ...awayPlayers].some(p => p.isTempCaptain);
+
   return (
-    <div className="mt-1 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 sm:gap-4 text-xs">
-      <PlayerBreakdownSide
-        players={homePlayers}
-        teamLabel={fixture.homeTeam.name}
-        gwNumber={gwNumber}
-        isGhost={fixture.homeTeam.isGhost}
-        ghostScore={fixture.result?.homeScore}
-      />
-      <PlayerBreakdownSide
-        players={awayPlayers}
-        teamLabel={fixture.awayTeam.name}
-        gwNumber={gwNumber}
-        isGhost={fixture.awayTeam.isGhost}
-        ghostScore={fixture.result?.awayScore}
-      />
+    <div className="mt-1 pt-2 border-t border-white/10 text-xs">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4">
+        <PlayerBreakdownSide
+          players={homePlayers}
+          teamLabel={fixture.homeTeam.name}
+          gwNumber={gwNumber}
+          isGhost={fixture.homeTeam.isGhost}
+          ghostScore={fixture.result?.homeScore}
+        />
+        <PlayerBreakdownSide
+          players={awayPlayers}
+          teamLabel={fixture.awayTeam.name}
+          gwNumber={gwNumber}
+          isGhost={fixture.awayTeam.isGhost}
+          ghostScore={fixture.result?.awayScore}
+        />
+      </div>
+      {hasTempCaptain && (
+        <div className="mt-2 text-[10px] text-amber-400/70">
+          C* = auto-assigned temp captain (lowest scorer)
+        </div>
+      )}
     </div>
   );
 }
