@@ -241,7 +241,7 @@ export default function AdminHelpPage() {
             <p className="text-purple-300 text-xs mt-2">8-team: SF in GW36 (1-legged), Final + 3rd Place in GW37–38 (2-legged aggregate).</p>
           )}
           {teamSize === 16 && (
-            <p className="text-purple-300 text-xs mt-2">16-team: Group sprints GW31–33 → Merger QFs + Seeding GW34 → SFs GW35–36 → Finals GW37–38. All 16 teams play until GW34; only 4 Challenger QF losers are eliminated.</p>
+            <p className="text-purple-300 text-xs mt-2">16-team: Group sprints GW31–33 → Championship SFs GW34–35 (2-legged) + Challenger QFs / WS Seeding GW34 → Challenger/WS SFs GW35–36 → Championship Final + 3rd Place GW36–38 (triple-legged aggregate); Challenger/WS Finals GW37–38 (2-legged). All 16 teams play until GW34; only 4 Challenger QF losers are eliminated.</p>
           )}
           {teamSize === 32 && (
             <p className="text-purple-300 text-xs mt-2">32-team: RO16 + Challenger-31 in GW31–32 → QF GW33–34 → SF GW35–36 → Final GW37–38.</p>

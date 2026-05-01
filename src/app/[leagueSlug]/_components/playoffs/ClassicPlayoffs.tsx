@@ -160,10 +160,20 @@ export function ClassicPlayoffs() {
                 </div>
               </div>
             ) : data.teamSize === 16 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[600px] min-h-[500px]">
-                <RoundColumn title="Seeding Round" ties={data.tvt.qf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Grand Finale" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+              <div className="space-y-8 min-w-[320px]">
+                <div>
+                  <h2 className="text-xs font-bold text-yellow-400 uppercase tracking-wider mb-3">GW34–35 — Semi-Finals</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                  </div>
+                </div>
+                <div>
+                  <h2 className="text-xs font-bold text-yellow-400 uppercase tracking-wider mb-3">GW36–38 — Final &amp; 3rd Place (Triple-Legged Aggregate)</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <RoundColumn title="Final" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                    <RoundColumn title="3rd Place" ties={data.tvt.thirdPlace ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-4 gap-3 sm:gap-4 min-w-[700px] min-h-[600px]">

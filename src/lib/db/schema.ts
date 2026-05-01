@@ -281,7 +281,8 @@ export const playoffTies = sqliteTable("playoff_ties", {
   loserId: text("loser_id").references(() => teams.id, { onDelete: "set null" }),
   gw1: integer("gw1").notNull(), // First leg / single-leg GW number
   gw2: integer("gw2"), // Second leg GW number (null for single-leg)
-  status: text("status").notNull().default("pending"), // "pending" | "leg1_done" | "complete"
+  gw3: integer("gw3"), // Third leg GW number (null for 1-leg/2-leg ties; used by 16T triple-leg Final/3rd)
+  status: text("status").notNull().default("pending"), // "pending" | "leg1_done" | "leg2_done" | "complete"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 

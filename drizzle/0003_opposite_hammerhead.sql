@@ -1,0 +1,1 @@
+ALTER TABLE `playoff_ties` ADD `gw3` integer;

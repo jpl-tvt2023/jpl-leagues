@@ -104,6 +104,71 @@ async function create2LegTie(params: {
   });
 }
 
+// Create a triple-legged tie + 3 fixtures (legs 1/2/3, alternating swap pattern: H-A, A-H, H-A)
+async function create3LegTie(params: {
+  tieId: string;
+  leagueId: string;
+  roundName: string;
+  roundType: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  gw1Id: string;
+  gw2Id: string;
+  gw3Id: string;
+  gw1Num: number;
+  gw2Num: number;
+  gw3Num: number;
+  groupId: string;
+}) {
+  await db.insert(playoffTies).values({
+    tieId: params.tieId,
+    leagueId: params.leagueId,
+    roundName: params.roundName,
+    roundType: params.roundType,
+    homeTeamId: params.homeTeamId,
+    awayTeamId: params.awayTeamId,
+    gw1: params.gw1Num,
+    gw2: params.gw2Num,
+    gw3: params.gw3Num,
+    status: "pending",
+  });
+
+  await createFixture({
+    tieId: params.tieId,
+    gwId: params.gw1Id,
+    homeTeamId: params.homeTeamId,
+    awayTeamId: params.awayTeamId,
+    groupId: params.groupId,
+    roundName: params.roundName,
+    roundType: params.roundType,
+    leg: 1,
+  });
+
+  // Leg 2: swapped
+  await createFixture({
+    tieId: params.tieId,
+    gwId: params.gw2Id,
+    homeTeamId: params.awayTeamId,
+    awayTeamId: params.homeTeamId,
+    groupId: params.groupId,
+    roundName: params.roundName,
+    roundType: params.roundType,
+    leg: 2,
+  });
+
+  // Leg 3: swapped back to original orientation
+  await createFixture({
+    tieId: params.tieId,
+    gwId: params.gw3Id,
+    homeTeamId: params.homeTeamId,
+    awayTeamId: params.awayTeamId,
+    groupId: params.groupId,
+    roundName: params.roundName,
+    roundType: params.roundType,
+    leg: 3,
+  });
+}
+
 // Create a single-leg KO tie + fixture
 async function create1LegTie(params: {
   tieId: string;
@@ -208,10 +273,58 @@ async function resolve1LegTie(tieId: string, leagueId: string): Promise<{ winner
   return { winnerId, loserId };
 }
 
+// Resolve a triple-legged tie: sum all 3 legs (leg2 is swapped). Home wins on aggregate tie.
+async function resolve3LegTie(tieId: string, leagueId: string): Promise<{ winnerId: string; loserId: string } | null> {
+  const tie = await getTie(tieId, leagueId);
+  if (!tie || !tie.homeTeamId || !tie.awayTeamId) return null;
+
+  const tieFixtures = await db.select().from(fixtures)
+    .where(and(eq(fixtures.tieId, tieId), eq(fixtures.isPlayoff, true)));
+
+  const leg1 = tieFixtures.find(f => f.leg === 1);
+  const leg2 = tieFixtures.find(f => f.leg === 2);
+  const leg3 = tieFixtures.find(f => f.leg === 3);
+  if (!leg1 || !leg2 || !leg3) return null;
+
+  const leg1Result = await db.query.results.findFirst({ where: eq(results.fixtureId, leg1.id) });
+  const leg2Result = await db.query.results.findFirst({ where: eq(results.fixtureId, leg2.id) });
+  const leg3Result = await db.query.results.findFirst({ where: eq(results.fixtureId, leg3.id) });
+  if (!leg1Result || !leg2Result || !leg3Result) return null;
+
+  const homeTeamId = tie.homeTeamId;
+  const awayTeamId = tie.awayTeamId;
+
+  // leg1/leg3: homeTeam is home; leg2: homeTeam is away (swapped)
+  const homeAgg = leg1Result.homeScore + leg2Result.awayScore + leg3Result.homeScore;
+  const awayAgg = leg1Result.awayScore + leg2Result.homeScore + leg3Result.awayScore;
+
+  await db.update(playoffTies)
+    .set({
+      homeAggregate: homeAgg,
+      awayAggregate: awayAgg,
+      winnerId: homeAgg >= awayAgg ? homeTeamId : awayTeamId,
+      loserId: homeAgg >= awayAgg ? awayTeamId : homeTeamId,
+      status: "complete",
+    })
+    .where(eq(playoffTies.tieId, tieId));
+
+  return {
+    winnerId: homeAgg >= awayAgg ? homeTeamId : awayTeamId,
+    loserId: homeAgg >= awayAgg ? awayTeamId : homeTeamId,
+  };
+}
+
 // Mark leg1 done for a 2-legged tie
 async function markLeg1Done(tieId: string) {
   await db.update(playoffTies)
     .set({ status: "leg1_done" })
+    .where(eq(playoffTies.tieId, tieId));
+}
+
+// Mark leg2 done for a triple-legged tie
+async function markLeg2Done(tieId: string) {
+  await db.update(playoffTies)
+    .set({ status: "leg2_done" })
     .where(eq(playoffTies.tieId, tieId));
 }
 
@@ -591,12 +704,12 @@ export async function POST(request: NextRequest) {
       switch (gwOffset) {
         case 0: await advanceGroupGW_16T(0, leagueId, actions); break;      // GW31
         case 1: await advanceGroupGW_16T(1, leagueId, actions); break;      // GW32
-        case 2: await advanceGW33_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW33 + create GW34
-        case 3: await advanceGW34_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW34 + create SFs
-        case 4: await advanceGW35_16T(actions); break;                       // GW35: mark SF leg1
-        case 5: await advanceGW36_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW36 + create Finals
-        case 6: await advanceGW37_16T(actions); break;                       // GW37: mark Final leg1
-        case 7: await advanceGW38_16T(leagueId, actions); break;             // GW38: resolve all
+        case 2: await advanceGW33_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW33 + create SFs (GW34+35) + Chall QFs + WS Seeding
+        case 3: await advanceGW34_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW34: SF leg1 + resolve QFs/WS, create CSF/WSSF
+        case 4: await advanceGW35_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW35: resolve SFs, create 3-leg Final/3rd (GW36+37+38), CSF/WSSF leg1
+        case 5: await advanceGW36_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW36: resolve CSFs/WSSFs, create CFINAL/CW3RD/WSFINAL/WS3RD; Final/3rd leg1
+        case 6: await advanceGW37_16T(actions); break;                       // GW37: 2-leg finals leg1; 3-leg Final/3rd leg2
+        case 7: await advanceGW38_16T(leagueId, actions); break;             // GW38: resolve all (3-leg + 2-leg)
       }
 
     } else {
@@ -712,32 +825,35 @@ async function advanceGW33_16T(groupId: string, leagueId: string, playoffStartGw
   }
 
   // The Great Cut:
-  //   Elite 4   (→ GW34 seeding):     champA[0..1], champB[0..1]
-  //   Relegated 4 (→ GW34 Chall QFs): champA[2..3], champB[2..3]
-  //   Survivors 4 (→ GW34 Chall QFs): challA[0..1], challB[0..1]
-  //   Wooden Spoon 4 (→ GW34 WS seeding): challA[2..3], challB[2..3]
+  //   Elite 4   (→ Championship SFs GW34+35): champA[0..1], champB[0..1]
+  //   Relegated 4 (→ GW34 Chall QFs):         champA[2..3], champB[2..3]
+  //   Survivors 4 (→ GW34 Chall QFs):         challA[0..1], challB[0..1]
+  //   Wooden Spoon 4 (→ GW34 WS seeding):     challA[2..3], challB[2..3]
 
   const gw34Id = await getGameweekId(playoffStartGw + 3, leagueId);
-  if (!gw34Id) throw new Error(`GW${playoffStartGw + 3} not found`);
+  const gw35Id = await getGameweekId(playoffStartGw + 4, leagueId);
+  if (!gw34Id || !gw35Id) throw new Error(`GW${playoffStartGw + 3}/${playoffStartGw + 4} not found`);
 
-  // Elite Seeding matches (Championship top 4)
-  // M1: ChampA1 vs ChampB1 → winner=#1 seed, loser=#2 seed
-  // M2: ChampA2 vs ChampB2 → winner=#3 seed, loser=#4 seed
-  await create1LegTie({
-    tieId: "16T-ES-M1", leagueId,
-    roundName: "16T-ES", roundType: "tvt",
-    homeTeamId: champA[0].teamId, awayTeamId: champB[0].teamId,
-    gwId: gw34Id, gwNum: playoffStartGw + 3, groupId,
+  // Championship Semi-Finals — directly seeded from group standings (no Elite Seeding round)
+  // SF-A: ChampA1 vs ChampB2  (Group A winner vs Group B runner-up)
+  // SF-B: ChampB1 vs ChampA2  (Group B winner vs Group A runner-up)
+  await create2LegTie({
+    tieId: "16T-SF-A", leagueId,
+    roundName: "16T-SF", roundType: "tvt",
+    homeTeamId: champA[0].teamId, awayTeamId: champB[1].teamId,
+    gw1Id: gw34Id, gw2Id: gw35Id,
+    gw1Num: playoffStartGw + 3, gw2Num: playoffStartGw + 4, groupId,
   });
-  actions.push("Created 16T-ES-M1 (Elite Seeding: ChampA1 vs ChampB1)");
+  actions.push("Created 16T-SF-A (ChampA1 vs ChampB2, GW34+35)");
 
-  await create1LegTie({
-    tieId: "16T-ES-M2", leagueId,
-    roundName: "16T-ES", roundType: "tvt",
-    homeTeamId: champA[1].teamId, awayTeamId: champB[1].teamId,
-    gwId: gw34Id, gwNum: playoffStartGw + 3, groupId,
+  await create2LegTie({
+    tieId: "16T-SF-B", leagueId,
+    roundName: "16T-SF", roundType: "tvt",
+    homeTeamId: champB[0].teamId, awayTeamId: champA[1].teamId,
+    gw1Id: gw34Id, gw2Id: gw35Id,
+    gw1Num: playoffStartGw + 3, gw2Num: playoffStartGw + 4, groupId,
   });
-  actions.push("Created 16T-ES-M2 (Elite Seeding: ChampA2 vs ChampB2)");
+  actions.push("Created 16T-SF-B (ChampB1 vs ChampA2, GW34+35)");
 
   // Challenger Quarter-Finals (4 relegated + 4 Challenger survivors)
   // QF1: ChampA3 vs ChallB2  QF2: ChampB3 vs ChallA2
@@ -778,18 +894,20 @@ async function advanceGW33_16T(groupId: string, leagueId: string, playoffStartGw
   actions.push("Created 16T-WS-M2 (WS Seeding: ChallA4 vs ChallB4)");
 }
 
-// GW34: resolve all seeding/QF matches + create GW35-36 semi-finals
+// GW34: SF leg 1 done; resolve 1-leg Challenger QFs + 1-leg WS Seeding; create CSF/WSSF (2-leg, GW35+36)
 async function advanceGW34_16T(groupId: string, leagueId: string, playoffStartGw: number, actions: string[]) {
-  const esM1 = await resolve1LegTie("16T-ES-M1", leagueId);
-  const esM2 = await resolve1LegTie("16T-ES-M2", leagueId);
-  if (esM1) actions.push("16T-ES-M1: Elite Seeding resolved");
-  if (esM2) actions.push("16T-ES-M2: Elite Seeding resolved");
+  // Championship SFs played leg 1 in GW34
+  await markLeg1Done("16T-SF-A");
+  await markLeg1Done("16T-SF-B");
+  actions.push("16T-SF-A / 16T-SF-B: leg 1 recorded");
 
+  // Resolve 1-leg Challenger QFs
   for (const qfId of ["16T-QF1", "16T-QF2", "16T-QF3", "16T-QF4"]) {
     const result = await resolve1LegTie(qfId, leagueId);
     if (result) actions.push(`${qfId}: QF resolved`);
   }
 
+  // Resolve 1-leg Wooden Spoon Seeding
   const wsM1 = await resolve1LegTie("16T-WS-M1", leagueId);
   const wsM2 = await resolve1LegTie("16T-WS-M2", leagueId);
   if (wsM1) actions.push("16T-WS-M1: WS Seeding resolved");
@@ -798,32 +916,6 @@ async function advanceGW34_16T(groupId: string, leagueId: string, playoffStartGw
   const gw35Id = await getGameweekId(playoffStartGw + 4, leagueId);
   const gw36Id = await getGameweekId(playoffStartGw + 5, leagueId);
   if (!gw35Id || !gw36Id) throw new Error(`GW${playoffStartGw + 4}/${playoffStartGw + 5} not found`);
-
-  // Championship SFs — fixed seeding:
-  // Seed #1 = M1 winner (won group + won GW34), Seed #2 = M1 loser
-  // Seed #3 = M2 winner, Seed #4 = M2 loser
-  // SF-A: #1 vs #4,  SF-B: #2 vs #3
-  if (esM1?.winnerId && esM1.loserId && esM2?.winnerId && esM2.loserId) {
-    await create2LegTie({
-      tieId: "16T-SF-A", leagueId,
-      roundName: "16T-SF", roundType: "tvt",
-      homeTeamId: esM1.winnerId, awayTeamId: esM2.loserId,
-      gw1Id: gw35Id, gw2Id: gw36Id,
-      gw1Num: playoffStartGw + 4, gw2Num: playoffStartGw + 5, groupId,
-    });
-    actions.push("Created 16T-SF-A (Seed#1 vs Seed#4)");
-
-    await create2LegTie({
-      tieId: "16T-SF-B", leagueId,
-      roundName: "16T-SF", roundType: "tvt",
-      homeTeamId: esM1.loserId, awayTeamId: esM2.winnerId,
-      gw1Id: gw35Id, gw2Id: gw36Id,
-      gw1Num: playoffStartGw + 4, gw2Num: playoffStartGw + 5, groupId,
-    });
-    actions.push("Created 16T-SF-B (Seed#2 vs Seed#3)");
-  } else {
-    actions.push("Elite Seeding incomplete — Championship SFs not created");
-  }
 
   // Challenger SFs (QF1 winner vs QF4 winner, QF2 winner vs QF3 winner)
   const qf1 = await getTie("16T-QF1", leagueId);
@@ -876,42 +968,70 @@ async function advanceGW34_16T(groupId: string, leagueId: string, playoffStartGw
   }
 }
 
-// GW35: mark leg 1 done for all 6 SF ties
-async function advanceGW35_16T(actions: string[]) {
-  for (const tieId of ["16T-SF-A", "16T-SF-B", "16T-CSF-A", "16T-CSF-B", "16T-WSSF-A", "16T-WSSF-B"]) {
+// GW35: resolve Championship SFs (2-leg agg) + create 3-leg Final/3rd (GW36+37+38);
+//       mark CSF/WSSF leg 1 done (their leg 2 plays in GW36)
+async function advanceGW35_16T(groupId: string, leagueId: string, playoffStartGw: number, actions: string[]) {
+  const sfA = await resolve2LegTie("16T-SF-A", leagueId);
+  const sfB = await resolve2LegTie("16T-SF-B", leagueId);
+  if (sfA) actions.push("16T-SF-A: aggregate resolved");
+  if (sfB) actions.push("16T-SF-B: aggregate resolved");
+
+  // CSF/WSSF leg 1 played in GW35; leg 2 will be GW36
+  for (const tieId of ["16T-CSF-A", "16T-CSF-B", "16T-WSSF-A", "16T-WSSF-B"]) {
     await markLeg1Done(tieId);
     actions.push(`${tieId}: leg 1 recorded`);
   }
+
+  const gw36Id = await getGameweekId(playoffStartGw + 5, leagueId);
+  const gw37Id = await getGameweekId(playoffStartGw + 6, leagueId);
+  const gw38Id = await getGameweekId(playoffStartGw + 7, leagueId);
+  if (!gw36Id || !gw37Id || !gw38Id) throw new Error(`GW${playoffStartGw + 5}/${playoffStartGw + 6}/${playoffStartGw + 7} not found`);
+
+  // Championship Final + 3rd Place — TRIPLE-LEGGED across GW36+37+38, decided by aggregate
+  if (sfA?.winnerId && sfB?.winnerId) {
+    await create3LegTie({
+      tieId: "16T-FINAL", leagueId, roundName: "16T-FINAL", roundType: "tvt",
+      homeTeamId: sfA.winnerId, awayTeamId: sfB.winnerId,
+      gw1Id: gw36Id, gw2Id: gw37Id, gw3Id: gw38Id,
+      gw1Num: playoffStartGw + 5, gw2Num: playoffStartGw + 6, gw3Num: playoffStartGw + 7,
+      groupId,
+    });
+    actions.push("Created 16T-FINAL (Championship Grand Final — triple-legged GW36+37+38)");
+  }
+  if (sfA?.loserId && sfB?.loserId) {
+    await create3LegTie({
+      tieId: "16T-3RD", leagueId, roundName: "16T-3RD", roundType: "tvt",
+      homeTeamId: sfA.loserId, awayTeamId: sfB.loserId,
+      gw1Id: gw36Id, gw2Id: gw37Id, gw3Id: gw38Id,
+      gw1Num: playoffStartGw + 5, gw2Num: playoffStartGw + 6, gw3Num: playoffStartGw + 7,
+      groupId,
+    });
+    actions.push("Created 16T-3RD (Championship 3rd Place — triple-legged GW36+37+38)");
+  }
 }
 
-// GW36: resolve SF aggregates + create GW37-38 finals
+// GW36: resolve Challenger SFs and WS SFs (2-leg agg); create 2-leg Challenger/WS finals on GW37+38;
+//       mark Championship 3-leg Final/3rd leg 1 done
 async function advanceGW36_16T(groupId: string, leagueId: string, playoffStartGw: number, actions: string[]) {
-  const sfA    = await resolve2LegTie("16T-SF-A",    leagueId);
-  const sfB    = await resolve2LegTie("16T-SF-B",    leagueId);
-  const csfA   = await resolve2LegTie("16T-CSF-A",   leagueId);
-  const csfB   = await resolve2LegTie("16T-CSF-B",   leagueId);
-  const wssfA  = await resolve2LegTie("16T-WSSF-A",  leagueId);
-  const wssfB  = await resolve2LegTie("16T-WSSF-B",  leagueId);
+  const csfA  = await resolve2LegTie("16T-CSF-A",  leagueId);
+  const csfB  = await resolve2LegTie("16T-CSF-B",  leagueId);
+  const wssfA = await resolve2LegTie("16T-WSSF-A", leagueId);
+  const wssfB = await resolve2LegTie("16T-WSSF-B", leagueId);
 
-  for (const [id, r] of [["16T-SF-A", sfA], ["16T-SF-B", sfB], ["16T-CSF-A", csfA], ["16T-CSF-B", csfB], ["16T-WSSF-A", wssfA], ["16T-WSSF-B", wssfB]] as [string, typeof sfA][]) {
+  for (const [id, r] of [["16T-CSF-A", csfA], ["16T-CSF-B", csfB], ["16T-WSSF-A", wssfA], ["16T-WSSF-B", wssfB]] as [string, typeof csfA][]) {
     if (r) actions.push(`${id}: aggregate resolved`);
   }
+
+  // Championship triple-leg finals played leg 1 in GW36
+  await markLeg1Done("16T-FINAL");
+  await markLeg1Done("16T-3RD");
+  actions.push("16T-FINAL / 16T-3RD: leg 1 recorded");
 
   const gw37Id = await getGameweekId(playoffStartGw + 6, leagueId);
   const gw38Id = await getGameweekId(playoffStartGw + 7, leagueId);
   if (!gw37Id || !gw38Id) throw new Error(`GW${playoffStartGw + 6}/${playoffStartGw + 7} not found`);
 
-  // Championship Final + 3rd Place
-  if (sfA?.winnerId && sfB?.winnerId) {
-    await create2LegTie({ tieId: "16T-FINAL", leagueId, roundName: "16T-FINAL", roundType: "tvt", homeTeamId: sfA.winnerId, awayTeamId: sfB.winnerId, gw1Id: gw37Id, gw2Id: gw38Id, gw1Num: playoffStartGw + 6, gw2Num: playoffStartGw + 7, groupId });
-    actions.push("Created 16T-FINAL (Championship Grand Final)");
-  }
-  if (sfA?.loserId && sfB?.loserId) {
-    await create2LegTie({ tieId: "16T-3RD", leagueId, roundName: "16T-3RD", roundType: "tvt", homeTeamId: sfA.loserId, awayTeamId: sfB.loserId, gw1Id: gw37Id, gw2Id: gw38Id, gw1Num: playoffStartGw + 6, gw2Num: playoffStartGw + 7, groupId });
-    actions.push("Created 16T-3RD (Championship 3rd Place)");
-  }
-
-  // Challenger Final + 3rd Place
+  // Challenger Final + 3rd Place (2-leg, GW37+38 — unchanged)
   if (csfA?.winnerId && csfB?.winnerId) {
     await create2LegTie({ tieId: "16T-CFINAL", leagueId, roundName: "16T-CFINAL", roundType: "challenger-ko", homeTeamId: csfA.winnerId, awayTeamId: csfB.winnerId, gw1Id: gw37Id, gw2Id: gw38Id, gw1Num: playoffStartGw + 6, gw2Num: playoffStartGw + 7, groupId });
     actions.push("Created 16T-CFINAL (Challenger Grand Final)");
@@ -921,7 +1041,7 @@ async function advanceGW36_16T(groupId: string, leagueId: string, playoffStartGw
     actions.push("Created 16T-C3RD (Challenger 3rd Place)");
   }
 
-  // Wooden Spoon Final + 3rd Place
+  // Wooden Spoon Final + 3rd Place (2-leg, GW37+38 — unchanged)
   if (wssfA?.winnerId && wssfB?.winnerId) {
     await create2LegTie({ tieId: "16T-WSFINAL", leagueId, roundName: "16T-WSFINAL", roundType: "tvt", homeTeamId: wssfA.winnerId, awayTeamId: wssfB.winnerId, gw1Id: gw37Id, gw2Id: gw38Id, gw1Num: playoffStartGw + 6, gw2Num: playoffStartGw + 7, groupId });
     actions.push("Created 16T-WSFINAL (WS Final — 13th Place)");
@@ -932,25 +1052,36 @@ async function advanceGW36_16T(groupId: string, leagueId: string, playoffStartGw
   }
 }
 
-// GW37: mark leg 1 done for all 6 final ties
+// GW37: 2-leg Challenger/WS finals leg 1 done; 3-leg Championship Final/3rd leg 2 done
 async function advanceGW37_16T(actions: string[]) {
-  for (const tieId of ["16T-FINAL", "16T-3RD", "16T-CFINAL", "16T-C3RD", "16T-WSFINAL", "16T-WS3RD"]) {
+  for (const tieId of ["16T-CFINAL", "16T-C3RD", "16T-WSFINAL", "16T-WS3RD"]) {
     await markLeg1Done(tieId);
     actions.push(`${tieId}: leg 1 recorded`);
   }
+  for (const tieId of ["16T-FINAL", "16T-3RD"]) {
+    await markLeg2Done(tieId);
+    actions.push(`${tieId}: leg 2 recorded`);
+  }
 }
 
-// GW38: resolve all 6 final aggregates
+// GW38: resolve all finals — 3-leg aggregate for Championship; 2-leg aggregate for Challenger/WS
 async function advanceGW38_16T(leagueId: string, actions: string[]) {
-  const finals: [string, string][] = [
-    ["16T-FINAL",   "Championship Champion"],
-    ["16T-3RD",     "Championship 3rd Place"],
+  const tripleFinals: [string, string][] = [
+    ["16T-FINAL", "Championship Champion"],
+    ["16T-3RD",   "Championship 3rd Place"],
+  ];
+  for (const [tieId, label] of tripleFinals) {
+    const result = await resolve3LegTie(tieId, leagueId);
+    if (result) actions.push(`${tieId}: ${label} determined!`);
+  }
+
+  const twoLegFinals: [string, string][] = [
     ["16T-CFINAL",  "Challenger Champion (5th)"],
     ["16T-C3RD",    "Challenger 3rd Place (7th)"],
     ["16T-WSFINAL", "13th Place"],
     ["16T-WS3RD",   "15th Place"],
   ];
-  for (const [tieId, label] of finals) {
+  for (const [tieId, label] of twoLegFinals) {
     const result = await resolve2LegTie(tieId, leagueId);
     if (result) actions.push(`${tieId}: ${label} determined!`);
   }

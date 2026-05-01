@@ -35,7 +35,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
     teamSize === 8
       ? `GW36: Semi-Finals (1v4, 2v3, single-leg). GW37–38: Final + 3rd Place (2-legged aggregate). Ranks 5–8 are eliminated after the league stage.`
       : teamSize === 16
-      ? `JPL-TVT Merged Funnel — All 16 teams play GW31–38. GW31–33: Playoff Groups (Championship: ranks 1, 4, 5, 8 / 2, 3, 6, 7; Challenger: ranks 9, 12, 13, 16 / 10, 11, 14, 15). GW34: The Great Cut — Elite Seeding (top 4 of Champ groups) + Challenger QFs (Champ 3rd/4th vs Chall 1st/2nd) + Wooden Spoon Seeding (bottom 4 of Chall groups). GW35–36: SFs across Championship, Challenger, and Wooden Spoon brackets (2-legged). GW37–38: Finals + 3rd Place ties (2-legged). Final placings: 1st–4th from Championship, 5th–8th from Challenger, 9th–12th from Challenger QF (losers), 13th–16th from Wooden Spoon.`
+      ? `JPL-TVT Merged Funnel — All 16 teams play GW31–38. GW31–33: Playoff Groups (Championship: ranks 1, 4, 5, 8 / 2, 3, 6, 7; Challenger: ranks 9, 12, 13, 16 / 10, 11, 14, 15). GW34–35: Championship Semi-Finals (2-legged aggregate, positionally seeded from group standings). GW34: Challenger QFs (Champ 3rd/4th vs Chall 1st/2nd) + Wooden Spoon Seeding (bottom 4 of Chall groups). GW35–36: Challenger and Wooden Spoon SFs (2-legged). GW36–38: Championship Final + 3rd Place (triple-legged aggregate). GW37–38: Challenger and Wooden Spoon Finals + 3rd Place (2-legged). Final placings: 1st–4th from Championship, 5th–8th from Challenger, 9th–12th from Challenger QF (losers), 13th–16th from Wooden Spoon.`
       : `GW31: RO16 Leg 1 + C-31 (Round of 12 KO, ranks 9–14 cross-group). GW32: RO16 Leg 2 + C-32 (Round of 6 KO). GW33: QF Leg 1 + Challenger Survival (RO16 losers + C-32 winners ranked by FPL points; top 8 advance). GW34: QF Leg 2 + C-34 (Survival top-8 KO). GW35: SF Leg 1 + C-35 (QF losers vs C-34 winners). GW36: SF Leg 2 + C-36. GW37: Final Leg 1 + C-37. GW38: Final Leg 2 + C-38 Challenger Final. Ranks 15–16 per group are eliminated after the league stage.`;
 
   const generalFaqs: FaqEntry[] = [
@@ -315,9 +315,9 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
           ? [
               `After GW30, all 16 teams continue into a 3-bracket playoff (Championship, Challenger, Wooden Spoon). No one is eliminated yet.`,
               "GW31–33: Playoff Groups — 4 groups of 4, single-leg round-robin. Snake-seeded so top meets bottom inside each group.",
-              "GW34 — The Great Cut: Elite Seeding for top 4, Challenger QFs blend Champ 3rd/4th with Chall 1st/2nd, Wooden Spoon Seeding for bottom 4.",
-              "GW35–36: Semi-Finals across all 3 brackets (2-legged aggregate).",
-              "GW37–38: Finals + 3rd Place ties (2-legged) decide every position from 1st to 16th. Only the 4 Challenger QF losers have no further matches (they finish 9th–12th).",
+              "GW34 — The Great Cut: Championship SFs Leg 1 (positionally seeded — Group A 1st vs Group B 2nd, and mirror), Challenger QFs blend Champ 3rd/4th with Chall 1st/2nd, Wooden Spoon Seeding for bottom 4.",
+              "GW34–35: Championship Semi-Finals (2-legged aggregate). GW35–36: Challenger and Wooden Spoon SFs (2-legged).",
+              "GW36–38: Championship Final + 3rd Place — triple-legged aggregate across GW36/37/38. GW37–38: Challenger and Wooden Spoon Finals + 3rd Place (2-legged). Only the 4 Challenger QF losers have no further matches (they finish 9th–12th).",
             ]
           : [
               `After GW30, top 8 per group advance to the Title Play-offs; ranks 9–14 per group enter the Challenger Series; ranks 15–16 are eliminated.`,
