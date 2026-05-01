@@ -357,8 +357,6 @@ export function RoundColumn({
   refreshingGw,
   tempLiveScores,
   onRefreshRound,
-  pairConnector,
-  incomingConnector,
 }: {
   title: string;
   ties: TieDisplay[];
@@ -367,12 +365,6 @@ export function RoundColumn({
   refreshingGw?: number | null;
   tempLiveScores?: Record<number, LiveFixtureScore[]>;
   onRefreshRound?: (gw: number) => void;
-  /** Group cards in pairs and draw a right-facing "]" bracket joining each pair's midpoint
-   *  toward the next column. Use on RO16, QF, SF columns where two ties feed one. */
-  pairConnector?: boolean;
-  /** Draw a short horizontal stub on the LEFT of every card (visual receiver of the
-   *  feeder column's pair bracket). Use on QF, SF, Final. */
-  incomingConnector?: boolean;
 }) {
   if (ties.length === 0) return null;
 
@@ -400,45 +392,10 @@ export function RoundColumn({
           </button>
         )}
       </div>
-      <div className={`flex flex-col gap-3 sm:gap-4 justify-around flex-1 ${pairConnector ? "pr-4 sm:pr-6" : ""}`}>
-        {pairConnector
-          ? Array.from({ length: Math.ceil(ties.length / 2) }).map((_, pairIdx) => {
-              const a = ties[pairIdx * 2];
-              const b = ties[pairIdx * 2 + 1];
-              const halfGap = "calc(50% + 0.375rem)"; // gap-3 = 0.75rem, half = 0.375rem
-              return (
-                <div key={a?.tieId ?? `pair-${pairIdx}`} className="relative flex flex-col gap-3 sm:gap-4">
-                  {a && (
-                    <div className={`relative ${incomingConnector ? "pl-4 sm:pl-6 before:content-[''] before:absolute before:left-0 before:top-1/2 before:w-4 sm:before:w-6 before:border-t-2 before:border-yellow-500/40" : ""}`}>
-                      <MatchCard tie={a} liveScores={mergedScores} isFreshlyRefreshed={isFreshlyRefreshed} />
-                      {b && (
-                        <>
-                          {/* Top card → midpoint between pair: horizontal stub from card mid-right + vertical bar going DOWN to mid-of-gap */}
-                          <span className="pointer-events-none absolute right-[-1rem] sm:right-[-1.5rem] top-1/2 w-4 sm:w-6 border-t-2 border-yellow-500/40" />
-                          <span className="pointer-events-none absolute right-[-1rem] sm:right-[-1.5rem] top-1/2 border-r-2 border-yellow-500/40" style={{ height: halfGap }} />
-                        </>
-                      )}
-                    </div>
-                  )}
-                  {b && (
-                    <div className={`relative ${incomingConnector ? "pl-4 sm:pl-6 before:content-[''] before:absolute before:left-0 before:top-1/2 before:w-4 sm:before:w-6 before:border-t-2 before:border-yellow-500/40" : ""}`}>
-                      <MatchCard tie={b} liveScores={mergedScores} isFreshlyRefreshed={isFreshlyRefreshed} />
-                      {/* Bottom card → midpoint: horizontal stub from card mid-right + vertical bar going UP to mid-of-gap */}
-                      <span className="pointer-events-none absolute right-[-1rem] sm:right-[-1.5rem] top-1/2 w-4 sm:w-6 border-t-2 border-yellow-500/40" />
-                      <span className="pointer-events-none absolute right-[-1rem] sm:right-[-1.5rem] bottom-1/2 border-r-2 border-yellow-500/40" style={{ height: halfGap }} />
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          : ties.map((tie) => (
-              <div
-                key={tie.tieId}
-                className={incomingConnector ? "relative pl-4 sm:pl-6 before:content-[''] before:absolute before:left-0 before:top-1/2 before:w-4 sm:before:w-6 before:border-t-2 before:border-yellow-500/40" : ""}
-              >
-                <MatchCard tie={tie} liveScores={mergedScores} isFreshlyRefreshed={isFreshlyRefreshed} />
-              </div>
-            ))}
+      <div className="flex flex-col gap-3 sm:gap-4 justify-around flex-1">
+        {ties.map((tie) => (
+          <MatchCard key={tie.tieId} tie={tie} liveScores={mergedScores} isFreshlyRefreshed={isFreshlyRefreshed} />
+        ))}
       </div>
     </div>
   );
