@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { NotificationBell } from "@/components/NotificationBell";
+import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
 
 // Types
 interface DashboardData {
@@ -1604,17 +1605,14 @@ export default function DashboardPage() {
                           )}
                         </div>
                         <div className="text-right">
-                          {p.isCaptain ? (
-                            <span className={`${'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"} font-semibold`}>
-                              {p.transferHits > 0
-                                ? `(${p.fplScore} − ${p.transferHits}) × 2 = ${p.finalScore}`
-                                : `${p.fplScore} × 2 = ${p.finalScore}`}
-                            </span>
-                          ) : (
-                            <span className={liveScoreOverride ? "text-green-300" : "text-white"}>
-                              {p.transferHits > 0 ? `${p.fplScore} − ${p.transferHits} = ${p.finalScore}` : p.finalScore}
-                            </span>
-                          )}
+                          <PlayerScoreFormula
+                            fplScore={p.fplScore}
+                            transferHits={p.transferHits}
+                            finalScore={p.finalScore}
+                            isCaptain={p.isCaptain}
+                            captainColorClass={'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"}
+                            nonCaptainColorClass={liveScoreOverride ? "text-green-300" : "text-white"}
+                          />
                         </div>
                       </div>
                     ))}
@@ -1651,17 +1649,14 @@ export default function DashboardPage() {
                           )}
                         </div>
                         <div className="text-right">
-                          {p.isCaptain ? (
-                            <span className={`${'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"} font-semibold`}>
-                              {p.transferHits > 0
-                                ? `(${p.fplScore} − ${p.transferHits}) × 2 = ${p.finalScore}`
-                                : `${p.fplScore} × 2 = ${p.finalScore}`}
-                            </span>
-                          ) : (
-                            <span className={liveScoreOverride ? "text-green-300" : "text-white"}>
-                              {p.transferHits > 0 ? `${p.fplScore} − ${p.transferHits} = ${p.finalScore}` : p.finalScore}
-                            </span>
-                          )}
+                          <PlayerScoreFormula
+                            fplScore={p.fplScore}
+                            transferHits={p.transferHits}
+                            finalScore={p.finalScore}
+                            isCaptain={p.isCaptain}
+                            captainColorClass={'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"}
+                            nonCaptainColorClass={liveScoreOverride ? "text-green-300" : "text-white"}
+                          />
                         </div>
                       </div>
                     ))}
@@ -1764,17 +1759,13 @@ export default function DashboardPage() {
                                 )}
                               </div>
                               <div className="text-right">
-                                {p.isCaptain ? (
-                                  <span className={`${p.isInferred ? "text-orange-400" : "text-yellow-400"} font-semibold`}>
-                                    {p.transferHits > 0
-                                      ? `(${p.fplScore} − ${p.transferHits}) × 2 = ${p.finalScore}`
-                                      : `${p.fplScore} × 2 = ${p.finalScore}`}
-                                  </span>
-                                ) : (
-                                  <span className="text-white">
-                                    {p.transferHits > 0 ? `${p.fplScore} − ${p.transferHits} = ${p.finalScore}` : p.finalScore}
-                                  </span>
-                                )}
+                                <PlayerScoreFormula
+                                  fplScore={p.fplScore}
+                                  transferHits={p.transferHits}
+                                  finalScore={p.finalScore}
+                                  isCaptain={p.isCaptain}
+                                  captainColorClass={p.isInferred ? "text-orange-400" : "text-yellow-400"}
+                                />
                               </div>
                             </div>
                           ))}

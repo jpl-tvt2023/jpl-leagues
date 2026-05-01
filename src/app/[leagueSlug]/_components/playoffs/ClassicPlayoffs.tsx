@@ -223,8 +223,11 @@ export function ClassicPlayoffs() {
                     const ties = roundData as TieDisplay[];
                     const insertSurvivalBefore = key === "c34" && showSurvival;
                     if ((!ties || ties.length === 0) && !insertSurvivalBefore) return null;
-                    const hasLive = mergedScores.some((s) => s.gameweek === gw);
-                    const isRoundRefreshing = refreshing === gw;
+                    const roundGws = ties && ties.length > 0
+                      ? Array.from(new Set(ties.flatMap(t => [t.gw1, t.gw2, t.gw3].filter((x): x is number => x != null))))
+                      : [gw];
+                    const hasLive = mergedScores.some((s) => roundGws.includes(s.gameweek));
+                    const isRoundRefreshing = refreshing != null && roundGws.includes(refreshing);
                     return (
                       <div key={key} className="space-y-6">
                         {insertSurvivalBefore && (
@@ -236,7 +239,7 @@ export function ClassicPlayoffs() {
                               <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider">{label}</h3>
                               {hasLive && (
                                 <button
-                                  onClick={() => handleRefreshRound(gw)}
+                                  onClick={() => roundGws.forEach(g => handleRefreshRound(g))}
                                   disabled={isRoundRefreshing}
                                   className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRoundRefreshing ? "animate-spin" : ""}`}
                                   title="Refresh live scores"

@@ -90,6 +90,47 @@ export interface BracketData {
   liveScores?: Record<number, LiveFixtureScore[]>;
 }
 
+// Renders the player's score formula consistently across all fixture/playoff cards.
+// Captain: `{net} × 2 = {final}` and a trailing `(−{hits} hit applied)` note when hits > 0.
+// Non-captain: bare `{final}`, with `(−{hits} hit applied)` when hits > 0.
+export function PlayerScoreFormula({
+  fplScore,
+  transferHits,
+  finalScore,
+  isCaptain,
+  isTempCaptain,
+  captainColorClass,
+  nonCaptainColorClass,
+}: {
+  fplScore: number;
+  transferHits: number;
+  finalScore: number;
+  isCaptain: boolean;
+  isTempCaptain?: boolean;
+  captainColorClass?: string;
+  nonCaptainColorClass?: string;
+}) {
+  const hitNote = transferHits > 0
+    ? <div className="text-gray-400 font-normal text-[10px] leading-tight">(−{transferHits} hit applied)</div>
+    : null;
+  if (isCaptain) {
+    const net = fplScore - transferHits;
+    const colour = captainColorClass ?? (isTempCaptain ? "text-amber-400" : "text-yellow-400");
+    return (
+      <div className="inline-flex flex-col items-end leading-tight">
+        <span className={`${colour} font-semibold`}>{net} × 2 = {finalScore}</span>
+        {hitNote}
+      </div>
+    );
+  }
+  return (
+    <div className="inline-flex flex-col items-end leading-tight">
+      <span className={nonCaptainColorClass ?? "text-white"}>{finalScore}</span>
+      {hitNote}
+    </div>
+  );
+}
+
 function PlayerBreakdown({
   label,
   players,
@@ -127,17 +168,13 @@ function PlayerBreakdown({
             )}
           </div>
           <div className="text-right shrink-0 ml-2 whitespace-nowrap">
-            {p.isCaptain ? (
-              <span className={p.isTempCaptain ? "text-amber-400 font-semibold" : "text-yellow-400 font-semibold"}>
-                {p.transferHits > 0
-                  ? `(${p.fplScore} − ${p.transferHits}) × 2 = ${p.finalScore}`
-                  : `${p.fplScore} × 2 = ${p.finalScore}`}
-              </span>
-            ) : (
-              <span className="text-white">
-                {p.transferHits > 0 ? `${p.fplScore} − ${p.transferHits} = ${p.finalScore}` : p.finalScore}
-              </span>
-            )}
+            <PlayerScoreFormula
+              fplScore={p.fplScore}
+              transferHits={p.transferHits}
+              finalScore={p.finalScore}
+              isCaptain={p.isCaptain}
+              isTempCaptain={p.isTempCaptain}
+            />
           </div>
         </div>
       ))}
@@ -452,10 +489,13 @@ export function RoundColumn({
   const cachedScores = liveScores ? Object.values(liveScores).flat() : [];
   const mergedScores = [...tempScores, ...cachedScores];
 
-  const roundGw = ties[0].gw1;
-  const hasLiveData = mergedScores.some((s) => s.gameweek === roundGw);
-  const isRefreshing = refreshingGw === roundGw;
-  const isFreshlyRefreshed = (tempLiveScores ? Object.keys(tempLiveScores).map(Number) : []).includes(roundGw);
+  const roundGws = Array.from(new Set(
+    ties.flatMap(t => [t.gw1, t.gw2, t.gw3].filter((x): x is number => x != null))
+  ));
+  const hasLiveData = mergedScores.some((s) => roundGws.includes(s.gameweek));
+  const isRefreshing = refreshingGw != null && roundGws.includes(refreshingGw);
+  const refreshedKeys = tempLiveScores ? Object.keys(tempLiveScores).map(Number) : [];
+  const isFreshlyRefreshed = roundGws.some(gw => refreshedKeys.includes(gw));
 
   return (
     <div className={`flex flex-col gap-3 ${className || ""}`}>
@@ -463,7 +503,7 @@ export function RoundColumn({
         <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider text-center">{title}</h3>
         {hasLiveData && onRefreshRound && (
           <button
-            onClick={() => onRefreshRound(roundGw)}
+            onClick={() => roundGws.forEach(gw => onRefreshRound(gw))}
             disabled={isRefreshing}
             className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRefreshing ? "animate-spin" : ""}`}
             title="Refresh live scores"
