@@ -392,14 +392,9 @@ export function RoundColumn({
           </button>
         )}
       </div>
-      <div className="flex flex-col gap-2 justify-around flex-1">
+      <div className="flex flex-col gap-3 sm:gap-4 justify-around flex-1">
         {ties.map((tie) => (
-          <MatchCard
-            key={tie.tieId}
-            tie={tie}
-            liveScores={mergedScores}
-            isFreshlyRefreshed={isFreshlyRefreshed}
-          />
+          <MatchCard key={tie.tieId} tie={tie} liveScores={mergedScores} isFreshlyRefreshed={isFreshlyRefreshed} />
         ))}
       </div>
     </div>

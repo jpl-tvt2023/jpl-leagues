@@ -13,8 +13,10 @@ const RO16_SEEDING: [string, string, number, string, number][] = [
   ["RO16-G", "A", 4, "B", 5], ["RO16-H", "B", 4, "A", 5],
 ];
 
-// Bracket-paired order: ties whose winners meet are adjacent
-const RO16_BRACKET_ORDER = ["RO16-A", "RO16-H", "RO16-B", "RO16-G", "RO16-C", "RO16-F", "RO16-D", "RO16-E"];
+// Bracket-paired pyramid order: feeders for SF-A on top half (QF-A=A+H, QF-D=D+E),
+// feeders for SF-B on bottom half (QF-B=B+G, QF-C=C+F). Lets the visual flow read
+// top→bottom without crossing lines.
+const RO16_BRACKET_ORDER = ["RO16-A", "RO16-H", "RO16-D", "RO16-E", "RO16-B", "RO16-G", "RO16-C", "RO16-F"];
 
 const C31_SEEDING: [string, string, number, string, number][] = [
   ["C-31-A", "A", 9, "B", 14], ["C-31-B", "B", 9, "A", 14],
@@ -22,10 +24,11 @@ const C31_SEEDING: [string, string, number, string, number][] = [
   ["C-31-E", "A", 11, "B", 12], ["C-31-F", "B", 11, "A", 12],
 ];
 
-// QF seeding (W of RO16 ties)
+// QF seeding (W of RO16 ties) — order matches RO16_BRACKET_ORDER so the QF
+// column renders top→bottom in the same pyramid: A, D, B, C.
 const QF_SEEDING: [string, string, string][] = [
-  ["QF-A", "RO16-A", "RO16-H"], ["QF-B", "RO16-B", "RO16-G"],
-  ["QF-C", "RO16-C", "RO16-F"], ["QF-D", "RO16-D", "RO16-E"],
+  ["QF-A", "RO16-A", "RO16-H"], ["QF-D", "RO16-D", "RO16-E"],
+  ["QF-B", "RO16-B", "RO16-G"], ["QF-C", "RO16-C", "RO16-F"],
 ];
 // SF seeding
 const SF_SEEDING: [string, string, string][] = [

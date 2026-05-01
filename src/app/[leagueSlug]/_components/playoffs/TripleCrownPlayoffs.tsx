@@ -95,9 +95,9 @@ export function TripleCrownPlayoffs() {
             {(data.tvt.qf?.length || data.tvt.sf?.length || data.tvt.final?.length) ? (
               <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
-                  <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
-                  <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
-                  <RoundColumn title="UCL Final 🏆" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-yellow-500/50 pl-3" />
+                  <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
+                  <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
+                  <RoundColumn title="UCL Final 🏆" ties={data.tvt.final ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-yellow-500/50 pl-3" />
                 </div>
               </div>
             ) : (
@@ -125,9 +125,9 @@ export function TripleCrownPlayoffs() {
               return hasData ? (
                 <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
-                    <RoundColumn title="Quarter-Finals" ties={uelQF} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
-                    <RoundColumn title="Semi-Finals" ties={uelSF} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
-                    <RoundColumn title="Europa Final 🏆" ties={uelFinal} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />
+                    <RoundColumn title="Quarter-Finals" ties={uelQF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
+                    <RoundColumn title="Semi-Finals" ties={uelSF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
+                    <RoundColumn title="Europa Final 🏆" ties={uelFinal}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />
                   </div>
                 </div>
               ) : (
