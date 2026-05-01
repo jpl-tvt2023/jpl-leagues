@@ -251,6 +251,44 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Playoffs group not found" }, { status: 500 });
   }
 
+  // Pre-check: every playoff fixture in the GW being advanced must have a
+  // scored result. Otherwise resolve1LegTie / markLeg1Done would silently
+  // no-op and the bracket state would drift out of sync with the UI.
+  const gwForCheck = await db.query.gameweeks.findFirst({
+    where: and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId)),
+  });
+  if (!gwForCheck) {
+    return NextResponse.json(
+      { error: `GW${gwNumber} not found for this league` },
+      { status: 400 },
+    );
+  }
+  const gwFixturesForCheck = await db.query.fixtures.findMany({
+    where: and(eq(fixtures.gameweekId, gwForCheck.id), eq(fixtures.isPlayoff, true)),
+    with: { result: true },
+  });
+  if (gwFixturesForCheck.length === 0) {
+    return NextResponse.json(
+      { error: `No playoff fixtures exist for GW${gwNumber}. Generate the bracket or the previous round first.` },
+      { status: 400 },
+    );
+  }
+  const unscored = gwFixturesForCheck.filter(f => !f.result);
+  if (unscored.length > 0) {
+    const missing = unscored.map(f => {
+      const legSuffix = f.leg ? ` (leg ${f.leg})` : "";
+      return `${f.tieId ?? f.id}${legSuffix}`;
+    });
+    return NextResponse.json(
+      {
+        error: `Cannot advance GW${gwNumber} — ${missing.length} of ${gwFixturesForCheck.length} fixture${gwFixturesForCheck.length === 1 ? "" : "s"} not yet scored. Run the scoring job for GW${gwNumber} first, then retry. Missing: ${missing.join(", ")}`,
+        gameweek: gwNumber,
+        missing,
+      },
+      { status: 400 },
+    );
+  }
+
   const actions: string[] = [];
 
   try {
