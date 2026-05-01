@@ -1,0 +1,1 @@
+ALTER TABLE `challenger_survival_entries` ADD `player_scores` text;
