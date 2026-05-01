@@ -51,7 +51,7 @@ async function createFixture(params: {
     leg: params.leg ?? null,
     tieId: params.tieId,
     roundType: params.roundType,
-  });
+  }).onConflictDoNothing({ target: fixtures.id });
   return fixtureId;
 }
 
@@ -79,7 +79,7 @@ async function create2LegTie(params: {
     gw1: params.gw1Num,
     gw2: params.gw2Num,
     status: "pending",
-  });
+  }).onConflictDoNothing({ target: playoffTies.tieId });
 
   await createFixture({
     tieId: params.tieId,
@@ -131,7 +131,7 @@ async function create3LegTie(params: {
     gw2: params.gw2Num,
     gw3: params.gw3Num,
     status: "pending",
-  });
+  }).onConflictDoNothing({ target: playoffTies.tieId });
 
   await createFixture({
     tieId: params.tieId,
@@ -191,7 +191,7 @@ async function create1LegTie(params: {
     gw1: params.gwNum,
     gw2: null,
     status: "pending",
-  });
+  }).onConflictDoNothing({ target: playoffTies.tieId });
 
   await createFixture({
     tieId: params.tieId,
@@ -209,6 +209,9 @@ async function create1LegTie(params: {
 async function resolve2LegTie(tieId: string, leagueId: string): Promise<{ winnerId: string; loserId: string } | null> {
   const tie = await getTie(tieId, leagueId);
   if (!tie || !tie.homeTeamId || !tie.awayTeamId) return null;
+  if (tie.status === "complete" && tie.winnerId && tie.loserId) {
+    return { winnerId: tie.winnerId, loserId: tie.loserId };
+  }
 
   const tieFixtures = await db.select().from(fixtures)
     .where(and(eq(fixtures.tieId, tieId), eq(fixtures.isPlayoff, true)));
@@ -248,6 +251,9 @@ async function resolve2LegTie(tieId: string, leagueId: string): Promise<{ winner
 async function resolve1LegTie(tieId: string, leagueId: string): Promise<{ winnerId: string; loserId: string } | null> {
   const tie = await getTie(tieId, leagueId);
   if (!tie || !tie.homeTeamId || !tie.awayTeamId) return null;
+  if (tie.status === "complete" && tie.winnerId && tie.loserId) {
+    return { winnerId: tie.winnerId, loserId: tie.loserId };
+  }
 
   const tieFixture = await db.select().from(fixtures)
     .where(and(eq(fixtures.tieId, tieId), eq(fixtures.isPlayoff, true)));
@@ -277,6 +283,9 @@ async function resolve1LegTie(tieId: string, leagueId: string): Promise<{ winner
 async function resolve3LegTie(tieId: string, leagueId: string): Promise<{ winnerId: string; loserId: string } | null> {
   const tie = await getTie(tieId, leagueId);
   if (!tie || !tie.homeTeamId || !tie.awayTeamId) return null;
+  if (tie.status === "complete" && tie.winnerId && tie.loserId) {
+    return { winnerId: tie.winnerId, loserId: tie.loserId };
+  }
 
   const tieFixtures = await db.select().from(fixtures)
     .where(and(eq(fixtures.tieId, tieId), eq(fixtures.isPlayoff, true)));
