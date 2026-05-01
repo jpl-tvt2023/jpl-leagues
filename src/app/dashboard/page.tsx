@@ -1606,10 +1606,14 @@ export default function DashboardPage() {
                         <div className="text-right">
                           {p.isCaptain ? (
                             <span className={`${'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"} font-semibold`}>
-                              {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} × 2 = {p.finalScore}
+                              {p.transferHits > 0
+                                ? `(${p.fplScore} − ${p.transferHits}) × 2 = ${p.finalScore}`
+                                : `${p.fplScore} × 2 = ${p.finalScore}`}
                             </span>
                           ) : (
-                            <span className={liveScoreOverride ? "text-green-300" : "text-white"}>{p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}</span>
+                            <span className={liveScoreOverride ? "text-green-300" : "text-white"}>
+                              {p.transferHits > 0 ? `${p.fplScore} − ${p.transferHits} = ${p.finalScore}` : p.finalScore}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1649,10 +1653,14 @@ export default function DashboardPage() {
                         <div className="text-right">
                           {p.isCaptain ? (
                             <span className={`${'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"} font-semibold`}>
-                              {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} × 2 = {p.finalScore}
+                              {p.transferHits > 0
+                                ? `(${p.fplScore} − ${p.transferHits}) × 2 = ${p.finalScore}`
+                                : `${p.fplScore} × 2 = ${p.finalScore}`}
                             </span>
                           ) : (
-                            <span className={liveScoreOverride ? "text-green-300" : "text-white"}>{p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}</span>
+                            <span className={liveScoreOverride ? "text-green-300" : "text-white"}>
+                              {p.transferHits > 0 ? `${p.fplScore} − ${p.transferHits} = ${p.finalScore}` : p.finalScore}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1758,10 +1766,14 @@ export default function DashboardPage() {
                               <div className="text-right">
                                 {p.isCaptain ? (
                                   <span className={`${p.isInferred ? "text-orange-400" : "text-yellow-400"} font-semibold`}>
-                                    {p.fplScore}{p.transferHits > 0 ? ` - ${p.transferHits}` : ""} × 2 = {p.finalScore}
+                                    {p.transferHits > 0
+                                      ? `(${p.fplScore} − ${p.transferHits}) × 2 = ${p.finalScore}`
+                                      : `${p.fplScore} × 2 = ${p.finalScore}`}
                                   </span>
                                 ) : (
-                                  <span className="text-white">{p.finalScore}{p.transferHits > 0 ? ` (−${p.transferHits})` : ""}</span>
+                                  <span className="text-white">
+                                    {p.transferHits > 0 ? `${p.fplScore} − ${p.transferHits} = ${p.finalScore}` : p.finalScore}
+                                  </span>
                                 )}
                               </div>
                             </div>
