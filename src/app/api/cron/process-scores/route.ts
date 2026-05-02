@@ -222,8 +222,10 @@ async function fetchAndCacheLiveScores(gameweek: number): Promise<void> {
     });
 
     const captainByTeamId = new Map<string, string>();
+    const autoAssignedByTeamId = new Map<string, boolean>();
     for (const pick of captainPicks) {
       captainByTeamId.set(pick.player.teamId, pick.player.id);
+      autoAssignedByTeamId.set(pick.player.teamId, pick.isValid === false);
     }
 
     // Previous-GW captains (used for temp-cap tiebreak when current GW has no announcement)
@@ -249,13 +251,15 @@ async function fetchAndCacheLiveScores(gameweek: number): Promise<void> {
           fixture.homeTeam.players,
           captainByTeamId.get(fixture.homeTeamId),
           prevCaptainByTeamId.get(fixture.homeTeamId) ?? null,
-          gameweek
+          gameweek,
+          autoAssignedByTeamId.get(fixture.homeTeamId) ?? false,
         );
         const awayScore = await calculateLiveTeamScore(
           fixture.awayTeam.players,
           captainByTeamId.get(fixture.awayTeamId),
           prevCaptainByTeamId.get(fixture.awayTeamId) ?? null,
-          gameweek
+          gameweek,
+          autoAssignedByTeamId.get(fixture.awayTeamId) ?? false,
         );
 
         gwLiveScores.push({
@@ -299,7 +303,8 @@ async function calculateLiveTeamScore(
   teamPlayers: { id: string; name: string; fplId: string }[],
   captainPlayerId: string | undefined,
   prevCaptainPlayerId: string | null,
-  gameweek: number
+  gameweek: number,
+  captainWasAutoAssigned: boolean = false,
 ): Promise<{
   total: number;
   players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
@@ -318,9 +323,10 @@ async function calculateLiveTeamScore(
     }
   }
 
-  // Resolve captain: announced > temp (lowest net, rotate-on-tie).
+  // Resolve captain: announced > temp (lowest net, rotate-on-tie). Treat as temp captain
+  // if either no row existed OR the existing row was auto-assigned post-deadline (isValid === false).
   let resolvedCaptainId: string | null = captainPlayerId ?? null;
-  let isTemp = false;
+  let isTemp = captainWasAutoAssigned;
   if (!resolvedCaptainId) {
     resolvedCaptainId = pickTempCaptain(rawScores, prevCaptainPlayerId);
     isTemp = !!resolvedCaptainId;

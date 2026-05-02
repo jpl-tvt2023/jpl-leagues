@@ -317,11 +317,15 @@ async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | nu
   ) => {
     const captainPick = captainByTeamId.get(teamId);
     if (captainPick) {
+      // gameweek_captains.isValid === false means the captain was auto-assigned post-deadline
+      // (see autoAssignDefaultCaptain in /api/gameweeks/[gw]/route.ts), not announced by the team.
+      const wasAutoAssigned = captainPick.isValid === false;
       return teamPlayers.map(p => {
         const isCaptain = captainPick.playerId === p.id;
         if (isCaptain) {
           return {
             name: p.name, fplId: p.fplId, isCaptain: true,
+            ...(wasAutoAssigned ? { isTempCaptain: true } : {}),
             fplScore: captainPick.fplScore, transferHits: captainPick.transferHits,
             finalScore: captainPick.doubledScore,
           };
@@ -420,8 +424,10 @@ async function fetchAndCacheLiveScoresForGw(gameweek: number, leagueId: string |
     });
 
     const captainByTeamId = new Map<string, string>();
+    const autoAssignedByTeamId = new Map<string, boolean>();
     for (const pick of captainPicks) {
       captainByTeamId.set(pick.player.teamId, pick.player.id);
+      autoAssignedByTeamId.set(pick.player.teamId, pick.isValid === false);
     }
 
     // Previous-GW captains for temp-cap tiebreak rotation
@@ -449,13 +455,15 @@ async function fetchAndCacheLiveScoresForGw(gameweek: number, leagueId: string |
           fixture.homeTeam.players,
           captainByTeamId.get(fixture.homeTeamId),
           prevCaptainByTeamId.get(fixture.homeTeamId) ?? null,
-          gameweek
+          gameweek,
+          autoAssignedByTeamId.get(fixture.homeTeamId) ?? false,
         );
         const awayScore = await calculateLiveTeamScore(
           fixture.awayTeam.players,
           captainByTeamId.get(fixture.awayTeamId),
           prevCaptainByTeamId.get(fixture.awayTeamId) ?? null,
-          gameweek
+          gameweek,
+          autoAssignedByTeamId.get(fixture.awayTeamId) ?? false,
         );
 
         gwLiveScores.push({
@@ -496,7 +504,8 @@ async function calculateLiveTeamScore(
   teamPlayers: { id: string; name: string; fplId: string }[],
   captainPlayerId: string | undefined,
   prevCaptainPlayerId: string | null,
-  gameweek: number
+  gameweek: number,
+  captainWasAutoAssigned: boolean = false,
 ): Promise<{
   total: number;
   players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
@@ -515,7 +524,7 @@ async function calculateLiveTeamScore(
   }
 
   let resolvedCaptainId: string | null = captainPlayerId ?? null;
-  let isTemp = false;
+  let isTemp = captainWasAutoAssigned;
   if (!resolvedCaptainId) {
     resolvedCaptainId = pickTempCaptain(rawScores, prevCaptainPlayerId);
     isTemp = !!resolvedCaptainId;
@@ -565,10 +574,14 @@ async function computeLiveSurvivalScores(
     where: leagueId ? and(eq(gameweeks.number, gameweek - 1), eq(gameweeks.leagueId, leagueId)) : eq(gameweeks.number, gameweek - 1),
   });
   const captainByTeam = new Map<string, string>();
+  const autoAssignedByTeam = new Map<string, boolean>();
   const prevCaptainByTeam = new Map<string, string>();
   if (gw) {
     const picks = await db.query.gameweekCaptains.findMany({ where: eq(gameweekCaptains.gameweekId, gw.id), with: { player: true } });
-    for (const p of picks) captainByTeam.set(p.player.teamId, p.player.id);
+    for (const p of picks) {
+      captainByTeam.set(p.player.teamId, p.player.id);
+      autoAssignedByTeam.set(p.player.teamId, p.isValid === false);
+    }
   }
   if (prevGw) {
     const picks = await db.query.gameweekCaptains.findMany({ where: eq(gameweekCaptains.gameweekId, prevGw.id), with: { player: true } });
@@ -584,7 +597,7 @@ async function computeLiveSurvivalScores(
       }));
 
       let captainId: string | null = captainByTeam.get(teamId) ?? null;
-      let isTemp = false;
+      let isTemp = autoAssignedByTeam.get(teamId) ?? false;
       if (!captainId) {
         captainId = pickTempCaptain(raw, prevCaptainByTeam.get(teamId) ?? null);
         isTemp = !!captainId;
