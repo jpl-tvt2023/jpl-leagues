@@ -540,6 +540,75 @@ async function calculateLiveTeamScore(
   return { total, players };
 }
 
+/**
+ * Compute live Challenger Survival scores for the given team IDs at the given gameweek.
+ * Cache-first via calculateTeamGameweekScore (FPL fallback). Honors announced captain
+ * (gameweek_captains) or auto-picks a temp captain (lowest net, rotate vs prev GW).
+ * Used by the bracket route to surface mid-week scores before admin runs Advance GW33.
+ */
+async function computeLiveSurvivalScores(
+  teamIds: string[],
+  gameweek: number,
+  leagueId: string | null,
+): Promise<Map<string, { score: number; playerScores: SurvivalPlayerScore[] }>> {
+  const out = new Map<string, { score: number; playerScores: SurvivalPlayerScore[] }>();
+  if (teamIds.length === 0) return out;
+
+  const { calculateTeamGameweekScore } = await import("@/lib/fpl");
+  const { pickTempCaptain } = await import("@/lib/scoring/temp-captain");
+  const { players: playersTable } = await import("@/lib/db/schema");
+
+  const gw = await db.query.gameweeks.findFirst({
+    where: leagueId ? and(eq(gameweeks.number, gameweek), eq(gameweeks.leagueId, leagueId)) : eq(gameweeks.number, gameweek),
+  });
+  const prevGw = await db.query.gameweeks.findFirst({
+    where: leagueId ? and(eq(gameweeks.number, gameweek - 1), eq(gameweeks.leagueId, leagueId)) : eq(gameweeks.number, gameweek - 1),
+  });
+  const captainByTeam = new Map<string, string>();
+  const prevCaptainByTeam = new Map<string, string>();
+  if (gw) {
+    const picks = await db.query.gameweekCaptains.findMany({ where: eq(gameweekCaptains.gameweekId, gw.id), with: { player: true } });
+    for (const p of picks) captainByTeam.set(p.player.teamId, p.player.id);
+  }
+  if (prevGw) {
+    const picks = await db.query.gameweekCaptains.findMany({ where: eq(gameweekCaptains.gameweekId, prevGw.id), with: { player: true } });
+    for (const p of picks) prevCaptainByTeam.set(p.player.teamId, p.player.id);
+  }
+
+  for (const teamId of teamIds) {
+    try {
+      const teamPlayers = await db.select().from(playersTable).where(eq(playersTable.teamId, teamId));
+      const raw = await Promise.all(teamPlayers.map(async (p) => {
+        const s = await calculateTeamGameweekScore(p.fplId, gameweek, leagueId);
+        return { id: p.id, name: p.name, fplId: p.fplId, fplScore: s.points, transferHits: s.transferHits, netScore: s.netScore };
+      }));
+
+      let captainId: string | null = captainByTeam.get(teamId) ?? null;
+      let isTemp = false;
+      if (!captainId) {
+        captainId = pickTempCaptain(raw, prevCaptainByTeam.get(teamId) ?? null);
+        isTemp = !!captainId;
+      }
+
+      let total = 0;
+      const playerScores: SurvivalPlayerScore[] = raw.map((r) => {
+        const isCaptain = captainId === r.id;
+        const finalScore = isCaptain ? r.netScore * 2 : r.netScore;
+        total += finalScore;
+        return {
+          name: r.name, fplId: r.fplId, fplScore: r.fplScore, transferHits: r.transferHits,
+          isCaptain, ...(isCaptain && isTemp ? { isTempCaptain: true } : {}), finalScore,
+        };
+      });
+
+      out.set(teamId, { score: total, playerScores });
+    } catch (err) {
+      console.error(`Live survival score failed for team ${teamId}:`, err);
+    }
+  }
+  return out;
+}
+
 // ============================================
 // TENTATIVE / PROJECTED MODE
 // ============================================
@@ -1114,27 +1183,49 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
 
   // C-33 Survival
   const survivalEntries: SurvivalDisplay[] = [];
-  const gw33 = await db.query.gameweeks.findFirst({ where: eq(gameweeks.number, 33) });
+  const gw33 = await db.query.gameweeks.findFirst({
+    where: leagueId ? and(eq(gameweeks.number, 33), eq(gameweeks.leagueId, leagueId)) : eq(gameweeks.number, 33),
+  });
   if (gw33) {
     const entries = await db.select().from(challengerSurvivalEntries)
       .where(eq(challengerSurvivalEntries.gameweekId, gw33.id));
+    // If no entry has been ranked (admin hasn't clicked Advance GW33 yet) but GW33's
+    // deadline has passed, compute live FPL data so users see the round populating
+    // as fixtures are scored — without waiting for the formal Advance step.
+    const anyRanked = entries.some(e => e.rank != null);
+    const computeLive = entries.length > 0 && !anyRanked && gw33.deadline && new Date(gw33.deadline) <= new Date();
+    let liveByTeam = new Map<string, { score: number; playerScores: SurvivalPlayerScore[] }>();
+    if (computeLive) {
+      liveByTeam = await computeLiveSurvivalScores(entries.map(e => e.teamId), 33, leagueId ?? null);
+    }
     for (const e of entries) {
       const info = teamMap.get(e.teamId);
       let playerScores: SurvivalPlayerScore[] | null = null;
+      let score = e.score;
       if (e.playerScores) {
         try { playerScores = JSON.parse(e.playerScores) as SurvivalPlayerScore[]; }
         catch { playerScores = null; }
+      } else if (computeLive) {
+        const live = liveByTeam.get(e.teamId);
+        if (live) {
+          playerScores = live.playerScores;
+          score = live.score;
+        }
       }
       survivalEntries.push({
         teamId: e.teamId,
         name: info?.name || "Unknown",
-        score: e.score,
+        score,
         rank: e.rank,
         advanced: e.advanced,
         playerScores,
       });
     }
-    survivalEntries.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
+    // When ranked, sort by stored rank; when live (no rank yet), sort by score desc.
+    survivalEntries.sort((a, b) => {
+      if (anyRanked) return (a.rank ?? 99) - (b.rank ?? 99);
+      return (b.score ?? 0) - (a.score ?? 0);
+    });
   }
   // If no survival entries in DB yet, build placeholders from known winners/losers
   const c33: SurvivalDisplay[] = survivalEntries.length > 0 ? survivalEntries : [
