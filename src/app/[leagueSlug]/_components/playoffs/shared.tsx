@@ -532,17 +532,38 @@ export function RoundColumn({
   );
 }
 
-export function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
+export function SurvivalTable({
+  entries,
+  onRefresh,
+  isRefreshing,
+}: {
+  entries: SurvivalDisplay[];
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
+}) {
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   if (entries.length === 0) return null;
   // Render in descending score order so users see leaders first (also matches the
   // post-Advance ranked order, since rank 1 = highest score).
   const sorted = [...entries].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const hasAnyScore = sorted.some(e => (e.score ?? 0) > 0);
   return (
     <div>
-      <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider mb-2">
-        C-33 Survival (GW33) — Top 8 Advance
-      </h3>
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-xs font-bold text-yellow-400 uppercase tracking-wider">
+          C-33 Survival (GW33) — Top 8 Advance
+        </h3>
+        {hasAnyScore && onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${isRefreshing ? "animate-spin" : ""}`}
+            title="Refresh live scores"
+          >
+            ⟳
+          </button>
+        )}
+      </div>
       <div className="bg-slate-800/80 border border-white/10 rounded-lg overflow-hidden">
         <table className="w-full text-xs">
           <thead>
@@ -585,6 +606,11 @@ export function SurvivalTable({ entries }: { entries: SurvivalDisplay[] }) {
                     <tr className={rowTint}>
                       <td colSpan={4} className="px-2 pb-2">
                         <div className="flex flex-col gap-1 bg-slate-900/40 rounded p-2">
+                          {e.playerScores.some(p => p.isTempCaptain) && (
+                            <div className="text-[10px] text-amber-400/70 mb-1">
+                              C* = auto-assigned temp captain (lowest scorer)
+                            </div>
+                          )}
                           {e.playerScores.map((p, idx) => (
                             <div key={idx} className="flex items-center justify-between text-xs">
                               <div className="flex items-center gap-1.5 min-w-0">

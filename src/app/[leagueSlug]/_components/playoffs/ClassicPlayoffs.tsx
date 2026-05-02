@@ -231,7 +231,11 @@ export function ClassicPlayoffs() {
                     return (
                       <div key={key} className="space-y-6">
                         {insertSurvivalBefore && (
-                          <SurvivalTable entries={data.challenger.c33 as SurvivalDisplay[]} />
+                          <SurvivalTable
+                            entries={data.challenger.c33 as SurvivalDisplay[]}
+                            onRefresh={() => handleRefreshRound(33)}
+                            isRefreshing={refreshing === 33}
+                          />
                         )}
                         {ties && ties.length > 0 && (
                           <div>
