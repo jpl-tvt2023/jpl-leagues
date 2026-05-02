@@ -331,8 +331,8 @@ export default function UEFAFixturesPage() {
                                 : hasResult
                                 ? "border-white/10 bg-white/5"
                                 : "border-blue-500/15 bg-blue-950/20"
-                            } ${isGhostFixture ? "" : "cursor-pointer"}`}
-                            onClick={() => !isGhostFixture && toggleExpand(fixture.id)}
+                            } cursor-pointer`}
+                            onClick={() => toggleExpand(fixture.id)}
                           >
                             <div className="flex items-center gap-2 sm:gap-3">
                               {/* Home team */}
@@ -367,24 +367,22 @@ export default function UEFAFixturesPage() {
                               </div>
                             </div>
 
-                            {/* Player breakdown toggle */}
-                            {!isGhostFixture && (
-                              <div className="mt-2">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); toggleExpand(fixture.id); }}
-                                  className="w-full text-center text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
-                                >
-                                  {isExpanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
-                                </button>
-                                {isExpanded && (
-                                  hasPlayerData
-                                    ? <PlayerBreakdown fixture={fixture} liveData={live} />
-                                    : <div className="mt-2 p-3 rounded-lg bg-white/5 border border-white/10 text-center text-xs text-gray-400">
-                                        Player breakdown not yet available — FPL data will appear once the gameweek begins.
-                                      </div>
-                                )}
-                              </div>
-                            )}
+                            {/* Player breakdown toggle — Ghost fixtures still show the human side's breakdown */}
+                            <div className="mt-2">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleExpand(fixture.id); }}
+                                className="w-full text-center text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
+                              >
+                                {isExpanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
+                              </button>
+                              {isExpanded && (
+                                (hasPlayerData || isGhostFixture)
+                                  ? <PlayerBreakdown fixture={fixture} liveData={live} />
+                                  : <div className="mt-2 p-3 rounded-lg bg-white/5 border border-white/10 text-center text-xs text-gray-400">
+                                      Player breakdown not yet available — FPL data will appear once the gameweek begins.
+                                    </div>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
