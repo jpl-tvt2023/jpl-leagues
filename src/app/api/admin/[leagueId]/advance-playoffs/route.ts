@@ -1277,7 +1277,11 @@ async function advanceGW33(groupId: string, leagueId: string, actions: string[])
     with: { player: true },
   });
   const captainByTeam33 = new Map<string, string>();
-  for (const pick of gw33Captains) captainByTeam33.set(pick.player.teamId, pick.player.id);
+  const autoAssignedByTeam33 = new Map<string, boolean>();
+  for (const pick of gw33Captains) {
+    captainByTeam33.set(pick.player.teamId, pick.player.id);
+    autoAssignedByTeam33.set(pick.player.teamId, pick.isValid === false);
+  }
 
   const prevCaptainByTeam = new Map<string, string>();
   if (gw32) {
@@ -1302,10 +1306,11 @@ async function advanceGW33(groupId: string, leagueId: string, actions: string[])
       }));
 
       // Resolve captain: announced > temp-cap fallback (lowest net, rotate on tie).
+      // Auto-assigned captains (gameweek_captains.isValid === false) also count as temp.
       const announcedCaptainId = captainByTeam33.get(entry.teamId) ?? null;
       const prevCaptainId = prevCaptainByTeam.get(entry.teamId) ?? null;
       let resolvedCaptainId: string | null = announcedCaptainId;
-      let isTemp = false;
+      let isTemp = autoAssignedByTeam33.get(entry.teamId) ?? false;
       if (!resolvedCaptainId) {
         resolvedCaptainId = pickTempCaptain(raw, prevCaptainId);
         isTemp = !!resolvedCaptainId;
