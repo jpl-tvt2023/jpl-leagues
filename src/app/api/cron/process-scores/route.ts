@@ -5,7 +5,7 @@ import { eq, asc, and } from "drizzle-orm";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { detectLiveGameweek, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
-import { getPlayoffAdvanceGws } from "@/lib/playoffs/advance-windows";
+import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
 
 /**
  * GET /api/cron/process-scores
@@ -143,13 +143,15 @@ export async function GET(request: NextRequest) {
       console.error("Cron: Failed to process auction leagues:", e);
     }
 
-    // ── Auto-advance playoffs ────────────────────────────────────────
-    // For each active league whose playoff window includes targetGW, fire
-    // /api/admin/[leagueId]/advance-playoffs?gw=targetGW. Idempotent — re-runs
-    // are safe (tie inserts use onConflictDoNothing; resolve* helpers short-circuit
-    // on status="complete"). Per-league errors are logged but never fail the cron.
+    // ── Auto-generate playoff fixtures (one-shot per league) ─────────
+    // When the regular-season-end GW (TVT: playoffStartGw - 1) or TC GW24 is
+    // scored, generate the initial playoff bracket. Idempotent — the generate
+    // endpoints return 400 if ties already exist, which we log-and-skip.
+    let advanceLeagues: Array<{
+      id: string; slug: string; format: string; teamSize: number | null; playoffStartGw: number | null;
+    }> = [];
     try {
-      const advanceLeagues = await db
+      advanceLeagues = await db
         .select({
           id: leagues.id,
           slug: leagues.slug,
@@ -160,6 +162,43 @@ export async function GET(request: NextRequest) {
         .from(leagues)
         .where(eq(leagues.isActive, true));
 
+      for (const lg of advanceLeagues) {
+        const action = getPlayoffGenerateAction(
+          lg.format,
+          lg.teamSize ?? 32,
+          lg.playoffStartGw ?? 31,
+          targetGW,
+        );
+        if (!action) continue;
+
+        try {
+          const generateUrl = `${baseUrl}/api/admin/${lg.id}/${action.endpoint}`;
+          const genRes = await fetch(generateUrl, {
+            method: "POST",
+            headers: { Authorization: request.headers.get("Authorization") || "" },
+          });
+          const genBody = await genRes.json();
+          if (!genRes.ok) {
+            // Most common: 400 "already exist" — already generated, safe to skip.
+            console.log(`Cron: ${action.endpoint} skipped for "${lg.slug}" GW${targetGW}: ${genBody.error ?? "unknown"}`);
+          } else {
+            console.log(`Cron: ${action.endpoint} succeeded for "${lg.slug}" GW${targetGW}`);
+          }
+        } catch (e) {
+          console.error(`Cron: ${action.endpoint} threw for "${lg.slug}" GW${targetGW}:`, e);
+        }
+      }
+    } catch (e) {
+      console.error("Cron: generate-playoffs loop failed:", e);
+    }
+
+    // ── Auto-advance playoffs ────────────────────────────────────────
+    // For each active league whose playoff window includes targetGW, fire
+    // /api/admin/[leagueId]/advance-playoffs?gw=targetGW. Idempotent — re-runs
+    // are safe (tie inserts use onConflictDoNothing; resolve* helpers short-circuit
+    // on status="complete"). Per-league errors are logged but never fail the cron.
+    try {
+      // Reuse the leagues list pulled above to avoid a second DB round-trip.
       for (const lg of advanceLeagues) {
         const window = getPlayoffAdvanceGws(lg.format, lg.teamSize ?? 32, lg.playoffStartGw ?? 31);
         if (!window.has(targetGW)) continue;

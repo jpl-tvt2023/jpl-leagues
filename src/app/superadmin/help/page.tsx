@@ -141,7 +141,7 @@ export default function SuperadminHelpPage() {
           </div>
           <div className="mt-2">
             <p className="font-medium text-white">16-team (JPL-TVT Merged Funnel):</p>
-            <p>1 group of 16. 30 GW league stage. Playoffs GW31–38 across three brackets: Championship (ranks 1–8), Challenger (ranks 9–16 + relegated Championship teams), and Wooden Spoon (bottom 4 Challengers). Group sprints GW31–33, Merger QFs + Seeding GW34, SFs GW35–36, Finals GW37–38. Only the 4 Challenger QF losers are eliminated — all other teams play GW31–38.</p>
+            <p>1 group of 16. 30 GW league stage. Playoffs GW31–38 across three brackets: Championship (top 8 from playoff group sprints), Challenger (mid 8 — Challenger QF losers eliminated), and Wooden Spoon (bottom 4). Group sprints GW31–33; Championship SFs GW34–35 (2-legged) + Challenger QFs / WS Seeding GW34; Challenger/WS SFs GW35–36; Championship Final + 3rd Place GW36–38 (triple-legged aggregate); Challenger/WS Finals + 3rd Place GW37–38 (2-legged). All 16 teams play until GW34; only the 4 Challenger QF losers are eliminated.</p>
           </div>
           <div className="mt-2">
             <p className="font-medium text-white">8-team:</p>
