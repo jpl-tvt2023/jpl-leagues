@@ -8,11 +8,12 @@
  *   - Update cupGroupPoints (W=+2, L=0, no draws possible)
  */
 
-import { db, fixtures, gameweeks, groups, results, teams, players, auditLogs, type Fixture, type Team, type Player, type Group, type Result } from "@/lib/db";
+import { db, fixtures, gameweeks, groups, results, teams, players, auditLogs, gameweekCaptains, type Fixture, type Team, type Player, type Group, type Result } from "@/lib/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { getAllCachedScores } from "@/lib/fpl-cache";
 import { calculateGhostScore, determineGhostMatchResult, calculateCupGroupPoints } from "./scoring";
+import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import { generateId } from "@/lib/id";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
@@ -139,6 +140,49 @@ export async function processTripleCrownGameweek(
       return { success: true, message: "No PL fixtures to process", processed: 0 };
     }
 
+    // Captain lookup for this GW (announced via gameweek_captains; isValid=false ⇒ auto-assigned).
+    // Same pattern as TVT scoring path so badges + doubling stay consistent across formats.
+    const gwCaptains = await db.query.gameweekCaptains.findMany({
+      where: eq(gameweekCaptains.gameweekId, gameweekId),
+      with: { player: true },
+    });
+    const captainByTeam = new Map<string, string>();
+    const autoAssignedByTeam = new Map<string, boolean>();
+    for (const pick of gwCaptains) {
+      captainByTeam.set(pick.player.teamId, pick.player.id);
+      autoAssignedByTeam.set(pick.player.teamId, pick.isValid === false);
+    }
+
+    // Previous-GW captains for temp-cap rotation tiebreak when auto-assigning.
+    const prevCaptainByTeam = new Map<string, string>();
+    if (gameweekNumber > 1) {
+      const prevGw = await db.query.gameweeks.findFirst({
+        where: and(eq(gameweeks.number, gameweekNumber - 1), eq(gameweeks.leagueId, leagueId)),
+      });
+      if (prevGw) {
+        const prevPicks = await db.query.gameweekCaptains.findMany({
+          where: eq(gameweekCaptains.gameweekId, prevGw.id),
+          with: { player: true },
+        });
+        for (const p of prevPicks) prevCaptainByTeam.set(p.player.teamId, p.player.id);
+      }
+    }
+
+    // Helper to insert an auto-pick gameweek_captains row when no captain announced.
+    // Mirrors autoAssignDefaultCaptain in /api/gameweeks/[gw] route — keeps the captain
+    // visible to live-refresh / dashboard / playoff-bracket paths post-process.
+    async function persistAutoCaptain(teamId: string, playerId: string): Promise<void> {
+      await db.insert(gameweekCaptains).values({
+        id: generateId(),
+        gameweekId,
+        playerId,
+        announcedAt: new Date(),
+        isValid: false,
+      });
+      captainByTeam.set(teamId, playerId);
+      autoAssignedByTeam.set(teamId, true);
+    }
+
     // Build carry-forward hit map from previous GW
     const carryForwardMap = new Map<string, number>();
     if (gameweekNumber > 1) {
@@ -170,9 +214,42 @@ export async function processTripleCrownGameweek(
           })
         );
 
-        // Calculate team scores (no captain doubling, just sum of net scores)
-        const homeTeamScore = homeScores.reduce((sum, s) => sum + (s.points - s.transferHits), 0);
-        const awayTeamScore = awayScores.reduce((sum, s) => sum + (s.points - s.transferHits), 0);
+        // Resolve captain per side (announced > auto via lowest net + prev-GW rotation).
+        // Persist auto-picks into gameweek_captains so live-refresh / dashboard share the same captain.
+        const resolveCaptainForSide = async (teamId: string, teamPlayers: Player[], scoresArr: typeof homeScores) => {
+          let captainId = captainByTeam.get(teamId) ?? null;
+          let isAutoAssigned = autoAssignedByTeam.get(teamId) ?? false;
+          if (!captainId) {
+            const candidates = teamPlayers.map((p, idx) => ({
+              id: p.id,
+              name: p.name,
+              netScore: scoresArr[idx].points - scoresArr[idx].transferHits,
+            }));
+            const picked = pickTempCaptain(candidates, prevCaptainByTeam.get(teamId) ?? null);
+            if (picked) {
+              await persistAutoCaptain(teamId, picked);
+              captainId = picked;
+              isAutoAssigned = true;
+            }
+          }
+          return { captainId, isAutoAssigned };
+        };
+
+        const homeCap = await resolveCaptainForSide(fixture.homeTeamId, fixture.homeTeam.players, homeScores);
+        const awayCap = await resolveCaptainForSide(fixture.awayTeamId, fixture.awayTeam.players, awayScores);
+
+        // Per-format docs: Team Score = sum(non-captain net) + (captain net × 2). Same captain
+        // applies to PL, cup, and knockout. See TripleCrownHelp.tsx → "Captain & Scoring".
+        const homeTeamScore = homeScores.reduce((sum, s, i) => {
+          const net = s.points - s.transferHits;
+          const isCap = fixture.homeTeam.players[i]?.id === homeCap.captainId;
+          return sum + (isCap ? net * 2 : net);
+        }, 0);
+        const awayTeamScore = awayScores.reduce((sum, s, i) => {
+          const net = s.points - s.transferHits;
+          const isCap = fixture.awayTeam.players[i]?.id === awayCap.captainId;
+          return sum + (isCap ? net * 2 : net);
+        }, 0);
 
         // Apply carry-forward deductions
         const homeCarryForward = fixture.homeTeam.players.reduce(
@@ -192,13 +269,33 @@ export async function processTripleCrownGameweek(
         playerScoreCache.set(fixture.homeTeamId, JSON.stringify(
           homeScores.map((s, i) => {
             const p = fixture.homeTeam.players[i];
-            return { name: p?.name ?? "", fplId: p?.fplId ?? "", fplScore: s.points, transferHits: s.transferHits, isCaptain: false, finalScore: s.points - s.transferHits };
+            const net = s.points - s.transferHits;
+            const isCaptain = p?.id === homeCap.captainId;
+            return {
+              name: p?.name ?? "",
+              fplId: p?.fplId ?? "",
+              fplScore: s.points,
+              transferHits: s.transferHits,
+              isCaptain,
+              ...(isCaptain && homeCap.isAutoAssigned ? { isTempCaptain: true } : {}),
+              finalScore: isCaptain ? net * 2 : net,
+            };
           })
         ));
         playerScoreCache.set(fixture.awayTeamId, JSON.stringify(
           awayScores.map((s, i) => {
             const p = fixture.awayTeam.players[i];
-            return { name: p?.name ?? "", fplId: p?.fplId ?? "", fplScore: s.points, transferHits: s.transferHits, isCaptain: false, finalScore: s.points - s.transferHits };
+            const net = s.points - s.transferHits;
+            const isCaptain = p?.id === awayCap.captainId;
+            return {
+              name: p?.name ?? "",
+              fplId: p?.fplId ?? "",
+              fplScore: s.points,
+              transferHits: s.transferHits,
+              isCaptain,
+              ...(isCaptain && awayCap.isAutoAssigned ? { isTempCaptain: true } : {}),
+              finalScore: isCaptain ? net * 2 : net,
+            };
           })
         ));
 

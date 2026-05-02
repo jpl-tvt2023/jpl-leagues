@@ -3140,7 +3140,7 @@ export default function AdminDashboard() {
               <>
                 {/* Triple Crown: Cup Groups */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                  <h3 className="text-lg font-bold text-white mb-4">Cup Groups (GW1–24)</h3>
+                  <h3 className="text-lg font-bold text-white mb-4">Cup Groups (GW6–24)</h3>
                   {cupGroupsLoading ? (
                     <p className="text-gray-400 text-sm">Loading…</p>
                   ) : !cupGroupsGenerated ? (
