@@ -361,13 +361,20 @@ async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | nu
       });
 
       if (result) {
-        // Prefer stored player scores (TC format stores them; TVT uses captain reconstruction)
-        const homePlayers = result.homePlayerScores
-          ? JSON.parse(result.homePlayerScores)
-          : buildPlayerBreakdown(fixture.homeTeam.players, fixture.homeTeamId, result.homeScore);
-        const awayPlayers = result.awayPlayerScores
-          ? JSON.parse(result.awayPlayerScores)
-          : buildPlayerBreakdown(fixture.awayTeam.players, fixture.awayTeamId, result.awayScore);
+        // Prefer stored player scores (TC format stores them; TVT also stores them via
+        // /api/gameweeks/[gw] POST). Normalize legacy `isAutoAssigned` → `isTempCaptain`
+        // for old rows.
+        const normalize = (raw: string | null | undefined) => {
+          if (!raw) return null;
+          try {
+            const arr = JSON.parse(raw) as Array<Record<string, unknown>>;
+            return arr.map(p => p.isAutoAssigned && !p.isTempCaptain ? { ...p, isTempCaptain: true } : p);
+          } catch { return null; }
+        };
+        const homePlayers = normalize(result.homePlayerScores)
+          ?? buildPlayerBreakdown(fixture.homeTeam.players, fixture.homeTeamId, result.homeScore);
+        const awayPlayers = normalize(result.awayPlayerScores)
+          ?? buildPlayerBreakdown(fixture.awayTeam.players, fixture.awayTeamId, result.awayScore);
         gwLiveScores.push({
           fixtureId: fixture.id,
           gameweek: gameweek,
