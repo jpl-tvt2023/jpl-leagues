@@ -5,6 +5,7 @@ import { eq, asc, and } from "drizzle-orm";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { detectLiveGameweek, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
+import { getPlayoffAdvanceGws } from "@/lib/playoffs/advance-windows";
 
 /**
  * GET /api/cron/process-scores
@@ -140,6 +141,49 @@ export async function GET(request: NextRequest) {
       }
     } catch (e) {
       console.error("Cron: Failed to process auction leagues:", e);
+    }
+
+    // ── Auto-advance playoffs ────────────────────────────────────────
+    // For each active league whose playoff window includes targetGW, fire
+    // /api/admin/[leagueId]/advance-playoffs?gw=targetGW. Idempotent — re-runs
+    // are safe (tie inserts use onConflictDoNothing; resolve* helpers short-circuit
+    // on status="complete"). Per-league errors are logged but never fail the cron.
+    try {
+      const advanceLeagues = await db
+        .select({
+          id: leagues.id,
+          slug: leagues.slug,
+          format: leagues.format,
+          teamSize: leagues.teamSize,
+          playoffStartGw: leagues.playoffStartGw,
+        })
+        .from(leagues)
+        .where(eq(leagues.isActive, true));
+
+      for (const lg of advanceLeagues) {
+        const window = getPlayoffAdvanceGws(lg.format, lg.teamSize ?? 32, lg.playoffStartGw ?? 31);
+        if (!window.has(targetGW)) continue;
+
+        try {
+          const advanceUrl = `${baseUrl}/api/admin/${lg.id}/advance-playoffs?gw=${targetGW}`;
+          const advanceRes = await fetch(advanceUrl, {
+            method: "POST",
+            headers: { Authorization: request.headers.get("Authorization") || "" },
+          });
+          const advanceBody = await advanceRes.json();
+          if (!advanceRes.ok) {
+            console.error(`Cron: advance-playoffs failed for "${lg.slug}" GW${targetGW}:`, advanceBody);
+          } else {
+            console.log(
+              `Cron: Advanced "${lg.slug}" GW${targetGW} (${(advanceBody.actions?.length ?? 0)} actions)`,
+            );
+          }
+        } catch (e) {
+          console.error(`Cron: advance-playoffs threw for "${lg.slug}" GW${targetGW}:`, e);
+        }
+      }
+    } catch (e) {
+      console.error("Cron: advance-playoffs loop failed:", e);
     }
 
     // Pre-warm page caches for all active leagues so users get instant loads
