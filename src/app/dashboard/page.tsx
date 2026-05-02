@@ -1662,6 +1662,17 @@ export default function DashboardPage() {
                     ))}
                   </div>
                 </div>
+                {leagueFormat !== "auction" && (() => {
+                  const lastGwPlayers = [
+                    ...((liveScoreOverride?.myPlayerScores ?? data.lastGwResult.myPlayerScores) ?? []),
+                    ...((liveScoreOverride?.oppPlayerScores ?? data.lastGwResult.oppPlayerScores) ?? []),
+                  ];
+                  return lastGwPlayers.some(p => 'isTempCaptain' in p && p.isTempCaptain) ? (
+                    <div className="text-[10px] text-amber-400/70 mt-2">
+                      C* = auto-assigned temp captain (lowest scorer)
+                    </div>
+                  ) : null;
+                })()}
               </div>
             )}
 
@@ -1771,6 +1782,11 @@ export default function DashboardPage() {
                           ))}
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {[...cupPlayerScores, ...cupOppPlayerScores].some(p => 'isTempCaptain' in p && p.isTempCaptain) && (
+                    <div className="text-[10px] text-amber-400/70 mt-2">
+                      C* = auto-assigned temp captain (lowest scorer)
                     </div>
                   )}
                 </div>
