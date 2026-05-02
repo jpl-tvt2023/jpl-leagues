@@ -85,8 +85,8 @@ export async function GET(request: NextRequest) {
           awayTeamId: f.awayTeamId,
           homeScore: f.result!.homeScore,
           awayScore: f.result!.awayScore,
-          homePlayers: f.result!.homePlayerScores ? JSON.parse(f.result!.homePlayerScores) : [],
-          awayPlayers: f.result!.awayPlayerScores ? JSON.parse(f.result!.awayPlayerScores) : [],
+          homePlayers: normalizeStoredPlayerScores(f.result!.homePlayerScores),
+          awayPlayers: normalizeStoredPlayerScores(f.result!.awayPlayerScores),
         }));
       return NextResponse.json({ isLive: false, fixtures: storedFixtures, reason: "already_processed", cachedAt: new Date().toISOString() });
     }
@@ -243,6 +243,19 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Parse stored homePlayerScores/awayPlayerScores JSON and normalize legacy field names.
+ * Older rows stored `isAutoAssigned: true` for auto-picked captains; the renderer expects
+ * `isTempCaptain: true`. Map one to the other so old data renders the C* badge.
+ */
+function normalizeStoredPlayerScores(raw: string | null | undefined): Array<Record<string, unknown>> {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw) as Array<Record<string, unknown>>;
+    return arr.map(p => p.isAutoAssigned && !p.isTempCaptain ? { ...p, isTempCaptain: true } : p);
+  } catch { return []; }
 }
 
 /**

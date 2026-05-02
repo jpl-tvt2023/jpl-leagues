@@ -722,7 +722,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               fplScore: s.points,
               transferHits: s.transferHits,
               isCaptain: s.isCaptain,
-              isAutoAssigned: s.isAutoAssigned,
+              ...(s.isAutoAssigned ? { isTempCaptain: true } : {}),
               finalScore,
             };
           })
@@ -739,7 +739,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               fplScore: s.points,
               transferHits: s.transferHits,
               isCaptain: s.isCaptain,
-              isAutoAssigned: s.isAutoAssigned,
+              ...(s.isAutoAssigned ? { isTempCaptain: true } : {}),
               finalScore,
             };
           })
