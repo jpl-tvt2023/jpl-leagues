@@ -457,9 +457,64 @@ export async function processTripleCrownGameweek(
     // ============================================
     // PASS 3: UCL / UEL KNOCKOUT FIXTURES
     // ============================================
+    // Match by competitionType OR roundType — historically only generate-brackets set
+    // competitionType; advance-playoffs (which creates SF + Final fixtures via create2LegTie)
+    // only set roundType. Accept either so previously-created SF/Final rows still process.
+    const isKnockout = (val: string | null | undefined) =>
+      val === "ucl-knockout" || val === "uel-knockout";
     const knockoutFixtures = gameweek.fixtures.filter(
-      f => (f.competitionType === "ucl-knockout" || f.competitionType === "uel-knockout") && !f.result
+      f => (isKnockout(f.competitionType) || isKnockout(f.roundType)) && !f.result
     ) as FixtureWithRelations[];
+
+    // Helper: resolve captain + build correctly-doubled per-player JSON for a knockout
+    // side when Pass 1 didn't cache it (e.g. PL fixture for these teams was already
+    // processed earlier and skipped this run). Mirrors PL Pass 1's captain logic so the
+    // SF / Final breakdowns show the same C / C* badges and (net × 2) totals.
+    const buildKnockoutSide = async (teamId: string, teamPlayers: Player[]) => {
+      const scoresArr = await Promise.all(
+        teamPlayers.map(async (p) => {
+          const score = await calculateTeamGameweekScore(p.fplId, gameweekNumber, leagueId);
+          return { ...score, player: p };
+        }),
+      );
+
+      let captainId = captainByTeam.get(teamId) ?? null;
+      let isAutoAssigned = autoAssignedByTeam.get(teamId) ?? false;
+      if (!captainId) {
+        const candidates = teamPlayers.map((p, idx) => ({
+          id: p.id, name: p.name, netScore: scoresArr[idx].points - scoresArr[idx].transferHits,
+        }));
+        const picked = pickTempCaptain(candidates, prevCaptainByTeam.get(teamId) ?? null);
+        if (picked) {
+          await persistAutoCaptain(teamId, picked);
+          captainId = picked;
+          isAutoAssigned = true;
+        }
+      }
+
+      const total = scoresArr.reduce((sum, s) => {
+        const net = s.points - s.transferHits;
+        return sum + (s.player.id === captainId ? net * 2 : net);
+      }, 0);
+
+      const json = JSON.stringify(
+        scoresArr.map(s => {
+          const net = s.points - s.transferHits;
+          const isCaptain = s.player.id === captainId;
+          return {
+            name: s.player.name,
+            fplId: s.player.fplId,
+            fplScore: s.points,
+            transferHits: s.transferHits,
+            isCaptain,
+            ...(isCaptain && isAutoAssigned ? { isTempCaptain: true } : {}),
+            finalScore: isCaptain ? net * 2 : net,
+          };
+        })
+      );
+
+      return { total, json };
+    };
 
     for (const fixture of knockoutFixtures) {
       try {
@@ -470,37 +525,15 @@ export async function processTripleCrownGameweek(
         let awayPlayerScoresJson = playerScoreCache.get(fixture.awayTeamId) ?? null;
 
         if (homeTeamScore === undefined) {
-          const homeScores = await Promise.all(
-            fixture.homeTeam.players.map(async (p: Player) => {
-              const score = await calculateTeamGameweekScore(p.fplId, gameweekNumber, leagueId);
-              return { ...score, player: p };
-            })
-          );
-          homeTeamScore = homeScores.reduce((sum, s) => sum + (s.points - s.transferHits), 0);
-          homePlayerScoresJson = JSON.stringify(
-            homeScores.map(s => ({
-              name: s.player.name, fplId: s.player.fplId,
-              fplScore: s.points, transferHits: s.transferHits,
-              isCaptain: false, finalScore: s.points - s.transferHits,
-            }))
-          );
+          const home = await buildKnockoutSide(fixture.homeTeamId, fixture.homeTeam.players);
+          homeTeamScore = home.total;
+          homePlayerScoresJson = home.json;
         }
 
         if (awayTeamScore === undefined) {
-          const awayScores = await Promise.all(
-            fixture.awayTeam.players.map(async (p: Player) => {
-              const score = await calculateTeamGameweekScore(p.fplId, gameweekNumber, leagueId);
-              return { ...score, player: p };
-            })
-          );
-          awayTeamScore = awayScores.reduce((sum, s) => sum + (s.points - s.transferHits), 0);
-          awayPlayerScoresJson = JSON.stringify(
-            awayScores.map(s => ({
-              name: s.player.name, fplId: s.player.fplId,
-              fplScore: s.points, transferHits: s.transferHits,
-              isCaptain: false, finalScore: s.points - s.transferHits,
-            }))
-          );
+          const away = await buildKnockoutSide(fixture.awayTeamId, fixture.awayTeam.players);
+          awayTeamScore = away.total;
+          awayPlayerScoresJson = away.json;
         }
 
         let homeMatchPoints = 0, awayMatchPoints = 0;

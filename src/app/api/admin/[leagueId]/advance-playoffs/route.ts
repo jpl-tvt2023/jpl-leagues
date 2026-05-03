@@ -39,6 +39,13 @@ async function createFixture(params: {
     ? `playoff-${params.tieId}-leg${params.leg}`
     : `playoff-${params.tieId}`;
 
+  // For TC knockouts, mirror roundType into competitionType so the TC processor's
+  // Pass 3 filter (which historically expected competitionType) matches these rows
+  // even when called via the advance helpers. Other formats leave it null.
+  const competitionType = params.roundType === "ucl-knockout" || params.roundType === "uel-knockout"
+    ? params.roundType
+    : null;
+
   await db.insert(fixtures).values({
     id: fixtureId,
     gameweekId: params.gwId,
@@ -51,6 +58,7 @@ async function createFixture(params: {
     leg: params.leg ?? null,
     tieId: params.tieId,
     roundType: params.roundType,
+    competitionType,
   }).onConflictDoNothing({ target: fixtures.id });
   return fixtureId;
 }
