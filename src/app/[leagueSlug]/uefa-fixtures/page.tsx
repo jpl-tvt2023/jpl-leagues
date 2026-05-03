@@ -298,9 +298,10 @@ export default function UEFAFixturesPage() {
               </div>
             )}
 
-            {/* Fixtures by group */}
-            <div className="space-y-8">
-              {sortedGroups.length > 0 ? sortedGroups.map((groupLetter) => {
+            {/* Fixtures by group — 2-column grid (A|B / C|D) on md+ */}
+            {sortedGroups.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
+              {sortedGroups.map((groupLetter) => {
                 const groupFixtures = groupedFixtures.get(groupLetter)!;
                 return (
                   <div key={groupLetter}>
@@ -389,10 +390,11 @@ export default function UEFAFixturesPage() {
                     </div>
                   </div>
                 );
-              }) : (
-                <div className="text-center text-gray-500 py-8">No cup group fixtures in this gameweek</div>
-              )}
+              })}
             </div>
+            ) : (
+              <div className="text-center text-gray-500 py-8">No cup group fixtures in this gameweek</div>
+            )}
           </>
         )}
       </div>

@@ -3197,7 +3197,7 @@ export default function AdminDashboard() {
                 {/* Triple Crown: Advance Knockouts */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                   <h3 className="text-lg font-bold text-white mb-4">Advance Knockouts</h3>
-                  {playoffsGenerated && (
+                  {bracketsGenerated && (
                     <div>
                       <p className="text-gray-400 text-sm mb-4">Advance UCL/UEL knockout rounds after each gameweek is scored.</p>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
