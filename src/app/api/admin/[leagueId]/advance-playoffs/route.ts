@@ -419,8 +419,9 @@ export async function POST(request: NextRequest) {
       // GW27: QF Leg 1 played (mark leg 1 done)
       // GW29: QF Leg 2 → Resolve QFs + Create SF ties (GW33+35)
       // GW33: SF Leg 1 played (mark leg 1 done)
-      // GW35: SF Leg 2 → Resolve SFs + Create Finals (GW38)
-      // GW38: Resolve Finals
+      // GW35: SF Leg 2 → Resolve SFs + Create 2-leg Finals (GW37+GW38)
+      // GW37: Final Leg 1 played (mark leg 1 done)
+      // GW38: Final Leg 2 → Resolve 2-leg Finals (UCL + UEL champions crowned)
       if (gwNumber === 27) {
         // QF Leg 1 has been played — mark leg 1 done for all QF ties
         const uclQfTies = await db.select({ tieId: playoffTies.tieId })
@@ -610,23 +611,26 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Create UCL Final (skip if already exists)
+        // Create UCL Final — 2-legged across GW37 (leg 1) + GW38 (leg 2). Skip if already exists.
         const existingUclFinal = await getTie("UCL-FINAL", leagueId);
         if (!existingUclFinal && uclSfWinners.length >= 2) {
+          const gw37 = await getGameweekId(37, leagueId);
           const gw38 = await getGameweekId(38, leagueId);
-          if (gw38) {
-            await create1LegTie({
+          if (gw37 && gw38) {
+            await create2LegTie({
               tieId: "UCL-FINAL",
               leagueId,
               roundName: "UCL-FINAL",
               roundType: "ucl-knockout",
               homeTeamId: uclSfWinners[0].winnerId,
               awayTeamId: uclSfWinners[1].winnerId,
-              gwId: gw38,
-              gwNum: 38,
+              gw1Id: gw37,
+              gw2Id: gw38,
+              gw1Num: 37,
+              gw2Num: 38,
               groupId: playoffsGroupId,
             });
-            actions.push("UCL-FINAL: Final created");
+            actions.push("UCL-FINAL: 2-leg Final created (GW37+38)");
           }
         }
 
@@ -640,37 +644,46 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Create UEL Final (skip if already exists)
+        // Create UEL Final — 2-legged across GW37 (leg 1) + GW38 (leg 2). Skip if already exists.
         const existingUelFinal = await getTie("UEL-FINAL", leagueId);
         if (!existingUelFinal && uelSfWinners.length >= 2) {
+          const gw37 = await getGameweekId(37, leagueId);
           const gw38 = await getGameweekId(38, leagueId);
-          if (gw38) {
-            await create1LegTie({
+          if (gw37 && gw38) {
+            await create2LegTie({
               tieId: "UEL-FINAL",
               leagueId,
               roundName: "UEL-FINAL",
               roundType: "uel-knockout",
               homeTeamId: uelSfWinners[0].winnerId,
               awayTeamId: uelSfWinners[1].winnerId,
-              gwId: gw38,
-              gwNum: 38,
+              gw1Id: gw37,
+              gw2Id: gw38,
+              gw1Num: 37,
+              gw2Num: 38,
               groupId: playoffsGroupId,
             });
-            actions.push("UEL-FINAL: Final created");
+            actions.push("UEL-FINAL: 2-leg Final created (GW37+38)");
           }
         }
+      } else if (gwNumber === 37) {
+        // Final Leg 1 played — mark leg 1 done for UCL/UEL Finals
+        await markLeg1Done("UCL-FINAL");
+        actions.push("UCL-FINAL: Final leg 1 recorded");
+        await markLeg1Done("UEL-FINAL");
+        actions.push("UEL-FINAL: Final leg 1 recorded");
       } else if (gwNumber === 38) {
-        // Resolve Finals
-        const uclFinal = await resolve1LegTie("UCL-FINAL", leagueId);
+        // Final Leg 2 — Resolve 2-leg aggregate Finals (UCL + UEL)
+        const uclFinal = await resolve2LegTie("UCL-FINAL", leagueId);
         if (uclFinal) actions.push("UCL-FINAL: UCL Champion crowned!");
 
-        const uelFinal = await resolve1LegTie("UEL-FINAL", leagueId);
+        const uelFinal = await resolve2LegTie("UEL-FINAL", leagueId);
         if (uelFinal) actions.push("UEL-FINAL: UEL Champion crowned!");
 
         actions.push("Triple Crown tournament complete!");
       } else {
         return NextResponse.json({
-          error: "Triple Crown playoff advancement: GW27 (QF Leg 1), GW29 (QF Leg 2 + SF creation), GW33 (SF Leg 1), GW35 (SF Leg 2 + Final creation), or GW38 (Finals)",
+          error: "Triple Crown playoff advancement: GW27 (QF Leg 1), GW29 (QF Leg 2 + SF creation), GW33 (SF Leg 1), GW35 (SF Leg 2 + Final creation), GW37 (Final Leg 1), or GW38 (Final Leg 2)",
         }, { status: 400 });
       }
 
