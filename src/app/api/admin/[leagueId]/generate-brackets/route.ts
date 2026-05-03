@@ -365,6 +365,54 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * DELETE /api/admin/[leagueId]/generate-brackets
+ * Delete all UCL/UEL knockout ties + their fixtures + results so brackets can be reseeded.
+ * Used by the "Delete & Regenerate UCL/UEL Brackets" admin button.
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const leagueId = await getAuthorizedLeagueId(request);
+    if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const ties = await db.select({ tieId: playoffTies.tieId }).from(playoffTies).where(
+      and(
+        eq(playoffTies.leagueId, leagueId),
+        inArray(playoffTies.roundType, ["ucl-knockout", "uel-knockout"]),
+      ),
+    );
+    const tieIds = ties.map(t => t.tieId);
+    if (tieIds.length === 0) {
+      await invalidateLeaguePageCache(leagueId);
+      return NextResponse.json({ success: true, message: "No brackets to delete", deletedTies: 0, deletedFixtures: 0 });
+    }
+
+    const { results, fixtures: fixturesTable } = await import("@/lib/db/schema");
+
+    const fxRows = await db.select({ id: fixturesTable.id }).from(fixturesTable).where(inArray(fixturesTable.tieId, tieIds));
+    const fixtureIds = fxRows.map(f => f.id);
+
+    await db.transaction(async (tx) => {
+      if (fixtureIds.length > 0) {
+        await tx.delete(results).where(inArray(results.fixtureId, fixtureIds));
+        await tx.delete(fixturesTable).where(inArray(fixturesTable.id, fixtureIds));
+      }
+      await tx.delete(playoffTies).where(inArray(playoffTies.tieId, tieIds));
+    });
+
+    await invalidateLeaguePageCache(leagueId);
+    return NextResponse.json({
+      success: true,
+      message: `Deleted ${tieIds.length} ties and ${fixtureIds.length} fixtures`,
+      deletedTies: tieIds.length,
+      deletedFixtures: fixtureIds.length,
+    });
+  } catch (error) {
+    console.error("Error deleting UCL/UEL brackets:", error);
+    return NextResponse.json({ error: "Failed to delete brackets" }, { status: 500 });
+  }
+}
+
+/**
  * GET /api/admin/[leagueId]/generate-brackets
  * Check bracket generation status
  */
