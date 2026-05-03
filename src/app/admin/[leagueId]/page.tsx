@@ -765,6 +765,33 @@ export default function AdminDashboard() {
     }
   };
 
+  const regenerateBrackets = async () => {
+    if (!window.confirm("Delete existing UCL/UEL brackets and regenerate from GW24 standings? All knockout ties, fixtures, and results will be removed.")) return;
+    setBracketsLoading(true);
+    setMessage(null);
+    try {
+      const delRes = await fetch(`/api/admin/${leagueId}/generate-brackets`, { method: "DELETE" });
+      const delData = await delRes.json();
+      if (!delRes.ok) {
+        setMessage({ type: "error", text: delData.error || "Failed to delete existing brackets" });
+        setBracketsLoading(false);
+        return;
+      }
+      const genRes = await fetch(`/api/admin/${leagueId}/generate-brackets`, { method: "POST" });
+      const genData = await genRes.json();
+      if (!genRes.ok) {
+        setMessage({ type: "error", text: genData.error || "Deleted but failed to regenerate brackets" });
+      } else {
+        setMessage({ type: "success", text: genData.message || "Brackets regenerated successfully" });
+        setBracketsGenerated(true);
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setBracketsLoading(false);
+    }
+  };
+
   const saveGroupAssignments = async () => {
     const assignments = Object.entries(groupAssignments).map(([teamId, group]) => ({ teamId, group }));
     if (assignments.length === 0) return;
@@ -3190,6 +3217,16 @@ export default function AdminDashboard() {
                   ) : (
                     <div>
                       <p className="text-green-400 text-sm mb-4">✓ Brackets generated. UCL/UEL quarterfinals ready for GW27 & GW29.</p>
+                      <button
+                        onClick={regenerateBrackets}
+                        disabled={bracketsLoading}
+                        className="px-6 py-3 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold hover:from-red-400 hover:to-orange-400 disabled:opacity-50 transition"
+                      >
+                        {bracketsLoading ? "Regenerating…" : "Delete & Regenerate UCL/UEL Brackets"}
+                      </button>
+                      <p className="text-gray-500 text-xs mt-2">
+                        Deletes all existing UCL/UEL ties, fixtures, and results, then reseeds from GW24 cup group standings.
+                      </p>
                     </div>
                   )}
                 </div>
