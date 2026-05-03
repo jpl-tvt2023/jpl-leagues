@@ -617,12 +617,19 @@ export default function AdminDashboard() {
         const data = await res.json();
         setPlayoffsGenerated(data.generated === true);
       }
-      // For Triple Crown, also fetch cup group status
+      // For Triple Crown, also fetch cup group + UCL/UEL bracket status in parallel
       if (leagueConfig.format === "triple-crown") {
-        const cupRes = await fetch(`/api/admin/${leagueId}/generate-cup-groups`);
+        const [cupRes, bracketsRes] = await Promise.all([
+          fetch(`/api/admin/${leagueId}/generate-cup-groups`),
+          fetch(`/api/admin/${leagueId}/generate-brackets`),
+        ]);
         if (cupRes.ok) {
           const cupData = await cupRes.json();
           setCupGroupsGenerated(cupData.cupGroupsSeeded === true);
+        }
+        if (bracketsRes.ok) {
+          const bracketsData = await bracketsRes.json();
+          setBracketsGenerated(bracketsData.bracketsGenerated === true);
         }
       }
     } catch {
