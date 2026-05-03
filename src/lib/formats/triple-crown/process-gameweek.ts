@@ -457,6 +457,28 @@ export async function processTripleCrownGameweek(
     // ============================================
     // PASS 3: UCL / UEL KNOCKOUT FIXTURES
     // ============================================
+    // Pre-hydrate teamScoreCache + playerScoreCache from already-scored PL fixtures in
+    // this GW. Pass 1 only adds entries for fixtures it just processed; PL fixtures that
+    // were scored in a previous run (or via bulk upload) get skipped by the !f.result filter,
+    // leaving their teams uncached. Without this, Pass 3 falls back to fetchTeamGameweekPicks
+    // which fails for test/future GWs with no FPL data. Per TC docs the same team score
+    // is used across PL/cup/knockout the same GW, so reusing the stored PL aggregate is correct.
+    for (const f of gameweek.fixtures) {
+      if (f.competitionType !== "pl" || !f.result) continue;
+      if (!teamScoreCache.has(f.homeTeamId)) {
+        teamScoreCache.set(f.homeTeamId, f.result.homeScore);
+      }
+      if (!teamScoreCache.has(f.awayTeamId)) {
+        teamScoreCache.set(f.awayTeamId, f.result.awayScore);
+      }
+      if (f.result.homePlayerScores && !playerScoreCache.has(f.homeTeamId)) {
+        playerScoreCache.set(f.homeTeamId, f.result.homePlayerScores);
+      }
+      if (f.result.awayPlayerScores && !playerScoreCache.has(f.awayTeamId)) {
+        playerScoreCache.set(f.awayTeamId, f.result.awayPlayerScores);
+      }
+    }
+
     // Match by competitionType OR roundType — historically only generate-brackets set
     // competitionType; advance-playoffs (which creates SF + Final fixtures via create2LegTie)
     // only set roundType. Accept either so previously-created SF/Final rows still process.
