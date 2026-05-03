@@ -39,9 +39,9 @@ export function TripleCrownRules() {
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
         <SectionHeader letter="D" color="blue" title="UCL / UEL Knockouts" />
         <ul className="space-y-4 text-gray-300">
-          <RuleItem><strong>UCL (Champions League):</strong> 8 teams (top 2 from each cup group). Quarter-Finals → Semi-Finals → Final.</RuleItem>
-          <RuleItem><strong>UEL (Europa League):</strong> 8 teams (ranks 3–4 from each cup group). Quarter-Finals → Semi-Finals → Final.</RuleItem>
-          <RuleItem><strong>Format:</strong> 2-legged ties. Aggregate score over both legs decides the winner.</RuleItem>
+          <RuleItem><strong>UCL (Champions League):</strong> 8 teams (top 2 from each cup group). QF (GW27+29) → SF (GW33+35) → Final (GW37+38).</RuleItem>
+          <RuleItem><strong>UEL (Europa League):</strong> 8 teams (ranks 3–4 from each cup group). QF (GW27+29) → SF (GW33+35) → Final (GW37+38).</RuleItem>
+          <RuleItem><strong>Format:</strong> Every round (QF / SF / Final) is 2-legged. Aggregate score across both legs decides the winner; on aggregate draw, the higher-seeded home team advances.</RuleItem>
           <RuleItem><strong>QF Seeding (cross-group):</strong></RuleItem>
           <li className="ml-8 space-y-1 text-sm">
             <div className="text-blue-400 font-medium">UCL: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1</div>

@@ -820,7 +820,7 @@ async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "
   ];
 
   const uclFinal: TieDisplay[] = [
-    { tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 38, gw2: null, home: placeholder("Winner of UCL-SF-1"), away: placeholder("Winner of UCL-SF-2"), winnerId: null, loserId: null },
+    { tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 37, gw2: 38, home: placeholder("Winner of UCL-SF-1"), away: placeholder("Winner of UCL-SF-2"), winnerId: null, loserId: null },
   ];
 
   const uelQF: TieDisplay[] = [
@@ -836,7 +836,7 @@ async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "
   ];
 
   const uelFinal: TieDisplay[] = [
-    { tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 38, gw2: null, home: placeholder("Winner of UEL-SF-1"), away: placeholder("Winner of UEL-SF-2"), winnerId: null, loserId: null },
+    { tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 37, gw2: 38, home: placeholder("Winner of UEL-SF-1"), away: placeholder("Winner of UEL-SF-2"), winnerId: null, loserId: null },
   ];
 
   return {
@@ -1097,7 +1097,7 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
         : placeholder(`W ${srcTieId}`);
     };
 
-    // UCL: QF (GW27+29) → SF (GW33+35) → Final (GW38)
+    // UCL: QF (GW27+29) → SF (GW33+35) → Final (GW37+38, 2-leg)
     const uclQf = tiesByRound("UCL-QF");
     const uclSfFromDb = tiesByRound("UCL-SF");
     const uclSf = uclSfFromDb.length > 0 ? uclSfFromDb : [{
@@ -1112,12 +1112,12 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
 
     const uclFinalFromDb = tiesByRound("UCL-FINAL");
     const uclFinal = uclFinalFromDb.length > 0 ? uclFinalFromDb : [{
-      tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 38, gw2: null,
+      tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 37, gw2: 38,
       home: resolveWinnerTC("UCL-SF-1"), away: resolveWinnerTC("UCL-SF-2"),
       winnerId: null, loserId: null,
     } as TieDisplay];
 
-    // UEL: QF (GW27+29) → SF (GW33+35) → Final (GW38)
+    // UEL: QF (GW27+29) → SF (GW33+35) → Final (GW37+38, 2-leg)
     const uelQf = tiesByRound("UEL-QF");
     const uelSfFromDb = tiesByRound("UEL-SF");
     const uelSf = uelSfFromDb.length > 0 ? uelSfFromDb : [{
@@ -1132,7 +1132,7 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
 
     const uelFinalFromDb = tiesByRound("UEL-FINAL");
     const uelFinal = uelFinalFromDb.length > 0 ? uelFinalFromDb : [{
-      tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 38, gw2: null,
+      tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 37, gw2: 38,
       home: resolveWinnerTC("UEL-SF-1"), away: resolveWinnerTC("UEL-SF-2"),
       winnerId: null, loserId: null,
     } as TieDisplay];

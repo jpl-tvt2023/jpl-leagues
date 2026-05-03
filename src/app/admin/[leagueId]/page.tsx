@@ -3237,8 +3237,8 @@ export default function AdminDashboard() {
                   {bracketsGenerated && (
                     <div>
                       <p className="text-gray-400 text-sm mb-4">Advance UCL/UEL knockout rounds after each gameweek is scored.</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {[27, 29, 33, 35, 38].map((gw) => (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                        {[27, 29, 33, 35, 37, 38].map((gw) => (
                           <button
                             key={gw}
                             onClick={() => advancePlayoffs(gw)}
@@ -3250,7 +3250,7 @@ export default function AdminDashboard() {
                         ))}
                       </div>
                       <p className="text-gray-500 text-xs mt-4">
-                        GW27: QF Leg 1 | GW29: QF Leg 2 + Create SFs | GW33: SF Leg 1 | GW35: SF Leg 2 + Create Finals | GW38: Final
+                        GW27: QF Leg 1 | GW29: QF Leg 2 + Create SFs | GW33: SF Leg 1 | GW35: SF Leg 2 + Create 2-leg Finals (GW37+38) | GW37: Final Leg 1 | GW38: Final Leg 2 + Crown Champions
                       </p>
                     </div>
                   )}

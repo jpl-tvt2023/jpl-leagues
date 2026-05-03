@@ -16,7 +16,7 @@ export function getPlayoffAdvanceGws(
   playoffStartGw: number,
 ): Set<number> {
   if (format === "auction") return new Set();
-  if (format === "triple-crown") return new Set([27, 29, 33, 35, 38]);
+  if (format === "triple-crown") return new Set([27, 29, 33, 35, 37, 38]);
   if (teamSize === 8) return new Set([playoffStartGw, playoffStartGw + 1, playoffStartGw + 2]);
   if (teamSize === 16) return new Set(Array.from({ length: 8 }, (_, i) => playoffStartGw + i));
   if (teamSize === 32) return new Set([31, 32, 33, 34, 35, 36, 37, 38]);
