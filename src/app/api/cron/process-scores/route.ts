@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, gameweeks, fixtures, results, teams, gameweekCaptains, players, leagues } from "@/lib/db";
+import { db, gameweeks, fixtures, results, teams, gameweekCaptains, players, leagues, auditLogs } from "@/lib/db";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import { eq, asc, and } from "drizzle-orm";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { detectLiveGameweek, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
+import { generateId } from "@/lib/id";
 
 /**
  * GET /api/cron/process-scores
@@ -13,256 +14,221 @@ import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/a
  * Authenticated via CRON_SECRET (checked in middleware).
  */
 export async function GET(request: NextRequest) {
+  const runId = generateId();
+  const buildSha = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
+  const summary = {
+    runId,
+    dueGws: [] as number[],
+    perGw: [] as Array<{ gw: number; processed: number; failed: number; advancedLeagues: number; generatedLeagues: number }>,
+    errors: [] as string[],
+  };
+
+  // Self-record run start so "did the cron run?" is answerable from the DB.
   try {
-    // Find gameweeks that have fixtures but incomplete results (need processing)
-    const allGameweeks = await db
-      .select()
-      .from(gameweeks)
-      .orderBy(asc(gameweeks.number));
+    await db.insert(auditLogs).values({
+      id: runId,
+      type: "CRON_RUN_START",
+      description: `process-scores cron started (build ${buildSha})`,
+      pointsAffected: 0,
+    });
+  } catch (e) {
+    console.error("Cron: failed to write CRON_RUN_START audit row:", e);
+  }
 
-    // Find the latest gameweek whose deadline has passed and has pending fixtures
+  try {
+    // Build an ordered list of every GW that has fixtures + a passed deadline.
+    // We iterate them all so a multi-day backlog (or test data with all deadlines
+    // set to one date) catches up in a single run rather than getting stuck on
+    // the highest GW. Idempotency in score/generate/advance handlers makes
+    // re-running already-done work a safe no-op.
+    const allGameweeks = await db.select().from(gameweeks).orderBy(asc(gameweeks.number));
     const now = new Date();
-    let targetGW: number | null = null;
-
+    const dueGwSet = new Set<number>();
     for (const gw of allGameweeks) {
-      if (gw.deadline > now) continue; // deadline hasn't passed yet
-
-      // Check if this GW has unprocessed fixtures
-      const gwFixtures = await db
-        .select({ id: fixtures.id, resultId: results.id })
+      if (gw.deadline > now) continue;
+      const fxRows = await db
+        .select({ id: fixtures.id })
         .from(fixtures)
-        .leftJoin(results, eq(results.fixtureId, fixtures.id))
         .where(eq(fixtures.gameweekId, gw.id));
+      if (fxRows.length === 0) continue;
+      dueGwSet.add(gw.number);
+    }
+    const dueGws = [...dueGwSet].sort((a, b) => a - b);
+    summary.dueGws = dueGws;
 
-      if (gwFixtures.length === 0) continue; // no fixtures
-
-      const unprocessed = gwFixtures.filter((f) => f.resultId === null).length;
-      const processed = gwFixtures.length - unprocessed;
-
-      // Target this GW if it has any fixtures (reprocess with force)
-      // Prefer the latest GW with a passed deadline
-      if (gwFixtures.length > 0) {
-        targetGW = gw.number;
-      }
+    if (dueGws.length === 0) {
+      console.log("Cron: no gameweeks need processing");
+      await writeRunEnd(runId, "ok", summary);
+      return NextResponse.json({ success: true, message: "No gameweek needs processing", runId, summary });
     }
 
-    if (!targetGW) {
-      return NextResponse.json({
-        success: true,
-        message: "No gameweek needs processing",
-      });
-    }
+    console.log(`Cron: due gameweeks (ascending): ${dueGws.join(", ")}`);
 
-    // Before clearing/processing, fetch and cache fresh live scores for in-progress GW
+    // Fetch + cache fresh live FPL scores once for whichever GW is currently in-progress.
+    // detectLiveGameweek consults FPL bootstrap, not our DB, so it gives us the real
+    // mid-week GW (typically the highest one that's actually started).
     try {
-      const { liveGw, gwStatus } = await detectLiveGameweek();
-      
+      const { liveGw } = await detectLiveGameweek();
       if (liveGw && liveGw >= 31 && liveGw <= 38) {
         console.log(`Cron: Detected GW${liveGw} as in-progress, fetching live scores...`);
         await fetchAndCacheLiveScores(liveGw);
-        console.log(`Cron: Successfully cached live scores for GW${liveGw}`);
       }
-    } catch (error) {
-      console.error("Cron: Failed to fetch/cache live scores:", error);
-      // Continue with processing even if live cache fails
-    }
-
-    // Clear live cache for this gameweek before processing final scores
-    try {
-      await clearLiveCache(targetGW);
-      console.log(`Cron: Cleared live cache for GW${targetGW}`);
     } catch (e) {
-      console.error(`Cron: Failed to clear live cache for GW${targetGW}:`, e);
+      console.error("Cron: Failed to fetch/cache live scores:", e);
     }
 
-    // Call the existing gameweek processing endpoint internally
     const baseUrl = request.nextUrl.origin;
-    const processUrl = `${baseUrl}/api/gameweeks/${targetGW}?force=true`;
+    const authHeader = request.headers.get("Authorization") || "";
 
-    const response = await fetch(processUrl, {
-      method: "POST",
-      headers: {
-        // Pass through the cron authorization so middleware injects admin headers
-        Authorization: request.headers.get("Authorization") || "",
-      },
-    });
+    // Pull active leagues once so each GW iteration can dispatch generate + advance
+    // without re-querying.
+    const activeLeagues = await db
+      .select({
+        id: leagues.id,
+        slug: leagues.slug,
+        format: leagues.format,
+        teamSize: leagues.teamSize,
+        playoffStartGw: leagues.playoffStartGw,
+        isActive: leagues.isActive,
+      })
+      .from(leagues)
+      .where(eq(leagues.isActive, true));
 
-    const result = await response.json();
+    // ── Per-GW pipeline: clear cache → score → auction → generate → advance ──
+    for (const gw of dueGws) {
+      const gwSummary = { gw, processed: 0, failed: 0, advancedLeagues: 0, generatedLeagues: 0 };
+      summary.perGw.push(gwSummary);
 
-    if (!response.ok) {
-      console.error(`Cron: Failed to process GW${targetGW}:`, result);
-      return NextResponse.json(
-        {
-          success: false,
-          gameweek: targetGW,
-          error: result.error || "Processing failed",
-        },
-        { status: 500 }
-      );
-    }
+      try { await clearLiveCache(gw); } catch (e) {
+        console.error(`Cron: failed to clear live cache for GW${gw}:`, e);
+      }
 
-    console.log(`Cron: Successfully processed GW${targetGW}`, {
-      processed: result.processed,
-      failed: result.failed,
-    });
+      // Score
+      try {
+        const res = await fetch(`${baseUrl}/api/gameweeks/${gw}?force=true`, {
+          method: "POST",
+          headers: { Authorization: authHeader },
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          console.error(`Cron: score failed for GW${gw}:`, body);
+          summary.errors.push(`score GW${gw}: ${body.error ?? "unknown"}`);
+        } else {
+          gwSummary.processed = body.processed ?? 0;
+          gwSummary.failed = body.failed ?? body.errors?.length ?? 0;
+          if (gwSummary.processed === 0 && gwSummary.failed > 0) {
+            console.warn(`Cron: GW${gw} processed 0 fixtures (${gwSummary.failed} FPL fetch errors — likely future GW)`);
+          } else {
+            console.log(`Cron: scored GW${gw} (processed=${gwSummary.processed}, failed=${gwSummary.failed})`);
+          }
+        }
+      } catch (e) {
+        console.error(`Cron: score threw for GW${gw}:`, e);
+        summary.errors.push(`score GW${gw} threw`);
+      }
 
-    // Process auction leagues separately (they don't use fixtures/results)
-    try {
-      const auctionLeagues = await db
-        .select()
-        .from(leagues)
-        .where(and(eq(leagues.isActive, true), eq(leagues.format, "auction")));
-
-      for (const league of auctionLeagues) {
-        if (targetGW) {
-          // Find the gameweek record for this league
+      // Auction processing for this GW (auction leagues only)
+      const auctionLeagues = activeLeagues.filter(l => l.format === "auction");
+      for (const lg of auctionLeagues) {
+        try {
           const gwRow = await db
             .select()
             .from(gameweeks)
-            .where(and(eq(gameweeks.leagueId, league.id), eq(gameweeks.number, targetGW)))
+            .where(and(eq(gameweeks.leagueId, lg.id), eq(gameweeks.number, gw)))
             .limit(1);
-
-          if (gwRow.length > 0) {
-            try {
-              const auctionResult = await processAuctionGameweek(
-                gwRow[0].id,
-                targetGW,
-                league.id,
-                true // force reprocess
-              );
-              console.log(`Cron: Processed auction league "${league.slug}" GW${targetGW}:`, {
-                teamsProcessed: auctionResult.teamsProcessed,
-              });
-            } catch (e) {
-              console.error(`Cron: Failed to process auction league "${league.slug}" GW${targetGW}:`, e);
-            }
-          }
+          if (gwRow.length === 0) continue;
+          const result = await processAuctionGameweek(gwRow[0].id, gw, lg.id, true);
+          console.log(`Cron: auction "${lg.slug}" GW${gw} processed (${result.teamsProcessed} teams)`);
+        } catch (e) {
+          console.error(`Cron: auction "${lg.slug}" GW${gw} failed:`, e);
         }
       }
-    } catch (e) {
-      console.error("Cron: Failed to process auction leagues:", e);
-    }
 
-    // ── Auto-generate playoff fixtures (one-shot per league) ─────────
-    // When the regular-season-end GW (TVT: playoffStartGw - 1) or TC GW24 is
-    // scored, generate the initial playoff bracket. Idempotent — the generate
-    // endpoints return 400 if ties already exist, which we log-and-skip.
-    let advanceLeagues: Array<{
-      id: string; slug: string; format: string; teamSize: number | null; playoffStartGw: number | null;
-    }> = [];
-    try {
-      advanceLeagues = await db
-        .select({
-          id: leagues.id,
-          slug: leagues.slug,
-          format: leagues.format,
-          teamSize: leagues.teamSize,
-          playoffStartGw: leagues.playoffStartGw,
-        })
-        .from(leagues)
-        .where(eq(leagues.isActive, true));
-
-      for (const lg of advanceLeagues) {
-        const action = getPlayoffGenerateAction(
-          lg.format,
-          lg.teamSize ?? 32,
-          lg.playoffStartGw ?? 31,
-          targetGW,
-        );
+      // Generate (one-shot per league when this GW is the trigger GW)
+      for (const lg of activeLeagues) {
+        const action = getPlayoffGenerateAction(lg.format, lg.teamSize ?? 32, lg.playoffStartGw ?? 31, gw);
         if (!action) continue;
-
         try {
-          const generateUrl = `${baseUrl}/api/admin/${lg.id}/${action.endpoint}`;
-          const genRes = await fetch(generateUrl, {
+          const genRes = await fetch(`${baseUrl}/api/admin/${lg.id}/${action.endpoint}`, {
             method: "POST",
-            headers: { Authorization: request.headers.get("Authorization") || "" },
+            headers: { Authorization: authHeader },
           });
           const genBody = await genRes.json();
           if (!genRes.ok) {
-            // Most common: 400 "already exist" — already generated, safe to skip.
-            console.log(`Cron: ${action.endpoint} skipped for "${lg.slug}" GW${targetGW}: ${genBody.error ?? "unknown"}`);
+            console.log(`Cron: ${action.endpoint} skipped for "${lg.slug}" GW${gw}: ${genBody.error ?? "unknown"}`);
           } else {
-            console.log(`Cron: ${action.endpoint} succeeded for "${lg.slug}" GW${targetGW}`);
+            gwSummary.generatedLeagues++;
+            console.log(`Cron: ${action.endpoint} succeeded for "${lg.slug}" GW${gw}`);
           }
         } catch (e) {
-          console.error(`Cron: ${action.endpoint} threw for "${lg.slug}" GW${targetGW}:`, e);
+          console.error(`Cron: ${action.endpoint} threw for "${lg.slug}" GW${gw}:`, e);
         }
       }
-    } catch (e) {
-      console.error("Cron: generate-playoffs loop failed:", e);
-    }
 
-    // ── Auto-advance playoffs ────────────────────────────────────────
-    // For each active league whose playoff window includes targetGW, fire
-    // /api/admin/[leagueId]/advance-playoffs?gw=targetGW. Idempotent — re-runs
-    // are safe (tie inserts use onConflictDoNothing; resolve* helpers short-circuit
-    // on status="complete"). Per-league errors are logged but never fail the cron.
-    try {
-      // Reuse the leagues list pulled above to avoid a second DB round-trip.
-      for (const lg of advanceLeagues) {
+      // Advance (per-league, only if this GW is in the league's playoff window)
+      for (const lg of activeLeagues) {
         const window = getPlayoffAdvanceGws(lg.format, lg.teamSize ?? 32, lg.playoffStartGw ?? 31);
-        if (!window.has(targetGW)) continue;
-
+        if (!window.has(gw)) continue;
         try {
-          const advanceUrl = `${baseUrl}/api/admin/${lg.id}/advance-playoffs?gw=${targetGW}`;
-          const advanceRes = await fetch(advanceUrl, {
+          const advRes = await fetch(`${baseUrl}/api/admin/${lg.id}/advance-playoffs?gw=${gw}`, {
             method: "POST",
-            headers: { Authorization: request.headers.get("Authorization") || "" },
+            headers: { Authorization: authHeader },
           });
-          const advanceBody = await advanceRes.json();
-          if (!advanceRes.ok) {
-            console.error(`Cron: advance-playoffs failed for "${lg.slug}" GW${targetGW}:`, advanceBody);
+          const advBody = await advRes.json();
+          if (!advRes.ok) {
+            console.error(`Cron: advance-playoffs failed for "${lg.slug}" GW${gw}:`, advBody);
           } else {
-            console.log(
-              `Cron: Advanced "${lg.slug}" GW${targetGW} (${(advanceBody.actions?.length ?? 0)} actions)`,
-            );
+            gwSummary.advancedLeagues++;
+            console.log(`Cron: Advanced "${lg.slug}" GW${gw} (${advBody.actions?.length ?? 0} actions)`);
           }
         } catch (e) {
-          console.error(`Cron: advance-playoffs threw for "${lg.slug}" GW${targetGW}:`, e);
+          console.error(`Cron: advance-playoffs threw for "${lg.slug}" GW${gw}:`, e);
         }
       }
-    } catch (e) {
-      console.error("Cron: advance-playoffs loop failed:", e);
     }
 
-    // Pre-warm page caches for all active leagues so users get instant loads
+    // Pre-warm page caches once at the very end so users get instant loads
+    // reflecting the post-advance bracket state.
     try {
-      const activeLeagues = await db
-        .select({ slug: leagues.slug })
-        .from(leagues)
-        .where(eq(leagues.isActive, true));
-
-      const authHeader = request.headers.get("Authorization") || "";
-
-      for (const league of activeLeagues) {
-        const slug = league.slug;
+      for (const lg of activeLeagues) {
         try {
           await Promise.all([
-            fetch(`${baseUrl}/api/standings?leagueSlug=${encodeURIComponent(slug)}`, { headers: { Authorization: authHeader } }),
-            fetch(`${baseUrl}/api/fixtures?leagueSlug=${encodeURIComponent(slug)}`, { headers: { Authorization: authHeader } }),
-            fetch(`${baseUrl}/api/playoffs/bracket?leagueSlug=${encodeURIComponent(slug)}`, { headers: { Authorization: authHeader } }),
+            fetch(`${baseUrl}/api/standings?leagueSlug=${encodeURIComponent(lg.slug)}`, { headers: { Authorization: authHeader } }),
+            fetch(`${baseUrl}/api/fixtures?leagueSlug=${encodeURIComponent(lg.slug)}`, { headers: { Authorization: authHeader } }),
+            fetch(`${baseUrl}/api/playoffs/bracket?leagueSlug=${encodeURIComponent(lg.slug)}`, { headers: { Authorization: authHeader } }),
           ]);
-          console.log(`Cron: Pre-warmed page cache for league "${slug}"`);
         } catch (e) {
-          console.error(`Cron: Failed to pre-warm cache for league "${slug}":`, e);
+          console.error(`Cron: pre-warm failed for "${lg.slug}":`, e);
         }
       }
     } catch (e) {
-      console.error("Cron: Failed to pre-warm page caches:", e);
+      console.error("Cron: pre-warm loop failed:", e);
     }
 
-    return NextResponse.json({
-      success: true,
-      gameweek: targetGW,
-      processed: result.processed,
-      failed: result.failed,
-    });
+    await writeRunEnd(runId, "ok", summary);
+    return NextResponse.json({ success: true, runId, summary });
   } catch (error) {
     console.error("Cron process-scores error:", error);
-    return NextResponse.json(
-      { error: "Cron job failed" },
-      { status: 500 }
-    );
+    summary.errors.push(error instanceof Error ? error.message : "unknown");
+    await writeRunEnd(runId, "error", summary);
+    return NextResponse.json({ error: "Cron job failed", runId, summary }, { status: 500 });
+  }
+}
+
+async function writeRunEnd(
+  runId: string,
+  status: "ok" | "error",
+  summary: { dueGws: number[]; perGw: unknown[]; errors: string[] },
+): Promise<void> {
+  try {
+    await db.insert(auditLogs).values({
+      id: generateId(),
+      type: "CRON_RUN_END",
+      description: `process-scores cron finished (${status}) | runId=${runId} | ${JSON.stringify(summary)}`.slice(0, 1900),
+      pointsAffected: 0,
+    });
+  } catch (e) {
+    console.error("Cron: failed to write CRON_RUN_END audit row:", e);
   }
 }
 
