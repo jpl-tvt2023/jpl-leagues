@@ -1,25 +1,41 @@
 /**
- * Shared catch-up engine: scores, generates, and advances every active league
- * across every gameweek with a passed deadline + finalized FPL data.
+ * Catch-up engine for the superadmin "Run Auto-Processing" flow.
  *
- * Used by:
- *  - The Vercel Cron route (kept for manual CRON_SECRET invocations).
- *  - The superadmin "Run Auto-Processing for All Leagues" button.
+ * Split into three exports so each per-league call stays well under the
+ * Vercel Hobby 60-second function ceiling:
+ *  - computePlan()       → builds the work list + writes CRON_RUN_START
+ *  - processOneLeague()  → runs score + generate + advance for ONE league
+ *  - finishRun()         → writes CRON_RUN_END + pre-warms page caches
  *
- * Iteration order is league-first → GW-second so per-league error isolation is
- * built in: a failure inside league A's pipeline only affects league A's result;
- * leagues B, C, … continue normally.
+ * The superadmin browser stitches these together: `/plan` → loop `/league` per
+ * league → `/finish`. Because each HTTP call is small, the wall-clock total can
+ * grow without ever tripping a single function's 60s budget.
  */
 
-import { db, gameweeks, fixtures, leagues, auditLogs, type Gameweek } from "@/lib/db";
+import { db, gameweeks, fixtures, leagues, auditLogs } from "@/lib/db";
+import { gameweekCaptains } from "@/lib/db/schema";
 import { asc, eq, and } from "drizzle-orm";
 import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
-import { gameweekCaptains } from "@/lib/db/schema";
 import { generateId } from "@/lib/id";
+
+export type LeaguePlanItem = {
+  id: string;
+  slug: string;
+  format: string;
+  teamSize: number | null;
+  playoffStartGw: number | null;
+};
+
+export type Plan = {
+  runId: string;
+  dueGws: number[];
+  leagues: LeaguePlanItem[];
+  globalErrors: string[];   // GWs skipped because FPL not finalized, FPL bootstrap failed, etc.
+};
 
 export type LeagueResult = {
   leagueId: string;
@@ -32,20 +48,16 @@ export type LeagueResult = {
   errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league"; message: string }>;
 };
 
-export type Summary = {
-  runId: string;
-  dueGws: number[];
-  leagues: LeagueResult[];
-  globalErrors: string[];
-};
-
-interface ProcessAllInput {
+interface FetchInput {
   baseUrl: string;
   authHeader?: string;     // Bearer token forwarded for cron-secret callers
   cookieHeader?: string;   // session cookie forwarded for admin-button callers
 }
 
-/** Parse a fetch response as JSON, throwing if it isn't (Deployment Protection / HTML auth pages). */
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  Helpers                                                                   */
+/* ────────────────────────────────────────────────────────────────────────── */
+
 async function safeJson(res: Response): Promise<{ ok: boolean; status: number; body: unknown }> {
   const ct = res.headers.get("content-type") ?? "";
   if (!ct.includes("application/json")) {
@@ -55,35 +67,57 @@ async function safeJson(res: Response): Promise<{ ok: boolean; status: number; b
   return { ok: res.ok, status: res.status, body: await res.json() };
 }
 
-/** Returns true only if FPL bootstrap reports the GW as fully finalized. */
 async function isGwFinalized(gw: number): Promise<boolean> {
   try {
     const bs = await fetchBootstrapData() as { events?: Array<{ id: number; finished: boolean; data_checked: boolean }> };
     const event = bs.events?.find(e => e.id === gw);
     return !!event && event.finished === true && event.data_checked === true;
   } catch {
-    // FPL unreachable → treat as not finalized to avoid premature advance.
     return false;
   }
 }
 
-/**
- * Build the list of GWs that have:
- *  - passed deadline,
- *  - at least one fixture in DB,
- *  - FPL bootstrap reports finished + data_checked = true.
- * The third condition prevents premature advance with partial FPL scores.
- */
-async function computeDueGws(globalErrors: string[]): Promise<number[]> {
+function messageFrom(e: unknown): string {
+  return e instanceof Error ? e.message : "unknown error";
+}
+
+async function internalFetch(url: string, method: "GET" | "POST", input: FetchInput): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (input.authHeader) headers["Authorization"] = input.authHeader;
+  if (input.cookieHeader) headers["Cookie"] = input.cookieHeader;
+  return fetch(url, { method, headers });
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  computePlan — fast, used by the /plan endpoint                            */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+export async function computePlan(): Promise<Plan> {
+  const runId = generateId();
+  const buildSha = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
+  const globalErrors: string[] = [];
+
+  try {
+    await db.insert(auditLogs).values({
+      id: runId,
+      type: "CRON_RUN_START",
+      description: `process-all started (build ${buildSha})`,
+      pointsAffected: 0,
+    });
+  } catch (e) {
+    console.error("computePlan: CRON_RUN_START write failed:", e);
+  }
+
+  // Build the dueGws set: deadline passed AND FPL bootstrap reports finalized.
   const allGameweeks = await db.select().from(gameweeks).orderBy(asc(gameweeks.number));
   const now = new Date();
-  const seenGwNumbers = new Set<number>();
+  const seen = new Set<number>();
   const dueByNumber = new Set<number>();
 
   for (const gw of allGameweeks) {
     if (gw.deadline > now) continue;
-    if (seenGwNumbers.has(gw.number)) continue;
-    seenGwNumbers.add(gw.number);
+    if (seen.has(gw.number)) continue;
+    seen.add(gw.number);
 
     const fxRows = await db
       .select({ id: fixtures.id })
@@ -98,206 +132,221 @@ async function computeDueGws(globalErrors: string[]): Promise<number[]> {
     }
     dueByNumber.add(gw.number);
   }
-  return [...dueByNumber].sort((a, b) => a - b);
+  const dueGws = [...dueByNumber].sort((a, b) => a - b);
+
+  const activeLeagues = await db
+    .select({
+      id: leagues.id,
+      slug: leagues.slug,
+      format: leagues.format,
+      teamSize: leagues.teamSize,
+      playoffStartGw: leagues.playoffStartGw,
+    })
+    .from(leagues)
+    .where(eq(leagues.isActive, true));
+
+  return {
+    runId,
+    dueGws,
+    leagues: activeLeagues,
+    globalErrors,
+  };
 }
 
-function messageFrom(e: unknown): string {
-  return e instanceof Error ? e.message : "unknown error";
-}
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  processOneLeague — used by /league endpoint                               */
+/* ────────────────────────────────────────────────────────────────────────── */
 
-/**
- * Main entry point. Returns a Summary describing what happened, league-by-league.
- * Always writes a CRON_RUN_START / CRON_RUN_END audit pair.
- */
-export async function processAllLeagues(input: ProcessAllInput): Promise<Summary> {
-  const runId = generateId();
-  const buildSha = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
-  const summary: Summary = { runId, dueGws: [], leagues: [], globalErrors: [] };
-
-  try {
-    await db.insert(auditLogs).values({
-      id: runId,
-      type: "CRON_RUN_START",
-      description: `process-all started (build ${buildSha})`,
-      pointsAffected: 0,
-    });
-  } catch (e) {
-    console.error("process-all: failed to write CRON_RUN_START audit row:", e);
-  }
+export async function processOneLeague(
+  league: LeaguePlanItem,
+  dueGws: number[],
+  input: FetchInput,
+): Promise<LeagueResult> {
+  const result: LeagueResult = {
+    leagueId: league.id,
+    slug: league.slug,
+    format: league.format,
+    status: "ok",
+    scoredGws: [],
+    advancedGws: [],
+    generatedFor: [],
+    errors: [],
+  };
 
   try {
-    summary.dueGws = await computeDueGws(summary.globalErrors);
-    console.log(`process-all: due gameweeks: ${summary.dueGws.join(", ") || "(none)"}`);
+    for (const gw of dueGws) {
+      try { await clearLiveCache(gw); } catch { /* non-fatal */ }
 
-    // Live cache populate — once per run, for whichever GW FPL says is in-progress.
-    try {
-      const { liveGw } = await detectLiveGameweek();
-      if (liveGw && liveGw >= 31 && liveGw <= 38) {
-        await fetchAndCacheLiveScores(liveGw);
-      }
-    } catch (e) {
-      summary.globalErrors.push(`live-cache fetch: ${messageFrom(e)}`);
-    }
-
-    const activeLeagues = await db
-      .select({
-        id: leagues.id,
-        slug: leagues.slug,
-        format: leagues.format,
-        teamSize: leagues.teamSize,
-        playoffStartGw: leagues.playoffStartGw,
-      })
-      .from(leagues)
-      .where(eq(leagues.isActive, true));
-
-    for (const lg of activeLeagues) {
-      const result: LeagueResult = {
-        leagueId: lg.id,
-        slug: lg.slug,
-        format: lg.format,
-        status: "ok",
-        scoredGws: [],
-        advancedGws: [],
-        generatedFor: [],
-        errors: [],
-      };
-
-      try {
-        for (const gw of summary.dueGws) {
-          // Clear any stale live-cache for this GW once (cheap; no per-league key needed).
-          try { await clearLiveCache(gw); } catch { /* ignore — non-fatal */ }
-
-          // ── Score this league at this GW ──
-          if (lg.format === "auction") {
-            // Auction has its own processor; doesn't go through /api/gameweeks.
-            try {
-              const gwRow = await db
-                .select()
-                .from(gameweeks)
-                .where(and(eq(gameweeks.leagueId, lg.id), eq(gameweeks.number, gw)))
-                .limit(1);
-              if (gwRow.length > 0) {
-                const r = await processAuctionGameweek(gwRow[0].id, gw, lg.id, true);
-                result.scoredGws.push(gw);
-                console.log(`process-all: auction "${lg.slug}" GW${gw} → ${r.teamsProcessed} teams`);
-              }
-            } catch (e) {
-              result.errors.push({ gw, step: "auction", message: messageFrom(e) });
-            }
-          } else {
-            try {
-              const url = `${input.baseUrl}/api/gameweeks/${gw}?force=true&leagueId=${encodeURIComponent(lg.id)}`;
-              const res = await internalFetch(url, "POST", input);
-              const parsed = await safeJson(res);
-              const body = parsed.body as { processed?: number; failed?: number; errors?: unknown[]; error?: string };
-              if (!parsed.ok) {
-                result.errors.push({ gw, step: "score", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
-              } else {
-                const processed = body.processed ?? 0;
-                const failed = body.failed ?? body.errors?.length ?? 0;
-                if (processed > 0 || failed === 0) result.scoredGws.push(gw);
-                if (processed === 0 && failed > 0) {
-                  result.errors.push({ gw, step: "score", message: `Processed 0 fixtures (${failed} FPL fetch errors — likely future GW)` });
-                }
-              }
-            } catch (e) {
-              result.errors.push({ gw, step: "score", message: messageFrom(e) });
-            }
+      // ── Score ──
+      if (league.format === "auction") {
+        try {
+          const gwRow = await db
+            .select()
+            .from(gameweeks)
+            .where(and(eq(gameweeks.leagueId, league.id), eq(gameweeks.number, gw)))
+            .limit(1);
+          if (gwRow.length > 0) {
+            await processAuctionGameweek(gwRow[0].id, gw, league.id, true);
+            result.scoredGws.push(gw);
           }
-
-          // ── Generate (only fires when this GW is the trigger GW for this league) ──
-          const action = getPlayoffGenerateAction(lg.format, lg.teamSize ?? 32, lg.playoffStartGw ?? 31, gw);
-          if (action) {
-            try {
-              const url = `${input.baseUrl}/api/admin/${lg.id}/${action.endpoint}`;
-              const res = await internalFetch(url, "POST", input);
-              const parsed = await safeJson(res);
-              const body = parsed.body as { error?: string };
-              if (parsed.ok) {
-                result.generatedFor.push(gw);
-              } else {
-                // 400 "already exists" is normal on re-runs — not an error worth surfacing.
-                if (!(body.error ?? "").toLowerCase().includes("already")) {
-                  result.errors.push({ gw, step: "generate", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
-                }
-              }
-            } catch (e) {
-              result.errors.push({ gw, step: "generate", message: messageFrom(e) });
-            }
-          }
-
-          // ── Advance (only fires for GWs in this league's playoff window) ──
-          const advanceWindow = getPlayoffAdvanceGws(lg.format, lg.teamSize ?? 32, lg.playoffStartGw ?? 31);
-          if (advanceWindow.has(gw)) {
-            try {
-              const url = `${input.baseUrl}/api/admin/${lg.id}/advance-playoffs?gw=${gw}`;
-              const res = await internalFetch(url, "POST", input);
-              const parsed = await safeJson(res);
-              const body = parsed.body as { actions?: unknown[]; error?: string };
-              if (parsed.ok) {
-                result.advancedGws.push(gw);
-              } else {
-                result.errors.push({ gw, step: "advance", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
-              }
-            } catch (e) {
-              result.errors.push({ gw, step: "advance", message: messageFrom(e) });
-            }
-          }
+        } catch (e) {
+          result.errors.push({ gw, step: "auction", message: messageFrom(e) });
         }
-      } catch (outerErr) {
-        result.errors.push({ step: "league", message: `League-level failure: ${messageFrom(outerErr)}` });
-      }
-
-      // ── Pre-warm cached pages for this league (best-effort; doesn't affect status) ──
-      try {
-        await Promise.all([
-          internalFetch(`${input.baseUrl}/api/standings?leagueSlug=${encodeURIComponent(lg.slug)}`, "GET", input),
-          internalFetch(`${input.baseUrl}/api/fixtures?leagueSlug=${encodeURIComponent(lg.slug)}`, "GET", input),
-          internalFetch(`${input.baseUrl}/api/playoffs/bracket?leagueSlug=${encodeURIComponent(lg.slug)}`, "GET", input),
-        ]);
-      } catch { /* swallow — pre-warm failures shouldn't downgrade league status */ }
-
-      // Compute final status
-      const didAnyWork = result.scoredGws.length + result.advancedGws.length + result.generatedFor.length > 0;
-      if (result.errors.length === 0) {
-        result.status = didAnyWork ? "ok" : "skipped";
       } else {
-        result.status = didAnyWork ? "partial" : "error";
+        try {
+          const url = `${input.baseUrl}/api/gameweeks/${gw}?force=true&leagueId=${encodeURIComponent(league.id)}`;
+          const res = await internalFetch(url, "POST", input);
+          const parsed = await safeJson(res);
+          const body = parsed.body as { processed?: number; failed?: number; errors?: unknown[]; error?: string };
+          if (!parsed.ok) {
+            result.errors.push({ gw, step: "score", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
+          } else {
+            const processed = body.processed ?? 0;
+            const failed = body.failed ?? body.errors?.length ?? 0;
+            if (processed > 0 || failed === 0) result.scoredGws.push(gw);
+            if (processed === 0 && failed > 0) {
+              result.errors.push({ gw, step: "score", message: `Processed 0 fixtures (${failed} FPL fetch errors — likely future GW)` });
+            }
+          }
+        } catch (e) {
+          result.errors.push({ gw, step: "score", message: messageFrom(e) });
+        }
       }
-      summary.leagues.push(result);
+
+      // ── Generate (one-shot per league when this GW is the trigger GW) ──
+      const action = getPlayoffGenerateAction(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31, gw);
+      if (action) {
+        try {
+          const url = `${input.baseUrl}/api/admin/${league.id}/${action.endpoint}`;
+          const res = await internalFetch(url, "POST", input);
+          const parsed = await safeJson(res);
+          const body = parsed.body as { error?: string };
+          if (parsed.ok) {
+            result.generatedFor.push(gw);
+          } else if (!(body.error ?? "").toLowerCase().includes("already")) {
+            result.errors.push({ gw, step: "generate", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
+          }
+        } catch (e) {
+          result.errors.push({ gw, step: "generate", message: messageFrom(e) });
+        }
+      }
+
+      // ── Advance (per-league, only if this GW is in the league's playoff window) ──
+      const advanceWindow = getPlayoffAdvanceGws(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31);
+      if (advanceWindow.has(gw)) {
+        try {
+          const url = `${input.baseUrl}/api/admin/${league.id}/advance-playoffs?gw=${gw}`;
+          const res = await internalFetch(url, "POST", input);
+          const parsed = await safeJson(res);
+          const body = parsed.body as { actions?: unknown[]; error?: string };
+          if (parsed.ok) {
+            result.advancedGws.push(gw);
+          } else {
+            result.errors.push({ gw, step: "advance", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
+          }
+        } catch (e) {
+          result.errors.push({ gw, step: "advance", message: messageFrom(e) });
+        }
+      }
     }
-  } catch (e) {
-    summary.globalErrors.push(`run-level failure: ${messageFrom(e)}`);
+  } catch (outerErr) {
+    result.errors.push({ step: "league", message: `League-level failure: ${messageFrom(outerErr)}` });
   }
 
+  // Compute final status
+  const didAnyWork = result.scoredGws.length + result.advancedGws.length + result.generatedFor.length > 0;
+  if (result.errors.length === 0) {
+    result.status = didAnyWork ? "ok" : "skipped";
+  } else {
+    result.status = didAnyWork ? "partial" : "error";
+  }
+  return result;
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  finishRun — used by /finish endpoint                                      */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+export async function finishRun(
+  runId: string,
+  dueGws: number[],
+  results: LeagueResult[],
+  globalErrors: string[],
+  input: FetchInput,
+): Promise<void> {
+  // Live cache populate for whichever GW FPL says is in-progress (best-effort).
+  try {
+    const { liveGw } = await detectLiveGameweek();
+    if (liveGw && liveGw >= 31 && liveGw <= 38) {
+      await fetchAndCacheLiveScores(liveGw);
+    }
+  } catch (e) {
+    console.error("finishRun: live-cache fetch failed:", e);
+  }
+
+  // Pre-warm cached pages for every league that did work.
+  for (const r of results) {
+    if (r.status === "skipped") continue;
+    try {
+      await Promise.all([
+        internalFetch(`${input.baseUrl}/api/standings?leagueSlug=${encodeURIComponent(r.slug)}`, "GET", input),
+        internalFetch(`${input.baseUrl}/api/fixtures?leagueSlug=${encodeURIComponent(r.slug)}`, "GET", input),
+        internalFetch(`${input.baseUrl}/api/playoffs/bracket?leagueSlug=${encodeURIComponent(r.slug)}`, "GET", input),
+      ]);
+    } catch { /* swallow — pre-warm failures shouldn't downgrade status */ }
+  }
+
+  // Write CRON_RUN_END audit row with the rolled-up summary.
   try {
     await db.insert(auditLogs).values({
       id: generateId(),
       type: "CRON_RUN_END",
       description: `process-all finished | runId=${runId} | ${JSON.stringify({
-        dueGws: summary.dueGws,
-        leagues: summary.leagues.map(l => ({ slug: l.slug, status: l.status, scored: l.scoredGws.length, advanced: l.advancedGws.length, generated: l.generatedFor.length, errors: l.errors.length })),
-        globalErrors: summary.globalErrors.length,
+        dueGws,
+        leagues: results.map(l => ({
+          slug: l.slug, status: l.status,
+          scored: l.scoredGws.length, advanced: l.advancedGws.length,
+          generated: l.generatedFor.length, errors: l.errors.length,
+        })),
+        globalErrors: globalErrors.length,
       })}`.slice(0, 1900),
       pointsAffected: 0,
     });
   } catch (e) {
-    console.error("process-all: failed to write CRON_RUN_END audit row:", e);
+    console.error("finishRun: CRON_RUN_END write failed:", e);
   }
-
-  return summary;
-}
-
-/** Issue an internal HTTP request, forwarding either a Bearer token or a session cookie. */
-async function internalFetch(url: string, method: "GET" | "POST", input: ProcessAllInput): Promise<Response> {
-  const headers: Record<string, string> = {};
-  if (input.authHeader) headers["Authorization"] = input.authHeader;
-  if (input.cookieHeader) headers["Cookie"] = input.cookieHeader;
-  return fetch(url, { method, headers });
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/*  Below: live-score caching helpers (lifted from the old cron route)        */
+/*  processAllInOne — convenience for the cron route fallback                 */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+export type Summary = {
+  runId: string;
+  dueGws: number[];
+  leagues: LeagueResult[];
+  globalErrors: string[];
+};
+
+/** Server-side single-shot orchestration. Used by /api/cron/process-scores. */
+export async function processAllLeagues(input: FetchInput): Promise<Summary> {
+  const plan = await computePlan();
+  const results: LeagueResult[] = [];
+  for (const lg of plan.leagues) {
+    const r = await processOneLeague(lg, plan.dueGws, input);
+    results.push(r);
+  }
+  await finishRun(plan.runId, plan.dueGws, results, plan.globalErrors, input);
+  return {
+    runId: plan.runId,
+    dueGws: plan.dueGws,
+    leagues: results,
+    globalErrors: plan.globalErrors,
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  Live-score caching helpers (lifted from the old cron route)               */
 /* ────────────────────────────────────────────────────────────────────────── */
 
 async function fetchAndCacheLiveScores(gameweek: number): Promise<void> {
@@ -416,7 +465,3 @@ async function calculateLiveTeamScore(
 
   return { total, players };
 }
-
-// Re-export the Gameweek type alias just so this file can satisfy any
-// downstream type imports without dragging the schema namespace.
-export type { Gameweek };
