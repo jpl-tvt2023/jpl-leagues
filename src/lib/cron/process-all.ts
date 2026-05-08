@@ -67,14 +67,39 @@ async function safeJson(res: Response): Promise<{ ok: boolean; status: number; b
   return { ok: res.ok, status: res.status, body: await res.json() };
 }
 
-async function isGwFinalized(gw: number): Promise<boolean> {
-  try {
-    const bs = await fetchBootstrapData() as { events?: Array<{ id: number; finished: boolean; data_checked: boolean }> };
-    const event = bs.events?.find(e => e.id === gw);
-    return !!event && event.finished === true && event.data_checked === true;
-  } catch {
-    return false;
+type FplEvent = { id: number; finished: boolean; data_checked: boolean };
+type FinalizeStatus = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Pure lookup against an already-fetched bootstrap events array.
+ * Returns a precise reason when the GW is not eligible, so the UI can show
+ * "FPL still in progress (finished=false)" vs "FPL bootstrap fetch failed: HTTP 429"
+ * vs "not present in FPL bootstrap" — instead of a single generic "not finalized" line.
+ *
+ * Note: we deliberately gate on `finished` only, NOT `data_checked`. FPL flips
+ * `data_checked` 1–2 days after `finished` (it's the bonus-points reconciliation
+ * flag); for our scoring + advance pipeline the published `entry_history.points`
+ * is stable as soon as `finished=true`.
+ */
+function isGwFinalized(
+  gw: number,
+  bootstrapEvents: FplEvent[] | null,
+  bootstrapError: string | null,
+): FinalizeStatus {
+  if (bootstrapError) {
+    return { ok: false, reason: `cannot verify FPL state — bootstrap fetch failed: ${bootstrapError}` };
   }
+  if (!bootstrapEvents) {
+    return { ok: false, reason: "FPL bootstrap unavailable" };
+  }
+  const event = bootstrapEvents.find(e => e.id === gw);
+  if (!event) {
+    return { ok: false, reason: "not present in FPL bootstrap" };
+  }
+  if (event.finished !== true) {
+    return { ok: false, reason: "FPL still in progress (finished=false)" };
+  }
+  return { ok: true };
 }
 
 function messageFrom(e: unknown): string {
@@ -92,23 +117,40 @@ async function internalFetch(url: string, method: "GET" | "POST", input: FetchIn
 /*  computePlan — fast, used by the /plan endpoint                            */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-export async function computePlan(): Promise<Plan> {
+export async function computePlan(opts: { force?: boolean } = {}): Promise<Plan> {
   const runId = generateId();
   const buildSha = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
   const globalErrors: string[] = [];
+  const force = opts.force === true;
 
   try {
     await db.insert(auditLogs).values({
       id: runId,
       type: "CRON_RUN_START",
-      description: `process-all started (build ${buildSha})`,
+      description: `process-all started (build ${buildSha}${force ? ", force=true" : ""})`,
       pointsAffected: 0,
     });
   } catch (e) {
     console.error("computePlan: CRON_RUN_START write failed:", e);
   }
 
-  // Build the dueGws set: deadline passed AND FPL bootstrap reports finalized.
+  // Fetch FPL bootstrap ONCE for the whole plan. If this fails we surface the
+  // single error to the UI rather than silently flagging every GW as "not finalized".
+  let bootstrapEvents: FplEvent[] | null = null;
+  let bootstrapError: string | null = null;
+  if (!force) {
+    try {
+      const bs = await fetchBootstrapData() as { events?: FplEvent[] };
+      bootstrapEvents = bs.events ?? [];
+    } catch (e) {
+      bootstrapError = e instanceof Error ? e.message : "unknown error";
+      globalErrors.push(`FPL bootstrap fetch failed: ${bootstrapError}`);
+    }
+  } else {
+    globalErrors.push("Force mode active — FPL finalization gate bypassed");
+  }
+
+  // Build the dueGws set: deadline passed AND (force OR FPL bootstrap says finished).
   const allGameweeks = await db.select().from(gameweeks).orderBy(asc(gameweeks.number));
   const now = new Date();
   const seen = new Set<number>();
@@ -125,9 +167,14 @@ export async function computePlan(): Promise<Plan> {
       .where(eq(fixtures.gameweekId, gw.id));
     if (fxRows.length === 0) continue;
 
-    const finalized = await isGwFinalized(gw.number);
-    if (!finalized) {
-      globalErrors.push(`GW${gw.number}: deadline passed but FPL not yet finalized — skipped`);
+    if (force) {
+      dueByNumber.add(gw.number);
+      continue;
+    }
+
+    const status = isGwFinalized(gw.number, bootstrapEvents, bootstrapError);
+    if (!status.ok) {
+      globalErrors.push(`GW${gw.number}: ${status.reason} — skipped`);
       continue;
     }
     dueByNumber.add(gw.number);
@@ -329,8 +376,8 @@ export type Summary = {
 };
 
 /** Server-side single-shot orchestration. Used by /api/cron/process-scores. */
-export async function processAllLeagues(input: FetchInput): Promise<Summary> {
-  const plan = await computePlan();
+export async function processAllLeagues(input: FetchInput & { force?: boolean }): Promise<Summary> {
+  const plan = await computePlan({ force: input.force });
   const results: LeagueResult[] = [];
   for (const lg of plan.leagues) {
     const r = await processOneLeague(lg, plan.dueGws, input);

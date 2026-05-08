@@ -419,6 +419,7 @@ export default function SuperAdminDashboard() {
   const [processLeagues, setProcessLeagues] = useState<LeagueRow[]>([]);
   const [processCurrentSlug, setProcessCurrentSlug] = useState<string | null>(null);
   const [processStartedAt, setProcessStartedAt] = useState<number | null>(null);
+  const [processForce, setProcessForce] = useState(false);
 
   const handleRunProcessAll = async () => {
     if (processRunning) return;
@@ -434,7 +435,8 @@ export default function SuperAdminDashboard() {
     // Step 1: fetch the plan
     let plan: { runId: string; dueGws: number[]; leagues: LeaguePlanItem[]; globalErrors: string[] };
     try {
-      const planRes = await fetch("/api/admin/process-all/plan", { credentials: "include" });
+      const planUrl = `/api/admin/process-all/plan${processForce ? "?force=true" : ""}`;
+      const planRes = await fetch(planUrl, { credentials: "include" });
       if (!planRes.ok) {
         const data = await planRes.json().catch(() => ({}));
         if (planRes.status === 401) setProcessError("Not authenticated — please sign in again.");
@@ -1443,7 +1445,7 @@ export default function SuperAdminDashboard() {
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <button
                   onClick={handleRunProcessAll}
                   disabled={processRunning}
@@ -1451,12 +1453,27 @@ export default function SuperAdminDashboard() {
                 >
                   {processRunning ? "Processing…" : "Run Auto-Processing for All Leagues"}
                 </button>
+                <label className="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={processForce}
+                    onChange={(e) => setProcessForce(e.target.checked)}
+                    disabled={processRunning}
+                    className="h-4 w-4 rounded border-white/20 bg-white/5"
+                  />
+                  Force-process even if FPL hasn&apos;t finalized
+                </label>
                 {processRunning && processCurrentSlug && (
-                  <span className="text-sm text-gray-400">
+                  <span className="text-sm text-gray-400 w-full">
                     Processing <span className="text-white">{processCurrentSlug}</span>…
                   </span>
                 )}
               </div>
+              <p className="text-xs text-gray-500 mt-3">
+                <strong className="text-gray-400">Force</strong> bypasses the FPL bootstrap gate. Use only when you know the
+                gameweek scores are stable but FPL&apos;s bootstrap hasn&apos;t flipped <code>finished=true</code> yet
+                (extended FPL outage, test environment, etc.).
+              </p>
             </div>
 
             {/* Top-level error banner (plan failed, network, etc.) */}
