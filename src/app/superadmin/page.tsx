@@ -27,7 +27,25 @@ interface Admin {
   assignedLeagueIds: string[];
 }
 
-type TabType = "leagues" | "admins";
+type TabType = "leagues" | "admins" | "operations";
+
+// ── Operations: process-all run summary ──
+type ProcessAllLeagueResult = {
+  leagueId: string;
+  slug: string;
+  format: string;
+  status: "ok" | "partial" | "error" | "skipped";
+  scoredGws: number[];
+  advancedGws: number[];
+  generatedFor: number[];
+  errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league"; message: string }>;
+};
+type ProcessAllSummary = {
+  runId: string;
+  dueGws: number[];
+  leagues: ProcessAllLeagueResult[];
+  globalErrors: string[];
+};
 
 // ──────────────────────────────────────────────
 // Create-league wizard steps
@@ -395,9 +413,52 @@ export default function SuperAdminDashboard() {
     window.location.href = "/signin";
   };
 
+  // ── Operations: Run Auto-Processing ──
+  const [processRunning, setProcessRunning] = useState(false);
+  const [processSummary, setProcessSummary] = useState<ProcessAllSummary | null>(null);
+  const [processError, setProcessError] = useState<string | null>(null);
+
+  const handleRunProcessAll = async () => {
+    if (processRunning) return;
+    setProcessRunning(true);
+    setProcessSummary(null);
+    setProcessError(null);
+    try {
+      const res = await fetch("/api/admin/process-all", {
+        method: "POST",
+        credentials: "include",
+      });
+      // Handle potential timeout / non-JSON gracefully
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        const txt = (await res.text()).slice(0, 300);
+        setProcessError(
+          res.status === 504
+            ? "Run exceeded the 60-second budget. Partial progress was recorded — click again to continue from where it left off."
+            : `Server returned non-JSON (HTTP ${res.status}): ${txt}`
+        );
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 401) setProcessError("Not authenticated — please sign in again.");
+        else if (res.status === 403) setProcessError("Not authorized — superadmin access required.");
+        else setProcessError(`Server error (HTTP ${res.status}): ${data.error ?? data.message ?? "unknown"}`);
+        if (data.summary) setProcessSummary(data.summary);
+        return;
+      }
+      setProcessSummary(data.summary);
+    } catch (e) {
+      setProcessError(`Network error: ${e instanceof Error ? e.message : "unknown"}`);
+    } finally {
+      setProcessRunning(false);
+    }
+  };
+
   const tabs: { id: TabType; label: string }[] = [
     { id: "leagues", label: "Leagues" },
     { id: "admins", label: "Admins" },
+    { id: "operations", label: "Operations" },
   ];
 
   return (
@@ -1271,6 +1332,145 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Operations Tab ── */}
+        {activeTab === "operations" && (
+          <div>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-white">Operations</h2>
+              <p className="text-gray-400 text-sm mt-1">
+                Catch-up runner — scores pending fixtures, generates initial playoff brackets,
+                advances every league through its playoff window, and pre-warms page caches.
+                Idempotent (safe to re-click). Skips any GW where FPL hasn&apos;t marked the
+                gameweek as finalized yet.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleRunProcessAll}
+                  disabled={processRunning}
+                  className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-3 rounded-lg hover:from-yellow-300 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  {processRunning ? "Processing…" : "Run Auto-Processing for All Leagues"}
+                </button>
+                {processRunning && (
+                  <span className="text-sm text-gray-400">
+                    Processing all leagues… (may take up to 60 seconds, don&apos;t close this tab)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Top-level error banner (HTTP 4xx/5xx, network, timeout) */}
+            {processError && (
+              <div className="mt-6 rounded-lg border border-red-500/40 bg-red-500/10 p-4">
+                <div className="font-semibold text-red-300 mb-1">Run failed</div>
+                <pre className="text-xs text-red-200 whitespace-pre-wrap font-mono">{processError}</pre>
+              </div>
+            )}
+
+            {/* Summary panel */}
+            {processSummary && (
+              <div className="mt-6 space-y-4">
+                {/* Status banner */}
+                {(() => {
+                  const okCount = processSummary.leagues.filter(l => l.status === "ok").length;
+                  const partialCount = processSummary.leagues.filter(l => l.status === "partial").length;
+                  const errorCount = processSummary.leagues.filter(l => l.status === "error").length;
+                  const skippedCount = processSummary.leagues.filter(l => l.status === "skipped").length;
+
+                  if (processSummary.dueGws.length === 0) {
+                    return (
+                      <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-green-300 text-sm">
+                        No gameweeks need processing — everything is up to date.
+                      </div>
+                    );
+                  }
+                  const tone = errorCount > 0 ? "red" : partialCount > 0 ? "orange" : "green";
+                  const cls = tone === "red"
+                    ? "border-red-500/30 bg-red-500/10 text-red-300"
+                    : tone === "orange"
+                    ? "border-orange-500/30 bg-orange-500/10 text-orange-300"
+                    : "border-green-500/30 bg-green-500/10 text-green-300";
+                  return (
+                    <div className={`rounded-lg border ${cls} p-4 text-sm`}>
+                      <div className="font-semibold">
+                        Run complete: {okCount} ok · {partialCount} partial · {errorCount} error · {skippedCount} skipped
+                      </div>
+                      <div className="text-xs mt-1 opacity-80">
+                        Due gameweeks this run: {processSummary.dueGws.join(", ") || "(none)"}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Global errors (run-wide, e.g. "GW35 deadline passed but FPL not yet finalized") */}
+                {processSummary.globalErrors.length > 0 && (
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+                    <div className="font-semibold text-yellow-300 mb-2 text-sm">Global notices</div>
+                    <ul className="space-y-1">
+                      {processSummary.globalErrors.map((m, i) => (
+                        <li key={i} className="text-xs text-yellow-200 font-mono whitespace-pre-wrap">{m}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Per-league cards */}
+                <div className="space-y-3">
+                  {processSummary.leagues.map((lg) => {
+                    const colour = lg.status === "ok"
+                      ? "border-green-500/30 bg-green-500/5"
+                      : lg.status === "partial"
+                      ? "border-orange-500/40 bg-orange-500/5"
+                      : lg.status === "error"
+                      ? "border-red-500/40 bg-red-500/5"
+                      : "border-gray-500/30 bg-gray-500/5";
+                    const badge = lg.status === "ok"
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">✓ OK</span>
+                      : lg.status === "partial"
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400">⚠ PARTIAL</span>
+                      : lg.status === "error"
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">✗ ERROR</span>
+                      : <span className="text-xs px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400">– SKIPPED</span>;
+                    return (
+                      <div key={lg.leagueId} className={`rounded-xl border ${colour} p-4`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-white font-semibold">{lg.slug}</span>
+                            <span className="text-xs text-gray-500">({lg.format})</span>
+                          </div>
+                          {badge}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-300 mb-3">
+                          <div><span className="text-gray-500">Scored:</span> {lg.scoredGws.length > 0 ? lg.scoredGws.map(n => `GW${n}`).join(", ") : "—"}</div>
+                          <div><span className="text-gray-500">Advanced:</span> {lg.advancedGws.length > 0 ? lg.advancedGws.map(n => `GW${n}`).join(", ") : "—"}</div>
+                          <div><span className="text-gray-500">Generated:</span> {lg.generatedFor.length > 0 ? lg.generatedFor.map(n => `GW${n}`).join(", ") : "—"}</div>
+                        </div>
+                        {lg.errors.length > 0 && (
+                          <div className="mt-2 pt-3 border-t border-white/10">
+                            <div className="text-xs font-semibold text-red-300 mb-1.5">Errors:</div>
+                            <ul className="space-y-1.5">
+                              {lg.errors.map((e, i) => (
+                                <li key={i} className="text-[11px] text-red-200 font-mono whitespace-pre-wrap leading-relaxed">
+                                  {e.gw != null ? `GW${e.gw} ` : ""}{e.step}: {e.message}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="text-xs text-gray-500 mt-4">Run ID: <code className="text-gray-400">{processSummary.runId}</code></div>
               </div>
             )}
           </div>
