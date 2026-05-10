@@ -14,7 +14,7 @@
 
 import { NextRequest } from "next/server";
 import { db, gameweeks, fixtures, leagues, auditLogs, results } from "@/lib/db";
-import { gameweekCaptains, playoffTies } from "@/lib/db/schema";
+import { gameweekCaptains, playoffTies, backups } from "@/lib/db/schema";
 import { asc, eq, and, isNull, ne, or } from "drizzle-orm";
 import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
@@ -22,6 +22,7 @@ import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import { generateId } from "@/lib/id";
+import { generateBackupRows } from "@/lib/backup/generate";
 
 // In-process handler imports — bypass Vercel's edge / Deployment Protection
 // entirely. Each handler is just an async function; we invoke it directly with
@@ -251,6 +252,32 @@ export async function computePlan(): Promise<Plan> {
  * in which case the heavy advance dispatcher would just spend ~10s of reads
  * for a pure no-op. Skipping it shaves the bulk of catch-up runs.
  */
+/**
+ * Take a one-shot backup of the league when GW1 first locks in.
+ * Stores row arrays (NOT binary xlsx) so future formatting changes don't lock
+ * the snapshot to a stale schema. Does nothing if a `gw1-lock` row already
+ * exists for the league.
+ */
+async function maybeWriteGw1Snapshot(leagueId: string): Promise<void> {
+  const existing = await db
+    .select({ id: backups.id })
+    .from(backups)
+    .where(and(eq(backups.leagueId, leagueId), eq(backups.trigger, "gw1-lock")))
+    .limit(1);
+  if (existing.length > 0) return;
+
+  const rows = await generateBackupRows(leagueId);
+  await db.insert(backups).values({
+    id: generateId(),
+    leagueId,
+    trigger: "gw1-lock",
+    teamsJson: rows.teams ? JSON.stringify(rows.teams) : null,
+    fixturesJson: JSON.stringify(rows.fixtures),
+    captainsJson: rows.captains ? JSON.stringify(rows.captains) : null,
+    chipsJson: rows.chips ? JSON.stringify(rows.chips) : null,
+  });
+}
+
 async function hasAdvanceWork(leagueId: string, gw: number): Promise<boolean> {
   const pending = await db
     .select({ tieId: playoffTies.tieId })
@@ -420,6 +447,18 @@ export async function processOneLeagueOneGw(
       } catch (e) {
         result.errors.push({ step: "advance", message: messageFrom(e) });
       }
+    }
+  }
+
+  // ── GW1 auto-snapshot: capture league state once, persist for archival ──
+  // Fires after the FIRST successful GW1 run (real work OR pre-flight skip both count).
+  // Idempotent: skipped if a `gw1-lock` backup row already exists for this league.
+  // Wrapped to never let a snapshot failure break scoring.
+  if (gw === 1 && (result.scored || result.scoreSkipped) && result.errors.length === 0) {
+    try {
+      await maybeWriteGw1Snapshot(league.id);
+    } catch (e) {
+      console.error(`GW1 snapshot for ${league.slug} failed:`, e);
     }
   }
 

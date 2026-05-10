@@ -298,6 +298,20 @@ export const challengerSurvivalEntries = sqliteTable("challenger_survival_entrie
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
+// League backups — JSON snapshots of teams/fixtures/captains/chips in importable shape.
+// One row per (leagueId, trigger) combo when trigger="gw1-lock"; many rows allowed for "manual".
+// JSON columns store ROW ARRAYS (not binary xlsx) so future formatting changes don't lock us in.
+export const backups = sqliteTable("backups", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  trigger: text("trigger").notNull(), // "gw1-lock" | "manual"
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  teamsJson: text("teams_json"),       // null when format === "auction"
+  fixturesJson: text("fixtures_json").notNull(),
+  captainsJson: text("captains_json"), // null when format === "auction"
+  chipsJson: text("chips_json"),       // null when format !== "tvt"
+});
+
 // Admin-configurable settings (key-value store, scoped per league)
 export const settings = sqliteTable("settings", {
   key: text("key").notNull(),
