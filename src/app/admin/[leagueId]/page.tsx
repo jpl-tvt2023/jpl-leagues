@@ -1488,6 +1488,39 @@ export default function AdminDashboard() {
     }
   };
 
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
+  const handleDownloadBackup = async () => {
+    if (downloadingBackup) return;
+    setDownloadingBackup(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/backup`, { credentials: "include" });
+      if (!res.ok) {
+        const ct = res.headers.get("content-type") ?? "";
+        const errMsg = ct.includes("application/json")
+          ? (await res.json()).error ?? "Backup failed"
+          : `Backup failed (HTTP ${res.status})`;
+        setMessage({ type: "error", text: errMsg });
+        return;
+      }
+      const blob = await res.blob();
+      // Pull filename from Content-Disposition; fall back to a sensible default
+      const cd = res.headers.get("content-disposition") ?? "";
+      const m = cd.match(/filename="?([^"]+)"?/);
+      const filename = m?.[1] ?? `backup-${leagueId}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      setMessage({ type: "success", text: `Downloaded ${filename}` });
+    } catch (e) {
+      setMessage({ type: "error", text: `Network error: ${e instanceof Error ? e.message : "unknown"}` });
+    } finally {
+      setDownloadingBackup(false);
+    }
+  };
+
   const handleImportChips = async () => {
     if (chipsData.length === 0) {
       setMessage({ type: "error", text: "Please upload an Excel file with TVT chips data" });
@@ -2809,6 +2842,27 @@ export default function AdminDashboard() {
               <p className="text-gray-400 mt-1">Upload teams and fixtures via Excel (.xlsx)</p>
             </div>
 
+            {/* Backup section — always available, generates importable .xlsx files */}
+            <div className="mb-8 rounded-2xl border border-blue-500/30 bg-blue-500/5 p-6 backdrop-blur">
+              <h3 className="text-xl font-bold text-white mb-2">Backup Current Data</h3>
+              <p className="text-gray-400 text-sm mb-2">
+                Downloads a .zip with up to 4 .xlsx files (teams, fixtures, captains, chips) reflecting current league state.
+                Each file is ready to re-import via the blocks below — useful for disaster recovery, migration, or end-of-season archiving.
+              </p>
+              <p className="text-gray-500 text-xs mb-4">
+                Captains and chips files are only included if your league uses them. Passwords in the teams file are
+                emitted as <code className="text-gray-300">RESET_REQUIRED</code> placeholders — bcrypt hashes can&apos;t be reversed,
+                so you&apos;ll need to set new passwords on restore.
+              </p>
+              <button
+                onClick={handleDownloadBackup}
+                disabled={downloadingBackup}
+                className="rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 px-6 py-3 font-semibold text-white hover:from-blue-400 hover:to-cyan-500 transition disabled:opacity-50"
+              >
+                {downloadingBackup ? "Generating..." : "Download Backup (.zip)"}
+              </button>
+            </div>
+
             <div className="grid gap-8">
               {/* Teams Upload — full-details, recovery / dev-test only. Hidden for auction leagues. */}
               {leagueConfig?.format !== "auction" && (
@@ -2926,6 +2980,56 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Chip Import Section — TVT only */}
+            {leagueConfig?.format === "tvt" && (
+              <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h3 className="text-xl font-bold text-white mb-4">Import Chip Data</h3>
+                <p className="text-gray-400 text-sm mb-2">
+                  Excel columns: Team, then gameweek numbers (1, 2, 3...) with the chip code marking the GW each team played that chip.
+                </p>
+                <p className="text-gray-300 text-sm mb-2">
+                  Enabled chips for this league:{" "}
+                  <span className="text-white font-mono">
+                    {leagueConfig.enabledChips.map(formatChipLabel).join(", ")}
+                  </span>
+                </p>
+                <p className="text-gray-500 text-xs mb-4">
+                  Append <code className="text-gray-300">W</code> for a wasted chip (e.g. <code className="text-gray-300">WW</code> = wasted Win-Win).
+                  For Challenge Chip, append <code className="text-gray-300">:OPP</code> with opponent&apos;s team code (e.g. <code className="text-gray-300">C:TAD</code>).
+                </p>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => handleFileUpload(e, "chips")}
+                      className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-purple-500/20 file:text-purple-300 hover:file:bg-purple-500/30"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      onClick={handleImportChips}
+                      disabled={bulkUploading || chipsData.length === 0}
+                      className="w-full rounded-lg bg-gradient-to-r from-purple-500 to-fuchsia-600 px-6 py-3 font-semibold text-white hover:from-purple-400 hover:to-fuchsia-500 transition disabled:opacity-50"
+                    >
+                      {bulkUploading ? "Importing..." : "Import Chips"}
+                    </button>
+                  </div>
+                </div>
+
+                {chipsFileName && (
+                  <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                    <p className="text-green-400 text-sm">
+                      ✓ Loaded: {chipsFileName} ({chipsData.length} rows)
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
 
             {/* Upload Results */}
@@ -4029,6 +4133,19 @@ function fmtMoney(n: number): string {
   if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
   if (abs >= 1_000) return `${sign}£${(abs / 1_000).toFixed(0)}K`;
   return `${sign}£${abs}`;
+}
+
+const CHIP_NAMES: Record<string, string> = {
+  W: "Win-Win",
+  D: "Double Pointer",
+  C: "Challenge Chip",
+  SL: "Score Lock",
+  CB: "Comeback",
+  UD: "Underdog",
+};
+
+function formatChipLabel(code: string): string {
+  return CHIP_NAMES[code] ? `${code} (${CHIP_NAMES[code]})` : code;
 }
 
 function AdminMarketplaceTab({ leagueId }: { leagueId: string }) {
