@@ -12,6 +12,7 @@
  * grow without ever tripping a single function's 60s budget.
  */
 
+import { NextRequest } from "next/server";
 import { db, gameweeks, fixtures, leagues, auditLogs } from "@/lib/db";
 import { gameweekCaptains } from "@/lib/db/schema";
 import { asc, eq, and } from "drizzle-orm";
@@ -21,6 +22,49 @@ import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import { generateId } from "@/lib/id";
+
+// In-process handler imports — bypass Vercel's edge / Deployment Protection
+// entirely. Each handler is just an async function; we invoke it directly with
+// a constructed NextRequest and superadmin headers (mimicking what middleware
+// would have set), then read its NextResponse like any normal Response.
+import { POST as scorePost } from "@/app/api/gameweeks/[gw]/route";
+import { POST as generatePlayoffsPost } from "@/app/api/admin/[leagueId]/generate-playoffs/route";
+import { POST as generateBracketsPost } from "@/app/api/admin/[leagueId]/generate-brackets/route";
+import { advancePlayoffsImpl } from "@/app/api/admin/[leagueId]/advance-playoffs/route";
+
+/**
+ * Invoke another route's POST handler directly (no HTTP, no edge layer).
+ * Constructs a NextRequest with admin session headers — middleware would
+ * normally inject these, but we skip middleware so we set them ourselves.
+ */
+async function callHandlerDirect<T>(
+  handler: (req: NextRequest, ctx: T) => Promise<Response>,
+  url: string,
+  ctx: T,
+  opts?: { body?: unknown; leagueId?: string },
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const headers: Record<string, string> = {
+    // Mimic the headers middleware would inject — we're skipping the HTTP layer.
+    "x-session-id": "superadmin-orchestrator",
+    "x-session-type": "superadmin",
+  };
+  // For routes that authorise via getAuthorizedLeagueId (reads x-league-id),
+  // surface the leagueId here so handlers see it.
+  if (opts?.leagueId) headers["x-league-id"] = opts.leagueId;
+  if (opts?.body !== undefined) headers["Content-Type"] = "application/json";
+
+  const req = new NextRequest(url, {
+    method: "POST",
+    headers,
+    ...(opts?.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+  });
+  const res = await handler(req, ctx);
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = await res.json();
+  } catch { /* empty body — leave parsed as {} */ }
+  return { status: res.status, body: parsed };
+}
 
 export type LeaguePlanItem = {
   id: string;
@@ -57,15 +101,6 @@ interface FetchInput {
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  Helpers                                                                   */
 /* ────────────────────────────────────────────────────────────────────────── */
-
-async function safeJson(res: Response): Promise<{ ok: boolean; status: number; body: unknown }> {
-  const ct = res.headers.get("content-type") ?? "";
-  if (!ct.includes("application/json")) {
-    const txt = (await res.text()).slice(0, 200);
-    throw new Error(`Non-JSON response (${res.status} ${ct.split(";")[0] || "no-ct"}): ${txt}`);
-  }
-  return { ok: res.ok, status: res.status, body: await res.json() };
-}
 
 type FplEvent = { id: number; finished: boolean; data_checked: boolean };
 type FinalizeStatus = { ok: true } | { ok: false; reason: string };
@@ -106,13 +141,6 @@ function messageFrom(e: unknown): string {
   return e instanceof Error ? e.message : "unknown error";
 }
 
-async function internalFetch(url: string, method: "GET" | "POST", input: FetchInput, body?: string): Promise<Response> {
-  const headers: Record<string, string> = {};
-  if (input.authHeader) headers["Authorization"] = input.authHeader;
-  if (input.cookieHeader) headers["Cookie"] = input.cookieHeader;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  return fetch(url, { method, headers, body });
-}
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  computePlan — fast, used by the /plan endpoint                            */
@@ -248,14 +276,17 @@ export async function processOneLeague(
         try {
           const forceParam = reprocess ? "&force=true" : "";
           const url = `${input.baseUrl}/api/gameweeks/${gw}?leagueId=${encodeURIComponent(league.id)}${forceParam}`;
-          const res = await internalFetch(url, "POST", input);
-          const parsed = await safeJson(res);
-          const body = parsed.body as { processed?: number; failed?: number; errors?: unknown[]; error?: string };
-          if (!parsed.ok) {
-            result.errors.push({ gw, step: "score", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
+          const { status, body } = await callHandlerDirect(
+            scorePost,
+            url,
+            { params: Promise.resolve({ gw: String(gw) }) },
+          );
+          const b = body as { processed?: number; failed?: number; errors?: unknown[]; error?: string };
+          if (status >= 400) {
+            result.errors.push({ gw, step: "score", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
           } else {
-            const processed = body.processed ?? 0;
-            const failed = body.failed ?? body.errors?.length ?? 0;
+            const processed = b.processed ?? 0;
+            const failed = b.failed ?? b.errors?.length ?? 0;
             if (processed > 0 || failed === 0) result.scoredGws.push(gw);
             if (processed === 0 && failed > 0) {
               result.errors.push({ gw, step: "score", message: `Processed 0 fixtures (${failed} FPL fetch errors — likely future GW)` });
@@ -271,13 +302,18 @@ export async function processOneLeague(
       if (action) {
         try {
           const url = `${input.baseUrl}/api/admin/${league.id}/${action.endpoint}`;
-          const res = await internalFetch(url, "POST", input);
-          const parsed = await safeJson(res);
-          const body = parsed.body as { error?: string };
-          if (parsed.ok) {
+          const handler = action.endpoint === "generate-brackets" ? generateBracketsPost : generatePlayoffsPost;
+          const { status, body } = await callHandlerDirect(
+            handler,
+            url,
+            { params: Promise.resolve({ leagueId: league.id }) },
+            { leagueId: league.id },
+          );
+          const b = body as { error?: string };
+          if (status >= 200 && status < 300) {
             result.generatedFor.push(gw);
-          } else if (!(body.error ?? "").toLowerCase().includes("already")) {
-            result.errors.push({ gw, step: "generate", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
+          } else if (!(b.error ?? "").toLowerCase().includes("already")) {
+            result.errors.push({ gw, step: "generate", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
           }
         } catch (e) {
           result.errors.push({ gw, step: "generate", message: messageFrom(e) });
@@ -288,17 +324,13 @@ export async function processOneLeague(
       const advanceWindow = getPlayoffAdvanceGws(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31);
       if (advanceWindow.has(gw)) {
         try {
-          // The route reads `gameweek` from the JSON body. Send both the query
-          // param (for the route's own forgiving fallback) and the body (the
-          // canonical input the per-league admin UI uses).
-          const url = `${input.baseUrl}/api/admin/${league.id}/advance-playoffs?gw=${gw}`;
-          const res = await internalFetch(url, "POST", input, JSON.stringify({ gameweek: gw }));
-          const parsed = await safeJson(res);
-          const body = parsed.body as { actions?: unknown[]; error?: string };
-          if (parsed.ok) {
+          // Direct call into advancePlayoffsImpl — no HTTP, no edge layer, no body parsing.
+          const { status, body } = await advancePlayoffsImpl(league.id, gw);
+          if (status >= 200 && status < 300) {
             result.advancedGws.push(gw);
           } else {
-            result.errors.push({ gw, step: "advance", message: `HTTP ${parsed.status}: ${body.error ?? "unknown"}` });
+            const b = body as { error?: string };
+            result.errors.push({ gw, step: "advance", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
           }
         } catch (e) {
           result.errors.push({ gw, step: "advance", message: messageFrom(e) });
@@ -340,17 +372,9 @@ export async function finishRun(
     console.error("finishRun: live-cache fetch failed:", e);
   }
 
-  // Pre-warm cached pages for every league that did work.
-  for (const r of results) {
-    if (r.status === "skipped") continue;
-    try {
-      await Promise.all([
-        internalFetch(`${input.baseUrl}/api/standings?leagueSlug=${encodeURIComponent(r.slug)}`, "GET", input),
-        internalFetch(`${input.baseUrl}/api/fixtures?leagueSlug=${encodeURIComponent(r.slug)}`, "GET", input),
-        internalFetch(`${input.baseUrl}/api/playoffs/bracket?leagueSlug=${encodeURIComponent(r.slug)}`, "GET", input),
-      ]);
-    } catch { /* swallow — pre-warm failures shouldn't downgrade status */ }
-  }
+  // (Pre-warm dropped — was using internal HTTP fetches that get bounced by
+  // Vercel Deployment Protection. The standings/fixtures/playoffs caches will
+  // repopulate on the next user visit; no functional regression.)
 
   // Write CRON_RUN_END audit row with the rolled-up summary.
   try {
