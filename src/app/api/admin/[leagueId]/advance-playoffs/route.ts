@@ -352,16 +352,18 @@ async function markLeg2Done(tieId: string) {
  * Body: { gameweek: number }
  * Routes to format-specific handlers (8-team, 16-team, 32-team).
  */
-export async function POST(request: NextRequest) {
-  const leagueId = await getAuthorizedLeagueId(request);
-  if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const body = await request.json();
-  const gwNumber = body.gameweek as number;
-  if (!gwNumber) {
-    return NextResponse.json({ error: "Gameweek number required" }, { status: 400 });
-  }
-
+/**
+ * Pure-function variant of the POST handler. Callable in-process from the
+ * superadmin "Run Auto-Processing" orchestrator (src/lib/cron/process-all.ts)
+ * to avoid HTTP roundtrips and the Vercel Deployment Protection 401 wall.
+ *
+ * Returns { status, body } — caller wraps in NextResponse.json or interprets
+ * body.error / body.success directly.
+ */
+export async function advancePlayoffsImpl(
+  leagueId: string,
+  gwNumber: number,
+): Promise<{ status: number; body: Record<string, unknown> }> {
   // Fetch format config
   const leagueRow = await db.select({
     format: leagues.format,
@@ -378,7 +380,7 @@ export async function POST(request: NextRequest) {
     ? (await db.query.groups.findFirst({ where: and(eq(groups.groupType, "cup"), eq(groups.leagueId, leagueId)) }))?.id
     : await getPlayoffsGroupId(leagueId);
   if (!playoffsGroupId) {
-    return NextResponse.json({ error: "Playoffs group not found" }, { status: 500 });
+    return { status: 500, body: { error: "Playoffs group not found" } };
   }
 
   // Pre-check: every playoff fixture in the GW being advanced must have a
@@ -388,20 +390,14 @@ export async function POST(request: NextRequest) {
     where: and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId)),
   });
   if (!gwForCheck) {
-    return NextResponse.json(
-      { error: `GW${gwNumber} not found for this league` },
-      { status: 400 },
-    );
+    return { status: 400, body: { error: `GW${gwNumber} not found for this league` } };
   }
   const gwFixturesForCheck = await db.query.fixtures.findMany({
     where: and(eq(fixtures.gameweekId, gwForCheck.id), eq(fixtures.isPlayoff, true)),
     with: { result: true },
   });
   if (gwFixturesForCheck.length === 0) {
-    return NextResponse.json(
-      { error: `No playoff fixtures exist for GW${gwNumber}. Generate the bracket or the previous round first.` },
-      { status: 400 },
-    );
+    return { status: 400, body: { error: `No playoff fixtures exist for GW${gwNumber}. Generate the bracket or the previous round first.` } };
   }
   const unscored = gwFixturesForCheck.filter(f => !f.result);
   if (unscored.length > 0) {
@@ -409,14 +405,14 @@ export async function POST(request: NextRequest) {
       const legSuffix = f.leg ? ` (leg ${f.leg})` : "";
       return `${f.tieId ?? f.id}${legSuffix}`;
     });
-    return NextResponse.json(
-      {
+    return {
+      status: 400,
+      body: {
         error: `Cannot advance GW${gwNumber} — ${missing.length} of ${gwFixturesForCheck.length} fixture${gwFixturesForCheck.length === 1 ? "" : "s"} not yet scored. Run the scoring job for GW${gwNumber} first, then retry. Missing: ${missing.join(", ")}`,
         gameweek: gwNumber,
         missing,
       },
-      { status: 400 },
-    );
+    };
   }
 
   const actions: string[] = [];
@@ -690,9 +686,10 @@ export async function POST(request: NextRequest) {
 
         actions.push("Triple Crown tournament complete!");
       } else {
-        return NextResponse.json({
-          error: "Triple Crown playoff advancement: GW27 (QF Leg 1), GW29 (QF Leg 2 + SF creation), GW33 (SF Leg 1), GW35 (SF Leg 2 + Final creation), GW37 (Final Leg 1), or GW38 (Final Leg 2)",
-        }, { status: 400 });
+        return {
+          status: 400,
+          body: { error: "Triple Crown playoff advancement: GW27 (QF Leg 1), GW29 (QF Leg 2 + SF creation), GW33 (SF Leg 1), GW35 (SF Leg 2 + Final creation), GW37 (Final Leg 1), or GW38 (Final Leg 2)" },
+        };
       }
 
     } else if (teamSize === 8) {
@@ -701,9 +698,10 @@ export async function POST(request: NextRequest) {
       // GW37 (playoffStartGw+1): mark leg1 done
       // GW38 (playoffStartGw+2): resolve Finals
       if (gwNumber < playoffStartGw || gwNumber > playoffStartGw + 2) {
-        return NextResponse.json({
-          error: `8-team playoff gameweeks are ${playoffStartGw}–${playoffStartGw + 2}`,
-        }, { status: 400 });
+        return {
+          status: 400,
+          body: { error: `8-team playoff gameweeks are ${playoffStartGw}–${playoffStartGw + 2}` },
+        };
       }
       if (gwNumber === playoffStartGw) {
         await advanceSF8(playoffsGroupId, leagueId, playoffStartGw, actions);
@@ -726,9 +724,10 @@ export async function POST(request: NextRequest) {
       // GW35-36: semi-finals
       // GW37-38: finals
       if (gwNumber < playoffStartGw || gwNumber > playoffStartGw + 7) {
-        return NextResponse.json({
-          error: `16-team playoff gameweeks are ${playoffStartGw}–${playoffStartGw + 7}`,
-        }, { status: 400 });
+        return {
+          status: 400,
+          body: { error: `16-team playoff gameweeks are ${playoffStartGw}–${playoffStartGw + 7}` },
+        };
       }
       const gwOffset = gwNumber - playoffStartGw;
       switch (gwOffset) {
@@ -745,7 +744,7 @@ export async function POST(request: NextRequest) {
     } else {
       // ── 32-TEAM FORMAT ───────────────────────────────────────
       if (gwNumber < 31 || gwNumber > 38) {
-        return NextResponse.json({ error: "Gameweek must be between 31 and 38" }, { status: 400 });
+        return { status: 400, body: { error: "Gameweek must be between 31 and 38" } };
       }
       switch (gwNumber) {
         case 31: await advanceGW31(playoffsGroupId, leagueId, actions); break;
@@ -763,14 +762,44 @@ export async function POST(request: NextRequest) {
     }
 
     await invalidateLeaguePageCache(leagueId);
-    return NextResponse.json({ success: true, gameweek: gwNumber, actions });
+    return { status: 200, body: { success: true, gameweek: gwNumber, actions } };
   } catch (error) {
     console.error("Error advancing playoffs:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to advance playoffs" },
-      { status: 500 }
-    );
+    return {
+      status: 500,
+      body: { error: error instanceof Error ? error.message : "Failed to advance playoffs" },
+    };
   }
+}
+
+/**
+ * Thin HTTP wrapper. Pulls gameweek from `?gw=N` query param OR `{ gameweek: N }`
+ * body, then delegates to advancePlayoffsImpl. Per-league admin pages, the cron
+ * fallback, and any external caller all hit this route.
+ */
+export async function POST(request: NextRequest) {
+  const leagueId = await getAuthorizedLeagueId(request);
+  if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  let gwNumber: number | undefined;
+  const queryGw = request.nextUrl.searchParams.get("gw");
+  if (queryGw) {
+    const parsed = parseInt(queryGw, 10);
+    if (!isNaN(parsed)) gwNumber = parsed;
+  }
+  if (gwNumber == null) {
+    try {
+      const body = await request.json();
+      const fromBody = body?.gameweek;
+      if (typeof fromBody === "number") gwNumber = fromBody;
+    } catch { /* no body */ }
+  }
+  if (!gwNumber || isNaN(gwNumber)) {
+    return NextResponse.json({ error: "Gameweek number required (?gw=N or { gameweek: N })" }, { status: 400 });
+  }
+
+  const { status, body } = await advancePlayoffsImpl(leagueId, gwNumber);
+  return NextResponse.json(body, { status });
 }
 
 // ── 8-TEAM handlers ───────────────────────────────────────────────────────────

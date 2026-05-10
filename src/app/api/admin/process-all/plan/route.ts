@@ -14,9 +14,8 @@ export async function GET(request: NextRequest) {
   if (!isSuperAdmin(request)) {
     return NextResponse.json({ error: "Superadmin only" }, { status: 403 });
   }
-  const force = request.nextUrl.searchParams.get("force") === "true";
   try {
-    const plan = await computePlan({ force });
+    const plan = await computePlan();
     return NextResponse.json({ success: true, plan });
   } catch (e) {
     return NextResponse.json(
