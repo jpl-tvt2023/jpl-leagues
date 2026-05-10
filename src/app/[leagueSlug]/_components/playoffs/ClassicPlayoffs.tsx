@@ -58,6 +58,7 @@ export function ClassicPlayoffs() {
         leagueName={leagueName}
         currentPage="playoffs"
         format={leagueFormat === "auction" ? "auction" : "tvt"}
+        teamSize={league.teamSize}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
         onSignOut={handleSignOut}

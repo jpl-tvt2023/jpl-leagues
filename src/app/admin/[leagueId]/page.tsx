@@ -1488,6 +1488,59 @@ export default function AdminDashboard() {
     }
   };
 
+  // Saved historical snapshots — currently the only writer is the GW1 auto-snapshot.
+  type SavedBackup = {
+    id: string;
+    trigger: string;
+    createdAt: string | number | Date;
+    includes: { teams: boolean; fixtures: boolean; captains: boolean; chips: boolean };
+  };
+  const [savedBackups, setSavedBackups] = useState<SavedBackup[]>([]);
+  const [downloadingSnapshotId, setDownloadingSnapshotId] = useState<string | null>(null);
+
+  // Fetch saved-backup list whenever the bulkUpload tab is active.
+  useEffect(() => {
+    if (activeTab !== "bulkUpload") return;
+    let cancelled = false;
+    fetch(`/api/admin/${leagueId}/backups`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : { backups: [] })
+      .then((data: { backups?: SavedBackup[] }) => {
+        if (!cancelled) setSavedBackups(data.backups ?? []);
+      })
+      .catch(() => { if (!cancelled) setSavedBackups([]); });
+    return () => { cancelled = true; };
+  }, [activeTab, leagueId]);
+
+  const handleDownloadSnapshot = async (backupId: string) => {
+    if (downloadingSnapshotId) return;
+    setDownloadingSnapshotId(backupId);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/backups/${backupId}`, { credentials: "include" });
+      if (!res.ok) {
+        const ct = res.headers.get("content-type") ?? "";
+        const errMsg = ct.includes("application/json")
+          ? (await res.json()).error ?? "Snapshot download failed"
+          : `Snapshot download failed (HTTP ${res.status})`;
+        setMessage({ type: "error", text: errMsg });
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("content-disposition") ?? "";
+      const m = cd.match(/filename="?([^"]+)"?/);
+      const filename = m?.[1] ?? `snapshot-${backupId}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setMessage({ type: "error", text: `Network error: ${e instanceof Error ? e.message : "unknown"}` });
+    } finally {
+      setDownloadingSnapshotId(null);
+    }
+  };
+
   const [downloadingBackup, setDownloadingBackup] = useState(false);
   const handleDownloadBackup = async () => {
     if (downloadingBackup) return;
@@ -2861,6 +2914,47 @@ export default function AdminDashboard() {
               >
                 {downloadingBackup ? "Generating..." : "Download Backup (.zip)"}
               </button>
+
+              {/* Saved snapshots — auto-archived at GW1 lock-in (or future manual archives) */}
+              {savedBackups.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-blue-500/20">
+                  <h4 className="text-sm font-semibold text-white mb-2">Saved snapshots</h4>
+                  <p className="text-gray-500 text-xs mb-3">
+                    Historical archives. Each is a .zip with the same 4 .xlsx files captured at the moment the snapshot was taken.
+                  </p>
+                  <ul className="space-y-2">
+                    {savedBackups.map(snap => {
+                      const created = new Date(snap.createdAt);
+                      const triggerLabel = snap.trigger === "gw1-lock" ? "GW1 lock-in" : snap.trigger;
+                      const includedParts = [
+                        snap.includes.teams && "teams",
+                        snap.includes.fixtures && "fixtures",
+                        snap.includes.captains && "captains",
+                        snap.includes.chips && "chips",
+                      ].filter(Boolean).join(", ");
+                      const isDownloading = downloadingSnapshotId === snap.id;
+                      return (
+                        <li key={snap.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                          <div className="min-w-0 text-xs">
+                            <div className="text-white">
+                              <span className="font-semibold">{triggerLabel}</span>{" "}
+                              <span className="text-gray-400">— {created.toLocaleString()}</span>
+                            </div>
+                            <div className="text-gray-500 truncate">includes: {includedParts || "(empty)"}</div>
+                          </div>
+                          <button
+                            onClick={() => handleDownloadSnapshot(snap.id)}
+                            disabled={isDownloading}
+                            className="rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 text-xs font-semibold px-3 py-1.5 transition disabled:opacity-50 shrink-0"
+                          >
+                            {isDownloading ? "Downloading..." : "Download"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div className="grid gap-8">

@@ -71,6 +71,7 @@ export function ClassicStandings() {
         leagueName={leagueName}
         currentPage="standings"
         format={isTripleCrown ? "triple-crown" : "tvt"}
+        teamSize={teamSize}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
         onSignOut={handleSignOut}

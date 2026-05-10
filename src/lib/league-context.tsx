@@ -2,6 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import { notFound } from "next/navigation";
+import { getFormatPalette, type FormatPalette } from "@/lib/format-palette";
 
 export type LeagueFormat = "tvt" | "triple-crown" | "auction";
 
@@ -62,4 +63,14 @@ export function useEnforceFormat(allowed: readonly LeagueFormat[]): void {
   if (!allowed.includes(league.format as LeagueFormat)) {
     notFound();
   }
+}
+
+/**
+ * Resolve the visual palette for the current league. Use whenever a chrome
+ * surface should look format-aware (header chip, hero accents, top borders).
+ * Returns a stable object — pure function of (format, teamSize) under the hood.
+ */
+export function useFormatPalette(): FormatPalette {
+  const { league } = useLeague();
+  return getFormatPalette(league.format, league.teamSize);
 }
