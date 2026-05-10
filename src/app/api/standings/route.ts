@@ -157,8 +157,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(responseData);
     }
 
-    // Get all teams with their relations using relational query
+    // Get all teams with their relations using relational query.
+    // CRITICAL: filter by leagueId here. Without this clause we'd load every team
+    // across every league + their fixtures + their results, then iterate them all
+    // to build `processedGws` and `allFplIds` — which causes the cold-cache FPL
+    // fetch loop below to make thousands of sequential FPL roundtrips and time out.
     const allTeamsUnfiltered = await db.query.teams.findMany({
+      where: eq(teams.leagueId, leagueId),
       with: {
         group: true,
         players: true,
@@ -198,44 +203,60 @@ export async function GET(request: NextRequest) {
     // calls would be extremely slow (38 GWs × 40 players = 1500+ sequential requests).
     const processedGws = new Set<number>();
     if (leagueFormat !== "triple-crown") {
-      for (const t of allTeamsUnfiltered) {
-        for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-          if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
-            processedGws.add(f.gameweek.number);
-          }
-        }
-      }
-
-      for (const gw of processedGws) {
-        // Try cache first
-        const gwCache = await getAllCachedScores(gw, leagueId);
-        const suffix = `_gw${gw}`;
-
-        if (Object.keys(gwCache).length > 0) {
-          // Cache has data — use it
-          for (const [key, data] of Object.entries(gwCache)) {
-            if (key.endsWith(suffix)) {
-              const fplId = key.slice(0, -suffix.length);
-              if (!playerGwHitsMap.has(fplId)) {
-                playerGwHitsMap.set(fplId, new Map());
-              }
-              playerGwHitsMap.get(fplId)!.set(gw, data.transferHits);
-            }
-          }
-        } else {
-          // Cache empty — fetch from FPL API (also populates cache for next time)
-          for (const fplId of allFplIds) {
-            try {
-              const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
-              if (!playerGwHitsMap.has(fplId)) {
-                playerGwHitsMap.set(fplId, new Map());
-              }
-              playerGwHitsMap.get(fplId)!.set(gw, score.transferHits);
-            } catch {
-              // FPL API may fail for some players/GWs — skip gracefully
+      // Wrap the whole hit-penalty fetch in try/catch — if FPL is down or rate-limited,
+      // we skip the deduction this run rather than 500ing the entire standings response.
+      // The standings remain useful (chip + bonus points still computed); the hit penalty
+      // is a small correction that the next request can populate once FPL recovers.
+      try {
+        for (const t of allTeamsUnfiltered) {
+          for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
+            if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
+              processedGws.add(f.gameweek.number);
             }
           }
         }
+
+        for (const gw of processedGws) {
+          // Try cache first
+          const gwCache = await getAllCachedScores(gw, leagueId);
+          const suffix = `_gw${gw}`;
+
+          if (Object.keys(gwCache).length > 0) {
+            // Cache has data — use it
+            for (const [key, data] of Object.entries(gwCache)) {
+              if (key.endsWith(suffix)) {
+                const fplId = key.slice(0, -suffix.length);
+                if (!playerGwHitsMap.has(fplId)) {
+                  playerGwHitsMap.set(fplId, new Map());
+                }
+                playerGwHitsMap.get(fplId)!.set(gw, data.transferHits);
+              }
+            }
+          } else {
+            // Cache empty — fetch from FPL API in parallel within this GW.
+            // (Sequential per-fplId previously caused multi-minute cold-cache stalls.)
+            // GW loop stays sequential to bound concurrency vs FPL rate limits.
+            const fetched = await Promise.all(
+              [...allFplIds].map(async (fplId) => {
+                try {
+                  const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
+                  return { fplId, hits: score.transferHits };
+                } catch {
+                  return null;
+                }
+              }),
+            );
+            for (const r of fetched) {
+              if (!r) continue;
+              if (!playerGwHitsMap.has(r.fplId)) {
+                playerGwHitsMap.set(r.fplId, new Map());
+              }
+              playerGwHitsMap.get(r.fplId)!.set(gw, r.hits);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("standings: hit-penalty fetch failed (continuing without deductions):", e);
       }
     }
 
