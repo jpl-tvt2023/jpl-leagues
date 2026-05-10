@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups, fixtures, results, gameweeks, gameweekCaptains, gameweekChips, settings, leagues } from "@/lib/db";
-import { eq, and, gt, asc, desc, or } from "drizzle-orm";
+import { eq, and, gt, asc, desc, or, inArray } from "drizzle-orm";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
@@ -110,8 +110,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Get all gameweeks ordered by number
+    // Get all gameweeks for this team's league only.
+    // Without the where clause we'd load every gameweek across every league.
     const allGameweeks = await db.query.gameweeks.findMany({
+      where: teamLeagueId ? eq(gameweeks.leagueId, teamLeagueId) : undefined,
       orderBy: [asc(gameweeks.number)],
     });
 
@@ -696,14 +698,19 @@ export async function GET(request: NextRequest) {
     // ============================================
     let oppositeGroupTeams: { id: string; name: string }[] = [];
     try {
-      const allGroups = await db.query.groups.findMany();
+      // Scope groups query to this team's league. The teams query is scoped via
+      // inArray on the top-2 IDs (no point loading all teams just to filter).
+      const allGroups = teamLeagueId
+        ? await db.query.groups.findMany({ where: eq(groups.leagueId, teamLeagueId) })
+        : await db.query.groups.findMany();
       const oppositeGroup = allGroups.find(g => g.id !== team.groupId);
       if (oppositeGroup && currentGwNumber) {
         const top2 = await getTop2FromGroup(oppositeGroup.id, currentGwNumber);
         const top2Ids = top2.map(t => t.teamId);
-        const top2Teams = await db.query.teams.findMany();
+        const top2Teams = top2Ids.length === 0 ? [] : await db.query.teams.findMany({
+          where: inArray(teams.id, top2Ids),
+        });
         oppositeGroupTeams = top2Teams
-          .filter(t => top2Ids.includes(t.id))
           .sort((a, b) => top2Ids.indexOf(a.id) - top2Ids.indexOf(b.id))
           .map(t => ({ id: t.id, name: t.name }));
       }

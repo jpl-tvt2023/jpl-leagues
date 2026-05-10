@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, leagues } from "@/lib/db/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, gameweekChips, leagues } from "@/lib/db/schema";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { fetchTeamGameweekPicks, detectLiveGameweek } from "@/lib/fpl";
 import { getLiveCachedScores, getCachedPlayoffBracket, setCachedPlayoffBracket } from "@/lib/fpl-cache";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
@@ -1490,7 +1490,11 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
 // ============================================
 async function getGroupStandings(leagueId?: string | null) {
   try {
+    // Scope teams query server-side when leagueId is provided. Without this,
+    // every bracket render loads every team across every league + their fixtures
+    // — slow on cold caches in multi-league deployments.
     const allTeamsRaw = await db.query.teams.findMany({
+      where: leagueId ? eq(teams.leagueId, leagueId) : undefined,
       with: {
         group: true,
         players: true,
@@ -1498,9 +1502,24 @@ async function getGroupStandings(leagueId?: string | null) {
         awayFixtures: { with: { result: true, gameweek: true } },
       },
     });
-    const allTeams = leagueId ? allTeamsRaw.filter(t => t.leagueId === leagueId) : allTeamsRaw;
+    const allTeams = allTeamsRaw; // already league-scoped via the where clause above
 
-    const allChipsRaw = await db.query.gameweekChips.findMany({ with: { gameweek: true } });
+    // Scope chips query to this league's gameweeks (chips don't carry leagueId
+    // directly — index via gameweekId).
+    let allChipsRaw: Awaited<ReturnType<typeof db.query.gameweekChips.findMany>>;
+    if (leagueId) {
+      const gwIdRows = await db
+        .select({ id: gameweeks.id })
+        .from(gameweeks)
+        .where(eq(gameweeks.leagueId, leagueId));
+      const gwIds = gwIdRows.map(g => g.id);
+      allChipsRaw = gwIds.length === 0 ? [] : await db.query.gameweekChips.findMany({
+        where: inArray(gameweekChips.gameweekId, gwIds),
+        with: { gameweek: true },
+      });
+    } else {
+      allChipsRaw = await db.query.gameweekChips.findMany({ with: { gameweek: true } });
+    }
     const chipPointsByTeam = new Map<string, number>();
     for (const chip of allChipsRaw) {
       if (chip.isProcessed) {

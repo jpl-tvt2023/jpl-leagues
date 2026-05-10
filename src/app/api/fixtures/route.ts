@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, fixtures, teams, gameweeks, groups, results, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getCachedFixtures, setCachedFixtures } from "@/lib/fpl-cache";
 
 /**
@@ -45,8 +45,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Use relational queries for cleaner joins
-    let allFixtures = await db.query.fixtures.findMany({
+    // Pre-fetch this league's gameweek IDs so the fixtures query can be scoped
+    // server-side via inArray. Without this we'd load EVERY fixture across every
+    // league and filter in memory — slow on multi-league setups, especially when
+    // the fixtures-cache is cold.
+    const leagueGwRows = await db
+      .select({ id: gameweeks.id })
+      .from(gameweeks)
+      .where(eq(gameweeks.leagueId, leagueId));
+    const leagueGwIds = leagueGwRows.map(g => g.id);
+
+    let allFixtures = leagueGwIds.length === 0 ? [] : await db.query.fixtures.findMany({
+      where: inArray(fixtures.gameweekId, leagueGwIds),
       with: {
         homeTeam: true,
         awayTeam: true,
@@ -55,9 +65,6 @@ export async function GET(request: NextRequest) {
         result: true,
       },
     });
-
-    // Filter by league (now always present)
-    allFixtures = allFixtures.filter(f => f.gameweek.leagueId === leagueId);
 
     // Filter by gameweek if provided
     if (gameweekParam) {
