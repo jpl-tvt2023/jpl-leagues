@@ -106,11 +106,12 @@ function messageFrom(e: unknown): string {
   return e instanceof Error ? e.message : "unknown error";
 }
 
-async function internalFetch(url: string, method: "GET" | "POST", input: FetchInput): Promise<Response> {
+async function internalFetch(url: string, method: "GET" | "POST", input: FetchInput, body?: string): Promise<Response> {
   const headers: Record<string, string> = {};
   if (input.authHeader) headers["Authorization"] = input.authHeader;
   if (input.cookieHeader) headers["Cookie"] = input.cookieHeader;
-  return fetch(url, { method, headers });
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  return fetch(url, { method, headers, body });
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -287,8 +288,11 @@ export async function processOneLeague(
       const advanceWindow = getPlayoffAdvanceGws(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31);
       if (advanceWindow.has(gw)) {
         try {
+          // The route reads `gameweek` from the JSON body. Send both the query
+          // param (for the route's own forgiving fallback) and the body (the
+          // canonical input the per-league admin UI uses).
           const url = `${input.baseUrl}/api/admin/${league.id}/advance-playoffs?gw=${gw}`;
-          const res = await internalFetch(url, "POST", input);
+          const res = await internalFetch(url, "POST", input, JSON.stringify({ gameweek: gw }));
           const parsed = await safeJson(res);
           const body = parsed.body as { actions?: unknown[]; error?: string };
           if (parsed.ok) {

@@ -356,10 +356,23 @@ export async function POST(request: NextRequest) {
   const leagueId = await getAuthorizedLeagueId(request);
   if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const body = await request.json();
-  const gwNumber = body.gameweek as number;
-  if (!gwNumber) {
-    return NextResponse.json({ error: "Gameweek number required" }, { status: 400 });
+  // Accept gameweek from EITHER ?gw=N (used by orchestrator) or { gameweek: N }
+  // body (used by per-league admin UI). Empty body must not crash the function.
+  let gwNumber: number | undefined;
+  const queryGw = request.nextUrl.searchParams.get("gw");
+  if (queryGw) {
+    const parsed = parseInt(queryGw, 10);
+    if (!isNaN(parsed)) gwNumber = parsed;
+  }
+  if (gwNumber == null) {
+    try {
+      const body = await request.json();
+      const fromBody = body?.gameweek;
+      if (typeof fromBody === "number") gwNumber = fromBody;
+    } catch { /* no body — fall through to validation below */ }
+  }
+  if (!gwNumber || isNaN(gwNumber)) {
+    return NextResponse.json({ error: "Gameweek number required (?gw=N or { gameweek: N })" }, { status: 400 });
   }
 
   // Fetch format config
