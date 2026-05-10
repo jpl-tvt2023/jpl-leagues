@@ -38,6 +38,8 @@ type ProcessAllLeagueResult = {
   scoredGws: number[];
   advancedGws: number[];
   generatedFor: number[];
+  generatedAlready: number[];
+  advanceWindowFuture: number[];
   errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league"; message: string }>;
 };
 
@@ -466,6 +468,8 @@ export default function SuperAdminDashboard() {
       scoredGws: [],
       advancedGws: [],
       generatedFor: [],
+      generatedAlready: [],
+      advanceWindowFuture: [],
       errors: [],
     })));
 
@@ -496,6 +500,7 @@ export default function SuperAdminDashboard() {
           const failedResult: ProcessAllLeagueResult = {
             leagueId: lg.id, slug: lg.slug, format: lg.format,
             status: "error", scoredGws: [], advancedGws: [], generatedFor: [],
+            generatedAlready: [], advanceWindowFuture: [],
             errors: [{ step: "league", message: errMsg }],
           };
           completedResults.push(failedResult);
@@ -509,6 +514,7 @@ export default function SuperAdminDashboard() {
           const failedResult: ProcessAllLeagueResult = {
             leagueId: lg.id, slug: lg.slug, format: lg.format,
             status: "error", scoredGws: [], advancedGws: [], generatedFor: [],
+            generatedAlready: [], advanceWindowFuture: [],
             errors: [{ step: "league", message: errMsg }],
           };
           completedResults.push(failedResult);
@@ -524,6 +530,7 @@ export default function SuperAdminDashboard() {
         const failedResult: ProcessAllLeagueResult = {
           leagueId: lg.id, slug: lg.slug, format: lg.format,
           status: "error", scoredGws: [], advancedGws: [], generatedFor: [],
+          generatedAlready: [], advanceWindowFuture: [],
           errors: [{ step: "league", message: errMsg }],
         };
         completedResults.push(failedResult);
@@ -1610,10 +1617,31 @@ export default function SuperAdminDashboard() {
                           {badge}
                         </div>
                         {!isInflight && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-300 mb-3">
-                            <div><span className="text-gray-500">Scored:</span> {lg.scoredGws.length > 0 ? lg.scoredGws.map(n => `GW${n}`).join(", ") : "—"}</div>
-                            <div><span className="text-gray-500">Advanced:</span> {lg.advancedGws.length > 0 ? lg.advancedGws.map(n => `GW${n}`).join(", ") : "—"}</div>
-                            <div><span className="text-gray-500">Generated:</span> {lg.generatedFor.length > 0 ? lg.generatedFor.map(n => `GW${n}`).join(", ") : "—"}</div>
+                          <div className="space-y-1 text-xs text-gray-300 mb-3">
+                            <div>
+                              <span className="text-gray-500">Scored:</span>{" "}
+                              {lg.scoredGws.length > 0 ? lg.scoredGws.map(n => `GW${n}`).join(", ") : "—"}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Generated:</span>{" "}
+                              {lg.generatedFor.length > 0 ? (
+                                <span className="text-green-300">{lg.generatedFor.map(n => `GW${n}`).join(", ")}</span>
+                              ) : lg.generatedAlready.length > 0 ? (
+                                <span className="text-gray-500">
+                                  {lg.generatedAlready.map(n => `GW${n}`).join(", ")} (already in place)
+                                </span>
+                              ) : "—"}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Advanced:</span>{" "}
+                              {lg.advancedGws.length > 0 ? lg.advancedGws.map(n => `GW${n}`).join(", ") : "—"}
+                            </div>
+                            {lg.advanceWindowFuture.length > 0 && (
+                              <div className="italic text-yellow-200/70">
+                                <span className="text-gray-500 not-italic">Awaiting:</span>{" "}
+                                {lg.advanceWindowFuture.map(n => `GW${n}`).join(", ")} not yet finalized
+                              </div>
+                            )}
                           </div>
                         )}
                         {lg.errors.length > 0 && (

@@ -13,9 +13,9 @@
  */
 
 import { NextRequest } from "next/server";
-import { db, gameweeks, fixtures, leagues, auditLogs } from "@/lib/db";
+import { db, gameweeks, fixtures, leagues, auditLogs, results } from "@/lib/db";
 import { gameweekCaptains } from "@/lib/db/schema";
-import { asc, eq, and } from "drizzle-orm";
+import { asc, eq, and, isNull, inArray } from "drizzle-orm";
 import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
@@ -89,6 +89,8 @@ export type LeagueResult = {
   scoredGws: number[];
   advancedGws: number[];
   generatedFor: number[];
+  generatedAlready: number[];      // generate fired but bracket already existed (no-op success)
+  advanceWindowFuture: number[];   // advance window GWs blocked because the GW isn't FPL-finalized yet
   errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league"; message: string }>;
 };
 
@@ -246,19 +248,58 @@ export async function processOneLeague(
     scoredGws: [],
     advancedGws: [],
     generatedFor: [],
+    generatedAlready: [],
+    advanceWindowFuture: [],
     errors: [],
   };
+
+  // Pre-flight: figure out which GWs in this league actually have at least one
+  // unscored fixture. Calling the heavy score handler for fully-scored GWs costs
+  // hundreds of ms each (eager-load of fixtures + teams + players + group + result
+  // + captains) — for 32T / TC across 35 GWs this alone burns through the 60s
+  // ceiling even when there's no real work. One cheap query short-circuits all of it.
+  const reprocess = input.reprocess === true;
+  let unscoredGws: Set<number>;
+  if (reprocess) {
+    // Force re-score requested → run scoring for every dueGw regardless.
+    unscoredGws = new Set(dueGws);
+  } else {
+    try {
+      const rows = await db
+        .selectDistinct({ number: gameweeks.number })
+        .from(gameweeks)
+        .innerJoin(fixtures, eq(fixtures.gameweekId, gameweeks.id))
+        .leftJoin(results, eq(results.fixtureId, fixtures.id))
+        .where(and(
+          eq(gameweeks.leagueId, league.id),
+          inArray(gameweeks.number, dueGws),
+          isNull(results.id),
+        ));
+      unscoredGws = new Set(rows.map(r => r.number));
+    } catch (e) {
+      // If pre-flight fails, fall back to scoring every GW (slow but correct).
+      result.errors.push({ step: "league", message: `Pre-flight failed: ${messageFrom(e)}` });
+      unscoredGws = new Set(dueGws);
+    }
+  }
 
   try {
     for (const gw of dueGws) {
       try { await clearLiveCache(gw); } catch { /* non-fatal */ }
 
       // ── Score ──
-      // By default we DON'T pass force=true. The downstream processors filter
-      // out already-scored fixtures (`!f.result`), so caught-up GWs do near-zero
-      // work. Force-reprocess (delete+recompute) is opt-in via input.reprocess.
-      const reprocess = input.reprocess === true;
-      if (league.format === "auction") {
+      // Skip the heavy scoring call for GWs where every fixture is already scored.
+      // The score handler's filter would no-op these anyway, but the per-call
+      // setup cost (eager-loaded fixtures + teams + players) is the real bottleneck
+      // — bypassing it cuts 32T / TC catch-up runs from 60s+ down to seconds.
+      // Auction always goes through its own processor (different scoring model —
+      // doesn't track unscored state via the results table the same way).
+      const needsScore = league.format === "auction" ? true : unscoredGws.has(gw);
+      if (!needsScore) {
+        // Already fully scored — nothing to do, but mark it for the UI so the
+        // admin sees this league has been confirmed up-to-date for this GW.
+        result.scoredGws.push(gw);
+      } else if (league.format === "auction") {
         try {
           const gwRow = await db
             .select()
@@ -312,7 +353,11 @@ export async function processOneLeague(
           const b = body as { error?: string };
           if (status >= 200 && status < 300) {
             result.generatedFor.push(gw);
-          } else if (!(b.error ?? "").toLowerCase().includes("already")) {
+          } else if ((b.error ?? "").toLowerCase().includes("already")) {
+            // Bracket was generated in a prior run — surface this as confirmed-existing
+            // rather than silently swallowing (UI used to show "Generated: —" which read as "nothing happened").
+            result.generatedAlready.push(gw);
+          } else {
             result.errors.push({ gw, step: "generate", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
           }
         } catch (e) {
@@ -341,8 +386,25 @@ export async function processOneLeague(
     result.errors.push({ step: "league", message: `League-level failure: ${messageFrom(outerErr)}` });
   }
 
+  // Compute "advance window — waiting on FPL". For each league format we know
+  // the expected advance-GW window; any window GW that wasn't in this run's
+  // dueGws (because FPL hasn't marked it finished yet) and hasn't already been
+  // advanced is "awaiting". Surfacing this stops the UI from showing
+  // "Advanced: —" as if nothing was applicable when in fact GWs are pending.
+  try {
+    const advanceWindow = getPlayoffAdvanceGws(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31);
+    const dueSet = new Set(dueGws);
+    const advancedSet = new Set(result.advancedGws);
+    for (const gw of advanceWindow) {
+      if (!dueSet.has(gw) && !advancedSet.has(gw)) {
+        result.advanceWindowFuture.push(gw);
+      }
+    }
+    result.advanceWindowFuture.sort((a, b) => a - b);
+  } catch { /* non-fatal */ }
+
   // Compute final status
-  const didAnyWork = result.scoredGws.length + result.advancedGws.length + result.generatedFor.length > 0;
+  const didAnyWork = result.scoredGws.length + result.advancedGws.length + result.generatedFor.length + result.generatedAlready.length > 0;
   if (result.errors.length === 0) {
     result.status = didAnyWork ? "ok" : "skipped";
   } else {
