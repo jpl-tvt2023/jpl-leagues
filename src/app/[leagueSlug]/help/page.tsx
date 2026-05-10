@@ -50,6 +50,7 @@ export default function LeagueHelpPage() {
         leagueName={league.name}
         currentPage="help"
         format={isTripleCrown ? "triple-crown" : "tvt"}
+        teamSize={league.teamSize}
         isLoggedIn={viewer.authenticated}
         dashboardHref={viewer.dashboardHref}
         onSignOut={handleSignOut}

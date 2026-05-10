@@ -92,6 +92,25 @@ function isResetSeasonRoute(pathname: string): boolean {
   return /^\/api\/admin\/[^/]+\/reset-season$/.test(pathname);
 }
 
+/**
+ * Per-admin rate limit: 30 POSTs/min on heavy compute endpoints.
+ * Generous enough that the UI clicking through normal flows never trips it,
+ * tight enough to block runaway scripts / buggy clients. Keyed by session ID
+ * (not IP) so each admin gets their own bucket.
+ */
+type ExpensiveAdminRoute = { test: (p: string) => boolean; label: string };
+const EXPENSIVE_ADMIN_ROUTES: ExpensiveAdminRoute[] = [
+  { test: p => /^\/api\/admin\/[^/]+\/generate-playoffs$/.test(p),  label: "generate-playoffs" },
+  { test: p => /^\/api\/admin\/[^/]+\/generate-brackets$/.test(p),  label: "generate-brackets" },
+  { test: p => /^\/api\/admin\/[^/]+\/advance-playoffs$/.test(p),   label: "advance-playoffs"  },
+  { test: p => /^\/api\/admin\/[^/]+\/create-gameweeks$/.test(p),   label: "create-gameweeks"  },
+  { test: p => p === "/api/admin/process-all/league-gw",            label: "process-all-gw"    },
+];
+function matchExpensiveAdminRoute(pathname: string): string | null {
+  for (const r of EXPENSIVE_ADMIN_ROUTES) if (r.test(pathname)) return r.label;
+  return null;
+}
+
 // ---------- Middleware ----------
 
 export async function middleware(request: NextRequest) {
@@ -164,6 +183,16 @@ export async function middleware(request: NextRequest) {
   if (isAdminRoute(pathname, method)) {
     if (session.type !== "admin" && session.type !== "superadmin") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+    // Per-admin rate limit on expensive POST endpoints (heavy compute or large DB writes).
+    if (method === "POST") {
+      const label = matchExpensiveAdminRoute(pathname);
+      if (label && !(await rateLimit(`expensive:${label}:${session.id}`, 30, 60_000))) {
+        return NextResponse.json(
+          { error: "Too many requests on this endpoint. Please slow down." },
+          { status: 429 }
+        );
+      }
     }
     // Forward verified session info + leagueId as headers for route handlers
     const response = NextResponse.next();

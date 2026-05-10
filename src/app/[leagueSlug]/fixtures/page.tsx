@@ -264,6 +264,7 @@ export default function LeagueFixturesPage() {
         leagueName={leagueName}
         currentPage="fixtures"
         format={leagueFormat === "auction" ? "auction" : leagueFormat === "triple-crown" ? "triple-crown" : "tvt"}
+        teamSize={league.teamSize}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
         onSignOut={handleSignOut}

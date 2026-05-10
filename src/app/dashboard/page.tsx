@@ -878,8 +878,6 @@ export default function DashboardPage() {
         gameweek: data.deadline.gameweek,
       };
 
-      console.log("Submitting captain with payload:", payload);
-
       const response = await fetch("/api/team/captain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -888,7 +886,6 @@ export default function DashboardPage() {
       });
 
       const result = await response.json();
-      console.log("Captain submission response:", response.status, result);
 
       if (!response.ok) {
         const errorText = result.error || "Failed to submit captain";
@@ -935,8 +932,6 @@ export default function DashboardPage() {
         ...(selectedChip === "C" && { challengedTeamId: selectedChallengedTeam }),
       };
 
-      console.log("Submitting chip with payload:", payload);
-
       const response = await fetch("/api/team/chips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -945,7 +940,6 @@ export default function DashboardPage() {
       });
 
       const result = await response.json();
-      console.log("Chip submission response:", response.status, result);
 
       if (!response.ok) {
         const errorText = result.error || "Failed to submit chip";

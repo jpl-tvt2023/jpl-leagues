@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { NotificationBell } from "./NotificationBell";
+import { getFormatPalette } from "@/lib/format-palette";
 
 export interface LeagueNavProps {
   leagueSlug: string;
   leagueName: string;
   currentPage: string;
   format: "auction" | "triple-crown" | "tvt";
+  /** Optional: when provided, distinguishes TVT-8 / TVT-16 / TVT-32 in the format chip. */
+  teamSize?: number | null;
   isLoggedIn: boolean;
   dashboardHref: string;
   onSignOut: () => void;
@@ -17,10 +20,12 @@ export interface LeagueNavProps {
 function NavLink({
   href,
   active,
+  activeClass,
   children,
 }: {
   href: string;
   active: boolean;
+  activeClass: string;
   children: React.ReactNode;
 }) {
   return (
@@ -28,7 +33,7 @@ function NavLink({
       href={href}
       className={
         active
-          ? "text-yellow-400 font-semibold transition"
+          ? `${activeClass} font-semibold transition`
           : "text-gray-300 hover:text-white transition"
       }
     >
@@ -42,12 +47,15 @@ export function LeagueNav({
   leagueName,
   currentPage,
   format,
+  teamSize = null,
   isLoggedIn,
   dashboardHref,
   onSignOut,
 }: LeagueNavProps) {
   const isAuction = format === "auction";
   const isTripleCrown = format === "triple-crown";
+  const palette = getFormatPalette(format, teamSize);
+  const activeClass = palette.badgeText; // active link uses the palette accent color
 
   const [auctionLive, setAuctionLive] = useState(false);
 
@@ -76,46 +84,52 @@ export function LeagueNav({
           JPL
         </div>
         <span className="text-base sm:text-xl font-bold text-white hidden sm:inline truncate max-w-[180px] lg:max-w-none">{leagueName || "League"}</span>
+        <span
+          className={`hidden sm:inline-block text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${palette.badgeBg} ${palette.badgeText}`}
+          title={`Format: ${palette.label}`}
+        >
+          {palette.label}
+        </span>
       </Link>
 
       <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm lg:text-base overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-white/10 max-w-full -mx-1 px-1 [&>*]:shrink-0">
         {/* Dashboard / All Leagues */}
-        <NavLink href={isLoggedIn ? dashboardHref : "/"} active={currentPage === "dashboard"}>
+        <NavLink href={isLoggedIn ? dashboardHref : "/"} activeClass={activeClass} active={currentPage ==="dashboard"}>
           {isLoggedIn ? "Dashboard" : "All Leagues"}
         </NavLink>
 
         {isAuction ? (
           <>
-            <NavLink href={`/${leagueSlug}/standings`} active={currentPage === "standings"}>Standings</NavLink>
-            <NavLink href={`/${leagueSlug}/teams`} active={currentPage === "teams"}>Teams</NavLink>
-            <NavLink href={`/${leagueSlug}/auction`} active={currentPage === "auction"}>Auction</NavLink>
-            <NavLink href={`/${leagueSlug}/squad`} active={currentPage === "squad"}>Squad</NavLink>
-            <NavLink href={`/${leagueSlug}/players`} active={currentPage === "players"}>Players</NavLink>
+            <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/teams`} activeClass={activeClass} active={currentPage ==="teams"}>Teams</NavLink>
+            <NavLink href={`/${leagueSlug}/auction`} activeClass={activeClass} active={currentPage ==="auction"}>Auction</NavLink>
+            <NavLink href={`/${leagueSlug}/squad`} activeClass={activeClass} active={currentPage ==="squad"}>Squad</NavLink>
+            <NavLink href={`/${leagueSlug}/players`} activeClass={activeClass} active={currentPage ==="players"}>Players</NavLink>
             {!auctionLive && (
-              <NavLink href={`/${leagueSlug}/marketplace`} active={currentPage === "marketplace"}>Marketplace</NavLink>
+              <NavLink href={`/${leagueSlug}/marketplace`} activeClass={activeClass} active={currentPage ==="marketplace"}>Marketplace</NavLink>
             )}
-            <NavLink href={`/${leagueSlug}/finance`} active={currentPage === "finance"}>Finance</NavLink>
-            <NavLink href={`/${leagueSlug}/rules`} active={currentPage === "rules"}>Rules</NavLink>
+            <NavLink href={`/${leagueSlug}/finance`} activeClass={activeClass} active={currentPage ==="finance"}>Finance</NavLink>
+            <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>
           </>
         ) : isTripleCrown ? (
           <>
-            <NavLink href={`/${leagueSlug}/standings`} active={currentPage === "standings"}>PL Standings</NavLink>
-            <NavLink href={`/${leagueSlug}/fixtures`} active={currentPage === "fixtures"}>PL Fixtures</NavLink>
-            <NavLink href={`/${leagueSlug}/uefa-standings`} active={currentPage === "uefa-standings"}>UEFA Standings</NavLink>
-            <NavLink href={`/${leagueSlug}/uefa-fixtures`} active={currentPage === "uefa-fixtures"}>UEFA Fixtures</NavLink>
-            <NavLink href={`/${leagueSlug}/playoffs`} active={currentPage === "playoffs"}>Playoffs</NavLink>
-            <NavLink href={`/${leagueSlug}/winners`} active={currentPage === "winners"}>Winners</NavLink>
-            <NavLink href={`/${leagueSlug}/rules`} active={currentPage === "rules"}>Rules</NavLink>
-            <NavLink href={`/${leagueSlug}/help`} active={currentPage === "help"}>Help</NavLink>
+            <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>PL Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/fixtures`} activeClass={activeClass} active={currentPage ==="fixtures"}>PL Fixtures</NavLink>
+            <NavLink href={`/${leagueSlug}/uefa-standings`} activeClass={activeClass} active={currentPage ==="uefa-standings"}>UEFA Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/uefa-fixtures`} activeClass={activeClass} active={currentPage ==="uefa-fixtures"}>UEFA Fixtures</NavLink>
+            <NavLink href={`/${leagueSlug}/playoffs`} activeClass={activeClass} active={currentPage ==="playoffs"}>Playoffs</NavLink>
+            <NavLink href={`/${leagueSlug}/winners`} activeClass={activeClass} active={currentPage ==="winners"}>Winners</NavLink>
+            <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>
+            <NavLink href={`/${leagueSlug}/help`} activeClass={activeClass} active={currentPage ==="help"}>Help</NavLink>
           </>
         ) : (
           <>
-            <NavLink href={`/${leagueSlug}/standings`} active={currentPage === "standings"}>Standings</NavLink>
-            <NavLink href={`/${leagueSlug}/fixtures`} active={currentPage === "fixtures"}>Fixtures</NavLink>
-            <NavLink href={`/${leagueSlug}/playoffs`} active={currentPage === "playoffs"}>Playoffs</NavLink>
-            <NavLink href={`/${leagueSlug}/winners`} active={currentPage === "winners"}>Winners</NavLink>
-            <NavLink href={`/${leagueSlug}/rules`} active={currentPage === "rules"}>Rules</NavLink>
-            <NavLink href={`/${leagueSlug}/help`} active={currentPage === "help"}>Help</NavLink>
+            <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/fixtures`} activeClass={activeClass} active={currentPage ==="fixtures"}>Fixtures</NavLink>
+            <NavLink href={`/${leagueSlug}/playoffs`} activeClass={activeClass} active={currentPage ==="playoffs"}>Playoffs</NavLink>
+            <NavLink href={`/${leagueSlug}/winners`} activeClass={activeClass} active={currentPage ==="winners"}>Winners</NavLink>
+            <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>
+            <NavLink href={`/${leagueSlug}/help`} activeClass={activeClass} active={currentPage ==="help"}>Help</NavLink>
           </>
         )}
 
