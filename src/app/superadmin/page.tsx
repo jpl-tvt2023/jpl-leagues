@@ -43,6 +43,24 @@ type ProcessAllLeagueResult = {
   errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league"; message: string }>;
 };
 
+// ── Per-GW chip state, populated as each /league-gw call returns ──
+type GwChipState = "queued" | "processing" | "ok" | "skipped" | "error";
+
+type LeagueGwResult = {
+  leagueId: string;
+  slug: string;
+  gw: number;
+  status: "ok" | "skipped" | "error";
+  scored: boolean;
+  scoreSkipped: boolean;
+  generated: boolean;
+  generatedAlready: boolean;
+  advanced: boolean;
+  advanceSkipped: boolean;
+  advanceWindowFuture: boolean;
+  errors: Array<{ step: "score" | "generate" | "advance" | "auction"; message: string }>;
+};
+
 // ──────────────────────────────────────────────
 // Create-league wizard steps
 type WizardStep = "sport" | "format" | "team_size" | "chips" | "details" | "assign";
@@ -409,9 +427,13 @@ export default function SuperAdminDashboard() {
     window.location.href = "/signin";
   };
 
-  // ── Operations: Run Auto-Processing (client-orchestrated, league-by-league) ──
+  // ── Operations: Run Auto-Processing (client-orchestrated, league × gw) ──
   type LeaguePlanItem = { id: string; slug: string; format: string; teamSize: number | null; playoffStartGw: number | null };
-  type LeagueRow = ProcessAllLeagueResult & { uiStatus: "queued" | "processing" | "ok" | "partial" | "error" | "skipped" };
+  type LeagueRow = ProcessAllLeagueResult & {
+    uiStatus: "queued" | "processing" | "ok" | "partial" | "error" | "skipped";
+    gwStates: Record<number, GwChipState>;
+    gwTooltips: Record<number, string>;
+  };
 
   const [processRunning, setProcessRunning] = useState(false);
   const [processError, setProcessError] = useState<string | null>(null);
@@ -421,8 +443,6 @@ export default function SuperAdminDashboard() {
   const [processLeagues, setProcessLeagues] = useState<LeagueRow[]>([]);
   const [processCurrentSlug, setProcessCurrentSlug] = useState<string | null>(null);
   const [processStartedAt, setProcessStartedAt] = useState<number | null>(null);
-  const [processForce, setProcessForce] = useState(false);
-  const [processReprocess, setProcessReprocess] = useState(false);
 
   const handleRunProcessAll = async () => {
     if (processRunning) return;
@@ -438,8 +458,7 @@ export default function SuperAdminDashboard() {
     // Step 1: fetch the plan
     let plan: { runId: string; dueGws: number[]; leagues: LeaguePlanItem[]; globalErrors: string[] };
     try {
-      const planUrl = `/api/admin/process-all/plan${processForce ? "?force=true" : ""}`;
-      const planRes = await fetch(planUrl, { credentials: "include" });
+      const planRes = await fetch("/api/admin/process-all/plan", { credentials: "include" });
       if (!planRes.ok) {
         const data = await planRes.json().catch(() => ({}));
         if (planRes.status === 401) setProcessError("Not authenticated — please sign in again.");
@@ -459,6 +478,9 @@ export default function SuperAdminDashboard() {
     setProcessRunId(plan.runId);
     setProcessDueGws(plan.dueGws);
     setProcessGlobalErrors(plan.globalErrors);
+
+    // Initialize per-league rows with every dueGw queued.
+    const initialGwStates = plan.dueGws.reduce<Record<number, GwChipState>>((acc, gw) => { acc[gw] = "queued"; return acc; }, {});
     setProcessLeagues(plan.leagues.map(lg => ({
       leagueId: lg.id,
       slug: lg.slug,
@@ -471,71 +493,116 @@ export default function SuperAdminDashboard() {
       generatedAlready: [],
       advanceWindowFuture: [],
       errors: [],
+      gwStates: { ...initialGwStates },
+      gwTooltips: {},
     })));
 
-    // Step 2: process each league sequentially
+    // Step 2: nested loop — for each league, for each GW, fire one /league-gw call.
+    // Each call is bounded by ~5-15s so we never hit Vercel's 60s ceiling.
     const completedResults: ProcessAllLeagueResult[] = [];
     for (let i = 0; i < plan.leagues.length; i++) {
       const lg = plan.leagues[i];
       setProcessCurrentSlug(lg.slug);
-
-      // mark this league as processing in the UI
       setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...row, uiStatus: "processing" } : row));
 
-      try {
-        const leagueUrl = `/api/admin/process-all/league${processReprocess ? "?reprocess=true" : ""}`;
-        const res = await fetch(leagueUrl, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runId: plan.runId, league: lg, dueGws: plan.dueGws }),
-        });
+      // Build the per-league aggregate as GW results stream in.
+      const agg: ProcessAllLeagueResult = {
+        leagueId: lg.id, slug: lg.slug, format: lg.format,
+        status: "skipped",
+        scoredGws: [], advancedGws: [], generatedFor: [],
+        generatedAlready: [], advanceWindowFuture: [],
+        errors: [],
+      };
 
-        const ct = res.headers.get("content-type") ?? "";
-        if (!ct.includes("application/json")) {
-          const txt = (await res.text()).slice(0, 200);
-          const errMsg = res.status === 504
-            ? `Per-league call timed out (60s). The league has too many unscored fixtures, or "Force re-score" is enabled. Try un-checking Force re-score, or reprocess one GW at a time via the league's own admin page.`
-            : `Non-JSON response (HTTP ${res.status}): ${txt}`;
-          const failedResult: ProcessAllLeagueResult = {
-            leagueId: lg.id, slug: lg.slug, format: lg.format,
-            status: "error", scoredGws: [], advancedGws: [], generatedFor: [],
-            generatedAlready: [], advanceWindowFuture: [],
-            errors: [{ step: "league", message: errMsg }],
-          };
-          completedResults.push(failedResult);
-          setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...failedResult, uiStatus: "error" } : row));
-          continue;
+      for (const gw of plan.dueGws) {
+        // mark this GW as in-flight
+        setProcessLeagues(prev => prev.map((row, idx) => idx === i
+          ? { ...row, gwStates: { ...row.gwStates, [gw]: "processing" } }
+          : row));
+
+        let gwResult: LeagueGwResult | null = null;
+        let gwError: string | null = null;
+
+        try {
+          const res = await fetch("/api/admin/process-all/league-gw", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ runId: plan.runId, league: lg, gw }),
+          });
+          const ct = res.headers.get("content-type") ?? "";
+          if (!ct.includes("application/json")) {
+            const txt = (await res.text()).slice(0, 200);
+            gwError = res.status === 504
+              ? `Call timed out (60s). Visit this league's admin page to process GW${gw} manually.`
+              : `Non-JSON response (HTTP ${res.status}): ${txt}`;
+          } else {
+            const data = await res.json();
+            if (!res.ok) {
+              gwError = `HTTP ${res.status}: ${data.error ?? data.message ?? "unknown"}`;
+            } else {
+              gwResult = data.result as LeagueGwResult;
+            }
+          }
+        } catch (e) {
+          gwError = `Network error: ${e instanceof Error ? e.message : "unknown"}`;
         }
 
-        const data = await res.json();
-        if (!res.ok) {
-          const errMsg = `HTTP ${res.status}: ${data.error ?? data.message ?? "unknown"}`;
-          const failedResult: ProcessAllLeagueResult = {
-            leagueId: lg.id, slug: lg.slug, format: lg.format,
-            status: "error", scoredGws: [], advancedGws: [], generatedFor: [],
-            generatedAlready: [], advanceWindowFuture: [],
-            errors: [{ step: "league", message: errMsg }],
-          };
-          completedResults.push(failedResult);
-          setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...failedResult, uiStatus: "error" } : row));
-          continue;
+        // Aggregate into the league row + update the chip state.
+        let chipState: GwChipState;
+        let tooltip: string;
+        if (gwError) {
+          chipState = "error";
+          tooltip = `GW${gw} — ${gwError}`;
+          agg.errors.push({ gw, step: "score", message: gwError });
+        } else if (gwResult) {
+          if (gwResult.scored || gwResult.scoreSkipped) agg.scoredGws.push(gw);
+          if (gwResult.advanced) agg.advancedGws.push(gw);
+          if (gwResult.generated) agg.generatedFor.push(gw);
+          if (gwResult.generatedAlready) agg.generatedAlready.push(gw);
+          for (const e of gwResult.errors) agg.errors.push({ gw, step: e.step, message: e.message });
+
+          chipState = gwResult.status;
+          // Build a compact tooltip from the per-stage flags.
+          const parts: string[] = [];
+          if (gwResult.scored) parts.push("score: ok");
+          else if (gwResult.scoreSkipped) parts.push("score: skipped");
+          if (gwResult.generated) parts.push("generate: ok");
+          else if (gwResult.generatedAlready) parts.push("generate: already in place");
+          if (gwResult.advanced) parts.push("advance: ok");
+          else if (gwResult.advanceSkipped) parts.push("advance: skipped");
+          if (gwResult.errors.length > 0) parts.push(...gwResult.errors.map(e => `${e.step}: ${e.message}`));
+          tooltip = `GW${gw} — ${parts.join(" / ") || "no work"}`;
+        } else {
+          chipState = "error";
+          tooltip = `GW${gw} — unknown error`;
         }
 
-        const result: ProcessAllLeagueResult = data.result;
-        completedResults.push(result);
-        setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...result, uiStatus: result.status } : row));
-      } catch (e) {
-        const errMsg = `Network error: ${e instanceof Error ? e.message : "unknown"}`;
-        const failedResult: ProcessAllLeagueResult = {
-          leagueId: lg.id, slug: lg.slug, format: lg.format,
-          status: "error", scoredGws: [], advancedGws: [], generatedFor: [],
-          generatedAlready: [], advanceWindowFuture: [],
-          errors: [{ step: "league", message: errMsg }],
-        };
-        completedResults.push(failedResult);
-        setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...failedResult, uiStatus: "error" } : row));
+        setProcessLeagues(prev => prev.map((row, idx) => idx === i ? {
+          ...row,
+          gwStates: { ...row.gwStates, [gw]: chipState },
+          gwTooltips: { ...row.gwTooltips, [gw]: tooltip },
+          // Mirror the aggregate into the row so error lists / Scored / Advanced lines update live.
+          scoredGws: agg.scoredGws,
+          advancedGws: agg.advancedGws,
+          generatedFor: agg.generatedFor,
+          generatedAlready: agg.generatedAlready,
+          errors: agg.errors,
+        } : row));
       }
+
+      // After all GWs for this league: compute advanceWindowFuture (window ∖ dueGws ∖ advanced).
+      // We don't know the advance window client-side, so we skip this here — the existing
+      // server-aggregated wrapper handles it for the cron path; for the UI we just leave it empty.
+      const errorCount = agg.errors.length;
+      const didAnyWork = agg.scoredGws.length + agg.advancedGws.length + agg.generatedFor.length + agg.generatedAlready.length > 0;
+      const finalStatus: ProcessAllLeagueResult["status"] = errorCount === 0
+        ? (didAnyWork ? "ok" : "skipped")
+        : (didAnyWork ? "partial" : "error");
+      agg.status = finalStatus;
+
+      completedResults.push(agg);
+      setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...row, uiStatus: finalStatus } : row));
     }
 
     // Step 3: finish (audit log + pre-warm)
@@ -1462,26 +1529,6 @@ export default function SuperAdminDashboard() {
                 >
                   {processRunning ? "Processing…" : "Run Auto-Processing for All Leagues"}
                 </button>
-                <label className="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={processForce}
-                    onChange={(e) => setProcessForce(e.target.checked)}
-                    disabled={processRunning}
-                    className="h-4 w-4 rounded border-white/20 bg-white/5"
-                  />
-                  Force-process even if FPL hasn&apos;t finalized
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={processReprocess}
-                    onChange={(e) => setProcessReprocess(e.target.checked)}
-                    disabled={processRunning}
-                    className="h-4 w-4 rounded border-white/20 bg-white/5"
-                  />
-                  Force re-score (recompute every result from scratch)
-                </label>
                 {processRunning && processCurrentSlug && (
                   <span className="text-sm text-gray-400 w-full">
                     Processing <span className="text-white">{processCurrentSlug}</span>…
@@ -1489,14 +1536,9 @@ export default function SuperAdminDashboard() {
                 )}
               </div>
               <p className="text-xs text-gray-500 mt-3">
-                <strong className="text-gray-400">Force-process</strong> bypasses the FPL bootstrap gate. Use only when you know the
-                gameweek scores are stable but FPL&apos;s bootstrap hasn&apos;t flipped <code>finished=true</code> yet
-                (extended FPL outage, test environment, etc.).
-              </p>
-              <p className="text-xs text-gray-500 mt-2">
-                <strong className="text-gray-400">Force re-score</strong> deletes every existing result and recomputes from FPL.
-                Slow — typically only finishes within 60s for leagues that have just a few GWs of history. Don&apos;t enable
-                routinely; use for emergencies after a scoring-rule change.
+                For force-reprocess (recompute every result) or to bypass the FPL finalization gate, use the
+                affected league&apos;s own admin page (Scoring tab → Reprocess). The buttons there are scoped
+                to one league at a time.
               </p>
             </div>
 
@@ -1606,7 +1648,7 @@ export default function SuperAdminDashboard() {
                       : lg.uiStatus === "queued"
                       ? <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-gray-500">⏸ QUEUED</span>
                       : <span className="text-xs px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400">– SKIPPED</span>;
-                    const isInflight = lg.uiStatus === "queued" || lg.uiStatus === "processing";
+                    const dueGwsForRow = processDueGws ?? [];
                     return (
                       <div key={lg.leagueId} className={`rounded-xl border ${colour} p-4`}>
                         <div className="flex items-center justify-between mb-3">
@@ -1616,34 +1658,59 @@ export default function SuperAdminDashboard() {
                           </div>
                           {badge}
                         </div>
-                        {!isInflight && (
-                          <div className="space-y-1 text-xs text-gray-300 mb-3">
-                            <div>
-                              <span className="text-gray-500">Scored:</span>{" "}
-                              {lg.scoredGws.length > 0 ? lg.scoredGws.map(n => `GW${n}`).join(", ") : "—"}
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Generated:</span>{" "}
-                              {lg.generatedFor.length > 0 ? (
-                                <span className="text-green-300">{lg.generatedFor.map(n => `GW${n}`).join(", ")}</span>
-                              ) : lg.generatedAlready.length > 0 ? (
-                                <span className="text-gray-500">
-                                  {lg.generatedAlready.map(n => `GW${n}`).join(", ")} (already in place)
+                        {/* Per-GW chip row — live progress visible immediately */}
+                        {dueGwsForRow.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-3">
+                            {dueGwsForRow.map(gw => {
+                              const st = lg.gwStates[gw] ?? "queued";
+                              const tip = lg.gwTooltips[gw] ?? `GW${gw} — ${st}`;
+                              const chipCls = st === "ok"
+                                ? "bg-green-500/30 text-green-200 border-green-500/40"
+                                : st === "skipped"
+                                ? "bg-teal-500/15 text-teal-300/70 border-teal-500/20"
+                                : st === "processing"
+                                ? "bg-yellow-500/30 text-yellow-200 border-yellow-500/50 animate-pulse"
+                                : st === "error"
+                                ? "bg-red-500/30 text-red-200 border-red-500/50"
+                                : "bg-white/5 text-gray-500 border-white/10";
+                              return (
+                                <span
+                                  key={gw}
+                                  title={tip}
+                                  className={`text-[10px] px-1.5 py-0.5 rounded border ${chipCls} font-mono`}
+                                >
+                                  {gw}
                                 </span>
-                              ) : "—"}
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Advanced:</span>{" "}
-                              {lg.advancedGws.length > 0 ? lg.advancedGws.map(n => `GW${n}`).join(", ") : "—"}
-                            </div>
-                            {lg.advanceWindowFuture.length > 0 && (
-                              <div className="italic text-yellow-200/70">
-                                <span className="text-gray-500 not-italic">Awaiting:</span>{" "}
-                                {lg.advanceWindowFuture.map(n => `GW${n}`).join(", ")} not yet finalized
-                              </div>
-                            )}
+                              );
+                            })}
                           </div>
                         )}
+                        <div className="space-y-1 text-xs text-gray-300 mb-3">
+                          <div>
+                            <span className="text-gray-500">Scored:</span>{" "}
+                            {lg.scoredGws.length > 0 ? lg.scoredGws.map(n => `GW${n}`).join(", ") : "—"}
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Generated:</span>{" "}
+                            {lg.generatedFor.length > 0 ? (
+                              <span className="text-green-300">{lg.generatedFor.map(n => `GW${n}`).join(", ")}</span>
+                            ) : lg.generatedAlready.length > 0 ? (
+                              <span className="text-gray-500">
+                                {lg.generatedAlready.map(n => `GW${n}`).join(", ")} (already in place)
+                              </span>
+                            ) : "—"}
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Advanced:</span>{" "}
+                            {lg.advancedGws.length > 0 ? lg.advancedGws.map(n => `GW${n}`).join(", ") : "—"}
+                          </div>
+                          {lg.advanceWindowFuture.length > 0 && (
+                            <div className="italic text-yellow-200/70">
+                              <span className="text-gray-500 not-italic">Awaiting:</span>{" "}
+                              {lg.advanceWindowFuture.map(n => `GW${n}`).join(", ")} not yet finalized
+                            </div>
+                          )}
+                        </div>
                         {lg.errors.length > 0 && (
                           <div className="mt-2 pt-3 border-t border-white/10">
                             <div className="text-xs font-semibold text-red-300 mb-1.5">Errors:</div>

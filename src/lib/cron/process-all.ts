@@ -14,8 +14,8 @@
 
 import { NextRequest } from "next/server";
 import { db, gameweeks, fixtures, leagues, auditLogs, results } from "@/lib/db";
-import { gameweekCaptains } from "@/lib/db/schema";
-import { asc, eq, and, isNull, inArray } from "drizzle-orm";
+import { gameweekCaptains, playoffTies } from "@/lib/db/schema";
+import { asc, eq, and, isNull, ne, or } from "drizzle-orm";
 import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
@@ -94,10 +94,28 @@ export type LeagueResult = {
   errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league"; message: string }>;
 };
 
+/**
+ * Per-(league × gameweek) result returned by the /league-gw endpoint.
+ * Each field is a single boolean — work was done, skipped, or errored for THIS GW.
+ * The browser aggregates these into the LeagueResult shape for the league card.
+ */
+export type LeagueGwResult = {
+  leagueId: string;
+  slug: string;
+  gw: number;
+  status: "ok" | "skipped" | "error";  // skipped = nothing was needed
+  scored: boolean;            // score handler ran AND produced new results
+  scoreSkipped: boolean;      // pre-flight saw nothing to score
+  generated: boolean;         // generate fired (created new bracket)
+  generatedAlready: boolean;  // generate fired but bracket already existed
+  advanced: boolean;          // advance dispatcher fired AND did work
+  advanceSkipped: boolean;    // advance window matched but nothing pending
+  advanceWindowFuture: boolean; // gw is in advance window but not in dueGws (FPL not finalized)
+  errors: Array<{ step: "score" | "generate" | "advance" | "auction"; message: string }>;
+};
+
 interface FetchInput {
   baseUrl: string;
-  authHeader?: string;     // Bearer token forwarded for cron-secret callers
-  cookieHeader?: string;   // session cookie forwarded for admin-button callers
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -148,17 +166,16 @@ function messageFrom(e: unknown): string {
 /*  computePlan — fast, used by the /plan endpoint                            */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-export async function computePlan(opts: { force?: boolean } = {}): Promise<Plan> {
+export async function computePlan(): Promise<Plan> {
   const runId = generateId();
   const buildSha = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
   const globalErrors: string[] = [];
-  const force = opts.force === true;
 
   try {
     await db.insert(auditLogs).values({
       id: runId,
       type: "CRON_RUN_START",
-      description: `process-all started (build ${buildSha}${force ? ", force=true" : ""})`,
+      description: `process-all started (build ${buildSha})`,
       pointsAffected: 0,
     });
   } catch (e) {
@@ -169,19 +186,16 @@ export async function computePlan(opts: { force?: boolean } = {}): Promise<Plan>
   // single error to the UI rather than silently flagging every GW as "not finalized".
   let bootstrapEvents: FplEvent[] | null = null;
   let bootstrapError: string | null = null;
-  if (!force) {
-    try {
-      const bs = await fetchBootstrapData() as { events?: FplEvent[] };
-      bootstrapEvents = bs.events ?? [];
-    } catch (e) {
-      bootstrapError = e instanceof Error ? e.message : "unknown error";
-      globalErrors.push(`FPL bootstrap fetch failed: ${bootstrapError}`);
-    }
-  } else {
-    globalErrors.push("Force mode active — FPL finalization gate bypassed");
+  try {
+    const bs = await fetchBootstrapData() as { events?: FplEvent[] };
+    bootstrapEvents = bs.events ?? [];
+  } catch (e) {
+    bootstrapError = e instanceof Error ? e.message : "unknown error";
+    globalErrors.push(`FPL bootstrap fetch failed: ${bootstrapError}`);
   }
 
-  // Build the dueGws set: deadline passed AND (force OR FPL bootstrap says finished).
+  // Build the dueGws set: deadline passed AND FPL bootstrap says finished.
+  // No force-bypass — emergency reprocess belongs in per-league admin.
   const allGameweeks = await db.select().from(gameweeks).orderBy(asc(gameweeks.number));
   const now = new Date();
   const seen = new Set<number>();
@@ -197,11 +211,6 @@ export async function computePlan(opts: { force?: boolean } = {}): Promise<Plan>
       .from(fixtures)
       .where(eq(fixtures.gameweekId, gw.id));
     if (fxRows.length === 0) continue;
-
-    if (force) {
-      dueByNumber.add(gw.number);
-      continue;
-    }
 
     const status = isGwFinalized(gw.number, bootstrapEvents, bootstrapError);
     if (!status.ok) {
@@ -232,13 +241,214 @@ export async function computePlan(opts: { force?: boolean } = {}): Promise<Plan>
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/*  processOneLeague — used by /league endpoint                               */
+/*  hasAdvanceWork — fast skip-when-done guard for advance dispatcher         */
 /* ────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * Returns true iff any playoff_ties row touching this GW is not yet `complete`.
+ * Catches the common case where every tie in the GW's window is already
+ * resolved AND every next-round tie was already created (idempotent inserts) —
+ * in which case the heavy advance dispatcher would just spend ~10s of reads
+ * for a pure no-op. Skipping it shaves the bulk of catch-up runs.
+ */
+async function hasAdvanceWork(leagueId: string, gw: number): Promise<boolean> {
+  const pending = await db
+    .select({ tieId: playoffTies.tieId })
+    .from(playoffTies)
+    .where(and(
+      eq(playoffTies.leagueId, leagueId),
+      or(
+        eq(playoffTies.gw1, gw),
+        eq(playoffTies.gw2, gw),
+        eq(playoffTies.gw3, gw),
+      ),
+      ne(playoffTies.status, "complete"),
+    ))
+    .limit(1);
+  return pending.length > 0;
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  processOneLeagueOneGw — used by /league-gw endpoint                       */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Process score + generate + advance for ONE league × ONE gameweek.
+ * Bounded ≤ ~5-15s; well under the Vercel Hobby 60s ceiling.
+ *
+ * The browser orchestrates calling this for every (league, gw) pair so the UI
+ * can render live per-GW progress chips. The legacy `processOneLeague` below
+ * loops this function for the cron-fallback / single-shot code path.
+ */
+export async function processOneLeagueOneGw(
+  league: LeaguePlanItem,
+  gw: number,
+  input: FetchInput,
+): Promise<LeagueGwResult> {
+  const result: LeagueGwResult = {
+    leagueId: league.id,
+    slug: league.slug,
+    gw,
+    status: "ok",
+    scored: false,
+    scoreSkipped: false,
+    generated: false,
+    generatedAlready: false,
+    advanced: false,
+    advanceSkipped: false,
+    advanceWindowFuture: false,
+    errors: [],
+  };
+
+  try { await clearLiveCache(gw); } catch { /* non-fatal */ }
+
+  // ── Score ──
+  // Per-GW pre-flight: are there any unscored fixtures for this league at this GW?
+  // If not, skip the heavy handler entirely. Auction format always goes through its
+  // own processor (different scoring model — doesn't use the results table the same way).
+  if (league.format === "auction") {
+    try {
+      const gwRow = await db
+        .select()
+        .from(gameweeks)
+        .where(and(eq(gameweeks.leagueId, league.id), eq(gameweeks.number, gw)))
+        .limit(1);
+      if (gwRow.length > 0) {
+        await processAuctionGameweek(gwRow[0].id, gw, league.id, false);
+        result.scored = true;
+      } else {
+        result.scoreSkipped = true;
+      }
+    } catch (e) {
+      result.errors.push({ step: "auction", message: messageFrom(e) });
+    }
+  } else {
+    let unscoredCount = 0;
+    try {
+      const rows = await db
+        .select({ id: fixtures.id })
+        .from(gameweeks)
+        .innerJoin(fixtures, eq(fixtures.gameweekId, gameweeks.id))
+        .leftJoin(results, eq(results.fixtureId, fixtures.id))
+        .where(and(
+          eq(gameweeks.leagueId, league.id),
+          eq(gameweeks.number, gw),
+          isNull(results.id),
+        ))
+        .limit(1);
+      unscoredCount = rows.length;
+    } catch (e) {
+      result.errors.push({ step: "score", message: `Pre-flight failed: ${messageFrom(e)}` });
+    }
+
+    if (unscoredCount === 0 && result.errors.length === 0) {
+      result.scoreSkipped = true;
+    } else {
+      try {
+        const url = `${input.baseUrl}/api/gameweeks/${gw}?leagueId=${encodeURIComponent(league.id)}`;
+        const { status, body } = await callHandlerDirect(
+          scorePost,
+          url,
+          { params: Promise.resolve({ gw: String(gw) }) },
+        );
+        const b = body as { processed?: number; failed?: number; errors?: unknown[]; error?: string };
+        if (status >= 400) {
+          result.errors.push({ step: "score", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
+        } else {
+          const processed = b.processed ?? 0;
+          const failed = b.failed ?? b.errors?.length ?? 0;
+          if (processed > 0) {
+            result.scored = true;
+          } else if (failed === 0) {
+            result.scoreSkipped = true;
+          } else {
+            result.errors.push({ step: "score", message: `Processed 0 fixtures (${failed} FPL fetch errors — likely future GW)` });
+          }
+        }
+      } catch (e) {
+        result.errors.push({ step: "score", message: messageFrom(e) });
+      }
+    }
+  }
+
+  // ── Generate (only at this league's trigger GW) ──
+  const action = getPlayoffGenerateAction(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31, gw);
+  if (action) {
+    try {
+      const url = `${input.baseUrl}/api/admin/${league.id}/${action.endpoint}`;
+      const handler = action.endpoint === "generate-brackets" ? generateBracketsPost : generatePlayoffsPost;
+      const { status, body } = await callHandlerDirect(
+        handler,
+        url,
+        { params: Promise.resolve({ leagueId: league.id }) },
+        { leagueId: league.id },
+      );
+      const b = body as { error?: string };
+      if (status >= 200 && status < 300) {
+        result.generated = true;
+      } else if ((b.error ?? "").toLowerCase().includes("already")) {
+        result.generatedAlready = true;
+      } else {
+        result.errors.push({ step: "generate", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
+      }
+    } catch (e) {
+      result.errors.push({ step: "generate", message: messageFrom(e) });
+    }
+  }
+
+  // ── Advance (only if this GW is in the league's playoff window) ──
+  const advanceWindow = getPlayoffAdvanceGws(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31);
+  if (advanceWindow.has(gw)) {
+    // Fast skip: every tie touching this GW is already complete → dispatcher would no-op.
+    let pending = false;
+    try {
+      pending = await hasAdvanceWork(league.id, gw);
+    } catch (e) {
+      result.errors.push({ step: "advance", message: `hasAdvanceWork failed: ${messageFrom(e)}` });
+    }
+    if (!pending && result.errors.length === 0) {
+      result.advanceSkipped = true;
+    } else if (pending) {
+      try {
+        const { status, body } = await advancePlayoffsImpl(league.id, gw);
+        if (status >= 200 && status < 300) {
+          result.advanced = true;
+        } else {
+          const b = body as { error?: string };
+          result.errors.push({ step: "advance", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
+        }
+      } catch (e) {
+        result.errors.push({ step: "advance", message: messageFrom(e) });
+      }
+    }
+  }
+
+  // Final per-GW status
+  const didAnyWork = result.scored || result.generated || result.advanced;
+  const wasFullySkipped = !didAnyWork && (result.scoreSkipped || result.generatedAlready || result.advanceSkipped);
+  if (result.errors.length > 0) {
+    result.status = "error";
+  } else if (didAnyWork) {
+    result.status = "ok";
+  } else if (wasFullySkipped) {
+    result.status = "skipped";
+  } else {
+    // No work, no skip-marker — e.g. an early-GW outside any playoff window where score was already done.
+    result.status = "skipped";
+  }
+
+  return result;
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  processOneLeague — legacy wrapper that loops processOneLeagueOneGw        */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/** Used by `processAllLeagues` (cron-fallback path). Aggregates per-GW results into LeagueResult. */
 export async function processOneLeague(
   league: LeaguePlanItem,
   dueGws: number[],
-  input: FetchInput & { reprocess?: boolean },
+  input: FetchInput,
 ): Promise<LeagueResult> {
   const result: LeagueResult = {
     leagueId: league.id,
@@ -253,144 +463,16 @@ export async function processOneLeague(
     errors: [],
   };
 
-  // Pre-flight: figure out which GWs in this league actually have at least one
-  // unscored fixture. Calling the heavy score handler for fully-scored GWs costs
-  // hundreds of ms each (eager-load of fixtures + teams + players + group + result
-  // + captains) — for 32T / TC across 35 GWs this alone burns through the 60s
-  // ceiling even when there's no real work. One cheap query short-circuits all of it.
-  const reprocess = input.reprocess === true;
-  let unscoredGws: Set<number>;
-  if (reprocess) {
-    // Force re-score requested → run scoring for every dueGw regardless.
-    unscoredGws = new Set(dueGws);
-  } else {
-    try {
-      const rows = await db
-        .selectDistinct({ number: gameweeks.number })
-        .from(gameweeks)
-        .innerJoin(fixtures, eq(fixtures.gameweekId, gameweeks.id))
-        .leftJoin(results, eq(results.fixtureId, fixtures.id))
-        .where(and(
-          eq(gameweeks.leagueId, league.id),
-          inArray(gameweeks.number, dueGws),
-          isNull(results.id),
-        ));
-      unscoredGws = new Set(rows.map(r => r.number));
-    } catch (e) {
-      // If pre-flight fails, fall back to scoring every GW (slow but correct).
-      result.errors.push({ step: "league", message: `Pre-flight failed: ${messageFrom(e)}` });
-      unscoredGws = new Set(dueGws);
-    }
-  }
-
   try {
     for (const gw of dueGws) {
-      try { await clearLiveCache(gw); } catch { /* non-fatal */ }
-
-      // ── Score ──
-      // Skip the heavy scoring call for GWs where every fixture is already scored.
-      // The score handler's filter would no-op these anyway, but the per-call
-      // setup cost (eager-loaded fixtures + teams + players) is the real bottleneck
-      // — bypassing it cuts 32T / TC catch-up runs from 60s+ down to seconds.
-      // Auction always goes through its own processor (different scoring model —
-      // doesn't track unscored state via the results table the same way).
-      const needsScore = league.format === "auction" ? true : unscoredGws.has(gw);
-      if (!needsScore) {
-        // Already fully scored — nothing to do, but mark it for the UI so the
-        // admin sees this league has been confirmed up-to-date for this GW.
-        result.scoredGws.push(gw);
-      } else if (league.format === "auction") {
-        try {
-          const gwRow = await db
-            .select()
-            .from(gameweeks)
-            .where(and(eq(gameweeks.leagueId, league.id), eq(gameweeks.number, gw)))
-            .limit(1);
-          if (gwRow.length > 0) {
-            await processAuctionGameweek(gwRow[0].id, gw, league.id, reprocess);
-            result.scoredGws.push(gw);
-          }
-        } catch (e) {
-          result.errors.push({ gw, step: "auction", message: messageFrom(e) });
-        }
-      } else {
-        try {
-          const forceParam = reprocess ? "&force=true" : "";
-          const url = `${input.baseUrl}/api/gameweeks/${gw}?leagueId=${encodeURIComponent(league.id)}${forceParam}`;
-          const { status, body } = await callHandlerDirect(
-            scorePost,
-            url,
-            { params: Promise.resolve({ gw: String(gw) }) },
-          );
-          const b = body as { processed?: number; failed?: number; errors?: unknown[]; error?: string };
-          if (status >= 400) {
-            result.errors.push({ gw, step: "score", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
-          } else {
-            const processed = b.processed ?? 0;
-            const failed = b.failed ?? b.errors?.length ?? 0;
-            if (processed > 0 || failed === 0) result.scoredGws.push(gw);
-            if (processed === 0 && failed > 0) {
-              result.errors.push({ gw, step: "score", message: `Processed 0 fixtures (${failed} FPL fetch errors — likely future GW)` });
-            }
-          }
-        } catch (e) {
-          result.errors.push({ gw, step: "score", message: messageFrom(e) });
-        }
-      }
-
-      // ── Generate (one-shot per league when this GW is the trigger GW) ──
-      const action = getPlayoffGenerateAction(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31, gw);
-      if (action) {
-        try {
-          const url = `${input.baseUrl}/api/admin/${league.id}/${action.endpoint}`;
-          const handler = action.endpoint === "generate-brackets" ? generateBracketsPost : generatePlayoffsPost;
-          const { status, body } = await callHandlerDirect(
-            handler,
-            url,
-            { params: Promise.resolve({ leagueId: league.id }) },
-            { leagueId: league.id },
-          );
-          const b = body as { error?: string };
-          if (status >= 200 && status < 300) {
-            result.generatedFor.push(gw);
-          } else if ((b.error ?? "").toLowerCase().includes("already")) {
-            // Bracket was generated in a prior run — surface this as confirmed-existing
-            // rather than silently swallowing (UI used to show "Generated: —" which read as "nothing happened").
-            result.generatedAlready.push(gw);
-          } else {
-            result.errors.push({ gw, step: "generate", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
-          }
-        } catch (e) {
-          result.errors.push({ gw, step: "generate", message: messageFrom(e) });
-        }
-      }
-
-      // ── Advance (per-league, only if this GW is in the league's playoff window) ──
-      const advanceWindow = getPlayoffAdvanceGws(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31);
-      if (advanceWindow.has(gw)) {
-        try {
-          // Direct call into advancePlayoffsImpl — no HTTP, no edge layer, no body parsing.
-          const { status, body } = await advancePlayoffsImpl(league.id, gw);
-          if (status >= 200 && status < 300) {
-            result.advancedGws.push(gw);
-          } else {
-            const b = body as { error?: string };
-            result.errors.push({ gw, step: "advance", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
-          }
-        } catch (e) {
-          result.errors.push({ gw, step: "advance", message: messageFrom(e) });
-        }
-      }
+      const gwRes = await processOneLeagueOneGw(league, gw, input);
+      mergeGwIntoLeagueResult(result, gwRes);
     }
   } catch (outerErr) {
     result.errors.push({ step: "league", message: `League-level failure: ${messageFrom(outerErr)}` });
   }
 
-  // Compute "advance window — waiting on FPL". For each league format we know
-  // the expected advance-GW window; any window GW that wasn't in this run's
-  // dueGws (because FPL hasn't marked it finished yet) and hasn't already been
-  // advanced is "awaiting". Surfacing this stops the UI from showing
-  // "Advanced: —" as if nothing was applicable when in fact GWs are pending.
+  // Advance-window GWs that aren't in this run's dueGws (FPL not finalized yet).
   try {
     const advanceWindow = getPlayoffAdvanceGws(league.format, league.teamSize ?? 32, league.playoffStartGw ?? 31);
     const dueSet = new Set(dueGws);
@@ -403,7 +485,6 @@ export async function processOneLeague(
     result.advanceWindowFuture.sort((a, b) => a - b);
   } catch { /* non-fatal */ }
 
-  // Compute final status
   const didAnyWork = result.scoredGws.length + result.advancedGws.length + result.generatedFor.length + result.generatedAlready.length > 0;
   if (result.errors.length === 0) {
     result.status = didAnyWork ? "ok" : "skipped";
@@ -411,6 +492,19 @@ export async function processOneLeague(
     result.status = didAnyWork ? "partial" : "error";
   }
   return result;
+}
+
+/** Merge a single per-GW result into the league-aggregate shape. Exported so the browser can reuse it. */
+export function mergeGwIntoLeagueResult(agg: LeagueResult, gwRes: LeagueGwResult): void {
+  // "scored" in the aggregate means "this GW is fully scored" — covers both
+  // cases where we did real work and where pre-flight confirmed it was already done.
+  if (gwRes.scored || gwRes.scoreSkipped) agg.scoredGws.push(gwRes.gw);
+  if (gwRes.advanced) agg.advancedGws.push(gwRes.gw);
+  if (gwRes.generated) agg.generatedFor.push(gwRes.gw);
+  if (gwRes.generatedAlready) agg.generatedAlready.push(gwRes.gw);
+  for (const e of gwRes.errors) {
+    agg.errors.push({ gw: gwRes.gw, step: e.step, message: e.message });
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -471,10 +565,8 @@ export type Summary = {
 };
 
 /** Server-side single-shot orchestration. Used by /api/cron/process-scores. */
-export async function processAllLeagues(
-  input: FetchInput & { force?: boolean; reprocess?: boolean },
-): Promise<Summary> {
-  const plan = await computePlan({ force: input.force });
+export async function processAllLeagues(input: FetchInput): Promise<Summary> {
+  const plan = await computePlan();
   const results: LeagueResult[] = [];
   for (const lg of plan.leagues) {
     const r = await processOneLeague(lg, plan.dueGws, input);

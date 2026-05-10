@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { finishRun, type LeagueResult } from "@/lib/cron/process-all";
-import { isSuperAdmin, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { isSuperAdmin } from "@/lib/auth";
 
 export const maxDuration = 60;
 
@@ -16,11 +16,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Superadmin only" }, { status: 403 });
   }
 
-  const sessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (!sessionToken) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
   let body: { runId?: string; dueGws?: number[]; results?: LeagueResult[]; globalErrors?: string[] };
   try {
     body = await request.json();
@@ -32,10 +27,9 @@ export async function POST(request: NextRequest) {
   }
 
   const baseUrl = request.nextUrl.origin;
-  const cookieHeader = `${SESSION_COOKIE_NAME}=${sessionToken}`;
 
   try {
-    await finishRun(body.runId, body.dueGws, body.results, body.globalErrors ?? [], { baseUrl, cookieHeader });
+    await finishRun(body.runId, body.dueGws, body.results, body.globalErrors ?? [], { baseUrl });
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json(
