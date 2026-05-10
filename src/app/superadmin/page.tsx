@@ -420,6 +420,7 @@ export default function SuperAdminDashboard() {
   const [processCurrentSlug, setProcessCurrentSlug] = useState<string | null>(null);
   const [processStartedAt, setProcessStartedAt] = useState<number | null>(null);
   const [processForce, setProcessForce] = useState(false);
+  const [processReprocess, setProcessReprocess] = useState(false);
 
   const handleRunProcessAll = async () => {
     if (processRunning) return;
@@ -478,7 +479,8 @@ export default function SuperAdminDashboard() {
       setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...row, uiStatus: "processing" } : row));
 
       try {
-        const res = await fetch("/api/admin/process-all/league", {
+        const leagueUrl = `/api/admin/process-all/league${processReprocess ? "?reprocess=true" : ""}`;
+        const res = await fetch(leagueUrl, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -489,7 +491,7 @@ export default function SuperAdminDashboard() {
         if (!ct.includes("application/json")) {
           const txt = (await res.text()).slice(0, 200);
           const errMsg = res.status === 504
-            ? `Per-league call timed out (60s) — likely too many fixtures. Re-run later or split this league.`
+            ? `Per-league call timed out (60s). The league has too many unscored fixtures, or "Force re-score" is enabled. Try un-checking Force re-score, or reprocess one GW at a time via the league's own admin page.`
             : `Non-JSON response (HTTP ${res.status}): ${txt}`;
           const failedResult: ProcessAllLeagueResult = {
             leagueId: lg.id, slug: lg.slug, format: lg.format,
@@ -1463,6 +1465,16 @@ export default function SuperAdminDashboard() {
                   />
                   Force-process even if FPL hasn&apos;t finalized
                 </label>
+                <label className="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={processReprocess}
+                    onChange={(e) => setProcessReprocess(e.target.checked)}
+                    disabled={processRunning}
+                    className="h-4 w-4 rounded border-white/20 bg-white/5"
+                  />
+                  Force re-score (recompute every result from scratch)
+                </label>
                 {processRunning && processCurrentSlug && (
                   <span className="text-sm text-gray-400 w-full">
                     Processing <span className="text-white">{processCurrentSlug}</span>…
@@ -1470,9 +1482,14 @@ export default function SuperAdminDashboard() {
                 )}
               </div>
               <p className="text-xs text-gray-500 mt-3">
-                <strong className="text-gray-400">Force</strong> bypasses the FPL bootstrap gate. Use only when you know the
+                <strong className="text-gray-400">Force-process</strong> bypasses the FPL bootstrap gate. Use only when you know the
                 gameweek scores are stable but FPL&apos;s bootstrap hasn&apos;t flipped <code>finished=true</code> yet
                 (extended FPL outage, test environment, etc.).
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                <strong className="text-gray-400">Force re-score</strong> deletes every existing result and recomputes from FPL.
+                Slow — typically only finishes within 60s for leagues that have just a few GWs of history. Don&apos;t enable
+                routinely; use for emergencies after a scoring-rule change.
               </p>
             </div>
 
