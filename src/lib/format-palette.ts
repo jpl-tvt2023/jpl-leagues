@@ -26,6 +26,8 @@ export type FormatPalette = {
   badgeText: string;
   /** Short label (≤6 chars) shown in the format chip. */
   label: string;
+  /** Full-page background gradient classes — applied at `[leagueSlug]/layout.tsx`. */
+  pageBg: string;
 };
 
 const TVT_8_PALETTE: FormatPalette = {
@@ -36,6 +38,7 @@ const TVT_8_PALETTE: FormatPalette = {
   badgeBg: "bg-indigo-500/20",
   badgeText: "text-indigo-200",
   label: "TVT-8",
+  pageBg: "bg-gradient-to-b from-slate-900 via-indigo-900 to-slate-900",
 };
 
 const TVT_16_PALETTE: FormatPalette = {
@@ -46,6 +49,7 @@ const TVT_16_PALETTE: FormatPalette = {
   badgeBg: "bg-violet-500/20",
   badgeText: "text-violet-200",
   label: "TVT-16",
+  pageBg: "bg-gradient-to-b from-slate-900 via-violet-900 to-slate-900",
 };
 
 const TVT_32_PALETTE: FormatPalette = {
@@ -56,6 +60,7 @@ const TVT_32_PALETTE: FormatPalette = {
   badgeBg: "bg-purple-500/20",
   badgeText: "text-purple-200",
   label: "TVT-32",
+  pageBg: "bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900",
 };
 
 const TC_PALETTE: FormatPalette = {
@@ -66,6 +71,7 @@ const TC_PALETTE: FormatPalette = {
   badgeBg: "bg-amber-500/20",
   badgeText: "text-amber-200",
   label: "TC",
+  pageBg: "bg-gradient-to-b from-slate-900 via-amber-900/40 to-slate-900",
 };
 
 const AUCTION_PALETTE: FormatPalette = {
@@ -76,6 +82,7 @@ const AUCTION_PALETTE: FormatPalette = {
   badgeBg: "bg-emerald-500/20",
   badgeText: "text-emerald-200",
   label: "Auction",
+  pageBg: "bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]",
 };
 
 const DEFAULT_PALETTE: FormatPalette = TVT_32_PALETTE;
