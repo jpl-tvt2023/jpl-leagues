@@ -207,7 +207,7 @@ export async function computePlan(opts: { force?: boolean } = {}): Promise<Plan>
 export async function processOneLeague(
   league: LeaguePlanItem,
   dueGws: number[],
-  input: FetchInput,
+  input: FetchInput & { reprocess?: boolean },
 ): Promise<LeagueResult> {
   const result: LeagueResult = {
     leagueId: league.id,
@@ -225,6 +225,10 @@ export async function processOneLeague(
       try { await clearLiveCache(gw); } catch { /* non-fatal */ }
 
       // ── Score ──
+      // By default we DON'T pass force=true. The downstream processors filter
+      // out already-scored fixtures (`!f.result`), so caught-up GWs do near-zero
+      // work. Force-reprocess (delete+recompute) is opt-in via input.reprocess.
+      const reprocess = input.reprocess === true;
       if (league.format === "auction") {
         try {
           const gwRow = await db
@@ -233,7 +237,7 @@ export async function processOneLeague(
             .where(and(eq(gameweeks.leagueId, league.id), eq(gameweeks.number, gw)))
             .limit(1);
           if (gwRow.length > 0) {
-            await processAuctionGameweek(gwRow[0].id, gw, league.id, true);
+            await processAuctionGameweek(gwRow[0].id, gw, league.id, reprocess);
             result.scoredGws.push(gw);
           }
         } catch (e) {
@@ -241,7 +245,8 @@ export async function processOneLeague(
         }
       } else {
         try {
-          const url = `${input.baseUrl}/api/gameweeks/${gw}?force=true&leagueId=${encodeURIComponent(league.id)}`;
+          const forceParam = reprocess ? "&force=true" : "";
+          const url = `${input.baseUrl}/api/gameweeks/${gw}?leagueId=${encodeURIComponent(league.id)}${forceParam}`;
           const res = await internalFetch(url, "POST", input);
           const parsed = await safeJson(res);
           const body = parsed.body as { processed?: number; failed?: number; errors?: unknown[]; error?: string };
@@ -376,7 +381,9 @@ export type Summary = {
 };
 
 /** Server-side single-shot orchestration. Used by /api/cron/process-scores. */
-export async function processAllLeagues(input: FetchInput & { force?: boolean }): Promise<Summary> {
+export async function processAllLeagues(
+  input: FetchInput & { force?: boolean; reprocess?: boolean },
+): Promise<Summary> {
   const plan = await computePlan({ force: input.force });
   const results: LeagueResult[] = [];
   for (const lg of plan.leagues) {

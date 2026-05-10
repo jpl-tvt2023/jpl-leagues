@@ -15,9 +15,10 @@ export async function GET(request: NextRequest) {
   const baseUrl = request.nextUrl.origin;
   const authHeader = request.headers.get("Authorization") ?? "";
   const force = request.nextUrl.searchParams.get("force") === "true";
+  const reprocess = request.nextUrl.searchParams.get("reprocess") === "true";
 
   try {
-    const summary = await processAllLeagues({ baseUrl, authHeader, force });
+    const summary = await processAllLeagues({ baseUrl, authHeader, force, reprocess });
     const ok = summary.globalErrors.length === 0 && summary.leagues.every(l => l.status !== "error");
     return NextResponse.json({ success: ok, summary }, { status: ok ? 200 : 500 });
   } catch (error) {

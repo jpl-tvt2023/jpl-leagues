@@ -34,9 +34,10 @@ export async function POST(request: NextRequest) {
 
   const baseUrl = request.nextUrl.origin;
   const cookieHeader = `${SESSION_COOKIE_NAME}=${sessionToken}`;
+  const reprocess = request.nextUrl.searchParams.get("reprocess") === "true";
 
   try {
-    const result = await processOneLeague(body.league, body.dueGws, { baseUrl, cookieHeader });
+    const result = await processOneLeague(body.league, body.dueGws, { baseUrl, cookieHeader, reprocess });
     return NextResponse.json({ success: true, result });
   } catch (e) {
     return NextResponse.json(
