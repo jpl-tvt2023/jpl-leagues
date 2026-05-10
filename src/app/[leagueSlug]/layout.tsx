@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db, leagues, leagueAdmins, teams } from "@/lib/db";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { LeagueProvider, type LeagueInfo, type ViewerInfo } from "@/lib/league-context";
+import { getFormatPalette } from "@/lib/format-palette";
 
 function parseEnabledChips(raw: string): string[] {
   try {
@@ -110,5 +111,14 @@ export default async function LeagueLayout({
 
   const viewer = await resolveViewer();
 
-  return <LeagueProvider value={{ league, viewer }}>{children}</LeagueProvider>;
+  // Per-format page background gradient. Applied here so every page under
+  // /[leagueSlug]/* picks up the format identity in one place. Individual page
+  // wrappers may also set their own bg-* classes — those stack on top.
+  const palette = getFormatPalette(league.format, league.teamSize);
+
+  return (
+    <LeagueProvider value={{ league, viewer }}>
+      <div className={`min-h-screen ${palette.pageBg}`}>{children}</div>
+    </LeagueProvider>
+  );
 }

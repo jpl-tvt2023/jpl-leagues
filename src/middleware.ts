@@ -20,11 +20,18 @@ async function rateLimit(key: string, maxAttempts: number, windowMs: number): Pr
   if (!kv) return true; // Skip rate limiting if Redis not configured (local dev)
 
   const redisKey = `rl:${key}`;
-  const count = await kv.incr(redisKey);
-  if (count === 1) {
-    await kv.expire(redisKey, Math.ceil(windowMs / 1000));
+  try {
+    const count = await kv.incr(redisKey);
+    if (count === 1) {
+      await kv.expire(redisKey, Math.ceil(windowMs / 1000));
+    }
+    return count <= maxAttempts;
+  } catch (e) {
+    // Fail open: never block real traffic because the limiter is unreachable.
+    // A brief Upstash blip should not turn into a 30-second middleware hang.
+    console.error("rateLimit: Redis error, allowing request:", e);
+    return true;
   }
-  return count <= maxAttempts;
 }
 
 function getClientIp(request: NextRequest): string {

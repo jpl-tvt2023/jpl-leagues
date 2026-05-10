@@ -85,7 +85,7 @@ export function LeagueNav({
         </div>
         <span className="text-base sm:text-xl font-bold text-white hidden sm:inline truncate max-w-[180px] lg:max-w-none">{leagueName || "League"}</span>
         <span
-          className={`hidden sm:inline-block text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${palette.badgeBg} ${palette.badgeText}`}
+          className={`inline-block text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded ${palette.badgeBg} ${palette.badgeText}`}
           title={`Format: ${palette.label}`}
         >
           {palette.label}
