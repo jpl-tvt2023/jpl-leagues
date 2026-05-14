@@ -292,9 +292,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
       steps: [
         "Each row represents one team. Columns show: Played (MP), Wins (W), Draws (D), Losses (L), Chips & Bonus Points (CP/BP), Total League Points (Pts), Total FPL Score (Scores).",
         `Green rows (Rank 1–${topCutoff}) are heading to the Title Play-offs.`,
-        teamSize !== 8
-          ? "Yellow rows (Rank 9–14) are heading to the Challenger Series."
-          : "There is no Challenger Series in the 8-team format.",
+        teamSize !== 8 ? "Yellow rows (Rank 9–14) are heading to the Challenger Series." : null,
         `Red rows (Rank ${eliminatedRange}) are eliminated after the league stage.`,
         "If two teams are tied on points, the tiebreaker order is: head-to-head record → total FPL score → alphabetical.",
       ].filter(Boolean) as string[],
@@ -329,12 +327,22 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
               "In each 2-legged title tie, the higher seed plays at home in Leg 1. Aggregate FPL score decides the winner; on a draw, higher Leg 2 score advances.",
             ],
     },
+    {
+      number: 4,
+      title: "Tracking finalists on the Hall of Champions",
+      steps: [
+        `Click "Winners" in the nav to view the Hall of Champions.`,
+        "The table always shows every trophy position from season start onwards — Championship Bracket and (where applicable) Challenger Bracket sections.",
+        "Rows are greyed out as 'TBD' until their underlying playoff round resolves — e.g. the Champion row fills after the Final completes; Challenger 3rd Place fills after that round resolves.",
+        "Once every position is decided, the 'Tournament in Progress' banner at the top disappears.",
+      ],
+    },
   ];
 
   const teamScenarios: ScenarioEntry[] = userRole !== "public"
     ? [
         {
-          number: 4,
+          number: 5,
           title: "Logging in for the first time and changing your password",
           steps: [
             `Click "Sign In" in the navigation bar.`,
@@ -345,7 +353,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
           ],
         },
         {
-          number: 5,
+          number: 6,
           title: "Submitting your captain before the deadline",
           steps: [
             "Decide which of your two players to nominate as captain for the upcoming GW.",
@@ -356,7 +364,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
           ],
         },
         {
-          number: 6,
+          number: 7,
           title: "Using a chip for the first time",
           steps: [
             "Confirm the chip is available — check your dashboard to see which chips remain in the current set.",
@@ -367,7 +375,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
           ],
         },
         {
-          number: 7,
+          number: 8,
           title: "Understanding your dashboard after a result",
           steps: [
             "After the GW is processed, your dashboard updates with the final result.",
@@ -378,7 +386,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
           ],
         },
         {
-          number: 8,
+          number: 9,
           title: "Checking which chips you've used",
           steps: [
             "Log in and navigate to your team dashboard.",

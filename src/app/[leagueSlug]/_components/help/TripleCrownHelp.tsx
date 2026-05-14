@@ -22,7 +22,7 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
       question: "What is Triple Crown format?",
       answer: (
         <p>
-          Triple Crown is a 20-team JPL format with <strong className="text-white">three parallel competitions</strong>: Premier League (38-GW H2H round-robin), Cup Groups (UEFA-style group stage on even GWs 6–24), and UCL/UEL Knockouts (bracket stage after groups). Each team consists of two FPL managers. There are <strong className="text-white">no chips</strong> in this format, but the captain system is active.
+          Triple Crown is a 20-team JPL format with <strong className="text-white">three parallel competitions</strong>: Premier League (38-GW H2H round-robin), Cup Groups (UEFA-style group stage on even GWs 6–24), and UCL/UEL Knockouts (bracket stage after groups). Each team consists of two FPL managers. The captain system is active every gameweek.
         </p>
       ),
     },
@@ -88,12 +88,6 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
         </div>
       ),
     },
-    {
-      question: "Are there chips in Triple Crown?",
-      answer: (
-        <p><strong className="text-white">No.</strong> Triple Crown does not use any special chips (Win-Win, Double Pointer, Challenge, etc.). The only power mechanic is the captain doubling system, which is active every GW.</p>
-      ),
-    },
   ];
 
   const teamFaqs: FaqEntry[] = [
@@ -152,12 +146,22 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
         "Winners advance to the next round until the Final determines the champion.",
       ],
     },
+    {
+      number: 4,
+      title: "Tracking champions on the Hall of Champions",
+      steps: [
+        `Click "Winners" in the nav to view the Hall of Champions.`,
+        "Three trophy cards are shown: PL Champion, UCL Champion, UEL Champion — each with its own colour identity.",
+        "Each card stays as a greyed 'TBD' placeholder until its competition concludes: UCL and UEL after their Finals (GW38), PL Champion after the league standings settle.",
+        "The 'Tournament in Progress' banner at the top clears once all three are decided.",
+      ],
+    },
   ];
 
   const teamScenarios: ScenarioEntry[] = userRole !== "public"
     ? [
         {
-          number: 4,
+          number: 5,
           title: "Submitting your captain in Triple Crown",
           steps: [
             "Decide which player to nominate as captain for the upcoming GW.",
