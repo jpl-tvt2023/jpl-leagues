@@ -10,6 +10,7 @@ interface BreakdownPlayer {
   elementId: number;
   name: string;
   points: number;
+  elementType: number | null;
 }
 
 interface TeamRow {
@@ -18,8 +19,19 @@ interface TeamRow {
   totalPoints: number;
   rank: number;
   payout: number;
+  leagueRank: number | null;
+  prevLeagueRank: number | null;
+  rankDelta: number | null;
   players: BreakdownPlayer[];
 }
+
+const GW_POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+const GW_POSITION_COLORS: Record<number, string> = {
+  1: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  2: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  3: "bg-green-500/20 text-green-300 border-green-500/30",
+  4: "bg-red-500/20 text-red-300 border-red-500/30",
+};
 
 function formatCurrency(amount: number): string {
   const abs = Math.abs(amount);
@@ -222,15 +234,36 @@ export function AuctionGwResults() {
                                       {row.players.length === 0 ? (
                                         <div className="text-xs text-gray-500 italic">No player breakdown recorded for this gameweek.</div>
                                       ) : (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1">
-                                          {row.players.map((p) => (
-                                            <div key={p.elementId} className="flex items-center justify-between text-xs text-gray-200">
-                                              <span className={p.points === 0 ? "text-gray-500" : ""}>{p.name}</span>
-                                              <span className={`font-mono ${p.points >= 8 ? "text-[#00ff85]" : p.points > 0 ? "text-gray-200" : "text-gray-600"}`}>
-                                                {p.points}
-                                              </span>
-                                            </div>
-                                          ))}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                          {([1, 2, 3, 4] as const).map((posType) => {
+                                            const players = row.players
+                                              .filter((p) => p.elementType === posType)
+                                              .sort((a, b) => b.points - a.points);
+                                            return (
+                                              <div key={posType} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                                                <div className="flex items-center justify-between mb-2.5">
+                                                  <span className={`text-xs font-bold px-2 py-0.5 rounded border ${GW_POSITION_COLORS[posType]}`}>
+                                                    {GW_POSITION_LABELS[posType]}
+                                                  </span>
+                                                  <span className="text-xs text-gray-500">{players.length}</span>
+                                                </div>
+                                                {players.length === 0 ? (
+                                                  <div className="text-xs text-gray-600 text-center py-3">—</div>
+                                                ) : (
+                                                  <div className="space-y-1.5">
+                                                    {players.map((p) => (
+                                                      <div key={p.elementId} className="flex items-center justify-between text-sm min-w-0">
+                                                        <span className={`truncate ${p.points === 0 ? "text-gray-500" : "text-gray-200"}`}>{p.name}</span>
+                                                        <span className={`font-mono shrink-0 ml-2 ${p.points >= 8 ? "text-[#00ff85] font-bold" : p.points > 0 ? "text-gray-200" : "text-gray-600"}`}>
+                                                          {p.points}
+                                                        </span>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       )}
                                     </td>

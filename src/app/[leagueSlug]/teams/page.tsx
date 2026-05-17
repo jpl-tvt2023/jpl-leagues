@@ -358,25 +358,25 @@ export default function TeamsPage() {
                                           .filter((p) => p.elementType === posType)
                                           .sort((a, b) => b.totalPoints - a.totalPoints);
                                         return (
-                                          <div key={posType} className="rounded-lg border border-white/10 bg-white/[0.03] p-2">
-                                            <div className="flex items-center justify-between mb-2">
-                                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${POSITION_COLORS[posType]}`}>
+                                          <div key={posType} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                                            <div className="flex items-center justify-between mb-2.5">
+                                              <span className={`text-xs font-bold px-2 py-0.5 rounded border ${POSITION_COLORS[posType]}`}>
                                                 {POSITION_LABELS[posType]}
                                               </span>
-                                              <span className="text-[10px] text-gray-500">{players.length}</span>
+                                              <span className="text-xs text-gray-500">{players.length}</span>
                                             </div>
                                             {players.length === 0 ? (
-                                              <div className="text-[10px] text-gray-600 text-center py-3">—</div>
+                                              <div className="text-xs text-gray-600 text-center py-3">—</div>
                                             ) : (
-                                              <div className="space-y-1.5">
+                                              <div className="space-y-2">
                                                 {players.map((p) => (
-                                                  <div key={p.ownershipId} className="text-[11px] min-w-0">
+                                                  <div key={p.ownershipId} className="text-sm min-w-0">
                                                     <div className="flex items-center gap-1.5 min-w-0">
-                                                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${p.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
+                                                      <span className={`h-2 w-2 rounded-full shrink-0 ${p.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
                                                       <span className="text-gray-200 truncate flex-1">{p.playerName}</span>
                                                       <span className="font-mono text-[#00ff85] shrink-0">{p.totalPoints}p</span>
                                                     </div>
-                                                    <div className="flex items-center justify-between mt-0.5 pl-3 text-[10px]">
+                                                    <div className="flex items-center justify-between mt-0.5 pl-3.5 text-xs">
                                                       <span className="font-mono text-gray-400">{(p.purchasePrice / 1_000_000).toFixed(1)}M</span>
                                                       <span className="font-mono font-semibold text-cyan-300">£{(p.fmv / 1_000_000).toFixed(1)}M</span>
                                                     </div>
