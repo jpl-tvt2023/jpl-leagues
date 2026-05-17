@@ -92,9 +92,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ isLive: false, fixtures: storedFixtures, reason: "already_processed", cachedAt: new Date().toISOString() });
     }
 
-    // Check live cache first
+    // Check live cache first — but ignore entries that predate the players-left
+    // fields so we don't serve schema-drifted payloads after a deploy. Once the
+    // fresh-compute path below rewrites the entry, subsequent hits are fast again.
     const cached = await getLiveCachedScores(gwNumber, leagueId);
-    if (cached && cached.fixtures && cached.fixtures.length > 0) {
+    const cacheHasNewFields = cached?.fixtures?.[0] != null
+      && "playersLeftHome" in cached.fixtures[0];
+    if (cached && cached.fixtures && cached.fixtures.length > 0 && cacheHasNewFields) {
       return NextResponse.json({ isLive: true, ...cached });
     }
 
