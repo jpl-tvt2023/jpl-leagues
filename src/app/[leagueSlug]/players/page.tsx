@@ -98,6 +98,7 @@ export default function PlayersPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [plTeams, setPlTeams] = useState<PLTeam[]>([]);
+  const [leagueTeams, setLeagueTeams] = useState<{ id: string; name: string }[]>([]);
 
   // Filters
   const [gameweek, setGameweek] = useState(1);
@@ -205,6 +206,7 @@ export default function PlayersPage() {
       setRows(data.rows);
       setTotalCount(data.totalCount);
       setTotalPages(data.totalPages);
+      if (Array.isArray(data.teams)) setLeagueTeams(data.teams);
     } catch (err) {
       console.error(err);
     }
@@ -329,9 +331,15 @@ export default function PlayersPage() {
                 className="bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white"
               >
                 <option value="all" className="bg-slate-800">All</option>
-                <option value="owned" className="bg-slate-800">Owned</option>
                 <option value="free" className="bg-slate-800">Free Agents</option>
                 {myTeamId && <option value="mine" className="bg-slate-800">My Squad</option>}
+                {leagueTeams
+                  .filter((t) => t.id !== myTeamId)
+                  .map((t) => (
+                    <option key={t.id} value={t.id} className="bg-slate-800">
+                      {t.name}
+                    </option>
+                  ))}
               </select>
             </div>
 

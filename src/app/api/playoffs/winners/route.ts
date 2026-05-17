@@ -1,14 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leagues, playoffTies, teams, players } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { leagues, playoffTies, teams, players, gameweeks, fixtures, results } from "@/lib/db/schema";
+import { eq, and, desc, inArray } from "drizzle-orm";
+
+/**
+ * Hall of Champions — return the FULL position set for the league's format on
+ * every request, with `pending: true` for positions whose underlying playoff
+ * tie hasn't reached `status="complete"` yet. The page renders pending rows
+ * as greyed-out "TBD — {placeholder}" entries so users see the bracket
+ * structure from season start, with slots filling in as each round resolves.
+ *
+ * `concluded` flips to true only when every position is filled.
+ */
 
 interface Winner {
   position: number;
   label: string;
-  category: "championship" | "challenger" | "pl" | "ucl" | "uel";
-  teamId: string;
-  teamName: string;
+  category: "championship" | "challenger" | "pl" | "ucl" | "uel" | "auction";
+  pending: boolean;
+  placeholder?: string;     // human-readable hint when pending (e.g. "Winner of 16T-FINAL")
+  teamId: string | null;
+  teamName: string | null;
   players: { name: string; fplId: string }[];
 }
 
@@ -20,61 +32,25 @@ interface WinnersResponse {
 export async function GET(req: NextRequest): Promise<NextResponse<WinnersResponse>> {
   try {
     const leagueSlug = req.nextUrl.searchParams.get("leagueSlug");
-
     if (!leagueSlug) {
-      return NextResponse.json(
-        { concluded: false, winners: [] },
-        { status: 400 }
-      );
+      return NextResponse.json({ concluded: false, winners: [] }, { status: 400 });
     }
 
-    // Resolve league
-    const league = await db.query.leagues.findFirst({
-      where: eq(leagues.slug, leagueSlug),
-    });
-
+    const league = await db.query.leagues.findFirst({ where: eq(leagues.slug, leagueSlug) });
     if (!league) {
-      return NextResponse.json(
-        { concluded: false, winners: [] },
-        { status: 404 }
-      );
+      return NextResponse.json({ concluded: false, winners: [] }, { status: 404 });
     }
 
     const leagueId = league.id;
     const teamSize = league.teamSize ?? 8;
     const format = league.format;
 
-    // Build winners array based on format
-    let winnersData: Winner[] = [];
-
+    let winnersData: Winner[];
     if (format === "triple-crown") {
       winnersData = await buildTripleCrownWinners(leagueId);
-      // Triple Crown is "concluded" when all three finals are complete
-      const allFinalsComplete = winnersData.length === 3;
-      return NextResponse.json({ concluded: allFinalsComplete, winners: winnersData });
-    }
-
-    // Determine final tie ID by format (TVT)
-    let finalTieId: string;
-    if (teamSize === 8) {
-      finalTieId = "8T-FINAL";
-    } else if (teamSize === 16) {
-      finalTieId = "16T-FINAL";
-    } else {
-      finalTieId = "Final";
-    }
-
-    // Query final tie
-    const finalTie = await db.query.playoffTies.findFirst({
-      where: and(eq(playoffTies.tieId, finalTieId), eq(playoffTies.leagueId, leagueId)),
-    });
-
-    // If not concluded, return early
-    if (!finalTie || finalTie.status !== "complete") {
-      return NextResponse.json({ concluded: false, winners: [] });
-    }
-
-    if (teamSize === 8) {
+    } else if (format === "auction") {
+      winnersData = await buildAuctionWinner(leagueId);
+    } else if (teamSize === 8) {
       winnersData = await build8TeamWinners(leagueId);
     } else if (teamSize === 16) {
       winnersData = await build16TeamWinners(leagueId);
@@ -82,227 +58,197 @@ export async function GET(req: NextRequest): Promise<NextResponse<WinnersRespons
       winnersData = await build32TeamWinners(leagueId);
     }
 
-    return NextResponse.json({ concluded: true, winners: winnersData });
+    const concluded = winnersData.length > 0 && winnersData.every(w => !w.pending);
+    return NextResponse.json({ concluded, winners: winnersData });
   } catch (error) {
     console.error("Winners API error:", error);
-    return NextResponse.json(
-      { concluded: false, winners: [] },
-      { status: 500 }
-    );
+    return NextResponse.json({ concluded: false, winners: [] }, { status: 500 });
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  Helpers                                                                   */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+type TieRef = {
+  id: string;
+  pos: number;
+  label: string;
+  category: Winner["category"];
+  /** true = take the tie's winnerId; false = take the loserId. */
+  winnerSide: boolean;
+};
+
+/**
+ * Resolve a list of tie-driven positions. For each entry: if the tie is
+ * `complete` and the relevant side has a teamId, return a filled row.
+ * Otherwise return a pending row with a descriptive placeholder.
+ */
+async function resolveTiePositions(leagueId: string, refs: TieRef[]): Promise<Winner[]> {
+  const out: Winner[] = [];
+  for (const ref of refs) {
+    const tie = await db.query.playoffTies.findFirst({
+      where: and(eq(playoffTies.tieId, ref.id), eq(playoffTies.leagueId, leagueId)),
+    });
+    const teamId = tie?.status === "complete"
+      ? (ref.winnerSide ? tie.winnerId : tie.loserId)
+      : null;
+    if (teamId) {
+      const teamData = await getTeamData(teamId);
+      if (teamData) {
+        out.push({ position: ref.pos, label: ref.label, category: ref.category, pending: false, teamId: teamData.teamId, teamName: teamData.teamName, players: teamData.players });
+        continue;
+      }
+    }
+    out.push({
+      position: ref.pos, label: ref.label, category: ref.category,
+      pending: true,
+      placeholder: `${ref.winnerSide ? "Winner" : "Loser"} of ${ref.id}`,
+      teamId: null, teamName: null, players: [],
+    });
+  }
+  return out;
+}
+
+async function getTeamData(teamId: string): Promise<Pick<Winner, "teamId" | "teamName" | "players"> | null> {
+  const team = await db.query.teams.findFirst({ where: eq(teams.id, teamId) });
+  if (!team) return null;
+  const teamPlayers = await db.query.players.findMany({ where: eq(players.teamId, teamId) });
+  return {
+    teamId: team.id,
+    teamName: team.name,
+    players: teamPlayers.map((p) => ({ name: p.name, fplId: p.fplId })),
+  };
+}
+
+/**
+ * Check whether GW38 is fully scored (every fixture in GW38 has a result).
+ * Used to gate season-long awards (PL Champion, Auction Season Champion) that
+ * depend on standings being settled, not on a single tie.
+ */
+async function isGw38Settled(leagueId: string): Promise<boolean> {
+  const [gw38] = await db.select({ id: gameweeks.id })
+    .from(gameweeks)
+    .where(and(eq(gameweeks.leagueId, leagueId), eq(gameweeks.number, 38)))
+    .limit(1);
+  if (!gw38) return false;
+
+  const gwFixtures = await db.select({ id: fixtures.id }).from(fixtures).where(eq(fixtures.gameweekId, gw38.id));
+  if (gwFixtures.length === 0) return false;
+
+  const gwResults = await db.select({ fixtureId: results.fixtureId })
+    .from(results)
+    .where(inArray(results.fixtureId, gwFixtures.map(f => f.id)));
+  return gwResults.length === gwFixtures.length;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  Per-format builders                                                       */
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 async function buildTripleCrownWinners(leagueId: string): Promise<Winner[]> {
   const winners: Winner[] = [];
 
-  // PL Champion: top leaguePoints at GW38
-  const topTeam = await db.select({ id: teams.id })
+  // 1) PL Champion — top leaguePoints. Gated on GW38 being fully scored so we
+  // don't crown mid-season leaders prematurely.
+  const settled = await isGw38Settled(leagueId);
+  if (settled) {
+    const topTeam = await db.select({ id: teams.id })
+      .from(teams)
+      .where(eq(teams.leagueId, leagueId))
+      .orderBy(desc(teams.leaguePoints))
+      .limit(1);
+    const teamData = topTeam.length > 0 ? await getTeamData(topTeam[0].id) : null;
+    if (teamData) {
+      winners.push({ position: 1, label: "PL Champion", category: "pl", pending: false, ...teamData });
+    } else {
+      winners.push(plPendingTC());
+    }
+  } else {
+    winners.push(plPendingTC());
+  }
+
+  // 2) UCL Champion
+  winners.push(...await resolveTiePositions(leagueId, [
+    { id: "UCL-FINAL", pos: 2, label: "UCL Champion", category: "ucl", winnerSide: true },
+  ]));
+
+  // 3) UEL Champion
+  winners.push(...await resolveTiePositions(leagueId, [
+    { id: "UEL-FINAL", pos: 3, label: "UEL Champion", category: "uel", winnerSide: true },
+  ]));
+
+  return winners;
+}
+
+function plPendingTC(): Winner {
+  return {
+    position: 1, label: "PL Champion", category: "pl",
+    pending: true, placeholder: "Top points after GW38",
+    teamId: null, teamName: null, players: [],
+  };
+}
+
+async function buildAuctionWinner(leagueId: string): Promise<Winner[]> {
+  const settled = await isGw38Settled(leagueId);
+  if (!settled) {
+    return [{
+      position: 1, label: "Season Champion", category: "auction",
+      pending: true, placeholder: "To be crowned at season end",
+      teamId: null, teamName: null, players: [],
+    }];
+  }
+  const top = await db.select({ id: teams.id })
     .from(teams)
     .where(eq(teams.leagueId, leagueId))
     .orderBy(desc(teams.leaguePoints))
     .limit(1);
-
-  const plChampion = topTeam.length > 0
-    ? await db.query.teams.findFirst({ where: eq(teams.id, topTeam[0].id) })
-    : null;
-
-  if (plChampion) {
-    const teamData = await getTeamData(plChampion.id);
-    if (teamData) {
-      winners.push({
-        position: 1,
-        label: "PL Champion",
-        category: "pl",
-        ...teamData,
-      });
-    }
+  const teamData = top.length > 0 ? await getTeamData(top[0].id) : null;
+  if (!teamData) {
+    return [{
+      position: 1, label: "Season Champion", category: "auction",
+      pending: true, placeholder: "To be crowned at season end",
+      teamId: null, teamName: null, players: [],
+    }];
   }
-
-  // UCL Champion: UCL-FINAL winner
-  const uclFinal = await db.query.playoffTies.findFirst({
-    where: and(eq(playoffTies.tieId, "UCL-FINAL"), eq(playoffTies.leagueId, leagueId)),
-  });
-
-  if (uclFinal?.winnerId) {
-    const teamData = await getTeamData(uclFinal.winnerId);
-    if (teamData) {
-      winners.push({
-        position: 2,
-        label: "UCL Champion",
-        category: "ucl",
-        ...teamData,
-      });
-    }
-  }
-
-  // UEL Champion: UEL-FINAL winner
-  const uelFinal = await db.query.playoffTies.findFirst({
-    where: and(eq(playoffTies.tieId, "UEL-FINAL"), eq(playoffTies.leagueId, leagueId)),
-  });
-
-  if (uelFinal?.winnerId) {
-    const teamData = await getTeamData(uelFinal.winnerId);
-    if (teamData) {
-      winners.push({
-        position: 3,
-        label: "UEL Champion",
-        category: "uel",
-        ...teamData,
-      });
-    }
-  }
-
-  return winners;
+  return [{
+    position: 1, label: "Season Champion", category: "auction",
+    pending: false, ...teamData,
+  }];
 }
 
 async function build8TeamWinners(leagueId: string): Promise<Winner[]> {
-  const winners: Winner[] = [];
-
-  // Position 1: Final winner
-  const finalTie = await db.query.playoffTies.findFirst({
-    where: and(eq(playoffTies.tieId, "8T-FINAL"), eq(playoffTies.leagueId, leagueId)),
-  });
-
-  if (finalTie?.winnerId) {
-    const teamData = await getTeamData(finalTie.winnerId);
-    if (teamData) {
-      winners.push({
-        position: 1,
-        label: "Champion",
-        category: "championship",
-        ...teamData,
-      });
-    }
-  }
-
-  // Position 2: Final loser
-  if (finalTie?.loserId) {
-    const teamData = await getTeamData(finalTie.loserId);
-    if (teamData) {
-      winners.push({
-        position: 2,
-        label: "Runner-Up",
-        category: "championship",
-        ...teamData,
-      });
-    }
-  }
-
-  // Position 3: 3rd Place winner
-  const thirdPlaceTie = await db.query.playoffTies.findFirst({
-    where: and(eq(playoffTies.tieId, "8T-3RD"), eq(playoffTies.leagueId, leagueId)),
-  });
-
-  if (thirdPlaceTie?.winnerId) {
-    const teamData = await getTeamData(thirdPlaceTie.winnerId);
-    if (teamData) {
-      winners.push({
-        position: 3,
-        label: "3rd Place",
-        category: "championship",
-        ...teamData,
-      });
-    }
-  }
-
-  return winners;
+  return resolveTiePositions(leagueId, [
+    { id: "8T-FINAL", pos: 1, label: "Champion",   category: "championship", winnerSide: true  },
+    { id: "8T-FINAL", pos: 2, label: "Runner-Up",  category: "championship", winnerSide: false },
+    { id: "8T-3RD",   pos: 3, label: "3rd Place",  category: "championship", winnerSide: true  },
+  ]);
 }
 
 async function build16TeamWinners(leagueId: string): Promise<Winner[]> {
-  const winners: Winner[] = [];
-
-  const tieIds = [
-    { id: "16T-FINAL", pos: 1, label: "Champion", category: "championship" as const, winnerPos: true },
-    { id: "16T-FINAL", pos: 2, label: "Runner-Up", category: "championship" as const, winnerPos: false },
-    { id: "16T-CFINAL", pos: 3, label: "Challenger Champion", category: "challenger" as const, winnerPos: true },
-    { id: "16T-CFINAL", pos: 4, label: "Challenger Runner-Up", category: "challenger" as const, winnerPos: false },
-    { id: "16T-C3RD", pos: 5, label: "Challenger 3rd Place", category: "challenger" as const, winnerPos: true },
-    { id: "16T-C3RD", pos: 6, label: "Challenger 4th Place", category: "challenger" as const, winnerPos: false },
-  ];
-
-  for (const tieInfo of tieIds) {
-    const tie = await db.query.playoffTies.findFirst({
-      where: and(eq(playoffTies.tieId, tieInfo.id), eq(playoffTies.leagueId, leagueId)),
-    });
-
-    if (tie) {
-      const teamId = tieInfo.winnerPos ? tie.winnerId : tie.loserId;
-      if (teamId) {
-        const teamData = await getTeamData(teamId);
-        if (teamData) {
-          winners.push({
-            position: tieInfo.pos,
-            label: tieInfo.label,
-            category: tieInfo.category,
-            ...teamData,
-          });
-        }
-      }
-    }
-  }
-
-  return winners;
+  return resolveTiePositions(leagueId, [
+    { id: "16T-FINAL",  pos: 1, label: "Champion",                 category: "championship", winnerSide: true  },
+    { id: "16T-FINAL",  pos: 2, label: "Runner-Up",                category: "championship", winnerSide: false },
+    { id: "16T-CFINAL", pos: 3, label: "Challenger Champion",      category: "challenger",   winnerSide: true  },
+    { id: "16T-CFINAL", pos: 4, label: "Challenger Runner-Up",     category: "challenger",   winnerSide: false },
+    { id: "16T-C3RD",   pos: 5, label: "Challenger 3rd Place",     category: "challenger",   winnerSide: true  },
+    { id: "16T-C3RD",   pos: 6, label: "Challenger 4th Place",     category: "challenger",   winnerSide: false },
+  ]);
 }
 
 async function build32TeamWinners(leagueId: string): Promise<Winner[]> {
-  const winners: Winner[] = [];
-
-  const tieIds = [
-    { id: "Final", pos: 1, label: "TVT Champion", category: "championship" as const, winnerPos: true },
-    { id: "Final", pos: 2, label: "TVT Runner-Up", category: "championship" as const, winnerPos: false },
-    { id: "C-38-A", pos: 3, label: "Challenger Champion", category: "challenger" as const, winnerPos: true },
-    { id: "C-38-A", pos: 4, label: "Challenger Runner-Up", category: "challenger" as const, winnerPos: false },
-    { id: "C-37-A", pos: 5, label: "Challenger SF (A)", category: "challenger" as const, winnerPos: false },
-    { id: "C-37-B", pos: 6, label: "Challenger SF (B)", category: "challenger" as const, winnerPos: false },
-    { id: "C-36-A", pos: 7, label: "Challenger QF (A)", category: "challenger" as const, winnerPos: false },
-    { id: "C-36-B", pos: 8, label: "Challenger QF (B)", category: "challenger" as const, winnerPos: false },
-    { id: "C-35-A", pos: 9, label: "Challenger R16 (A)", category: "challenger" as const, winnerPos: false },
-    { id: "C-35-B", pos: 10, label: "Challenger R16 (B)", category: "challenger" as const, winnerPos: false },
-    { id: "C-35-C", pos: 11, label: "Challenger R16 (C)", category: "challenger" as const, winnerPos: false },
-    { id: "C-35-D", pos: 12, label: "Challenger R16 (D)", category: "challenger" as const, winnerPos: false },
-  ];
-
-  for (const tieInfo of tieIds) {
-    const tie = await db.query.playoffTies.findFirst({
-      where: and(eq(playoffTies.tieId, tieInfo.id), eq(playoffTies.leagueId, leagueId)),
-    });
-
-    if (tie) {
-      const teamId = tieInfo.winnerPos ? tie.winnerId : tie.loserId;
-      if (teamId) {
-        const teamData = await getTeamData(teamId);
-        if (teamData) {
-          winners.push({
-            position: tieInfo.pos,
-            label: tieInfo.label,
-            category: tieInfo.category,
-            ...teamData,
-          });
-        }
-      }
-    }
-  }
-
-  return winners;
-}
-
-async function getTeamData(teamId: string): Promise<Omit<Winner, "position" | "label" | "category"> | null> {
-  const team = await db.query.teams.findFirst({
-    where: eq(teams.id, teamId),
-  });
-
-  if (!team) return null;
-
-  const teamPlayers = await db.query.players.findMany({
-    where: eq(players.teamId, teamId),
-  });
-
-  return {
-    teamId: team.id,
-    teamName: team.name,
-    players: teamPlayers.map((p) => ({
-      name: p.name,
-      fplId: p.fplId,
-    })),
-  };
+  return resolveTiePositions(leagueId, [
+    { id: "Final",   pos:  1, label: "TVT Champion",            category: "championship", winnerSide: true  },
+    { id: "Final",   pos:  2, label: "TVT Runner-Up",           category: "championship", winnerSide: false },
+    { id: "C-38-A",  pos:  3, label: "Challenger Champion",     category: "challenger",   winnerSide: true  },
+    { id: "C-38-A",  pos:  4, label: "Challenger Runner-Up",    category: "challenger",   winnerSide: false },
+    { id: "C-37-A",  pos:  5, label: "Challenger SF (A)",       category: "challenger",   winnerSide: false },
+    { id: "C-37-B",  pos:  6, label: "Challenger SF (B)",       category: "challenger",   winnerSide: false },
+    { id: "C-36-A",  pos:  7, label: "Challenger QF (A)",       category: "challenger",   winnerSide: false },
+    { id: "C-36-B",  pos:  8, label: "Challenger QF (B)",       category: "challenger",   winnerSide: false },
+    { id: "C-35-A",  pos:  9, label: "Challenger R16 (A)",      category: "challenger",   winnerSide: false },
+    { id: "C-35-B",  pos: 10, label: "Challenger R16 (B)",      category: "challenger",   winnerSide: false },
+    { id: "C-35-C",  pos: 11, label: "Challenger R16 (C)",      category: "challenger",   winnerSide: false },
+    { id: "C-35-D",  pos: 12, label: "Challenger R16 (D)",      category: "challenger",   winnerSide: false },
+  ]);
 }

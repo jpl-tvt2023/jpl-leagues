@@ -11,7 +11,6 @@ export function TripleCrownRules() {
           <RuleItem><strong>Format:</strong> 20 teams compete across 3 parallel competitions — Premier League (PL), Cup Groups (UEFA), and UCL/UEL Knockouts.</RuleItem>
           <RuleItem><strong>Squad:</strong> 2 FPL managers per team. Team score = combined FPL scores of both players minus transfer hits.</RuleItem>
           <RuleItem><strong>Captaincy:</strong> One player is nominated as captain per GW. Their net score (FPL score minus hits) is <strong>doubled</strong>. Same deadline and rules as TVT.</RuleItem>
-          <RuleItem><strong>No Chips:</strong> Triple Crown does not use any special chips (Win-Win, Double Pointer, Challenge, etc.).</RuleItem>
         </ul>
       </section>
 

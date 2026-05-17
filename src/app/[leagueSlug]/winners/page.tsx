@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
@@ -9,9 +8,11 @@ import { LeagueNav } from "@/components/LeagueNav";
 interface Winner {
   position: number;
   label: string;
-  category: "championship" | "challenger" | "pl" | "ucl" | "uel";
-  teamId: string;
-  teamName: string;
+  category: "championship" | "challenger" | "pl" | "ucl" | "uel" | "auction";
+  pending: boolean;
+  placeholder?: string;
+  teamId: string | null;
+  teamName: string | null;
   players: { name: string; fplId: string }[];
 }
 
@@ -30,6 +31,7 @@ export default function LeagueWinnersPage() {
   const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [leagueName, setLeagueName] = useState<string>("");
   const [leagueFormat, setLeagueFormat] = useState<string | null>(null);
+  const [teamSize, setTeamSize] = useState<number | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -47,10 +49,11 @@ export default function LeagueWinnersPage() {
     fetch("/api/leagues")
       .then((r) => r.json())
       .then((d) => {
-        const league = (d.leagues || []).find((l: { slug: string; name: string; format?: string }) => l.slug === leagueSlug);
+        const league = (d.leagues || []).find((l: { slug: string; name: string; format?: string; teamSize?: number }) => l.slug === leagueSlug);
         if (league) {
           setLeagueName(league.name);
           setLeagueFormat(league.format ?? null);
+          setTeamSize(league.teamSize ?? null);
         }
       })
       .catch(() => {});
@@ -62,17 +65,13 @@ export default function LeagueWinnersPage() {
     const fetchWinners = async () => {
       try {
         const res = await fetch(`/api/playoffs/winners?leagueSlug=${encodeURIComponent(leagueSlug)}`);
-        if (res.ok) {
-          const winners = await res.json();
-          setData(winners);
-        }
+        if (res.ok) setData(await res.json());
       } catch (err) {
         console.error("Failed to fetch winners:", err);
       } finally {
         setIsLoading(false);
       }
     };
-
     if (leagueSlug) fetchWinners();
   }, [leagueSlug]);
 
@@ -81,45 +80,19 @@ export default function LeagueWinnersPage() {
     window.location.href = "/signin";
   };
 
-  const getTrophyEmoji = (position: number) => {
-    if (position === 1) return "🥇";
-    if (position === 2) return "🥈";
-    if (position === 3) return "🥉";
-    return "⭐";
-  };
+  if (isLoading) return <LoadingScreen variant="standings" fullScreen />;
 
-  const getCategoryColor = (category: string) => {
-    if (category === "championship" || category === "pl") return "text-blue-400";
-    if (category === "ucl") return "text-blue-300";
-    if (category === "uel") return "text-purple-300";
-    return "text-yellow-400"; // challenger
-  };
-
-  const getCategoryBg = (category: string, position: number) => {
-    if (position <= 3) {
-      if (position === 1) return "bg-gradient-to-r from-yellow-900/40 to-yellow-800/20";
-      if (position === 2) return "bg-gradient-to-r from-gray-600/40 to-gray-500/20";
-      return "bg-gradient-to-r from-amber-900/40 to-amber-800/20";
-    }
-    if (category === "championship" || category === "pl") return "bg-blue-900/20";
-    if (category === "ucl") return "bg-blue-800/20";
-    if (category === "uel") return "bg-purple-900/20";
-    return "bg-yellow-900/20"; // challenger
-  };
-
-  if (isLoading) {
-    return <LoadingScreen variant="standings" fullScreen />;
-  }
-
-  const isTripleCrown = leagueFormat === "triple-crown";
+  const winners = data?.winners ?? [];
+  const concluded = data?.concluded ?? false;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen">
       <LeagueNav
         leagueSlug={leagueSlug}
         leagueName={leagueName}
         currentPage="winners"
         format={leagueFormat === "auction" ? "auction" : leagueFormat === "triple-crown" ? "triple-crown" : "tvt"}
+        teamSize={teamSize}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
         onSignOut={handleSignOut}
@@ -131,74 +104,217 @@ export default function LeagueWinnersPage() {
           <p className="text-sm sm:text-base text-gray-400">Season winners and finalists</p>
         </div>
 
-        {!data?.concluded ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="text-center max-w-md">
-              <div className="text-6xl mb-4">⏳</div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Tournament in Progress</h2>
-              <p className="text-sm sm:text-base text-gray-400">
-                Winners will be crowned once the championship finals are concluded.
-              </p>
+        {/* Slim progress banner — shown until every position is filled */}
+        {!concluded && (
+          <div className="mb-6 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4 flex items-center gap-3">
+            <span className="text-2xl shrink-0">⏳</span>
+            <div>
+              <div className="text-yellow-300 font-semibold text-sm sm:text-base">Tournament in Progress</div>
+              <div className="text-yellow-200/70 text-xs mt-0.5">
+                Positions fill in as each playoff round resolves. Winners are crowned once the championship finals conclude.
+              </div>
             </div>
           </div>
+        )}
+
+        {/* Format dispatcher */}
+        {leagueFormat === "triple-crown" ? (
+          <TripleCrownTrophies winners={winners} />
+        ) : leagueFormat === "auction" ? (
+          <AuctionTrophy winners={winners} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[500px]">
-              <thead>
-                <tr className="border-b border-white/10">
-                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Rank</th>
-                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Position</th>
-                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Team</th>
-                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Players</th>
-                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs sm:text-sm font-semibold">Category</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.winners.map((winner) => (
-                  <tr
-                    key={winner.position}
-                    className={`border-b border-white/5 transition ${getCategoryBg(winner.category, winner.position)}`}
-                  >
-                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-center text-xl sm:text-2xl">{getTrophyEmoji(winner.position)}</td>
-                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
-                      <div className="text-white font-bold">{winner.label}</div>
-                      <div className="text-xs text-gray-400 mt-1"># {winner.position}</div>
-                    </td>
-                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
-                      <div className="text-white font-semibold">{winner.teamName}</div>
-                    </td>
-                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
-                      <div className="space-y-1">
-                        {winner.players.map((player, idx) => (
-                          <div key={idx} className="text-sm">
-                            <a
-                              href={`https://fantasy.premierleague.com/entry/${player.fplId}/event/38`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-400 hover:text-blue-300 underline"
-                            >
-                              {player.name}
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
-                      <span
-                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                          winner.category === "championship"
-                            ? "bg-blue-900/60 text-blue-200"
-                            : "bg-yellow-900/60 text-yellow-200"
-                        }`}
-                      >
-                        {winner.category === "championship" ? "Championship" : "Challenger"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <TvtWinnersTable winners={winners} teamSize={teamSize ?? 32} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────── */
+/*  Triple Crown — 3 independent trophy cards (NOT a ranked table)              */
+/* ──────────────────────────────────────────────────────────────────────────── */
+
+function TripleCrownTrophies({ winners }: { winners: Winner[] }) {
+  // Sort to canonical PL / UCL / UEL order regardless of API order.
+  const order: Winner["category"][] = ["pl", "ucl", "uel"];
+  const sorted = [...winners].sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+      {sorted.map(w => <TripleCrownCard key={w.position} winner={w} />)}
+    </div>
+  );
+}
+
+function TripleCrownCard({ winner }: { winner: Winner }) {
+  const colourMap: Record<string, { card: string; badge: string }> = {
+    pl:  { card: "from-blue-700/40 to-blue-900/20 border-blue-500/40",  badge: "bg-blue-500/20 text-blue-200" },
+    ucl: { card: "from-sky-600/40 to-sky-900/20 border-sky-500/40",     badge: "bg-sky-500/20 text-sky-200" },
+    uel: { card: "from-amber-600/40 to-amber-900/20 border-amber-500/40", badge: "bg-amber-500/20 text-amber-200" },
+  };
+  const c = colourMap[winner.category] ?? colourMap.pl;
+  const pendingCls = winner.pending ? "opacity-60 grayscale" : "";
+
+  return (
+    <div className={`rounded-2xl border bg-gradient-to-br ${c.card} ${pendingCls} p-6 transition`}>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-3xl sm:text-4xl">🏆</span>
+        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${c.badge}`}>
+          {winner.category.toUpperCase()}
+        </span>
+      </div>
+      <div className="text-white font-bold text-lg sm:text-xl mb-1">{winner.label}</div>
+      {winner.pending ? (
+        <div className="text-gray-400 italic text-sm">TBD — {winner.placeholder}</div>
+      ) : (
+        <>
+          <div className="text-white font-semibold text-base sm:text-lg">{winner.teamName}</div>
+          <div className="mt-3 space-y-1">
+            {winner.players.map((p, i) => (
+              <a
+                key={i}
+                href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/38`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs sm:text-sm text-blue-300 hover:text-blue-200 underline"
+              >
+                {p.name}
+              </a>
+            ))}
           </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────── */
+/*  TVT — sectioned ranked table per teamSize                                   */
+/* ──────────────────────────────────────────────────────────────────────────── */
+
+function TvtWinnersTable({ winners, teamSize }: { winners: Winner[]; teamSize: number }) {
+  const championship = winners.filter(w => w.category === "championship").sort((a, b) => a.position - b.position);
+  const challenger   = winners.filter(w => w.category === "challenger").sort((a, b) => a.position - b.position);
+
+  // TVT-8 has only championship — render a single section.
+  if (teamSize === 8 || challenger.length === 0) {
+    return <WinnersSection title="Championship" rows={championship} />;
+  }
+
+  return (
+    <div className="space-y-8">
+      <WinnersSection title="Championship Bracket" rows={championship} />
+      <WinnersSection title="Challenger Bracket" rows={challenger} />
+    </div>
+  );
+}
+
+function WinnersSection({ title, rows }: { title: string; rows: Winner[] }) {
+  return (
+    <div>
+      <h2 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">{title}</h2>
+      <div className="overflow-x-auto rounded-xl border border-white/10">
+        <table className="w-full min-w-[500px]">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/5">
+              <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Rank</th>
+              <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Position</th>
+              <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Team</th>
+              <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Players</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(w => <WinnerRow key={w.position} winner={w} />)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function WinnerRow({ winner }: { winner: Winner }) {
+  const emoji = winner.position === 1 ? "🥇" : winner.position === 2 ? "🥈" : winner.position === 3 ? "🥉" : "⭐";
+  const pendingCls = winner.pending ? "opacity-50" : "";
+  const filledBg = !winner.pending && winner.position <= 3
+    ? (winner.position === 1
+        ? "bg-gradient-to-r from-yellow-900/40 to-yellow-800/10"
+        : winner.position === 2
+          ? "bg-gradient-to-r from-gray-600/40 to-gray-500/10"
+          : "bg-gradient-to-r from-amber-900/40 to-amber-800/10")
+    : winner.pending ? "" : (winner.category === "challenger" ? "bg-yellow-900/10" : "bg-blue-900/10");
+
+  return (
+    <tr className={`border-b border-white/5 transition ${pendingCls} ${filledBg}`}>
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-center text-xl sm:text-2xl">
+        <span className={winner.pending ? "grayscale" : ""}>{emoji}</span>
+      </td>
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
+        <div className="text-white font-semibold">{winner.label}</div>
+        <div className="text-xs text-gray-500 mt-1"># {winner.position}</div>
+      </td>
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
+        {winner.pending ? (
+          <span className="text-gray-500 italic">TBD — {winner.placeholder}</span>
+        ) : (
+          <span className="text-white font-semibold">{winner.teamName}</span>
+        )}
+      </td>
+      <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
+        {winner.pending ? (
+          <span className="text-gray-600">—</span>
+        ) : (
+          <div className="space-y-1">
+            {winner.players.map((p, i) => (
+              <a
+                key={i}
+                href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/38`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-blue-400 hover:text-blue-300 underline"
+              >
+                {p.name}
+              </a>
+            ))}
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────── */
+/*  Auction — single hero trophy                                                */
+/* ──────────────────────────────────────────────────────────────────────────── */
+
+function AuctionTrophy({ winners }: { winners: Winner[] }) {
+  const w = winners[0];
+  if (!w) return null;
+  const pendingCls = w.pending ? "opacity-60 grayscale" : "";
+
+  return (
+    <div className="max-w-xl mx-auto">
+      <div className={`rounded-2xl border border-emerald-500/40 bg-gradient-to-br from-emerald-700/30 to-teal-900/20 ${pendingCls} p-8 text-center`}>
+        <div className="text-5xl sm:text-6xl mb-3">🏆</div>
+        <div className="text-emerald-200 text-xs font-bold uppercase tracking-widest mb-2">Auction · Season Champion</div>
+        {w.pending ? (
+          <div className="text-gray-400 italic text-sm">TBD — {w.placeholder}</div>
+        ) : (
+          <>
+            <div className="text-white font-bold text-xl sm:text-2xl">{w.teamName}</div>
+            <div className="mt-4 flex flex-col items-center gap-1">
+              {w.players.map((p, i) => (
+                <a
+                  key={i}
+                  href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/38`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-300 hover:text-emerald-200 underline text-sm"
+                >
+                  {p.name}
+                </a>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
