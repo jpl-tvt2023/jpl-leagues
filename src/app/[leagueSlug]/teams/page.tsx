@@ -22,12 +22,21 @@ interface SquadPlayer {
   ownershipId: string;
   fplElementId: number;
   playerName: string;
+  elementType: number | null;
   purchasePrice: number;
   acquiredGw: number;
   status: string;
   totalPoints: number;
   fmv: number;
 }
+
+const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+const POSITION_COLORS: Record<number, string> = {
+  1: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  2: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  3: "bg-green-500/20 text-green-300 border-green-500/30",
+  4: "bg-red-500/20 text-red-300 border-red-500/30",
+};
 
 interface SquadResponse {
   teamId: string;
@@ -333,7 +342,7 @@ export default function TeamsPage() {
                                   <div className="text-xs text-gray-500 italic">No players in squad yet.</div>
                                 ) : (
                                   <>
-                                    <div className="flex flex-wrap items-center gap-2 mb-2 text-[11px]">
+                                    <div className="flex flex-wrap items-center gap-2 mb-3 text-[11px]">
                                       <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
                                         {squad.activeCount} active
                                       </span>
@@ -343,17 +352,41 @@ export default function TeamsPage() {
                                         </span>
                                       )}
                                     </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5">
-                                      {squad.squad.map((p) => (
-                                        <div key={p.ownershipId} className="flex items-center gap-2 text-[11px] min-w-0">
-                                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${p.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
-                                          <span className="text-gray-200 truncate flex-1">{p.playerName}</span>
-                                          <span className="font-mono text-[#00ff85] shrink-0">{p.totalPoints}p</span>
-                                          <span className="font-mono text-gray-300 shrink-0">{(p.purchasePrice / 1_000_000).toFixed(1)}M</span>
-                                          <span className="text-[9px] uppercase tracking-wider text-gray-500 shrink-0">FMV</span>
-                                          <span className="font-mono font-semibold text-cyan-300 shrink-0">£{(p.fmv / 1_000_000).toFixed(1)}M</span>
-                                        </div>
-                                      ))}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                      {([1, 2, 3, 4] as const).map((posType) => {
+                                        const players = squad.squad
+                                          .filter((p) => p.elementType === posType)
+                                          .sort((a, b) => b.totalPoints - a.totalPoints);
+                                        return (
+                                          <div key={posType} className="rounded-lg border border-white/10 bg-white/[0.03] p-2">
+                                            <div className="flex items-center justify-between mb-2">
+                                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${POSITION_COLORS[posType]}`}>
+                                                {POSITION_LABELS[posType]}
+                                              </span>
+                                              <span className="text-[10px] text-gray-500">{players.length}</span>
+                                            </div>
+                                            {players.length === 0 ? (
+                                              <div className="text-[10px] text-gray-600 text-center py-3">—</div>
+                                            ) : (
+                                              <div className="space-y-1.5">
+                                                {players.map((p) => (
+                                                  <div key={p.ownershipId} className="text-[11px] min-w-0">
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${p.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
+                                                      <span className="text-gray-200 truncate flex-1">{p.playerName}</span>
+                                                      <span className="font-mono text-[#00ff85] shrink-0">{p.totalPoints}p</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between mt-0.5 pl-3 text-[10px]">
+                                                      <span className="font-mono text-gray-400">{(p.purchasePrice / 1_000_000).toFixed(1)}M</span>
+                                                      <span className="font-mono font-semibold text-cyan-300">£{(p.fmv / 1_000_000).toFixed(1)}M</span>
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   </>
                                 )}

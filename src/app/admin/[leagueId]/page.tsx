@@ -132,12 +132,21 @@ interface AuctionSquadPlayer {
   ownershipId: string;
   fplElementId: number;
   playerName: string;
+  elementType: number | null;
   purchasePrice: number;
   acquiredGw: number;
   status: string;
   totalPoints: number;
   fmv: number;
 }
+
+const SQUAD_POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+const SQUAD_POSITION_COLORS: Record<number, string> = {
+  1: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  2: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  3: "bg-green-500/20 text-green-300 border-green-500/30",
+  4: "bg-red-500/20 text-red-300 border-red-500/30",
+};
 
 interface AuctionTeamSquad {
   teamId: string;
@@ -3982,21 +3991,41 @@ export default function AdminDashboard() {
                             {teamSquad.squad.length === 0 ? (
                               <p className="text-xs text-gray-500">No players yet</p>
                             ) : (
-                              <div className="space-y-1">
-                                {teamSquad.squad.map((player) => (
-                                  <div key={player.ownershipId} className="flex items-center justify-between text-[11px] py-1 border-b border-white/5 last:border-0">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
-                                      <span className="text-gray-300 truncate">{player.playerName}</span>
+                              <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                                {([1, 2, 3, 4] as const).map((posType) => {
+                                  const players = teamSquad.squad
+                                    .filter((p) => p.elementType === posType)
+                                    .sort((a, b) => b.totalPoints - a.totalPoints);
+                                  return (
+                                    <div key={posType} className="rounded-md border border-white/10 bg-white/[0.02] p-1.5">
+                                      <div className="flex items-center justify-between mb-1.5">
+                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${SQUAD_POSITION_COLORS[posType]}`}>
+                                          {SQUAD_POSITION_LABELS[posType]}
+                                        </span>
+                                        <span className="text-[9px] text-gray-500">{players.length}</span>
+                                      </div>
+                                      {players.length === 0 ? (
+                                        <div className="text-[10px] text-gray-600 text-center py-2">—</div>
+                                      ) : (
+                                        <div className="space-y-1">
+                                          {players.map((player) => (
+                                            <div key={player.ownershipId} className="text-[10px] min-w-0">
+                                              <div className="flex items-center gap-1 min-w-0">
+                                                <span className={`w-1 h-1 rounded-full shrink-0 ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
+                                                <span className="text-gray-300 truncate flex-1">{player.playerName}</span>
+                                                <span className="text-[#00ff85] font-mono shrink-0">{player.totalPoints}p</span>
+                                              </div>
+                                              <div className="flex items-center justify-between pl-2 text-[9px] mt-0.5">
+                                                <span className="text-gray-400 font-mono">{(player.purchasePrice / 1_000_000).toFixed(1)}M</span>
+                                                <span className="text-cyan-300 font-mono font-semibold">£{(player.fmv / 1_000_000).toFixed(1)}M</span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="text-[#00ff85] font-mono">{player.totalPoints}p</span>
-                                      <span className="text-gray-300 font-mono">{(player.purchasePrice / 1_000_000).toFixed(1)}M</span>
-                                      <span className="text-[10px] uppercase tracking-wider text-gray-500">FMV</span>
-                                      <span className="text-cyan-300 font-mono font-semibold">£{(player.fmv / 1_000_000).toFixed(1)}M</span>
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
