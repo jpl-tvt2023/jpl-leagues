@@ -17,9 +17,15 @@ import { auctionOwnership, auctionSessions, teams, leagues } from "@/lib/db/sche
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchElementInfo } from "@/lib/fpl";
+import {
+  MAX_SQUAD_SIZE,
+  effectiveMaxSquadSize,
+  emptyCounts,
+  validateAddPlayer,
+  type SquadCounts,
+} from "./squad-rules";
 
 const DEFAULT_MIN_BID = 500_000;
-const SQUAD_SIZE = 14;
 
 /**
  * Run a simulated snake draft for a league's auction session.
@@ -64,8 +70,12 @@ export async function simulateAuction(
 
   // Track remaining purse per team (start from initialBudget since this is a fresh auction)
   const remainingPurse = new Map<string, number>();
+  // Track per-team squad position counts so each pick can be checked against the
+  // 1 GK / 3 DEF / 3 MID / 1 FWD minimum via validateAddPlayer.
+  const teamCounts = new Map<string, SquadCounts>();
   for (const t of leagueTeams) {
     remainingPurse.set(t.id, initialBudget);
+    teamCounts.set(t.id, emptyCounts());
   }
 
   // Fetch FPL players sorted by total_points desc
@@ -84,8 +94,9 @@ export async function simulateAuction(
   // Collect all ownership records — bulk insert after loop to avoid Vercel timeout
   const ownershipRecords: (typeof auctionOwnership.$inferInsert)[] = [];
 
-  // Snake draft: 14 rounds
-  for (let round = 0; round < SQUAD_SIZE; round++) {
+  // Snake draft: up to MAX_SQUAD_SIZE rounds. Each pick must pass
+  // validateAddPlayer so the final squad meets 1 GK / 3 DEF / 3 MID / 1 FWD.
+  for (let round = 0; round < MAX_SQUAD_SIZE; round++) {
     // Snake: even rounds go forward, odd rounds go reverse
     const order =
       round % 2 === 0 ? [...snakeOrder] : [...snakeOrder].reverse();
@@ -94,25 +105,26 @@ export async function simulateAuction(
       const team = teamMap.get(teamId);
       if (!team) continue;
 
-      const maxSlots = SQUAD_SIZE - (team.penaltySlots ?? 0);
+      const penaltySlots = team.penaltySlots ?? 0;
+      const maxSlots = effectiveMaxSquadSize(penaltySlots);
       if (round >= maxSlots) continue;
 
       const purse = remainingPurse.get(teamId) ?? 0;
+      const counts = teamCounts.get(teamId);
+      if (!counts) continue;
 
-      // Find the best available player this team can afford
       let assigned = false;
       for (const player of sortedPlayers) {
         if (assignedElementIds.has(player.id)) continue;
 
-        // Price = FPL now_cost × 100,000 (now_cost is in 0.1M units)
+        // Position feasibility — would this addition still let the squad
+        // reach the 1/3/3/1 minimum with the slots that remain?
+        const feasibility = validateAddPlayer(counts, penaltySlots, player.element_type);
+        if (!feasibility.ok) continue;
+
+        // Pricing — real (FPL now_cost × 100K), else floor as last-resort.
         let price = player.now_cost * 100_000;
-
-        // If price exceeds remaining purse, use floor price
-        if (price > purse) {
-          price = DEFAULT_MIN_BID;
-        }
-
-        // If even floor price exceeds purse, skip (shouldn't happen with reasonable budgets)
+        if (price > purse) price = DEFAULT_MIN_BID;
         if (price > purse) continue;
 
         ownershipRecords.push({
@@ -132,15 +144,19 @@ export async function simulateAuction(
         assignedElementIds.add(player.id);
         remainingPurse.set(teamId, purse - price);
         teamSpend.set(teamId, (teamSpend.get(teamId) ?? 0) + price);
+        if (player.element_type === 1 || player.element_type === 2 || player.element_type === 3 || player.element_type === 4) {
+          counts[player.element_type as 1 | 2 | 3 | 4]++;
+        }
+        counts.total++;
         totalAssigned++;
         assigned = true;
         break;
       }
 
       if (!assigned) {
-        // No available players (extremely unlikely with ~700 FPL players)
         console.warn(
-          `[simulate] No available player for team ${teamId} in round ${round}`
+          `[simulate] No feasible+affordable player for team ${teamId} in round ${round}`,
+          { counts, purse: remainingPurse.get(teamId), penaltySlots }
         );
       }
     }

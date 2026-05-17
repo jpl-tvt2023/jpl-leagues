@@ -49,10 +49,23 @@ export function calculateRefund(purchasePrice: number): number {
 
 /**
  * Calculate Fair Market Value of a player.
- * FMV = PurchasePrice + (TotalPoints * 50,000)
+ *
+ * Reverse-tiered appreciation: players grow slowly when they haven't proven
+ * themselves yet, and the per-point rate increases as their season total
+ * climbs. This keeps cheap punts cheap (and tradeable) early in the season
+ * while still rewarding sustained elite scoring late.
+ *
+ *   0–100 pts:  £20K / point
+ *   100–200 pts: £40K / point
+ *   200+ pts:   £60K / point
  */
 export function calculateFMV(purchasePrice: number, totalPoints: number): number {
-  return purchasePrice + totalPoints * 50_000;
+  const pts = Math.max(0, totalPoints);
+  const tier1 = Math.min(pts, 100);
+  const tier2 = Math.min(Math.max(pts - 100, 0), 100);
+  const tier3 = Math.max(pts - 200, 0);
+  const appreciation = tier1 * 20_000 + tier2 * 40_000 + tier3 * 60_000;
+  return purchasePrice + appreciation;
 }
 
 /**
