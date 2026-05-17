@@ -157,27 +157,37 @@ export function NotificationBell() {
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-white/5">
-              {items.map((n) => (
-                <li key={n.id}>
-                  <button
-                    onClick={() => handleClick(n)}
-                    className={`w-full text-left px-3 py-2 hover:bg-white/5 transition ${
-                      n.readAt ? "opacity-60" : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {!n.readAt && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-yellow-400" />}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-white">{n.title}</div>
-                        <div className="text-xs text-gray-300 mt-0.5">{n.body}</div>
-                        <div className="text-[10px] text-gray-500 mt-1">{new Date(n.createdAt).toLocaleString()}</div>
+            <>
+              <ul className="divide-y divide-white/5">
+                {items.slice(0, 5).map((n) => (
+                  <li key={n.id}>
+                    <button
+                      onClick={() => handleClick(n)}
+                      className={`w-full text-left px-3 py-2 hover:bg-white/5 transition ${
+                        n.readAt ? "opacity-60" : ""
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!n.readAt && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-yellow-400" />}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-white">{n.title}</div>
+                          <div className="text-xs text-gray-300 mt-0.5">{n.body}</div>
+                          <div className="text-[10px] text-gray-500 mt-1">{new Date(n.createdAt).toLocaleString()}</div>
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="border-t border-white/10 px-3 py-2 text-center">
+                <button
+                  onClick={() => { setOpen(false); window.location.href = "/notifications"; }}
+                  className="text-xs text-yellow-400 hover:text-yellow-300 font-semibold"
+                >
+                  See all notifications →
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
