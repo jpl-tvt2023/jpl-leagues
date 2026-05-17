@@ -24,10 +24,19 @@ interface SquadPlayer {
   ownershipId: string;
   fplElementId: number;
   playerName: string;
+  elementType: number | null;
   purchasePrice: number;
   fmv: number;
   status: string;
 }
+
+const MARKET_POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+const MARKET_POSITION_COLORS: Record<number, string> = {
+  1: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  2: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  3: "bg-green-500/20 text-green-300 border-green-500/30",
+  4: "bg-red-500/20 text-red-300 border-red-500/30",
+};
 
 interface StandingEntry {
   teamId: string;
@@ -519,40 +528,76 @@ export default function MarketplacePage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                       <div className="text-xs uppercase text-gray-400 mb-2">Offer from your squad</div>
-                      <div className="max-h-60 overflow-y-auto space-y-1 rounded-lg border border-white/10 p-2">
-                        {mySquad.map((p) => (
-                          <label key={p.ownershipId} className="flex items-center gap-2 text-sm text-white hover:bg-white/5 px-2 py-1 rounded cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={offeredIds.has(p.ownershipId)}
-                              onChange={() => toggle(offeredIds, p.ownershipId, setOfferedIds)}
-                            />
-                            <span className="flex-1">{p.playerName}</span>
-                            <span className="font-mono text-xs text-gray-400">{formatCurrency(p.fmv)}</span>
-                          </label>
-                        ))}
+                      <div className="max-h-60 overflow-y-auto rounded-lg border border-white/10 p-2 space-y-3">
+                        {([1, 2, 3, 4] as const).map((posType) => {
+                          const players = mySquad
+                            .filter((p) => p.elementType === posType)
+                            .sort((a, b) => b.fmv - a.fmv);
+                          if (players.length === 0) return null;
+                          return (
+                            <div key={posType}>
+                              <div className="flex items-center justify-between mb-1 px-1">
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${MARKET_POSITION_COLORS[posType]}`}>
+                                  {MARKET_POSITION_LABELS[posType]}
+                                </span>
+                                <span className="text-[10px] text-gray-500">{players.length}</span>
+                              </div>
+                              <div className="space-y-0.5">
+                                {players.map((p) => (
+                                  <label key={p.ownershipId} className="flex items-center gap-2 text-sm text-white hover:bg-white/5 px-2 py-1 rounded cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={offeredIds.has(p.ownershipId)}
+                                      onChange={() => toggle(offeredIds, p.ownershipId, setOfferedIds)}
+                                    />
+                                    <span className="flex-1">{p.playerName}</span>
+                                    <span className="font-mono text-xs text-gray-400">{formatCurrency(p.fmv)}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                       <div className="mt-1 text-xs text-gray-400">FMV: {formatCurrency(offeredFMVPreview)}</div>
                     </div>
                     <div>
                       <div className="text-xs uppercase text-gray-400 mb-2">Request from target</div>
-                      <div className="max-h-60 overflow-y-auto space-y-1 rounded-lg border border-white/10 p-2">
+                      <div className="max-h-60 overflow-y-auto rounded-lg border border-white/10 p-2 space-y-3">
                         {!targetId ? (
                           <div className="text-xs text-gray-500 p-2">Select a target first</div>
                         ) : targetSquad.length === 0 ? (
                           <div className="text-xs text-gray-500 p-2">Loading...</div>
                         ) : (
-                          targetSquad.map((p) => (
-                            <label key={p.ownershipId} className="flex items-center gap-2 text-sm text-white hover:bg-white/5 px-2 py-1 rounded cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={requestedIds.has(p.ownershipId)}
-                                onChange={() => toggle(requestedIds, p.ownershipId, setRequestedIds)}
-                              />
-                              <span className="flex-1">{p.playerName}</span>
-                              <span className="font-mono text-xs text-gray-400">{formatCurrency(p.fmv)}</span>
-                            </label>
-                          ))
+                          ([1, 2, 3, 4] as const).map((posType) => {
+                            const players = targetSquad
+                              .filter((p) => p.elementType === posType)
+                              .sort((a, b) => b.fmv - a.fmv);
+                            if (players.length === 0) return null;
+                            return (
+                              <div key={posType}>
+                                <div className="flex items-center justify-between mb-1 px-1">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${MARKET_POSITION_COLORS[posType]}`}>
+                                    {MARKET_POSITION_LABELS[posType]}
+                                  </span>
+                                  <span className="text-[10px] text-gray-500">{players.length}</span>
+                                </div>
+                                <div className="space-y-0.5">
+                                  {players.map((p) => (
+                                    <label key={p.ownershipId} className="flex items-center gap-2 text-sm text-white hover:bg-white/5 px-2 py-1 rounded cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={requestedIds.has(p.ownershipId)}
+                                        onChange={() => toggle(requestedIds, p.ownershipId, setRequestedIds)}
+                                      />
+                                      <span className="flex-1">{p.playerName}</span>
+                                      <span className="font-mono text-xs text-gray-400">{formatCurrency(p.fmv)}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                       <div className="mt-1 text-xs text-gray-400">FMV: {formatCurrency(requestedFMVPreview)}</div>

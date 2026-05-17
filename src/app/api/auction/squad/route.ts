@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
         ownershipId: p.id,
         fplElementId: p.fplElementId,
         playerName: p.playerName,
+        elementType: p.elementType,
         purchasePrice: p.purchasePrice,
         acquiredGw: p.acquiredGw,
         status: p.status,
