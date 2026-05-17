@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 interface NotificationItem {
   id: string;
@@ -16,7 +16,33 @@ export function NotificationBell() {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; right: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // The bell sits inside nav containers that use `overflow-x-auto`, which
+  // implicitly clips Y too. An absolute dropdown extending below the nav row
+  // forces vertical overflow → Chromium renders a thin vertical scrollbar in
+  // the nav. Using `position: fixed` escapes that overflow container; we just
+  // need to pin the dropdown to the bell button's rect when it opens.
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const update = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setDropdownPos({
+        top: rect.bottom + 8,
+        right: Math.max(8, window.innerWidth - rect.right),
+      });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +101,7 @@ export function NotificationBell() {
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={buttonRef}
         onClick={() => setOpen((o) => !o)}
         className="relative rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition"
         aria-label="Notifications"
@@ -90,7 +117,10 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[92vw] max-w-sm sm:w-80 max-h-[70vh] sm:max-h-96 overflow-y-auto rounded-lg border border-white/10 bg-slate-900 shadow-xl z-50">
+        <div
+          className="fixed w-[92vw] max-w-sm sm:w-80 max-h-[70vh] sm:max-h-96 overflow-y-auto rounded-lg border border-white/10 bg-slate-900 shadow-xl z-[60]"
+          style={dropdownPos ? { top: dropdownPos.top, right: dropdownPos.right } : { top: -9999, right: 0 }}
+        >
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
             <span className="text-sm font-semibold text-white">Notifications</span>
             {unread > 0 && (
