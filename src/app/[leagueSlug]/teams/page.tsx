@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -18,7 +18,27 @@ interface TeamCard {
   isMine: boolean;
 }
 
-type SortKey = "rank" | "purse" | "squadValue";
+interface SquadPlayer {
+  ownershipId: string;
+  fplElementId: number;
+  playerName: string;
+  purchasePrice: number;
+  acquiredGw: number;
+  status: string;
+  totalPoints: number;
+  fmv: number;
+}
+
+interface SquadResponse {
+  teamId: string;
+  teamName: string;
+  squad: SquadPlayer[];
+  activeCount: number;
+  deadwoodCount: number;
+}
+
+type SortKey = "rank" | "name" | "totalPoints" | "purse" | "squadValue" | "squadSize";
+type SortDir = "asc" | "desc";
 
 function formatCurrency(amount: number): string {
   const abs = Math.abs(amount);
@@ -28,11 +48,54 @@ function formatCurrency(amount: number): string {
   return `${sign}£${abs}`;
 }
 
-function rankStyle(rank: number): { badge: string; ring: string } {
-  if (rank === 1) return { badge: "bg-gradient-to-br from-yellow-300 to-yellow-600 text-slate-900", ring: "ring-yellow-400/30" };
-  if (rank === 2) return { badge: "bg-gradient-to-br from-slate-200 to-slate-400 text-slate-900", ring: "ring-slate-300/30" };
-  if (rank === 3) return { badge: "bg-gradient-to-br from-orange-400 to-amber-700 text-white", ring: "ring-orange-400/30" };
-  return { badge: "bg-purple-500/30 text-purple-200 border border-purple-400/40", ring: "ring-purple-500/20" };
+function rankStyle(rank: number): string {
+  if (rank === 1) return "bg-gradient-to-br from-yellow-300 to-yellow-600 text-slate-900";
+  if (rank === 2) return "bg-gradient-to-br from-slate-200 to-slate-400 text-slate-900";
+  if (rank === 3) return "bg-gradient-to-br from-orange-400 to-amber-700 text-white";
+  return "bg-purple-500/30 text-purple-200 border border-purple-400/40";
+}
+
+function SortableTh({
+  label,
+  k,
+  sortKey,
+  sortDir,
+  setSortKey,
+  setSortDir,
+  align = "left",
+  className = "",
+}: {
+  label: string;
+  k: SortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  setSortKey: (k: SortKey) => void;
+  setSortDir: (d: SortDir) => void;
+  align?: "left" | "right";
+  className?: string;
+}) {
+  const active = sortKey === k;
+  const onClick = () => {
+    if (active) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(k);
+      // numeric columns default to desc, name/rank default to asc
+      setSortDir(k === "rank" || k === "name" ? "asc" : "desc");
+    }
+  };
+  return (
+    <th className={`px-2 py-2 sm:px-4 sm:py-3 text-xs uppercase tracking-wider font-semibold ${align === "right" ? "text-right" : "text-left"} ${className}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1 transition hover:text-white ${active ? "text-yellow-300" : "text-gray-300"}`}
+      >
+        {label}
+        <span className="text-[9px]">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
+  );
 }
 
 export default function TeamsPage() {
@@ -44,7 +107,12 @@ export default function TeamsPage() {
   const [error, setError] = useState<string | null>(null);
   const [teamList, setTeamList] = useState<TeamCard[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("rank");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [squadByTeam, setSquadByTeam] = useState<Map<string, SquadResponse>>(new Map());
+  const [loadingSquads, setLoadingSquads] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -84,13 +152,73 @@ export default function TeamsPage() {
     window.location.href = "/signin";
   };
 
+  const fetchSquad = useCallback(async (teamId: string) => {
+    if (squadByTeam.has(teamId) || loadingSquads.has(teamId)) return;
+    setLoadingSquads((prev) => {
+      const next = new Set(prev);
+      next.add(teamId);
+      return next;
+    });
+    try {
+      const res = await fetch(`/api/auction/squad?teamId=${teamId}`);
+      if (!res.ok) throw new Error("Failed to load squad");
+      const json = (await res.json()) as SquadResponse;
+      setSquadByTeam((prev) => {
+        const next = new Map(prev);
+        next.set(teamId, json);
+        return next;
+      });
+    } catch {
+      // Best-effort — leave squad unloaded; user can collapse + retry by re-expanding.
+    } finally {
+      setLoadingSquads((prev) => {
+        const next = new Set(prev);
+        next.delete(teamId);
+        return next;
+      });
+    }
+  }, [squadByTeam, loadingSquads]);
+
+  const toggleExpand = (teamId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) {
+        next.delete(teamId);
+      } else {
+        next.add(teamId);
+        fetchSquad(teamId);
+      }
+      return next;
+    });
+  };
+
+  const expandAll = () => {
+    const all = new Set(teamList.map((t) => t.teamId));
+    setExpanded(all);
+    for (const t of teamList) fetchSquad(t.teamId);
+  };
+
+  const collapseAll = () => setExpanded(new Set());
+
   const sortedTeams = useMemo(() => {
     const arr = [...teamList];
-    if (sortKey === "rank") arr.sort((a, b) => a.rank - b.rank);
-    else if (sortKey === "purse") arr.sort((a, b) => b.purse - a.purse);
-    else if (sortKey === "squadValue") arr.sort((a, b) => b.squadValue - a.squadValue);
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      let av: number | string;
+      let bv: number | string;
+      switch (sortKey) {
+        case "rank": av = a.rank; bv = b.rank; break;
+        case "name": av = a.name; bv = b.name; break;
+        case "totalPoints": av = a.totalPoints; bv = b.totalPoints; break;
+        case "purse": av = a.purse; bv = b.purse; break;
+        case "squadValue": av = a.squadValue; bv = b.squadValue; break;
+        case "squadSize": av = a.squadSize; bv = b.squadSize; break;
+      }
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
     return arr;
-  }, [teamList, sortKey]);
+  }, [teamList, sortKey, sortDir]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
@@ -111,93 +239,133 @@ export default function TeamsPage() {
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : (
           <>
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h1 className="text-2xl sm:text-4xl font-bold text-white">League Teams</h1>
                 <p className="text-sm text-gray-400 mt-1">
-                  {teamList.length} {teamList.length === 1 ? "team" : "teams"} competing
+                  {teamList.length} {teamList.length === 1 ? "team" : "teams"} competing · click a row to view squad
                 </p>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-400">Sort by</span>
-                {([
-                  ["rank", "Rank"],
-                  ["purse", "Purse"],
-                  ["squadValue", "Squad Value"],
-                ] as const).map(([k, label]) => (
+              {teamList.length > 0 && (
+                <div className="flex items-center gap-2 text-xs">
                   <button
-                    key={k}
-                    onClick={() => setSortKey(k)}
-                    className={
-                      sortKey === k
-                        ? "rounded-full bg-yellow-400/20 border border-yellow-400/60 text-yellow-300 px-3 py-1 font-semibold"
-                        : "rounded-full bg-white/5 border border-white/10 text-gray-300 px-3 py-1 hover:bg-white/10 transition"
-                    }
+                    type="button"
+                    onClick={expandAll}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 transition"
                   >
-                    {label}
+                    Expand all
                   </button>
-                ))}
-              </div>
+                  <button
+                    type="button"
+                    onClick={collapseAll}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 transition"
+                  >
+                    Collapse all
+                  </button>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {sortedTeams.map((t) => {
-                const rs = rankStyle(t.rank);
-                return (
-                  <div
-                    key={t.teamId}
-                    className={`relative rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4 transition hover:bg-white/[0.08] ${
-                      t.isMine ? "ring-2 ring-yellow-500/40" : ""
-                    }`}
-                  >
-                    {t.isMine && (
-                      <span className="absolute -top-2 -right-2 rounded-full bg-yellow-400 text-slate-900 text-[10px] font-bold px-2 py-0.5 shadow">
-                        YOU
-                      </span>
-                    )}
-
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold ${rs.badge}`}>
-                            #{t.rank}
-                          </span>
-                        </div>
-                        <h3 className="mt-2 text-base font-semibold text-white truncate">{t.name}</h3>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-2xl font-bold text-white leading-none">{t.totalPoints}</div>
-                        <div className="text-[10px] text-gray-400 uppercase tracking-wider mt-0.5">pts</div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-center border-t border-white/10 pt-3">
-                      <div>
-                        <div className="text-[10px] text-gray-400 uppercase tracking-wider">Purse</div>
-                        <div className="text-xs font-semibold text-green-300 mt-0.5">{formatCurrency(t.purse)}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-400 uppercase tracking-wider">Squad Val</div>
-                        <div className="text-xs font-semibold text-blue-300 mt-0.5">{formatCurrency(t.squadValue)}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-400 uppercase tracking-wider">Squad</div>
-                        <div className="text-xs font-semibold text-white mt-0.5">{t.squadSize}/14</div>
-                      </div>
-                    </div>
-
-                    {t.topPerformer && (
-                      <div className="mt-3 flex items-center justify-between text-[11px] border-t border-white/5 pt-2">
-                        <span className="text-gray-400">⭐ Top</span>
-                        <span className="text-gray-200 font-medium truncate ml-2">
-                          {t.topPerformer.name}{" "}
-                          <span className="text-yellow-300">({t.topPerformer.points})</span>
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden backdrop-blur">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[760px]">
+                  <thead className="bg-white/10 text-xs uppercase tracking-wider">
+                    <tr>
+                      <SortableTh label="#" k="rank" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} />
+                      <SortableTh label="Team" k="name" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} />
+                      <SortableTh label="Points" k="totalPoints" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" />
+                      <SortableTh label="Purse" k="purse" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" />
+                      <SortableTh label="Squad Value" k="squadValue" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" />
+                      <SortableTh label="Squad" k="squadSize" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" />
+                      <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs uppercase tracking-wider font-semibold text-right text-gray-300">Top Scorer</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedTeams.map((t) => {
+                      const isExpanded = expanded.has(t.teamId);
+                      const squad = squadByTeam.get(t.teamId);
+                      const isLoadingSquad = loadingSquads.has(t.teamId);
+                      return (
+                        <Fragment key={t.teamId}>
+                          <tr
+                            onClick={() => toggleExpand(t.teamId)}
+                            className={`border-t border-white/5 hover:bg-white/[0.06] transition cursor-pointer ${t.isMine ? "bg-yellow-500/[0.05]" : ""}`}
+                          >
+                            <td className="px-2 py-2 sm:px-4 sm:py-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex h-7 min-w-[28px] items-center justify-center rounded-md text-xs font-bold px-1.5 ${rankStyle(t.rank)}`}>
+                                  #{t.rank}
+                                </span>
+                                <span className="text-[10px] text-gray-500">{isExpanded ? "▲" : "▼"}</span>
+                              </div>
+                            </td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-sm font-semibold ${t.isMine ? "text-yellow-300" : "text-white"}`}>{t.name}</span>
+                                {t.isMine && (
+                                  <span className="rounded-full bg-yellow-400 text-slate-900 text-[10px] font-bold px-2 py-0.5">YOU</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono font-bold text-[#00ff85]">{t.totalPoints}</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-green-300">{formatCurrency(t.purse)}</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-blue-300">{formatCurrency(t.squadValue)}</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-white">{t.squadSize}/14</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right text-xs text-gray-200 truncate max-w-[180px]">
+                              {t.topPerformer ? (
+                                <>
+                                  {t.topPerformer.name}{" "}
+                                  <span className="text-yellow-300">({t.topPerformer.points})</span>
+                                </>
+                              ) : (
+                                <span className="text-gray-600">—</span>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-black/30 border-t border-white/5">
+                              <td colSpan={7} className="px-4 py-3">
+                                {isLoadingSquad ? (
+                                  <div className="text-xs text-gray-400 italic">Loading squad…</div>
+                                ) : !squad ? (
+                                  <div className="text-xs text-gray-500 italic">No squad data available.</div>
+                                ) : squad.squad.length === 0 ? (
+                                  <div className="text-xs text-gray-500 italic">No players in squad yet.</div>
+                                ) : (
+                                  <>
+                                    <div className="flex flex-wrap items-center gap-2 mb-2 text-[11px]">
+                                      <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                                        {squad.activeCount} active
+                                      </span>
+                                      {squad.deadwoodCount > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">
+                                          {squad.deadwoodCount} deadwood
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5">
+                                      {squad.squad.map((p) => (
+                                        <div key={p.ownershipId} className="flex items-center gap-2 text-[11px] min-w-0">
+                                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${p.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
+                                          <span className="text-gray-200 truncate flex-1">{p.playerName}</span>
+                                          <span className="font-mono text-[#00ff85] shrink-0">{p.totalPoints}p</span>
+                                          <span className="font-mono text-gray-300 shrink-0">{(p.purchasePrice / 1_000_000).toFixed(1)}M</span>
+                                          <span className="text-[9px] uppercase tracking-wider text-gray-500 shrink-0">FMV</span>
+                                          <span className="font-mono font-semibold text-cyan-300 shrink-0">£{(p.fmv / 1_000_000).toFixed(1)}M</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}
