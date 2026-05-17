@@ -277,9 +277,16 @@ export function MatchCard({
     liveFixture: LiveFixtureScore | undefined,
   ): number | null | undefined => {
     if (!liveFixture || !side?.teamId) return undefined;
-    if (liveFixture.homeTeamId === side.teamId) return liveFixture.playersLeftHome ?? null;
-    if (liveFixture.awayTeamId === side.teamId) return liveFixture.playersLeftAway ?? null;
-    return undefined;
+    const isHome = liveFixture.homeTeamId === side.teamId;
+    const isAway = liveFixture.awayTeamId === side.teamId;
+    if (!isHome && !isAway) return undefined;
+    const raw = isHome ? liveFixture.playersLeftHome : liveFixture.playersLeftAway;
+    // Preserve the three states distinctly:
+    //   undefined → field absent in response → hide footer
+    //   null      → field present but FPL outage → render "—"
+    //   number    → render the count
+    if (raw === undefined) return undefined;
+    return raw;
   };
 
   return (

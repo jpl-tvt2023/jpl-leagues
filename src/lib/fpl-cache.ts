@@ -342,11 +342,15 @@ export async function getLiveCachedScores(
 export async function setLiveCachedScores(
   gameweek: number,
   data: LiveGameweekData,
-  leagueId?: string | null
+  leagueId?: string | null,
+  /** Override the default 10-min TTL. Used to shorten the lifetime of a
+   *  partially-degraded payload (e.g. one with null players-left values) so
+   *  it self-heals quickly once FPL recovers. */
+  ttlSeconds?: number,
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_TTL });
+  await r.set(getLiveKey(gameweek, leagueId), data, { ex: ttlSeconds ?? LIVE_CACHE_TTL });
 }
 
 /**

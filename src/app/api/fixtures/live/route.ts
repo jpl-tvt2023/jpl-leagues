@@ -88,17 +88,27 @@ export async function GET(request: NextRequest) {
           awayScore: f.result!.awayScore,
           homePlayers: normalizeStoredPlayerScores(f.result!.homePlayerScores),
           awayPlayers: normalizeStoredPlayerScores(f.result!.awayPlayerScores),
+          // A processed GW has no PL fixtures left by definition. Explicit 0
+          // keeps the UI from rendering "—" (which would mean "FPL outage").
+          playersLeftHome: 0 as number | null,
+          playersLeftAway: 0 as number | null,
         }));
       return NextResponse.json({ isLive: false, fixtures: storedFixtures, reason: "already_processed", cachedAt: new Date().toISOString() });
     }
 
-    // Check live cache first — but ignore entries that predate the players-left
-    // fields so we don't serve schema-drifted payloads after a deploy. Once the
-    // fresh-compute path below rewrites the entry, subsequent hits are fast again.
+    // Check live cache first — reject entries that predate the players-left
+    // fields OR whose cached values are null (FPL outage at cache-write time).
+    // Forcing a recompute on null lets the cache self-heal within seconds of
+    // FPL recovering, rather than staying poisoned for the full 10-min TTL.
     const cached = await getLiveCachedScores(gwNumber, leagueId);
-    const cacheHasNewFields = cached?.fixtures?.[0] != null
-      && "playersLeftHome" in cached.fixtures[0];
-    if (cached && cached.fixtures && cached.fixtures.length > 0 && cacheHasNewFields) {
+    const firstFixture = cached?.fixtures?.[0] as
+      | { playersLeftHome?: number | null }
+      | undefined;
+    const cacheHasValidPlayersLeft =
+      firstFixture != null
+      && "playersLeftHome" in firstFixture
+      && firstFixture.playersLeftHome !== null;
+    if (cached && cached.fixtures && cached.fixtures.length > 0 && cacheHasValidPlayersLeft) {
       return NextResponse.json({ isLive: true, ...cached });
     }
 
@@ -242,8 +252,19 @@ export async function GET(request: NextRequest) {
           cachedAt: new Date().toISOString(),
         };
 
-        // Cache for 10 minutes
-        await setLiveCachedScores(gwNumber, liveData, leagueId);
+        // Cache for 10 minutes normally, but shorten to 60s when any fixture
+        // has null players-left (FPL outage at write time) so the entry
+        // self-heals quickly once FPL recovers — rather than poisoning the
+        // cache for the full 10 minutes.
+        const anyNullPlayersLeft = liveFixtures.some(
+          (f) => f.playersLeftHome === null || f.playersLeftAway === null,
+        );
+        await setLiveCachedScores(
+          gwNumber,
+          liveData,
+          leagueId,
+          anyNullPlayersLeft ? 60 : undefined,
+        );
 
         return NextResponse.json({ isLive: true, ...liveData });
       }
