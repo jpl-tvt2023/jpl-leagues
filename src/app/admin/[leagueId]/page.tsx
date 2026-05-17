@@ -83,19 +83,30 @@ interface GameweekStatus {
   survivalRanked?: number;
 }
 
+interface H2HMatchResult {
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  homeMatchPoints: number;
+  awayMatchPoints: number;
+}
+
+interface AuctionTeamResult {
+  teamId: string;
+  teamName: string;
+  totalPoints: number;
+  rank: number;
+  payout: number;
+}
+
 interface ScoringResult {
   gameweek: number;
   processed: number;
   failed: number;
-  results: {
-    homeTeam: string;
-    awayTeam: string;
-    homeScore: number;
-    awayScore: number;
-    homeMatchPoints: number;
-    awayMatchPoints: number;
-  }[];
-  errors?: { homeTeam: string; awayTeam: string; error: string }[];
+  // TVT/triple-crown return H2H matches; auction returns per-team point rows.
+  results: (H2HMatchResult | AuctionTeamResult)[];
+  errors?: ({ homeTeam: string; awayTeam: string; error: string } | string)[];
 }
 
 interface CacheStats {
@@ -245,6 +256,7 @@ export default function AdminDashboard() {
   const [auctionSessions, setAuctionSessions] = useState<AuctionSessionInfo[]>([]);
   const [auctionActiveSession, setAuctionActiveSession] = useState<AuctionSessionInfo | null>(null);
   const [auctionTeamSquads, setAuctionTeamSquads] = useState<AuctionTeamSquad[]>([]);
+  const [expandedSquads, setExpandedSquads] = useState<Set<string>>(new Set());
   const [auctionTrades, setAuctionTrades] = useState<AuctionTradeProposal[]>([]);
   const [auctionLoading, setAuctionLoading] = useState(false);
   const [auctionSessionCreating, setAuctionSessionCreating] = useState(false);
@@ -891,6 +903,12 @@ export default function AdminDashboard() {
           }
         } catch { /* skip */ }
       }
+      squads.sort((a, b) => {
+        const an = parseInt(a.teamName.match(/\d+/)?.[0] ?? "0", 10);
+        const bn = parseInt(b.teamName.match(/\d+/)?.[0] ?? "0", 10);
+        if (an !== bn) return an - bn;
+        return a.teamName.localeCompare(b.teamName);
+      });
       setAuctionTeamSquads(squads);
 
       // Fetch trades
@@ -3322,9 +3340,34 @@ export default function AdminDashboard() {
                           )}
                         </div>
                       </div>
-                      {result.results.length > 0 && (
+                      {result.results.length > 0 && isAuctionFormat && (
                         <div className="space-y-2">
-                          {result.results.map((match, mIdx) => (
+                          {(result.results as AuctionTeamResult[])
+                            .slice()
+                            .sort((a, b) => a.rank - b.rank)
+                            .map((row, mIdx) => (
+                              <div key={mIdx} className="flex items-center justify-between p-2 rounded bg-white/5 text-sm">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs font-bold text-gray-400 w-6 text-right">#{row.rank}</span>
+                                  <span className={row.rank === 1 ? "text-yellow-300 font-semibold" : "text-white font-semibold"}>
+                                    {row.teamName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <span className="text-[#00ff85] font-mono font-bold">
+                                    {row.totalPoints} pts
+                                  </span>
+                                  <span className="text-green-300 text-xs font-mono">
+                                    £{(row.payout / 1_000_000).toFixed(2)}M
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                      {result.results.length > 0 && !isAuctionFormat && (
+                        <div className="space-y-2">
+                          {(result.results as H2HMatchResult[]).map((match, mIdx) => (
                             <div key={mIdx} className="flex items-center justify-between p-2 rounded bg-white/5 text-sm">
                               <div className="flex items-center gap-2">
                                 <span className={match.homeMatchPoints > match.awayMatchPoints ? "text-green-400 font-semibold" : "text-gray-300"}>
@@ -3352,7 +3395,9 @@ export default function AdminDashboard() {
                           <h5 className="text-sm font-semibold text-red-400">Errors:</h5>
                           {result.errors.map((err, eIdx) => (
                             <div key={eIdx} className="text-xs text-red-300 bg-red-500/10 p-2 rounded">
-                              {err.homeTeam} vs {err.awayTeam}: {err.error}
+                              {typeof err === "string"
+                                ? err
+                                : `${err.homeTeam} vs ${err.awayTeam}: ${err.error}`}
                             </div>
                           ))}
                         </div>
@@ -3861,47 +3906,103 @@ export default function AdminDashboard() {
 
             {/* Squad Overview */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h2 className="text-2xl font-bold text-white mb-4">Squad Overview</h2>
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <h2 className="text-2xl font-bold text-white">Squad Overview</h2>
+                {auctionTeamSquads.length > 0 && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedSquads(new Set(auctionTeamSquads.map((s) => s.teamId)))}
+                      className="px-3 py-1.5 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 transition"
+                    >
+                      Expand all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedSquads(new Set())}
+                      className="px-3 py-1.5 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 transition"
+                    >
+                      Collapse all
+                    </button>
+                  </div>
+                )}
+              </div>
               {auctionTeamSquads.length === 0 ? (
                 <div className="text-center text-gray-400 py-8 text-sm">No squad data available</div>
               ) : (
-                <div className="grid md:grid-cols-2 gap-4">
-                  {auctionTeamSquads.map((teamSquad) => (
-                    <div key={teamSquad.teamId} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-white">{teamSquad.teamName}</h3>
-                        <div className="flex gap-2">
-                          <span className="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400">
-                            {teamSquad.activeCount} active
-                          </span>
-                          {teamSquad.deadwoodCount > 0 && (
-                            <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400">
-                              {teamSquad.deadwoodCount} deadwood
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {auctionTeamSquads.map((teamSquad) => {
+                    const isExpanded = expandedSquads.has(teamSquad.teamId);
+                    const activePlayers = teamSquad.squad.filter((p) => p.status === "active");
+                    const totalSpent = teamSquad.squad.reduce((sum, p) => sum + p.purchasePrice, 0);
+                    const totalPoints = teamSquad.squad.reduce((sum, p) => sum + p.totalPoints, 0);
+                    const topScorer = activePlayers.length > 0
+                      ? [...activePlayers].sort((a, b) => b.totalPoints - a.totalPoints)[0]
+                      : null;
+                    const toggle = () => setExpandedSquads((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(teamSquad.teamId)) next.delete(teamSquad.teamId);
+                      else next.add(teamSquad.teamId);
+                      return next;
+                    });
+                    return (
+                      <div key={teamSquad.teamId} className="rounded-xl border border-white/10 bg-white/[0.03]">
+                        <button
+                          type="button"
+                          onClick={toggle}
+                          className="w-full text-left p-3 hover:bg-white/[0.04] transition"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="font-semibold text-white text-sm">{teamSquad.teamName}</h3>
+                            <span className="text-[10px] text-gray-500">{isExpanded ? "▲" : "▼"}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                              {teamSquad.activeCount} active
                             </span>
-                          )}
-                        </div>
+                            {teamSquad.deadwoodCount > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">
+                                {teamSquad.deadwoodCount} dw
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-gray-400">
+                            <span>Spent</span>
+                            <span className="text-right font-mono text-gray-200">£{(totalSpent / 1_000_000).toFixed(1)}M</span>
+                            <span>Points</span>
+                            <span className="text-right font-mono text-[#00ff85]">{totalPoints}</span>
+                            <span>Top</span>
+                            <span className="text-right font-mono text-gray-200 truncate">
+                              {topScorer ? `${topScorer.playerName} · ${topScorer.totalPoints}` : "—"}
+                            </span>
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="border-t border-white/10 px-3 pb-3 pt-2">
+                            {teamSquad.squad.length === 0 ? (
+                              <p className="text-xs text-gray-500">No players yet</p>
+                            ) : (
+                              <div className="space-y-1">
+                                {teamSquad.squad.map((player) => (
+                                  <div key={player.ownershipId} className="flex items-center justify-between text-[11px] py-1 border-b border-white/5 last:border-0">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
+                                      <span className="text-gray-300 truncate">{player.playerName}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-gray-500 shrink-0">
+                                      <span>{player.totalPoints}p</span>
+                                      <span>{(player.purchasePrice / 1_000_000).toFixed(1)}M</span>
+                                      <span className="text-gray-600">F:{(player.fmv / 1_000_000).toFixed(1)}M</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      {teamSquad.squad.length === 0 ? (
-                        <p className="text-xs text-gray-500">No players yet</p>
-                      ) : (
-                        <div className="space-y-1">
-                          {teamSquad.squad.map((player) => (
-                            <div key={player.ownershipId} className="flex items-center justify-between text-xs py-1 border-b border-white/5 last:border-0">
-                              <div className="flex items-center gap-2">
-                                <span className={`w-1.5 h-1.5 rounded-full ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
-                                <span className="text-gray-300">{player.playerName}</span>
-                              </div>
-                              <div className="flex items-center gap-3 text-gray-500">
-                                <span>{player.totalPoints} pts</span>
-                                <span>{(player.purchasePrice / 1_000_000).toFixed(1)}M</span>
-                                <span className="text-gray-600">FMV: {(player.fmv / 1_000_000).toFixed(1)}M</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

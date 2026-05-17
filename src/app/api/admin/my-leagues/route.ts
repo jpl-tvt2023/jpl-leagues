@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leagues, leagueAdmins, teams, gameweeks } from "@/lib/db/schema";
-import { eq, and, max, count } from "drizzle-orm";
+import { leagues, leagueAdmins, teams } from "@/lib/db/schema";
+import { eq, count } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
+import { getCurrentGameweekNumber } from "@/lib/gameweeks/current-gw";
 
 /**
  * GET /api/admin/my-leagues
@@ -42,15 +43,12 @@ export async function GET(request: NextRequest) {
         .from(teams)
         .where(eq(teams.leagueId, league.id));
 
-      const [currentGwRow] = await db
-        .select({ maxGw: max(gameweeks.number) })
-        .from(gameweeks)
-        .where(and(eq(gameweeks.leagueId, league.id)));
+      const currentGameweek = await getCurrentGameweekNumber(league.id);
 
       return {
         ...league,
         teamCount: teamCountRow?.count ?? 0,
-        currentGameweek: currentGwRow?.maxGw ?? null,
+        currentGameweek,
       };
     })
   );

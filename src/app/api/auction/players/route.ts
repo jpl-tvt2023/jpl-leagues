@@ -7,10 +7,11 @@ import { fetchElementInfo, fetchElementGameweekPoints, fetchBootstrapData } from
 
 /**
  * GET /api/auction/players?leagueId=xxx&gameweek=N&page=1&pageSize=50
- *   &position=1..4&plTeam=id&ownership=all|owned|free|mine&search=name
+ *   &position=1..4&plTeam=id&ownership=all|free|mine|<teamId>&search=name
  *
  * Returns a paginated list of all FPL players with per-GW points,
  * ownership info (which JPL team owns them during the selected GW), and metadata.
+ * Also returns the league's team list so the client can populate per-team filter options.
  */
 export async function GET(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
   const pageSize = Math.min(100, Math.max(10, parseInt(searchParams.get("pageSize") ?? "50", 10)));
   const positionFilter = searchParams.get("position") ? parseInt(searchParams.get("position")!, 10) : null;
   const plTeamFilter = searchParams.get("plTeam") ? parseInt(searchParams.get("plTeam")!, 10) : null;
-  const ownershipFilter = searchParams.get("ownership") ?? "all"; // all | owned | free | mine
+  const ownershipFilter = searchParams.get("ownership") ?? "all"; // all | free | mine | <teamId>
   const searchQuery = (searchParams.get("search") ?? "").toLowerCase().trim();
 
   if (!leagueId) {
@@ -127,9 +128,15 @@ export async function GET(request: NextRequest) {
       const ownerTeamId = owner?.teamId ?? null;
 
       // Ownership filter
-      if (ownershipFilter === "owned" && !ownerTeamId) continue;
       if (ownershipFilter === "free" && ownerTeamId) continue;
       if (ownershipFilter === "mine" && ownerTeamId !== myTeamId) continue;
+      // Any other non-built-in value is treated as a specific teamId
+      if (
+        ownershipFilter !== "all" &&
+        ownershipFilter !== "free" &&
+        ownershipFilter !== "mine" &&
+        ownerTeamId !== ownershipFilter
+      ) continue;
 
       rows.push({
         elementId: el.id,
@@ -155,6 +162,14 @@ export async function GET(request: NextRequest) {
     const start = (page - 1) * pageSize;
     const paged = rows.slice(start, start + pageSize);
 
+    // Sort teams by trailing numeric suffix so "Team 2" precedes "Team 10".
+    const sortedTeams = [...leagueTeams].sort((a, b) => {
+      const an = parseInt(a.name.match(/\d+/)?.[0] ?? "0", 10);
+      const bn = parseInt(b.name.match(/\d+/)?.[0] ?? "0", 10);
+      if (an !== bn) return an - bn;
+      return a.name.localeCompare(b.name);
+    });
+
     return NextResponse.json({
       gameweek,
       totalCount,
@@ -162,6 +177,7 @@ export async function GET(request: NextRequest) {
       pageSize,
       totalPages: Math.ceil(totalCount / pageSize),
       rows: paged,
+      teams: sortedTeams,
     });
   } catch (err) {
     console.error("Auction players API error:", err);

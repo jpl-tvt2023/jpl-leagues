@@ -101,6 +101,7 @@ export function LeagueNav({
         {isAuction ? (
           <>
             <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/gw-results`} activeClass={activeClass} active={currentPage ==="gw-results"}>GW Results</NavLink>
             <NavLink href={`/${leagueSlug}/teams`} activeClass={activeClass} active={currentPage ==="teams"}>Teams</NavLink>
             <NavLink href={`/${leagueSlug}/auction`} activeClass={activeClass} active={currentPage ==="auction"}>Auction</NavLink>
             <NavLink href={`/${leagueSlug}/squad`} activeClass={activeClass} active={currentPage ==="squad"}>Squad</NavLink>
@@ -110,6 +111,7 @@ export function LeagueNav({
             )}
             <NavLink href={`/${leagueSlug}/finance`} activeClass={activeClass} active={currentPage ==="finance"}>Finance</NavLink>
             <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>
+            <NavLink href={`/${leagueSlug}/help`} activeClass={activeClass} active={currentPage ==="help"}>Help</NavLink>
           </>
         ) : isTripleCrown ? (
           <>

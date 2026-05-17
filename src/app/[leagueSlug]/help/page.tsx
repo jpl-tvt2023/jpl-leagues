@@ -7,10 +7,11 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { useLeague, useEnforceFormat } from "@/lib/league-context";
 import { TripleCrownHelp } from "../_components/help/TripleCrownHelp";
 import { TvtHelp } from "../_components/help/TvtHelp";
+import { AuctionHelp } from "../_components/help/AuctionHelp";
 import type { UserRole } from "../_components/help/shared";
 
 export default function LeagueHelpPage() {
-  useEnforceFormat(["tvt", "triple-crown"]);
+  useEnforceFormat(["tvt", "triple-crown", "auction"]);
 
   const params = useParams();
   const router = useRouter();
@@ -35,7 +36,10 @@ export default function LeagueHelpPage() {
       : "public";
 
   const isTripleCrown = league.format === "triple-crown";
-  const variantLabel = isTripleCrown
+  const isAuction = league.format === "auction";
+  const variantLabel = isAuction
+    ? "Auction"
+    : isTripleCrown
     ? "Triple Crown"
     : league.teamSize === 8
     ? "8-Team"
@@ -49,7 +53,7 @@ export default function LeagueHelpPage() {
         leagueSlug={leagueSlug}
         leagueName={league.name}
         currentPage="help"
-        format={isTripleCrown ? "triple-crown" : "tvt"}
+        format={isAuction ? "auction" : isTripleCrown ? "triple-crown" : "tvt"}
         teamSize={league.teamSize}
         isLoggedIn={viewer.authenticated}
         dashboardHref={viewer.dashboardHref}
@@ -72,7 +76,9 @@ export default function LeagueHelpPage() {
           )}
         </div>
 
-        {isTripleCrown ? (
+        {isAuction ? (
+          <AuctionHelp userRole={userRole} leagueSlug={leagueSlug} />
+        ) : isTripleCrown ? (
           <TripleCrownHelp userRole={userRole} />
         ) : (
           <TvtHelp
