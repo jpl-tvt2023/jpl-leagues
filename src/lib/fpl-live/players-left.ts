@@ -24,8 +24,11 @@ function getRedis(): Redis | null {
   return redis;
 }
 
-const FPL_FIXTURES_TTL_SECONDS = 60;
+const ALL_FIXTURES_CACHE_KEY = "fpl:fixtures:all";
+const ALL_FIXTURES_TTL_SECONDS = 60;
 const FPL_FIXTURES_URL = "https://fantasy.premierleague.com/api/fixtures/";
+// Some shared User-Agent — FPL is friendlier to clients that identify themselves.
+const FPL_USER_AGENT = "Mozilla/5.0 (compatible; jpl-leagues/1.0; +https://jpl-leagues.vercel.app)";
 
 interface FplFixture {
   id: number;
@@ -39,41 +42,66 @@ interface FplFixture {
 }
 
 /**
- * Fetch all PL fixtures for a given GW from FPL (with 60s Redis cache).
+ * Fetch the full season fixtures list from FPL (with 60s Redis cache).
  *
  * Returns:
- *   - FplFixture[] on success (may be empty for blank GWs).
- *   - null on actual FPL outage (fetch error, non-2xx, or non-array response).
+ *   - FplFixture[] on success — non-empty for a real season.
+ *   - null on actual FPL outage (fetch error, non-2xx, non-array body, OR
+ *     empty body — which shouldn't happen for a live season, so we treat it
+ *     as a flag-worthy hiccup).
  *
  * Cache discipline: only populate Redis with non-empty arrays. A transient
- * empty response shouldn't poison the cache for 60s.
+ * empty / failed response shouldn't poison the cache for 60s.
+ *
+ * Logs to console.warn on suspicious responses (non-2xx, non-array, empty)
+ * so Vercel logs surface what's happening when the UI shows "—".
  */
-export async function getFplFixturesForGw(gw: number): Promise<FplFixture[] | null> {
+async function getAllFplFixtures(): Promise<FplFixture[] | null> {
   const r = getRedis();
-  const key = `fpl:fixtures:gw${gw}`;
 
   if (r) {
-    const cached = await r.get<FplFixture[]>(key);
-    // Only trust cache entries that have at least one fixture — defensive
-    // against any historical empty-array poisoning.
+    const cached = await r.get<FplFixture[]>(ALL_FIXTURES_CACHE_KEY);
     if (Array.isArray(cached) && cached.length > 0) return cached;
   }
 
   try {
-    const res = await fetch(`${FPL_FIXTURES_URL}?event=${gw}`, {
-      // Bypass Next.js fetch cache — Redis handles caching for us
+    const res = await fetch(FPL_FIXTURES_URL, {
+      // Bypass Next.js fetch cache — Redis handles caching for us.
       cache: "no-store",
+      headers: { "User-Agent": FPL_USER_AGENT },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[players-left] FPL /fixtures/ status=${res.status}`);
+      return null;
+    }
     const data = (await res.json()) as FplFixture[];
-    if (!Array.isArray(data)) return null;
-    // Only cache non-empty results. Empty arrays (blank GWs or transient
-    // FPL responses) are returned to the caller but never cached.
-    if (r && data.length > 0) await r.set(key, data, { ex: FPL_FIXTURES_TTL_SECONDS });
+    if (!Array.isArray(data)) {
+      console.warn(`[players-left] FPL /fixtures/ unexpected body type=${typeof data}`);
+      return null;
+    }
+    if (data.length === 0) {
+      console.warn("[players-left] FPL /fixtures/ returned 0 fixtures");
+      return null;
+    }
+    if (r) await r.set(ALL_FIXTURES_CACHE_KEY, data, { ex: ALL_FIXTURES_TTL_SECONDS });
     return data;
-  } catch {
+  } catch (e) {
+    console.warn("[players-left] FPL /fixtures/ fetch error", e);
     return null;
   }
+}
+
+/**
+ * Fetch all PL fixtures for a given GW (filtered from the cached full list).
+ *
+ * Returns:
+ *   - FplFixture[] on success (may be empty for a legitimately blank GW).
+ *   - null when the underlying full-season fetch failed.
+ */
+export async function getFplFixturesForGw(gw: number): Promise<FplFixture[] | null> {
+  const all = await getAllFplFixtures();
+  if (all == null) return null;
+  return all.filter((f) => f.event === gw);
 }
 
 export interface PlayersLeftResult {
@@ -87,7 +115,12 @@ export interface PlayersLeftResult {
 
 /**
  * Count fixtures-left-to-play across a list of FPL element IDs for a GW.
- * Returns null on FPL outage (so callers can show "—" rather than misleading 0).
+ *
+ * Three result modes:
+ *   - Returns null when the FPL /fixtures/ fetch fails entirely (UI shows "—").
+ *   - Returns { leftToPlay: 0 } when the full-season list IS available but
+ *     the requested GW has no fixtures (legitimate blank GW).
+ *   - Returns the computed count otherwise.
  */
 export async function countPlayersLeftToPlay(
   fplElementIds: number[],
@@ -98,16 +131,15 @@ export async function countPlayersLeftToPlay(
     return { leftToPlay: 0, total: 0, isLive: false };
   }
 
-  const fixtures = await getFplFixturesForGw(gw);
-  // null → FPL fetch failed entirely (network/non-2xx); show "—".
-  // [] → FPL returned a successful but empty payload. For a normal GW that's
-  // pathological — we don't want to lie with "0" or "—" either. Log a warning
-  // so this is visible, and surface as null. Cache hygiene above prevents the
-  // empty from sticking, so a subsequent call has a chance to recover.
-  if (fixtures == null) return null;
-  if (fixtures.length === 0) {
-    console.warn("[players-left] FPL returned empty fixtures for GW", gw);
-    return null;
+  // Use the full-season fetch so we can distinguish "outage" (parent null)
+  // from "blank GW" (parent non-empty, filtered slice empty).
+  const allFixtures = await getAllFplFixtures();
+  if (allFixtures == null) return null;
+
+  const gwFixtures = allFixtures.filter((f) => f.event === gw);
+  if (gwFixtures.length === 0) {
+    // Legitimate blank GW — every input contributes 0.
+    return { leftToPlay: 0, total: fplElementIds.length, isLive: false };
   }
 
   let elements: Awaited<ReturnType<typeof fetchElementInfo>>;
@@ -119,13 +151,12 @@ export async function countPlayersLeftToPlay(
 
   const now = Date.now();
 
-  // PL team → count of unstarted fixtures in this GW
+  // PL team → count of unstarted fixtures in this GW.
   const unstartedByTeam = new Map<number, number>();
-  // PL team → "currently has a fixture in progress" (kicked off, not finished)
   let anyLiveFixture = false;
-  for (const f of fixtures) {
+  for (const f of gwFixtures) {
     if (!f.kickoff_time) {
-      // Fixture not yet scheduled — treat as unstarted for both teams.
+      // Not yet scheduled — treat as unstarted for both PL teams.
       unstartedByTeam.set(f.team_h, (unstartedByTeam.get(f.team_h) ?? 0) + 1);
       unstartedByTeam.set(f.team_a, (unstartedByTeam.get(f.team_a) ?? 0) + 1);
       continue;
@@ -139,7 +170,6 @@ export async function countPlayersLeftToPlay(
     }
   }
 
-  // Map element id → PL team
   const teamByElement = new Map<number, number>();
   for (const el of elements) teamByElement.set(el.id, el.team);
 
