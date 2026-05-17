@@ -148,10 +148,13 @@ function PlayerBreakdown({
   label,
   players,
   gameweek,
+  playersLeft,
 }: {
   label: string;
   players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
   gameweek: number;
+  /** undefined = don't render the footer; null = FPL outage ("—"); number = count. */
+  playersLeft?: number | null;
 }) {
   if (players.length === 0) return null;
   return (
@@ -191,6 +194,13 @@ function PlayerBreakdown({
           </div>
         </div>
       ))}
+      {playersLeft !== undefined && (
+        <div className="mt-1 text-[10px] text-center">
+          <span className={playersLeft != null && playersLeft > 0 ? "text-yellow-400" : "text-gray-500"}>
+            {playersLeft == null ? "—" : playersLeft} players left to play
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -260,6 +270,16 @@ export function MatchCard({
     if (liveFixture.homeTeamId === side.teamId) return liveFixture.homePlayers;
     if (liveFixture.awayTeamId === side.teamId) return liveFixture.awayPlayers;
     return [];
+  };
+
+  const getPlayersLeftForSide = (
+    side: TeamSide | null,
+    liveFixture: LiveFixtureScore | undefined,
+  ): number | null | undefined => {
+    if (!liveFixture || !side?.teamId) return undefined;
+    if (liveFixture.homeTeamId === side.teamId) return liveFixture.playersLeftHome ?? null;
+    if (liveFixture.awayTeamId === side.teamId) return liveFixture.playersLeftAway ?? null;
+    return undefined;
   };
 
   return (
@@ -392,28 +412,6 @@ export function MatchCard({
         )}
       </div>
 
-      {showLive && (() => {
-        const liveLegs = [liveScoreLeg1, liveScoreLeg2, liveScoreLeg3].filter(
-          (l): l is LiveFixtureScore => !!l,
-        );
-        let total = 0;
-        let anyKnown = false;
-        let anyUnknown = false;
-        for (const l of liveLegs) {
-          if (l.playersLeftHome != null) { total += l.playersLeftHome; anyKnown = true; } else anyUnknown = true;
-          if (l.playersLeftAway != null) { total += l.playersLeftAway; anyKnown = true; } else anyUnknown = true;
-        }
-        if (!anyKnown && !anyUnknown) return null;
-        const show = anyKnown && !anyUnknown;
-        return (
-          <div className="mt-1 text-center text-[11px]">
-            <span className={show && total > 0 ? "text-yellow-400" : "text-gray-500"}>
-              Players left to play — {show ? total : "—"}
-            </span>
-          </div>
-        );
-      })()}
-
       {is3Leg && !isPlaceholder(tie.home) && (
         <div className="flex justify-end text-[10px] text-gray-500 gap-2 mt-0.5">
           <span className="w-5 text-center">L1</span>
@@ -447,11 +445,13 @@ export function MatchCard({
                   label={`${tie.home?.name || "Home"} Players`}
                   players={getPlayersForSide(tie.home, liveScoreLeg1)}
                   gameweek={tie.gw1}
+                  playersLeft={getPlayersLeftForSide(tie.home, liveScoreLeg1)}
                 />
                 <PlayerBreakdown
                   label={`${tie.away?.name || "Away"} Players`}
                   players={getPlayersForSide(tie.away, liveScoreLeg1)}
                   gameweek={tie.gw1}
+                  playersLeft={getPlayersLeftForSide(tie.away, liveScoreLeg1)}
                 />
               </div>
             </div>
@@ -464,11 +464,13 @@ export function MatchCard({
                   label={`${tie.home?.name || "Home"} Players`}
                   players={getPlayersForSide(tie.home, liveScoreLeg2)}
                   gameweek={tie.gw2!}
+                  playersLeft={getPlayersLeftForSide(tie.home, liveScoreLeg2)}
                 />
                 <PlayerBreakdown
                   label={`${tie.away?.name || "Away"} Players`}
                   players={getPlayersForSide(tie.away, liveScoreLeg2)}
                   gameweek={tie.gw2!}
+                  playersLeft={getPlayersLeftForSide(tie.away, liveScoreLeg2)}
                 />
               </div>
             </div>
@@ -481,11 +483,13 @@ export function MatchCard({
                   label={`${tie.home?.name || "Home"} Players`}
                   players={getPlayersForSide(tie.home, liveScoreLeg3)}
                   gameweek={tie.gw3!}
+                  playersLeft={getPlayersLeftForSide(tie.home, liveScoreLeg3)}
                 />
                 <PlayerBreakdown
                   label={`${tie.away?.name || "Away"} Players`}
                   players={getPlayersForSide(tie.away, liveScoreLeg3)}
                   gameweek={tie.gw3!}
+                  playersLeft={getPlayersLeftForSide(tie.away, liveScoreLeg3)}
                 />
               </div>
             </div>
