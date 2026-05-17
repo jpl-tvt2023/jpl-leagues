@@ -1,10 +1,11 @@
 // JPL Auction Gameweek Processor
 // Scores all teams, ranks them, assigns payouts, updates purses
 
-import { db, teams, auctionScores, auctionOwnership } from "../../db";
+import { db, teams, auctionScores, auctionOwnership, leagues } from "../../db";
 import { eq, and } from "drizzle-orm";
 import { calculateAuctionTeamScore } from "./scoring";
 import { getPayoutForRank, calculateRefund, calculateFMV } from "./economy";
+import { createNotification } from "../../notifications";
 import { randomUUID } from "crypto";
 
 export interface AuctionProcessResult {
@@ -106,6 +107,11 @@ export async function processAuctionGameweek(
     return { ...score, rank, payout };
   });
 
+  // Notification fan-out happens after the transaction commits. Track refunds
+  // per team here so the post-commit loop has the data it needs.
+  const refundByTeam = new Map<string, number>();
+  const releaseCountByTeam = new Map<string, number>();
+
   // Atomically write scores and update purses
   await db.transaction(async (tx) => {
     // Delete existing scores for this GW if reprocessing
@@ -165,7 +171,6 @@ export async function processAuctionGameweek(
         );
 
       // Aggregate refunds per team to avoid multiple round-trips
-      const refundByTeam = new Map<string, number>();
       for (const p of pendingReleases) {
         const refund = calculateRefund(p.purchasePrice);
         await tx
@@ -177,6 +182,7 @@ export async function processAuctionGameweek(
           })
           .where(eq(auctionOwnership.id, p.id));
         refundByTeam.set(p.teamId, (refundByTeam.get(p.teamId) ?? 0) + refund);
+        releaseCountByTeam.set(p.teamId, (releaseCountByTeam.get(p.teamId) ?? 0) + 1);
       }
 
       for (const [teamId, totalRefund] of refundByTeam) {
@@ -197,6 +203,50 @@ export async function processAuctionGameweek(
       }
     }
   });
+
+  // Post-commit notification fan-out. Failures must never bubble up — scoring
+  // already succeeded. Best-effort: a logged warning per team is enough.
+  try {
+    const [leagueRow] = await db
+      .select({ slug: leagues.slug })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    const slug = leagueRow?.slug ?? "";
+
+    for (const score of rankedScores) {
+      try {
+        await createNotification({
+          teamId: score.teamId,
+          leagueId,
+          type: "gw_processed",
+          title: `GW${gameweekNumber} scored`,
+          body: `Ranked #${score.rank} · ${score.totalPoints} pts · Payout £${(score.payout / 1_000_000).toFixed(2)}M`,
+          link: slug ? `/${slug}/gw-results?gw=${gameweekNumber}` : undefined,
+        });
+      } catch (e) {
+        console.warn("[processAuctionGameweek] notify gw_processed failed", { teamId: score.teamId, error: e });
+      }
+    }
+
+    for (const [teamId, totalRefund] of refundByTeam) {
+      const count = releaseCountByTeam.get(teamId) ?? 0;
+      try {
+        await createNotification({
+          teamId,
+          leagueId,
+          type: "release_refund",
+          title: "Release refund credited",
+          body: `£${(totalRefund / 1_000_000).toFixed(2)}M for ${count} released player${count === 1 ? "" : "s"}`,
+          link: slug ? `/${slug}/finance` : undefined,
+        });
+      } catch (e) {
+        console.warn("[processAuctionGameweek] notify release_refund failed", { teamId, error: e });
+      }
+    }
+  } catch (e) {
+    console.warn("[processAuctionGameweek] notification fan-out skipped", e);
+  }
 
   return {
     success: true,

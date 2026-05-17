@@ -3,6 +3,7 @@ import { db, teams, teamPenalties, auctionSessions, leagues } from "@/lib/db";
 import { eq, and, isNull, asc, desc, or } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculatePurse } from "@/lib/formats/auction/economy";
+import { createNotification } from "@/lib/notifications";
 
 // Pricing rules: £2.5M while still inside the cycle that issued the penalty;
 // £5M once that cycle has ended (i.e. before/during a later mini-auction).
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
   const leagueId = team.leagueId;
   const currentCycle = await getCurrentCycle(leagueId);
   const leagueRow = await db
-    .select({ initialBudget: leagues.initialBudget })
+    .select({ initialBudget: leagues.initialBudget, slug: leagues.slug })
     .from(leagues)
     .where(eq(leagues.id, leagueId))
     .limit(1);
@@ -194,11 +195,28 @@ export async function POST(request: NextRequest) {
       .where(eq(teams.id, teamId));
   });
 
+  const remainingPenaltySlots = (team.penaltySlots ?? 0) - 1;
+
+  // Best-effort notification — must not fail the redemption response.
+  try {
+    const slug = leagueRow[0]?.slug ?? "";
+    await createNotification({
+      teamId,
+      leagueId,
+      type: "slot_redeemed",
+      title: "Penalty slot redeemed",
+      body: `£${(cost / 1_000_000).toFixed(2)}M deducted · ${remainingPenaltySlots} slot${remainingPenaltySlots === 1 ? "" : "s"} remaining`,
+      link: slug ? `/${slug}/auction` : undefined,
+    });
+  } catch (e) {
+    console.warn("[redeem-slot] notify slot_redeemed failed", { teamId, error: e });
+  }
+
   return NextResponse.json({
     success: true,
     cost,
     incurredCycle: chosen?.incurredCycle ?? null,
     currentCycle,
-    remainingPenaltySlots: (team.penaltySlots ?? 0) - 1,
+    remainingPenaltySlots,
   });
 }
