@@ -159,7 +159,7 @@ export function NotificationBell() {
           ) : (
             <>
               <ul className="divide-y divide-white/5">
-                {items.slice(0, 5).map((n) => (
+                {items.slice(0, 3).map((n) => (
                   <li key={n.id}>
                     <button
                       onClick={() => handleClick(n)}

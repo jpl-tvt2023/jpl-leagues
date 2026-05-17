@@ -14,18 +14,24 @@ interface NotificationItem {
   createdAt: string;
 }
 
+const PAGE_SIZE = 50;
+
 export default function NotificationsPage() {
   const router = useRouter();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      setIsLoading(true);
       try {
-        const res = await fetch("/api/notifications?limit=200");
+        const res = await fetch(`/api/notifications?page=${page}&pageSize=${PAGE_SIZE}`);
         if (!res.ok) {
           if (res.status === 401) {
             router.push("/signin");
@@ -37,6 +43,8 @@ export default function NotificationsPage() {
         if (cancelled) return;
         setItems(data.notifications ?? []);
         setUnread(data.unreadCount ?? 0);
+        setTotalCount(data.totalCount ?? 0);
+        setTotalPages(data.totalPages ?? 0);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Unknown error");
       } finally {
@@ -45,7 +53,7 @@ export default function NotificationsPage() {
     };
     load();
     return () => { cancelled = true; };
-  }, [router]);
+  }, [router, page]);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -102,7 +110,7 @@ export default function NotificationsPage() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white">Notifications</h1>
             <p className="text-sm text-gray-400 mt-1">
-              {items.length} total {unread > 0 && <span className="text-yellow-400">· {unread} unread</span>}
+              {totalCount} total {unread > 0 && <span className="text-yellow-400">· {unread} unread</span>}
             </p>
           </div>
           {unread > 0 && (
@@ -151,33 +159,59 @@ export default function NotificationsPage() {
             </p>
           </div>
         ) : (
-          <ul className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden divide-y divide-white/5">
-            {items.map((n) => (
-              <li key={n.id}>
-                <button
-                  onClick={() => handleClick(n)}
-                  className={`w-full text-left px-4 py-4 hover:bg-white/[0.04] transition ${
-                    n.readAt ? "opacity-60" : ""
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    {!n.readAt && (
-                      <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-yellow-400" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline justify-between gap-3 flex-wrap">
-                        <div className="text-sm sm:text-base font-semibold text-white">{n.title}</div>
-                        <div className="text-[11px] text-gray-500 shrink-0">
-                          {new Date(n.createdAt).toLocaleString()}
+          <>
+            <ul className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden divide-y divide-white/5">
+              {items.map((n) => (
+                <li key={n.id}>
+                  <button
+                    onClick={() => handleClick(n)}
+                    className={`w-full text-left px-4 py-4 hover:bg-white/[0.04] transition ${
+                      n.readAt ? "opacity-60" : ""
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {!n.readAt && (
+                        <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-yellow-400" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                          <div className="text-sm sm:text-base font-semibold text-white">{n.title}</div>
+                          <div className="text-[11px] text-gray-500 shrink-0">
+                            {new Date(n.createdAt).toLocaleString()}
+                          </div>
                         </div>
+                        <div className="text-xs sm:text-sm text-gray-300 mt-1">{n.body}</div>
                       </div>
-                      <div className="text-xs sm:text-sm text-gray-300 mt-1">{n.body}</div>
                     </div>
-                  </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-6 gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="px-4 py-2 rounded-lg bg-white/10 text-white text-sm hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                >
+                  ← Previous
                 </button>
-              </li>
-            ))}
-          </ul>
+                <span className="text-xs sm:text-sm text-gray-400">
+                  Page {page} of {totalPages} · showing {items.length} of {totalCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="px-4 py-2 rounded-lg bg-white/10 text-white text-sm hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

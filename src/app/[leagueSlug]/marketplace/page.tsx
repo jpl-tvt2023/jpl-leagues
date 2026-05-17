@@ -380,7 +380,7 @@ export default function MarketplacePage() {
 
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-10">
         {isLoading ? (
-          <LoadingScreen variant="dashboard" fullScreen={false} />
+          <LoadingScreen variant="default" fullScreen={false} label="Loading Marketplace" />
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : auctionLive ? (
