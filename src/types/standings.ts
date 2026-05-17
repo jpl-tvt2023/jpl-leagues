@@ -32,4 +32,8 @@ export interface TeamStanding {
   };
   groupRank: number;
   zone: "playoffs" | "challenger" | "eliminated";
+  /** Group rank as of the previous gameweek; null if there isn't one yet. */
+  previousRank?: number | null;
+  /** previousRank − groupRank (positive = climbed). null if no prior GW. */
+  rankDelta?: number | null;
 }

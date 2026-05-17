@@ -18,6 +18,8 @@ export interface AuctionStanding {
   squadValue: number; // sum of FMV of all owned players
   gwHistory: AuctionGwHistory[];
   rank: number;
+  previousRank: number | null;
+  rankDelta: number | null;
 }
 
 /**
@@ -52,6 +54,8 @@ export function computeAuctionStandings(
       squadValue: squadValues.get(team.id) ?? 0,
       gwHistory,
       rank: 0, // will be assigned below
+      previousRank: null,
+      rankDelta: null,
     };
   });
 
@@ -66,6 +70,42 @@ export function computeAuctionStandings(
   // Assign ranks
   for (let i = 0; i < standings.length; i++) {
     standings[i].rank = i + 1;
+  }
+
+  // Compute previous-GW ranking — cumulative totalPoints through (maxGw - 1).
+  // Ties broken using the same secondary keys (squadValue asc, purse desc) as
+  // the current sort, so the delta math is consistent. Skip when no prior GW.
+  const playedGws = standings
+    .flatMap((s) => s.gwHistory.map((h) => h.gw))
+    .filter((n) => n > 0);
+  if (playedGws.length > 0) {
+    const maxGw = Math.max(...playedGws);
+    if (maxGw > 1) {
+      const previousGw = maxGw - 1;
+      const previousStandings = standings.map((s) => {
+        const pointsThroughPrev = s.gwHistory
+          .filter((h) => h.gw <= previousGw)
+          .reduce((sum, h) => sum + h.points, 0);
+        return { teamId: s.teamId, totalPoints: pointsThroughPrev, squadValue: s.squadValue, purse: s.purse };
+      });
+      previousStandings.sort((a, b) => {
+        if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+        if (a.squadValue !== b.squadValue) return a.squadValue - b.squadValue;
+        return b.purse - a.purse;
+      });
+      const previousRankByTeam = new Map<string, number>();
+      previousStandings.forEach((row, idx) => previousRankByTeam.set(row.teamId, idx + 1));
+      // Only treat a team as having a "previous rank" if it actually played the
+      // earlier GW. A team with zero history at previousGw shouldn't show a delta.
+      for (const s of standings) {
+        const hasPrevGw = s.gwHistory.some((h) => h.gw <= previousGw);
+        if (!hasPrevGw) continue;
+        const prev = previousRankByTeam.get(s.teamId);
+        if (prev == null) continue;
+        s.previousRank = prev;
+        s.rankDelta = prev - s.rank;
+      }
+    }
   }
 
   return standings;

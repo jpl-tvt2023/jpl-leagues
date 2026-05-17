@@ -24,6 +24,10 @@ export interface LiveFixtureScore {
   awayScore: number;
   homePlayers: LivePlayerScore[];
   awayPlayers: LivePlayerScore[];
+  /** Fixtures-left-to-play across home managers' starting XI. null when FPL fixtures unavailable. */
+  playersLeftHome?: number | null;
+  /** Fixtures-left-to-play across away managers' starting XI. null when FPL fixtures unavailable. */
+  playersLeftAway?: number | null;
 }
 
 export interface FixtureTeam {

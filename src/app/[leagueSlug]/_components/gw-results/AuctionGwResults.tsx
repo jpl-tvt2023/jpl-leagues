@@ -23,6 +23,9 @@ interface TeamRow {
   prevLeagueRank: number | null;
   rankDelta: number | null;
   players: BreakdownPlayer[];
+  /** Fixtures-left-to-play for this team's active roster in the selected GW.
+   *  null when the FPL fixtures call failed; 0 when nothing remains. */
+  playersLeftToPlay?: number | null;
 }
 
 const GW_POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -52,7 +55,9 @@ export function AuctionGwResults() {
   const myTeamId = viewer.type === "team" ? viewer.teamId ?? null : null;
 
   const [processedGws, setProcessedGws] = useState<number[]>([]);
+  const [liveGameweek, setLiveGameweek] = useState<number | null>(null);
   const [selectedGw, setSelectedGw] = useState<number | null>(null);
+  const [isLive, setIsLive] = useState<boolean>(false);
   const [rows, setRows] = useState<TeamRow[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -63,9 +68,10 @@ export function AuctionGwResults() {
     window.location.href = "/signin";
   };
 
-  const fetchData = useCallback(async () => {
+  // `silent` = don't flash the loading screen (used for background polling).
+  const fetchData = useCallback(async (silent: boolean = false) => {
     if (!leagueSlug) return;
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const url = new URL("/api/auction/gw-summary", window.location.origin);
       url.searchParams.set("leagueSlug", leagueSlug);
@@ -74,20 +80,58 @@ export function AuctionGwResults() {
       if (!res.ok) throw new Error("Failed to fetch gameweek results");
       const data = await res.json();
       setProcessedGws(data.processedGameweeks ?? []);
+      setLiveGameweek(typeof data.liveGameweek === "number" ? data.liveGameweek : null);
       setSelectedGw(data.selectedGw ?? null);
+      setIsLive(!!data.isLive);
       setRows(data.rows ?? []);
-      setExpanded(new Set());
+      if (!silent) setExpanded(new Set());
     } catch (err) {
       console.error("Error fetching GW results:", err);
-      setError("Failed to load gameweek results. Please try again later.");
+      if (!silent) setError("Failed to load gameweek results. Please try again later.");
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [leagueSlug, gwParam]);
 
   useEffect(() => {
-    fetchData();
+    fetchData(false);
   }, [fetchData]);
+
+  // Visibility-aware 60s polling while in live mode. Pauses when the tab is
+  // backgrounded so we don't burn FPL quota on hidden tabs.
+  useEffect(() => {
+    if (!isLive) return;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer != null) return;
+      timer = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          fetchData(true);
+        }
+      }, 60_000);
+    };
+    const stop = () => {
+      if (timer != null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        // Immediate refresh on becoming visible, then resume interval.
+        fetchData(true);
+        start();
+      } else {
+        stop();
+      }
+    };
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [isLive, fetchData]);
 
   const goToGw = (gw: number) => {
     const sp = new URLSearchParams();
@@ -104,9 +148,16 @@ export function AuctionGwResults() {
     });
   };
 
-  const currentIdx = selectedGw != null ? processedGws.indexOf(selectedGw) : -1;
-  const prevGw = currentIdx > 0 ? processedGws[currentIdx - 1] : null;
-  const nextGw = currentIdx >= 0 && currentIdx < processedGws.length - 1 ? processedGws[currentIdx + 1] : null;
+  // Selectable list includes processed GWs + the in-flight GW (if any).
+  const selectableGws = (() => {
+    if (liveGameweek != null && !processedGws.includes(liveGameweek)) {
+      return [...processedGws, liveGameweek].sort((a, b) => a - b);
+    }
+    return processedGws;
+  })();
+  const currentIdx = selectedGw != null ? selectableGws.indexOf(selectedGw) : -1;
+  const prevGw = currentIdx > 0 ? selectableGws[currentIdx - 1] : null;
+  const nextGw = currentIdx >= 0 && currentIdx < selectableGws.length - 1 ? selectableGws[currentIdx + 1] : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -132,7 +183,7 @@ export function AuctionGwResults() {
 
             {error ? (
               <div className="text-center text-red-400 py-12">{error}</div>
-            ) : processedGws.length === 0 ? (
+            ) : selectableGws.length === 0 ? (
               <div className="text-center py-12">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
                   <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">No Processed Gameweeks Yet</h2>
@@ -158,9 +209,9 @@ export function AuctionGwResults() {
                       onChange={(e) => goToGw(parseInt(e.target.value, 10))}
                       className="bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white"
                     >
-                      {processedGws.map((gw) => (
+                      {selectableGws.map((gw) => (
                         <option key={gw} value={gw}>
-                          GW{gw}
+                          GW{gw}{gw === liveGameweek ? " · LIVE" : ""}
                         </option>
                       ))}
                     </select>
@@ -172,9 +223,15 @@ export function AuctionGwResults() {
                     >
                       Next →
                     </button>
+                    {isLive && (
+                      <span className="ml-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/20 border border-green-500/30 text-green-400 text-[11px] font-bold uppercase tracking-wider">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                        Live
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-gray-400">
-                    {rows.length} teams · click a row to view scoring players
+                    {rows.length} teams · click a row to view scoring players · ▲/▼ shows league rank change vs previous GW
                   </div>
                 </div>
 
@@ -187,13 +244,14 @@ export function AuctionGwResults() {
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">GW Points</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Scorers</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">League Rank</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Left</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rows.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                            <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                               No results for this gameweek.
                             </td>
                           </tr>
@@ -201,7 +259,6 @@ export function AuctionGwResults() {
                           rows.map((row) => {
                             const isMine = row.teamId === myTeamId;
                             const isExpanded = expanded.has(row.teamId);
-                            const scorers = row.players.filter((p) => p.points > 0);
                             return (
                               <Fragment key={row.teamId}>
                                 <tr
@@ -221,16 +278,48 @@ export function AuctionGwResults() {
                                   <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">
                                     {formatCurrency(row.payout)}
                                   </td>
-                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right text-gray-400">
-                                    <span className="inline-flex items-center gap-1">
-                                      {scorers.length}
-                                      <span className="text-[10px]">{isExpanded ? "▲" : "▼"}</span>
+                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">
+                                    <span className="inline-flex items-center justify-end gap-2">
+                                      <span className="font-mono font-bold text-white">
+                                        {row.leagueRank != null ? `#${row.leagueRank}` : "—"}
+                                      </span>
+                                      {row.rankDelta != null && row.rankDelta !== 0 ? (
+                                        <span
+                                          className={`font-mono text-xs ${row.rankDelta > 0 ? "text-green-400" : "text-red-400"}`}
+                                          title={
+                                            row.prevLeagueRank != null
+                                              ? `Was #${row.prevLeagueRank} after GW${selectedGw != null ? selectedGw - 1 : "?"}`
+                                              : undefined
+                                          }
+                                        >
+                                          {row.rankDelta > 0 ? `▲${row.rankDelta}` : `▼${Math.abs(row.rankDelta)}`}
+                                        </span>
+                                      ) : row.rankDelta === 0 ? (
+                                        <span className="font-mono text-xs text-gray-500" title="No change vs previous GW">—</span>
+                                      ) : null}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">
+                                    <span className="inline-flex items-center justify-end gap-2">
+                                      <span
+                                        className={`font-mono ${
+                                          row.playersLeftToPlay == null
+                                            ? "text-gray-500"
+                                            : row.playersLeftToPlay > 0
+                                            ? "text-yellow-400 font-bold"
+                                            : "text-gray-400"
+                                        }`}
+                                        title="Fixtures left to play for this team's active roster in the selected GW"
+                                      >
+                                        {row.playersLeftToPlay == null ? "—" : row.playersLeftToPlay}
+                                      </span>
+                                      <span className="text-[10px] text-gray-500">{isExpanded ? "▲" : "▼"}</span>
                                     </span>
                                   </td>
                                 </tr>
                                 {isExpanded && (
                                   <tr className="bg-black/30 border-t border-white/5">
-                                    <td colSpan={5} className="px-4 py-3">
+                                    <td colSpan={6} className="px-4 py-3">
                                       {row.players.length === 0 ? (
                                         <div className="text-xs text-gray-500 italic">No player breakdown recorded for this gameweek.</div>
                                       ) : (

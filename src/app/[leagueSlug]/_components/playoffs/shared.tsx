@@ -13,6 +13,8 @@ export interface LiveFixtureScore {
   awayScore: number;
   homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
   awayPlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
+  playersLeftHome?: number | null;
+  playersLeftAway?: number | null;
 }
 
 export interface TeamSide {
@@ -389,6 +391,28 @@ export function MatchCard({
           )
         )}
       </div>
+
+      {showLive && (() => {
+        const liveLegs = [liveScoreLeg1, liveScoreLeg2, liveScoreLeg3].filter(
+          (l): l is LiveFixtureScore => !!l,
+        );
+        let total = 0;
+        let anyKnown = false;
+        let anyUnknown = false;
+        for (const l of liveLegs) {
+          if (l.playersLeftHome != null) { total += l.playersLeftHome; anyKnown = true; } else anyUnknown = true;
+          if (l.playersLeftAway != null) { total += l.playersLeftAway; anyKnown = true; } else anyUnknown = true;
+        }
+        if (!anyKnown && !anyUnknown) return null;
+        const show = anyKnown && !anyUnknown;
+        return (
+          <div className="mt-1 text-center text-[11px]">
+            <span className={show && total > 0 ? "text-yellow-400" : "text-gray-500"}>
+              Players left to play — {show ? total : "—"}
+            </span>
+          </div>
+        );
+      })()}
 
       {is3Leg && !isPlaceholder(tie.home) && (
         <div className="flex justify-end text-[10px] text-gray-500 gap-2 mt-0.5">

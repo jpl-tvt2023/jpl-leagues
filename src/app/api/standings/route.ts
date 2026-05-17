@@ -303,6 +303,109 @@ export async function GET(request: NextRequest) {
       teamChipsRawMap.set(chip.teamId, arr);
     }
 
+    // ===== Previous-GW snapshot for rank-change indicator (display-only) =====
+    // The previousRank / rankDelta we attach below is purely additive: it does
+    // NOT influence current standings, sort order, group assignment, zones, or
+    // playoff seeding. TVT playoff bracket generation uses its own
+    // `getGroupStandings` helper in `src/lib/formats/tvt/playoffs.ts` and is
+    // completely independent of this code path.
+    let maxPlayedGw = 0;
+    for (const t of allTeams) {
+      for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
+        if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
+          if (f.gameweek.number > maxPlayedGw) maxPlayedGw = f.gameweek.number;
+        }
+      }
+    }
+
+    // Chips contributed before the latest GW only.
+    const prevChipPointsByTeam = new Map<string, number>();
+    for (const chip of allChipsRaw) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chipGw = (chip as any).gameweek?.number;
+      if (chipGw && chipGw > leagueStageEnd) continue;
+      if (chipGw === maxPlayedGw) continue;
+      if (chip.isProcessed) {
+        const pts = chip.pointsAwarded || 0;
+        if (chip.chipType === "C" || pts > 0) {
+          prevChipPointsByTeam.set(chip.teamId, (prevChipPointsByTeam.get(chip.teamId) || 0) + pts);
+        }
+      }
+    }
+
+    // Compute previous-GW sort keys per team (leaguePoints, pointsFor, cbpPoints).
+    const prevSortKeysByTeam = new Map<string, { leaguePoints: number; pointsFor: number; cbpPoints: number; group: string | null }>();
+    if (maxPlayedGw > 0) {
+      for (const team of allTeams) {
+        let pWins = 0, pDraws = 0, pLosses = 0, pPointsFor = 0;
+        let pBonusPtsTotal = 0;
+        for (const f of team.homeFixtures) {
+          if (f.gameweek.number > leagueStageEnd) continue;
+          if (f.gameweek.number === maxPlayedGw) continue;
+          if (f.competitionType && f.competitionType !== "pl") continue;
+          if (!f.result) continue;
+          pPointsFor += f.result.homeScore;
+          if (f.result.homeScore > f.result.awayScore) pWins++;
+          else if (f.result.homeScore === f.result.awayScore) pDraws++;
+          else pLosses++;
+          if (f.result.homeGotBonus) pBonusPtsTotal += f.result.homeUsedDoublePointer ? 2 : 1;
+        }
+        for (const f of team.awayFixtures) {
+          if (f.gameweek.number > leagueStageEnd) continue;
+          if (f.gameweek.number === maxPlayedGw) continue;
+          if (f.competitionType && f.competitionType !== "pl") continue;
+          if (!f.result) continue;
+          pPointsFor += f.result.awayScore;
+          if (f.result.awayScore > f.result.homeScore) pWins++;
+          else if (f.result.awayScore === f.result.homeScore) pDraws++;
+          else pLosses++;
+          if (f.result.awayGotBonus) pBonusPtsTotal += f.result.awayUsedDoublePointer ? 2 : 1;
+        }
+        void pLosses; // shape parity with current loop
+        const pChipPts = prevChipPointsByTeam.get(team.id) || 0;
+        const pCbpPts = pChipPts + pBonusPtsTotal;
+        let pHitPenaltyTotal = 0;
+        for (const player of team.players) {
+          const gwHits = playerGwHitsMap.get(player.fplId);
+          if (gwHits) {
+            for (const [gw, hits] of gwHits.entries()) {
+              if (gw === maxPlayedGw) continue;
+              if (hits > 12) pHitPenaltyTotal++;
+            }
+          }
+        }
+        // Same formula as the current pass below for both TVT and triple-crown
+        // (display purposes — triple-crown's stored leaguePoints is for current
+        // values only and equivalently derives from W/D minus hits).
+        const pLeaguePoints = (pWins * 2) + (pDraws * 1) + pCbpPts - pHitPenaltyTotal;
+        prevSortKeysByTeam.set(team.id, {
+          leaguePoints: pLeaguePoints,
+          pointsFor: pPointsFor,
+          cbpPoints: pCbpPts,
+          group: team.group?.name ?? null,
+        });
+      }
+    }
+
+    // Sort previous snapshot per group, assign 1-based previous rank.
+    const prevRankByTeam = new Map<string, number>();
+    if (maxPlayedGw > 1) {
+      const prevByGroup = new Map<string | null, { teamId: string; leaguePoints: number; pointsFor: number; cbpPoints: number }[]>();
+      for (const [teamId, v] of prevSortKeysByTeam.entries()) {
+        const arr = prevByGroup.get(v.group) ?? [];
+        arr.push({ teamId, leaguePoints: v.leaguePoints, pointsFor: v.pointsFor, cbpPoints: v.cbpPoints });
+        prevByGroup.set(v.group, arr);
+      }
+      for (const arr of prevByGroup.values()) {
+        arr.sort((a, b) => {
+          if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
+          if (a.pointsFor !== b.pointsFor) return b.pointsFor - a.pointsFor;
+          return b.cbpPoints - a.cbpPoints;
+        });
+        arr.forEach((row, idx) => prevRankByTeam.set(row.teamId, idx + 1));
+      }
+    }
+
     // Calculate standings for each team
     const standings: TeamStanding[] = allTeams.map((team) => {
       let wins = 0;
@@ -464,22 +567,34 @@ export async function GET(request: NextRequest) {
     const groupMap: Record<string, RankedStanding[]> = {};
     for (const gName of groupNames) {
       const groupTeams = standings.filter(t => t.group === gName);
-      groupMap[gName] = groupTeams.map((team, index) => ({
-        ...team,
-        rank: index + 1,
-        groupRank: index + 1,
-        zone: getQualificationZone(index + 1, leagueTeamSize),
-      }));
+      groupMap[gName] = groupTeams.map((team, index) => {
+        const groupRank = index + 1;
+        const prevRank = maxPlayedGw > 1 ? prevRankByTeam.get(team.teamId) ?? null : null;
+        return {
+          ...team,
+          rank: groupRank,
+          groupRank,
+          zone: getQualificationZone(groupRank, leagueTeamSize),
+          previousRank: prevRank,
+          rankDelta: prevRank != null ? prevRank - groupRank : null,
+        };
+      });
     }
 
     // For groupless leagues (8-team, 16-team, Triple Crown), all teams go into groupA
     if (groupNames.length === 0 && standings.length > 0) {
-      groupMap["A"] = standings.map((team, index) => ({
-        ...team,
-        rank: index + 1,
-        groupRank: index + 1,
-        zone: getQualificationZone(index + 1, leagueTeamSize),
-      }));
+      groupMap["A"] = standings.map((team, index) => {
+        const groupRank = index + 1;
+        const prevRank = maxPlayedGw > 1 ? prevRankByTeam.get(team.teamId) ?? null : null;
+        return {
+          ...team,
+          rank: groupRank,
+          groupRank,
+          zone: getQualificationZone(groupRank, leagueTeamSize),
+          previousRank: prevRank,
+          rankDelta: prevRank != null ? prevRank - groupRank : null,
+        };
+      });
     }
 
     const responseData = {

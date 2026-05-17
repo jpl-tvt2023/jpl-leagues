@@ -100,6 +100,18 @@ function FixtureCard({
         </div>
       </div>
 
+      {isLive && (liveData?.playersLeftHome != null || liveData?.playersLeftAway != null) && (() => {
+        const total = (liveData.playersLeftHome ?? 0) + (liveData.playersLeftAway ?? 0);
+        const allKnown = liveData.playersLeftHome != null && liveData.playersLeftAway != null;
+        return (
+          <div className="mt-2 text-center text-[11px]">
+            <span className={allKnown && total > 0 ? "text-yellow-400" : "text-gray-500"}>
+              Players left to play — {allKnown ? total : "—"}
+            </span>
+          </div>
+        );
+      })()}
+
       <div className="mt-2">
         <button
           onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}

@@ -101,6 +101,9 @@ export function ClassicStandings() {
                   }
                 </p>
               )}
+              {latestGameweek > 0 && (
+                <p className="text-[11px] text-gray-500 mt-2">▲/▼ shows league rank change vs previous GW</p>
+              )}
             </div>
 
             {!isTripleCrown && (
