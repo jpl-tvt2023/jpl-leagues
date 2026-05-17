@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auctionScores, gameweeks, leagues, teams } from "@/lib/db/schema";
+import { auctionScores, auctionOwnership, gameweeks, leagues, teams } from "@/lib/db/schema";
 import { and, eq, lte } from "drizzle-orm";
 
 /**
@@ -91,6 +91,46 @@ export async function GET(request: NextRequest) {
     .where(eq(teams.leagueId, league.id));
   const teamNameMap = new Map(teamRows.map((t) => [t.id, t.name]));
 
+  // Build elementId → elementType map from ownership. A player's position is
+  // immutable, so a single map covers every gameweek even when ownership
+  // changes hands across the season.
+  const ownershipRows = await db
+    .select({
+      fplElementId: auctionOwnership.fplElementId,
+      elementType: auctionOwnership.elementType,
+    })
+    .from(auctionOwnership)
+    .where(eq(auctionOwnership.leagueId, league.id));
+  const elementTypeMap = new Map<number, number | null>();
+  for (const o of ownershipRows) {
+    if (!elementTypeMap.has(o.fplElementId)) {
+      elementTypeMap.set(o.fplElementId, o.elementType ?? null);
+    }
+  }
+
+  // Compute cumulative league standings at the end of a given GW number.
+  // Returns a Map<teamId, rank> where rank is 1-based, ties broken by raw
+  // cumulative points (Drizzle SQLite has no stable secondary key here, but
+  // ties are vanishingly rare for cumulative totals).
+  const gwNumberById = new Map(gws.map((g) => [g.id, g.number]));
+  function leagueRanksAfter(gwNumber: number): Map<string, number> {
+    const cumulative = new Map<string, number>();
+    for (const s of allScores) {
+      const num = gwNumberById.get(s.gameweekId);
+      if (num == null || num > gwNumber) continue;
+      cumulative.set(s.teamId, (cumulative.get(s.teamId) ?? 0) + s.totalPoints);
+    }
+    const ordered = [...cumulative.entries()].sort((a, b) => b[1] - a[1]);
+    const ranks = new Map<string, number>();
+    ordered.forEach(([teamId], idx) => ranks.set(teamId, idx + 1));
+    return ranks;
+  }
+
+  const currentRanks = leagueRanksAfter(selectedGw);
+  const previousRanks = selectedGw > processedGameweeks[0]
+    ? leagueRanksAfter(selectedGw - 1)
+    : null;
+
   type BreakdownPlayer = { elementId: number; name: string; points: number };
 
   const rows = allScores
@@ -103,13 +143,23 @@ export async function GET(request: NextRequest) {
       } catch {
         // Malformed JSON in playerBreakdown — skip the per-player view but keep the row.
       }
+      const enrichedPlayers = players.map((p) => ({
+        ...p,
+        elementType: elementTypeMap.get(p.elementId) ?? null,
+      }));
+      const leagueRank = currentRanks.get(s.teamId) ?? null;
+      const prevLeagueRank = previousRanks ? previousRanks.get(s.teamId) ?? null : null;
+      const rankDelta = leagueRank != null && prevLeagueRank != null ? prevLeagueRank - leagueRank : null;
       return {
         teamId: s.teamId,
         teamName: teamNameMap.get(s.teamId) ?? "Unknown",
         totalPoints: s.totalPoints,
         rank: s.rank ?? 0,
         payout: s.payout,
-        players: players.sort((a, b) => b.points - a.points),
+        leagueRank,
+        prevLeagueRank,
+        rankDelta,
+        players: enrichedPlayers.sort((a, b) => b.points - a.points),
       };
     })
     .sort((a, b) => {
