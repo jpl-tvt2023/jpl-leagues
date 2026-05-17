@@ -110,7 +110,7 @@ export function AuctionGwResults() {
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
         {isLoading ? (
-          <LoadingScreen variant="standings" fullScreen={false} />
+          <LoadingScreen variant="gw-results" fullScreen={false} />
         ) : (
           <>
             <div className="text-center mb-8">

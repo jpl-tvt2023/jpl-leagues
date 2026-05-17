@@ -409,6 +409,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           <Link href="/dashboard" className="text-yellow-400 font-semibold transition">Dashboard</Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
+          <Link href={`/${leagueSlug}/gw-results`} className="text-gray-300 hover:text-white transition">GW Results</Link>
           <Link href={`/${leagueSlug}/teams`} className="text-gray-300 hover:text-white transition">Teams</Link>
           <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
@@ -418,6 +419,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           )}
           <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
+          <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
           <NotificationBell />
           <button onClick={onSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
             Sign Out

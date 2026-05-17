@@ -7,7 +7,10 @@ export type NotificationType =
   | "trade_rejected"
   | "trade_approved"
   | "trade_admin_rejected"
-  | "trade_cancelled";
+  | "trade_cancelled"
+  | "gw_processed"
+  | "release_refund"
+  | "slot_redeemed";
 
 export interface CreateNotificationInput {
   teamId: string;
