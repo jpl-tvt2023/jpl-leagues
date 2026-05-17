@@ -40,15 +40,23 @@ interface FplFixture {
 
 /**
  * Fetch all PL fixtures for a given GW from FPL (with 60s Redis cache).
- * Returns [] on FPL outage so callers degrade gracefully.
+ *
+ * Returns:
+ *   - FplFixture[] on success (may be empty for blank GWs).
+ *   - null on actual FPL outage (fetch error, non-2xx, or non-array response).
+ *
+ * Cache discipline: only populate Redis with non-empty arrays. A transient
+ * empty response shouldn't poison the cache for 60s.
  */
-export async function getFplFixturesForGw(gw: number): Promise<FplFixture[]> {
+export async function getFplFixturesForGw(gw: number): Promise<FplFixture[] | null> {
   const r = getRedis();
   const key = `fpl:fixtures:gw${gw}`;
 
   if (r) {
     const cached = await r.get<FplFixture[]>(key);
-    if (cached) return cached;
+    // Only trust cache entries that have at least one fixture — defensive
+    // against any historical empty-array poisoning.
+    if (Array.isArray(cached) && cached.length > 0) return cached;
   }
 
   try {
@@ -56,13 +64,15 @@ export async function getFplFixturesForGw(gw: number): Promise<FplFixture[]> {
       // Bypass Next.js fetch cache — Redis handles caching for us
       cache: "no-store",
     });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const data = (await res.json()) as FplFixture[];
-    if (!Array.isArray(data)) return [];
-    if (r) await r.set(key, data, { ex: FPL_FIXTURES_TTL_SECONDS });
+    if (!Array.isArray(data)) return null;
+    // Only cache non-empty results. Empty arrays (blank GWs or transient
+    // FPL responses) are returned to the caller but never cached.
+    if (r && data.length > 0) await r.set(key, data, { ex: FPL_FIXTURES_TTL_SECONDS });
     return data;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -89,10 +99,16 @@ export async function countPlayersLeftToPlay(
   }
 
   const fixtures = await getFplFixturesForGw(gw);
-  // If FPL returned no fixture rows, fall back to null (treat as outage).
-  // Note: BGW with no fixtures would also return [] from the API; but a BGW
-  // is exceptional, and showing "—" is acceptable in that edge case.
-  if (fixtures.length === 0) return null;
+  // null → FPL fetch failed entirely (network/non-2xx); show "—".
+  // [] → FPL returned a successful but empty payload. For a normal GW that's
+  // pathological — we don't want to lie with "0" or "—" either. Log a warning
+  // so this is visible, and surface as null. Cache hygiene above prevents the
+  // empty from sticking, so a subsequent call has a chance to recover.
+  if (fixtures == null) return null;
+  if (fixtures.length === 0) {
+    console.warn("[players-left] FPL returned empty fixtures for GW", gw);
+    return null;
+  }
 
   let elements: Awaited<ReturnType<typeof fetchElementInfo>>;
   try {
