@@ -307,6 +307,10 @@ export interface LiveFixtureScore {
   awayScore: number;
   homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
   awayPlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
+  /** Fixtures-left-to-play across home managers' starting XI. null when FPL fixtures fetch failed. */
+  playersLeftHome?: number | null;
+  /** Fixtures-left-to-play across away managers' starting XI. null when FPL fixtures fetch failed. */
+  playersLeftAway?: number | null;
 }
 
 export interface LiveGameweekData {

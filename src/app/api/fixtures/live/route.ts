@@ -10,6 +10,7 @@ import {
   type LiveGameweekData,
 } from "@/lib/fpl-cache";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
+import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
 
 /**
  * GET /api/fixtures/live?gameweek=N
@@ -182,6 +183,22 @@ export async function GET(request: NextRequest) {
             autoAssignedByTeam.get(fixture.awayTeamId) ?? false,
           );
 
+          // Players-left per side: starting-XI element IDs across managers,
+          // looked up against PL fixtures' kickoff times. Helper returns null
+          // on FPL outage — surface null so UI can show "—" rather than 0.
+          let playersLeftHome: number | null = null;
+          let playersLeftAway: number | null = null;
+          try {
+            const [pHome, pAway] = await Promise.all([
+              countPlayersLeftToPlay(homeScore.starterElementIds, gwNumber),
+              countPlayersLeftToPlay(awayScore.starterElementIds, gwNumber),
+            ]);
+            playersLeftHome = pHome?.leftToPlay ?? null;
+            playersLeftAway = pAway?.leftToPlay ?? null;
+          } catch {
+            // best-effort — keep nulls
+          }
+
           liveFixtures.push({
             fixtureId: fixture.id,
             gameweek: gwNumber,
@@ -193,6 +210,8 @@ export async function GET(request: NextRequest) {
             awayScore: awayScore.total,
             homePlayers: homeScore.players,
             awayPlayers: awayScore.players,
+            playersLeftHome,
+            playersLeftAway,
           });
         } catch (err) {
           console.error(`Live score error for fixture ${fixture.id}:`, err);
@@ -259,7 +278,9 @@ function normalizeStoredPlayerScores(raw: string | null | undefined): Array<Reco
 }
 
 /**
- * Calculate live score for a TVT team (2 FPL players + captaincy doubling)
+ * Calculate live score for a TVT team (2 FPL players + captaincy doubling).
+ * Also returns the starting-XI FPL element IDs across both managers so the
+ * caller can compute "players left to play" for this side of the fixture.
  */
 async function calculateLiveTeamScore(
   teamPlayers: { id: string; name: string; fplId: string }[],
@@ -270,14 +291,22 @@ async function calculateLiveTeamScore(
 ): Promise<{
   total: number;
   players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
+  /** FPL element IDs of the starting XI across all managers (positions 1-11, no dedupe). */
+  starterElementIds: number[];
 }> {
   const rawScores: { id: string; name: string; fplId: string; fplScore: number; transferHits: number; netScore: number }[] = [];
+  const starterElementIds: number[] = [];
   for (const player of teamPlayers) {
     try {
       const picks = await fetchTeamGameweekPicks(player.fplId, gameweek);
       const fplScore = picks.entry_history.points;
       const transferHits = picks.entry_history.event_transfers_cost;
       rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore, transferHits, netScore: fplScore - transferHits });
+      // Starters are picks.position 1-11. Collect their element IDs for the
+      // players-left indicator. No dedupe: each roster slot counts independently.
+      for (const pk of picks.picks ?? []) {
+        if (pk.position >= 1 && pk.position <= 11) starterElementIds.push(pk.element);
+      }
     } catch {
       rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore: 0, transferHits: 0, netScore: 0 });
     }
@@ -309,5 +338,5 @@ async function calculateLiveTeamScore(
     };
   });
 
-  return { total, players };
+  return { total, players, starterElementIds };
 }
