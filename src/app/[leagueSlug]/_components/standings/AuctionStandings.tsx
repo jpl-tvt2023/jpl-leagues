@@ -21,6 +21,8 @@ interface AuctionStandingRow {
   purse: number;
   squadValue: number;
   rank: number;
+  previousRank: number | null;
+  rankDelta: number | null;
   gwHistory: AuctionGwHistoryEntry[];
 }
 
@@ -124,6 +126,7 @@ export function AuctionStandings() {
             <div className="text-center mb-10">
               <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">{leagueName || "Auction League"}</h1>
               <p className="text-[#00ff85] text-sm font-semibold uppercase tracking-widest">Auction · Total Points Race</p>
+              <p className="text-[11px] text-gray-500 mt-2">▲/▼ shows league rank change vs previous GW</p>
             </div>
             {error ? (
               <div className="text-center text-red-400 py-12">{error}</div>
@@ -213,7 +216,21 @@ export function AuctionStandings() {
                             tabIndex={0}
                             className="border-t border-white/5 hover:bg-white/10 transition cursor-pointer focus:outline-none focus:bg-white/10"
                           >
-                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{row.rank}</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span>{row.rank}</span>
+                                {row.rankDelta != null && row.rankDelta !== 0 ? (
+                                  <span
+                                    className={`font-mono text-xs font-normal ${row.rankDelta > 0 ? "text-green-400" : "text-red-400"}`}
+                                    title={row.previousRank != null ? `Was #${row.previousRank} last GW` : undefined}
+                                  >
+                                    {row.rankDelta > 0 ? `▲${row.rankDelta}` : `▼${Math.abs(row.rankDelta)}`}
+                                  </span>
+                                ) : row.rankDelta === 0 ? (
+                                  <span className="font-mono text-xs font-normal text-gray-500" title="No change vs previous GW">—</span>
+                                ) : null}
+                              </span>
+                            </td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
                               <div className="font-semibold text-white">{row.teamName}</div>
                             </td>

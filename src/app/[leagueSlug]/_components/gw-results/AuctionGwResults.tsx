@@ -174,7 +174,7 @@ export function AuctionGwResults() {
                     </button>
                   </div>
                   <div className="text-xs text-gray-400">
-                    {rows.length} teams · click a row to view scoring players
+                    {rows.length} teams · click a row to view scoring players · ▲/▼ shows league rank change vs previous GW
                   </div>
                 </div>
 
@@ -187,7 +187,7 @@ export function AuctionGwResults() {
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">GW Points</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Scorers</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">League Rank</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -201,7 +201,6 @@ export function AuctionGwResults() {
                           rows.map((row) => {
                             const isMine = row.teamId === myTeamId;
                             const isExpanded = expanded.has(row.teamId);
-                            const scorers = row.players.filter((p) => p.points > 0);
                             return (
                               <Fragment key={row.teamId}>
                                 <tr
@@ -221,10 +220,26 @@ export function AuctionGwResults() {
                                   <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">
                                     {formatCurrency(row.payout)}
                                   </td>
-                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right text-gray-400">
-                                    <span className="inline-flex items-center gap-1">
-                                      {scorers.length}
-                                      <span className="text-[10px]">{isExpanded ? "▲" : "▼"}</span>
+                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">
+                                    <span className="inline-flex items-center justify-end gap-2">
+                                      <span className="font-mono font-bold text-white">
+                                        {row.leagueRank != null ? `#${row.leagueRank}` : "—"}
+                                      </span>
+                                      {row.rankDelta != null && row.rankDelta !== 0 ? (
+                                        <span
+                                          className={`font-mono text-xs ${row.rankDelta > 0 ? "text-green-400" : "text-red-400"}`}
+                                          title={
+                                            row.prevLeagueRank != null
+                                              ? `Was #${row.prevLeagueRank} after GW${selectedGw != null ? selectedGw - 1 : "?"}`
+                                              : undefined
+                                          }
+                                        >
+                                          {row.rankDelta > 0 ? `▲${row.rankDelta}` : `▼${Math.abs(row.rankDelta)}`}
+                                        </span>
+                                      ) : row.rankDelta === 0 ? (
+                                        <span className="font-mono text-xs text-gray-500" title="No change vs previous GW">—</span>
+                                      ) : null}
+                                      <span className="text-[10px] text-gray-500">{isExpanded ? "▲" : "▼"}</span>
                                     </span>
                                   </td>
                                 </tr>

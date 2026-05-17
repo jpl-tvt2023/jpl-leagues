@@ -150,19 +150,31 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
                     }`}
                   >
                     <td className="px-2 py-2 sm:px-3">
-                      <span
-                        className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] sm:text-xs font-bold ${
-                          isTripleCrown
-                            ? team.groupRank <= 4 ? "bg-green-500/20 text-green-400" : "bg-white/10 text-gray-400"
-                            : team.zone === "playoffs"
-                              ? "bg-green-500/20 text-green-400"
-                              : team.zone === "challenger"
-                              ? "bg-yellow-500/20 text-yellow-400"
-                              : "bg-red-500/20 text-red-400"
-                        }`}
-                      >
-                        {team.groupRank}
-                      </span>
+                      <div className="inline-flex items-center gap-1.5">
+                        <span
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] sm:text-xs font-bold ${
+                            isTripleCrown
+                              ? team.groupRank <= 4 ? "bg-green-500/20 text-green-400" : "bg-white/10 text-gray-400"
+                              : team.zone === "playoffs"
+                                ? "bg-green-500/20 text-green-400"
+                                : team.zone === "challenger"
+                                ? "bg-yellow-500/20 text-yellow-400"
+                                : "bg-red-500/20 text-red-400"
+                          }`}
+                        >
+                          {team.groupRank}
+                        </span>
+                        {team.rankDelta != null && team.rankDelta !== 0 ? (
+                          <span
+                            className={`font-mono text-[10px] sm:text-xs ${team.rankDelta > 0 ? "text-green-400" : "text-red-400"}`}
+                            title={team.previousRank != null ? `Was #${team.previousRank} last GW` : undefined}
+                          >
+                            {team.rankDelta > 0 ? `▲${team.rankDelta}` : `▼${Math.abs(team.rankDelta)}`}
+                          </span>
+                        ) : team.rankDelta === 0 ? (
+                          <span className="font-mono text-[10px] sm:text-xs text-gray-500" title="No change vs previous GW">—</span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-2 py-2 font-medium text-white leading-tight min-w-0 max-w-[140px] sm:max-w-none truncate">{team.name}</td>
                     <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.played}</td>
