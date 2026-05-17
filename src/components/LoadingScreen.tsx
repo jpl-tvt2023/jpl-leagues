@@ -2,6 +2,7 @@ import React from "react";
 
 type LoadingVariant =
   | "standings"
+  | "gw-results"
   | "fixtures"
   | "playoffs"
   | "dashboard"
@@ -138,6 +139,13 @@ const VARIANTS: Record<
     ringColor: "#facc15",        // yellow-400
     dotColor: "bg-yellow-400",
     textColor: "text-yellow-400",
+    Icon: IconStandings,
+  },
+  "gw-results": {
+    label: "Loading Gameweek Results",
+    ringColor: "#00ff85",        // matches the GW Results page accent
+    dotColor: "bg-emerald-400",
+    textColor: "text-emerald-400",
     Icon: IconStandings,
   },
   fixtures: {
