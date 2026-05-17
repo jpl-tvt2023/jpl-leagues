@@ -323,7 +323,7 @@ export default function SquadPage() {
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
         {isLoading ? (
-          <LoadingScreen variant="dashboard" fullScreen={false} />
+          <LoadingScreen variant="default" fullScreen={false} label="Loading Squad" />
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>
         ) : !squadData || !economy ? (

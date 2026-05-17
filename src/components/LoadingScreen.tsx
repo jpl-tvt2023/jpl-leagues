@@ -15,6 +15,8 @@ interface LoadingScreenProps {
   variant?: LoadingVariant;
   /** true = full-screen with gradient bg (early-return pages); false = content-area block (nav always visible) */
   fullScreen?: boolean;
+  /** Optional override of the variant's default label. Variant still drives the icon and colour. */
+  label?: string;
 }
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────
@@ -201,9 +203,10 @@ const VARIANTS: Record<
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function LoadingScreen({ variant = "default", fullScreen = true }: LoadingScreenProps) {
+export function LoadingScreen({ variant = "default", fullScreen = true, label }: LoadingScreenProps) {
   const cfg = VARIANTS[variant];
   const { Icon } = cfg;
+  const displayLabel = label ?? cfg.label;
 
   const spinner = (
     <div className="flex flex-col items-center gap-4 sm:gap-5 px-4">
@@ -235,7 +238,7 @@ export function LoadingScreen({ variant = "default", fullScreen = true }: Loadin
       </div>
 
       {/* label */}
-      <p className={`text-xs sm:text-sm font-semibold tracking-wide text-center ${cfg.textColor}`}>{cfg.label}</p>
+      <p className={`text-xs sm:text-sm font-semibold tracking-wide text-center ${cfg.textColor}`}>{displayLabel}</p>
 
       {/* staggered bouncing dots */}
       <div className="flex gap-1.5">

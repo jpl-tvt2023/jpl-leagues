@@ -1,5 +1,5 @@
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function Loading() {
-  return <LoadingScreen variant="help" label="Loading Help" />;
+  return <LoadingScreen variant="default" label="Loading Players" />;
 }
