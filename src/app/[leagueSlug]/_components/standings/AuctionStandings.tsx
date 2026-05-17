@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useLeague } from "@/lib/league-context";
@@ -34,10 +34,19 @@ function formatCurrency(amount: number): string {
 
 export function AuctionStandings() {
   const params = useParams();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const leagueSlug = params.leagueSlug as string;
   const gwParam = searchParams.get("gw");
   const selectedGw = gwParam ? parseInt(gwParam, 10) : null;
+
+  const openGwResults = () => router.push(`/${leagueSlug}/gw-results`);
+  const onRowKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openGwResults();
+    }
+  };
 
   const { league, viewer } = useLeague();
   const leagueName = league.name;
@@ -150,7 +159,14 @@ export function AuctionStandings() {
                         </thead>
                         <tbody>
                           {perGwRows.map((r) => (
-                            <tr key={r.teamId} className="border-t border-white/5 hover:bg-white/5 transition">
+                            <tr
+                              key={r.teamId}
+                              onClick={openGwResults}
+                              onKeyDown={onRowKeyDown}
+                              role="button"
+                              tabIndex={0}
+                              className="border-t border-white/5 hover:bg-white/10 transition cursor-pointer focus:outline-none focus:bg-white/10"
+                            >
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{r.rank}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
                                 <div className="font-semibold text-white">{r.teamName}</div>
@@ -189,7 +205,14 @@ export function AuctionStandings() {
                       </thead>
                       <tbody>
                         {auctionStandings.map((row) => (
-                          <tr key={row.teamId} className="border-t border-white/5 hover:bg-white/5 transition">
+                          <tr
+                            key={row.teamId}
+                            onClick={openGwResults}
+                            onKeyDown={onRowKeyDown}
+                            role="button"
+                            tabIndex={0}
+                            className="border-t border-white/5 hover:bg-white/10 transition cursor-pointer focus:outline-none focus:bg-white/10"
+                          >
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{row.rank}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
                               <div className="font-semibold text-white">{row.teamName}</div>

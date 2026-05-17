@@ -3989,10 +3989,11 @@ export default function AdminDashboard() {
                                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
                                       <span className="text-gray-300 truncate">{player.playerName}</span>
                                     </div>
-                                    <div className="flex items-center gap-2 text-gray-500 shrink-0">
-                                      <span>{player.totalPoints}p</span>
-                                      <span>{(player.purchasePrice / 1_000_000).toFixed(1)}M</span>
-                                      <span className="text-gray-600">F:{(player.fmv / 1_000_000).toFixed(1)}M</span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-[#00ff85] font-mono">{player.totalPoints}p</span>
+                                      <span className="text-gray-300 font-mono">{(player.purchasePrice / 1_000_000).toFixed(1)}M</span>
+                                      <span className="text-[10px] uppercase tracking-wider text-gray-500">FMV</span>
+                                      <span className="text-cyan-300 font-mono font-semibold">£{(player.fmv / 1_000_000).toFixed(1)}M</span>
                                     </div>
                                   </div>
                                 ))}
