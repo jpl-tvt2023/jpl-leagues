@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
   }
 
   const leagueId = request.nextUrl.searchParams.get("leagueId");
+  const limitParam = parseInt(request.nextUrl.searchParams.get("limit") ?? "30", 10);
+  const limit = Math.min(200, Math.max(1, Number.isFinite(limitParam) ? limitParam : 30));
   const where = leagueId
     ? and(eq(notifications.teamId, session.id), eq(notifications.leagueId, leagueId))
     : eq(notifications.teamId, session.id);
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
     .from(notifications)
     .where(where)
     .orderBy(desc(notifications.createdAt))
-    .limit(30);
+    .limit(limit);
 
   const unreadCount = rows.filter((r) => r.readAt === null).length;
 
