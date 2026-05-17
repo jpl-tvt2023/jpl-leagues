@@ -17,6 +17,7 @@ import { db, gameweeks, fixtures, leagues, auditLogs, results } from "@/lib/db";
 import { gameweekCaptains, playoffTies, backups } from "@/lib/db/schema";
 import { asc, eq, and, isNull, ne, or } from "drizzle-orm";
 import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
+import { syncGameweekDeadlines } from "@/lib/gameweeks/sync-deadlines";
 import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
@@ -501,6 +502,17 @@ export async function processOneLeague(
     advanceWindowFuture: [],
     errors: [],
   };
+
+  // Reconcile our gameweeks.deadline column with FPL's current truth once per
+  // league before processing. Mid-season FPL deadline shifts would otherwise
+  // leave the in-flight GW detection and live-mode triggers slightly off. The
+  // sync is idempotent and bootstrap-cached, so this is cheap. Failures here
+  // must NEVER block scoring — wrap in try/catch.
+  try {
+    await syncGameweekDeadlines(league.id);
+  } catch (syncErr) {
+    console.warn(`[process-all] sync-deadlines failed for league ${league.slug}:`, messageFrom(syncErr));
+  }
 
   try {
     for (const gw of dueGws) {
