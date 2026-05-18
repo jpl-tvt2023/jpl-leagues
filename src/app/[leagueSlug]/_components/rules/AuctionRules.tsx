@@ -101,9 +101,25 @@ export function AuctionRules() {
       </section>
 
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
-        <SectionHeader letter="G" color="green" title="Standings" />
+        <SectionHeader letter="G" color="green" title="PL Club Ownership (opt-in)" />
+        <p className="text-xs text-gray-500 mb-3">Only applies to leagues with the PL Club Auction enabled.</p>
+        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+          <RuleItem>Before the player auction, each team buys <strong className="text-white">one PL club</strong> in a random-nomination, single-bid auction.</RuleItem>
+          <RuleItem>The club auction shares the same purse as the player auction. <strong className="text-white">One club per team, one owner per club, season-long, non-tradeable.</strong></RuleItem>
+          <RuleItem>If no one bids on a nominated club, it goes <strong className="text-white">unsold</strong> and is re-nominated in a round-2 pass before the player auction begins.</RuleItem>
+          <RuleItem><strong className="text-white">Synergy multiplier (×1.5):</strong> any owned player whose current PL club matches your owned club earns a <strong>+50% bonus</strong> on their raw GW points. Bonus follows the player&apos;s current PL club — transfers re-route the multiplier.</RuleItem>
+          <RuleItem><strong className="text-white">Club result bonus</strong>: every GW your owned club wins or draws a real-PL fixture you earn points based on the club&apos;s tier (per-fixture; DGW = doubled, BGW = 0).</RuleItem>
+          <RuleItem>Tier bonuses — <strong className="text-yellow-300">Top 8</strong>: +2 win / +1 draw · <strong className="text-blue-300">Mid</strong>: +3 / +1 · <strong className="text-emerald-300">Promoted</strong>: +4 / +2.</RuleItem>
+          <RuleItem>Your team displays as the <strong className="text-white">owned club&apos;s name</strong> all season (e.g. &quot;Liverpool&quot;), with a tier-coloured chip beside it.</RuleItem>
+          <RuleItem>Synergy bonuses <strong className="text-white">do not</strong> compound into FMV / squad value / trade economics — those stay on raw points only.</RuleItem>
+        </ul>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <SectionHeader letter="H" color="green" title="Standings" />
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
           <RuleItem>Teams are ranked by <strong className="text-white">total cumulative FPL points</strong> scored by their squad across all gameweeks.</RuleItem>
+          <RuleItem>For PL Club Auction leagues, total = <strong className="text-white">Raw + Synergy + Club result</strong>.</RuleItem>
           <RuleItem>In case of a tie, teams with a higher average GW score rank higher.</RuleItem>
           <RuleItem>Purse size and trade activity do not affect standings — only on-pitch performance counts.</RuleItem>
         </ul>

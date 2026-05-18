@@ -44,7 +44,68 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
       question: "How are points calculated each gameweek?",
       answer: (
         <p>
-          Your GW score = sum of FPL points from your <strong className="text-white">active</strong> owned players. Players you have marked as <strong className="text-yellow-400">deadwood</strong> remain in your squad but contribute zero. Once scored, payouts are credited to your purse based on your GW rank. See the <Link href={`/${leagueSlug}/rules`} className="text-yellow-400 hover:text-yellow-300">Rules page</Link> for the full payout schedule.
+          Your GW score = sum of FPL points from your <strong className="text-white">active</strong> owned players. Players you have marked as <strong className="text-yellow-400">deadwood</strong> remain in your squad but contribute zero. For leagues with the <strong className="text-white">PL Club Auction</strong> enabled, the total is <strong className="text-white">Raw + Synergy + Club result</strong>. Once scored, payouts are credited to your purse based on your GW rank. See the <Link href={`/${leagueSlug}/rules`} className="text-yellow-400 hover:text-yellow-300">Rules page</Link> for the full payout schedule.
+        </p>
+      ),
+    },
+    {
+      question: "What is the PL Club auction and how does it work?",
+      answer: (
+        <div className="space-y-2">
+          <p>
+            Before the player auction begins, each fantasy team buys <strong className="text-white">one Premier League club</strong> in a separate auction. The system <strong className="text-white">randomly nominates</strong> clubs one at a time; bidders place bids; the highest bidder wins. If nobody bids on a nominated club, it goes unsold and is re-nominated in a round-2 pass (only club-less teams can bid in round 2).
+          </p>
+          <p>
+            Clubs are <strong className="text-white">non-tradeable</strong> — you own that club for the entire season. Your team displays as the owned club&apos;s name everywhere (e.g. &quot;Team 5&quot; → &quot;Arsenal&quot;), with a tier-coloured chip beside it.
+          </p>
+        </div>
+      ),
+    },
+    {
+      question: "How does the ×1.5 club synergy multiplier work?",
+      answer: (
+        <div className="space-y-2">
+          <p>
+            Any owned player whose PL club matches your owned club earns a <strong className="text-yellow-300">+50% bonus</strong> on their raw GW points. The synergy follows the player&apos;s PL club <strong className="text-white">at the time of the GW</strong>, not their current club.
+          </p>
+          <p>
+            If a player transfers mid-season, the <strong className="text-white">previous owner keeps synergy</strong> on every GW the player completed at the old club, and the <strong className="text-white">new owner gains synergy</strong> from the transfer GW onward. Example: Mbeumo plays GW1-15 for Brentford then signs for Man Utd before GW16 — the Brentford owner keeps GW1-15 synergy on Mbeumo, the Man Utd owner picks up GW16+.
+          </p>
+          <p>
+            Synergy applies only to GW scoring; it does <strong className="text-white">not</strong> compound into FMV, squad value, or trade economics.
+          </p>
+        </div>
+      ),
+    },
+    {
+      question: "How does the club result bonus work?",
+      answer: (
+        <div className="space-y-2">
+          <p>
+            Every GW your owned club wins or draws a real-PL fixture, you earn a per-fixture bonus based on the club&apos;s tier:
+          </p>
+          <ul className="ml-5 list-disc space-y-1">
+            <li><strong className="text-yellow-300">Top 8</strong> (last season&apos;s 1-8) — Win +2 / Draw +1 per fixture.</li>
+            <li><strong className="text-blue-300">Mid</strong> (last season&apos;s 9-17) — Win +3 / Draw +1.</li>
+            <li><strong className="text-emerald-300">Promoted</strong> (3 newly-promoted clubs) — Win +4 / Draw +2.</li>
+          </ul>
+          <p>Double Gameweek = bonus paid per fixture (so 2× in a DGW). Blank Gameweek = no fixture, no bonus.</p>
+        </div>
+      ),
+    },
+    {
+      question: "What happens if I own a player who transfers out of the Premier League mid-season?",
+      answer: (
+        <p>
+          Their historical points (and synergy) stay on your record for any GWs already scored. Going forward they score 0 (no longer in FPL). You can <strong className="text-white">release</strong> them for a 50% refund just like any other player — see the Releases section in the Rules.
+        </p>
+      ),
+    },
+    {
+      question: "What happens when admin reprocesses a historical GW after a player transfer?",
+      answer: (
+        <p>
+          Reprocessing uses the player&apos;s PL club <strong className="text-white">at the time the GW was originally scored</strong> (snapshotted in the scoring breakdown) rather than the live FPL bootstrap. So mid-season transfers do NOT retroactively re-route synergy on already-scored GWs. If a player has since left the PL entirely (missing from the bootstrap), the last-known synergy bonus is preserved. In the rare case automatic preservation isn&apos;t enough, superadmin can edit per-row synergy / club-result via the <em>Score Adjustments</em> tab — every change is audit-logged with a reason.
         </p>
       ),
     },
@@ -132,6 +193,18 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
         "Open Players to browse the full FPL pool and see which JPL team owns each player.",
       ],
     },
+    {
+      number: 2,
+      title: "The PL Club auction — from random nomination to final ownership",
+      steps: [
+        "Admin schedules a separate club-auction session, typically 1 hour or 1 day before the initial player auction.",
+        "When the session starts, the system randomly orders all 20 PL clubs and auto-nominates the first one.",
+        "Any team that doesn't yet own a club may bid. Same purse, same bid timer rules as the player auction.",
+        "Highest bidder wins the club at their final bid. No bids → club goes unsold and re-nominates in round 2.",
+        "Round 2 re-shuffles the unsold clubs; only club-less teams can bid. Repeat until every team has a club.",
+        "After the session, every team's display name flips to their owned club (e.g. 'Team 5' → 'Arsenal') with a tier chip.",
+      ],
+    },
   ];
 
   const teamScenarios: ScenarioEntry[] = [
@@ -164,6 +237,17 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
         "Select the player(s) you're offering from your squad and the player(s) you're requesting from theirs.",
         "Optionally add cash (positive = you pay, negative = you receive). The FMV floor check ensures both sides receive ≥80% of what they give.",
         "Submit. The recipient is notified via the bell icon and can accept, reject, or counter.",
+      ],
+    },
+    {
+      number: 4,
+      title: "Reprocessing a gameweek after a player transferred",
+      steps: [
+        "Admin clicks Reprocess on a previously-scored GW from the Scoring tab.",
+        "The scorer fetches the latest FPL bootstrap and recomputes raw points and synergy.",
+        "For owned players who are no longer in the FPL bootstrap (transferred out of the PL), the scorer preserves their previously-stored synergy bonus rather than dropping it to 0.",
+        "Total = Raw + Synergy + Club result is recomputed and standings re-rank.",
+        "If automatic preservation isn't enough (rare), superadmin can edit per-row synergy / club-result from Superadmin → Score Adjustments. Every change is audit-logged with a reason.",
       ],
     },
   ];

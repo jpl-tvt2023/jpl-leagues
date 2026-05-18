@@ -3748,7 +3748,7 @@ export default function AdminDashboard() {
                 <div className="text-center py-12 rounded-xl bg-white/[0.02] border border-dashed border-white/10">
                   <div className="text-3xl mb-2">📅</div>
                   <div className="text-sm text-gray-300 font-medium">No auction sessions yet</div>
-                  <div className="text-xs text-gray-500 mt-1">Click "+ Initial Auction" above to schedule one</div>
+                  <div className="text-xs text-gray-500 mt-1">Click &quot;+ Initial Auction&quot; above to schedule one</div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -4651,14 +4651,21 @@ function AdminFinanceTab({ leagueId }: { leagueId: string }) {
   }, [leagueId]);
 
   useEffect(() => {
-    if (!selectedTeamId) { setLedger(null); return; }
+    if (!selectedTeamId) return; // No team selected — let the previous ledger linger or display the empty state below.
+    let cancelled = false;
     (async () => {
       setLedgerLoading(true);
       const res = await fetch(`/api/auction/finance?teamId=${selectedTeamId}`);
+      if (cancelled) return;
       if (res.ok) setLedger(await res.json()); else setLedger(null);
       setLedgerLoading(false);
     })();
+    return () => { cancelled = true; };
   }, [selectedTeamId]);
+
+  // Reset the ledger to null whenever the selection is cleared. Derived from selectedTeamId so we
+  // don't need a sync setState inside the fetch effect.
+  const ledgerForSelection = selectedTeamId ? ledger : null;
 
   if (loading) return <div className="text-gray-400 py-8 text-center">Loading finance audit…</div>;
 
@@ -4709,11 +4716,11 @@ function AdminFinanceTab({ leagueId }: { leagueId: string }) {
       {selectedTeamId && (
         <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
           <h3 className="text-lg font-bold text-white mb-3">
-            {ledger?.teamName ?? "Team"} — Ledger
+            {ledgerForSelection?.teamName ?? "Team"} — Ledger
           </h3>
           {ledgerLoading ? (
             <div className="text-gray-400 py-4 text-center">Loading…</div>
-          ) : !ledger ? (
+          ) : !ledgerForSelection ? (
             <div className="text-red-400 py-4 text-center">Ledger unavailable</div>
           ) : (
             <div className="overflow-x-auto">
@@ -4729,7 +4736,7 @@ function AdminFinanceTab({ leagueId }: { leagueId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {ledger.ledger.map((e) => (
+                  {ledgerForSelection.ledger.map((e) => (
                     <tr key={e.id} className={`border-b border-white/5 ${e.isPending ? "opacity-60" : ""}`}>
                       <td className="py-2 px-2 text-gray-400 font-mono">{e.gw ?? "—"}</td>
                       <td className="py-2 px-2 text-gray-400 text-xs whitespace-nowrap">

@@ -95,7 +95,7 @@ export async function PUT(request: NextRequest) {
       const groupRecords = await db.select().from(groups).where(
         and(eq(groups.name, group), eq(groups.leagueId, leagueId))
       );
-      let groupRecord = groupRecords[0];
+      const groupRecord = groupRecords[0];
 
       if (!groupRecord) {
         groupId = generateId();

@@ -72,10 +72,10 @@ export default function UEFAStandingsPage() {
       .catch(() => setIsLoading(false));
   }, [leagueSlug]);
 
-  // Fetch cup standings once leagueId is known
+  // Fetch cup standings once leagueId is known. Initial `isLoading=true` from useState covers
+  // the cold-load path; this effect just needs to flip it false on completion via .finally().
   useEffect(() => {
     if (!leagueId) return;
-    setIsLoading(true);
     fetch(`/api/triple-crown/cup-standings?leagueId=${leagueId}`)
       .then((r) => {
         if (!r.ok) return {};

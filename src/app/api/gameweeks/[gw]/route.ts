@@ -593,8 +593,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const margin = Math.abs(effectiveHomeScore - effectiveAwayScore);
         // NOTE: Bonus will be awarded AFTER all fixtures are processed to find highest margin per group
         // Set to false initially - will be updated in bonus calculation phase
-        let homeGotBonus = false;
-        let awayGotBonus = false;
+        const homeGotBonus = false;
+        const awayGotBonus = false;
 
         // ============================================
         // TVT CHIP PROCESSING

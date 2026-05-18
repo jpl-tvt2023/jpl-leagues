@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       purchasePrice: number | null;
     };
 
-    let rows: PlayerRow[] = [];
+    const rows: PlayerRow[] = [];
 
     for (const el of elements) {
       // Position filter

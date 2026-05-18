@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget, isSimulated } = body;
+  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget, isSimulated, clubAuctionEnabled } = body;
 
   if (!slug || !name || !sport || !format || !season) {
     return NextResponse.json({ error: "slug, name, sport, format, and season are required" }, { status: 400 });
@@ -113,6 +113,8 @@ export async function POST(request: NextRequest) {
         enabledChips: JSON.stringify(resolvedEnabledChips),
         initialBudget: resolvedBudget,
         isSimulated: format === "auction" ? (isSimulated ?? false) : false,
+        // PL Club Auction toggle — only meaningful on auction leagues; force false elsewhere
+        clubAuctionEnabled: format === "auction" ? Boolean(clubAuctionEnabled) : false,
       });
 
       // For TVT, pre-create the PL groups and split teams across them so the

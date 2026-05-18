@@ -6,10 +6,17 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useLeague } from "@/lib/league-context";
+import { TierChip } from "@/components/TierChip";
+import type { TeamClubOwnership } from "@/lib/teams/display-name";
+import { getTeamDisplayName } from "@/lib/teams/display-name";
 
 interface AuctionGwHistoryEntry {
   gw: number;
-  points: number;
+  points: number;            // back-compat alias for totalPoints
+  totalPoints: number;
+  rawPoints: number;
+  synergyBonus: number;
+  clubResultBonus: number;
   rank: number;
   payout: number;
 }
@@ -18,6 +25,9 @@ interface AuctionStandingRow {
   teamId: string;
   teamName: string;
   totalPoints: number;
+  rawPoints: number;
+  synergyBonus: number;
+  clubResultBonus: number;
   purse: number;
   squadValue: number;
   rank: number;
@@ -56,6 +66,7 @@ export function AuctionStandings() {
   const dashboardHref = viewer.dashboardHref;
 
   const [auctionStandings, setAuctionStandings] = useState<AuctionStandingRow[]>([]);
+  const [clubByTeamId, setClubByTeamId] = useState<Record<string, TeamClubOwnership>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +82,7 @@ export function AuctionStandings() {
         if (!response.ok) throw new Error("Failed to fetch standings");
         const data = await response.json();
         setAuctionStandings(data.standings || []);
+        setClubByTeamId(data.clubByTeamId ?? {});
       } catch (err) {
         console.error("Error fetching standings:", err);
         setError("Failed to load standings. Please try again later.");
@@ -172,7 +184,16 @@ export function AuctionStandings() {
                             >
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{r.rank}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
-                                <div className="font-semibold text-white">{r.teamName}</div>
+                                <div className="font-semibold text-white flex items-center gap-2 flex-wrap">
+                                  <span>{getTeamDisplayName({ id: r.teamId, name: r.teamName }, clubByTeamId[r.teamId])}</span>
+                                  {clubByTeamId[r.teamId] && (
+                                    <TierChip
+                                      tier={clubByTeamId[r.teamId].tier}
+                                      clubName={clubByTeamId[r.teamId].plTeamName}
+                                      short={clubByTeamId[r.teamId].plTeamShort}
+                                    />
+                                  )}
+                                </div>
                               </td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{r.points}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">{formatCurrency(r.payout)}</td>
@@ -196,12 +217,15 @@ export function AuctionStandings() {
                   )}
                   <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden backdrop-blur">
                     <div className="overflow-x-auto">
-                    <table className="w-full text-left min-w-[480px]">
+                    <table className="w-full text-left min-w-[640px]">
                       <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
                         <tr>
                           <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
                           <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
-                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Total Points</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Cumulative raw FPL points">Raw</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Cumulative +50% bonus on owned-club players">Syn</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Cumulative club W/D bonus">Club</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Raw + Synergy + Club">Total</th>
                           <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Purse</th>
                           <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Squad Value</th>
                         </tr>
@@ -232,9 +256,25 @@ export function AuctionStandings() {
                               </span>
                             </td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
-                              <div className="font-semibold text-white">{row.teamName}</div>
+                              <div className="font-semibold text-white flex items-center gap-2 flex-wrap">
+                                <span>{getTeamDisplayName({ id: row.teamId, name: row.teamName }, clubByTeamId[row.teamId])}</span>
+                                {clubByTeamId[row.teamId] && (
+                                  <TierChip
+                                    tier={clubByTeamId[row.teamId].tier}
+                                    clubName={clubByTeamId[row.teamId].plTeamName}
+                                    short={clubByTeamId[row.teamId].plTeamShort}
+                                  />
+                                )}
+                              </div>
                             </td>
-                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{row.totalPoints}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{row.rawPoints}</td>
+                            <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.synergyBonus > 0 ? "text-yellow-300 font-bold" : "text-gray-600"}`}>
+                              {row.synergyBonus > 0 ? `+${row.synergyBonus}` : "0"}
+                            </td>
+                            <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold" : "text-gray-600"}`}>
+                              {row.clubResultBonus > 0 ? `+${row.clubResultBonus}` : "0"}
+                            </td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{row.totalPoints}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">{formatCurrency(row.purse)}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(row.squadValue)}</td>
                           </tr>
@@ -244,7 +284,7 @@ export function AuctionStandings() {
                     </div>
                   </div>
                   <div className="mt-4 sm:mt-6 text-center text-xs text-gray-500 px-2">
-                    Total Points = Cumulative sum of all 14 owned players&apos; gameweek scores · Squad Value = Sum of FMV (purchase price + points-based appreciation)
+                    Total = Raw + Synergy + Club result · Synergy = +50% on owned-club players · Club = per-fixture W/D bonus by tier · Squad Value uses RAW points only (synergy doesn&apos;t inflate FMV)
                   </div>
                 </div>
               </div>

@@ -5,11 +5,18 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useLeague } from "@/lib/league-context";
+import { TierChip } from "@/components/TierChip";
+import type { TeamClubOwnership } from "@/lib/teams/display-name";
+import { getTeamDisplayName } from "@/lib/teams/display-name";
 
 interface BreakdownPlayer {
   elementId: number;
   name: string;
+  /** @deprecated back-compat alias for rawPoints — older code reads `points`. */
   points: number;
+  rawPoints: number;
+  synergyBonus: number;
+  plTeamId: number | null;
   elementType: number | null;
   plTeamShort?: string | null;
 }
@@ -18,6 +25,10 @@ interface TeamRow {
   teamId: string;
   teamName: string;
   totalPoints: number;
+  rawPoints: number;
+  synergyBonus: number;
+  clubResultBonus: number;
+  clubResultSummary: string | null;
   rank: number;
   payout: number;
   leagueRank: number | null;
@@ -60,6 +71,7 @@ export function AuctionGwResults() {
   const [selectedGw, setSelectedGw] = useState<number | null>(null);
   const [isLive, setIsLive] = useState<boolean>(false);
   const [rows, setRows] = useState<TeamRow[]>([]);
+  const [clubByTeamId, setClubByTeamId] = useState<Record<string, TeamClubOwnership>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +97,7 @@ export function AuctionGwResults() {
       setSelectedGw(data.selectedGw ?? null);
       setIsLive(!!data.isLive);
       setRows(data.rows ?? []);
+      setClubByTeamId(data.clubByTeamId ?? {});
       if (!silent) setExpanded(new Set());
     } catch (err) {
       console.error("Error fetching GW results:", err);
@@ -243,16 +256,19 @@ export function AuctionGwResults() {
                         <tr>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">GW Points</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Raw FPL points">Raw</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="+50% bonus on owned-club players">Syn</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Per-fixture bonus when owned club wins/draws">Club</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Total = Raw + Synergy + Club">Total</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">League Rank</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Rank</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Left</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rows.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                            <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                               No results for this gameweek.
                             </td>
                           </tr>
@@ -268,12 +284,26 @@ export function AuctionGwResults() {
                                 >
                                   <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{row.rank || "—"}</td>
                                   <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
-                                    <div className={`font-semibold ${isMine ? "text-yellow-300" : "text-white"}`}>
-                                      {row.teamName}
-                                      {isMine && <span className="ml-2 text-[10px] uppercase tracking-wider text-yellow-400">you</span>}
+                                    <div className={`font-semibold ${isMine ? "text-yellow-300" : "text-white"} flex items-center gap-2 flex-wrap`}>
+                                      <span>{getTeamDisplayName({ id: row.teamId, name: row.teamName }, clubByTeamId[row.teamId])}</span>
+                                      {clubByTeamId[row.teamId] && (
+                                        <TierChip
+                                          tier={clubByTeamId[row.teamId].tier}
+                                          clubName={clubByTeamId[row.teamId].plTeamName}
+                                          short={clubByTeamId[row.teamId].plTeamShort}
+                                        />
+                                      )}
+                                      {isMine && <span className="ml-1 text-[10px] uppercase tracking-wider text-yellow-400">you</span>}
                                     </div>
                                   </td>
-                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">
+                                  <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{row.rawPoints}</td>
+                                  <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.synergyBonus > 0 ? "text-yellow-300 font-bold" : "text-gray-600"}`}>
+                                    {row.synergyBonus > 0 ? `+${row.synergyBonus}` : "0"}
+                                  </td>
+                                  <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold" : "text-gray-600"}`}>
+                                    {row.clubResultBonus > 0 ? `+${row.clubResultBonus}` : "0"}
+                                  </td>
+                                  <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">
                                     {row.totalPoints}
                                   </td>
                                   <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">
@@ -320,15 +350,16 @@ export function AuctionGwResults() {
                                 </tr>
                                 {isExpanded && (
                                   <tr className="bg-black/30 border-t border-white/5">
-                                    <td colSpan={6} className="px-4 py-3">
+                                    <td colSpan={9} className="px-4 py-3">
                                       {row.players.length === 0 ? (
                                         <div className="text-xs text-gray-500 italic">No player breakdown recorded for this gameweek.</div>
                                       ) : (
+                                        <>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                           {([1, 2, 3, 4] as const).map((posType) => {
                                             const players = row.players
                                               .filter((p) => p.elementType === posType)
-                                              .sort((a, b) => b.points - a.points);
+                                              .sort((a, b) => (b.rawPoints + b.synergyBonus) - (a.rawPoints + a.synergyBonus));
                                             return (
                                               <div key={posType} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
                                                 <div className="flex items-center justify-between mb-2.5">
@@ -341,25 +372,39 @@ export function AuctionGwResults() {
                                                   <div className="text-xs text-gray-600 text-center py-3">—</div>
                                                 ) : (
                                                   <div className="space-y-1.5">
-                                                    {players.map((p) => (
+                                                    {players.map((p) => {
+                                                      const eff = p.rawPoints + p.synergyBonus;
+                                                      return (
                                                       <div key={p.elementId} className="flex items-center justify-between text-sm min-w-0">
-                                                        <span className={`truncate ${p.points === 0 ? "text-gray-500" : "text-gray-200"}`}>
+                                                        <span className={`truncate ${p.rawPoints === 0 ? "text-gray-500" : "text-gray-200"}`}>
                                                           {p.name}
                                                           {p.plTeamShort && (
                                                             <span className="ml-1 text-[10px] text-gray-500">({p.plTeamShort})</span>
                                                           )}
                                                         </span>
-                                                        <span className={`font-mono shrink-0 ml-2 ${p.points >= 8 ? "text-[#00ff85] font-bold" : p.points > 0 ? "text-gray-200" : "text-gray-600"}`}>
-                                                          {p.points}
+                                                        <span className="font-mono shrink-0 ml-2 flex items-baseline gap-1">
+                                                          <span className={`${eff >= 8 ? "text-[#00ff85] font-bold" : eff > 0 ? "text-gray-200" : "text-gray-600"}`}>
+                                                            {p.rawPoints}
+                                                          </span>
+                                                          {p.synergyBonus > 0 && (
+                                                            <span className="text-yellow-300 text-[11px]" title="Synergy bonus from owned PL club">+{p.synergyBonus}</span>
+                                                          )}
                                                         </span>
-                                                      </div>
-                                                    ))}
+                                                      </div>);
+                                                    })}
                                                   </div>
                                                 )}
                                               </div>
                                             );
                                           })}
                                         </div>
+                                        {(row.clubResultBonus > 0 || row.clubResultSummary) && (
+                                          <div className="mt-3 pt-3 border-t border-white/5 text-xs text-gray-400">
+                                            <span className="text-emerald-300 font-semibold">Club result:</span>{" "}
+                                            {row.clubResultSummary ?? `Owned club bonus this GW = +${row.clubResultBonus}`}
+                                          </div>
+                                        )}
+                                        </>
                                       )}
                                     </td>
                                   </tr>

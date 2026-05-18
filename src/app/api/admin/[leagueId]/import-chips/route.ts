@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
           // SL = Score Lock, CB = Comeback, UD = Underdog
           // DW = Wasted Double Pointer, WW = Wasted Win-Win, CW = Wasted Challenge
           // SLW = Wasted Score Lock, CBW = Wasted Comeback, UDW = Wasted Underdog
-          let chipEntries: { type: "W" | "D" | "C" | "SL" | "CB" | "UD"; wasted: boolean; opponentName?: string }[] = [];
+          const chipEntries: { type: "W" | "D" | "C" | "SL" | "CB" | "UD"; wasted: boolean; opponentName?: string }[] = [];
 
           // Check for wasted chips first
           if (gwValue === "DW") {

@@ -131,7 +131,7 @@ export default function SignInPage() {
         </form>
 
         <p className="mt-8 text-center text-sm text-gray-500">
-          Don't have credentials? Contact your league admin.
+          Don&apos;t have credentials? Contact your league admin.
         </p>
       </div>
     </div>

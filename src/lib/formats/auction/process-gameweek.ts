@@ -65,10 +65,57 @@ export async function processAuctionGameweek(
     return { success: false, teamsProcessed: 0, scores: [], error: "No teams found" };
   }
 
+  // Reprocess-preservation: build a per-team map of {elementId → {plTeamId, synergyBonus}} from
+  // the prior breakdown JSON. Two reasons we need this:
+  //   1. Synergy retroactivity: if a player transferred PL clubs after the GW was originally scored,
+  //      reprocess must NOT re-route synergy to the new club. The historical plTeamId drives the
+  //      synergy decision for this GW.
+  //   2. PL exits: if a player has left the PL entirely (missing from bootstrap), the last-known
+  //      synergy bonus is used as a fallback.
+  // Only applies on forceReprocess.
+  const preservedDataByTeam = new Map<string, Map<number, { plTeamId: number | null; synergyBonus: number }>>();
+  if (forceReprocess) {
+    const prior = await db
+      .select({ teamId: auctionScores.teamId, breakdown: auctionScores.playerBreakdown })
+      .from(auctionScores)
+      .where(
+        and(
+          eq(auctionScores.leagueId, leagueId),
+          eq(auctionScores.gameweekId, gameweekId)
+        )
+      );
+    for (const row of prior) {
+      try {
+        const parsed = JSON.parse(row.breakdown) as Array<{
+          elementId: number;
+          plTeamId?: number | null;
+          synergyBonus?: number;
+        }>;
+        const map = new Map<number, { plTeamId: number | null; synergyBonus: number }>();
+        for (const p of parsed) {
+          // Only preserve entries that carry at least one of the snapshot fields (legacy rows
+          // pre-club-auction had neither and produce nothing useful).
+          if (typeof p.synergyBonus === "number" || p.plTeamId != null) {
+            map.set(p.elementId, {
+              plTeamId: p.plTeamId ?? null,
+              synergyBonus: typeof p.synergyBonus === "number" ? p.synergyBonus : 0,
+            });
+          }
+        }
+        if (map.size > 0) preservedDataByTeam.set(row.teamId, map);
+      } catch { /* legacy breakdown rows that don't parse → nothing to preserve */ }
+    }
+  }
+
   // Calculate scores for all teams
   const teamScores = await Promise.all(
     leagueTeams.map(async (team) => {
-      const score = await calculateAuctionTeamScore(leagueId, team.id, gameweekNumber);
+      const score = await calculateAuctionTeamScore(
+        leagueId,
+        team.id,
+        gameweekNumber,
+        preservedDataByTeam.get(team.id)
+      );
       return { ...score, teamName: team.name };
     })
   );
@@ -85,7 +132,8 @@ export async function processAuctionGameweek(
   const squadValueByTeam = new Map<string, number>();
   for (const owned of allOwnership) {
     const score = teamScores.find((s) => s.teamId === owned.teamId);
-    const playerPts = score?.playerBreakdown.find((p) => p.elementId === owned.fplElementId)?.points ?? 0;
+    // FMV uses RAW points only (per locked spec — synergy never compounds into FMV/squad value/trades).
+    const playerPts = score?.playerBreakdown.find((p) => p.elementId === owned.fplElementId)?.rawPoints ?? 0;
     const fmv = calculateFMV(owned.purchasePrice, playerPts);
     squadValueByTeam.set(owned.teamId, (squadValueByTeam.get(owned.teamId) ?? 0) + fmv);
   }
@@ -132,13 +180,16 @@ export async function processAuctionGameweek(
     }
 
     for (const score of rankedScores) {
-      // Insert auction score
+      // Insert auction score (with PL Club Auction breakdown columns)
       await tx.insert(auctionScores).values({
         id: randomUUID(),
         leagueId,
         teamId: score.teamId,
         gameweekId,
         totalPoints: score.totalPoints,
+        rawPoints: score.rawPoints,
+        synergyBonus: score.synergyBonus,
+        clubResultBonus: score.clubResultBonus,
         playerBreakdown: JSON.stringify(score.playerBreakdown),
         rank: score.rank,
         payout: score.payout,
