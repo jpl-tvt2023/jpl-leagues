@@ -28,6 +28,7 @@ interface SquadPlayer {
   status: string;
   totalPoints: number;
   fmv: number;
+  plTeamShort?: string | null;
 }
 
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -373,7 +374,12 @@ export default function TeamsPage() {
                                                   <div key={p.ownershipId} className="text-sm min-w-0">
                                                     <div className="flex items-center gap-1.5 min-w-0">
                                                       <span className={`h-2 w-2 rounded-full shrink-0 ${p.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
-                                                      <span className="text-gray-200 truncate flex-1">{p.playerName}</span>
+                                                      <span className="text-gray-200 truncate flex-1">
+                                                        {p.playerName}
+                                                        {p.plTeamShort && (
+                                                          <span className="ml-1 text-[10px] text-gray-500">({p.plTeamShort})</span>
+                                                        )}
+                                                      </span>
                                                       <span className="font-mono text-[#00ff85] shrink-0">{p.totalPoints}p</span>
                                                     </div>
                                                     <div className="flex items-center justify-between mt-0.5 pl-3.5 text-xs">

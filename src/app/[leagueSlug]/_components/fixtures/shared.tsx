@@ -24,10 +24,6 @@ export interface LiveFixtureScore {
   awayScore: number;
   homePlayers: LivePlayerScore[];
   awayPlayers: LivePlayerScore[];
-  /** Fixtures-left-to-play across home managers' starting XI. null when FPL fixtures unavailable. */
-  playersLeftHome?: number | null;
-  /** Fixtures-left-to-play across away managers' starting XI. null when FPL fixtures unavailable. */
-  playersLeftAway?: number | null;
 }
 
 export interface FixtureTeam {
@@ -63,15 +59,12 @@ export function PlayerBreakdownSide({
   gwNumber,
   isGhost,
   ghostScore,
-  playersLeft,
 }: {
   players: LivePlayerScore[];
   teamLabel: string;
   gwNumber: number;
   isGhost?: boolean;
   ghostScore?: number;
-  /** undefined = don't render the footer; null = FPL outage ("—"); number = count. */
-  playersLeft?: number | null;
 }) {
   return (
     <div>
@@ -122,13 +115,6 @@ export function PlayerBreakdownSide({
       ) : (
         <div className="text-center text-gray-500 italic text-[10px] py-2">No breakdown available</div>
       )}
-      {!isGhost && playersLeft !== undefined && (
-        <div className="mt-1 text-[10px] text-center">
-          <span className={playersLeft != null && playersLeft > 0 ? "text-yellow-400" : "text-gray-500"}>
-            {playersLeft == null ? "—" : playersLeft} players left to play
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -173,7 +159,6 @@ export function PlayerBreakdown({
           gwNumber={gwNumber}
           isGhost={fixture.homeTeam.isGhost}
           ghostScore={fixture.result?.homeScore}
-          playersLeft={liveData?.playersLeftHome}
         />
         <PlayerBreakdownSide
           players={awayPlayers}
@@ -181,7 +166,6 @@ export function PlayerBreakdown({
           gwNumber={gwNumber}
           isGhost={fixture.awayTeam.isGhost}
           ghostScore={fixture.result?.awayScore}
-          playersLeft={liveData?.playersLeftAway}
         />
       </div>
       {hasTempCaptain && (
