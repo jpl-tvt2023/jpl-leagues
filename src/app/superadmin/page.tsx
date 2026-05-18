@@ -27,7 +27,23 @@ interface Admin {
   assignedLeagueIds: string[];
 }
 
-type TabType = "leagues" | "admins" | "operations";
+type TabType = "leagues" | "admins" | "operations" | "pl-standings" | "score-adjustments";
+
+// ── PL Standings (Club Auction tier mapping) ──
+type PLBootstrapTeam = { id: number; name: string; short_name: string };
+type PLStandingsState = {
+  season: string;
+  top8: number[];
+  mid: number[];
+  promoted: number[];
+  updatedAt: string | null;
+  plTeams: PLBootstrapTeam[];
+};
+const STANDINGS_TIER_META: Record<"top8" | "mid" | "promoted", { label: string; pillCls: string; expected: number }> = {
+  top8:     { label: "Top 8 (last season finish 1-8)",  pillCls: "bg-yellow-500/20 text-yellow-200 border-yellow-500/30", expected: 8 },
+  mid:      { label: "Mid (last season finish 9-17)",  pillCls: "bg-blue-500/20 text-blue-200 border-blue-500/30", expected: 9 },
+  promoted: { label: "Promoted (3 new from Championship)", pillCls: "bg-emerald-500/20 text-emerald-200 border-emerald-500/30", expected: 3 },
+};
 
 // ── Operations: process-all run summary ──
 type ProcessAllLeagueResult = {
@@ -116,6 +132,7 @@ export default function SuperAdminDashboard() {
     enabledChips: ["D", "W", "C"] as string[],
     initialBudget: 100_000_000,
     isSimulated: false,
+    clubAuctionEnabled: false,
   });
   const [wizardSelectedAdminIds, setWizardSelectedAdminIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -141,6 +158,152 @@ export default function SuperAdminDashboard() {
   const [assignedLeagueIds, setAssignedLeagueIds] = useState<string[]>([]);
   const [adminActionLoading, setAdminActionLoading] = useState(false);
 
+  // ── PL Standings (Club Auction tier mapping) ──
+  const [standings, setStandings] = useState<PLStandingsState | null>(null);
+  const [standingsLoading, setStandingsLoading] = useState(false);
+  const [standingsSaving, setStandingsSaving] = useState(false);
+
+  const fetchStandings = useCallback(async () => {
+    setStandingsLoading(true);
+    try {
+      const res = await fetch("/api/superadmin/pl-standings");
+      if (res.status === 401 || res.status === 403) { window.location.href = "/signin"; return; }
+      const data = await res.json();
+      setStandings({
+        season: data.season,
+        top8: data.top8 ?? [],
+        mid: data.mid ?? [],
+        promoted: data.promoted ?? [],
+        updatedAt: data.updatedAt ?? null,
+        plTeams: data.plTeams ?? [],
+      });
+    } catch (err) { console.error("fetchStandings failed:", err); }
+    finally { setStandingsLoading(false); }
+  }, []);
+
+  const moveStandingsTeam = (teamId: number, target: "top8" | "mid" | "promoted" | null) => {
+    setStandings((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, top8: [...prev.top8], mid: [...prev.mid], promoted: [...prev.promoted] };
+      next.top8 = next.top8.filter((id) => id !== teamId);
+      next.mid = next.mid.filter((id) => id !== teamId);
+      next.promoted = next.promoted.filter((id) => id !== teamId);
+      if (target === "top8") next.top8.push(teamId);
+      else if (target === "mid") next.mid.push(teamId);
+      else if (target === "promoted") {
+        // Promoted tier displays alphabetically (positions 18/19/20)
+        next.promoted.push(teamId);
+        const byName = new Map(prev.plTeams.map((t) => [t.id, t.name] as const));
+        next.promoted.sort((a, b) => (byName.get(a) ?? "").localeCompare(byName.get(b) ?? ""));
+      }
+      return next;
+    });
+  };
+
+  const saveStandings = async () => {
+    if (!standings) return;
+    if (standings.top8.length !== 8 || standings.mid.length !== 9 || standings.promoted.length !== 3) {
+      setMessage({ type: "error", text: "Tier counts must be: 8 / 9 / 3 (got " + standings.top8.length + " / " + standings.mid.length + " / " + standings.promoted.length + ")" });
+      return;
+    }
+    setStandingsSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/superadmin/pl-standings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          season: standings.season,
+          top8: standings.top8,
+          mid: standings.mid,
+          promoted: standings.promoted,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMessage({ type: "error", text: data.error || "Failed to save PL standings" }); return; }
+      setStandings((prev) => prev ? { ...prev, updatedAt: data.updatedAt } : prev);
+      setMessage({ type: "success", text: "PL standings saved." });
+    } catch { setMessage({ type: "error", text: "Network error" }); }
+    finally { setStandingsSaving(false); }
+  };
+
+  // ── Score Adjustments (PL Club Auction breakdown overrides) ──
+  type AdjLeague = { id: string; slug: string; name: string; season: string };
+  type AdjScoreRow = {
+    id: string; teamId: string; teamName: string;
+    totalPoints: number; rawPoints: number; synergyBonus: number; clubResultBonus: number;
+    rank: number | null; payout: number;
+  };
+  const [adjLeagues, setAdjLeagues] = useState<AdjLeague[]>([]);
+  const [adjGwsByLeague, setAdjGwsByLeague] = useState<Record<string, number[]>>({});
+  const [adjLeagueId, setAdjLeagueId] = useState<string>("");
+  const [adjGw, setAdjGw] = useState<number | null>(null);
+  const [adjRows, setAdjRows] = useState<AdjScoreRow[]>([]);
+  const [adjLoading, setAdjLoading] = useState(false);
+  const [adjEdits, setAdjEdits] = useState<Record<string, { synergyBonus?: number; clubResultBonus?: number; reason?: string }>>({});
+  const [adjSavingId, setAdjSavingId] = useState<string | null>(null);
+
+  const fetchAdjBootstrap = useCallback(async () => {
+    setAdjLoading(true);
+    try {
+      const res = await fetch("/api/superadmin/score-adjustments");
+      if (res.status === 401 || res.status === 403) { window.location.href = "/signin"; return; }
+      const data = await res.json();
+      setAdjLeagues(data.leagues ?? []);
+      setAdjGwsByLeague(data.gwsByLeague ?? {});
+    } catch (err) { console.error("fetchAdjBootstrap failed:", err); }
+    finally { setAdjLoading(false); }
+  }, []);
+
+  const fetchAdjRows = useCallback(async (leagueId: string, gw: number) => {
+    setAdjLoading(true);
+    setAdjRows([]);
+    try {
+      const res = await fetch(`/api/superadmin/score-adjustments?leagueId=${encodeURIComponent(leagueId)}&gameweek=${gw}`);
+      const data = await res.json();
+      if (!res.ok) { setMessage({ type: "error", text: data.error || "Failed to load scores" }); return; }
+      setAdjRows(data.scores ?? []);
+      setAdjEdits({});
+    } catch (err) { console.error("fetchAdjRows failed:", err); setMessage({ type: "error", text: "Network error" }); }
+    finally { setAdjLoading(false); }
+  }, []);
+
+  const saveAdj = async (row: AdjScoreRow) => {
+    const edit = adjEdits[row.id];
+    if (!edit) return;
+    const reason = (edit.reason ?? "").trim();
+    if (!reason) { setMessage({ type: "error", text: "Reason is required to save adjustments." }); return; }
+    if (edit.synergyBonus == null && edit.clubResultBonus == null) {
+      setMessage({ type: "error", text: "Edit synergy or club-result before saving." });
+      return;
+    }
+    setAdjSavingId(row.id);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/superadmin/score-adjustments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: row.id,
+          ...(edit.synergyBonus != null ? { synergyBonus: edit.synergyBonus } : {}),
+          ...(edit.clubResultBonus != null ? { clubResultBonus: edit.clubResultBonus } : {}),
+          reason,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMessage({ type: "error", text: data.error || "Save failed" }); return; }
+      // Patch the row in-place
+      setAdjRows((prev) => prev.map((r) =>
+        r.id === row.id
+          ? { ...r, synergyBonus: data.synergyBonus, clubResultBonus: data.clubResultBonus, totalPoints: data.totalPoints }
+          : r
+      ));
+      setAdjEdits((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
+      setMessage({ type: "success", text: `Saved (Δ ${data.deltaTotal >= 0 ? "+" : ""}${data.deltaTotal} pts).` });
+    } catch { setMessage({ type: "error", text: "Network error" }); }
+    finally { setAdjSavingId(null); }
+  };
+
   const fetchLeagues = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -164,7 +327,13 @@ export default function SuperAdminDashboard() {
   useEffect(() => {
     fetchLeagues();
     fetchAdmins();
-  }, [activeTab, fetchLeagues, fetchAdmins]);
+    if (activeTab === "pl-standings" && !standings) {
+      fetchStandings();
+    }
+    if (activeTab === "score-adjustments" && adjLeagues.length === 0) {
+      fetchAdjBootstrap();
+    }
+  }, [activeTab, fetchLeagues, fetchAdmins, fetchStandings, standings, fetchAdjBootstrap, adjLeagues.length]);
 
   // ── League actions ──
 
@@ -194,6 +363,7 @@ export default function SuperAdminDashboard() {
           enabledChips: leagueForm.enabledChips,
           initialBudget: leagueForm.initialBudget,
           isSimulated: leagueForm.isSimulated,
+          clubAuctionEnabled: leagueForm.clubAuctionEnabled,
         }),
       });
       const data = await res.json();
@@ -216,7 +386,7 @@ export default function SuperAdminDashboard() {
       setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
       setShowWizard(false);
       setWizardStep("sport");
-      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false });
+      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false, clubAuctionEnabled: false });
       setWizardSelectedAdminIds([]);
       setLeagues(prev => [...prev, { ...data, teamCount: 0, currentGameweek: null }]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
@@ -629,6 +799,8 @@ export default function SuperAdminDashboard() {
     { id: "leagues", label: "Leagues" },
     { id: "admins", label: "Admins" },
     { id: "operations", label: "Operations" },
+    { id: "pl-standings", label: "PL Standings" },
+    { id: "score-adjustments", label: "Score Adjustments" },
   ];
 
   return (
@@ -979,7 +1151,7 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400 text-sm mt-1">Manage all leagues on the platform</p>
               </div>
               <button
-                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false }); setMessage(null); }}
+                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false, clubAuctionEnabled: false }); setMessage(null); }}
                 className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
               >
                 + Create League
@@ -1058,6 +1230,7 @@ export default function SuperAdminDashboard() {
                                   enabledChips: [],
                                   initialBudget: 100_000_000,
                                   isSimulated: false,
+                                  clubAuctionEnabled: false,
                                 });
                               } else {
                                 setLeagueForm({ ...leagueForm, format: opt.value });
@@ -1246,6 +1419,20 @@ export default function SuperAdminDashboard() {
                               <div>
                                 <p className="text-white text-sm font-medium">Simulated Auction (Testing)</p>
                                 <p className="text-gray-500 text-xs">Auto-assigns players via snake draft when session starts. Skips live auction.</p>
+                              </div>
+                            </label>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3 cursor-pointer hover:bg-white/10 transition">
+                              <input
+                                type="checkbox"
+                                checked={leagueForm.clubAuctionEnabled}
+                                onChange={e => setLeagueForm({ ...leagueForm, clubAuctionEnabled: e.target.checked })}
+                                className="w-4 h-4 accent-yellow-400"
+                              />
+                              <div>
+                                <p className="text-white text-sm font-medium">PL Club Auction</p>
+                                <p className="text-gray-500 text-xs">Before the player auction, each team buys 1 PL club (random nomination, single round). Owned-club players earn ×1.5 synergy, plus a per-GW result bonus by tier (Top 8 / Mid / Promoted).</p>
                               </div>
                             </label>
                           </div>
@@ -1731,6 +1918,282 @@ export default function SuperAdminDashboard() {
                 {processRunId && (
                   <div className="text-xs text-gray-500 mt-4">Run ID: <code className="text-gray-400">{processRunId}</code></div>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── PL Standings Tab ── */}
+        {activeTab === "pl-standings" && (
+          <div>
+            <div className="mb-6 flex flex-wrap items-end gap-4 justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-white">PL Standings — Club Auction Tiers</h2>
+                <p className="text-gray-400 text-sm mt-1 max-w-2xl">
+                  Configures the tier mapping used by the PL Club Auction. Top 8 + Mid (9-17) are last
+                  season&apos;s final-ladder slots; Promoted is this season&apos;s 3 newly-promoted clubs (positions
+                  18/19/20 shown alphabetically). Tier sets the club&apos;s W/D bonus values.
+                </p>
+              </div>
+              {standings && (
+                <div className="text-xs text-gray-500">
+                  {standings.updatedAt && <>Last saved: <span className="text-gray-300">{new Date(standings.updatedAt).toLocaleString()}</span></>}
+                </div>
+              )}
+            </div>
+
+            {standingsLoading && !standings && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-sm text-gray-400">Loading…</div>
+            )}
+
+            {standings && (
+              <div className="space-y-6">
+                {/* Season + save bar */}
+                <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <label className="text-sm text-gray-300">
+                    Season:
+                    <input
+                      value={standings.season}
+                      onChange={(e) => setStandings((prev) => prev ? { ...prev, season: e.target.value } : prev)}
+                      className="ml-2 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-white focus:border-yellow-500 focus:outline-none"
+                      placeholder="2025-26"
+                    />
+                  </label>
+                  <div className="ml-auto flex items-center gap-3">
+                    <span className="text-xs text-gray-400">
+                      Counts: <span className="text-yellow-200">{standings.top8.length}</span>/8 ·{" "}
+                      <span className="text-blue-200">{standings.mid.length}</span>/9 ·{" "}
+                      <span className="text-emerald-200">{standings.promoted.length}</span>/3
+                    </span>
+                    <button
+                      onClick={saveStandings}
+                      disabled={standingsSaving}
+                      className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2 rounded-lg hover:from-yellow-300 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                    >
+                      {standingsSaving ? "Saving…" : "Save Standings"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tier sections */}
+                {(["top8", "mid", "promoted"] as const).map((tier) => {
+                  const meta = STANDINGS_TIER_META[tier];
+                  const ids = standings[tier];
+                  const byId = new Map(standings.plTeams.map((t) => [t.id, t] as const));
+                  const inTier = ids.map((id) => byId.get(id)).filter((t): t is PLBootstrapTeam => Boolean(t));
+                  const display = tier === "promoted"
+                    ? [...inTier].sort((a, b) => a.name.localeCompare(b.name))
+                    : inTier;
+                  return (
+                    <div key={tier} className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                      <div className="flex items-center gap-3 mb-4">
+                        <span className={`text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full border ${meta.pillCls}`}>
+                          {meta.label}
+                        </span>
+                        <span className={`text-xs ${ids.length === meta.expected ? "text-gray-400" : "text-red-300"}`}>
+                          {ids.length} / {meta.expected}
+                        </span>
+                      </div>
+                      {display.length === 0 ? (
+                        <div className="text-sm text-gray-500 italic">No clubs assigned.</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {display.map((t) => (
+                            <span key={t.id} className="inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 pl-3 pr-1.5 py-1 text-sm text-white">
+                              <span>{t.name}</span>
+                              <button
+                                onClick={() => moveStandingsTeam(t.id, null)}
+                                title="Remove from tier"
+                                className="rounded-full bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 w-5 h-5 flex items-center justify-center text-xs"
+                              >×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Unassigned / re-pick pool */}
+                {(() => {
+                  const assigned = new Set([...standings.top8, ...standings.mid, ...standings.promoted]);
+                  const unassigned = standings.plTeams.filter((t) => !assigned.has(t.id));
+                  if (unassigned.length === 0) return null;
+                  return (
+                    <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-5">
+                      <div className="text-sm font-semibold text-gray-300 mb-3">Unassigned clubs ({unassigned.length})</div>
+                      <div className="space-y-2">
+                        {unassigned.map((t) => (
+                          <div key={t.id} className="flex items-center justify-between gap-3 bg-white/5 rounded-lg px-3 py-2">
+                            <span className="text-sm text-white">{t.name}</span>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => moveStandingsTeam(t.id, "top8")}
+                                className="text-xs px-2.5 py-1 rounded bg-yellow-500/20 text-yellow-200 hover:bg-yellow-500/30 border border-yellow-500/30"
+                              >→ Top 8</button>
+                              <button
+                                onClick={() => moveStandingsTeam(t.id, "mid")}
+                                className="text-xs px-2.5 py-1 rounded bg-blue-500/20 text-blue-200 hover:bg-blue-500/30 border border-blue-500/30"
+                              >→ Mid</button>
+                              <button
+                                onClick={() => moveStandingsTeam(t.id, "promoted")}
+                                className="text-xs px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 border border-emerald-500/30"
+                              >→ Promoted</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Tier scoring reference */}
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-gray-400">
+                  <div className="font-semibold text-gray-300 mb-1">Per-fixture bonus (paid per real-PL fixture the owned club plays in a GW)</div>
+                  <div className="grid grid-cols-3 gap-3 mt-2">
+                    <div><span className="text-yellow-200 font-semibold">Top 8</span> — Win 2 · Draw 1</div>
+                    <div><span className="text-blue-200 font-semibold">Mid</span> — Win 3 · Draw 1</div>
+                    <div><span className="text-emerald-200 font-semibold">Promoted</span> — Win 4 · Draw 2</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Score Adjustments Tab ── */}
+        {activeTab === "score-adjustments" && (
+          <div>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-white">Score Adjustments — PL Club Auction overrides</h2>
+              <p className="text-gray-400 text-sm mt-1 max-w-2xl">
+                Manually override the <span className="text-yellow-200">Synergy</span> or
+                <span className="text-emerald-200"> Club result</span> bonus on a processed GW score row.
+                Raw points stay locked. Total auto-recomputes to Raw + Synergy + Club result.
+                Every change is logged with the reason you provide.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">League</label>
+                <select
+                  value={adjLeagueId}
+                  onChange={(e) => { setAdjLeagueId(e.target.value); setAdjGw(null); setAdjRows([]); }}
+                  className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-white focus:border-yellow-500 focus:outline-none"
+                >
+                  <option value="">— Pick a league —</option>
+                  {adjLeagues.map((l) => (
+                    <option key={l.id} value={l.id}>{l.slug} · {l.name} ({l.season})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Gameweek</label>
+                <select
+                  value={adjGw ?? ""}
+                  onChange={(e) => {
+                    const gw = e.target.value ? parseInt(e.target.value, 10) : null;
+                    setAdjGw(gw);
+                    if (gw != null && adjLeagueId) fetchAdjRows(adjLeagueId, gw);
+                  }}
+                  disabled={!adjLeagueId}
+                  className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-white focus:border-yellow-500 focus:outline-none disabled:opacity-50"
+                >
+                  <option value="">— Pick a GW —</option>
+                  {(adjLeagueId ? adjGwsByLeague[adjLeagueId] ?? [] : []).map((gw) => (
+                    <option key={gw} value={gw}>GW{gw}</option>
+                  ))}
+                </select>
+              </div>
+              {adjLoading && <span className="text-xs text-gray-400">Loading…</span>}
+            </div>
+
+            {adjRows.length > 0 && (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-white/5 text-xs uppercase tracking-wide text-gray-400">
+                    <tr>
+                      <th className="text-left px-3 py-2">Team</th>
+                      <th className="text-right px-2 py-2">Rank</th>
+                      <th className="text-right px-2 py-2">Raw</th>
+                      <th className="text-right px-2 py-2">Synergy</th>
+                      <th className="text-right px-2 py-2">Club</th>
+                      <th className="text-right px-2 py-2">Total</th>
+                      <th className="text-left px-3 py-2">Reason</th>
+                      <th className="px-2 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adjRows.map((row) => {
+                      const edit = adjEdits[row.id] ?? {};
+                      const dirty = edit.synergyBonus != null || edit.clubResultBonus != null;
+                      const effSynergy = edit.synergyBonus ?? row.synergyBonus;
+                      const effClubResult = edit.clubResultBonus ?? row.clubResultBonus;
+                      const previewTotal = row.rawPoints + effSynergy + effClubResult;
+                      return (
+                        <tr key={row.id} className="border-t border-white/5">
+                          <td className="px-3 py-2 text-white">{row.teamName}</td>
+                          <td className="px-2 py-2 text-right text-gray-300">{row.rank ?? "—"}</td>
+                          <td className="px-2 py-2 text-right text-gray-300">{row.rawPoints}</td>
+                          <td className="px-2 py-2 text-right">
+                            <input
+                              type="number"
+                              value={effSynergy}
+                              onChange={(e) => {
+                                const v = parseInt(e.target.value, 10);
+                                setAdjEdits((prev) => ({ ...prev, [row.id]: { ...prev[row.id], synergyBonus: Number.isFinite(v) ? v : 0 } }));
+                              }}
+                              className="w-16 rounded border border-white/10 bg-white/5 px-2 py-1 text-yellow-200 text-right text-sm focus:border-yellow-500 focus:outline-none"
+                            />
+                          </td>
+                          <td className="px-2 py-2 text-right">
+                            <input
+                              type="number"
+                              value={effClubResult}
+                              onChange={(e) => {
+                                const v = parseInt(e.target.value, 10);
+                                setAdjEdits((prev) => ({ ...prev, [row.id]: { ...prev[row.id], clubResultBonus: Number.isFinite(v) ? v : 0 } }));
+                              }}
+                              className="w-16 rounded border border-white/10 bg-white/5 px-2 py-1 text-emerald-200 text-right text-sm focus:border-emerald-500 focus:outline-none"
+                            />
+                          </td>
+                          <td className={`px-2 py-2 text-right font-semibold ${dirty && previewTotal !== row.totalPoints ? "text-yellow-300" : "text-white"}`}>
+                            {previewTotal}
+                            {dirty && previewTotal !== row.totalPoints && (
+                              <div className="text-[10px] text-gray-500">was {row.totalPoints}</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={edit.reason ?? ""}
+                              placeholder={dirty ? "Required" : ""}
+                              onChange={(e) => setAdjEdits((prev) => ({ ...prev, [row.id]: { ...prev[row.id], reason: e.target.value } }))}
+                              disabled={!dirty}
+                              className="w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-white text-sm focus:border-yellow-500 focus:outline-none disabled:opacity-50"
+                            />
+                          </td>
+                          <td className="px-2 py-2">
+                            <button
+                              onClick={() => saveAdj(row)}
+                              disabled={!dirty || adjSavingId === row.id || !(edit.reason ?? "").trim()}
+                              className="text-xs px-3 py-1 rounded bg-yellow-400 text-slate-900 font-semibold hover:bg-yellow-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              {adjSavingId === row.id ? "Saving…" : "Save"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {!adjLoading && adjLeagueId && adjGw != null && adjRows.length === 0 && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-gray-400">
+                No scored rows found for this league/GW combination.
               </div>
             )}
           </div>

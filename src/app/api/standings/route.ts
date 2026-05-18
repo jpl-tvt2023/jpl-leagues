@@ -5,6 +5,7 @@ import { getAllCachedScores, getCachedStandings, setCachedStandings } from "@/li
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { computeAuctionStandings } from "@/lib/formats/auction/standings";
 import { calculateFMV } from "@/lib/formats/auction/economy";
+import { getClubOwnershipsByTeam } from "@/lib/formats/auction/club-auction";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
 
@@ -81,8 +82,8 @@ export async function GET(request: NextRequest) {
     }
 
     const leagueId = league[0].id;
-    let playoffStartGw = league[0].playoffStartGw ?? 31;
-    let leagueTeamSize = league[0].teamSize ?? 32;
+    const playoffStartGw = league[0].playoffStartGw ?? 31;
+    const leagueTeamSize = league[0].teamSize ?? 32;
     const leagueFormat = league[0].format ?? "tvt";
     let leagueEnabledChips: string[] = ["D", "W", "C"];
     try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
@@ -133,12 +134,14 @@ export async function GET(request: NextRequest) {
 
       const squadValues = new Map<string, number>();
       for (const owned of allOwnership) {
-        // FMV = purchasePrice + (totalPoints * 50,000) — totalPoints from accumulated GW scores
+        // FMV uses RAW points only (per locked spec — synergy never compounds into FMV).
+        // Legacy breakdown rows carry `points` (no `rawPoints`); we tolerate both shapes.
         const playerTotalPoints = scores
           .filter((s) => s.teamId === owned.teamId)
           .reduce((sum, s) => {
-            const breakdown = JSON.parse(s.playerBreakdown || "[]") as { elementId: number; points: number }[];
-            const playerPts = breakdown.find((p) => p.elementId === owned.fplElementId)?.points ?? 0;
+            const breakdown = JSON.parse(s.playerBreakdown || "[]") as Array<{ elementId: number; points?: number; rawPoints?: number }>;
+            const match = breakdown.find((p) => p.elementId === owned.fplElementId);
+            const playerPts = match?.rawPoints ?? match?.points ?? 0;
             return sum + playerPts;
           }, 0);
         const fmv = calculateFMV(owned.purchasePrice, playerTotalPoints);
@@ -146,11 +149,13 @@ export async function GET(request: NextRequest) {
       }
 
       const standings = computeAuctionStandings(leagueTeams, scores, gwNumbers, squadValues);
+      const clubByTeamId = await getClubOwnershipsByTeam(leagueId);
 
       const responseData = {
         format: "auction" as const,
         standings,
         totalTeams: leagueTeams.length,
+        clubByTeamId,
       };
 
       setCachedStandings(leagueId, responseData).catch(() => {});

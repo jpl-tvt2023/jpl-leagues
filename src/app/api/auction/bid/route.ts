@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, auctionBids, auctionBidLogs, auctionSessions, auctionOwnership, teams, leagues } from "@/lib/db";
+import { db, auctionBids, auctionBidLogs, auctionSessions, auctionOwnership, auctionClubOwnership, teams, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { calculatePurse } from "@/lib/formats/auction/economy";
 import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
 import { fetchElementInfo } from "@/lib/fpl";
+import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
 
 // Anti-snipe: only extend the timer when a bid lands inside the closing window,
 // and then bump it by ANTI_SNIPE_EXTENSION_MS (capped at the admin's bidTimerSeconds).
@@ -98,28 +99,47 @@ export async function POST(request: NextRequest) {
       return { error: "Insufficient purse", status: 400 };
     }
 
-    // Check bidder doesn't already have 14 active players
-    const activeOwned = await tx
-      .select()
-      .from(auctionOwnership)
-      .where(
-        and(
-          eq(auctionOwnership.leagueId, leagueId),
-          eq(auctionOwnership.teamId, session.id),
-          eq(auctionOwnership.status, "active")
+    // Branch on session type: club auctions don't use player squad rules; instead
+    // we require the bidder to not yet own a club, and we skip the FPL-element lookup
+    // (currentBid.fplElementId here holds a PL team ID, not an element ID).
+    if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
+      const ownsClub = await tx
+        .select({ id: auctionClubOwnership.id })
+        .from(auctionClubOwnership)
+        .where(
+          and(
+            eq(auctionClubOwnership.leagueId, leagueId),
+            eq(auctionClubOwnership.teamId, session.id)
+          )
         )
-      );
+        .limit(1);
+      if (ownsClub.length > 0) {
+        return { error: "You already own a PL club — only club-less teams may bid in the club auction", status: 400 };
+      }
+    } else {
+      // Check bidder doesn't already have 14 active players
+      const activeOwned = await tx
+        .select()
+        .from(auctionOwnership)
+        .where(
+          and(
+            eq(auctionOwnership.leagueId, leagueId),
+            eq(auctionOwnership.teamId, session.id),
+            eq(auctionOwnership.status, "active")
+          )
+        );
 
-    // Squad-rule check: cap + position-feasibility for the player being bid on
-    const elements = await fetchElementInfo();
-    const el = elements.find((e) => e.id === currentBid.fplElementId);
-    if (!el) {
-      return { error: "Unknown FPL element", status: 400 };
-    }
-    const counts = countsFromOwnership(activeOwned);
-    const check = validateAddPlayer(counts, teamRow[0].penaltySlots ?? 0, el.element_type);
-    if (!check.ok) {
-      return { error: check.error, status: 400 };
+      // Squad-rule check: cap + position-feasibility for the player being bid on
+      const elements = await fetchElementInfo();
+      const el = elements.find((e) => e.id === currentBid.fplElementId);
+      if (!el) {
+        return { error: "Unknown FPL element", status: 400 };
+      }
+      const counts = countsFromOwnership(activeOwned);
+      const check = validateAddPlayer(counts, teamRow[0].penaltySlots ?? 0, el.element_type);
+      if (!check.ok) {
+        return { error: check.error, status: 400 };
+      }
     }
 
     // Anti-snipe: only extend the bid timer when the bid lands inside the

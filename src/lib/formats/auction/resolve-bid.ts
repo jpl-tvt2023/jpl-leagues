@@ -25,6 +25,11 @@ import { fetchElementInfo } from "@/lib/fpl";
 import { leagues } from "@/lib/db/schema";
 import { calculatePurse } from "./economy";
 import { countsFromOwnership, validateAddPlayer, effectiveMaxSquadSize } from "./squad-rules";
+import {
+  CLUB_AUCTION_SESSION_TYPE,
+  resolveClubBid,
+  advanceClubQueue,
+} from "./club-auction";
 
 const DEFAULT_MIN_BID = 500_000;
 
@@ -146,16 +151,25 @@ export async function resolveBidToUnsold(bid: BidRow): Promise<void> {
 }
 
 /**
- * Resolve an expired bid. The nominator is always the floor bidder, so the
- * player is always sold — either to the highest counter-bidder or, if no one
- * counter-bid, to the nominator at the base price.
+ * Resolve an expired bid. Branches on session type:
+ *   - For the **player auction**, the nominator is always the floor bidder, so the player is
+ *     always sold (to the high counter-bidder, or back to the nominator at floor).
+ *   - For the **club auction**, "no real bids" → unsold; ≥1 real bid → sold to high bidder.
  *
- * Returns "sold" if this call resolved the bid, or "already-resolved" if
- * another caller (SSE / safety-net) already handled it.
+ * Returns "sold" / "unsold" / "already-resolved". "unsold" is only possible for club bids.
  */
 export async function resolveExpiredBid(
   bid: BidRow
-): Promise<"sold" | "already-resolved"> {
+): Promise<"sold" | "unsold" | "already-resolved"> {
+  // Look up session type cheaply
+  const sess = await db
+    .select({ type: auctionSessions.type })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, bid.sessionId))
+    .limit(1);
+  if (sess[0]?.type === CLUB_AUCTION_SESSION_TYPE) {
+    return resolveClubBid(bid);
+  }
   const resolved = await resolveBidToSold(bid);
   return resolved ? "sold" : "already-resolved";
 }
@@ -163,15 +177,26 @@ export async function resolveExpiredBid(
 // ---- Nominator Advancement ----
 
 /**
- * Advance to the next nominator in the snake order and set a 60s nomination deadline.
+ * Advance to the next nominator. For a **player auction** this rolls the snake-order cursor and sets
+ * a fresh nomination deadline for the next team. For a **club auction** this advances the queue cursor
+ * and immediately auto-nominates the next PL club (no human in the loop).
  */
 export async function advanceNominator(sessionId: string): Promise<void> {
   const sessionRow = await db
-    .select({ snakeOrder: auctionSessions.snakeOrder, nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds })
+    .select({
+      type: auctionSessions.type,
+      snakeOrder: auctionSessions.snakeOrder,
+      nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds,
+    })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
   if (!sessionRow.length) return;
+
+  if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
+    await advanceClubQueue(sessionId);
+    return;
+  }
 
   const snakeOrder: string[] = JSON.parse(sessionRow[0].snakeOrder);
   if (snakeOrder.length === 0) return;
@@ -190,14 +215,23 @@ export async function advanceNominator(sessionId: string): Promise<void> {
 }
 
 /**
- * Set the nomination deadline for the current nominator (e.g. on session start).
+ * Set the nomination deadline for the current nominator (e.g. on session start, or whenever the SSE
+ * stream notices no deadline). For a **club auction** this triggers auto-nomination of the next club
+ * instead — there is no per-team nomination turn in club auctions.
  */
 export async function setNominationDeadline(sessionId: string): Promise<void> {
   const sessionRow = await db
-    .select({ nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds })
+    .select({
+      type: auctionSessions.type,
+      nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds,
+    })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
+  if (sessionRow[0]?.type === CLUB_AUCTION_SESSION_TYPE) {
+    await advanceClubQueue(sessionId);
+    return;
+  }
   const nomTimeout = sessionRow[0]?.nominationTimeoutSeconds ?? 60;
   const deadline = new Date(Date.now() + nomTimeout * 1000);
   await db

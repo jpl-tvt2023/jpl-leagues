@@ -1,13 +1,14 @@
 // JPL Auction — Finance / Ledger Assembly
 // Builds chronological transaction ledgers per team.
 
-import { db, teams, leagues, auctionOwnership, auctionScores, tradeProposals, gameweeks } from "../../db";
+import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, tradeProposals, gameweeks } from "../../db";
 import { eq, and, or } from "drizzle-orm";
 import { calculateRefund } from "./economy";
 
 export type TransactionType =
   | "initial_budget"
   | "purchase"
+  | "club_purchase"
   | "release_refund"
   | "pending_release"
   | "gw_payout"
@@ -84,7 +85,7 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
   const league = leagueRow[0];
   const initialBudget = league.initialBudget;
 
-  const [ownership, scores, allGws, trades, leagueTeams] = await Promise.all([
+  const [ownership, scores, allGws, trades, leagueTeams, clubOwnership] = await Promise.all([
     db.select().from(auctionOwnership).where(
       and(eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.teamId, teamId))
     ),
@@ -99,6 +100,9 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
       )
     ),
     db.select().from(teams).where(eq(teams.leagueId, leagueId)),
+    db.select().from(auctionClubOwnership).where(
+      and(eq(auctionClubOwnership.leagueId, leagueId), eq(auctionClubOwnership.teamId, teamId))
+    ),
   ]);
 
   const gwById = new Map<string, { number: number; deadline: Date }>();
@@ -119,6 +123,23 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     amount: initialBudget,
     isPending: false,
   });
+
+  // 1b. PL Club purchase (one-time, non-tradeable). Sorts by acquiredAt so it shows pre-player-auction.
+  for (const c of clubOwnership) {
+    entries.push({
+      id: `club-${c.id}`,
+      type: "club_purchase",
+      date: c.acquiredAt.toISOString(),
+      gw: 0,
+      description: `Bought ${c.plTeamName} (${c.tier})`,
+      amount: -c.purchasePrice,
+      isPending: false,
+      metadata: {
+        playerName: c.plTeamName,
+        purchasePrice: c.purchasePrice,
+      },
+    });
+  }
 
   // 2. Purchases + releases
   for (const o of ownership) {
@@ -313,8 +334,10 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
   // Reverse to show newest transactions first (descending order)
   const ledger: TransactionEntry[] = withBalance.reverse();
 
-  // Summary
-  const totalSpent = ownership.reduce((s, o) => s + o.purchasePrice, 0);
+  // Summary — include club-auction spend in totalSpent so it matches teams.totalSpent.
+  const totalSpent =
+    ownership.reduce((s, o) => s + o.purchasePrice, 0) +
+    clubOwnership.reduce((s, c) => s + c.purchasePrice, 0);
   const totalIncome = scores.reduce((s, sc) => s + sc.payout, 0);
   const totalRefunds = ownership
     .filter((o) => o.status === "released")

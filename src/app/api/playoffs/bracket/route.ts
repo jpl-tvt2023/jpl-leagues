@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
 }
 
 async function getLatestCompletedGw(leagueId?: string | null): Promise<number> {
-  let query = db.select({ gwNumber: gameweeks.number })
+  const query = db.select({ gwNumber: gameweeks.number })
     .from(results)
     .innerJoin(fixtures, eq(results.fixtureId, fixtures.id))
     .innerJoin(gameweeks, eq(fixtures.gameweekId, gameweeks.id));

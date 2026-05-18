@@ -48,6 +48,11 @@ export const leagues = sqliteTable("leagues", {
   initialBudget: integer("initial_budget").notNull().default(100_000_000),
   isSimulated: integer("is_simulated", { mode: "boolean" }).notNull().default(false), // Testing: auto-assign players via snake draft
 
+  // JPL Auction: PL Club Auction toggle — when on, league boots with a `club-auction` session
+  // before the `initial` player auction. Each team buys 1 PL club giving ×1.5 synergy on
+  // owned players from that club + per-GW result bonus when the club wins/draws.
+  clubAuctionEnabled: integer("club_auction_enabled", { mode: "boolean" }).notNull().default(false),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -356,19 +361,56 @@ export const auctionOwnership = sqliteTable("auction_ownership", {
 }));
 
 // Auction scores — per-GW team totals (replaces results for auction format)
+// total_points = raw_points + synergy_bonus + club_result_bonus.
+// `player_breakdown` JSON: [{elementId, name, rawPoints, synergyBonus, plTeamId}]
+// Legacy rows (pre-club-auction) may carry the older [{elementId, name, points}] shape; readers must tolerate both.
 export const auctionScores = sqliteTable("auction_scores", {
   id: text("id").primaryKey(),
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id, { onDelete: "cascade" }),
-  totalPoints: integer("total_points").notNull(), // Sum of all owned players' GW points
-  playerBreakdown: text("player_breakdown").notNull(), // JSON: [{elementId, name, points}]
+  totalPoints: integer("total_points").notNull(), // raw + synergy + clubResult
+  rawPoints: integer("raw_points").notNull().default(0),         // sum of owned players' raw FPL points this GW
+  synergyBonus: integer("synergy_bonus").notNull().default(0),    // 0.5 × raw on players matching team's owned PL club
+  clubResultBonus: integer("club_result_bonus").notNull().default(0), // tier-based bonus per fixture this GW for owned club
+  playerBreakdown: text("player_breakdown").notNull(),
   rank: integer("rank"), // GW rank (computed after all teams scored)
   payout: integer("payout").notNull().default(0), // Income earned this GW based on rank
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   teamGwUnique: uniqueIndex("auction_scores_team_gw_unique").on(table.leagueId, table.teamId, table.gameweekId),
 }));
+
+// PL Club ownership — one row per fantasy team that bought a PL club at the club auction.
+// One club per team, one owner per club (per league). `plTeamName`/`plTeamShort` snapshotted at purchase
+// so display survives FPL bootstrap drift. Tier resolved from `plStandingsConfig` at purchase time.
+export const auctionClubOwnership = sqliteTable("auction_club_ownership", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  plTeamId: integer("pl_team_id").notNull(),
+  plTeamName: text("pl_team_name").notNull(),
+  plTeamShort: text("pl_team_short").notNull(),
+  tier: text("tier").notNull(), // "top8" | "mid" | "promoted"
+  purchasePrice: integer("purchase_price").notNull(),
+  acquiredAt: integer("acquired_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  oneClubPerTeam: uniqueIndex("auction_club_team_unique").on(table.leagueId, table.teamId),
+  oneOwnerPerClub: uniqueIndex("auction_club_pl_unique").on(table.leagueId, table.plTeamId),
+}));
+
+// PL Standings config — singleton row (id = "current") describing the tier mapping the
+// club auction uses. Top 8 + Mid (9-17) from last season's final ladder, Promoted = 3 clubs
+// just up from the Championship. Superadmin-managed at /superadmin?tab=pl-standings.
+export const plStandingsConfig = sqliteTable("pl_standings_config", {
+  id: text("id").primaryKey(),
+  season: text("season").notNull(), // e.g. "2025-26"
+  top8: text("top8").notNull(),     // JSON array of FPL bootstrap team IDs (length 8)
+  mid: text("mid").notNull(),       // JSON array (length 9)
+  promoted: text("promoted").notNull(), // JSON array (length 3)
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
 
 // Auction sessions — tracks auction windows (pausable/resumable, can span multiple days)
 export const auctionSessions = sqliteTable("auction_sessions", {
@@ -483,6 +525,7 @@ export const leaguesRelations = relations(leagues, ({ many }) => ({
   auctionSessions: many(auctionSessions),
   auctionBids: many(auctionBids),
   auctionWishlists: many(auctionWishlists),
+  auctionClubOwnerships: many(auctionClubOwnership),
   tradeProposals: many(tradeProposals),
 }));
 
@@ -526,6 +569,7 @@ export const teamsRelations = relations(teams, ({ one, many }) => ({
   auctionOwnerships: many(auctionOwnership),
   auctionScores: many(auctionScores),
   auctionWishlists: many(auctionWishlists),
+  auctionClubOwnership: many(auctionClubOwnership),
 }));
 
 export const playersRelations = relations(players, ({ one, many }) => ({
@@ -704,6 +748,17 @@ export const auctionBidsRelations = relations(auctionBids, ({ one }) => ({
   }),
 }));
 
+export const auctionClubOwnershipRelations = relations(auctionClubOwnership, ({ one }) => ({
+  league: one(leagues, {
+    fields: [auctionClubOwnership.leagueId],
+    references: [leagues.id],
+  }),
+  team: one(teams, {
+    fields: [auctionClubOwnership.teamId],
+    references: [teams.id],
+  }),
+}));
+
 export const tradeProposalsRelations = relations(tradeProposals, ({ one }) => ({
   league: one(leagues, {
     fields: [tradeProposals.leagueId],
@@ -781,3 +836,12 @@ export type NewTradeProposal = typeof tradeProposals.$inferInsert;
 
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
+
+export type AuctionClubOwnership = typeof auctionClubOwnership.$inferSelect;
+export type NewAuctionClubOwnership = typeof auctionClubOwnership.$inferInsert;
+
+export type PLStandingsConfig = typeof plStandingsConfig.$inferSelect;
+export type NewPLStandingsConfig = typeof plStandingsConfig.$inferInsert;
+
+// Tier discriminator for PL Club Auction
+export type ClubTier = "top8" | "mid" | "promoted";

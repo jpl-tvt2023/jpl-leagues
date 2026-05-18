@@ -530,7 +530,7 @@ export async function GET(request: NextRequest) {
 
       // Calculate standings
       const standings = groupTeams.map(t => {
-        let pts = t.leaguePoints;
+        const pts = t.leaguePoints;
         let wins = 0;
 
         [...t.homeFixtures, ...t.awayFixtures].forEach(f => {

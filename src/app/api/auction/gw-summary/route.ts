@@ -7,6 +7,7 @@ import { getPayoutForRank } from "@/lib/formats/auction/economy";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
 import { getInFlightGameweekNumber } from "@/lib/gameweeks/in-flight";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
+import { getClubOwnershipsByTeam } from "@/lib/formats/auction/club-auction";
 
 /**
  * GET /api/auction/gw-summary?leagueSlug=xxx&gw=N
@@ -57,6 +58,9 @@ export async function GET(request: NextRequest) {
       teamId: auctionScores.teamId,
       gameweekId: auctionScores.gameweekId,
       totalPoints: auctionScores.totalPoints,
+      rawPoints: auctionScores.rawPoints,
+      synergyBonus: auctionScores.synergyBonus,
+      clubResultBonus: auctionScores.clubResultBonus,
       rank: auctionScores.rank,
       payout: auctionScores.payout,
       playerBreakdown: auctionScores.playerBreakdown,
@@ -113,6 +117,9 @@ export async function GET(request: NextRequest) {
     .from(teams)
     .where(eq(teams.leagueId, league.id));
   const teamNameMap = new Map(teamRows.map((t) => [t.id, t.name]));
+
+  // PL Club Auction: per-team owned club (drives team-rename + tier chip on UI).
+  const clubByTeamId = await getClubOwnershipsByTeam(league.id);
 
   // Build elementId → elementType map from ownership. A player's position is
   // immutable, so a single map covers every gameweek even when ownership
@@ -181,16 +188,30 @@ export async function GET(request: NextRequest) {
     }
 
     // Compute live points + active element IDs per team.
+    type LivePlayer = {
+      elementId: number;
+      name: string;
+      points: number;          // alias for rawPoints (kept for back-compat — older UI consumers read `points`)
+      rawPoints: number;
+      synergyBonus: number;
+      plTeamId: number | null;
+      elementType: number | null;
+      plTeamShort: string | null;
+    };
     type LiveRow = {
       teamId: string;
       teamName: string;
       totalPoints: number;
+      rawPoints: number;
+      synergyBonus: number;
+      clubResultBonus: number;
+      clubResultSummary: string | null;
       payout: number;
       gwRank: number;
       leagueRank: number | null;
       prevLeagueRank: number | null;
       rankDelta: number | null;
-      players: { elementId: number; name: string; points: number; elementType: number | null }[];
+      players: LivePlayer[];
       playersLeftToPlay: number | null;
     };
 
@@ -210,13 +231,11 @@ export async function GET(request: NextRequest) {
       ownershipByTeam.set(o.teamId, arr);
     }
 
-    const liveScoresByTeam = new Map<
-      string,
-      { totalPoints: number; players: { elementId: number; name: string; points: number }[] }
-    >();
+    type LiveScoreEntry = Awaited<ReturnType<typeof calculateAuctionTeamScore>>;
+    const liveScoresByTeam = new Map<string, LiveScoreEntry>();
     for (const t of teamRows) {
       const score = await calculateAuctionTeamScore(league.id, t.id, selectedGw);
-      liveScoresByTeam.set(t.id, { totalPoints: score.totalPoints, players: score.playerBreakdown });
+      liveScoresByTeam.set(t.id, score);
     }
 
     // Assign GW ranks based on live GW points (desc).
@@ -258,7 +277,7 @@ export async function GET(request: NextRequest) {
     );
 
     const liveRows: LiveRow[] = teamRows.map((t) => {
-      const live = liveScoresByTeam.get(t.id) ?? { totalPoints: 0, players: [] };
+      const live = liveScoresByTeam.get(t.id);
       const gwRank = gwRankByTeam.get(t.id) ?? 0;
       const leagueRank = leagueRankByTeam.get(t.id) ?? null;
       const prevLeagueRank = prevRanks ? prevRanks.get(t.id) ?? null : null;
@@ -266,19 +285,28 @@ export async function GET(request: NextRequest) {
       return {
         teamId: t.id,
         teamName: t.name,
-        totalPoints: live.totalPoints,
+        totalPoints: live?.totalPoints ?? 0,
+        rawPoints: live?.rawPoints ?? 0,
+        synergyBonus: live?.synergyBonus ?? 0,
+        clubResultBonus: live?.clubResultBonus ?? 0,
+        clubResultSummary: live?.clubResultSummary ?? null,
         payout: getPayoutForRank(gwRank),
         gwRank,
         leagueRank,
         prevLeagueRank,
         rankDelta,
-        players: live.players
+        players: (live?.playerBreakdown ?? [])
           .map((p) => ({
-            ...p,
+            elementId: p.elementId,
+            name: p.name,
+            points: p.rawPoints,        // back-compat alias
+            rawPoints: p.rawPoints,
+            synergyBonus: p.synergyBonus,
+            plTeamId: p.plTeamId,
             elementType: elementTypeMap.get(p.elementId) ?? null,
             plTeamShort: plTeamShortByElement.get(p.elementId) ?? null,
           }))
-          .sort((a, b) => b.points - a.points),
+          .sort((a, b) => b.rawPoints + b.synergyBonus - (a.rawPoints + a.synergyBonus)),
         playersLeftToPlay: playersLeftByTeam.get(t.id) ?? null,
       };
     });
@@ -292,10 +320,15 @@ export async function GET(request: NextRequest) {
       liveGameweek,
       selectedGw,
       isLive: true,
+      clubByTeamId,
       rows: liveRows.map((r) => ({
         teamId: r.teamId,
         teamName: r.teamName,
         totalPoints: r.totalPoints,
+        rawPoints: r.rawPoints,
+        synergyBonus: r.synergyBonus,
+        clubResultBonus: r.clubResultBonus,
+        clubResultSummary: r.clubResultSummary,
         rank: r.gwRank,
         payout: r.payout,
         leagueRank: r.leagueRank,
@@ -315,7 +348,16 @@ export async function GET(request: NextRequest) {
     ? leagueRanksAfter(selectedGw - 1)
     : null;
 
-  type BreakdownPlayer = { elementId: number; name: string; points: number };
+  // Historical breakdown rows: post-club-auction rows carry rawPoints/synergyBonus/plTeamId.
+  // Legacy rows (pre-club-auction) just have `points`. We tolerate both at read.
+  type BreakdownPlayer = {
+    elementId: number;
+    name: string;
+    points?: number;
+    rawPoints?: number;
+    synergyBonus?: number;
+    plTeamId?: number | null;
+  };
 
   // Players left to play in historical mode is normally 0 (GW finished), but
   // some fixtures may still be live if admin processed early. Cheap to compute.
@@ -354,11 +396,20 @@ export async function GET(request: NextRequest) {
       } catch {
         // Malformed JSON in playerBreakdown — skip the per-player view but keep the row.
       }
-      const enrichedPlayers = players.map((p) => ({
-        ...p,
-        elementType: elementTypeMap.get(p.elementId) ?? null,
-        plTeamShort: plTeamShortByElement.get(p.elementId) ?? null,
-      }));
+      const enrichedPlayers = players.map((p) => {
+        const rawPoints = p.rawPoints ?? p.points ?? 0;
+        const synergyBonus = p.synergyBonus ?? 0;
+        return {
+          elementId: p.elementId,
+          name: p.name,
+          points: rawPoints,        // back-compat
+          rawPoints,
+          synergyBonus,
+          plTeamId: p.plTeamId ?? null,
+          elementType: elementTypeMap.get(p.elementId) ?? null,
+          plTeamShort: plTeamShortByElement.get(p.elementId) ?? null,
+        };
+      });
       const leagueRank = currentRanks.get(s.teamId) ?? null;
       const prevLeagueRank = previousRanks ? previousRanks.get(s.teamId) ?? null : null;
       const rankDelta = leagueRank != null && prevLeagueRank != null ? prevLeagueRank - leagueRank : null;
@@ -366,12 +417,16 @@ export async function GET(request: NextRequest) {
         teamId: s.teamId,
         teamName: teamNameMap.get(s.teamId) ?? "Unknown",
         totalPoints: s.totalPoints,
+        rawPoints: s.rawPoints ?? 0,
+        synergyBonus: s.synergyBonus ?? 0,
+        clubResultBonus: s.clubResultBonus ?? 0,
+        clubResultSummary: null as string | null, // computed only in live mode; historical row carries the totals
         rank: s.rank ?? 0,
         payout: s.payout,
         leagueRank,
         prevLeagueRank,
         rankDelta,
-        players: enrichedPlayers.sort((a, b) => b.points - a.points),
+        players: enrichedPlayers.sort((a, b) => (b.rawPoints + b.synergyBonus) - (a.rawPoints + a.synergyBonus)),
         playersLeftToPlay: playersLeftByTeamHistorical.get(s.teamId) ?? null,
       };
     })
@@ -386,6 +441,7 @@ export async function GET(request: NextRequest) {
     liveGameweek,
     selectedGw,
     isLive: false,
+    clubByTeamId,
     rows,
   });
 }

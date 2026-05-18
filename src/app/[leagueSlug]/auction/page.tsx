@@ -96,7 +96,8 @@ function getJumpBidOptions(currentHighBid: number): number[] {
 }
 
 function ScheduledCountdown({ scheduledAt }: { scheduledAt: string }) {
-  const [now, setNow] = useState(Date.now());
+  // Lazy initializer keeps Date.now() out of the render path (React purity rule).
+  const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -971,7 +972,7 @@ export default function AuctionRoomPage() {
                           Nominate a Player
                         </button>
                         {nominateBlockedReason && (
-                          <div className="mt-2 text-[11px] text-red-400">{nominateBlockedReason} — you can't nominate</div>
+                          <div className="mt-2 text-[11px] text-red-400">{nominateBlockedReason} — you can&apos;t nominate</div>
                         )}
                       </>
                     ) : (

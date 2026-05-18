@@ -5,7 +5,11 @@ import type { AuctionScore, Team } from "../../db/schema";
 
 export interface AuctionGwHistory {
   gw: number;
-  points: number;
+  points: number;          // back-compat alias for totalPoints (kept for older UI consumers)
+  totalPoints: number;
+  rawPoints: number;
+  synergyBonus: number;
+  clubResultBonus: number;
   rank: number;
   payout: number;
 }
@@ -13,9 +17,12 @@ export interface AuctionGwHistory {
 export interface AuctionStanding {
   teamId: string;
   teamName: string;
-  totalPoints: number;
+  totalPoints: number;          // cumulative total = raw + synergy + clubResult
+  rawPoints: number;
+  synergyBonus: number;
+  clubResultBonus: number;
   purse: number;
-  squadValue: number; // sum of FMV of all owned players
+  squadValue: number;           // sum of FMV of all owned players (FMV uses RAW points only)
   gwHistory: AuctionGwHistory[];
   rank: number;
   previousRank: number | null;
@@ -28,7 +35,7 @@ export interface AuctionStanding {
  */
 export function computeAuctionStandings(
   teams: Pick<Team, "id" | "name" | "purse">[],
-  scores: Pick<AuctionScore, "teamId" | "gameweekId" | "totalPoints" | "rank" | "payout">[],
+  scores: Pick<AuctionScore, "teamId" | "gameweekId" | "totalPoints" | "rawPoints" | "synergyBonus" | "clubResultBonus" | "rank" | "payout">[],
   gwNumbers: Map<string, number>, // gameweekId -> gwNumber
   squadValues: Map<string, number> // teamId -> total FMV
 ): AuctionStanding[] {
@@ -38,10 +45,17 @@ export function computeAuctionStandings(
       .sort((a, b) => (gwNumbers.get(a.gameweekId) ?? 0) - (gwNumbers.get(b.gameweekId) ?? 0));
 
     const totalPoints = teamScores.reduce((sum, s) => sum + s.totalPoints, 0);
+    const rawPoints = teamScores.reduce((sum, s) => sum + (s.rawPoints ?? 0), 0);
+    const synergyBonus = teamScores.reduce((sum, s) => sum + (s.synergyBonus ?? 0), 0);
+    const clubResultBonus = teamScores.reduce((sum, s) => sum + (s.clubResultBonus ?? 0), 0);
 
     const gwHistory: AuctionGwHistory[] = teamScores.map((s) => ({
       gw: gwNumbers.get(s.gameweekId) ?? 0,
       points: s.totalPoints,
+      totalPoints: s.totalPoints,
+      rawPoints: s.rawPoints ?? 0,
+      synergyBonus: s.synergyBonus ?? 0,
+      clubResultBonus: s.clubResultBonus ?? 0,
       rank: s.rank ?? 0,
       payout: s.payout,
     }));
@@ -50,6 +64,9 @@ export function computeAuctionStandings(
       teamId: team.id,
       teamName: team.name,
       totalPoints,
+      rawPoints,
+      synergyBonus,
+      clubResultBonus,
       purse: team.purse,
       squadValue: squadValues.get(team.id) ?? 0,
       gwHistory,

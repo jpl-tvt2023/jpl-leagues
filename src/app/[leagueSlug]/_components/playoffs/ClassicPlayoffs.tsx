@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
@@ -28,13 +28,13 @@ export function ClassicPlayoffs() {
   const dashboardHref = viewer.dashboardHref;
 
   const { data, isLoading, refreshing, tempLiveScores, handleRefreshRound } = usePlayoffsBracket(leagueSlug);
-  const [activeTab, setActiveTab] = useState<TabType>("tvt");
-
-  useEffect(() => {
-    if (data && data.teamSize === 16 && data.latestCompletedGw < 34) {
-      setActiveTab("groupStage");
-    }
-  }, [data]);
+  // Derive the active tab from data + an optional user override. The 16-team variant defaults to
+  // "groupStage" while early playoff GWs haven't finished, but the user can manually switch and the
+  // override sticks. Computing at render-time avoids a setState-in-effect cascade.
+  const [tabOverride, setTabOverride] = useState<TabType | null>(null);
+  const autoDefaultTab: TabType = data && data.teamSize === 16 && data.latestCompletedGw < 34 ? "groupStage" : "tvt";
+  const activeTab: TabType = tabOverride ?? autoDefaultTab;
+  const setActiveTab = (t: TabType) => setTabOverride(t);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });

@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
       const gwNum = parseInt(gameweek);
 
       // Find or create the gameweek record
-      let gwRecord = await db.select().from(gameweeks).where(eq(gameweeks.number, gwNum));
+      const gwRecord = await db.select().from(gameweeks).where(eq(gameweeks.number, gwNum));
       let gameweekId: string;
 
       if (gwRecord.length === 0) {

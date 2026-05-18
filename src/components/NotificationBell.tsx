@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface NotificationItem {
   id: string;
@@ -13,6 +14,7 @@ interface NotificationItem {
 }
 
 export function NotificationBell() {
+  const router = useRouter();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -94,7 +96,7 @@ export function NotificationBell() {
 
   function handleClick(n: NotificationItem) {
     if (!n.readAt) markRead([n.id]);
-    if (n.link) window.location.href = n.link;
+    if (n.link) router.push(n.link);
     setOpen(false);
   }
 

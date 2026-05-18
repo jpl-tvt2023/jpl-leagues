@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 
 export interface LiveFixtureScore {
   fixtureId: string;
@@ -674,27 +674,26 @@ export function GroupStageView({
   playoffStartGw?: number;
   latestCompletedGw?: number;
 }) {
-  const [expandedGws, setExpandedGws] = useState<Record<string, Set<number>>>({});
-
-  useEffect(() => {
+  // Default-expanded GWs are derived from props (the current GW per round). User toggles layer on
+  // top as overrides — derived-at-render keeps this off the setState-in-effect path.
+  const [overrides, setOverrides] = useState<Record<string, Set<number>>>({});
+  const defaultExpanded = useMemo<Record<string, Set<number>>>(() => {
     const currentGw = latestCompletedGw ? (latestCompletedGw < 33 ? latestCompletedGw + 1 : 33) : 31;
-    const newExpanded: Record<string, Set<number>> = {};
-    groups.forEach((g) => {
-      newExpanded[g.roundPrefix] = new Set([currentGw]);
-    });
-    setExpandedGws(newExpanded);
+    const result: Record<string, Set<number>> = {};
+    groups.forEach((g) => { result[g.roundPrefix] = new Set([currentGw]); });
+    return result;
   }, [groups, latestCompletedGw]);
+  const expandedGws: Record<string, Set<number>> = { ...defaultExpanded, ...overrides };
 
   const toggleGwExpanded = (groupPrefix: string, gw: number) => {
-    setExpandedGws((prev) => {
-      const newState = { ...prev };
-      if (!newState[groupPrefix]) newState[groupPrefix] = new Set();
-      if (newState[groupPrefix].has(gw)) {
-        newState[groupPrefix].delete(gw);
-      } else {
-        newState[groupPrefix].add(gw);
-      }
-      return newState;
+    setOverrides((prev) => {
+      const next = { ...prev };
+      const current = next[groupPrefix] ?? defaultExpanded[groupPrefix] ?? new Set<number>();
+      const updated = new Set(current);
+      if (updated.has(gw)) updated.delete(gw);
+      else updated.add(gw);
+      next[groupPrefix] = updated;
+      return next;
     });
   };
 

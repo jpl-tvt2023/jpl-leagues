@@ -12,6 +12,12 @@ import {
 import { simulateAuction } from "@/lib/formats/auction/simulate";
 import { finalizePendingReleasesNow } from "@/lib/formats/auction/process-gameweek";
 import { purgePendingTrades } from "@/lib/formats/auction/live-session";
+import {
+  CLUB_AUCTION_SESSION_TYPE,
+  fetchAllPLClubsWithTiers,
+  buildInitialClubQueue,
+  autoNominateNextClub,
+} from "@/lib/formats/auction/club-auction";
 
 /**
  * Auto-resolve expired open bids that SSE may have missed.
@@ -140,6 +146,49 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "create") {
+    // Club auction: the "queue" stored in snakeOrder is a randomised list of PL team IDs,
+    // not fantasy team IDs. Only one club-auction session may exist per league.
+    if (type === CLUB_AUCTION_SESSION_TYPE) {
+      if (!leagueRow[0].clubAuctionEnabled) {
+        return NextResponse.json({ error: "Club auction is not enabled for this league" }, { status: 400 });
+      }
+      // Reject if a club-auction session already exists for this league
+      const prior = await db
+        .select({ id: auctionSessions.id })
+        .from(auctionSessions)
+        .where(and(eq(auctionSessions.leagueId, leagueId), eq(auctionSessions.type, CLUB_AUCTION_SESSION_TYPE)))
+        .limit(1);
+      if (prior.length > 0) {
+        return NextResponse.json({ error: "A club auction session already exists for this league" }, { status: 409 });
+      }
+      let clubs;
+      try {
+        clubs = await fetchAllPLClubsWithTiers();
+      } catch (err) {
+        console.error("[session] fetchAllPLClubsWithTiers failed:", err);
+        return NextResponse.json({ error: "Failed to load PL clubs from FPL" }, { status: 502 });
+      }
+      if (clubs.length === 0) {
+        return NextResponse.json({ error: "FPL bootstrap returned no PL clubs" }, { status: 502 });
+      }
+      const queue = buildInitialClubQueue(clubs.map((c) => c.id));
+
+      const id = generateId();
+      await db.insert(auctionSessions).values({
+        id,
+        leagueId,
+        type: CLUB_AUCTION_SESSION_TYPE,
+        cycleNumber: 1, // Round 1 of nominations
+        status: "pending",
+        snakeOrder: JSON.stringify(queue),
+        currentNominatorIndex: 0,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        bidTimerSeconds: bidTimerSeconds ?? 20,
+        nominationTimeoutSeconds: nominationTimeoutSeconds ?? 60,
+      });
+      return NextResponse.json({ success: true, id, queueLength: queue.length });
+    }
+
     // Get teams to generate snake order
     const leagueTeams = await db
       .select({ id: teams.id, leaguePoints: teams.leaguePoints })
@@ -262,9 +311,14 @@ export async function POST(request: NextRequest) {
     await finalizePendingReleasesNow(leagueId, gwNumber);
   }
 
-  // When starting/resuming, set the nomination deadline for the current nominator
+  // When starting/resuming a player auction, set the nomination deadline for the current nominator.
+  // For a club auction, there is no per-team nomination — the system auto-nominates one PL club at a time.
   if (newStatus === "active") {
-    await setNominationDeadline(sessionId);
+    if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
+      await autoNominateNextClub(sessionId);
+    } else {
+      await setNominationDeadline(sessionId);
+    }
   }
 
   // First-time start (not resume): purge any non-completed trade proposals so

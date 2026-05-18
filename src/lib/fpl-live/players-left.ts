@@ -30,12 +30,14 @@ const FPL_FIXTURES_URL = "https://fantasy.premierleague.com/api/fixtures/";
 // Some shared User-Agent — FPL is friendlier to clients that identify themselves.
 const FPL_USER_AGENT = "Mozilla/5.0 (compatible; jpl-leagues/1.0; +https://jpl-leagues.vercel.app)";
 
-interface FplFixture {
+export interface FplFixture {
   id: number;
   event: number | null;            // PL GW number; null for fixtures not yet scheduled
   kickoff_time: string | null;     // ISO; null if not yet scheduled
   team_h: number;                  // PL team ID
   team_a: number;                  // PL team ID
+  team_h_score: number | null;     // Final score (null until result is in)
+  team_a_score: number | null;
   started: boolean | null;
   finished: boolean;
   finished_provisional: boolean;

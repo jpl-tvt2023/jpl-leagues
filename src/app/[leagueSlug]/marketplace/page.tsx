@@ -49,7 +49,8 @@ type Tab = "incoming" | "outgoing" | "live" | "releases" | "history";
 const TRADE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 function ExpiryCountdown({ createdAt }: { createdAt: number | string }) {
-  const [now, setNow] = useState(Date.now());
+  // Lazy initializer keeps Date.now() out of the render path (React purity rule).
+  const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);

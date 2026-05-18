@@ -10,6 +10,7 @@ import {
 import { calculatePurse } from "@/lib/formats/auction/economy";
 import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
 import { fetchElementInfo } from "@/lib/fpl";
+import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
 
 const DEFAULT_MIN_BID = 500_000; // 500K minimum starting bid
 
@@ -48,6 +49,14 @@ export async function POST(request: NextRequest) {
   if (sessionRow.length === 0 || sessionRow[0].status !== "active") {
     console.error("[nominate] 400: session not active", { sessionId, status: sessionRow[0]?.status });
     return NextResponse.json({ error: "Auction session is not active" }, { status: 400 });
+  }
+
+  // Club auctions are system-nominated (random queue) — there is no team turn to nominate from.
+  if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
+    return NextResponse.json(
+      { error: "Club auctions are system-nominated. Use the bid endpoint to bid on the currently nominated club." },
+      { status: 400 }
+    );
   }
 
   const leagueId = sessionRow[0].leagueId;

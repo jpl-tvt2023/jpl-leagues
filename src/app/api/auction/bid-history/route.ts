@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
   // Fetch event logs for all resolved bids
   const bidIds = resolved.map((b) => b.id);
-  let logsByBidId: Record<string, { id: string; teamId: string; amount: number; type: string; createdAt: Date }[]> = {};
+  const logsByBidId: Record<string, { id: string; teamId: string; amount: number; type: string; createdAt: Date }[]> = {};
 
   if (bidIds.length > 0) {
     const logs = await db

@@ -43,6 +43,13 @@
       "when": 1778418403565,
       "tag": "0005_flawless_zzzax",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1779000000000,
+      "tag": "0006_pl_club_auction",
+      "breakpoints": true
     }
   ]
 }
