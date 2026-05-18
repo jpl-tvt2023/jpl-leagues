@@ -138,6 +138,7 @@ interface AuctionSquadPlayer {
   status: string;
   totalPoints: number;
   fmv: number;
+  plTeamShort?: string | null;
 }
 
 const SQUAD_POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -4012,7 +4013,12 @@ export default function AdminDashboard() {
                                             <div key={player.ownershipId} className="text-[10px] min-w-0">
                                               <div className="flex items-center gap-1 min-w-0">
                                                 <span className={`w-1 h-1 rounded-full shrink-0 ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
-                                                <span className="text-gray-300 truncate flex-1">{player.playerName}</span>
+                                                <span className="text-gray-300 truncate flex-1">
+                                                  {player.playerName}
+                                                  {player.plTeamShort && (
+                                                    <span className="ml-1 text-[8px] text-gray-500">({player.plTeamShort})</span>
+                                                  )}
+                                                </span>
                                                 <span className="text-[#00ff85] font-mono shrink-0">{player.totalPoints}p</span>
                                               </div>
                                               <div className="flex items-center justify-between pl-2 text-[9px] mt-0.5">

@@ -6,6 +6,7 @@ import { calculateAuctionTeamScore } from "@/lib/formats/auction/scoring";
 import { getPayoutForRank } from "@/lib/formats/auction/economy";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
 import { getInFlightGameweekNumber } from "@/lib/gameweeks/in-flight";
+import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
 
 /**
  * GET /api/auction/gw-summary?leagueSlug=xxx&gw=N
@@ -128,6 +129,24 @@ export async function GET(request: NextRequest) {
     if (!elementTypeMap.has(o.fplElementId)) {
       elementTypeMap.set(o.fplElementId, o.elementType ?? null);
     }
+  }
+
+  // Build elementId → PL club short_name lookup from FPL caches.
+  // Best-effort: on FPL outage we leave the map empty and players render
+  // without the club suffix.
+  const plTeamShortByElement = new Map<number, string>();
+  try {
+    const [elements, bootstrap] = await Promise.all([fetchElementInfo(), fetchBootstrapData()]);
+    const plTeamShortById = new Map<number, string>();
+    for (const t of (bootstrap.teams ?? []) as { id: number; short_name: string }[]) {
+      plTeamShortById.set(t.id, t.short_name);
+    }
+    for (const el of elements) {
+      const short = plTeamShortById.get(el.team);
+      if (short) plTeamShortByElement.set(el.id, short);
+    }
+  } catch {
+    // ignore
   }
 
   // Compute cumulative league standings at the end of a given GW number.
@@ -254,7 +273,11 @@ export async function GET(request: NextRequest) {
         prevLeagueRank,
         rankDelta,
         players: live.players
-          .map((p) => ({ ...p, elementType: elementTypeMap.get(p.elementId) ?? null }))
+          .map((p) => ({
+            ...p,
+            elementType: elementTypeMap.get(p.elementId) ?? null,
+            plTeamShort: plTeamShortByElement.get(p.elementId) ?? null,
+          }))
           .sort((a, b) => b.points - a.points),
         playersLeftToPlay: playersLeftByTeam.get(t.id) ?? null,
       };
@@ -334,6 +357,7 @@ export async function GET(request: NextRequest) {
       const enrichedPlayers = players.map((p) => ({
         ...p,
         elementType: elementTypeMap.get(p.elementId) ?? null,
+        plTeamShort: plTeamShortByElement.get(p.elementId) ?? null,
       }));
       const leagueRank = currentRanks.get(s.teamId) ?? null;
       const prevLeagueRank = previousRanks ? previousRanks.get(s.teamId) ?? null : null;

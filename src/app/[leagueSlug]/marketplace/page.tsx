@@ -28,6 +28,7 @@ interface SquadPlayer {
   purchasePrice: number;
   fmv: number;
   status: string;
+  plTeamShort?: string | null;
 }
 
 const MARKET_POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -550,7 +551,12 @@ export default function MarketplacePage() {
                                       checked={offeredIds.has(p.ownershipId)}
                                       onChange={() => toggle(offeredIds, p.ownershipId, setOfferedIds)}
                                     />
-                                    <span className="flex-1">{p.playerName}</span>
+                                    <span className="flex-1">
+                                      {p.playerName}
+                                      {p.plTeamShort && (
+                                        <span className="ml-1 text-[10px] text-gray-500">({p.plTeamShort})</span>
+                                      )}
+                                    </span>
                                     <span className="font-mono text-xs text-gray-400">{formatCurrency(p.fmv)}</span>
                                   </label>
                                 ))}
@@ -590,7 +596,12 @@ export default function MarketplacePage() {
                                         checked={requestedIds.has(p.ownershipId)}
                                         onChange={() => toggle(requestedIds, p.ownershipId, setRequestedIds)}
                                       />
-                                      <span className="flex-1">{p.playerName}</span>
+                                      <span className="flex-1">
+                                        {p.playerName}
+                                        {p.plTeamShort && (
+                                          <span className="ml-1 text-[10px] text-gray-500">({p.plTeamShort})</span>
+                                        )}
+                                      </span>
                                       <span className="font-mono text-xs text-gray-400">{formatCurrency(p.fmv)}</span>
                                     </label>
                                   ))}

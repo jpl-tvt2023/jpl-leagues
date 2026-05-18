@@ -11,6 +11,7 @@ interface BreakdownPlayer {
   name: string;
   points: number;
   elementType: number | null;
+  plTeamShort?: string | null;
 }
 
 interface TeamRow {
@@ -342,7 +343,12 @@ export function AuctionGwResults() {
                                                   <div className="space-y-1.5">
                                                     {players.map((p) => (
                                                       <div key={p.elementId} className="flex items-center justify-between text-sm min-w-0">
-                                                        <span className={`truncate ${p.points === 0 ? "text-gray-500" : "text-gray-200"}`}>{p.name}</span>
+                                                        <span className={`truncate ${p.points === 0 ? "text-gray-500" : "text-gray-200"}`}>
+                                                          {p.name}
+                                                          {p.plTeamShort && (
+                                                            <span className="ml-1 text-[10px] text-gray-500">({p.plTeamShort})</span>
+                                                          )}
+                                                        </span>
                                                         <span className={`font-mono shrink-0 ml-2 ${p.points >= 8 ? "text-[#00ff85] font-bold" : p.points > 0 ? "text-gray-200" : "text-gray-600"}`}>
                                                           {p.points}
                                                         </span>
