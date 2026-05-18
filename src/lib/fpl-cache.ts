@@ -307,10 +307,6 @@ export interface LiveFixtureScore {
   awayScore: number;
   homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
   awayPlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
-  /** Fixtures-left-to-play across home managers' starting XI. null when FPL fixtures fetch failed. */
-  playersLeftHome?: number | null;
-  /** Fixtures-left-to-play across away managers' starting XI. null when FPL fixtures fetch failed. */
-  playersLeftAway?: number | null;
 }
 
 export interface LiveGameweekData {
@@ -342,15 +338,11 @@ export async function getLiveCachedScores(
 export async function setLiveCachedScores(
   gameweek: number,
   data: LiveGameweekData,
-  leagueId?: string | null,
-  /** Override the default 10-min TTL. Used to shorten the lifetime of a
-   *  partially-degraded payload (e.g. one with null players-left values) so
-   *  it self-heals quickly once FPL recovers. */
-  ttlSeconds?: number,
+  leagueId?: string | null
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getLiveKey(gameweek, leagueId), data, { ex: ttlSeconds ?? LIVE_CACHE_TTL });
+  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_TTL });
 }
 
 /**

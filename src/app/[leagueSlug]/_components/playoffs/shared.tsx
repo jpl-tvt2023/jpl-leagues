@@ -13,8 +13,6 @@ export interface LiveFixtureScore {
   awayScore: number;
   homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
   awayPlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
-  playersLeftHome?: number | null;
-  playersLeftAway?: number | null;
 }
 
 export interface TeamSide {
@@ -148,13 +146,10 @@ function PlayerBreakdown({
   label,
   players,
   gameweek,
-  playersLeft,
 }: {
   label: string;
   players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
   gameweek: number;
-  /** undefined = don't render the footer; null = FPL outage ("—"); number = count. */
-  playersLeft?: number | null;
 }) {
   if (players.length === 0) return null;
   return (
@@ -194,13 +189,6 @@ function PlayerBreakdown({
           </div>
         </div>
       ))}
-      {playersLeft !== undefined && (
-        <div className="mt-1 text-[10px] text-center">
-          <span className={playersLeft != null && playersLeft > 0 ? "text-yellow-400" : "text-gray-500"}>
-            {playersLeft == null ? "—" : playersLeft} players left to play
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -270,23 +258,6 @@ export function MatchCard({
     if (liveFixture.homeTeamId === side.teamId) return liveFixture.homePlayers;
     if (liveFixture.awayTeamId === side.teamId) return liveFixture.awayPlayers;
     return [];
-  };
-
-  const getPlayersLeftForSide = (
-    side: TeamSide | null,
-    liveFixture: LiveFixtureScore | undefined,
-  ): number | null | undefined => {
-    if (!liveFixture || !side?.teamId) return undefined;
-    const isHome = liveFixture.homeTeamId === side.teamId;
-    const isAway = liveFixture.awayTeamId === side.teamId;
-    if (!isHome && !isAway) return undefined;
-    const raw = isHome ? liveFixture.playersLeftHome : liveFixture.playersLeftAway;
-    // Preserve the three states distinctly:
-    //   undefined → field absent in response → hide footer
-    //   null      → field present but FPL outage → render "—"
-    //   number    → render the count
-    if (raw === undefined) return undefined;
-    return raw;
   };
 
   return (
@@ -452,13 +423,11 @@ export function MatchCard({
                   label={`${tie.home?.name || "Home"} Players`}
                   players={getPlayersForSide(tie.home, liveScoreLeg1)}
                   gameweek={tie.gw1}
-                  playersLeft={getPlayersLeftForSide(tie.home, liveScoreLeg1)}
                 />
                 <PlayerBreakdown
                   label={`${tie.away?.name || "Away"} Players`}
                   players={getPlayersForSide(tie.away, liveScoreLeg1)}
                   gameweek={tie.gw1}
-                  playersLeft={getPlayersLeftForSide(tie.away, liveScoreLeg1)}
                 />
               </div>
             </div>
@@ -471,13 +440,11 @@ export function MatchCard({
                   label={`${tie.home?.name || "Home"} Players`}
                   players={getPlayersForSide(tie.home, liveScoreLeg2)}
                   gameweek={tie.gw2!}
-                  playersLeft={getPlayersLeftForSide(tie.home, liveScoreLeg2)}
                 />
                 <PlayerBreakdown
                   label={`${tie.away?.name || "Away"} Players`}
                   players={getPlayersForSide(tie.away, liveScoreLeg2)}
                   gameweek={tie.gw2!}
-                  playersLeft={getPlayersLeftForSide(tie.away, liveScoreLeg2)}
                 />
               </div>
             </div>
@@ -490,13 +457,11 @@ export function MatchCard({
                   label={`${tie.home?.name || "Home"} Players`}
                   players={getPlayersForSide(tie.home, liveScoreLeg3)}
                   gameweek={tie.gw3!}
-                  playersLeft={getPlayersLeftForSide(tie.home, liveScoreLeg3)}
                 />
                 <PlayerBreakdown
                   label={`${tie.away?.name || "Away"} Players`}
                   players={getPlayersForSide(tie.away, liveScoreLeg3)}
                   gameweek={tie.gw3!}
-                  playersLeft={getPlayersLeftForSide(tie.away, liveScoreLeg3)}
                 />
               </div>
             </div>
