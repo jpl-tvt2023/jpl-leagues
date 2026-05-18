@@ -78,20 +78,35 @@ async function computeClubResultBonus(
 }
 
 /**
+ * Per-player data carried forward across re-processings. Captured at scoring time and stored in
+ * `auctionScores.playerBreakdown` JSON, then replayed when admin re-processes the same GW.
+ */
+export interface PreservedPlayerData {
+  /** PL team the player was registered with **at original scoring time**. Drives synergy
+   *  retroactively — a mid-season transfer must NOT re-route synergy for already-scored GWs. */
+  plTeamId: number | null;
+  /** Final synergy bonus from the original scoring. Used only if the player has since left the
+   *  PL entirely (missing from bootstrap) — otherwise synergy is recomputed using `plTeamId`. */
+  synergyBonus: number;
+}
+
+/**
  * Calculate an auction team's GW score: raw + synergy + clubResult breakdown.
  *
  * Reads from `auctionOwnership` for current squad and `auctionClubOwnership` for owned-club bonus.
  * Owned-club perks (synergy + clubResult) only apply if the team owns a PL club; otherwise both are 0.
  *
- * @param preservedSynergyByElementId  Optional map used by reprocessing: if a previously-scored player
- *   has since left the PL (no longer in FPL bootstrap), preserve their last-known synergy bonus from this
- *   map rather than dropping it to 0.
+ * @param preservedPlayerDataByElementId  Optional map used by reprocessing. For each owned player
+ *   that has a preserved entry (i.e. the GW was scored before), the preserved `plTeamId` drives the
+ *   synergy decision rather than the live bootstrap — so a mid-season transfer doesn't retroactively
+ *   re-route synergy on already-scored GWs. The `synergyBonus` field is the last-known value, used
+ *   as a fallback when the player is missing from the current FPL bootstrap (left the PL entirely).
  */
 export async function calculateAuctionTeamScore(
   leagueId: string,
   teamId: string,
   gameweek: number,
-  preservedSynergyByElementId?: Map<number, number>
+  preservedPlayerDataByElementId?: Map<number, PreservedPlayerData>
 ): Promise<AuctionTeamGwScore> {
   // Squad owned during this GW
   const ownedPlayers = await db
@@ -125,25 +140,32 @@ export async function calculateAuctionTeamScore(
   ]);
   const elementById = new Map(elementInfo.map((e) => [e.id, e]));
 
-  // Per-player breakdown
+  // Per-player breakdown. The synergy decision uses the player's PL team at the time the GW was
+  // *originally* scored (snapshotted in the preserved data). Falls back to the live bootstrap on
+  // first-time scoring or when no snapshot exists. This makes mid-season transfers prospective —
+  // re-scoring an old GW doesn't re-route synergy to a player's new club.
   const playerBreakdown: AuctionPlayerBreakdown[] = ownedPlayers.map((p) => {
     const raw = elementPoints[p.fplElementId] ?? 0;
     const meta = elementById.get(p.fplElementId);
-    const currentPlTeamId = meta?.team ?? null;
+    const preserved = preservedPlayerDataByElementId?.get(p.fplElementId);
+    // Effective PL team for synergy: prefer the historical snapshot if we have one, else live bootstrap.
+    const effectivePlTeamId = preserved?.plTeamId ?? meta?.team ?? null;
     let synergyBonus = 0;
-    if (ownedClubPlTeamId != null && currentPlTeamId === ownedClubPlTeamId) {
+    if (ownedClubPlTeamId != null && effectivePlTeamId === ownedClubPlTeamId) {
       // ×0.5 of raw — integer rounding (round-half-up) keeps totals predictable.
       synergyBonus = Math.round(raw * SYNERGY_BONUS_RATIO);
-    } else if (!meta && preservedSynergyByElementId?.has(p.fplElementId)) {
-      // Reprocess preservation: player no longer in bootstrap → keep previously-stored synergy.
-      synergyBonus = preservedSynergyByElementId.get(p.fplElementId) ?? 0;
+    } else if (!meta && preserved) {
+      // Player has left the PL entirely (missing from bootstrap) but we have a snapshot — preserve
+      // the last-known synergy value rather than dropping it to 0.
+      synergyBonus = preserved.synergyBonus;
     }
     return {
       elementId: p.fplElementId,
       name: p.playerName,
       rawPoints: raw,
       synergyBonus,
-      plTeamId: currentPlTeamId,
+      // Persist the effective PL team into the breakdown JSON so subsequent reprocessing reads it.
+      plTeamId: effectivePlTeamId,
     };
   });
 

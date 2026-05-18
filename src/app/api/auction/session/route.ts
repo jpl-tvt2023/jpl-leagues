@@ -17,6 +17,7 @@ import {
   fetchAllPLClubsWithTiers,
   buildInitialClubQueue,
   autoNominateNextClub,
+  simulateClubAuction,
 } from "@/lib/formats/auction/club-auction";
 
 /**
@@ -148,18 +149,36 @@ export async function POST(request: NextRequest) {
   if (action === "create") {
     // Club auction: the "queue" stored in snakeOrder is a randomised list of PL team IDs,
     // not fantasy team IDs. Only one club-auction session may exist per league.
+    // Session-ordering guard: allowed creation order is club-auction → initial → mini-auction.
+    // Schedule is free-form (each session's `scheduledAt` can be any date) — only creation order is
+    // enforced. Read the existing sessions once for the rest of the create branch.
+    const existingSessions = await db
+      .select({ id: auctionSessions.id, type: auctionSessions.type, status: auctionSessions.status })
+      .from(auctionSessions)
+      .where(eq(auctionSessions.leagueId, leagueId));
+    const hasClubAuction = existingSessions.some((s) => s.type === CLUB_AUCTION_SESSION_TYPE);
+    const completedClubAuction = existingSessions.some(
+      (s) => s.type === CLUB_AUCTION_SESSION_TYPE && s.status === "completed"
+    );
+    const hasInitialAuction = existingSessions.some((s) => s.type === "initial");
+    const completedInitialAuction = existingSessions.some(
+      (s) => s.type === "initial" && s.status === "completed"
+    );
+
     if (type === CLUB_AUCTION_SESSION_TYPE) {
       if (!leagueRow[0].clubAuctionEnabled) {
         return NextResponse.json({ error: "Club auction is not enabled for this league" }, { status: 400 });
       }
       // Reject if a club-auction session already exists for this league
-      const prior = await db
-        .select({ id: auctionSessions.id })
-        .from(auctionSessions)
-        .where(and(eq(auctionSessions.leagueId, leagueId), eq(auctionSessions.type, CLUB_AUCTION_SESSION_TYPE)))
-        .limit(1);
-      if (prior.length > 0) {
+      if (hasClubAuction) {
         return NextResponse.json({ error: "A club auction session already exists for this league" }, { status: 409 });
+      }
+      // Reject if the initial player auction has already been created — clubs must run first
+      if (hasInitialAuction) {
+        return NextResponse.json(
+          { error: "Cannot create a club auction after an initial player auction has been scheduled. Allowed order: club-auction → initial → mini-auction." },
+          { status: 409 }
+        );
       }
       let clubs;
       try {
@@ -187,6 +206,32 @@ export async function POST(request: NextRequest) {
         nominationTimeoutSeconds: nominationTimeoutSeconds ?? 60,
       });
       return NextResponse.json({ success: true, id, queueLength: queue.length });
+    }
+
+    // Ordering guards for player auctions.
+    if (type === "initial") {
+      // Reject if a prior initial auction already exists for this league
+      if (hasInitialAuction) {
+        return NextResponse.json(
+          { error: "An initial auction session already exists for this league." },
+          { status: 409 }
+        );
+      }
+      // If clubs are enabled, the club auction must have completed first.
+      if (leagueRow[0].clubAuctionEnabled && !completedClubAuction) {
+        return NextResponse.json(
+          { error: "Club auction must be completed before creating the initial player auction. Allowed order: club-auction → initial → mini-auction." },
+          { status: 409 }
+        );
+      }
+    } else if (type === "mini-auction") {
+      // Mini-auctions require a completed initial auction.
+      if (!completedInitialAuction) {
+        return NextResponse.json(
+          { error: "Initial auction must be completed before creating a mini-auction. Allowed order: club-auction → initial → mini-auction." },
+          { status: 409 }
+        );
+      }
     }
 
     // Get teams to generate snake order
@@ -275,7 +320,8 @@ export async function POST(request: NextRequest) {
 
   const newStatus = action === "start" || action === "resume" ? "active" : action === "pause" ? "paused" : "completed";
 
-  // If starting a session in a simulated league, run auto-draft instead of live auction
+  // If starting a session in a simulated league, run auto-allocation instead of live auction.
+  // Dispatch by session type so a club-auction session runs the club allocator (not the player draft).
   if (newStatus === "active" && (action === "start") && leagueRow[0].isSimulated) {
     await db
       .update(auctionSessions)
@@ -283,6 +329,16 @@ export async function POST(request: NextRequest) {
       .where(eq(auctionSessions.id, sessionId));
 
     try {
+      if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
+        const result = await simulateClubAuction(leagueId, sessionId);
+        return NextResponse.json({
+          success: true,
+          sessionId,
+          status: "completed",
+          simulated: true,
+          clubsAllocated: result.allocated,
+        });
+      }
       const result = await simulateAuction(leagueId, sessionId);
       return NextResponse.json({
         success: true,

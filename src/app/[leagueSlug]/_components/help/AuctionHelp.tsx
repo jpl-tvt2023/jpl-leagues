@@ -64,9 +64,17 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
     {
       question: "How does the ×1.5 club synergy multiplier work?",
       answer: (
-        <p>
-          Any owned player whose <strong className="text-white">current PL club</strong> matches your owned club earns a <strong className="text-yellow-300">+50% bonus</strong> on their raw GW points. If a player you own transfers PL clubs mid-season, the multiplier follows the player&apos;s new club — you may lose synergy on a player and another manager may gain it. Synergy applies only to GW scoring; it does <strong className="text-white">not</strong> compound into FMV, squad value, or trade economics.
-        </p>
+        <div className="space-y-2">
+          <p>
+            Any owned player whose PL club matches your owned club earns a <strong className="text-yellow-300">+50% bonus</strong> on their raw GW points. The synergy follows the player&apos;s PL club <strong className="text-white">at the time of the GW</strong>, not their current club.
+          </p>
+          <p>
+            If a player transfers mid-season, the <strong className="text-white">previous owner keeps synergy</strong> on every GW the player completed at the old club, and the <strong className="text-white">new owner gains synergy</strong> from the transfer GW onward. Example: Mbeumo plays GW1-15 for Brentford then signs for Man Utd before GW16 — the Brentford owner keeps GW1-15 synergy on Mbeumo, the Man Utd owner picks up GW16+.
+          </p>
+          <p>
+            Synergy applies only to GW scoring; it does <strong className="text-white">not</strong> compound into FMV, squad value, or trade economics.
+          </p>
+        </div>
       ),
     },
     {
@@ -97,7 +105,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
       question: "What happens when admin reprocesses a historical GW after a player transfer?",
       answer: (
         <p>
-          The scorer detects players that are no longer in the FPL bootstrap and <strong className="text-white">preserves their previously-stored synergy bonus</strong> for that GW. Synergy for players still in FPL is recomputed normally. In the rare case automatic preservation isn&apos;t enough, the superadmin can edit per-row synergy / club-result via the <em>Score Adjustments</em> tab — every change is audit-logged with a reason.
+          Reprocessing uses the player&apos;s PL club <strong className="text-white">at the time the GW was originally scored</strong> (snapshotted in the scoring breakdown) rather than the live FPL bootstrap. So mid-season transfers do NOT retroactively re-route synergy on already-scored GWs. If a player has since left the PL entirely (missing from the bootstrap), the last-known synergy bonus is preserved. In the rare case automatic preservation isn&apos;t enough, superadmin can edit per-row synergy / club-result via the <em>Score Adjustments</em> tab — every change is audit-logged with a reason.
         </p>
       ),
     },

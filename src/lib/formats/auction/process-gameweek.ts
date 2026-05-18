@@ -65,10 +65,15 @@ export async function processAuctionGameweek(
     return { success: false, teamsProcessed: 0, scores: [], error: "No teams found" };
   }
 
-  // Reprocess-preservation: build a per-team map of {elementId → previously-stored synergyBonus}
-  // so that owned players who have since left the PL (no longer in FPL bootstrap) keep their
-  // historical synergy contribution. Only applies on forceReprocess.
-  const preservedSynergyByTeam = new Map<string, Map<number, number>>();
+  // Reprocess-preservation: build a per-team map of {elementId → {plTeamId, synergyBonus}} from
+  // the prior breakdown JSON. Two reasons we need this:
+  //   1. Synergy retroactivity: if a player transferred PL clubs after the GW was originally scored,
+  //      reprocess must NOT re-route synergy to the new club. The historical plTeamId drives the
+  //      synergy decision for this GW.
+  //   2. PL exits: if a player has left the PL entirely (missing from bootstrap), the last-known
+  //      synergy bonus is used as a fallback.
+  // Only applies on forceReprocess.
+  const preservedDataByTeam = new Map<string, Map<number, { plTeamId: number | null; synergyBonus: number }>>();
   if (forceReprocess) {
     const prior = await db
       .select({ teamId: auctionScores.teamId, breakdown: auctionScores.playerBreakdown })
@@ -81,13 +86,24 @@ export async function processAuctionGameweek(
       );
     for (const row of prior) {
       try {
-        const parsed = JSON.parse(row.breakdown) as Array<{ elementId: number; synergyBonus?: number }>;
-        const map = new Map<number, number>();
+        const parsed = JSON.parse(row.breakdown) as Array<{
+          elementId: number;
+          plTeamId?: number | null;
+          synergyBonus?: number;
+        }>;
+        const map = new Map<number, { plTeamId: number | null; synergyBonus: number }>();
         for (const p of parsed) {
-          if (typeof p.synergyBonus === "number") map.set(p.elementId, p.synergyBonus);
+          // Only preserve entries that carry at least one of the snapshot fields (legacy rows
+          // pre-club-auction had neither and produce nothing useful).
+          if (typeof p.synergyBonus === "number" || p.plTeamId != null) {
+            map.set(p.elementId, {
+              plTeamId: p.plTeamId ?? null,
+              synergyBonus: typeof p.synergyBonus === "number" ? p.synergyBonus : 0,
+            });
+          }
         }
-        if (map.size > 0) preservedSynergyByTeam.set(row.teamId, map);
-      } catch { /* legacy breakdown rows without synergy → nothing to preserve */ }
+        if (map.size > 0) preservedDataByTeam.set(row.teamId, map);
+      } catch { /* legacy breakdown rows that don't parse → nothing to preserve */ }
     }
   }
 
@@ -98,7 +114,7 @@ export async function processAuctionGameweek(
         leagueId,
         team.id,
         gameweekNumber,
-        preservedSynergyByTeam.get(team.id)
+        preservedDataByTeam.get(team.id)
       );
       return { ...score, teamName: team.name };
     })

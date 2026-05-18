@@ -508,3 +508,92 @@ export async function leagueHasClubAuctionEnabled(leagueId: string): Promise<boo
     .limit(1);
   return Boolean(row[0]?.enabled);
 }
+
+// ── Simulation ────────────────────────────────────────────────────────────
+// For leagues with `isSimulated=true`, the session route short-circuits the live auction and
+// auto-allocates everything. This is the club-auction equivalent of `simulateAuction` in
+// simulate.ts. Algorithm: random pairing of fantasy teams to PL clubs, floor price (500K) per
+// allocation, bulk-insert ownership rows, deduct purse, mark session completed.
+
+export async function simulateClubAuction(
+  leagueId: string,
+  sessionId: string
+): Promise<{ allocated: number }> {
+  // Fetch the session — must exist and be a club-auction
+  const sessionRow = await db
+    .select()
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+  if (sessionRow.length === 0) throw new Error("Session not found");
+  if (sessionRow[0].type !== CLUB_AUCTION_SESSION_TYPE) {
+    throw new Error("simulateClubAuction called on a non-club-auction session");
+  }
+
+  // Fetch fantasy teams (non-ghost) and PL clubs (with tier)
+  const [leagueTeams, clubs] = await Promise.all([
+    db.select().from(teams).where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false))),
+    fetchAllPLClubsWithTiers(),
+  ]);
+
+  if (leagueTeams.length === 0) throw new Error("No teams in league to allocate clubs to");
+  if (clubs.length === 0) throw new Error("FPL bootstrap returned no PL clubs");
+
+  // Random pairing: shuffle both, pair index-by-index. Auction leagues cap at ≤14 teams, so we
+  // never run out of clubs.
+  const shuffledTeams = shuffleInPlace([...leagueTeams]);
+  const shuffledClubs = shuffleInPlace([...clubs]);
+  const pairCount = Math.min(shuffledTeams.length, shuffledClubs.length);
+
+  const now = new Date();
+  const price = CLUB_FLOOR_BID;
+  const ownershipRecords: (typeof auctionClubOwnership.$inferInsert)[] = [];
+
+  for (let i = 0; i < pairCount; i++) {
+    const team = shuffledTeams[i];
+    const club = shuffledClubs[i];
+    if (!club.tier) {
+      // Shouldn't happen — every PL club resolves to a tier via the standings config. If a tier
+      // genuinely can't be resolved (FPL added a 21st club, say), skip this pairing rather than
+      // writing a tier-less row that scoring can't price.
+      console.warn(`[simulateClubAuction] skipping team ${team.id} — club ${club.id} has no tier`);
+      continue;
+    }
+    ownershipRecords.push({
+      id: generateId(),
+      leagueId,
+      teamId: team.id,
+      plTeamId: club.id,
+      plTeamName: club.name,
+      plTeamShort: club.short,
+      tier: club.tier,
+      purchasePrice: price,
+      acquiredAt: now,
+      createdAt: now,
+    });
+  }
+
+  if (ownershipRecords.length > 0) {
+    await db.insert(auctionClubOwnership).values(ownershipRecords);
+  }
+
+  // Deduct purse from each allocated team — one UPDATE per team (mirrors simulate.ts pattern)
+  for (const record of ownershipRecords) {
+    await db
+      .update(teams)
+      .set({
+        purse: sql`${teams.purse} - ${price}`,
+        totalSpent: sql`${teams.totalSpent} + ${price}`,
+        updatedAt: now,
+      })
+      .where(eq(teams.id, record.teamId));
+  }
+
+  // Mark the session completed
+  await db
+    .update(auctionSessions)
+    .set({ status: "completed" })
+    .where(eq(auctionSessions.id, sessionId));
+
+  return { allocated: ownershipRecords.length };
+}
