@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, auctionSessions, teamPenalties } from "@/lib/db";
+import { eq, and, isNull, desc, or } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
-import { calculateFMV } from "@/lib/formats/auction/economy";
+import { calculateFMV, calculatePurse } from "@/lib/formats/auction/economy";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
 import type { ClubTier } from "@/lib/db/schema";
+import {
+  MAX_SQUAD_SIZE,
+  MAX_BONUS_SLOTS,
+  effectiveMaxSquadSize,
+  nextBonusSlotCost,
+} from "@/lib/formats/auction/squad-rules";
+
+// Mirrors the constants in redeem-slot/route.ts. Surfaces the cheapest redeem cost so the slot-
+// status UI can render the inline Redeem button without a second API call.
+const REDEEM_SAME_CYCLE_COST = 2_500_000;
+const REDEEM_LATER_CYCLE_COST = 5_000_000;
 
 /**
  * GET /api/auction/squad?teamId=xxx
@@ -129,13 +140,98 @@ export async function GET(request: NextRequest) {
     : null;
   const displayName = ownedClub?.plTeamName ?? teamRow[0].name;
 
+  // ── Slot status — consolidates open / penalty / locked into one block for <SlotStatus>. ──
+  const activeCount = squad.filter((p) => p.status === "active").length;
+  const penaltySlots = teamRow[0].penaltySlots ?? 0;
+  const bonusSlots = teamRow[0].bonusSlots ?? 0;
+  const effectiveMax = effectiveMaxSquadSize(penaltySlots, bonusSlots);
+  const open = Math.max(0, effectiveMax - activeCount);
+  const lockedCount = MAX_BONUS_SLOTS - bonusSlots;
+  const nextUnlockCost = nextBonusSlotCost(bonusSlots);
+
+  // Is the initial auction complete? Required gate for unlock.
+  const initialSession = await db
+    .select({ status: auctionSessions.status })
+    .from(auctionSessions)
+    .where(and(eq(auctionSessions.leagueId, leagueRow[0].id), eq(auctionSessions.type, "initial")))
+    .limit(1);
+  const initialAuctionCompleted = initialSession[0]?.status === "completed";
+
+  const availablePurse = calculatePurse(
+    leagueRow[0].initialBudget,
+    teamRow[0].totalIncome,
+    teamRow[0].totalSpent,
+    teamRow[0].totalRefunds,
+  );
+  const canUnlock =
+    nextUnlockCost != null && initialAuctionCompleted && availablePurse >= nextUnlockCost;
+  const unlockBlockedReason = nextUnlockCost == null
+    ? "all bonus slots already unlocked"
+    : !initialAuctionCompleted
+      ? "initial auction in progress"
+      : availablePurse < nextUnlockCost
+        ? "insufficient purse"
+        : null;
+
+  // Cheapest unredeemed penalty cost — null when no penalty rows exist. Mirrors the pricing in the
+  // redeem-slot route: same-cycle = £2.5M, later cycle = £5M.
+  let redeemableCost: number | null = null;
+  let canRedeem = false;
+  if (penaltySlots > 0) {
+    const liveSess = await db
+      .select({ cycleNumber: auctionSessions.cycleNumber })
+      .from(auctionSessions)
+      .where(and(
+        eq(auctionSessions.leagueId, leagueRow[0].id),
+        or(eq(auctionSessions.status, "active"), eq(auctionSessions.status, "paused")),
+      ))
+      .limit(1);
+    let currentCycle = liveSess[0]?.cycleNumber ?? 0;
+    if (liveSess.length === 0) {
+      const latest = await db
+        .select({ cycleNumber: auctionSessions.cycleNumber })
+        .from(auctionSessions)
+        .where(eq(auctionSessions.leagueId, leagueRow[0].id))
+        .orderBy(desc(auctionSessions.cycleNumber))
+        .limit(1);
+      currentCycle = latest[0]?.cycleNumber ?? 0;
+    }
+    const unredeemed = await db
+      .select({ incurredCycle: teamPenalties.incurredCycle })
+      .from(teamPenalties)
+      .where(and(eq(teamPenalties.teamId, teamId), isNull(teamPenalties.redeemedAt)));
+    const costs = unredeemed.map((r) =>
+      r.incurredCycle === currentCycle ? REDEEM_SAME_CYCLE_COST : REDEEM_LATER_CYCLE_COST
+    );
+    // Legacy slots without ledger rows: priced at later-cycle cost.
+    const legacyCount = Math.max(0, penaltySlots - unredeemed.length);
+    for (let i = 0; i < legacyCount; i++) costs.push(REDEEM_LATER_CYCLE_COST);
+    redeemableCost = costs.length > 0 ? Math.min(...costs) : null;
+    canRedeem = redeemableCost != null && availablePurse >= redeemableCost;
+  }
+
   return NextResponse.json({
     teamId,
     teamName: displayName,
     leagueId: leagueRow[0].id,
     squad,
-    activeCount: squad.filter((p) => p.status === "active").length,
+    activeCount,
     deadwoodCount: squad.filter((p) => p.status === "deadwood").length,
     ownedClub,
+    slotStatus: {
+      active: activeCount,
+      effectiveMax,
+      baseCap: MAX_SQUAD_SIZE,
+      bonusSlots,
+      penaltySlots,
+      open,
+      lockedCount,
+      nextUnlockCost,
+      canUnlock,
+      unlockBlockedReason,
+      redeemableCost,
+      canRedeem,
+      initialAuctionCompleted,
+    },
   });
 }

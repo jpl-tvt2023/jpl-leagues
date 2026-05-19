@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { SlotStatus, type SlotStatusData } from "@/components/SlotStatus";
 import { useEnforceFormat } from "@/lib/league-context";
 
 interface SquadPlayer {
@@ -25,6 +26,45 @@ interface SquadResponse {
   squad: SquadPlayer[];
   activeCount: number;
   deadwoodCount: number;
+  slotStatus?: SlotStatusData;
+}
+
+// Inline wrapper that wires <SlotStatus> into the squad page — handles unlock + redeem flows
+// (confirm → POST → refresh parent) so the page-level callback stays small.
+function SquadSlotStatusInline({
+  slotStatus,
+  teamId,
+  onChanged,
+}: { slotStatus: SlotStatusData; teamId: string; onChanged: () => void | Promise<void> }) {
+  return (
+    <SlotStatus
+      slotStatus={slotStatus}
+      onUnlock={async () => {
+        const cost = slotStatus.nextUnlockCost;
+        if (!cost) return;
+        if (!confirm(`Unlock slot ${14 + slotStatus.bonusSlots + 1} for £${(cost / 1_000_000).toFixed(1)}M? This is non-refundable.`)) return;
+        const res = await fetch(`/api/auction/unlock-slot`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId }),
+        });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d?.error ?? "Unlock failed"); return; }
+        await onChanged();
+      }}
+      onRedeem={async () => {
+        const cost = slotStatus.redeemableCost;
+        if (cost == null) return;
+        if (!confirm(`Redeem penalty slot for £${(cost / 1_000_000).toFixed(1)}M?`)) return;
+        const res = await fetch(`/api/auction/redeem-slot`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId }),
+        });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d?.error ?? "Redeem failed"); return; }
+        await onChanged();
+      }}
+    />
+  );
 }
 
 interface EconomyResponse {
@@ -335,7 +375,11 @@ export default function SquadPage() {
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">{squadData.teamName}</h1>
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="rounded-full bg-white/10 px-3 py-1 text-white">{squadData.activeCount}/14 active</span>
+                    {squadData.slotStatus ? (
+                      <SquadSlotStatusInline slotStatus={squadData.slotStatus} teamId={squadData.teamId} onChanged={loadAll} />
+                    ) : (
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-white">{squadData.activeCount}/14 active</span>
+                    )}
                     {squadData.deadwoodCount > 0 && (
                       <span className="rounded-full bg-yellow-500/20 text-yellow-300 px-3 py-1 border border-yellow-500/30">
                         {squadData.deadwoodCount} deadwood

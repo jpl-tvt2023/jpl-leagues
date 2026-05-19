@@ -103,6 +103,10 @@ export const teams = sqliteTable("teams", {
 
   // JPL Auction: Penalty slots (missed nominations reduce max squad size from 14)
   penaltySlots: integer("penalty_slots").notNull().default(0),
+  // JPL Auction: Bonus slots unlocked via purse purchase (0 = default 14-slot cap;
+  // 1 = slot 15 unlocked for £10M; 2 = slot 16 unlocked for an additional £25M).
+  // Locked-slot unlocks are only allowed after the initial auction completes.
+  bonusSlots: integer("bonus_slots").notNull().default(0),
   
   // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)
   // Existing chips: WW = Win-Win, DP = Double Pointer, CC = Challenge Chip

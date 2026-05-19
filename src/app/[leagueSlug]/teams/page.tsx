@@ -15,6 +15,9 @@ interface TeamCard {
   purse: number;
   squadValue: number;
   squadSize: number;
+  penaltySlots?: number;
+  bonusSlots?: number;
+  effectiveMax?: number;
   topPerformer: { name: string; points: number } | null;
   isMine: boolean;
   ownedClub?: {
@@ -330,7 +333,19 @@ export default function TeamsPage() {
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono font-bold text-[#00ff85]">{t.totalPoints}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-green-300">{formatCurrency(t.purse)}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-blue-300">{formatCurrency(t.squadValue)}</td>
-                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-white">{t.squadSize}/14</td>
+                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-white">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span title={`${t.squadSize} active · effective max ${t.effectiveMax ?? 14}`}>
+                                  {t.squadSize} / {t.effectiveMax ?? 14}
+                                </span>
+                                {(t.penaltySlots ?? 0) > 0 && (
+                                  <span className="text-[10px] text-red-400" title={`${t.penaltySlots} penalty slot(s) lost`}>✕{t.penaltySlots}</span>
+                                )}
+                                {(t.bonusSlots ?? 0) > 0 && (
+                                  <span className="text-[10px] text-purple-300" title={`${t.bonusSlots} bonus slot(s) unlocked`}>+{t.bonusSlots}</span>
+                                )}
+                              </span>
+                            </td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-right text-xs text-gray-200 truncate max-w-[180px]">
                               {t.topPerformer ? (
                                 <>

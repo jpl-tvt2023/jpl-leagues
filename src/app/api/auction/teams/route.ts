@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
       id: teams.id,
       name: teams.name,
       purse: teams.purse,
+      penaltySlots: teams.penaltySlots,
+      bonusSlots: teams.bonusSlots,
     })
     .from(teams)
     .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)));
@@ -92,9 +94,11 @@ export async function GET(request: NextRequest) {
   // One DB query for the whole league; downstream consumers also get `ownedClub` for the tier chip.
   const clubByTeamId = await fetchClubOwnershipMap(leagueId);
 
+  const slotsByTeam = new Map(leagueTeams.map((t) => [t.id, { penaltySlots: t.penaltySlots ?? 0, bonusSlots: t.bonusSlots ?? 0 }]));
   const teamList = standings.map((s) => {
     const tp = topPerformerByTeam.get(s.teamId);
     const ownedClub = clubByTeamId.get(s.teamId) ?? null;
+    const slots = slotsByTeam.get(s.teamId) ?? { penaltySlots: 0, bonusSlots: 0 };
     return {
       teamId: s.teamId,
       name: ownedClub?.plTeamName ?? s.teamName,
@@ -103,6 +107,9 @@ export async function GET(request: NextRequest) {
       purse: s.purse,
       squadValue: s.squadValue,
       squadSize: squadSize.get(s.teamId) ?? 0,
+      penaltySlots: slots.penaltySlots,
+      bonusSlots: slots.bonusSlots,
+      effectiveMax: 14 + slots.bonusSlots - slots.penaltySlots,
       topPerformer: tp
         ? { name: elementName.get(tp.elementId) ?? `#${tp.elementId}`, points: tp.points }
         : null,

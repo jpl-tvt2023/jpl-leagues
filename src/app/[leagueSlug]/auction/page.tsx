@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { TierChip } from "@/components/TierChip";
+import { SlotStatus } from "@/components/SlotStatus";
 import type { ClubTier } from "@/lib/db/schema";
 import { useEnforceFormat } from "@/lib/league-context";
 
@@ -234,9 +235,11 @@ export default function AuctionRoomPage() {
   const [elements, setElements] = useState<BootstrapElement[]>([]);
   const [plTeams, setPlTeams] = useState<Map<number, BootstrapTeam>>(new Map());
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
+  const [mySlotStatus, setMySlotStatus] = useState<import("@/components/SlotStatus").SlotStatusData | null>(null);
   const [teamSummaries, setTeamSummaries] = useState<Record<string, {
     purse: number;
     penaltySlots: number;
+    bonusSlots?: number;
     players: { fplElementId: number; playerName: string; purchasePrice: number }[];
   }>>({});
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
@@ -325,12 +328,14 @@ export default function AuctionRoomPage() {
         setPlTeams(tMap);
       }
 
-      const [sessRes, standingsRes, ownedRes, economyRes, wishlistRes] = await Promise.all([
+      const [sessRes, standingsRes, ownedRes, economyRes, wishlistRes, squadRes] = await Promise.all([
         fetch(`/api/auction/session?leagueId=${league.id}`),
         fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`),
         fetch(`/api/auction/league-owned?leagueId=${league.id}`),
         fetch(`/api/auction/economy?teamId=${me.team.id}`),
         fetch(`/api/auction/wishlist?teamId=${me.team.id}`),
+        // Pull my squad's slot status so we can render <SlotStatus> with redeem/unlock costs.
+        fetch(`/api/auction/squad?teamId=${me.team.id}`),
       ]);
 
       let activeSessionId: string | null = null;
@@ -390,6 +395,11 @@ export default function AuctionRoomPage() {
       if (wishlistRes.ok) {
         const wl = await wishlistRes.json();
         setWishlist(wl.wishlist ?? []);
+      }
+
+      if (squadRes.ok) {
+        const sqJson = await squadRes.json();
+        setMySlotStatus(sqJson.slotStatus ?? null);
       }
 
       // Load historical bid feed (persists across page reloads)
@@ -669,7 +679,9 @@ export default function AuctionRoomPage() {
   const mySummary = myTeamId ? teamSummaries[myTeamId] : null;
   const myActiveCount = mySummary?.players?.length ?? 0;
   const myPenaltySlots = mySummary?.penaltySlots ?? 0;
-  const mySquadFull = myActiveCount >= 14 - myPenaltySlots;
+  const myBonusSlots = mySummary?.bonusSlots ?? 0;
+  // Squad-full check: base 14 + bonus slots unlocked − penalty slots lost.
+  const mySquadFull = myActiveCount >= 14 + myBonusSlots - myPenaltySlots;
   const cannotAffordNomination = myPurse < NOMINATE_MIN_BID;
   const nominateBlockedReason = mySquadFull
     ? "Squad full"
@@ -877,11 +889,67 @@ export default function AuctionRoomPage() {
                   <div className="text-xs text-gray-400 uppercase">Your Purse</div>
                   <div className="font-mono font-bold text-green-300">{formatCurrency(myPurse)}</div>
                 </div>
-                {myPenaltySlots > 0 && (
-                  <RedeemPenaltyButton teamId={myTeamId!} onRedeemed={refreshSessionState} />
-                )}
               </div>
             </div>
+
+            {/* Always-visible squad-slot summary: open / penalty / locked. Replaces the old
+                conditional "Penalty slots: N" + RedeemPenaltyButton pair so users see slot economy
+                even when they're at the default 14 cap with no penalties. */}
+            {mySlotStatus && (
+              <div className="mb-4">
+                <SlotStatus
+                  slotStatus={mySlotStatus}
+                  onUnlock={async () => {
+                    if (!myTeamId) return;
+                    const cost = mySlotStatus.nextUnlockCost;
+                    if (!cost) return;
+                    if (!confirm(`Unlock slot ${14 + mySlotStatus.bonusSlots + 1} for £${(cost / 1_000_000).toFixed(1)}M? This is non-refundable.`)) return;
+                    try {
+                      const res = await fetch(`/api/auction/unlock-slot`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ teamId: myTeamId }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) { alert(data?.error ?? "Unlock failed"); return; }
+                      // Refresh slot status + economy.
+                      const [sq, econ] = await Promise.all([
+                        fetch(`/api/auction/squad?teamId=${myTeamId}`).then(r => r.ok ? r.json() : null),
+                        fetch(`/api/auction/economy?teamId=${myTeamId}`).then(r => r.ok ? r.json() : null),
+                      ]);
+                      if (sq) setMySlotStatus(sq.slotStatus ?? null);
+                      if (econ) setMyPurse(econ.computedPurse ?? 0);
+                    } catch (e) {
+                      alert(`Unlock failed: ${e instanceof Error ? e.message : "unknown"}`);
+                    }
+                  }}
+                  onRedeem={async () => {
+                    if (!myTeamId) return;
+                    const cost = mySlotStatus.redeemableCost;
+                    if (cost == null) return;
+                    if (!confirm(`Redeem penalty slot for £${(cost / 1_000_000).toFixed(1)}M?`)) return;
+                    try {
+                      const res = await fetch(`/api/auction/redeem-slot`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ teamId: myTeamId }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) { alert(data?.error ?? "Redeem failed"); return; }
+                      const [sq, econ] = await Promise.all([
+                        fetch(`/api/auction/squad?teamId=${myTeamId}`).then(r => r.ok ? r.json() : null),
+                        fetch(`/api/auction/economy?teamId=${myTeamId}`).then(r => r.ok ? r.json() : null),
+                      ]);
+                      if (sq) setMySlotStatus(sq.slotStatus ?? null);
+                      if (econ) setMyPurse(econ.computedPurse ?? 0);
+                      refreshSessionState();
+                    } catch (e) {
+                      alert(`Redeem failed: ${e instanceof Error ? e.message : "unknown"}`);
+                    }
+                  }}
+                />
+              </div>
+            )}
 
             {session.status === "paused" && (
               <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-center text-yellow-300 text-sm">
@@ -1142,9 +1210,14 @@ export default function AuctionRoomPage() {
                                         );
                                       })}
                                     </div>
-                                    {summary && summary.penaltySlots > 0 && (
-                                      <div className="mt-1 text-[10px] text-red-400">
-                                        Penalty slots: {summary.penaltySlots} (max squad reduced)
+                                    {summary && (summary.penaltySlots > 0 || (summary.bonusSlots ?? 0) > 0) && (
+                                      <div className="mt-1 text-[10px] flex items-center gap-2">
+                                        {summary.penaltySlots > 0 && (
+                                          <span className="text-red-400">✕ {summary.penaltySlots} penalty {summary.penaltySlots === 1 ? "slot" : "slots"}</span>
+                                        )}
+                                        {(summary.bonusSlots ?? 0) > 0 && (
+                                          <span className="text-purple-300">+{summary.bonusSlots} unlocked</span>
+                                        )}
                                       </div>
                                     )}
                                   </td>

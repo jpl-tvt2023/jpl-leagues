@@ -11,6 +11,7 @@ export type NotificationType =
   | "gw_processed"
   | "release_refund"
   | "slot_redeemed"
+  | "slot_unlocked"
   | "club_purchased";
 
 export interface CreateNotificationInput {

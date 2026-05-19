@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
       totalIncome: teams.totalIncome,
       totalRefunds: teams.totalRefunds,
       penaltySlots: teams.penaltySlots,
+      bonusSlots: teams.bonusSlots,
     })
     .from(teams)
     .where(eq(teams.leagueId, leagueId));
@@ -71,6 +72,7 @@ export async function GET(request: NextRequest) {
   const teamSummaries: Record<string, {
     purse: number;
     penaltySlots: number;
+    bonusSlots: number;
     players: { fplElementId: number; playerName: string; purchasePrice: number }[];
   }> = {};
 
@@ -78,6 +80,7 @@ export async function GET(request: NextRequest) {
     teamSummaries[t.id] = {
       purse: calculatePurse(initialBudget, t.totalIncome, t.totalSpent, t.totalRefunds),
       penaltySlots: t.penaltySlots ?? 0,
+      bonusSlots: t.bonusSlots ?? 0,
       players: [],
     };
   }

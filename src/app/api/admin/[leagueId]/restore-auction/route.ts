@@ -50,6 +50,7 @@ interface AuctionTeamStateRow {
   "Total Income": number;
   "Total Refunds": number;
   "Penalty Slots": number;
+  "Bonus Slots"?: number;
 }
 interface AuctionSquadRow {
   "Ownership ID": string;
@@ -255,6 +256,8 @@ export async function POST(request: NextRequest) {
           totalIncome: Number(t["Total Income"]),
           totalRefunds: Number(t["Total Refunds"]),
           penaltySlots: Number(t["Penalty Slots"]),
+          // Bonus Slots may be absent in older backups taken before the column existed — default 0.
+          bonusSlots: Number(t["Bonus Slots"] ?? 0),
           updatedAt: new Date(),
         })
         .where(and(eq(teams.id, t["Team ID"]), eq(teams.leagueId, leagueId)));

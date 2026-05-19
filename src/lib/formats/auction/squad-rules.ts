@@ -1,14 +1,34 @@
 // JPL Auction — Squad composition rules.
 // Centralised so nominate, auto-nominate, and bid endpoints share one truth.
 
+// Base cap — what the initial auction fills. Slots 15 and 16 are locked behind purse-purchases
+// (see BONUS_SLOT_PRICES) and only unlockable after the initial auction completes.
 export const MAX_SQUAD_SIZE = 14;
+// How many extra slots a team can buy past the base cap (slot 15, slot 16). Absolute cap = 16.
+export const MAX_BONUS_SLOTS = 2;
+export const ABSOLUTE_SQUAD_CAP = MAX_SQUAD_SIZE + MAX_BONUS_SLOTS;
+// Sequential per-slot unlock costs. Index 0 = price to unlock slot 15; index 1 = slot 16.
+export const BONUS_SLOT_PRICES = [10_000_000, 25_000_000] as const;
 
 // element_type → minimum required in final squad
 // 1 = GKP, 2 = DEF, 3 = MID, 4 = FWD
 export const MIN_QUOTA: Record<number, number> = { 1: 1, 2: 3, 3: 3, 4: 1 };
 
-export function effectiveMaxSquadSize(penaltySlots: number): number {
-  return MAX_SQUAD_SIZE - (penaltySlots ?? 0);
+/**
+ * Effective squad cap for a team:
+ *   base (14) + bonus unlocks (0-2) − penalty slots (unlimited).
+ *
+ * The default `bonusSlots = 0` keeps callers that haven't been updated correct for the base case.
+ */
+export function effectiveMaxSquadSize(penaltySlots: number, bonusSlots: number = 0): number {
+  return MAX_SQUAD_SIZE + (bonusSlots ?? 0) - (penaltySlots ?? 0);
+}
+
+/** Cost (in purse units) to unlock the next bonus slot, or `null` if all bonus slots are unlocked. */
+export function nextBonusSlotCost(bonusSlots: number): number | null {
+  const idx = bonusSlots ?? 0;
+  if (idx >= MAX_BONUS_SLOTS) return null;
+  return BONUS_SLOT_PRICES[idx];
 }
 
 export interface SquadCounts {
@@ -69,9 +89,10 @@ export function isFeasible(counts: SquadCounts, maxSize: number): boolean {
 export function validateAddPlayer(
   counts: SquadCounts,
   penaltySlots: number,
-  elementType: number
+  elementType: number,
+  bonusSlots: number = 0,
 ): { ok: true } | { ok: false; error: string } {
-  const maxSize = effectiveMaxSquadSize(penaltySlots);
+  const maxSize = effectiveMaxSquadSize(penaltySlots, bonusSlots);
   if (counts.total >= maxSize) {
     return { ok: false, error: `Squad is full (${maxSize} players)` };
   }
