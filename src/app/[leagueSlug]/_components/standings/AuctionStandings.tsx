@@ -9,6 +9,7 @@ import { useLeague } from "@/lib/league-context";
 import { TierChip } from "@/components/TierChip";
 import type { TeamClubOwnership } from "@/lib/teams/display-name";
 import { getTeamDisplayName } from "@/lib/teams/display-name";
+import { formatPts } from "@/lib/format-points";
 
 interface AuctionGwHistoryEntry {
   gw: number;
@@ -17,6 +18,7 @@ interface AuctionGwHistoryEntry {
   rawPoints: number;
   synergyBonus: number;
   clubResultBonus: number;
+  clubResultSummary: string | null;
   rank: number;
   payout: number;
 }
@@ -195,7 +197,7 @@ export function AuctionStandings() {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{r.points}</td>
+                              <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{formatPts(r.points)}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">{formatCurrency(r.payout)}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(r.squadValue)}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(r.purse)}</td>
@@ -268,13 +270,33 @@ export function AuctionStandings() {
                               </div>
                             </td>
                             <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{row.rawPoints}</td>
-                            <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.synergyBonus > 0 ? "text-yellow-300 font-bold" : "text-gray-600"}`}>
-                              {row.synergyBonus > 0 ? `+${row.synergyBonus}` : "0"}
+                            <td
+                              className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.synergyBonus > 0 ? "text-yellow-300 font-bold cursor-help" : "text-gray-600"}`}
+                              title={
+                                row.synergyBonus > 0
+                                  ? row.gwHistory
+                                      .filter((h) => h.synergyBonus > 0)
+                                      .map((h) => `GW${h.gw}: +${formatPts(h.synergyBonus)}`)
+                                      .join("\n") || undefined
+                                  : undefined
+                              }
+                            >
+                              {row.synergyBonus > 0 ? `+${formatPts(row.synergyBonus)}` : "0"}
                             </td>
-                            <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold" : "text-gray-600"}`}>
+                            <td
+                              className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
+                              title={
+                                row.clubResultBonus > 0
+                                  ? row.gwHistory
+                                      .filter((h) => h.clubResultBonus > 0 && h.clubResultSummary)
+                                      .map((h) => `GW${h.gw}: ${h.clubResultSummary}`)
+                                      .join("\n") || undefined
+                                  : undefined
+                              }
+                            >
                               {row.clubResultBonus > 0 ? `+${row.clubResultBonus}` : "0"}
                             </td>
-                            <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{row.totalPoints}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{formatPts(row.totalPoints)}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">{formatCurrency(row.purse)}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(row.squadValue)}</td>
                           </tr>

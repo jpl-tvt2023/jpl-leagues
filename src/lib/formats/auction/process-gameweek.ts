@@ -190,6 +190,9 @@ export async function processAuctionGameweek(
         rawPoints: score.rawPoints,
         synergyBonus: score.synergyBonus,
         clubResultBonus: score.clubResultBonus,
+        // Persist the human-readable per-fixture summary so tooltips on standings + GW Results can
+        // show "Brentford 3-0 Man Utd → +3" without re-fetching PL fixtures.
+        clubResultSummary: score.clubResultSummary,
         playerBreakdown: JSON.stringify(score.playerBreakdown),
         rank: score.rank,
         payout: score.payout,

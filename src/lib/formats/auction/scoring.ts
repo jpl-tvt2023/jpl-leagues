@@ -5,7 +5,7 @@
 //   clubResult     — per-fixture tier-based bonus when the team's owned club wins/draws this GW.
 // Total scoring + ranking is handled by processAuctionGameweek; this file just computes per-team breakdowns.
 
-import { fetchElementGameweekPoints, fetchElementInfo } from "../../fpl";
+import { fetchElementGameweekPoints, fetchElementInfo, fetchBootstrapData } from "../../fpl";
 import { db, auctionOwnership, auctionClubOwnership } from "../../db";
 import { eq, and, lt, gte, or, isNull } from "drizzle-orm";
 import { getFplFixturesForGw } from "../../fpl-live/players-left";
@@ -55,24 +55,37 @@ async function computeClubResultBonus(
     return { bonus: 0, summary: "Blank GW — no fixture, no bonus" };
   }
 
+  // PL team-name lookup for the scoreline summary ("Brentford 3-0 Man Utd → +3").
+  // Best-effort: on FPL outage we fall back to "team#<id>".
+  const plNameById = new Map<number, string>();
+  try {
+    const bootstrap = await fetchBootstrapData();
+    for (const t of (bootstrap.teams ?? []) as Array<{ id: number; name: string }>) {
+      plNameById.set(t.id, t.name);
+    }
+  } catch { /* leave map empty; nameFor() falls back to "team#<id>" */ }
+  const nameFor = (id: number): string => plNameById.get(id) ?? `team#${id}`;
+
   let total = 0;
   const lines: string[] = [];
   for (const f of myFixtures) {
+    const homeName = nameFor(f.team_h);
+    const awayName = nameFor(f.team_a);
     if (!f.finished && !f.finished_provisional) {
-      // Fixture not finished yet — no bonus yet
-      lines.push(`fixture not yet finished`);
+      // Fixture not yet finished — no bonus yet
+      lines.push(`${homeName} vs ${awayName} (in progress) → +0`);
       continue;
     }
+    const homeScore = f.team_h_score ?? 0;
+    const awayScore = f.team_a_score ?? 0;
     const isHome = f.team_h === plTeamId;
-    const myScore = (isHome ? f.team_h_score : f.team_a_score) ?? 0;
-    const oppScore = (isHome ? f.team_a_score : f.team_h_score) ?? 0;
+    const myScore = isHome ? homeScore : awayScore;
+    const oppScore = isHome ? awayScore : homeScore;
     const isWin = myScore > oppScore;
     const isDraw = myScore === oppScore;
     const bonus = getClubBonusForTier(tier, isWin, isDraw);
     total += bonus;
-    if (isWin) lines.push(`won → +${bonus}`);
-    else if (isDraw) lines.push(`drew → +${bonus}`);
-    else lines.push(`lost → +0`);
+    lines.push(`${homeName} ${homeScore}-${awayScore} ${awayName} → +${bonus}`);
   }
   return { bonus: total, summary: lines.join("; ") };
 }
@@ -152,8 +165,9 @@ export async function calculateAuctionTeamScore(
     const effectivePlTeamId = preserved?.plTeamId ?? meta?.team ?? null;
     let synergyBonus = 0;
     if (ownedClubPlTeamId != null && effectivePlTeamId === ownedClubPlTeamId) {
-      // ×0.5 of raw — integer rounding (round-half-up) keeps totals predictable.
-      synergyBonus = Math.round(raw * SYNERGY_BONUS_RATIO);
+      // ×0.5 of raw — keep the fractional value (e.g. raw 13 → synergy 6.5).
+      // The DB columns are REAL; UI helper `formatPts` strips the trailing `.0` for whole numbers.
+      synergyBonus = raw * SYNERGY_BONUS_RATIO;
     } else if (!meta && preserved) {
       // Player has left the PL entirely (missing from bootstrap) but we have a snapshot — preserve
       // the last-known synergy value rather than dropping it to 0.

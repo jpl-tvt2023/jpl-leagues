@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { TierChip } from "@/components/TierChip";
 
 interface Team {
   id: string;
@@ -155,6 +156,12 @@ interface AuctionTeamSquad {
   squad: AuctionSquadPlayer[];
   activeCount: number;
   deadwoodCount: number;
+  ownedClub?: {
+    plTeamId: number;
+    plTeamName: string;
+    plTeamShort: string;
+    tier: "top8" | "mid" | "promoted";
+  } | null;
 }
 
 interface AuctionTradeProposal {
@@ -3735,13 +3742,30 @@ export default function AdminDashboard() {
                       </button>
                     );
                   })()}
-                  <button
-                    onClick={() => { setShowCreateSessionModal("initial"); setNewSessionScheduledAt(""); }}
-                    disabled={auctionSessionCreating}
-                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-green-500/25 to-emerald-500/20 text-green-300 hover:from-green-500/40 hover:to-emerald-500/30 border border-green-500/30 text-sm font-medium disabled:opacity-50 transition shadow-sm"
-                  >
-                    + Initial Auction
-                  </button>
+                  {(() => {
+                    // Backend allows exactly one initial auction per league — gate the button client-side
+                    // so admins get a tooltip instead of a 409. Also gate on club-auction completion
+                    // when the league requires it (mirrors the ordering guard in session/route.ts).
+                    const hasInitial = auctionSessions.some((s) => s.type === "initial");
+                    const needsClubFirst =
+                      leagueConfig.clubAuctionEnabled &&
+                      !auctionSessions.some((s) => s.type === "club-auction" && s.status === "completed");
+                    const blockedReason = hasInitial
+                      ? "Initial auction already exists"
+                      : needsClubFirst
+                      ? "Club auction must complete first"
+                      : null;
+                    return (
+                      <button
+                        onClick={() => { setShowCreateSessionModal("initial"); setNewSessionScheduledAt(""); }}
+                        disabled={auctionSessionCreating || blockedReason !== null}
+                        title={blockedReason ?? undefined}
+                        className="px-4 py-2 rounded-lg bg-gradient-to-r from-green-500/25 to-emerald-500/20 text-green-300 hover:from-green-500/40 hover:to-emerald-500/30 border border-green-500/30 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm"
+                      >
+                        + Initial Auction
+                      </button>
+                    );
+                  })()}
                   <button
                     onClick={() => { setShowCreateSessionModal("mini-auction"); setNewSessionScheduledAt(""); }}
                     disabled={auctionSessionCreating}
@@ -3786,7 +3810,11 @@ export default function AdminDashboard() {
                           <div className="flex-1">
                             <div className="flex items-center gap-3 flex-wrap">
                               <span className="font-semibold text-white">
-                                {session.type === "initial" ? "Initial Auction" : `Mini-Auction #${session.cycleNumber}`}
+                                {session.type === "initial"
+                                  ? "Initial Auction"
+                                  : session.type === "club-auction"
+                                  ? "Club Auction"
+                                  : `Mini-Auction #${session.cycleNumber}`}
                               </span>
                               <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider border ${
                                 session.status === "active" ? "bg-green-500/20 text-green-300 border-green-500/40" :
@@ -3803,7 +3831,11 @@ export default function AdminDashboard() {
                               )}
                             </div>
                             <div className="text-xs text-gray-400 mt-2 flex items-center gap-3">
-                              <span>👥 {session.snakeOrder.length} teams</span>
+                              {session.type === "club-auction" ? (
+                                <span>🏟️ {session.snakeOrder.length} clubs queued</span>
+                              ) : (
+                                <span>👥 {session.snakeOrder.length} teams</span>
+                              )}
                               <span className="text-gray-600">•</span>
                               <span>Position: {session.currentNominatorIndex + 1}/{session.snakeOrder.length}</span>
                             </div>
@@ -4034,7 +4066,18 @@ export default function AdminDashboard() {
                                 onClick={toggle}
                                 className="border-b border-white/5 hover:bg-white/[0.04] cursor-pointer transition"
                               >
-                                <td className="py-2 px-3 font-semibold text-white whitespace-nowrap">{teamSquad.teamName}</td>
+                                <td className="py-2 px-3 font-semibold text-white whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-2">
+                                    <span>{teamSquad.teamName}</span>
+                                    {teamSquad.ownedClub && (
+                                      <TierChip
+                                        tier={teamSquad.ownedClub.tier}
+                                        clubName={teamSquad.ownedClub.plTeamName}
+                                        short={teamSquad.ownedClub.plTeamShort}
+                                      />
+                                    )}
+                                  </span>
+                                </td>
                                 <td className="py-2 px-3">
                                   <span className="inline-flex items-center gap-1.5">
                                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">

@@ -10,6 +10,7 @@ export interface AuctionGwHistory {
   rawPoints: number;
   synergyBonus: number;
   clubResultBonus: number;
+  clubResultSummary: string | null;
   rank: number;
   payout: number;
 }
@@ -35,7 +36,7 @@ export interface AuctionStanding {
  */
 export function computeAuctionStandings(
   teams: Pick<Team, "id" | "name" | "purse">[],
-  scores: Pick<AuctionScore, "teamId" | "gameweekId" | "totalPoints" | "rawPoints" | "synergyBonus" | "clubResultBonus" | "rank" | "payout">[],
+  scores: Pick<AuctionScore, "teamId" | "gameweekId" | "totalPoints" | "rawPoints" | "synergyBonus" | "clubResultBonus" | "clubResultSummary" | "rank" | "payout">[],
   gwNumbers: Map<string, number>, // gameweekId -> gwNumber
   squadValues: Map<string, number> // teamId -> total FMV
 ): AuctionStanding[] {
@@ -56,6 +57,7 @@ export function computeAuctionStandings(
       rawPoints: s.rawPoints ?? 0,
       synergyBonus: s.synergyBonus ?? 0,
       clubResultBonus: s.clubResultBonus ?? 0,
+      clubResultSummary: s.clubResultSummary ?? null,
       rank: s.rank ?? 0,
       payout: s.payout,
     }));
