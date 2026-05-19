@@ -50,6 +50,13 @@
       "when": 1779000000000,
       "tag": "0006_pl_club_auction",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1779100000000,
+      "tag": "0007_club_result_summary",
+      "breakpoints": true
     }
   ]
 }

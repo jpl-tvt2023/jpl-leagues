@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
       rawPoints: auctionScores.rawPoints,
       synergyBonus: auctionScores.synergyBonus,
       clubResultBonus: auctionScores.clubResultBonus,
+      clubResultSummary: auctionScores.clubResultSummary,
       rank: auctionScores.rank,
       payout: auctionScores.payout,
       playerBreakdown: auctionScores.playerBreakdown,
@@ -420,7 +421,8 @@ export async function GET(request: NextRequest) {
         rawPoints: s.rawPoints ?? 0,
         synergyBonus: s.synergyBonus ?? 0,
         clubResultBonus: s.clubResultBonus ?? 0,
-        clubResultSummary: null as string | null, // computed only in live mode; historical row carries the totals
+        // Persisted by process-gameweek so historical reads carry the same scoreline as live mode.
+        clubResultSummary: s.clubResultSummary ?? null,
         rank: s.rank ?? 0,
         payout: s.payout,
         leagueRank,

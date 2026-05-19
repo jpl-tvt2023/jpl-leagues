@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, leagues, auctionOwnership, auctionScores } from "@/lib/db";
+import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
+import type { ClubTier } from "@/lib/db/schema";
 
 /**
  * GET /api/auction/squad?teamId=xxx
@@ -56,12 +57,16 @@ export async function GET(request: NextRequest) {
       )
     );
 
-  // Accumulate total points per element across all GWs
+  // Accumulate total points per element across all GWs.
+  // FMV uses RAW points only (synergy never compounds into FMV / squad value / trades).
+  // Post-club-auction breakdown shape: {elementId, rawPoints, synergyBonus, plTeamId}.
+  // Legacy pre-club-auction shape: {elementId, points}. Tolerate both at read time.
   const elementTotalPoints = new Map<number, number>();
   for (const score of scores) {
-    const breakdown: { elementId: number; points: number }[] = JSON.parse(score.playerBreakdown);
+    const breakdown: Array<{ elementId: number; points?: number; rawPoints?: number }> = JSON.parse(score.playerBreakdown);
     for (const p of breakdown) {
-      elementTotalPoints.set(p.elementId, (elementTotalPoints.get(p.elementId) ?? 0) + p.points);
+      const pts = p.rawPoints ?? p.points ?? 0;
+      elementTotalPoints.set(p.elementId, (elementTotalPoints.get(p.elementId) ?? 0) + pts);
     }
   }
 
@@ -104,12 +109,33 @@ export async function GET(request: NextRequest) {
       };
     });
 
+  // PL Club Auction: if this team owns a PL club, render the team as the club's name everywhere
+  // and surface the club info for the Squad Overview tier chip.
+  const clubRow = await db
+    .select()
+    .from(auctionClubOwnership)
+    .where(and(
+      eq(auctionClubOwnership.leagueId, leagueRow[0].id),
+      eq(auctionClubOwnership.teamId, teamId),
+    ))
+    .limit(1);
+  const ownedClub = clubRow[0]
+    ? {
+        plTeamId: clubRow[0].plTeamId,
+        plTeamName: clubRow[0].plTeamName,
+        plTeamShort: clubRow[0].plTeamShort,
+        tier: clubRow[0].tier as ClubTier,
+      }
+    : null;
+  const displayName = ownedClub?.plTeamName ?? teamRow[0].name;
+
   return NextResponse.json({
     teamId,
-    teamName: teamRow[0].name,
+    teamName: displayName,
     leagueId: leagueRow[0].id,
     squad,
     activeCount: squad.filter((p) => p.status === "active").length,
     deadwoodCount: squad.filter((p) => p.status === "deadwood").length,
+    ownedClub,
   });
 }

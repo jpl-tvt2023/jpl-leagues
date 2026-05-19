@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, primaryKey, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex, primaryKey, index } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
 // ============================================
@@ -362,6 +362,8 @@ export const auctionOwnership = sqliteTable("auction_ownership", {
 
 // Auction scores — per-GW team totals (replaces results for auction format)
 // total_points = raw_points + synergy_bonus + club_result_bonus.
+// `total_points` and `synergy_bonus` are REAL (synergy can be 0.5 × raw, naturally fractional).
+// `raw_points` and `club_result_bonus` are always integer-valued but declared as integers.
 // `player_breakdown` JSON: [{elementId, name, rawPoints, synergyBonus, plTeamId}]
 // Legacy rows (pre-club-auction) may carry the older [{elementId, name, points}] shape; readers must tolerate both.
 export const auctionScores = sqliteTable("auction_scores", {
@@ -369,10 +371,13 @@ export const auctionScores = sqliteTable("auction_scores", {
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   gameweekId: text("gameweek_id").notNull().references(() => gameweeks.id, { onDelete: "cascade" }),
-  totalPoints: integer("total_points").notNull(), // raw + synergy + clubResult
+  totalPoints: real("total_points").notNull(), // raw + synergy + clubResult; REAL because synergy can be fractional
   rawPoints: integer("raw_points").notNull().default(0),         // sum of owned players' raw FPL points this GW
-  synergyBonus: integer("synergy_bonus").notNull().default(0),    // 0.5 × raw on players matching team's owned PL club
+  synergyBonus: real("synergy_bonus").notNull().default(0),       // 0.5 × raw on players matching team's owned PL club
   clubResultBonus: integer("club_result_bonus").notNull().default(0), // tier-based bonus per fixture this GW for owned club
+  // Human-readable summary of the GW's owned-club result (e.g. "Brentford 3-0 Man Utd → +3").
+  // Persisted at scoring time; null for legacy rows pre-club-auction.
+  clubResultSummary: text("club_result_summary"),
   playerBreakdown: text("player_breakdown").notNull(),
   rank: integer("rank"), // GW rank (computed after all teams scored)
   payout: integer("payout").notNull().default(0), // Income earned this GW based on rank

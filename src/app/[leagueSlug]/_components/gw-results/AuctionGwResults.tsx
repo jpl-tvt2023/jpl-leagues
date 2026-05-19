@@ -8,6 +8,7 @@ import { useLeague } from "@/lib/league-context";
 import { TierChip } from "@/components/TierChip";
 import type { TeamClubOwnership } from "@/lib/teams/display-name";
 import { getTeamDisplayName } from "@/lib/teams/display-name";
+import { formatPts } from "@/lib/format-points";
 
 interface BreakdownPlayer {
   elementId: number;
@@ -297,14 +298,35 @@ export function AuctionGwResults() {
                                     </div>
                                   </td>
                                   <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{row.rawPoints}</td>
-                                  <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.synergyBonus > 0 ? "text-yellow-300 font-bold" : "text-gray-600"}`}>
-                                    {row.synergyBonus > 0 ? `+${row.synergyBonus}` : "0"}
+                                  <td
+                                    className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.synergyBonus > 0 ? "text-yellow-300 font-bold cursor-help" : "text-gray-600"}`}
+                                    title={
+                                      row.synergyBonus > 0
+                                        ? row.players
+                                            .filter((p) => p.synergyBonus > 0)
+                                            // Show raw × 1.5 = boosted so admins/teams can verify the math at a glance.
+                                            // e.g. "Salah: 6 × 1.5 = +9"
+                                            .map((p) => `${p.name}: ${p.rawPoints} × 1.5 = +${formatPts(p.rawPoints + p.synergyBonus)}`)
+                                            .join("\n") || undefined
+                                        : undefined
+                                    }
+                                  >
+                                    {row.synergyBonus > 0 ? `+${formatPts(row.synergyBonus)}` : "0"}
                                   </td>
-                                  <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold" : "text-gray-600"}`}>
+                                  <td
+                                    className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
+                                    title={
+                                      row.clubResultSummary && selectedGw != null
+                                        ? `GW${selectedGw}: ${row.clubResultSummary}`
+                                        : row.clubResultBonus > 0
+                                        ? `+${row.clubResultBonus} (no fixture detail)`
+                                        : undefined
+                                    }
+                                  >
                                     {row.clubResultBonus > 0 ? `+${row.clubResultBonus}` : "0"}
                                   </td>
                                   <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">
-                                    {row.totalPoints}
+                                    {formatPts(row.totalPoints)}
                                   </td>
                                   <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">
                                     {formatCurrency(row.payout)}
@@ -387,7 +409,7 @@ export function AuctionGwResults() {
                                                             {p.rawPoints}
                                                           </span>
                                                           {p.synergyBonus > 0 && (
-                                                            <span className="text-yellow-300 text-[11px]" title="Synergy bonus from owned PL club">+{p.synergyBonus}</span>
+                                                            <span className="text-yellow-300 text-[11px]" title="Synergy bonus from owned PL club">+{formatPts(p.synergyBonus)}</span>
                                                           )}
                                                         </span>
                                                       </div>);
