@@ -18,7 +18,9 @@ import {
   buildInitialClubQueue,
   autoNominateNextClub,
   simulateClubAuction,
+  loadStandingsConfig,
 } from "@/lib/formats/auction/club-auction";
+import { resolveTier } from "@/lib/data/pl-standings-seed";
 
 /**
  * Auto-resolve expired open bids that SSE may have missed.
@@ -78,7 +80,7 @@ export async function GET(request: NextRequest) {
   // For the active/latest session, include current bid item
   const activeSession = sessions.find((s) => s.status === "active" || s.status === "paused");
 
-  let currentBid = null;
+  let currentBid: (typeof auctionBids.$inferSelect & { tier?: string | null }) | null = null;
   if (activeSession) {
     // Auto-resolve any expired open bids (safety net if SSE wasn't running)
     await resolveExpiredBids(activeSession.id);
@@ -94,6 +96,17 @@ export async function GET(request: NextRequest) {
       )
       .limit(1);
     currentBid = openBids[0] ?? null;
+    // For club-auction sessions, attach tier so the UI can render a TierChip on first paint
+    // (before the SSE stream fills in subsequent updates).
+    if (currentBid && activeSession.type === CLUB_AUCTION_SESSION_TYPE) {
+      try {
+        const config = await loadStandingsConfig();
+        currentBid = { ...currentBid, tier: resolveTier(currentBid.fplElementId, config) };
+      } catch (e) {
+        console.warn("[session GET] loadStandingsConfig failed — tier will be null", e);
+        currentBid = { ...currentBid, tier: null };
+      }
+    }
   }
 
   return NextResponse.json({

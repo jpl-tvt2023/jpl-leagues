@@ -7,6 +7,12 @@ import {
   setNominationDeadline,
   handleNominationTimeout,
 } from "@/lib/formats/auction/resolve-bid";
+import {
+  CLUB_AUCTION_SESSION_TYPE,
+  loadStandingsConfig,
+} from "@/lib/formats/auction/club-auction";
+import { resolveTier } from "@/lib/data/pl-standings-seed";
+import type { ClubTier } from "@/lib/db/schema";
 
 // Force dynamic so Vercel doesn't buffer/cache the SSE response
 export const dynamic = "force-dynamic";
@@ -56,6 +62,12 @@ export async function GET(request: NextRequest) {
       let lastWaitingSnapshot: string | null = null;
       let lastHighBidderId: string | null = null;
       let lastHighBid: number | null = null;
+
+      // Lazy-loaded standings config — populated on first poll once we know the session type.
+      // For club-auction sessions we need it to derive tier per bid; for player sessions we never load it.
+      let standingsConfig: { top8: number[]; mid: number[]; promoted: number[] } | null = null;
+      const tierForPlTeamId = (plTeamId: number): ClubTier | null =>
+        standingsConfig ? resolveTier(plTeamId, standingsConfig) : null;
 
       const poll = async () => {
         if (isClosed) return;
@@ -112,6 +124,18 @@ export async function GET(request: NextRequest) {
             )
             .limit(1);
 
+          // For club-auction sessions, lazy-load the standings config once so we can attach `tier`
+          // (top8 / mid / promoted) to every bid payload — drives the tier-chip render on the client.
+          const isClubAuction = session.type === CLUB_AUCTION_SESSION_TYPE;
+          if (isClubAuction && !standingsConfig) {
+            try {
+              const { top8, mid, promoted } = await loadStandingsConfig();
+              standingsConfig = { top8, mid, promoted };
+            } catch (e) {
+              console.warn("[sse] loadStandingsConfig failed — tier will be null", e);
+            }
+          }
+
           if (openBids.length > 0) {
             lastWaitingSnapshot = null;
             const bid = openBids[0];
@@ -131,6 +155,9 @@ export async function GET(request: NextRequest) {
                 minBid: bid.minBid,
                 expiresAt: bid.expiresAt.toISOString(),
                 status: bid.status,
+                // For club-auction sessions, `fplElementId` is repurposed as a PL team ID — surface
+                // the tier so the UI can render a tier chip without doing its own standings lookup.
+                tier: isClubAuction ? tierForPlTeamId(bid.fplElementId) : null,
               };
 
               send("auction-state", auctionPayload);
@@ -171,6 +198,7 @@ export async function GET(request: NextRequest) {
                   playerName: final.playerName,
                   finalBid: final.currentHighBid,
                   winnerId: final.currentHighBidderId,
+                  tier: isClubAuction ? tierForPlTeamId(final.fplElementId) : null,
                 });
               }
               // else: already-resolved by another caller — skip

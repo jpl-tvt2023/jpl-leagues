@@ -5,11 +5,15 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { TierChip } from "@/components/TierChip";
+import type { ClubTier } from "@/lib/db/schema";
 import { useEnforceFormat } from "@/lib/league-context";
+
+const CLUB_AUCTION_TYPE = "club-auction";
 
 interface AuctionSession {
   id: string;
-  type: "initial" | "mini-auction";
+  type: "initial" | "mini-auction" | "club-auction";
   cycleNumber: number;
   status: "pending" | "active" | "paused" | "completed";
   snakeOrder: string[];
@@ -26,14 +30,15 @@ interface WishlistEntry {
 
 interface CurrentBid {
   bidId: string;
-  fplElementId: number;
-  playerName: string;
+  fplElementId: number;        // For club-auction, this holds a PL team ID (re-purposed).
+  playerName: string;          // For club-auction, this holds the PL club name.
   currentHighBid: number;
   currentHighBidderId: string;
   nominatorTeamId: string;
   minBid: number;
   expiresAt: string;
   status: string;
+  tier?: ClubTier | null;      // Populated by server for club-auction sessions only.
 }
 
 interface BootstrapElement {
@@ -251,15 +256,21 @@ export default function AuctionRoomPage() {
   const lastBidIdRef = useRef<string | null>(null);
   const elementByIdRef = useRef<Map<number, BootstrapElement>>(new Map());
   const plTeamsRef = useRef<Map<number, BootstrapTeam>>(new Map());
+  // Track the current session type so feed handlers can branch their formatting without re-binding.
+  const sessionTypeRef = useRef<string | null>(null);
 
   useEffect(() => { teamMapRef.current = teamMap; }, [teamMap]);
   useEffect(() => { leagueIdRef.current = leagueId; }, [leagueId]);
   useEffect(() => { myTeamIdRef.current = myTeamId; }, [myTeamId]);
   useEffect(() => { currentBidRef.current = currentBid; }, [currentBid]);
+  useEffect(() => { sessionTypeRef.current = session?.type ?? null; }, [session]);
 
-  /** Build "[POS·TEAM]" suffix from an FPL element id, or empty string. */
+  /** Build "[POS·TEAM]" suffix from an FPL element id, or empty string. For club-auction sessions
+   *  the same ID is a PL team ID, not an element ID — skip the tag entirely; the bid feed already
+   *  shows the club name and that's enough context. */
   const playerTag = useCallback((fplElementId: number | undefined | null): string => {
     if (!fplElementId) return "";
+    if (sessionTypeRef.current === CLUB_AUCTION_TYPE) return "";
     const el = elementByIdRef.current.get(fplElementId);
     if (!el) return "";
     const pos = POSITION_LABELS[el.element_type];
@@ -892,6 +903,31 @@ export default function AuctionRoomPage() {
                 {currentBid ? (
                   <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 to-slate-900/40 p-5 backdrop-blur h-full">
                     {(() => {
+                      const isClubAuction = session.type === CLUB_AUCTION_TYPE;
+                      if (isClubAuction) {
+                        // For club-auction, `fplElementId` is a PL team ID and `playerName` is the
+                        // PL club name. Skip the FPL element lookup; render the tier chip instead.
+                        const plTeam = plTeams.get(currentBid.fplElementId);
+                        return (
+                          <div className="text-center mb-4">
+                            <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">Club on the Block</div>
+                            <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 break-words">{currentBid.playerName}</h2>
+                            <div className="flex items-center justify-center gap-1.5 mb-1">
+                              {currentBid.tier && (
+                                <TierChip
+                                  tier={currentBid.tier}
+                                  clubName={currentBid.playerName}
+                                  short={plTeam?.short_name}
+                                />
+                              )}
+                              {plTeam && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">{plTeam.short_name}</span>}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              System-nominated · Base {formatCurrency(currentBid.minBid)}
+                            </div>
+                          </div>
+                        );
+                      }
                       const el = elementById.get(currentBid.fplElementId);
                       const pos = el ? POSITION_LABELS[el.element_type] : null;
                       const plTeam = el ? plTeams.get(el.team) : null;
@@ -951,6 +987,14 @@ export default function AuctionRoomPage() {
                         </div>
                       </div>
                     ) : null}
+                    {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
+                  </div>
+                ) : session.type === CLUB_AUCTION_TYPE ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Waiting for next club</div>
+                    <p className="text-gray-300 text-sm">
+                      The system auto-nominates one PL club at a time. The next club will appear shortly.
+                    </p>
                     {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
                   </div>
                 ) : (

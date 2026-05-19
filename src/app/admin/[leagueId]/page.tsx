@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -176,7 +176,7 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<TabType>("teams");
   const [teams, setTeams] = useState<Team[]>([]);
-  const [leagueConfig, setLeagueConfig] = useState<{ leagueDbId?: string; teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string }>({
+  const [leagueConfig, setLeagueConfig] = useState<{ leagueDbId?: string; teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string; clubAuctionEnabled?: boolean }>({
     teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"],
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -267,11 +267,13 @@ export default function AdminDashboard() {
   const [auctionActiveSession, setAuctionActiveSession] = useState<AuctionSessionInfo | null>(null);
   const [auctionTeamSquads, setAuctionTeamSquads] = useState<AuctionTeamSquad[]>([]);
   const [expandedSquads, setExpandedSquads] = useState<Set<string>>(new Set());
+  // Squad Overview table sort (local to this view).
+  const [squadSort, setSquadSort] = useState<{ key: "team" | "spent" | "points"; dir: "asc" | "desc" }>({ key: "team", dir: "asc" });
   const [auctionTrades, setAuctionTrades] = useState<AuctionTradeProposal[]>([]);
   const [auctionLoading, setAuctionLoading] = useState(false);
   const [auctionSessionCreating, setAuctionSessionCreating] = useState(false);
   const [auctionSessionAction, setAuctionSessionAction] = useState<string | null>(null);
-  const [showCreateSessionModal, setShowCreateSessionModal] = useState<string | null>(null); // "initial" | "mini-auction" | null
+  const [showCreateSessionModal, setShowCreateSessionModal] = useState<string | null>(null); // "initial" | "mini-auction" | "club-auction" | null
   const [newSessionScheduledAt, setNewSessionScheduledAt] = useState("");
   const [newSessionBidTimer, setNewSessionBidTimer] = useState("20");
   const [newSessionNominationTimer, setNewSessionNominationTimer] = useState("60");
@@ -402,6 +404,7 @@ export default function AdminDashboard() {
             playoffStartGw: league.playoffStartGw ?? 31,
             enabledChips,
             format: league.format,
+            clubAuctionEnabled: Boolean(league.clubAuctionEnabled),
           });
         }
       })
@@ -3712,6 +3715,26 @@ export default function AdminDashboard() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {leagueConfig.clubAuctionEnabled && (() => {
+                    // Mirror the backend ordering guards so the admin gets a tooltip rather than a 409.
+                    const hasClubAuction = auctionSessions.some((s) => s.type === "club-auction");
+                    const hasInitial = auctionSessions.some((s) => s.type === "initial");
+                    const blockedReason = hasClubAuction
+                      ? "Club auction already created"
+                      : hasInitial
+                      ? "An initial auction already exists — clubs must be created first"
+                      : null;
+                    return (
+                      <button
+                        onClick={() => { setShowCreateSessionModal("club-auction"); setNewSessionScheduledAt(""); }}
+                        disabled={auctionSessionCreating || blockedReason !== null}
+                        title={blockedReason ?? undefined}
+                        className="px-4 py-2 rounded-lg bg-gradient-to-r from-yellow-500/25 to-amber-500/20 text-yellow-200 hover:from-yellow-500/40 hover:to-amber-500/30 border border-yellow-500/30 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm"
+                      >
+                        + Club Auction
+                      </button>
+                    );
+                  })()}
                   <button
                     onClick={() => { setShowCreateSessionModal("initial"); setNewSessionScheduledAt(""); }}
                     disabled={auctionSessionCreating}
@@ -3853,11 +3876,26 @@ export default function AdminDashboard() {
                     <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-slate-900 text-lg">📅</div>
                     <div>
                       <h3 className="text-xl font-bold text-white">
-                        Create {showCreateSessionModal === "initial" ? "Initial Auction" : "Mini-Auction"}
+                        Create {showCreateSessionModal === "initial"
+                          ? "Initial Auction"
+                          : showCreateSessionModal === "club-auction"
+                          ? "Club Auction"
+                          : "Mini-Auction"}
                       </h3>
                       <p className="text-xs text-gray-400">Optionally schedule when it should start</p>
                     </div>
                   </div>
+                  {showCreateSessionModal === "club-auction" && (
+                    <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-[11px] text-yellow-200/90">
+                      <p className="font-semibold mb-1">How the PL Club auction works</p>
+                      <ul className="list-disc list-inside space-y-0.5 text-yellow-200/80">
+                        <li>System auto-nominates one PL club at a time in random order — teams don&apos;t nominate.</li>
+                        <li>Each team bids from the same shared purse; only teams without a club can bid.</li>
+                        <li>If no one bids, the club rejoins the round-2 queue.</li>
+                        <li>Must complete before you can create the initial player auction.</li>
+                      </ul>
+                    </div>
+                  )}
                   <div className="mb-4">
                     <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Scheduled Start (optional)</label>
                     <input
@@ -3939,108 +3977,174 @@ export default function AdminDashboard() {
               </div>
               {auctionTeamSquads.length === 0 ? (
                 <div className="text-center text-gray-400 py-8 text-sm">No squad data available</div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {auctionTeamSquads.map((teamSquad) => {
-                    const isExpanded = expandedSquads.has(teamSquad.teamId);
-                    const activePlayers = teamSquad.squad.filter((p) => p.status === "active");
-                    const totalSpent = teamSquad.squad.reduce((sum, p) => sum + p.purchasePrice, 0);
-                    const totalPoints = teamSquad.squad.reduce((sum, p) => sum + p.totalPoints, 0);
-                    const topScorer = activePlayers.length > 0
-                      ? [...activePlayers].sort((a, b) => b.totalPoints - a.totalPoints)[0]
-                      : null;
-                    const toggle = () => setExpandedSquads((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(teamSquad.teamId)) next.delete(teamSquad.teamId);
-                      else next.add(teamSquad.teamId);
-                      return next;
-                    });
-                    return (
-                      <div key={teamSquad.teamId} className="rounded-xl border border-white/10 bg-white/[0.03]">
-                        <button
-                          type="button"
-                          onClick={toggle}
-                          className="w-full text-left p-3 hover:bg-white/[0.04] transition"
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <h3 className="font-semibold text-white text-sm">{teamSquad.teamName}</h3>
-                            <span className="text-[10px] text-gray-500">{isExpanded ? "▲" : "▼"}</span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
-                              {teamSquad.activeCount} active
-                            </span>
-                            {teamSquad.deadwoodCount > 0 && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">
-                                {teamSquad.deadwoodCount} dw
-                              </span>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-gray-400">
-                            <span>Spent</span>
-                            <span className="text-right font-mono text-gray-200">£{(totalSpent / 1_000_000).toFixed(1)}M</span>
-                            <span>Points</span>
-                            <span className="text-right font-mono text-[#00ff85]">{totalPoints}</span>
-                            <span>Top</span>
-                            <span className="text-right font-mono text-gray-200 truncate">
-                              {topScorer ? `${topScorer.playerName} · ${topScorer.totalPoints}` : "—"}
-                            </span>
-                          </div>
-                        </button>
-                        {isExpanded && (
-                          <div className="border-t border-white/10 px-3 pb-3 pt-2">
-                            {teamSquad.squad.length === 0 ? (
-                              <p className="text-xs text-gray-500">No players yet</p>
-                            ) : (
-                              <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
-                                {([1, 2, 3, 4] as const).map((posType) => {
-                                  const players = teamSquad.squad
-                                    .filter((p) => p.elementType === posType)
-                                    .sort((a, b) => b.totalPoints - a.totalPoints);
-                                  return (
-                                    <div key={posType} className="rounded-md border border-white/10 bg-white/[0.02] p-1.5">
-                                      <div className="flex items-center justify-between mb-1.5">
-                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${SQUAD_POSITION_COLORS[posType]}`}>
-                                          {SQUAD_POSITION_LABELS[posType]}
-                                        </span>
-                                        <span className="text-[9px] text-gray-500">{players.length}</span>
-                                      </div>
-                                      {players.length === 0 ? (
-                                        <div className="text-[10px] text-gray-600 text-center py-2">—</div>
-                                      ) : (
-                                        <div className="space-y-1">
-                                          {players.map((player) => (
-                                            <div key={player.ownershipId} className="text-[10px] min-w-0">
-                                              <div className="flex items-center gap-1 min-w-0">
-                                                <span className={`w-1 h-1 rounded-full shrink-0 ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
-                                                <span className="text-gray-300 truncate flex-1">
-                                                  {player.playerName}
-                                                  {player.plTeamShort && (
-                                                    <span className="ml-1 text-[8px] text-gray-500">({player.plTeamShort})</span>
-                                                  )}
+              ) : (() => {
+                // Pre-compute per-team metrics once so sort + render share the same numbers.
+                const rows = auctionTeamSquads.map((teamSquad) => {
+                  const activePlayers = teamSquad.squad.filter((p) => p.status === "active");
+                  const totalSpent = teamSquad.squad.reduce((sum, p) => sum + p.purchasePrice, 0);
+                  const totalPoints = teamSquad.squad.reduce((sum, p) => sum + p.totalPoints, 0);
+                  const topScorer = activePlayers.length > 0
+                    ? [...activePlayers].sort((a, b) => b.totalPoints - a.totalPoints)[0]
+                    : null;
+                  return { teamSquad, totalSpent, totalPoints, topScorer };
+                });
+                const sorted = [...rows].sort((a, b) => {
+                  const dir = squadSort.dir === "asc" ? 1 : -1;
+                  if (squadSort.key === "team") return a.teamSquad.teamName.localeCompare(b.teamSquad.teamName) * dir;
+                  if (squadSort.key === "spent") return (a.totalSpent - b.totalSpent) * dir;
+                  return (a.totalPoints - b.totalPoints) * dir;
+                });
+                const toggleSort = (key: "team" | "spent" | "points") =>
+                  setSquadSort((prev) => prev.key === key
+                    ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+                    : { key, dir: key === "team" ? "asc" : "desc" });
+                const sortIndicator = (key: "team" | "spent" | "points") =>
+                  squadSort.key === key ? (squadSort.dir === "asc" ? "▲" : "▼") : <span className="text-gray-600">↕</span>;
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-xs uppercase text-gray-400 border-b border-white/10">
+                        <tr>
+                          <th className="text-left py-2 px-3 font-medium cursor-pointer select-none hover:text-white transition" onClick={() => toggleSort("team")}>
+                            <span className="inline-flex items-center gap-1">Team {sortIndicator("team")}</span>
+                          </th>
+                          <th className="text-left py-2 px-3 font-medium">Squad</th>
+                          <th className="text-right py-2 px-3 font-medium cursor-pointer select-none hover:text-white transition" onClick={() => toggleSort("spent")}>
+                            <span className="inline-flex items-center gap-1">Spent {sortIndicator("spent")}</span>
+                          </th>
+                          <th className="text-right py-2 px-3 font-medium cursor-pointer select-none hover:text-white transition" onClick={() => toggleSort("points")}>
+                            <span className="inline-flex items-center gap-1">Pts {sortIndicator("points")}</span>
+                          </th>
+                          <th className="text-left py-2 px-3 font-medium hidden sm:table-cell">Top scorer</th>
+                          <th className="w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sorted.map(({ teamSquad, totalSpent, totalPoints, topScorer }) => {
+                          const isExpanded = expandedSquads.has(teamSquad.teamId);
+                          const toggle = () => setExpandedSquads((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(teamSquad.teamId)) next.delete(teamSquad.teamId);
+                            else next.add(teamSquad.teamId);
+                            return next;
+                          });
+                          return (
+                            <Fragment key={teamSquad.teamId}>
+                              <tr
+                                onClick={toggle}
+                                className="border-b border-white/5 hover:bg-white/[0.04] cursor-pointer transition"
+                              >
+                                <td className="py-2 px-3 font-semibold text-white whitespace-nowrap">{teamSquad.teamName}</td>
+                                <td className="py-2 px-3">
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                                      {teamSquad.activeCount} active
+                                    </span>
+                                    {teamSquad.deadwoodCount > 0 && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">
+                                        {teamSquad.deadwoodCount} dw
+                                      </span>
+                                    )}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono text-gray-200 whitespace-nowrap">
+                                  £{(totalSpent / 1_000_000).toFixed(1)}M
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono text-[#00ff85] whitespace-nowrap">
+                                  {totalPoints}
+                                </td>
+                                <td className="py-2 px-3 text-gray-300 hidden sm:table-cell whitespace-nowrap">
+                                  {topScorer ? (
+                                    <span>
+                                      {topScorer.playerName}
+                                      {topScorer.plTeamShort && (
+                                        <span className="ml-1 text-[10px] text-gray-500">({topScorer.plTeamShort})</span>
+                                      )}
+                                      <span className="text-gray-500"> · </span>
+                                      <span className="font-mono">{topScorer.totalPoints}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-600">—</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-gray-500 text-center">{isExpanded ? "▼" : "▶"}</td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-black/30 border-b border-white/5">
+                                  <td colSpan={6} className="px-3 py-3">
+                                    {teamSquad.squad.length === 0 ? (
+                                      <p className="text-xs text-gray-500">No players yet</p>
+                                    ) : (
+                                      <div className="space-y-3">
+                                        {([1, 2, 3, 4] as const).map((posType) => {
+                                          const players = teamSquad.squad
+                                            .filter((p) => p.elementType === posType)
+                                            .sort((a, b) => b.totalPoints - a.totalPoints);
+                                          return (
+                                            <div key={posType}>
+                                              <div className="flex items-center gap-2 mb-1.5">
+                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${SQUAD_POSITION_COLORS[posType]}`}>
+                                                  {SQUAD_POSITION_LABELS[posType]}
                                                 </span>
-                                                <span className="text-[#00ff85] font-mono shrink-0">{player.totalPoints}p</span>
+                                                <span className="text-[10px] text-gray-500">· {players.length}</span>
                                               </div>
-                                              <div className="flex items-center justify-between pl-2 text-[9px] mt-0.5">
-                                                <span className="text-gray-400 font-mono">{(player.purchasePrice / 1_000_000).toFixed(1)}M</span>
-                                                <span className="text-cyan-300 font-mono font-semibold">£{(player.fmv / 1_000_000).toFixed(1)}M</span>
+                                              <div className="overflow-x-auto">
+                                                <table className="w-full text-xs">
+                                                  <thead className="text-[10px] uppercase text-gray-500">
+                                                    <tr>
+                                                      <th className="w-4"></th>
+                                                      <th className="text-left py-1 px-2 font-medium">Player</th>
+                                                      <th className="text-right py-1 px-2 font-medium w-16">Pts</th>
+                                                      <th className="text-right py-1 px-2 font-medium w-20">Spent</th>
+                                                      <th className="text-right py-1 px-2 font-medium w-20">FMV</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {players.length === 0 ? (
+                                                      <tr><td colSpan={5} className="py-1.5 text-center text-gray-600 text-[11px]">—</td></tr>
+                                                    ) : (
+                                                      players.map((player) => (
+                                                        <tr key={player.ownershipId} className="border-t border-white/[0.04]">
+                                                          <td className="py-1 pl-2">
+                                                            <span className={`block w-1.5 h-1.5 rounded-full ${player.status === "active" ? "bg-green-400" : "bg-orange-400"}`} />
+                                                          </td>
+                                                          <td className="py-1 px-2 text-gray-200">
+                                                            {player.playerName}
+                                                            {player.plTeamShort && (
+                                                              <span className="ml-1.5 text-[10px] text-gray-500">({player.plTeamShort})</span>
+                                                            )}
+                                                          </td>
+                                                          <td className={`py-1 px-2 text-right font-mono ${player.totalPoints > 0 ? "text-[#00ff85]" : "text-gray-500"}`}>
+                                                            {player.totalPoints}
+                                                          </td>
+                                                          <td className="py-1 px-2 text-right font-mono text-gray-300">
+                                                            £{(player.purchasePrice / 1_000_000).toFixed(1)}M
+                                                          </td>
+                                                          <td className="py-1 px-2 text-right font-mono text-cyan-300 font-semibold">
+                                                            £{(player.fmv / 1_000_000).toFixed(1)}M
+                                                          </td>
+                                                        </tr>
+                                                      ))
+                                                    )}
+                                                  </tbody>
+                                                </table>
                                               </div>
                                             </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Trade Proposals */}
