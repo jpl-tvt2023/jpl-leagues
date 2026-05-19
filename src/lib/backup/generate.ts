@@ -54,6 +54,7 @@ export type AuctionTeamStateRow = {
   "Total Income": number;
   "Total Refunds": number;
   "Penalty Slots": number;
+  "Bonus Slots": number;
 };
 export type AuctionSquadRow = {
   "Ownership ID": string;
@@ -265,6 +266,7 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
         totalIncome: teams.totalIncome,
         totalRefunds: teams.totalRefunds,
         penaltySlots: teams.penaltySlots,
+        bonusSlots: teams.bonusSlots,
       })
         .from(teams)
         .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false))),
@@ -281,6 +283,7 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
       "Total Income": t.totalIncome,
       "Total Refunds": t.totalRefunds,
       "Penalty Slots": t.penaltySlots,
+      "Bonus Slots": t.bonusSlots ?? 0,
     }));
 
     auctionSquads = ownershipRows.map((o) => ({

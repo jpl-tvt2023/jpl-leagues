@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
         return { error: "Unknown FPL element", status: 400 };
       }
       const counts = countsFromOwnership(activeOwned);
-      const check = validateAddPlayer(counts, teamRow[0].penaltySlots ?? 0, el.element_type);
+      const check = validateAddPlayer(counts, teamRow[0].penaltySlots ?? 0, el.element_type, teamRow[0].bonusSlots ?? 0);
       if (!check.ok) {
         return { error: check.error, status: 400 };
       }

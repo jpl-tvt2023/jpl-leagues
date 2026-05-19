@@ -342,8 +342,9 @@ export async function autoNominateFromWishlist(
 
   const counts = countsFromOwnership(ownership);
   const penaltySlots = teamRow[0].penaltySlots ?? 0;
+  const bonusSlots = teamRow[0].bonusSlots ?? 0;
   // If the squad is already full, don't even try.
-  if (counts.total >= effectiveMaxSquadSize(penaltySlots)) return false;
+  if (counts.total >= effectiveMaxSquadSize(penaltySlots, bonusSlots)) return false;
 
   const availablePurse = calculatePurse(
     leagueRow[0].initialBudget,
@@ -375,7 +376,7 @@ export async function autoNominateFromWishlist(
     // Skip if adding this player would break squad rules / position feasibility
     const el = elementById.get(entry.fplElementId);
     if (!el) continue;
-    const check = validateAddPlayer(counts, penaltySlots, el.element_type);
+    const check = validateAddPlayer(counts, penaltySlots, el.element_type, bonusSlots);
     if (!check.ok) continue;
 
     await createNomination(
@@ -449,7 +450,7 @@ export async function handleNominationTimeout(
   ]);
   if (teamRow.length > 0) {
     const counts = countsFromOwnership(ownership);
-    const maxSize = effectiveMaxSquadSize(teamRow[0].penaltySlots ?? 0);
+    const maxSize = effectiveMaxSquadSize(teamRow[0].penaltySlots ?? 0, teamRow[0].bonusSlots ?? 0);
     if (counts.total >= maxSize) {
       await advanceNominator(sessionId);
       return "skipped-full";

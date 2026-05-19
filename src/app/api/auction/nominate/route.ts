@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
     if (!el) {
       return NextResponse.json({ error: "Unknown FPL element" }, { status: 400 });
     }
-    const check = validateAddPlayer(counts, teamRow[0].penaltySlots ?? 0, el.element_type);
+    const check = validateAddPlayer(counts, teamRow[0].penaltySlots ?? 0, el.element_type, teamRow[0].bonusSlots ?? 0);
     if (!check.ok) {
       return NextResponse.json({ error: check.error }, { status: 400 });
     }

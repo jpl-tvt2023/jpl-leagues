@@ -144,7 +144,38 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
             </li>
           </ul>
           <p>
-            Until redeemed, the slot stays unavailable and your effective max stays reduced. The current <em>Penalty slots: N</em> indicator on the Auction page shows your live deduction count.
+            Until redeemed, the slot stays unavailable and your effective max stays reduced. The slot-status indicator on the Auction page shows your live deduction count + the cheapest redeemable cost.
+          </p>
+        </div>
+      ),
+    },
+    {
+      question: "What's the difference between open, locked, and penalty slots?",
+      answer: (
+        <div className="space-y-2">
+          <p>The squad-slot indicator on the Auction and Squad pages shows three distinct concepts:</p>
+          <ul className="ml-5 list-disc space-y-1">
+            <li><strong className="text-green-300">Open slots</strong> — empty spots in your squad you can still fill via auction. <code className="text-gray-200">open = effectiveMax − active</code>.</li>
+            <li><strong className="text-red-300">Penalty slots (✕)</strong> — slots you lost to missed nominations. Recovered by redeeming with purse (£2.5M same cycle / £5M later).</li>
+            <li><strong className="text-purple-300">Locked slots (🔒)</strong> — slots 15 and 16 that aren&apos;t yet unlocked. Unlock with purse money (£10M for slot 15, £25M for slot 16) AFTER the initial auction completes.</li>
+          </ul>
+          <p>Penalty (red ✕) and locked (grey 🔒) are visually distinct on screen — different mechanics, different fix paths.</p>
+        </div>
+      ),
+    },
+    {
+      question: "How do I unlock slot 15 and 16?",
+      answer: (
+        <div className="space-y-2">
+          <p>
+            The initial auction fills <strong className="text-white">14 active players</strong>. After it completes, you can spend purse money to expand your squad:
+          </p>
+          <ul className="ml-5 list-disc space-y-1">
+            <li><strong className="text-purple-300">£10M</strong> — unlock slot 15.</li>
+            <li><strong className="text-purple-300">£25M</strong> — unlock slot 16 (only available after slot 15 is unlocked).</li>
+          </ul>
+          <p>
+            Both unlocks are <strong className="text-white">non-refundable</strong>. The absolute squad ceiling is 16; you can&apos;t buy past that. A full league reset (admin action) clears bonus slots back to 0.
           </p>
         </div>
       ),

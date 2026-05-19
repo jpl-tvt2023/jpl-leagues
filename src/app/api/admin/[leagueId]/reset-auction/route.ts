@@ -69,6 +69,9 @@ export async function POST(request: NextRequest) {
         totalRefunds: 0,
         totalIncome: 0,
         penaltySlots: 0,
+        // Bonus slots were purchased with purse money that's being refunded — reset to 0 so the
+        // team starts again at the 14-slot cap with both 15/16 locked.
+        bonusSlots: 0,
         purse: initialBudget,
       })
       .where(eq(teams.leagueId, leagueId));
