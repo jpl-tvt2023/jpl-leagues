@@ -5,11 +5,10 @@
 //   clubResult     — per-fixture tier-based bonus when the team's owned club wins/draws this GW.
 // Total scoring + ranking is handled by processAuctionGameweek; this file just computes per-team breakdowns.
 
-import { fetchElementGameweekPoints, fetchElementInfo, fetchBootstrapData } from "../../fpl";
+import { fetchElementGameweekPoints, fetchElementInfo } from "../../fpl";
 import { db, auctionOwnership, auctionClubOwnership } from "../../db";
 import { eq, and, lt, gte, or, isNull } from "drizzle-orm";
-import { getFplFixturesForGw } from "../../fpl-live/players-left";
-import { getClubBonusForTier } from "./club-auction";
+import { computeClubResultBonus } from "./club-auction";
 import type { ClubTier } from "../../db/schema";
 
 export interface AuctionPlayerBreakdown {
@@ -36,59 +35,8 @@ export interface AuctionTeamGwScore {
 /** Synergy multiplier per the locked spec (×1.5 raw = +50% bonus on owned-club players). */
 export const SYNERGY_BONUS_RATIO = 0.5;
 
-/**
- * Compute the per-fixture club-result bonus for an owned club this GW.
- * - Looks up the GW's PL fixtures, filters to those involving the owned club.
- * - Awards `tier.win` for wins, `tier.draw` for draws, 0 for losses. Sums across fixtures (DGW = doubled).
- * - Returns null if FPL fixtures are unavailable — caller treats as 0 with a logged warning.
- */
-async function computeClubResultBonus(
-  plTeamId: number,
-  tier: ClubTier,
-  gw: number
-): Promise<{ bonus: number; summary: string } | null> {
-  const fixtures = await getFplFixturesForGw(gw);
-  if (fixtures == null) return null;
-
-  const myFixtures = fixtures.filter((f) => f.team_h === plTeamId || f.team_a === plTeamId);
-  if (myFixtures.length === 0) {
-    return { bonus: 0, summary: "Blank GW — no fixture, no bonus" };
-  }
-
-  // PL team-name lookup for the scoreline summary ("Brentford 3-0 Man Utd → +3").
-  // Best-effort: on FPL outage we fall back to "team#<id>".
-  const plNameById = new Map<number, string>();
-  try {
-    const bootstrap = await fetchBootstrapData();
-    for (const t of (bootstrap.teams ?? []) as Array<{ id: number; name: string }>) {
-      plNameById.set(t.id, t.name);
-    }
-  } catch { /* leave map empty; nameFor() falls back to "team#<id>" */ }
-  const nameFor = (id: number): string => plNameById.get(id) ?? `team#${id}`;
-
-  let total = 0;
-  const lines: string[] = [];
-  for (const f of myFixtures) {
-    const homeName = nameFor(f.team_h);
-    const awayName = nameFor(f.team_a);
-    if (!f.finished && !f.finished_provisional) {
-      // Fixture not yet finished — no bonus yet
-      lines.push(`${homeName} vs ${awayName} (in progress) → +0`);
-      continue;
-    }
-    const homeScore = f.team_h_score ?? 0;
-    const awayScore = f.team_a_score ?? 0;
-    const isHome = f.team_h === plTeamId;
-    const myScore = isHome ? homeScore : awayScore;
-    const oppScore = isHome ? awayScore : homeScore;
-    const isWin = myScore > oppScore;
-    const isDraw = myScore === oppScore;
-    const bonus = getClubBonusForTier(tier, isWin, isDraw);
-    total += bonus;
-    lines.push(`${homeName} ${homeScore}-${awayScore} ${awayName} → +${bonus}`);
-  }
-  return { bonus: total, summary: lines.join("; ") };
-}
+// `computeClubResultBonus` lives in club-auction.ts so both the scorer and the gw-summary historical
+// path (which back-fills tooltip summaries for legacy rows) can share it.
 
 /**
  * Per-player data carried forward across re-processings. Captured at scoring time and stored in

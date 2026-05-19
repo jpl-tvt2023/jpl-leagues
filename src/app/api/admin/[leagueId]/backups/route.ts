@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { generateId } from "@/lib/id";
+import { generateBackupRows } from "@/lib/backup/generate";
 
 /**
  * GET /api/admin/[leagueId]/backups
@@ -25,6 +27,10 @@ export async function GET(request: NextRequest) {
       hasFixtures: backups.fixturesJson,
       hasCaptains: backups.captainsJson,
       hasChips: backups.chipsJson,
+      hasAuctionTeamsState: backups.auctionTeamsStateJson,
+      hasAuctionSquads: backups.auctionSquadsJson,
+      hasAuctionClubs: backups.auctionClubsJson,
+      hasGameweeks: backups.gameweeksJson,
     })
     .from(backups)
     .where(eq(backups.leagueId, leagueId))
@@ -41,7 +47,66 @@ export async function GET(request: NextRequest) {
         fixtures: !!r.hasFixtures,
         captains: !!r.hasCaptains,
         chips: !!r.hasChips,
+        auctionTeamsState: !!r.hasAuctionTeamsState,
+        auctionSquads: !!r.hasAuctionSquads,
+        auctionClubs: !!r.hasAuctionClubs,
+        gameweeks: !!r.hasGameweeks,
       },
     })),
   });
+}
+
+/**
+ * POST /api/admin/[leagueId]/backups
+ *
+ * Create a manual snapshot of the league's current state. Distinct from the GET
+ * /api/admin/[leagueId]/backup download (that's a one-shot file response with no
+ * DB persistence). This endpoint persists a row in `backups` with `trigger: "manual"`
+ * so admins have an audit trail and can restore later.
+ *
+ * No body required. Returns the new backup row's metadata.
+ */
+export async function POST(request: NextRequest) {
+  const leagueId = await getAuthorizedLeagueId(request);
+  if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  try {
+    const rows = await generateBackupRows(leagueId);
+    const id = generateId();
+    const now = new Date();
+    await db.insert(backups).values({
+      id,
+      leagueId,
+      trigger: "manual",
+      createdAt: now,
+      teamsJson: rows.teams ? JSON.stringify(rows.teams) : null,
+      fixturesJson: JSON.stringify(rows.fixtures),
+      captainsJson: rows.captains ? JSON.stringify(rows.captains) : null,
+      chipsJson: rows.chips ? JSON.stringify(rows.chips) : null,
+      auctionTeamsStateJson: rows.auctionTeamsState ? JSON.stringify(rows.auctionTeamsState) : null,
+      auctionSquadsJson: rows.auctionSquads ? JSON.stringify(rows.auctionSquads) : null,
+      auctionClubsJson: rows.auctionClubs ? JSON.stringify(rows.auctionClubs) : null,
+      gameweeksJson: JSON.stringify(rows.gameweeks),
+    });
+    return NextResponse.json({
+      success: true,
+      id,
+      trigger: "manual",
+      createdAt: now.toISOString(),
+      counts: {
+        fixtures: rows.fixtures.length,
+        teams: rows.teams?.length ?? 0,
+        auctionTeamsState: rows.auctionTeamsState?.length ?? 0,
+        auctionSquads: rows.auctionSquads?.length ?? 0,
+        auctionClubs: rows.auctionClubs?.length ?? 0,
+        gameweeks: rows.gameweeks.length,
+      },
+    });
+  } catch (err) {
+    console.error("[backups POST] manual snapshot failed:", err);
+    return NextResponse.json(
+      { error: "Backup failed", message: err instanceof Error ? err.message : "unknown" },
+      { status: 500 }
+    );
+  }
 }

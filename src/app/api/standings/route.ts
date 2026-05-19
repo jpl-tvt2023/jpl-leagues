@@ -151,9 +151,17 @@ export async function GET(request: NextRequest) {
       const standings = computeAuctionStandings(leagueTeams, scores, gwNumbers, squadValues);
       const clubByTeamId = await getClubOwnershipsByTeam(leagueId);
 
+      // Apply PL Club Auction rename to each standings row's `teamName` so downstream consumers that
+      // only read `teamName` (e.g., marketplace's team picker) pick up the rename automatically.
+      // The standings UI uses `clubByTeamId` separately for the tier chip; both are wire-compatible.
+      const renamedStandings = standings.map((s) => ({
+        ...s,
+        teamName: clubByTeamId[s.teamId]?.plTeamName ?? s.teamName,
+      }));
+
       const responseData = {
         format: "auction" as const,
-        standings,
+        standings: renamedStandings,
         totalTeams: leagueTeams.length,
         clubByTeamId,
       };

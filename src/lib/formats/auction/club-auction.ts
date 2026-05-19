@@ -34,6 +34,7 @@ import {
 import { eq, and, count, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchBootstrapData } from "@/lib/fpl";
+import { getFplFixturesForGw } from "@/lib/fpl-live/players-left";
 import {
   PL_STANDINGS_SEED_ID,
   PL_STANDINGS_SEED_SEASON,
@@ -60,6 +61,66 @@ export function getClubBonusForTier(tier: ClubTier, isWin: boolean, isDraw: bool
   if (!isWin && !isDraw) return 0;
   const row = CLUB_TIER_BONUS[tier];
   return isWin ? row.win : row.draw;
+}
+
+/**
+ * Compute the per-fixture club-result bonus for an owned club in a given GW.
+ *
+ * Looks up the GW's PL fixtures, filters to those involving the owned club, and awards `tier.win`
+ * for wins / `tier.draw` for draws / 0 for losses. Sums across fixtures (DGW doubles the bonus).
+ *
+ * Returns `null` if the FPL fixtures fetch fails. Otherwise returns `{ bonus, summary }` where the
+ * summary string takes the form `"Brentford 3-0 Man Utd → +3"` (DGW joined with `; `). Caller
+ * decides whether to surface a `GWn:` prefix.
+ *
+ * Used by both the GW scorer (process-gameweek.ts) and on-the-fly tooltip backfill in the historical
+ * gw-summary path for legacy rows that pre-date the persisted `club_result_summary` column.
+ */
+export async function computeClubResultBonus(
+  plTeamId: number,
+  tier: ClubTier,
+  gw: number
+): Promise<{ bonus: number; summary: string } | null> {
+  const fixtures = await getFplFixturesForGw(gw);
+  if (fixtures == null) return null;
+
+  const myFixtures = fixtures.filter((f) => f.team_h === plTeamId || f.team_a === plTeamId);
+  if (myFixtures.length === 0) {
+    return { bonus: 0, summary: "Blank GW — no fixture, no bonus" };
+  }
+
+  // PL team-name lookup for the scoreline summary ("Brentford 3-0 Man Utd → +3").
+  // Best-effort: on FPL outage we fall back to "team#<id>".
+  const plNameById = new Map<number, string>();
+  try {
+    const bootstrap = await fetchBootstrapData();
+    for (const t of (bootstrap.teams ?? []) as Array<{ id: number; name: string }>) {
+      plNameById.set(t.id, t.name);
+    }
+  } catch { /* leave map empty; nameFor() falls back to "team#<id>" */ }
+  const nameFor = (id: number): string => plNameById.get(id) ?? `team#${id}`;
+
+  let total = 0;
+  const lines: string[] = [];
+  for (const f of myFixtures) {
+    const homeName = nameFor(f.team_h);
+    const awayName = nameFor(f.team_a);
+    if (!f.finished && !f.finished_provisional) {
+      lines.push(`${homeName} vs ${awayName} (in progress) → +0`);
+      continue;
+    }
+    const homeScore = f.team_h_score ?? 0;
+    const awayScore = f.team_a_score ?? 0;
+    const isHome = f.team_h === plTeamId;
+    const myScore = isHome ? homeScore : awayScore;
+    const oppScore = isHome ? awayScore : homeScore;
+    const isWin = myScore > oppScore;
+    const isDraw = myScore === oppScore;
+    const bonus = getClubBonusForTier(tier, isWin, isDraw);
+    total += bonus;
+    lines.push(`${homeName} ${homeScore}-${awayScore} ${awayName} → +${bonus}`);
+  }
+  return { bonus: total, summary: lines.join("; ") };
 }
 
 // ── Standings config loader (auto-seeds on first read) ──

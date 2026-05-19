@@ -7,6 +7,7 @@ import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { isAuctionLive } from "@/lib/formats/auction/live-session";
 import { createNotification } from "@/lib/notifications";
+import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 
 const TRADE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
@@ -234,12 +235,15 @@ export async function POST(request: NextRequest) {
     status: "pending",
   });
 
+  // PL Club Auction rename — notification body shows the proposer's club name if they own one.
+  const clubByTeamId = await fetchClubOwnershipMap(leagueId);
+  const proposerDisplay = clubByTeamId.get(session.id)?.plTeamName ?? proposerTeam[0]?.name ?? "A team";
   await createNotification({
     teamId: targetTeamId,
     leagueId,
     type: "trade_proposed",
     title: "New trade proposal",
-    body: `${proposerTeam[0]?.name ?? "A team"} sent you a trade proposal`,
+    body: `${proposerDisplay} sent you a trade proposal`,
     link: `/${leagueRow[0].slug}/marketplace?tab=incoming`,
   });
 
@@ -310,16 +314,18 @@ export async function PATCH(request: NextRequest) {
       .set({ status: "rejected", updatedAt: new Date() })
       .where(eq(tradeProposals.id, proposalId));
 
-    const [leagueRow, targetRow] = await Promise.all([
+    const [leagueRow, targetRow, clubByTeamIdRej] = await Promise.all([
       db.select({ slug: leagues.slug }).from(leagues).where(eq(leagues.id, proposal.leagueId)).limit(1),
       db.select({ name: teams.name }).from(teams).where(eq(teams.id, proposal.targetTeamId)).limit(1),
+      fetchClubOwnershipMap(proposal.leagueId),
     ]);
+    const targetDisplay = clubByTeamIdRej.get(proposal.targetTeamId)?.plTeamName ?? targetRow[0]?.name ?? "The other team";
     await createNotification({
       teamId: proposal.proposerTeamId,
       leagueId: proposal.leagueId,
       type: "trade_rejected",
       title: "Trade rejected",
-      body: `${targetRow[0]?.name ?? "The other team"} rejected your trade proposal`,
+      body: `${targetDisplay} rejected your trade proposal`,
       link: leagueRow[0] ? `/${leagueRow[0].slug}/marketplace?tab=outgoing` : undefined,
     });
     return NextResponse.json({ success: true, status: "rejected" });
@@ -375,16 +381,18 @@ export async function PATCH(request: NextRequest) {
     .set({ status: "accepted", updatedAt: new Date() })
     .where(eq(tradeProposals.id, proposalId));
 
-  const [leagueAcceptRow, targetAcceptRow] = await Promise.all([
+  const [leagueAcceptRow, targetAcceptRow, clubByTeamIdAcc] = await Promise.all([
     db.select({ slug: leagues.slug }).from(leagues).where(eq(leagues.id, proposal.leagueId)).limit(1),
     db.select({ name: teams.name }).from(teams).where(eq(teams.id, proposal.targetTeamId)).limit(1),
+    fetchClubOwnershipMap(proposal.leagueId),
   ]);
+  const targetAcceptDisplay = clubByTeamIdAcc.get(proposal.targetTeamId)?.plTeamName ?? targetAcceptRow[0]?.name ?? "The other team";
   await createNotification({
     teamId: proposal.proposerTeamId,
     leagueId: proposal.leagueId,
     type: "trade_accepted",
     title: "Trade accepted",
-    body: `${targetAcceptRow[0]?.name ?? "The other team"} accepted your trade — awaiting admin approval`,
+    body: `${targetAcceptDisplay} accepted your trade — awaiting admin approval`,
     link: leagueAcceptRow[0] ? `/${leagueAcceptRow[0].slug}/marketplace?tab=outgoing` : undefined,
   });
 

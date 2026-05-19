@@ -7,7 +7,7 @@ import { getPayoutForRank } from "@/lib/formats/auction/economy";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
 import { getInFlightGameweekNumber } from "@/lib/gameweeks/in-flight";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
-import { getClubOwnershipsByTeam } from "@/lib/formats/auction/club-auction";
+import { getClubOwnershipsByTeam, computeClubResultBonus } from "@/lib/formats/auction/club-auction";
 
 /**
  * GET /api/auction/gw-summary?leagueSlug=xxx&gw=N
@@ -117,10 +117,11 @@ export async function GET(request: NextRequest) {
     .select({ id: teams.id, name: teams.name })
     .from(teams)
     .where(eq(teams.leagueId, league.id));
-  const teamNameMap = new Map(teamRows.map((t) => [t.id, t.name]));
 
-  // PL Club Auction: per-team owned club (drives team-rename + tier chip on UI).
+  // PL Club Auction: per-team owned club (drives team-rename + tier chip on UI). Fetch first so
+  // we can rename `teamNameMap` entries in-place — downstream `teamName` reads pick the rename up.
   const clubByTeamId = await getClubOwnershipsByTeam(league.id);
+  const teamNameMap = new Map(teamRows.map((t) => [t.id, clubByTeamId[t.id]?.plTeamName ?? t.name]));
 
   // Build elementId → elementType map from ownership. A player's position is
   // immutable, so a single map covers every gameweek even when ownership
@@ -285,7 +286,8 @@ export async function GET(request: NextRequest) {
       const rankDelta = leagueRank != null && prevLeagueRank != null ? prevLeagueRank - leagueRank : null;
       return {
         teamId: t.id,
-        teamName: t.name,
+        // teamNameMap was already renamed above to reflect PL Club Auction ownership.
+        teamName: teamNameMap.get(t.id) ?? t.name,
         totalPoints: live?.totalPoints ?? 0,
         rawPoints: live?.rawPoints ?? 0,
         synergyBonus: live?.synergyBonus ?? 0,
@@ -387,8 +389,28 @@ export async function GET(request: NextRequest) {
     }),
   );
 
-  const rows = allScores
-    .filter((s) => s.gameweekId === targetGameweek.id)
+  // Backfill clubResultSummary on the fly for rows scored BEFORE the `club_result_summary` column
+  // existed (legacy rows have null + clubResultBonus > 0). New rows already carry the persisted
+  // value; this block is a no-op for them. We do not write back to the DB — recomputing each read
+  // is cheap (FPL fixtures + bootstrap are both Redis-cached) and keeps GET handlers side-effect-free.
+  const scoredThisGw = allScores.filter((s) => s.gameweekId === targetGameweek.id);
+  const fallbackSummaryByTeam = new Map<string, string>();
+  await Promise.all(
+    scoredThisGw
+      .filter((s) => s.clubResultSummary == null && (s.clubResultBonus ?? 0) > 0)
+      .map(async (s) => {
+        const club = clubByTeamId[s.teamId];
+        if (!club) return;
+        try {
+          const result = await computeClubResultBonus(club.plTeamId, club.tier, selectedGw);
+          if (result && result.summary) fallbackSummaryByTeam.set(s.teamId, result.summary);
+        } catch (e) {
+          console.warn("[gw-summary] backfill computeClubResultBonus failed", { teamId: s.teamId, gw: selectedGw, error: e });
+        }
+      })
+  );
+
+  const rows = scoredThisGw
     .map((s) => {
       let players: BreakdownPlayer[] = [];
       try {
@@ -421,8 +443,9 @@ export async function GET(request: NextRequest) {
         rawPoints: s.rawPoints ?? 0,
         synergyBonus: s.synergyBonus ?? 0,
         clubResultBonus: s.clubResultBonus ?? 0,
-        // Persisted by process-gameweek so historical reads carry the same scoreline as live mode.
-        clubResultSummary: s.clubResultSummary ?? null,
+        // Persisted by process-gameweek for new rows; backfilled above for legacy rows that pre-date
+        // the persisted column. Falls back to null only when FPL fixtures are unreachable.
+        clubResultSummary: s.clubResultSummary ?? fallbackSummaryByTeam.get(s.teamId) ?? null,
         rank: s.rank ?? 0,
         payout: s.payout,
         leagueRank,

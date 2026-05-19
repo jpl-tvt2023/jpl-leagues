@@ -23,6 +23,19 @@ export function getTeamDisplayName(team: TeamLike, ownership?: TeamClubOwnership
   return ownership?.plTeamName ?? team.name;
 }
 
+/**
+ * Return the short identifier for a fantasy team. If the team owns a PL club, returns the PL short
+ * code (e.g. "LIV"); otherwise falls back to the first three characters of the team name in caps.
+ * Used in dense surfaces where space is tight (nomination chips, compact tables).
+ */
+export function getTeamDisplayShort(
+  team: TeamLike,
+  ownership?: TeamClubOwnership | null,
+  fallback: (team: TeamLike) => string = (t) => t.name.slice(0, 3).toUpperCase(),
+): string {
+  return ownership?.plTeamShort ?? fallback(team);
+}
+
 /** Tier display label for chips. */
 export const TIER_LABEL: Record<ClubTier, string> = {
   top8: "Top 8",

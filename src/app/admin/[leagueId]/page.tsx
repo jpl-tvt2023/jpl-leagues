@@ -10,11 +10,18 @@ import { TierChip } from "@/components/TierChip";
 interface Team {
   id: string;
   teamLoginId?: string;
-  name: string;
+  name: string;          // Display name — renamed to the owned PL club's name when applicable.
+  rawName?: string;      // Original `teams.name` value — used in edit forms where the underlying name matters.
   group: string;
   players: { id: string; name: string; fplId: string }[];
   needsPasswordChange: boolean;
   isProfileComplete: boolean;
+  ownedClub?: {
+    plTeamId: number;
+    plTeamName: string;
+    plTeamShort: string;
+    tier: "top8" | "mid" | "promoted";
+  } | null;
 }
 
 interface TeamWithPlayers {
@@ -1526,15 +1533,29 @@ export default function AdminDashboard() {
     }
   };
 
-  // Saved historical snapshots — currently the only writer is the GW1 auto-snapshot.
+  // Saved historical snapshots — GW1 auto-snapshot + admin-triggered manual snapshots.
   type SavedBackup = {
     id: string;
     trigger: string;
     createdAt: string | number | Date;
-    includes: { teams: boolean; fixtures: boolean; captains: boolean; chips: boolean };
+    includes: {
+      teams: boolean;
+      fixtures: boolean;
+      captains: boolean;
+      chips: boolean;
+      auctionTeamsState?: boolean;
+      auctionSquads?: boolean;
+      auctionClubs?: boolean;
+      gameweeks?: boolean;
+    };
   };
   const [savedBackups, setSavedBackups] = useState<SavedBackup[]>([]);
   const [downloadingSnapshotId, setDownloadingSnapshotId] = useState<string | null>(null);
+  const [takingBackupNow, setTakingBackupNow] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [restoreBackupId, setRestoreBackupId] = useState<string | null>(null);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoringAuction, setRestoringAuction] = useState(false);
 
   // Fetch saved-backup list whenever the bulkUpload tab is active.
   useEffect(() => {
@@ -1609,6 +1630,97 @@ export default function AdminDashboard() {
       setMessage({ type: "error", text: `Network error: ${e instanceof Error ? e.message : "unknown"}` });
     } finally {
       setDownloadingBackup(false);
+    }
+  };
+
+  // POST /api/admin/[leagueId]/backups — persist a manual snapshot. Distinct from the .zip download
+  // above (that's stateless); this writes a row to `backups` so it survives league resets and can be
+  // used by the restore endpoint later.
+  const handleTakeBackupNow = async () => {
+    if (takingBackupNow) return;
+    setTakingBackupNow(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/backups`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data?.error ?? "Backup failed" });
+        return;
+      }
+      // Refresh the saved-snapshots list so the new row appears in-place.
+      try {
+        const list = await fetch(`/api/admin/${leagueId}/backups`, { credentials: "include" });
+        if (list.ok) {
+          const j = await list.json();
+          setSavedBackups(j.backups ?? []);
+        }
+      } catch { /* non-fatal */ }
+      const c = data.counts ?? {};
+      setMessage({
+        type: "success",
+        text: `Backup taken: ${c.fixtures ?? 0} fixtures, ${c.auctionSquads ?? c.teams ?? 0} ${c.auctionSquads ? "squads" : "teams"}, ${c.auctionClubs ?? 0} clubs.`,
+      });
+    } catch (e) {
+      setMessage({ type: "error", text: `Network error: ${e instanceof Error ? e.message : "unknown"}` });
+    } finally {
+      setTakingBackupNow(false);
+    }
+  };
+
+  // POST /api/admin/[leagueId]/restore-auction — accepts either a backup ID (from saved snapshots)
+  // or a multipart file upload of the original .zip. Wipes current auction state and rebuilds
+  // ownership + clubs; scores are NOT restored — admin reprocesses GWs to regenerate them.
+  const handleRestoreAuction = async () => {
+    if (restoringAuction) return;
+    if (!restoreBackupId && !restoreFile) {
+      setMessage({ type: "error", text: "Choose a saved snapshot or upload a .zip file." });
+      return;
+    }
+    if (!confirm(
+      "This will wipe the league's current auction state (sessions, bids, ownership, clubs, " +
+      "trades, scores) and rebuild from the backup. Reprocess each GW after restore to regenerate " +
+      "scores. Continue?",
+    )) return;
+    setRestoringAuction(true);
+    setMessage(null);
+    try {
+      let res: Response;
+      if (restoreFile) {
+        const form = new FormData();
+        form.append("file", restoreFile);
+        res = await fetch(`/api/admin/${leagueId}/restore-auction`, {
+          method: "POST",
+          credentials: "include",
+          body: form,
+        });
+      } else {
+        res = await fetch(`/api/admin/${leagueId}/restore-auction`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ backupId: restoreBackupId }),
+        });
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data?.error ?? "Restore failed" });
+        return;
+      }
+      const r = data.restored ?? {};
+      setMessage({
+        type: "success",
+        text: `Restored: ${r.squads ?? 0} squad rows · ${r.clubs ?? 0} clubs · ${r.teamsState ?? 0} team-state rows. Reprocess each GW from the Scoring tab to regenerate scores.`,
+      });
+      setShowRestoreModal(false);
+      setRestoreBackupId(null);
+      setRestoreFile(null);
+    } catch (e) {
+      setMessage({ type: "error", text: `Network error: ${e instanceof Error ? e.message : "unknown"}` });
+    } finally {
+      setRestoringAuction(false);
     }
   };
 
@@ -2945,13 +3057,31 @@ export default function AdminDashboard() {
                 emitted as <code className="text-gray-300">RESET_REQUIRED</code> placeholders — bcrypt hashes can&apos;t be reversed,
                 so you&apos;ll need to set new passwords on restore.
               </p>
-              <button
-                onClick={handleDownloadBackup}
-                disabled={downloadingBackup}
-                className="rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 px-6 py-3 font-semibold text-white hover:from-blue-400 hover:to-cyan-500 transition disabled:opacity-50"
-              >
-                {downloadingBackup ? "Generating..." : "Download Backup (.zip)"}
-              </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleDownloadBackup}
+                  disabled={downloadingBackup}
+                  className="rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 px-6 py-3 font-semibold text-white hover:from-blue-400 hover:to-cyan-500 transition disabled:opacity-50"
+                >
+                  {downloadingBackup ? "Generating..." : "Download Backup (.zip)"}
+                </button>
+                <button
+                  onClick={handleTakeBackupNow}
+                  disabled={takingBackupNow}
+                  title="Persists a snapshot row in the database so it survives league resets. Recommended right after the auction concludes."
+                  className="rounded-lg bg-gradient-to-r from-emerald-500/30 to-green-600/30 border border-emerald-500/40 px-6 py-3 font-semibold text-emerald-200 hover:from-emerald-500/40 hover:to-green-600/40 transition disabled:opacity-50"
+                >
+                  {takingBackupNow ? "Saving..." : "Take Backup Now"}
+                </button>
+                {isAuctionFormat && (
+                  <button
+                    onClick={() => setShowRestoreModal(true)}
+                    className="rounded-lg bg-gradient-to-r from-purple-500/30 to-fuchsia-600/30 border border-purple-500/40 px-6 py-3 font-semibold text-purple-200 hover:from-purple-500/40 hover:to-fuchsia-600/40 transition"
+                  >
+                    Restore from Backup
+                  </button>
+                )}
+              </div>
 
               {/* Saved snapshots — auto-archived at GW1 lock-in (or future manual archives) */}
               {savedBackups.length > 0 && (
@@ -2969,8 +3099,13 @@ export default function AdminDashboard() {
                         snap.includes.fixtures && "fixtures",
                         snap.includes.captains && "captains",
                         snap.includes.chips && "chips",
+                        snap.includes.auctionTeamsState && "teams-state",
+                        snap.includes.auctionSquads && "squads",
+                        snap.includes.auctionClubs && "clubs",
+                        snap.includes.gameweeks && "gameweeks",
                       ].filter(Boolean).join(", ");
                       const isDownloading = downloadingSnapshotId === snap.id;
+                      const canRestoreFromSnapshot = isAuctionFormat && (snap.includes.auctionSquads || snap.includes.auctionClubs);
                       return (
                         <li key={snap.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
                           <div className="min-w-0 text-xs">
@@ -2980,13 +3115,23 @@ export default function AdminDashboard() {
                             </div>
                             <div className="text-gray-500 truncate">includes: {includedParts || "(empty)"}</div>
                           </div>
-                          <button
-                            onClick={() => handleDownloadSnapshot(snap.id)}
-                            disabled={isDownloading}
-                            className="rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 text-xs font-semibold px-3 py-1.5 transition disabled:opacity-50 shrink-0"
-                          >
-                            {isDownloading ? "Downloading..." : "Download"}
-                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => handleDownloadSnapshot(snap.id)}
+                              disabled={isDownloading}
+                              className="rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 text-xs font-semibold px-3 py-1.5 transition disabled:opacity-50"
+                            >
+                              {isDownloading ? "Downloading..." : "Download"}
+                            </button>
+                            {canRestoreFromSnapshot && (
+                              <button
+                                onClick={() => { setRestoreBackupId(snap.id); setShowRestoreModal(true); }}
+                                className="rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 text-xs font-semibold px-3 py-1.5 transition"
+                              >
+                                Restore
+                              </button>
+                            )}
+                          </div>
                         </li>
                       );
                     })}
@@ -4346,6 +4491,19 @@ export default function AdminDashboard() {
                       <option value="mini-3">Before Mini-Auction 3</option>
                     </select>
                   </div>
+                  {auctionResetTarget === "initial" && (
+                    <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-[11px] text-red-200/90 space-y-1">
+                      <p className="font-semibold">Full wipe clears:</p>
+                      <ul className="list-disc list-inside text-red-200/80">
+                        <li>Auction sessions, bids, and bid logs</li>
+                        <li>Player ownerships, scores, and trade proposals</li>
+                        <li><strong>PL club ownerships</strong> (so a fresh club auction can run)</li>
+                        <li>Penalty slots and accumulated penalty ledger</li>
+                        <li>Team purse, totalSpent, totalIncome, totalRefunds (reset to initial budget)</li>
+                      </ul>
+                      <p className="pt-1 text-red-200/70">Preserved: team accounts, wishlists, gameweeks, fixtures.</p>
+                    </div>
+                  )}
                   <div className="flex gap-3">
                     <button
                       onClick={handleAuctionReset}
@@ -4357,6 +4515,71 @@ export default function AdminDashboard() {
                     <button
                       onClick={() => setShowAuctionResetConfirm(false)}
                       className="px-4 py-2 rounded-lg bg-white/10 text-gray-400 hover:bg-white/20 transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Restore Auction Modal */}
+            {showRestoreModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => !restoringAuction && setShowRestoreModal(false)}>
+                <div className="w-full max-w-lg rounded-2xl border border-purple-500/30 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+                  <h3 className="text-xl font-bold text-purple-300 mb-3">Restore Auction State</h3>
+                  <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 text-[11px] text-purple-200/90 mb-4 space-y-1">
+                    <p>This <strong>wipes the league&apos;s current auction state</strong> (sessions, bids, ownership, clubs, trades, scores, penalty slots) and restores from the chosen backup.</p>
+                    <p>After restore, reprocess each GW from the Scoring tab to regenerate scores from the restored squads + clubs.</p>
+                    <p className="text-purple-300/70">Team accounts and login IDs are <strong>not</strong> touched.</p>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Source</label>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">Saved snapshot</label>
+                        <select
+                          value={restoreBackupId ?? ""}
+                          onChange={(e) => { setRestoreBackupId(e.target.value || null); if (e.target.value) setRestoreFile(null); }}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 text-sm"
+                        >
+                          <option value="">— choose a snapshot —</option>
+                          {savedBackups.filter(s => s.includes.auctionSquads || s.includes.auctionClubs).map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.trigger === "gw1-lock" ? "GW1 lock-in" : s.trigger} · {new Date(s.createdAt).toLocaleString()}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="text-center text-[10px] uppercase tracking-wider text-gray-500">— or —</div>
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">Upload .zip backup</label>
+                        <input
+                          type="file"
+                          accept=".zip"
+                          onChange={(e) => { const f = e.target.files?.[0] ?? null; setRestoreFile(f); if (f) setRestoreBackupId(null); }}
+                          className="w-full text-xs text-gray-300 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-purple-500/20 file:text-purple-200 file:cursor-pointer cursor-pointer"
+                        />
+                        {restoreFile && (
+                          <p className="text-[11px] text-purple-300/80 mt-1">Selected: {restoreFile.name}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleRestoreAuction}
+                      disabled={restoringAuction || (!restoreBackupId && !restoreFile)}
+                      className="flex-1 px-4 py-2 rounded-lg bg-purple-500 text-white font-bold hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    >
+                      {restoringAuction ? "Restoring..." : "Restore Now"}
+                    </button>
+                    <button
+                      onClick={() => setShowRestoreModal(false)}
+                      disabled={restoringAuction}
+                      className="px-4 py-2 rounded-lg bg-white/10 text-gray-400 hover:bg-white/20 transition disabled:opacity-50"
                     >
                       Cancel
                     </button>

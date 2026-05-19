@@ -4,6 +4,7 @@ import { eq, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 
 /**
  * POST /api/admin/[leagueId]/create-team
@@ -137,24 +138,30 @@ export async function GET(request: NextRequest) {
     const leagueId = await getAuthorizedLeagueId(request);
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const allTeams = await db.query.teams.findMany({
-      where: and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)),
-      with: {
-        players: true,
-        group: true,
-      },
-    });
+    const [allTeams, clubByTeamId] = await Promise.all([
+      db.query.teams.findMany({
+        where: and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)),
+        with: { players: true, group: true },
+      }),
+      fetchClubOwnershipMap(leagueId),
+    ]);
 
     return NextResponse.json({
-      teams: allTeams.map(t => ({
-        id: t.id,
-        teamLoginId: t.teamLoginId,
-        name: t.name,
-        group: t.group?.name || "Unassigned",
-        players: t.players.map(p => ({ name: p.name, fplId: p.fplId, id: p.id })),
-        needsPasswordChange: t.mustChangePassword,
-        isProfileComplete: t.isProfileComplete,
-      })),
+      teams: allTeams.map(t => {
+        const ownedClub = clubByTeamId.get(t.id) ?? null;
+        return {
+          id: t.id,
+          teamLoginId: t.teamLoginId,
+          // PL Club Auction rename — a team that owns Liverpool displays as "Liverpool" everywhere.
+          name: ownedClub?.plTeamName ?? t.name,
+          rawName: t.name,
+          group: t.group?.name || "Unassigned",
+          players: t.players.map(p => ({ name: p.name, fplId: p.fplId, id: p.id })),
+          needsPasswordChange: t.mustChangePassword,
+          isProfileComplete: t.isProfileComplete,
+          ownedClub,
+        };
+      }),
     });
   } catch (error) {
     console.error("Get teams error:", error);

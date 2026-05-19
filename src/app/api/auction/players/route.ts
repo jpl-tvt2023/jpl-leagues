@@ -4,6 +4,7 @@ import { auctionOwnership } from "@/lib/db/schema";
 import { eq, and, lt, gte, or, isNull } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { fetchElementInfo, fetchElementGameweekPoints, fetchBootstrapData } from "@/lib/fpl";
+import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 
 /**
  * GET /api/auction/players?leagueId=xxx&gameweek=N&page=1&pageSize=50
@@ -84,11 +85,18 @@ export async function GET(request: NextRequest) {
       ownerMap.set(o.fplElementId, { teamId: o.teamId, purchasePrice: o.purchasePrice });
     }
 
-    // Fetch team names
-    const leagueTeams = await db
-      .select({ id: teams.id, name: teams.name })
-      .from(teams)
-      .where(eq(teams.leagueId, leagueId));
+    // Fetch team names + PL Club Auction rename. Team that owns Liverpool displays as "Liverpool"
+    // everywhere — including the "Owned By" column on the players list.
+    const [leagueTeamsRaw, clubByTeamId] = await Promise.all([
+      db.select({ id: teams.id, name: teams.name })
+        .from(teams)
+        .where(eq(teams.leagueId, leagueId)),
+      fetchClubOwnershipMap(leagueId),
+    ]);
+    const leagueTeams = leagueTeamsRaw.map((t) => ({
+      ...t,
+      name: clubByTeamId.get(t.id)?.plTeamName ?? t.name,
+    }));
     const teamNameMap = new Map<string, string>();
     for (const t of leagueTeams) {
       teamNameMap.set(t.id, t.name);

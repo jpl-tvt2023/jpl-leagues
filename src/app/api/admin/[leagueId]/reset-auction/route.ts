@@ -5,7 +5,9 @@ import {
   auctionBidLogs,
   auctionSessions,
   auctionOwnership,
+  auctionClubOwnership,
   auctionScores,
+  teamPenalties,
   tradeProposals,
   teams,
   leagues,
@@ -46,6 +48,11 @@ export async function POST(request: NextRequest) {
     await db.delete(auctionBids).where(eq(auctionBids.leagueId, leagueId));
     await db.delete(auctionSessions).where(eq(auctionSessions.leagueId, leagueId));
     await db.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId));
+    // PL Club Auction state — must be wiped so the league can re-run its club auction.
+    // Without this, the per-league unique-club constraint blocks any new club-auction session.
+    await db.delete(auctionClubOwnership).where(eq(auctionClubOwnership.leagueId, leagueId));
+    // Penalty ledger — full reset clears accumulated nomination penalties along with everything else.
+    await db.delete(teamPenalties).where(eq(teamPenalties.leagueId, leagueId));
     // Wishlists are preserved across resets — they are user-curated
     await db.delete(auctionScores).where(eq(auctionScores.leagueId, leagueId));
     await db.delete(tradeProposals).where(eq(tradeProposals.leagueId, leagueId));

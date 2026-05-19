@@ -59,6 +59,12 @@ interface BootstrapTeam {
 interface StandingEntry {
   teamId: string;
   teamName: string;
+  ownedClub?: {
+    plTeamId: number;
+    plTeamName: string;
+    plTeamShort: string;
+    tier: "top8" | "mid" | "promoted";
+  } | null;
 }
 
 interface BidFeedItem {
@@ -361,7 +367,12 @@ export default function AuctionRoomPage() {
       if (standingsRes.ok) {
         const standingsJson = await standingsRes.json();
         const rows: StandingEntry[] = standingsJson.standings ?? [];
-        for (const r of rows) standingsMap.set(r.teamId, r);
+        // /api/standings returns `clubByTeamId` map separately; thread it onto each row so the
+        // auction page has owned-club info inline with team identity (drives short codes + tier chip).
+        const clubByTeamId: Record<string, StandingEntry["ownedClub"]> = standingsJson.clubByTeamId ?? {};
+        for (const r of rows) {
+          standingsMap.set(r.teamId, { ...r, ownedClub: clubByTeamId[r.teamId] ?? null });
+        }
         setTeamMap(standingsMap);
       }
 
@@ -1087,8 +1098,22 @@ export default function AuctionRoomPage() {
                                   {isCurrent ? <span className="text-yellow-400 font-bold">►</span> : <span>{idx + 1}</span>}
                                 </td>
                                 <td className={`py-1.5 px-2 font-semibold ${isCurrent ? "text-yellow-300" : isMe ? "text-purple-300" : "text-white"}`}>
-                                  {team?.teamName ?? tid}
-                                  {isMe && <span className="text-[10px] ml-1 text-purple-400">(you)</span>}
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span>{team?.teamName ?? tid}</span>
+                                    {team?.ownedClub && (
+                                      <span
+                                        title={`${team.ownedClub.plTeamName} · ${team.ownedClub.tier}`}
+                                        className={`text-[9px] font-bold px-1 py-0.5 rounded border ${
+                                          team.ownedClub.tier === "top8" ? "bg-yellow-500/20 text-yellow-200 border-yellow-500/40"
+                                          : team.ownedClub.tier === "mid" ? "bg-blue-500/20 text-blue-200 border-blue-500/40"
+                                          : "bg-emerald-500/20 text-emerald-200 border-emerald-500/40"
+                                        }`}
+                                      >
+                                        {team.ownedClub.plTeamShort}
+                                      </span>
+                                    )}
+                                    {isMe && <span className="text-[10px] text-purple-400">(you)</span>}
+                                  </span>
                                 </td>
                                 <td className="py-1.5 px-2 text-right font-mono text-green-300">
                                   {summary ? formatCurrency(summary.purse) : "—"}
