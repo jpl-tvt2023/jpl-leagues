@@ -47,6 +47,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     fixtures: row.fixturesJson ? JSON.parse(row.fixturesJson) : [],
     captains: row.captainsJson ? JSON.parse(row.captainsJson) : null,
     chips: row.chipsJson ? JSON.parse(row.chipsJson) : null,
+    auctionTeamsState: row.auctionTeamsStateJson ? JSON.parse(row.auctionTeamsStateJson) : null,
+    auctionSquads: row.auctionSquadsJson ? JSON.parse(row.auctionSquadsJson) : null,
+    auctionClubs: row.auctionClubsJson ? JSON.parse(row.auctionClubsJson) : null,
+    gameweeks: row.gameweeksJson ? JSON.parse(row.gameweeksJson) : [],
   };
 
   const zipBuf = await buildBackupZip(rows);

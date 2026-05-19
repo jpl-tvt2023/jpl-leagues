@@ -17,7 +17,7 @@
  */
 
 import { db } from "@/lib/db";
-import { leagues, teams, gameweeks, fixtures, gameweekCaptains, gameweekChips } from "@/lib/db/schema";
+import { leagues, teams, gameweeks, fixtures, gameweekCaptains, gameweekChips, auctionOwnership, auctionClubOwnership } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
 export type TeamRow = {
@@ -43,12 +43,58 @@ export type CaptainRow = Record<string, string>;
 // Chip rows have a static Team col + dynamic 1..38 GW cols.
 export type ChipRow = Record<string, string>;
 
+// Auction sheets — populated only for `format === "auction"`. Use stable column names so the
+// restore endpoint and Excel viewers can both read them.
+export type AuctionTeamStateRow = {
+  "Team ID": string;
+  "Team Login ID": string;
+  "Team Name": string;
+  Purse: number;
+  "Total Spent": number;
+  "Total Income": number;
+  "Total Refunds": number;
+  "Penalty Slots": number;
+};
+export type AuctionSquadRow = {
+  "Ownership ID": string;
+  "Team ID": string;
+  "FPL Element ID": number;
+  "Player Name": string;
+  "Element Type": number | null;
+  "Purchase Price": number;
+  "Acquired GW": number;
+  "Released GW": number | null;
+  Status: string;
+};
+export type AuctionClubRow = {
+  ID: string;
+  "Team ID": string;
+  "PL Team ID": number;
+  "PL Team Name": string;
+  "PL Team Short": string;
+  Tier: string;
+  "Purchase Price": number;
+  "Acquired At": string;
+};
+export type GameweekRow = {
+  ID: string;
+  Number: number;
+  Deadline: string;
+  "Is Playoffs": boolean;
+};
+
 export type BackupRows = {
   format: string;
   teams: TeamRow[] | null;
   fixtures: FixtureRow[];
   captains: CaptainRow[] | null;
   chips: ChipRow[] | null;
+  // Auction-only sheets — null for TVT / triple-crown.
+  auctionTeamsState: AuctionTeamStateRow[] | null;
+  auctionSquads: AuctionSquadRow[] | null;
+  auctionClubs: AuctionClubRow[] | null;
+  // Available for every format — the restore endpoint reads this when recreating GW rows.
+  gameweeks: GameweekRow[];
 };
 
 /**
@@ -185,7 +231,93 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
     });
   }
 
-  return { format: league.format, teams: teamsRows, fixtures: fixturesRows, captains: captainsRows, chips: chipsRows };
+  // ── Gameweeks shape — id / number / deadline / isPlayoffs. Available for every format. ──
+  const gwRows = await db
+    .select({
+      id: gameweeks.id,
+      number: gameweeks.number,
+      deadline: gameweeks.deadline,
+      isPlayoffs: gameweeks.isPlayoffs,
+    })
+    .from(gameweeks)
+    .where(eq(gameweeks.leagueId, leagueId));
+  const gameweeksRows: GameweekRow[] = gwRows
+    .map((g) => ({
+      ID: g.id,
+      Number: g.number,
+      Deadline: g.deadline.toISOString(),
+      "Is Playoffs": Boolean(g.isPlayoffs),
+    }))
+    .sort((a, b) => a.Number - b.Number);
+
+  // ── Auction sheets — populated only for auction leagues. ──
+  let auctionTeamsState: AuctionTeamStateRow[] | null = null;
+  let auctionSquads: AuctionSquadRow[] | null = null;
+  let auctionClubs: AuctionClubRow[] | null = null;
+  if (league.format === "auction") {
+    const [auctionTeamRows, ownershipRows, clubRows] = await Promise.all([
+      db.select({
+        id: teams.id,
+        teamLoginId: teams.teamLoginId,
+        name: teams.name,
+        purse: teams.purse,
+        totalSpent: teams.totalSpent,
+        totalIncome: teams.totalIncome,
+        totalRefunds: teams.totalRefunds,
+        penaltySlots: teams.penaltySlots,
+      })
+        .from(teams)
+        .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false))),
+      db.select().from(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId)),
+      db.select().from(auctionClubOwnership).where(eq(auctionClubOwnership.leagueId, leagueId)),
+    ]);
+
+    auctionTeamsState = auctionTeamRows.map((t) => ({
+      "Team ID": t.id,
+      "Team Login ID": t.teamLoginId ?? "",
+      "Team Name": t.name,
+      Purse: t.purse,
+      "Total Spent": t.totalSpent,
+      "Total Income": t.totalIncome,
+      "Total Refunds": t.totalRefunds,
+      "Penalty Slots": t.penaltySlots,
+    }));
+
+    auctionSquads = ownershipRows.map((o) => ({
+      "Ownership ID": o.id,
+      "Team ID": o.teamId,
+      "FPL Element ID": o.fplElementId,
+      "Player Name": o.playerName,
+      "Element Type": o.elementType ?? null,
+      "Purchase Price": o.purchasePrice,
+      "Acquired GW": o.acquiredGw,
+      "Released GW": o.releasedGw ?? null,
+      Status: o.status,
+    }));
+
+    auctionClubs = clubRows.map((c) => ({
+      ID: c.id,
+      "Team ID": c.teamId,
+      "PL Team ID": c.plTeamId,
+      "PL Team Name": c.plTeamName,
+      "PL Team Short": c.plTeamShort,
+      Tier: c.tier,
+      "Purchase Price": c.purchasePrice,
+      "Acquired At": c.acquiredAt.toISOString(),
+    }));
+  }
+
+  return {
+    format: league.format,
+    teams: teamsRows,
+    fixtures: fixturesRows,
+    captains: captainsRows,
+    chips: chipsRows,
+    auctionTeamsState,
+    auctionSquads,
+    auctionClubs,
+    gameweeks: gameweeksRows,
+  };
 }
 
 /**

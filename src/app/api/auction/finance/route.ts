@@ -3,6 +3,7 @@ import { db, teams } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { buildTeamLedger, buildAllTeamsSummary } from "@/lib/formats/auction/finance";
+import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 
 /**
  * GET /api/auction/finance
@@ -31,7 +32,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "leagueId is required" }, { status: 400 });
     }
     const summaries = await buildAllTeamsSummary(leagueIdParam);
-    return NextResponse.json({ leagueId: leagueIdParam, teams: summaries });
+    // PL Club Auction rename + ownedClub for tier-chip rendering.
+    const clubByTeamId = await fetchClubOwnershipMap(leagueIdParam);
+    const renamed = summaries.map((s) => {
+      const ownedClub = clubByTeamId.get(s.teamId) ?? null;
+      return { ...s, teamName: ownedClub?.plTeamName ?? s.teamName, ownedClub };
+    });
+    return NextResponse.json({ leagueId: leagueIdParam, teams: renamed });
   }
 
   if (!teamId) {
@@ -57,5 +64,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Ledger unavailable" }, { status: 404 });
   }
 
-  return NextResponse.json(ledger);
+  // Override `teamName` with the owned-club name if this team bought one.
+  const clubByTeamId = await fetchClubOwnershipMap(teamRow[0].leagueId);
+  const ownedClub = clubByTeamId.get(teamId) ?? null;
+  const renamedLedger = ownedClub
+    ? { ...ledger, teamName: ownedClub.plTeamName, ownedClub }
+    : { ...ledger, ownedClub: null };
+
+  return NextResponse.json(renamedLedger);
 }

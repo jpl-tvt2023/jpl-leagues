@@ -15,6 +15,12 @@ export async function buildBackupZip(rows: BackupRows): Promise<ArrayBuffer> {
   zip.file("fixtures.xlsx", buildXlsxBuffer(rows.fixtures, "Fixtures"));
   if (rows.captains) zip.file("captains.xlsx", buildXlsxBuffer(rows.captains, "Captains"));
   if (rows.chips) zip.file("chips.xlsx", buildXlsxBuffer(rows.chips, "Chips"));
+  // Auction sheets — only present when the league format produced them.
+  if (rows.auctionTeamsState) zip.file("auction_teams_state.xlsx", buildXlsxBuffer(rows.auctionTeamsState, "Teams State"));
+  if (rows.auctionSquads) zip.file("auction_squads.xlsx", buildXlsxBuffer(rows.auctionSquads, "Squads"));
+  if (rows.auctionClubs) zip.file("auction_clubs.xlsx", buildXlsxBuffer(rows.auctionClubs, "Clubs"));
+  // Gameweeks shape — always emitted when the league has gameweeks; restore reads this.
+  if (rows.gameweeks.length > 0) zip.file("gameweeks.xlsx", buildXlsxBuffer(rows.gameweeks, "Gameweeks"));
   return zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
 }
 

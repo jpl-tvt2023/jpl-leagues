@@ -276,6 +276,11 @@ async function maybeWriteGw1Snapshot(leagueId: string): Promise<void> {
     fixturesJson: JSON.stringify(rows.fixtures),
     captainsJson: rows.captains ? JSON.stringify(rows.captains) : null,
     chipsJson: rows.chips ? JSON.stringify(rows.chips) : null,
+    // Auction-format snapshots — null for TVT / triple-crown.
+    auctionTeamsStateJson: rows.auctionTeamsState ? JSON.stringify(rows.auctionTeamsState) : null,
+    auctionSquadsJson: rows.auctionSquads ? JSON.stringify(rows.auctionSquads) : null,
+    auctionClubsJson: rows.auctionClubs ? JSON.stringify(rows.auctionClubs) : null,
+    gameweeksJson: JSON.stringify(rows.gameweeks),
   });
 }
 

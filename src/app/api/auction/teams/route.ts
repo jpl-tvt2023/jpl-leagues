@@ -5,6 +5,7 @@ import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { computeAuctionStandings } from "@/lib/formats/auction/standings";
 import { fetchElementInfo } from "@/lib/fpl";
+import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 
 /**
  * GET /api/auction/teams?leagueId=xxx
@@ -52,14 +53,15 @@ export async function GET(request: NextRequest) {
     .from(auctionOwnership)
     .where(and(eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.status, "active")));
 
-  // Per-player accumulated points per team (for FMV + top performer)
-  // key: `${teamId}:${elementId}` -> points
+  // Per-player accumulated RAW points per team (for FMV + top performer). FMV uses raw only per
+  // locked spec — no synergy in FMV. Tolerate both new ({rawPoints}) and legacy ({points}) shapes.
   const playerPointsByTeam = new Map<string, number>();
   for (const s of scores) {
-    const breakdown = JSON.parse(s.playerBreakdown || "[]") as { elementId: number; points: number }[];
+    const breakdown = JSON.parse(s.playerBreakdown || "[]") as Array<{ elementId: number; points?: number; rawPoints?: number }>;
     for (const p of breakdown) {
+      const pts = p.rawPoints ?? p.points ?? 0;
       const key = `${s.teamId}:${p.elementId}`;
-      playerPointsByTeam.set(key, (playerPointsByTeam.get(key) ?? 0) + p.points);
+      playerPointsByTeam.set(key, (playerPointsByTeam.get(key) ?? 0) + pts);
     }
   }
 
@@ -86,11 +88,16 @@ export async function GET(request: NextRequest) {
   const elementName = new Map<number, string>();
   for (const e of elements) elementName.set(e.id, e.web_name);
 
+  // PL Club Auction rename: a team that owns Liverpool displays as "Liverpool" everywhere.
+  // One DB query for the whole league; downstream consumers also get `ownedClub` for the tier chip.
+  const clubByTeamId = await fetchClubOwnershipMap(leagueId);
+
   const teamList = standings.map((s) => {
     const tp = topPerformerByTeam.get(s.teamId);
+    const ownedClub = clubByTeamId.get(s.teamId) ?? null;
     return {
       teamId: s.teamId,
-      name: s.teamName,
+      name: ownedClub?.plTeamName ?? s.teamName,
       rank: s.rank,
       totalPoints: s.totalPoints,
       purse: s.purse,
@@ -100,6 +107,7 @@ export async function GET(request: NextRequest) {
         ? { name: elementName.get(tp.elementId) ?? `#${tp.elementId}`, points: tp.points }
         : null,
       isMine: s.teamId === myTeamId,
+      ownedClub,
     };
   });
 

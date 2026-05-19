@@ -306,15 +306,25 @@ export const challengerSurvivalEntries = sqliteTable("challenger_survival_entrie
 // League backups — JSON snapshots of teams/fixtures/captains/chips in importable shape.
 // One row per (leagueId, trigger) combo when trigger="gw1-lock"; many rows allowed for "manual".
 // JSON columns store ROW ARRAYS (not binary xlsx) so future formatting changes don't lock us in.
+// Auction-specific columns: teams-state (purse/totalSpent/etc.), squads (auction_ownership rows),
+// clubs (auction_club_ownership rows), gameweeks (so a fresh restore knows the GW shape).
 export const backups = sqliteTable("backups", {
   id: text("id").primaryKey(),
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
-  trigger: text("trigger").notNull(), // "gw1-lock" | "manual"
+  trigger: text("trigger").notNull(), // "gw1-lock" | "manual" | "auction-complete"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   teamsJson: text("teams_json"),       // null when format === "auction"
   fixturesJson: text("fixtures_json").notNull(),
   captainsJson: text("captains_json"), // null when format === "auction"
   chipsJson: text("chips_json"),       // null when format !== "tvt"
+  // Auction format: per-team economy + squad + club snapshots. Populated only for auction leagues;
+  // null for TVT/triple-crown. Restore reads these to rebuild ownership state then admins reprocess GWs.
+  auctionTeamsStateJson: text("auction_teams_state_json"),
+  auctionSquadsJson: text("auction_squads_json"),
+  auctionClubsJson: text("auction_clubs_json"),
+  // Gameweeks list — id/number/deadline/isPlayoffs — preserved so restore can recreate GW rows when
+  // restoring into a fresh league (or repair missing GW rows).
+  gameweeksJson: text("gameweeks_json"),
 });
 
 // Admin-configurable settings (key-value store, scoped per league)
