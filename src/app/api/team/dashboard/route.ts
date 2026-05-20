@@ -1085,6 +1085,9 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         return {
           id: at.id,
           name: ownedClub?.plTeamName ?? at.name,
+          // Compact 3-letter form for cramped surfaces (dashboard mini-table). Falls back to the
+          // first 3 chars of the team name when no club is owned.
+          shortName: ownedClub?.plTeamShort ?? at.name.slice(0, 3).toUpperCase(),
           totalPoints: teamPointsMap.get(at.id) || 0,
           ownedClub,
         };

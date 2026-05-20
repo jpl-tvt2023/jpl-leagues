@@ -388,7 +388,7 @@ interface AuctionDashboardData {
   squad: { id: string; fplElementId: number; playerName: string; purchasePrice: number; acquiredGw: number; status: string; elementType: number | null; totalPoints: number }[];
   rank: number;
   totalManagers: number;
-  standings: { id: string; name: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
+  standings: { id: string; name: string; shortName: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
   gwHistory: { gameweek: number; points: number; rank: number | null; income: number }[];
   lastGwResult: { gameweek: number; points: number; rank: number | null; income: number } | null;
   auctionSession: { id: string; type: string; status: string } | null;
@@ -646,8 +646,11 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 w-6">#{s.rank}</span>
-                      <span className={`text-sm ${s.isCurrentTeam ? "text-yellow-300 font-semibold" : "text-white"}`}>
-                        {s.name}
+                      <span
+                        className={`text-sm font-mono ${s.isCurrentTeam ? "text-yellow-300 font-semibold" : "text-white"}`}
+                        title={s.name}
+                      >
+                        {s.shortName}
                       </span>
                     </div>
                     <span className="text-sm text-white font-mono">{s.totalPoints}</span>

@@ -4,6 +4,7 @@
 import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, tradeProposals, gameweeks } from "../../db";
 import { eq, and, or } from "drizzle-orm";
 import { calculateRefund } from "./economy";
+import { getPlTeamFullName } from "../../data/pl-team-full-names";
 
 export type TransactionType =
   | "initial_budget"
@@ -126,16 +127,19 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
 
   // 1b. PL Club purchase (one-time, non-tradeable). Sorts by acquiredAt so it shows pre-player-auction.
   for (const c of clubOwnership) {
+    // Normalise legacy rows (stored as FPL short form) to the full PL name. Keeps the ledger
+    // description and metadata consistent with what the UI shows everywhere else.
+    const clubName = getPlTeamFullName(c.plTeamId, c.plTeamName);
     entries.push({
       id: `club-${c.id}`,
       type: "club_purchase",
       date: c.acquiredAt.toISOString(),
       gw: 0,
-      description: `Bought ${c.plTeamName} (${c.tier})`,
+      description: `Bought ${clubName} (${c.tier})`,
       amount: -c.purchasePrice,
       isPending: false,
       metadata: {
-        playerName: c.plTeamName,
+        playerName: clubName,
         purchasePrice: c.purchasePrice,
       },
     });

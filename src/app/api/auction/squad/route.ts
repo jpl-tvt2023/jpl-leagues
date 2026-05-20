@@ -11,6 +11,7 @@ import {
   effectiveMaxSquadSize,
   nextBonusSlotCost,
 } from "@/lib/formats/auction/squad-rules";
+import { getPlTeamFullName } from "@/lib/data/pl-team-full-names";
 
 // Mirrors the constants in redeem-slot/route.ts. Surfaces the cheapest redeem cost so the slot-
 // status UI can render the inline Redeem button without a second API call.
@@ -133,7 +134,8 @@ export async function GET(request: NextRequest) {
   const ownedClub = clubRow[0]
     ? {
         plTeamId: clubRow[0].plTeamId,
-        plTeamName: clubRow[0].plTeamName,
+        // Normalise legacy rows to the full PL name; new writes are already full names.
+        plTeamName: getPlTeamFullName(clubRow[0].plTeamId, clubRow[0].plTeamName),
         plTeamShort: clubRow[0].plTeamShort,
         tier: clubRow[0].tier as ClubTier,
       }

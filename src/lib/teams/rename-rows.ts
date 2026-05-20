@@ -16,6 +16,7 @@ import { db } from "@/lib/db";
 import { auctionClubOwnership } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import type { ClubTier } from "@/lib/db/schema";
+import { getPlTeamFullName } from "@/lib/data/pl-team-full-names";
 
 export interface TeamRenameOwnership {
   plTeamId: number;
@@ -39,7 +40,9 @@ export async function fetchClubOwnershipMap(leagueId: string): Promise<Map<strin
   for (const r of rows) {
     map.set(r.teamId, {
       plTeamId: r.plTeamId,
-      plTeamName: r.plTeamName,
+      // Normalise legacy rows (stored as FPL short form) to the full PL name. New writes are already
+      // full names, but this read-side override means we don't need a one-off backfill.
+      plTeamName: getPlTeamFullName(r.plTeamId, r.plTeamName),
       plTeamShort: r.plTeamShort,
       tier: r.tier as ClubTier,
     });
