@@ -105,11 +105,9 @@ export function HelpTabBar({
   );
 }
 
-export function SectionDivider({ title, color }: { title: string; color: "yellow" | "purple" }) {
-  const cls = color === "yellow" ? "text-yellow-400 bg-yellow-400/20" : "text-purple-400 bg-purple-400/20";
-  const text = color === "yellow" ? "text-yellow-400" : "text-purple-400";
-  const line = color === "yellow" ? "bg-yellow-400/20" : "bg-purple-400/20";
-  void cls;
+export function SectionDivider({ title, color }: { title: string; color: "yellow" | "purple" | "orange" }) {
+  const text = color === "yellow" ? "text-yellow-400" : color === "orange" ? "text-orange-400" : "text-purple-400";
+  const line = color === "yellow" ? "bg-yellow-400/20" : color === "orange" ? "bg-orange-400/20" : "bg-purple-400/20";
   return (
     <h2 className={`text-lg font-bold ${text} mb-3 flex items-center gap-2`}>
       <span className={`h-px flex-1 ${line}`} />

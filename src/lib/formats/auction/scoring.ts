@@ -140,7 +140,10 @@ export async function calculateAuctionTeamScore(
     const result = await computeClubResultBonus(ownedClubPlTeamId, ownedClubTier, gameweek);
     if (result) {
       clubResultBonus = result.bonus;
-      clubResultSummary = `${clubRow[0].plTeamName} (${ownedClubTier}): ${result.summary} = +${result.bonus}`;
+      // Persist just the clean scoreline (e.g. "Brentford 3-0 Man Utd → +3"). The club name + tier
+      // are implied by the tooltip's column context; consumers prepend "GWn -" when rendering across
+      // multiple GWs.
+      clubResultSummary = result.summary;
     } else {
       // FPL outage — caller logs; default to 0 for now.
       clubResultSummary = `${clubRow[0].plTeamName}: result unavailable (FPL fixtures fetch failed)`;

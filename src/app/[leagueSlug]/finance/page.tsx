@@ -10,6 +10,7 @@ import { useEnforceFormat } from "@/lib/league-context";
 type TransactionType =
   | "initial_budget"
   | "purchase"
+  | "club_purchase"
   | "release_refund"
   | "pending_release"
   | "gw_payout"
@@ -66,6 +67,7 @@ function formatCurrency(amount: number): string {
 const TYPE_STYLES: Record<TransactionType, { label: string; badge: string }> = {
   initial_budget: { label: "Initial", badge: "bg-gray-500/20 text-gray-300 border-gray-500/40" },
   purchase: { label: "Purchase", badge: "bg-red-500/20 text-red-300 border-red-500/40" },
+  club_purchase: { label: "Club", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
   release_refund: { label: "Refund", badge: "bg-green-500/20 text-green-300 border-green-500/40" },
   pending_release: { label: "Pending Release", badge: "bg-orange-500/20 text-orange-300 border-orange-500/40" },
   gw_payout: { label: "GW Payout", badge: "bg-blue-500/20 text-blue-300 border-blue-500/40" },
@@ -74,6 +76,8 @@ const TYPE_STYLES: Record<TransactionType, { label: string; badge: string }> = {
   trade_swap: { label: "Trade Swap", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
   transfer_fee: { label: "Trade Tax", badge: "bg-red-500/20 text-red-300 border-red-500/40" },
 };
+
+const FALLBACK_STYLE = { label: "Other", badge: "bg-gray-500/20 text-gray-300 border-gray-500/40" };
 
 export default function FinancePage() {
   useEnforceFormat(["auction"]);
@@ -211,7 +215,9 @@ export default function FinancePage() {
                       </tr>
                     ) : (
                       filtered.map((e) => {
-                        const style = TYPE_STYLES[e.type];
+                        // Fallback guards against future TransactionType values that haven't been
+                        // mirrored into TYPE_STYLES — without this the page crashed on `club_purchase`.
+                        const style = TYPE_STYLES[e.type] ?? { ...FALLBACK_STYLE, label: e.type };
                         return (
                           <tr
                             key={e.id}

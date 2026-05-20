@@ -214,6 +214,40 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
     },
   ];
 
+  const adminFaqs: FaqEntry[] = [
+    {
+      question: "How do I back up and restore auction state?",
+      answer: (
+        <div className="space-y-2">
+          <p>
+            <strong className="text-white">Take Backup Now</strong> (Admin → Bulk Upload tab) saves a snapshot of every auction artefact — ownership, clubs, per-team economy, sessions, and scores — into the <code className="text-gray-200">backups</code> table. The system also auto-snapshots immediately after GW1 is scored.
+          </p>
+          <p>
+            <strong className="text-white">Restore from Backup</strong> (the button next to Take Backup) opens a modal where you choose either a saved snapshot or upload a previously-downloaded <code className="text-gray-200">.zip</code>. Confirming will <strong className="text-red-300">wipe</strong> current auction state and rebuild it from the chosen backup.
+          </p>
+          <p>
+            After restore, head to the <strong className="text-white">Scoring</strong> tab and reprocess each GW — scores regenerate from the restored ownership, standings and dashboards repopulate automatically.
+          </p>
+        </div>
+      ),
+    },
+  ];
+
+  const adminScenarios: ScenarioEntry[] = [
+    {
+      number: 1,
+      title: "Restore auction state from a backup",
+      steps: [
+        "Open Admin → Bulk Upload tab.",
+        "Click Restore from Backup. The modal lists every saved snapshot (auto-GW1 + any manual ones), most recent first.",
+        "Pick the snapshot you want — or switch to Upload .zip and drop a backup file you previously downloaded.",
+        "Confirm. The endpoint wipes current ownership/clubs/sessions/scores and rebuilds everything from the snapshot payload.",
+        "Go to the Scoring tab and click Reprocess on each affected GW so scores match the restored squad state.",
+        "Verify the dashboards and standings reflect the restored state.",
+      ],
+    },
+  ];
+
   const publicScenarios: ScenarioEntry[] = [
     {
       number: 1,
@@ -323,6 +357,24 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
             </div>
           )}
 
+          {userRole === "admin" && (
+            <div>
+              <SectionDivider title="Admin" color="orange" />
+              <div className="space-y-3">
+                {adminFaqs.map((faq, i) => (
+                  <AccordionItem
+                    key={generalFaqs.length + teamFaqs.length + i}
+                    index={generalFaqs.length + teamFaqs.length + i}
+                    question={faq.question}
+                    answer={faq.answer}
+                    openIndex={openIndex}
+                    setOpenIndex={setOpenIndex}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {userRole === "public" && (
             <PublicSignInPrompt message="Sign in to see team-specific FAQs about nomination timers, slot deduction, trades, and your wishlist." />
           )}
@@ -345,6 +397,17 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
               <SectionDivider title="Team Members" color="purple" />
               <div className="space-y-4">
                 {teamScenarios.map((s) => (
+                  <ScenarioCard key={s.number} number={s.number} title={s.title} steps={s.steps} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {userRole === "admin" && (
+            <div>
+              <SectionDivider title="Admin" color="orange" />
+              <div className="space-y-4">
+                {adminScenarios.map((s) => (
                   <ScenarioCard key={s.number} number={s.number} title={s.title} steps={s.steps} />
                 ))}
               </div>

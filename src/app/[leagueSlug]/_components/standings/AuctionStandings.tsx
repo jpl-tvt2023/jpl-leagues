@@ -10,6 +10,7 @@ import { TierChip } from "@/components/TierChip";
 import type { TeamClubOwnership } from "@/lib/teams/display-name";
 import { getTeamDisplayName } from "@/lib/teams/display-name";
 import { formatPts } from "@/lib/format-points";
+import { normalizeClubSummary } from "@/lib/formats/auction/club-summary";
 
 interface AuctionGwHistoryEntry {
   gw: number;
@@ -109,6 +110,9 @@ export function AuctionStandings() {
           gwRank: entry.rank,
           squadValue: s.squadValue,
           purse: s.purse,
+          synergyBonus: entry.synergyBonus,
+          clubResultBonus: entry.clubResultBonus,
+          clubResultSummary: normalizeClubSummary(entry.clubResultSummary),
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -163,12 +167,14 @@ export function AuctionStandings() {
                     </div>
                     <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/5 overflow-hidden backdrop-blur">
                       <div className="overflow-x-auto">
-                      <table className="w-full text-left min-w-[520px]">
+                      <table className="w-full text-left min-w-[640px]">
                         <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
                           <tr>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">GW Points</th>
+                            <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="+50% bonus on owned-club players (this GW)">Syn</th>
+                            <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Club W/D bonus (this GW)">Club</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Squad Value</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Purse</th>
@@ -198,6 +204,15 @@ export function AuctionStandings() {
                                 </div>
                               </td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{formatPts(r.points)}</td>
+                              <td className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${r.synergyBonus > 0 ? "text-yellow-300 font-bold" : "text-gray-600"}`}>
+                                {r.synergyBonus > 0 ? `+${formatPts(r.synergyBonus)}` : "0"}
+                              </td>
+                              <td
+                                className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${r.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
+                                title={r.clubResultBonus > 0 && r.clubResultSummary ? `${r.clubResultSummary} points` : undefined}
+                              >
+                                {r.clubResultBonus > 0 ? `+${r.clubResultBonus}` : "0"}
+                              </td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">{formatCurrency(r.payout)}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(r.squadValue)}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(r.purse)}</td>
@@ -289,7 +304,7 @@ export function AuctionStandings() {
                                 row.clubResultBonus > 0
                                   ? row.gwHistory
                                       .filter((h) => h.clubResultBonus > 0 && h.clubResultSummary)
-                                      .map((h) => `GW${h.gw}: ${h.clubResultSummary}`)
+                                      .map((h) => `GW${h.gw} - ${normalizeClubSummary(h.clubResultSummary)} points`)
                                       .join("\n") || undefined
                                   : undefined
                               }

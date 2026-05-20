@@ -34,8 +34,10 @@ export default function SetupPage() {
   const [errors, setErrors] = useState<Errors>({});
   const [nameCheckLoading, setNameCheckLoading] = useState(false);
   const [leagueFormat, setLeagueFormat] = useState<string>("tvt");
+  const [clubAuctionEnabled, setClubAuctionEnabled] = useState(false);
 
   const isAuction = leagueFormat === "auction";
+  const hideTeamName = isAuction && clubAuctionEnabled;
   const totalSteps = isAuction ? 1 : 3;
 
   const [formData, setFormData] = useState<SetupState>({
@@ -66,6 +68,9 @@ export default function SetupPage() {
         // Store league format for conditional UI
         if (me.leagueFormat) {
           setLeagueFormat(me.leagueFormat);
+        }
+        if (typeof me.clubAuctionEnabled === "boolean") {
+          setClubAuctionEnabled(me.clubAuctionEnabled);
         }
 
         // If already completed setup, redirect to dashboard
@@ -144,7 +149,9 @@ export default function SetupPage() {
       newErrors.teamLoginId = "Must be 3–20 alphanumeric/underscore/hyphen characters";
     }
 
-    if (!formData.teamName.trim()) {
+    // Club-auction leagues override the manager name with the owned PL club's name everywhere,
+    // so we skip the name field — the admin-assigned default (currentTeamName) is sent on submit.
+    if (!hideTeamName && !formData.teamName.trim()) {
       newErrors.teamName = isAuction ? "Name is required" : "Team name is required";
     }
 
@@ -299,24 +306,30 @@ export default function SetupPage() {
                 </p>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-white mb-2">{isAuction ? "Your Name" : "Team Name"}</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={formData.teamName}
-                    onChange={(e) => handleInputChange("teamName", e.target.value)}
-                    onBlur={(e) => handleTeamNameBlur(e.target.value)}
-                    placeholder={isAuction ? "Rahul Gupta" : "DM — Rahul"}
-                    className="flex-1 rounded-lg border border-white/20 bg-black/40 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
-                  />
-                  {nameCheckLoading && <span className="text-xs text-gray-400">Checking...</span>}
+              {hideTeamName ? (
+                <div className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-4 py-3 text-sm text-purple-200">
+                  Your team will display as the PL club you buy in the club auction — no display name needed.
                 </div>
-                {errors.teamName && <p className="text-red-400 text-xs mt-1">{errors.teamName}</p>}
-                <p className="text-gray-500 text-xs mt-2">
-                  Your display name. Must be unique within the league.
-                </p>
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-semibold text-white mb-2">{isAuction ? "Your Name" : "Team Name"}</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={formData.teamName}
+                      onChange={(e) => handleInputChange("teamName", e.target.value)}
+                      onBlur={(e) => handleTeamNameBlur(e.target.value)}
+                      placeholder={isAuction ? "Rahul Gupta" : "DM — Rahul"}
+                      className="flex-1 rounded-lg border border-white/20 bg-black/40 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
+                    />
+                    {nameCheckLoading && <span className="text-xs text-gray-400">Checking...</span>}
+                  </div>
+                  {errors.teamName && <p className="text-red-400 text-xs mt-1">{errors.teamName}</p>}
+                  <p className="text-gray-500 text-xs mt-2">
+                    Your display name. Must be unique within the league.
+                  </p>
+                </div>
+              )}
 
             </div>
           )}
