@@ -498,6 +498,18 @@ export const teamPenalties = sqliteTable("team_penalties", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
+// Audit trail for bonus-slot unlocks (slots 15 + 16). Feeds the finance ledger so each unlock is
+// visible as a "Slot Unlock" outflow. Without this table the unlock cost (£10M / £25M) would only
+// live in the aggregate `teams.totalSpent` counter — invisible per-event in the UI.
+export const teamSlotUnlocks = sqliteTable("team_slot_unlocks", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  slotNumber: integer("slot_number").notNull(), // 15 or 16
+  cost: integer("cost").notNull(),
+  unlockedAt: integer("unlocked_at", { mode: "timestamp" }).notNull(),
+});
+
 // Trade proposals — P2P marketplace with veto system
 export const tradeProposals = sqliteTable("trade_proposals", {
   id: text("id").primaryKey(),

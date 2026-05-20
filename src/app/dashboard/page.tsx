@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { NotificationBell } from "@/components/NotificationBell";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
+import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
 
 // Types
 interface DashboardData {
@@ -357,6 +358,14 @@ const EXPENSE_ROWS: Array<{ key: keyof AuctionDashboardData["expenseBreakdown"][
   { key: "trade_cash_out",   label: "Trade cash out" },
   { key: "trade_swap",       label: "Trade swap cash" },
   { key: "transfer_fee",     label: "Transfer tax" },
+  { key: "slot_unlock",      label: "Slot unlocks (15/16)" },
+  { key: "slot_redeem",      label: "Penalty slot buyback" },
+];
+
+const INCOME_ROWS: Array<{ key: keyof AuctionDashboardData["incomeBreakdown"]["byType"]; label: string }> = [
+  { key: "gw_payout",      label: "GW payouts" },
+  { key: "trade_cash_in",  label: "Trade cash in" },
+  { key: "release_refund", label: "Release refunds" },
 ];
 
 // ===== Auction Dashboard Types & Component =====
@@ -380,12 +389,22 @@ interface AuctionDashboardData {
       trade_cash_out: number;
       trade_swap: number;
       transfer_fee: number;
+      slot_unlock: number;
+      slot_redeem: number;
+    };
+  };
+  incomeBreakdown: {
+    total: number;
+    byType: {
+      gw_payout: number;
+      trade_cash_in: number;
+      release_refund: number;
     };
   };
   totalPoints: number;
   squadValue: number;
   squadSize: number;
-  squad: { id: string; fplElementId: number; playerName: string; purchasePrice: number; acquiredGw: number; status: string; elementType: number | null; totalPoints: number }[];
+  squad: { id: string; fplElementId: number; playerName: string; purchasePrice: number; fmv: number; acquiredGw: number; status: string; elementType: number | null; totalPoints: number }[];
   rank: number;
   totalManagers: number;
   standings: { id: string; name: string; shortName: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
@@ -403,9 +422,19 @@ function formatCurrency(value: number): string {
   return `£${value}`;
 }
 
+function PurseRow({ label, amount }: { label: string; amount: number }) {
+  const sign = amount >= 0 ? "+" : "−";
+  const color = amount >= 0 ? "text-green-300" : "text-red-300";
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+      <span className="text-sm text-gray-200">{label}</span>
+      <span className={`text-sm font-mono ${color}`}>{sign}{formatCurrency(Math.abs(amount))}</span>
+    </div>
+  );
+}
+
 function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashboardData; leagueSlug: string; onSignOut: () => void }) {
   const router = useRouter();
-  const netPnL = data.initialBudget + data.totalIncome + data.totalRefunds - data.totalSpent;
 
   const POS_LABEL: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
   const positionCounts = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<number, number>;
@@ -478,38 +507,96 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           </div>
         )}
 
-        {/* Economy Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-6">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur">
-            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Purse</div>
-            <div className="text-xl sm:text-2xl font-bold text-green-400">{formatCurrency(data.purse)}</div>
-            <div className="text-xs text-gray-500 mt-1">Available to bid</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur">
-            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Squad Value</div>
-            <div className="text-xl sm:text-2xl font-bold text-white">{formatCurrency(data.squadValue)}</div>
-            <div className="text-xs text-gray-500 mt-1">{data.squadSize}/14 players</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur">
-            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Income Earned</div>
-            <div className="text-xl sm:text-2xl font-bold text-blue-400">{formatCurrency(data.totalIncome)}</div>
-            <div className="text-xs text-gray-500 mt-1">From GW payouts</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur">
-            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Net P&amp;L</div>
-            <div className={`text-xl sm:text-2xl font-bold ${netPnL >= 0 ? "text-green-400" : "text-red-400"}`}>
-              {netPnL >= 0 ? "+" : ""}{formatCurrency(netPnL)}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">Budget + Income + Refunds − Spent</div>
-          </div>
-          <div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur cursor-default">
-            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Expenses</div>
-            <div className={`text-xl sm:text-2xl font-bold ${data.expenseBreakdown.total > 0 ? "text-red-400" : "text-gray-500"}`}>
-              {data.expenseBreakdown.total > 0 ? `-${formatCurrency(data.expenseBreakdown.total)}` : "£0"}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">Since club auction</div>
-            {data.expenseBreakdown.total > 0 && (
-              <div className="hidden group-hover:block absolute z-20 right-0 top-full mt-2 w-72 rounded-xl border border-white/10 bg-slate-800/95 backdrop-blur-xl shadow-xl p-3">
+        {/* Economy Grid — 4 cards, every popover portalled via EconomyCard so it can't be clipped by
+            sibling stacking contexts (Last Gameweek / Standings panels below have backdrop-blur). */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+          <EconomyCard
+            label="Purse"
+            value={formatCurrency(data.purse)}
+            valueClass="text-green-400"
+            caption="Available to bid"
+            tooltip={
+              <>
+                <div className="text-xs text-gray-400 font-semibold mb-2 uppercase tracking-wider">Purse Calculation</div>
+                <PurseRow label="Initial budget"     amount={data.initialBudget} />
+                <PurseRow label="GW + trade income"  amount={data.totalIncome} />
+                <PurseRow label="Release refunds"    amount={data.totalRefunds} />
+                <PurseRow label="Total spent"        amount={-data.totalSpent} />
+                <div className="flex items-center justify-between pt-2 mt-1 border-t border-white/10">
+                  <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Available</span>
+                  <span className="text-sm font-mono font-bold text-green-400">{formatCurrency(data.purse)}</span>
+                </div>
+              </>
+            }
+          />
+
+          <EconomyCard
+            label="Squad Value"
+            value={formatCurrency(data.squadValue)}
+            caption={`${data.squadSize}/14 players`}
+            tooltipWidth={340}
+            tooltip={
+              <>
+                <div className="text-xs text-gray-400 font-semibold mb-2 uppercase tracking-wider">Squad Value (FMV)</div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500">
+                      <th className="text-left font-normal pb-1">Player</th>
+                      <th className="text-right font-normal pb-1">Bought</th>
+                      <th className="text-right font-normal pb-1">FMV</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.squad.filter(p => p.status === "active").map(p => (
+                      <tr key={p.id} className="border-t border-white/5">
+                        <td className="py-1 text-gray-200 truncate max-w-[140px]">{p.playerName}</td>
+                        <td className="py-1 text-right font-mono text-gray-400">{formatCurrency(p.purchasePrice)}</td>
+                        <td className={`py-1 text-right font-mono ${p.fmv > p.purchasePrice ? "text-green-300" : "text-gray-200"}`}>
+                          {formatCurrency(p.fmv)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="flex items-center justify-between pt-2 mt-1 border-t border-white/10">
+                  <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Total</span>
+                  <span className="text-sm font-mono font-bold text-white">{formatCurrency(data.squadValue)}</span>
+                </div>
+              </>
+            }
+          />
+
+          <EconomyCard
+            label="Income"
+            value={data.incomeBreakdown.total > 0 ? `+${formatCurrency(data.incomeBreakdown.total)}` : "£0"}
+            valueClass={data.incomeBreakdown.total > 0 ? "text-blue-400" : "text-gray-500"}
+            caption="Since club auction"
+            tooltip={data.incomeBreakdown.total > 0 ? (
+              <>
+                <div className="text-xs text-gray-400 font-semibold mb-2 uppercase tracking-wider">Income Breakdown</div>
+                {INCOME_ROWS
+                  .filter(({ key }) => (data.incomeBreakdown.byType[key] ?? 0) > 0)
+                  .map(({ key, label }) => (
+                    <div key={key} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                      <span className="text-sm text-gray-200">{label}</span>
+                      <span className="text-sm font-mono text-blue-300">+{formatCurrency(data.incomeBreakdown.byType[key])}</span>
+                    </div>
+                  ))}
+                <div className="flex items-center justify-between pt-2 mt-1 border-t border-white/10">
+                  <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Total</span>
+                  <span className="text-sm font-mono font-bold text-blue-400">+{formatCurrency(data.incomeBreakdown.total)}</span>
+                </div>
+              </>
+            ) : undefined}
+          />
+
+          <EconomyCard
+            label="Expenses"
+            value={data.expenseBreakdown.total > 0 ? `-${formatCurrency(data.expenseBreakdown.total)}` : "£0"}
+            valueClass={data.expenseBreakdown.total > 0 ? "text-red-400" : "text-gray-500"}
+            caption="Since club auction"
+            tooltip={data.expenseBreakdown.total > 0 ? (
+              <>
                 <div className="text-xs text-gray-400 font-semibold mb-2 uppercase tracking-wider">Expense Breakdown</div>
                 {EXPENSE_ROWS
                   .filter(({ key }) => (data.expenseBreakdown.byType[key] ?? 0) > 0)
@@ -523,9 +610,9 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                   <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Total</span>
                   <span className="text-sm font-mono font-bold text-red-400">-{formatCurrency(data.expenseBreakdown.total)}</span>
                 </div>
-              </div>
-            )}
-          </div>
+              </>
+            ) : undefined}
+          />
         </div>
 
         {/* Main Grid */}
