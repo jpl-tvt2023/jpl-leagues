@@ -11,7 +11,36 @@ export async function GET(request: NextRequest) {
   if (!isSuperAdmin(request)) {
     return NextResponse.json({ error: "Superadmin access required" }, { status: 403 });
   }
-  const all = await db.select().from(leagues).orderBy(leagues.createdAt);
+  // Defensive: schema may include columns (e.g. auction_tier) that lag the prod migration. Fall back
+  // to a minimal projection so the admin can still see/manage existing leagues until the migration
+  // is applied. Newly-added columns receive their TypeScript-side defaults.
+  let all: Array<typeof leagues.$inferSelect>;
+  try {
+    all = await db.select().from(leagues).orderBy(leagues.createdAt);
+  } catch (err) {
+    console.warn("[superadmin/leagues] full SELECT failed — falling back to minimal projection. Pending migration?", err);
+    const fallback = await db
+      .select({
+        id: leagues.id,
+        slug: leagues.slug,
+        name: leagues.name,
+        sport: leagues.sport,
+        format: leagues.format,
+        season: leagues.season,
+        isActive: leagues.isActive,
+        teamSize: leagues.teamSize,
+        groupCount: leagues.groupCount,
+        playoffStartGw: leagues.playoffStartGw,
+        enabledChips: leagues.enabledChips,
+        initialBudget: leagues.initialBudget,
+        isSimulated: leagues.isSimulated,
+        clubAuctionEnabled: leagues.clubAuctionEnabled,
+        createdAt: leagues.createdAt,
+      })
+      .from(leagues)
+      .orderBy(leagues.createdAt);
+    all = fallback.map((row) => ({ ...row, auctionTier: "complete" as const }));
+  }
 
   // Attach quick stats to each league
   const leaguesWithStats = await Promise.all(
