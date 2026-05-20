@@ -38,13 +38,15 @@ interface SlotStatusProps {
   onRedeem?: () => void | Promise<void>;
   /** Compact mode: tighter spacing, no action buttons (read-only views on Teams page / Admin). */
   compact?: boolean;
+  /** Auction-tier gating: when "primary", slot expansion (15/16 unlock) is hidden entirely. */
+  auctionTier?: "primary" | "complete" | null;
 }
 
 function formatM(value: number): string {
   return `£${(value / 1_000_000).toFixed(1)}M`;
 }
 
-export function SlotStatus({ slotStatus, onUnlock, onRedeem, compact }: SlotStatusProps) {
+export function SlotStatus({ slotStatus, onUnlock, onRedeem, compact, auctionTier }: SlotStatusProps) {
   const {
     active,
     effectiveMax,
@@ -58,6 +60,7 @@ export function SlotStatus({ slotStatus, onUnlock, onRedeem, compact }: SlotStat
     redeemableCost,
     canRedeem,
   } = slotStatus;
+  const isPrimaryTier = auctionTier === "primary";
 
   const isFull = open === 0;
   const sizing = compact
@@ -110,8 +113,9 @@ export function SlotStatus({ slotStatus, onUnlock, onRedeem, compact }: SlotStat
         </>
       )}
 
-      {/* Locked segment — grey/blue. Only shown when there are still bonus slots to unlock. */}
-      {lockedCount > 0 && (
+      {/* Locked segment — grey/blue. Only shown when there are still bonus slots to unlock.
+          In Primary tier the entire segment is hidden (slot expansion is disabled). */}
+      {lockedCount > 0 && !isPrimaryTier && (
         <>
           <span className="text-gray-600">·</span>
           <span className="text-slate-400 font-medium inline-flex items-center gap-1" title={`Slot ${slotStatus.baseCap + bonusSlots + 1}${lockedCount === 2 ? `, slot ${slotStatus.baseCap + bonusSlots + 2}` : ""} locked — unlock with purse money`}>

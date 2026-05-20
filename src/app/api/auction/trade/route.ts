@@ -131,6 +131,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
   }
 
+  // Tier gate: Primary tier excludes trades entirely. UI hides the page; this enforces it server-side.
+  if (leagueRow[0].auctionTier === "primary") {
+    return NextResponse.json({ error: "Trades are not available in Primary tier" }, { status: 403 });
+  }
+
   if (await isAuctionLive(leagueId)) {
     return NextResponse.json(
       { error: "Marketplace is closed during a live auction" },
@@ -294,6 +299,13 @@ export async function PATCH(request: NextRequest) {
 
   if (proposal.status !== "pending") {
     return NextResponse.json({ error: "Proposal is no longer pending" }, { status: 400 });
+  }
+
+  // Tier gate: Primary tier excludes trades. Pending proposals from before a tier change still
+  // can't be accepted/rejected — they remain pending until they expire.
+  const leagueTierRow = await db.select({ auctionTier: leagues.auctionTier }).from(leagues).where(eq(leagues.id, proposal.leagueId)).limit(1);
+  if (leagueTierRow[0]?.auctionTier === "primary") {
+    return NextResponse.json({ error: "Trades are not available in Primary tier" }, { status: 403 });
   }
 
   if (await isAuctionLive(proposal.leagueId)) {

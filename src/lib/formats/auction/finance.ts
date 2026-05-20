@@ -106,12 +106,21 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     db.select().from(auctionClubOwnership).where(
       and(eq(auctionClubOwnership.leagueId, leagueId), eq(auctionClubOwnership.teamId, teamId))
     ),
+    // Defensive: a missing/lagging migration on either of these audit tables would otherwise crash
+    // the whole Finance + Dashboard pages (both consume this ledger). On error we degrade to an
+    // empty slot section — admin sees the page load, sees the warning, runs the migration.
     db.select().from(teamPenalties).where(
       and(eq(teamPenalties.leagueId, leagueId), eq(teamPenalties.teamId, teamId), isNotNull(teamPenalties.redeemedAt))
-    ),
+    ).catch((err) => {
+      console.warn("[buildTeamLedger] teamPenalties query failed (migration applied?)", err);
+      return [] as Array<typeof teamPenalties.$inferSelect>;
+    }),
     db.select().from(teamSlotUnlocks).where(
       and(eq(teamSlotUnlocks.leagueId, leagueId), eq(teamSlotUnlocks.teamId, teamId))
-    ),
+    ).catch((err) => {
+      console.warn("[buildTeamLedger] teamSlotUnlocks query failed (migration applied?)", err);
+      return [] as Array<typeof teamSlotUnlocks.$inferSelect>;
+    }),
   ]);
 
   const gwById = new Map<string, { number: number; deadline: Date }>();

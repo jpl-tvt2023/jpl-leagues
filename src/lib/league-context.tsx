@@ -18,6 +18,9 @@ export interface LeagueInfo {
   playoffStartGw: number;
   enabledChips: string[];
   initialBudget: number;
+  // Auction-only — "primary" disables trades + slot expansion. Default "complete" for legacy
+  // (TVT/triple-crown leagues default to "complete" too but never act on it).
+  auctionTier?: "primary" | "complete";
 }
 
 export interface ViewerInfo {

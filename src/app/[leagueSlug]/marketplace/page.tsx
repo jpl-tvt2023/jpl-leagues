@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { useEnforceFormat } from "@/lib/league-context";
+import { useEnforceFormat, useLeague } from "@/lib/league-context";
+import { isPrimary } from "@/lib/formats/auction/tier";
 
 interface TradeProposal {
   id: string;
@@ -77,6 +78,8 @@ function formatCurrency(amount: number): string {
 
 export default function MarketplacePage() {
   useEnforceFormat(["auction"]);
+  const { league } = useLeague();
+  const isPrimaryTier = isPrimary(league.auctionTier);
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
@@ -187,7 +190,11 @@ export default function MarketplacePage() {
     }
   }, [leagueSlug, router]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    // Skip the fetch when the league is on the Primary tier — the page renders a placeholder
+    // and the trade endpoints would 403 anyway.
+    if (!isPrimaryTier) load();
+  }, [load, isPrimaryTier]);
 
   // When user picks a target in the create modal, fetch their squad
   useEffect(() => {
@@ -398,13 +405,28 @@ export default function MarketplacePage() {
         leagueName={leagueSlug}
         currentPage="marketplace"
         format="auction"
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={true}
         dashboardHref="/dashboard"
         onSignOut={handleSignOut}
       />
 
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-10">
-        {isLoading ? (
+        {isPrimaryTier ? (
+          <div className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-5 sm:p-8 text-center">
+            <h1 className="text-2xl sm:text-3xl font-bold text-purple-200 mb-2">Trades not available in Primary tier</h1>
+            <p className="text-gray-300">
+              This league was created in the Primary tier, which excludes the Marketplace.
+              Upgrading to Complete unlocks player trades and slot expansion.
+            </p>
+            <Link
+              href="/dashboard"
+              className="mt-6 inline-block rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
+            >
+              Back to Dashboard
+            </Link>
+          </div>
+        ) : isLoading ? (
           <LoadingScreen variant="default" fullScreen={false} label="Loading Marketplace" />
         ) : error ? (
           <div className="text-center text-red-400 py-12">{error}</div>

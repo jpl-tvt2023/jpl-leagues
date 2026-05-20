@@ -59,6 +59,7 @@ export default function LeagueRulesPage() {
         currentPage="rules"
         format={isAuction ? "auction" : isTripleCrown ? "triple-crown" : "tvt"}
         teamSize={league.teamSize}
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={viewer.authenticated}
         dashboardHref={viewer.dashboardHref}
         onSignOut={handleSignOut}

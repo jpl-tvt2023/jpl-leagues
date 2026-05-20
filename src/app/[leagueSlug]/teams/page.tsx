@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TierChip } from "@/components/TierChip";
-import { useEnforceFormat } from "@/lib/league-context";
+import { useEnforceFormat, useLeague } from "@/lib/league-context";
 
 interface TeamCard {
   teamId: string;
@@ -120,6 +120,7 @@ function SortableTh({
 
 export default function TeamsPage() {
   useEnforceFormat(["auction"]);
+  const { league } = useLeague();
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
@@ -247,6 +248,7 @@ export default function TeamsPage() {
         leagueName={leagueSlug}
         currentPage="teams"
         format="auction"
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={isLoggedIn}
         dashboardHref="/dashboard"
         onSignOut={handleSignOut}

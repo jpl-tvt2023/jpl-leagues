@@ -133,6 +133,7 @@ export default function SuperAdminDashboard() {
     initialBudget: 100_000_000,
     isSimulated: false,
     clubAuctionEnabled: false,
+    auctionTier: "complete" as "primary" | "complete",
   });
   const [wizardSelectedAdminIds, setWizardSelectedAdminIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -364,6 +365,7 @@ export default function SuperAdminDashboard() {
           initialBudget: leagueForm.initialBudget,
           isSimulated: leagueForm.isSimulated,
           clubAuctionEnabled: leagueForm.clubAuctionEnabled,
+          auctionTier: leagueForm.auctionTier,
         }),
       });
       const data = await res.json();
@@ -386,7 +388,7 @@ export default function SuperAdminDashboard() {
       setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
       setShowWizard(false);
       setWizardStep("sport");
-      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false, clubAuctionEnabled: false });
+      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete" });
       setWizardSelectedAdminIds([]);
       setLeagues(prev => [...prev, { ...data, teamCount: 0, currentGameweek: null }]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
@@ -1151,7 +1153,7 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400 text-sm mt-1">Manage all leagues on the platform</p>
               </div>
               <button
-                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false, clubAuctionEnabled: false }); setMessage(null); }}
+                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete" }); setMessage(null); }}
                 className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
               >
                 + Create League
@@ -1231,6 +1233,7 @@ export default function SuperAdminDashboard() {
                                   initialBudget: 100_000_000,
                                   isSimulated: false,
                                   clubAuctionEnabled: false,
+                                  auctionTier: "complete",
                                 });
                               } else {
                                 setLeagueForm({ ...leagueForm, format: opt.value });
@@ -1421,6 +1424,39 @@ export default function SuperAdminDashboard() {
                                 <p className="text-gray-500 text-xs">Auto-assigns players via snake draft when session starts. Skips live auction.</p>
                               </div>
                             </label>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <p className="text-white text-sm font-medium mb-2">Auction Tier</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3 cursor-pointer hover:bg-white/10 transition">
+                                <input
+                                  type="radio"
+                                  name="auctionTier"
+                                  value="primary"
+                                  checked={leagueForm.auctionTier === "primary"}
+                                  onChange={() => setLeagueForm({ ...leagueForm, auctionTier: "primary" })}
+                                  className="mt-1 accent-yellow-400"
+                                />
+                                <div>
+                                  <p className="text-white text-sm font-medium">Primary</p>
+                                  <p className="text-gray-500 text-xs">Auction + GW payouts + penalty-slot redemption. <strong>No trades, no slot expansion.</strong></p>
+                                </div>
+                              </label>
+                              <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3 cursor-pointer hover:bg-white/10 transition">
+                                <input
+                                  type="radio"
+                                  name="auctionTier"
+                                  value="complete"
+                                  checked={leagueForm.auctionTier === "complete"}
+                                  onChange={() => setLeagueForm({ ...leagueForm, auctionTier: "complete" })}
+                                  className="mt-1 accent-yellow-400"
+                                />
+                                <div>
+                                  <p className="text-white text-sm font-medium">Complete</p>
+                                  <p className="text-gray-500 text-xs">All features: trades, slot 15/16 unlocks (£10M / £25M), redemption, club auction.</p>
+                                </div>
+                              </label>
+                            </div>
                           </div>
                           <div className="sm:col-span-2">
                             <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3 cursor-pointer hover:bg-white/10 transition">

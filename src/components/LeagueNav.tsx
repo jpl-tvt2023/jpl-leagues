@@ -12,6 +12,8 @@ export interface LeagueNavProps {
   format: "auction" | "triple-crown" | "tvt";
   /** Optional: when provided, distinguishes TVT-8 / TVT-16 / TVT-32 in the format chip. */
   teamSize?: number | null;
+  /** Auction-only: "primary" hides the Marketplace tab (trades disabled). Defaults to "complete". */
+  auctionTier?: "primary" | "complete" | null;
   isLoggedIn: boolean;
   dashboardHref: string;
   onSignOut: () => void;
@@ -48,12 +50,14 @@ export function LeagueNav({
   currentPage,
   format,
   teamSize = null,
+  auctionTier = null,
   isLoggedIn,
   dashboardHref,
   onSignOut,
 }: LeagueNavProps) {
   const isAuction = format === "auction";
   const isTripleCrown = format === "triple-crown";
+  const isPrimaryTier = isAuction && auctionTier === "primary";
   const palette = getFormatPalette(format, teamSize);
   const activeClass = palette.badgeText; // active link uses the palette accent color
 
@@ -106,7 +110,8 @@ export function LeagueNav({
             <NavLink href={`/${leagueSlug}/auction`} activeClass={activeClass} active={currentPage ==="auction"}>Auction</NavLink>
             <NavLink href={`/${leagueSlug}/squad`} activeClass={activeClass} active={currentPage ==="squad"}>Squad</NavLink>
             <NavLink href={`/${leagueSlug}/players`} activeClass={activeClass} active={currentPage ==="players"}>Players</NavLink>
-            {!auctionLive && (
+            {/* Trades are gated by auctionLive (mid-auction freeze) AND by tier (Primary disables). */}
+            {!auctionLive && !isPrimaryTier && (
               <NavLink href={`/${leagueSlug}/marketplace`} activeClass={activeClass} active={currentPage ==="marketplace"}>Marketplace</NavLink>
             )}
             <NavLink href={`/${leagueSlug}/finance`} activeClass={activeClass} active={currentPage ==="finance"}>Finance</NavLink>

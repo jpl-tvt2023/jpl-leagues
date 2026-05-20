@@ -8,7 +8,7 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { TierChip } from "@/components/TierChip";
 import { SlotStatus } from "@/components/SlotStatus";
 import type { ClubTier } from "@/lib/db/schema";
-import { useEnforceFormat } from "@/lib/league-context";
+import { useEnforceFormat, useLeague } from "@/lib/league-context";
 
 const CLUB_AUCTION_TYPE = "club-auction";
 
@@ -219,6 +219,7 @@ function RedeemPenaltyButton({ teamId, onRedeemed }: { teamId: string; onRedeeme
 
 export default function AuctionRoomPage() {
   useEnforceFormat(["auction"]);
+  const { league } = useLeague();
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
@@ -843,6 +844,7 @@ export default function AuctionRoomPage() {
         leagueName={leagueSlug}
         currentPage="auction"
         format="auction"
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={true}
         dashboardHref="/dashboard"
         onSignOut={handleSignOut}
@@ -899,6 +901,7 @@ export default function AuctionRoomPage() {
               <div className="mb-4">
                 <SlotStatus
                   slotStatus={mySlotStatus}
+                  auctionTier={league.auctionTier ?? "complete"}
                   onUnlock={async () => {
                     if (!myTeamId) return;
                     const cost = mySlotStatus.nextUnlockCost;

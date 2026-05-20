@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   const team = teamRow[0];
 
   const leagueRow = await db
-    .select({ id: leagues.id, format: leagues.format, initialBudget: leagues.initialBudget })
+    .select({ id: leagues.id, format: leagues.format, initialBudget: leagues.initialBudget, auctionTier: leagues.auctionTier })
     .from(leagues)
     .where(eq(leagues.id, team.leagueId))
     .limit(1);
@@ -56,6 +56,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
   }
   const league = leagueRow[0];
+
+  // Tier gate: Primary tier disables slot expansion entirely. UI hides the button; this enforces
+  // the same on the server in case the request is constructed directly.
+  if (league.auctionTier === "primary") {
+    return NextResponse.json({ error: "Slot expansion is not available in Primary tier" }, { status: 403 });
+  }
 
   // Already at the cap?
   const currentBonusSlots = team.bonusSlots ?? 0;

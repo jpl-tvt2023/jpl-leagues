@@ -53,13 +53,14 @@ export async function GET(request: NextRequest) {
       if (team) {
         // Fetch league format so the client knows which setup flow to use
         const leagueRow = await db
-          .select({ format: leagues.format, slug: leagues.slug, clubAuctionEnabled: leagues.clubAuctionEnabled })
+          .select({ format: leagues.format, slug: leagues.slug, clubAuctionEnabled: leagues.clubAuctionEnabled, auctionTier: leagues.auctionTier })
           .from(leagues)
           .where(eq(leagues.id, team.leagueId))
           .limit(1);
         const leagueFormat = leagueRow[0]?.format ?? "tvt";
         const leagueSlug = leagueRow[0]?.slug ?? null;
         const clubAuctionEnabled = leagueRow[0]?.clubAuctionEnabled ?? false;
+        const auctionTier = leagueRow[0]?.auctionTier ?? "complete";
 
         return NextResponse.json({
           authenticated: true,
@@ -67,6 +68,7 @@ export async function GET(request: NextRequest) {
           leagueFormat,
           leagueSlug,
           clubAuctionEnabled,
+          auctionTier,
           team: {
             id: team.id,
             name: team.name,

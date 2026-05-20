@@ -53,6 +53,10 @@ export const leagues = sqliteTable("leagues", {
   // owned players from that club + per-GW result bonus when the club wins/draws.
   clubAuctionEnabled: integer("club_auction_enabled", { mode: "boolean" }).notNull().default(false),
 
+  // JPL Auction tier: "primary" disables trades + slot expansion; "complete" enables everything.
+  // Penalty-slot redemption stays available in both tiers. Non-auction formats ignore this.
+  auctionTier: text("auction_tier", { enum: ["primary", "complete"] }).notNull().default("complete"),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 

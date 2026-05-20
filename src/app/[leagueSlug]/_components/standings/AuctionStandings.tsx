@@ -63,7 +63,10 @@ function ClubTooltipCell({ clubResultBonus, gwHistory, currentGwNumber, liveResu
               {Array.from({ length: currentGwNumber }, (_, i) => i + 1).map((gwN) => {
                 const h = gwHistory.find((x) => x.gw === gwN);
                 const scored = !!h;
-                const live = !scored ? liveResult : null;
+                // `liveResult` describes only the in-progress current GW. Earlier unscored GWs
+                // (admin hasn't processed them yet) should render as "yet to play", not inherit
+                // the current GW's scoreline.
+                const live = !scored && gwN === currentGwNumber ? liveResult : null;
                 const hasLive = !scored && !!live;
                 const summary = scored
                   ? (h!.clubResultSummary ? normalizeClubSummary(h!.clubResultSummary) : null)
@@ -230,6 +233,7 @@ export function AuctionStandings() {
         leagueName={leagueName}
         currentPage="standings"
         format="auction"
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
         onSignOut={handleSignOut}
