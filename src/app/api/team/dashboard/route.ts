@@ -7,6 +7,7 @@ import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
 import { calculatePurse, calculateRefund } from "@/lib/formats/auction/economy";
+import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
@@ -1074,8 +1075,19 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
       teamPointsMap.set(at.id, tScores.reduce((sum, s) => sum + s.totalPoints, 0));
     }
 
+    // Apply the PL Club Auction rename: any team that owns a club displays as the club's name.
+    const clubByTeamId = await fetchClubOwnershipMap(leagueId);
+
     const standings = allTeams
-      .map(at => ({ id: at.id, name: at.name, totalPoints: teamPointsMap.get(at.id) || 0 }))
+      .map(at => {
+        const ownedClub = clubByTeamId.get(at.id) ?? null;
+        return {
+          id: at.id,
+          name: ownedClub?.plTeamName ?? at.name,
+          totalPoints: teamPointsMap.get(at.id) || 0,
+          ownedClub,
+        };
+      })
       .sort((a, b) => b.totalPoints - a.totalPoints)
       .map((s, i) => ({ ...s, rank: i + 1, isCurrentTeam: s.id === teamId }));
 

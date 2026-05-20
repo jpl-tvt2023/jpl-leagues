@@ -3185,78 +3185,82 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {/* Fixtures Upload */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <h3 className="text-xl font-bold text-white mb-4">Upload Fixtures</h3>
-                <p className="text-gray-400 text-sm mb-4">
-                  Excel columns: Gameweek, Home Team, Away Team
-                </p>
-                
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={(e) => handleFileUpload(e, "fixtures")}
-                    className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-purple-500/20 file:text-purple-400 hover:file:bg-purple-500/30"
-                  />
-                </div>
-
-                {fixturesFileName && (
-                  <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
-                    <p className="text-green-400 text-sm">
-                      ✓ Loaded: {fixturesFileName} ({fixturesData.length} rows)
-                    </p>
-                  </div>
-                )}
-                
-                <button
-                  onClick={handleBulkUploadFixtures}
-                  disabled={bulkUploading || fixturesData.length === 0}
-                  className="w-full rounded-lg bg-gradient-to-r from-purple-400 to-purple-600 px-6 py-3 font-semibold text-white hover:from-purple-300 hover:to-purple-500 transition disabled:opacity-50"
-                >
-                  {bulkUploading ? "Uploading..." : "Upload Fixtures"}
-                </button>
-              </div>
-            </div>
-
-            {/* Captain Import Section */}
-            <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <h3 className="text-xl font-bold text-white mb-4">Import Captain Data</h3>
-              <p className="text-gray-400 text-sm mb-4">
-                Excel columns: Team, Players, then gameweek numbers (1, 2, 3...) with &quot;C&quot; marking captain gameweeks
-              </p>
-              
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={(e) => handleFileUpload(e, "captains")}
-                    className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-orange-500/20 file:text-orange-400 hover:file:bg-orange-500/30"
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    onClick={handleImportCaptains}
-                    disabled={bulkUploading || captainsData.length === 0}
-                    className="w-full rounded-lg bg-gradient-to-r from-orange-400 to-orange-600 px-6 py-3 font-semibold text-white hover:from-orange-300 hover:to-orange-500 transition disabled:opacity-50"
-                  >
-                    {bulkUploading ? "Importing..." : "Import Captains"}
-                  </button>
-                </div>
-              </div>
-
-              {captainsFileName && (
-                <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
-                  <p className="text-green-400 text-sm">
-                    ✓ Loaded: {captainsFileName} ({captainsData.length} rows)
+              {/* Fixtures Upload — H2H/TVT only; auction leagues don't use H2H fixtures. */}
+              {leagueConfig?.format !== "auction" && (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h3 className="text-xl font-bold text-white mb-4">Upload Fixtures</h3>
+                  <p className="text-gray-400 text-sm mb-4">
+                    Excel columns: Gameweek, Home Team, Away Team
                   </p>
+
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => handleFileUpload(e, "fixtures")}
+                      className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-purple-500/20 file:text-purple-400 hover:file:bg-purple-500/30"
+                    />
+                  </div>
+
+                  {fixturesFileName && (
+                    <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                      <p className="text-green-400 text-sm">
+                        ✓ Loaded: {fixturesFileName} ({fixturesData.length} rows)
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleBulkUploadFixtures}
+                    disabled={bulkUploading || fixturesData.length === 0}
+                    className="w-full rounded-lg bg-gradient-to-r from-purple-400 to-purple-600 px-6 py-3 font-semibold text-white hover:from-purple-300 hover:to-purple-500 transition disabled:opacity-50"
+                  >
+                    {bulkUploading ? "Uploading..." : "Upload Fixtures"}
+                  </button>
                 </div>
               )}
             </div>
+
+            {/* Captain Import Section — H2H/TVT only; auction doesn't use captains. */}
+            {leagueConfig?.format !== "auction" && (
+              <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <h3 className="text-xl font-bold text-white mb-4">Import Captain Data</h3>
+                <p className="text-gray-400 text-sm mb-4">
+                  Excel columns: Team, Players, then gameweek numbers (1, 2, 3...) with &quot;C&quot; marking captain gameweeks
+                </p>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => handleFileUpload(e, "captains")}
+                      className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-orange-500/20 file:text-orange-400 hover:file:bg-orange-500/30"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      onClick={handleImportCaptains}
+                      disabled={bulkUploading || captainsData.length === 0}
+                      className="w-full rounded-lg bg-gradient-to-r from-orange-400 to-orange-600 px-6 py-3 font-semibold text-white hover:from-orange-300 hover:to-orange-500 transition disabled:opacity-50"
+                    >
+                      {bulkUploading ? "Importing..." : "Import Captains"}
+                    </button>
+                  </div>
+                </div>
+
+                {captainsFileName && (
+                  <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                    <p className="text-green-400 text-sm">
+                      ✓ Loaded: {captainsFileName} ({captainsData.length} rows)
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Chip Import Section — TVT only */}
             {leagueConfig?.format === "tvt" && (

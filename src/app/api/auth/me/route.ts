@@ -52,15 +52,21 @@ export async function GET(request: NextRequest) {
       const team = teamList[0];
       if (team) {
         // Fetch league format so the client knows which setup flow to use
-        const leagueRow = await db.select({ format: leagues.format, slug: leagues.slug }).from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
+        const leagueRow = await db
+          .select({ format: leagues.format, slug: leagues.slug, clubAuctionEnabled: leagues.clubAuctionEnabled })
+          .from(leagues)
+          .where(eq(leagues.id, team.leagueId))
+          .limit(1);
         const leagueFormat = leagueRow[0]?.format ?? "tvt";
         const leagueSlug = leagueRow[0]?.slug ?? null;
+        const clubAuctionEnabled = leagueRow[0]?.clubAuctionEnabled ?? false;
 
         return NextResponse.json({
           authenticated: true,
           type: "team",
           leagueFormat,
           leagueSlug,
+          clubAuctionEnabled,
           team: {
             id: team.id,
             name: team.name,

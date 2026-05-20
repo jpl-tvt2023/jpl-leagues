@@ -9,6 +9,7 @@ import { TierChip } from "@/components/TierChip";
 import type { TeamClubOwnership } from "@/lib/teams/display-name";
 import { getTeamDisplayName } from "@/lib/teams/display-name";
 import { formatPts } from "@/lib/format-points";
+import { normalizeClubSummary } from "@/lib/formats/auction/club-summary";
 
 interface BreakdownPlayer {
   elementId: number;
@@ -316,8 +317,8 @@ export function AuctionGwResults() {
                                   <td
                                     className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
                                     title={
-                                      row.clubResultSummary && selectedGw != null
-                                        ? `GW${selectedGw}: ${row.clubResultSummary}`
+                                      row.clubResultSummary
+                                        ? `${normalizeClubSummary(row.clubResultSummary)} points`
                                         : row.clubResultBonus > 0
                                         ? `+${row.clubResultBonus} (no fixture detail)`
                                         : undefined
@@ -423,7 +424,7 @@ export function AuctionGwResults() {
                                         {(row.clubResultBonus > 0 || row.clubResultSummary) && (
                                           <div className="mt-3 pt-3 border-t border-white/5 text-xs text-gray-400">
                                             <span className="text-emerald-300 font-semibold">Club result:</span>{" "}
-                                            {row.clubResultSummary ?? `Owned club bonus this GW = +${row.clubResultBonus}`}
+                                            {normalizeClubSummary(row.clubResultSummary) ?? `Owned club bonus this GW = +${row.clubResultBonus}`}
                                           </div>
                                         )}
                                         </>
