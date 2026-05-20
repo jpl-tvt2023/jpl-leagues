@@ -360,16 +360,21 @@ export async function clearLiveCache(gameweek: number, leagueId?: string | null)
 // Invalidated by: any admin write that affects displayed data
 // ============================================
 
+// Bump when the standings response shape or values change so the next deploy invalidates the cache
+// automatically (old `standings:` entries become orphaned and expire on TTL).
+const STANDINGS_CACHE_VERSION = 2;
+const standingsKey = (leagueId: string) => `standings:v${STANDINGS_CACHE_VERSION}:${leagueId}`;
+
 export async function getCachedStandings(leagueId: string): Promise<unknown | null> {
   const r = getRedis();
   if (!r) return null;
-  return await r.get(`standings:${leagueId}`);
+  return await r.get(standingsKey(leagueId));
 }
 
 export async function setCachedStandings(leagueId: string, data: unknown): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(`standings:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+  await r.set(standingsKey(leagueId), data, { ex: PAGE_CACHE_TTL });
 }
 
 export async function getCachedFixtures(leagueId: string): Promise<unknown | null> {

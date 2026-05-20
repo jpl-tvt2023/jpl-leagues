@@ -17,7 +17,9 @@ type TransactionType =
   | "trade_cash_out"
   | "trade_cash_in"
   | "trade_swap"
-  | "transfer_fee";
+  | "transfer_fee"
+  | "slot_unlock"
+  | "slot_redeem";
 
 interface TransactionEntry {
   id: string;
@@ -75,6 +77,8 @@ const TYPE_STYLES: Record<TransactionType, { label: string; badge: string }> = {
   trade_cash_in: { label: "Trade In", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
   trade_swap: { label: "Trade Swap", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
   transfer_fee: { label: "Trade Tax", badge: "bg-red-500/20 text-red-300 border-red-500/40" },
+  slot_unlock: { label: "Slot Unlock", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
+  slot_redeem: { label: "Slot Redeem", badge: "bg-orange-500/20 text-orange-300 border-orange-500/40" },
 };
 
 const FALLBACK_STYLE = { label: "Other", badge: "bg-gray-500/20 text-gray-300 border-gray-500/40" };
@@ -139,7 +143,6 @@ export default function FinancePage() {
     });
   }, [data, filter]);
 
-  const netPL = data?.summary.netPnL ?? 0;
   const totalEarned = (data?.summary.totalIncome ?? 0) + (data?.summary.totalRefunds ?? 0);
 
   return (
@@ -168,13 +171,12 @@ export default function FinancePage() {
               <p className="text-sm text-gray-400">Every transaction from initial auction onward.</p>
             </div>
 
-            {/* Summary cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+            {/* Summary cards — Net P&L removed since it's algebraically identical to (purse - initial). */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
               <SummaryCard label="Initial Budget" value={formatCurrency(data.initialBudget)} color="text-white" />
               <SummaryCard label="Current Purse" value={formatCurrency(data.currentPurse)} color="text-green-300" />
               <SummaryCard label="Total Spent" value={formatCurrency(data.summary.totalSpent)} color="text-red-300" />
               <SummaryCard label="Total Earned" value={formatCurrency(totalEarned)} color="text-blue-300" />
-              <SummaryCard label="Net P&L" value={`${netPL >= 0 ? "+" : ""}${formatCurrency(netPL)}`} color={netPL >= 0 ? "text-green-300" : "text-red-300"} />
             </div>
 
             {/* Filter pills */}

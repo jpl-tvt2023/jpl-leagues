@@ -1,8 +1,8 @@
 // JPL Auction — Finance / Ledger Assembly
 // Builds chronological transaction ledgers per team.
 
-import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, tradeProposals, gameweeks } from "../../db";
-import { eq, and, or } from "drizzle-orm";
+import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, tradeProposals, gameweeks, teamPenalties, teamSlotUnlocks } from "../../db";
+import { eq, and, or, isNotNull } from "drizzle-orm";
 import { calculateRefund } from "./economy";
 import { getPlTeamFullName } from "../../data/pl-team-full-names";
 
@@ -16,7 +16,9 @@ export type TransactionType =
   | "trade_cash_out"
   | "trade_cash_in"
   | "trade_swap"
-  | "transfer_fee";
+  | "transfer_fee"
+  | "slot_unlock"
+  | "slot_redeem";
 
 const TRANSFER_FEE_RATE = 0.05;
 
@@ -86,7 +88,7 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
   const league = leagueRow[0];
   const initialBudget = league.initialBudget;
 
-  const [ownership, scores, allGws, trades, leagueTeams, clubOwnership] = await Promise.all([
+  const [ownership, scores, allGws, trades, leagueTeams, clubOwnership, redeemedPenalties, slotUnlocks] = await Promise.all([
     db.select().from(auctionOwnership).where(
       and(eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.teamId, teamId))
     ),
@@ -103,6 +105,12 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     db.select().from(teams).where(eq(teams.leagueId, leagueId)),
     db.select().from(auctionClubOwnership).where(
       and(eq(auctionClubOwnership.leagueId, leagueId), eq(auctionClubOwnership.teamId, teamId))
+    ),
+    db.select().from(teamPenalties).where(
+      and(eq(teamPenalties.leagueId, leagueId), eq(teamPenalties.teamId, teamId), isNotNull(teamPenalties.redeemedAt))
+    ),
+    db.select().from(teamSlotUnlocks).where(
+      and(eq(teamSlotUnlocks.leagueId, leagueId), eq(teamSlotUnlocks.teamId, teamId))
     ),
   ]);
 
@@ -325,6 +333,33 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     }
   }
 
+  // 5. Penalty slot redemptions — sourced from teamPenalties rows that have been redeemed.
+  for (const p of redeemedPenalties) {
+    if (!p.redeemedAt) continue; // defensive — the where clause already filters this
+    entries.push({
+      id: `slot-redeem-${p.id}`,
+      type: "slot_redeem",
+      date: p.redeemedAt.toISOString(),
+      gw: null,
+      description: `Penalty slot redemption (cycle ${p.incurredCycle})`,
+      amount: -(p.redemptionPrice ?? 0),
+      isPending: false,
+    });
+  }
+
+  // 6. Bonus slot unlocks (slot 15 / 16) — sourced from teamSlotUnlocks audit table.
+  for (const u of slotUnlocks) {
+    entries.push({
+      id: `slot-unlock-${u.id}`,
+      type: "slot_unlock",
+      date: u.unlockedAt.toISOString(),
+      gw: null,
+      description: `Unlocked slot ${u.slotNumber}`,
+      amount: -u.cost,
+      isPending: false,
+    });
+  }
+
   // Sort ascending first (needed to compute correct running balance)
   entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -335,32 +370,48 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     return { ...e, runningBalance: balance };
   });
 
+  // Derive every summary number from the assembled ledger — single source of truth so Finance,
+  // Dashboard, and any future surface agree by construction. Previously totalSpent only summed
+  // ownership tables, which excluded slot unlocks / redemptions / trade cash / transfer fees.
+  let totalIncome = 0;
+  let totalRefunds = 0;
+  let totalSpent = 0;
+  let totalForfeited = 0;
+  for (const e of withBalance) {
+    if (e.isPending) continue;
+    if (e.type === "initial_budget") continue; // starting balance, not income
+    if (e.type === "release_refund") {
+      totalRefunds += e.amount;
+      totalForfeited += e.metadata?.forfeitAmount ?? 0;
+      continue;
+    }
+    if (e.amount > 0) totalIncome += e.amount;
+    else if (e.amount < 0) totalSpent += Math.abs(e.amount);
+  }
+
+  // Current purse = the running balance after the most recent non-pending entry. By construction
+  // this equals `initialBudget + totalIncome + totalRefunds - totalSpent`. We use the ledger's
+  // running balance instead of reading `teams.purse` so the value can't drift from the math.
+  const currentPurse = withBalance.length > 0
+    ? withBalance[withBalance.length - 1].runningBalance
+    : initialBudget;
+
   // Reverse to show newest transactions first (descending order)
   const ledger: TransactionEntry[] = withBalance.reverse();
-
-  // Summary — include club-auction spend in totalSpent so it matches teams.totalSpent.
-  const totalSpent =
-    ownership.reduce((s, o) => s + o.purchasePrice, 0) +
-    clubOwnership.reduce((s, c) => s + c.purchasePrice, 0);
-  const totalIncome = scores.reduce((s, sc) => s + sc.payout, 0);
-  const totalRefunds = ownership
-    .filter((o) => o.status === "released")
-    .reduce((s, o) => s + calculateRefund(o.purchasePrice), 0);
-  const totalForfeited = ownership
-    .filter((o) => o.status === "released")
-    .reduce((s, o) => s + (o.purchasePrice - calculateRefund(o.purchasePrice)), 0);
 
   return {
     teamId,
     teamName: team.name,
     initialBudget,
-    currentPurse: team.purse,
+    currentPurse,
     summary: {
       totalSpent,
       totalIncome,
       totalRefunds,
       totalForfeited,
-      netPnL: initialBudget + totalIncome + totalRefunds - totalSpent,
+      // Net P&L excludes initial budget so it actually measures profit/loss since the auction
+      // started. (Previously the formula included initialBudget and was numerically equal to purse.)
+      netPnL: totalIncome + totalRefunds - totalSpent,
     },
     ledger,
   };

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, leagues, auctionSessions } from "@/lib/db";
+import { db, teams, leagues, auctionSessions, teamSlotUnlocks } from "@/lib/db";
 import { eq, and, sql } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { calculatePurse } from "@/lib/formats/auction/economy";
@@ -9,6 +9,7 @@ import {
   nextBonusSlotCost,
 } from "@/lib/formats/auction/squad-rules";
 import { createNotification } from "@/lib/notifications";
+import { generateId } from "@/lib/id";
 
 /**
  * POST /api/auction/unlock-slot
@@ -104,7 +105,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Apply the unlock atomically.
+  const slotNumber = MAX_SQUAD_SIZE + currentBonusSlots + 1; // The slot being unlocked (15 or 16).
+  const unlockedAt = new Date();
+
+  // Apply the unlock atomically — column updates + audit row in one transaction.
   await db.transaction(async (tx) => {
     await tx
       .update(teams)
@@ -112,9 +116,20 @@ export async function POST(request: NextRequest) {
         purse: sql`${teams.purse} - ${cost}`,
         totalSpent: sql`${teams.totalSpent} + ${cost}`,
         bonusSlots: currentBonusSlots + 1,
-        updatedAt: new Date(),
+        updatedAt: unlockedAt,
       })
       .where(eq(teams.id, teamId));
+
+    // Audit row feeds the Finance ledger so the unlock appears as a "Slot Unlock" outflow rather
+    // than getting buried in the aggregate teams.totalSpent counter.
+    await tx.insert(teamSlotUnlocks).values({
+      id: generateId(),
+      leagueId: league.id,
+      teamId,
+      slotNumber,
+      cost,
+      unlockedAt,
+    });
   });
 
   const newBonusSlots = currentBonusSlots + 1;

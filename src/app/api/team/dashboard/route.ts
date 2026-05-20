@@ -6,7 +6,7 @@ import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
-import { calculatePurse, calculateRefund } from "@/lib/formats/auction/economy";
+import { calculatePurse, calculateRefund, calculateFMV } from "@/lib/formats/auction/economy";
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 import { buildTeamLedger } from "@/lib/formats/auction/finance";
 
@@ -1047,7 +1047,9 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     const totalPoints = scores.reduce((sum, s) => sum + s.totalPoints, 0);
     const totalIncome = scores.reduce((sum, s) => sum + s.payout, 0);
 
-    // Per-player totalPoints across the season for the squad summary / top-4
+    // Per-player RAW points across the season for FMV calc + squad summary / top-4.
+    // Prefer `rawPoints` over the legacy `points` field — FMV spec is RAW-only (synergy never
+    // compounds into squad value). Matches the standings route at api/standings/route.ts:139-146.
     const myScoreRows = await db
       .select({ playerBreakdown: auctionScores.playerBreakdown })
       .from(auctionScores)
@@ -1055,9 +1057,10 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     const playerPointsMap = new Map<number, number>();
     for (const row of myScoreRows) {
       try {
-        const breakdown: { elementId: number; points: number }[] = JSON.parse(row.playerBreakdown);
+        const breakdown: { elementId: number; points?: number; rawPoints?: number }[] = JSON.parse(row.playerBreakdown);
         for (const entry of breakdown) {
-          playerPointsMap.set(entry.elementId, (playerPointsMap.get(entry.elementId) ?? 0) + entry.points);
+          const pts = entry.rawPoints ?? entry.points ?? 0;
+          playerPointsMap.set(entry.elementId, (playerPointsMap.get(entry.elementId) ?? 0) + pts);
         }
       } catch {
         // ignore malformed rows
@@ -1106,16 +1109,21 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
       .filter(s => s.status === "pending" && s.scheduledAt && s.scheduledAt > nowForAuction)
       .sort((a, b) => (a.scheduledAt!.getTime() - b.scheduledAt!.getTime()))[0] ?? null;
 
-    // Squad value = sum of purchase prices
-    const squadValue = squad.reduce((sum, p) => sum + p.purchasePrice, 0);
+    // Squad value = sum of FMV per active player (FMV = purchasePrice + appreciation tier on RAW points).
+    // Matches the standings page calculation.
+    const squadValue = squad.reduce((sum, p) => {
+      const pts = playerPointsMap.get(p.fplElementId) ?? 0;
+      return sum + calculateFMV(p.purchasePrice, pts);
+    }, 0);
 
     // Last GW result
     const lastGw = scores.length > 0 ? scores[scores.length - 1] : null;
 
-    // Expense breakdown — bifurcates all cash outflows by transaction type for the "Expenses" card.
-    // Sourced from the finance ledger so it stays in sync with the Finance page automatically.
-    // Release entries store the refund (positive) in `amount`; the matching forfeit is in metadata.
+    // The Finance ledger drives every economy summary here — single source of truth so dashboard
+    // and Finance page can't disagree. Release entries store the refund (positive) in `amount`;
+    // the matching forfeit is in metadata.
     const ledgerData = await buildTeamLedger(leagueId, teamId);
+
     const expenseByType: Record<string, number> = {
       purchase: 0,
       club_purchase: 0,
@@ -1123,20 +1131,41 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
       trade_cash_out: 0,
       trade_swap: 0,
       transfer_fee: 0,
+      slot_unlock: 0,
+      slot_redeem: 0,
+    };
+    const incomeByType: Record<string, number> = {
+      gw_payout: 0,
+      trade_cash_in: 0,
+      release_refund: 0,
     };
     if (ledgerData) {
       for (const entry of ledgerData.ledger) {
+        if (entry.isPending) continue;
         if (entry.type === "release_refund") {
-          // The 50% that didn't come back is the expense.
+          // Refund is positive income; the matching forfeit is bucketed under expenses.
+          incomeByType.release_refund += entry.amount;
           expenseByType.release_forfeit += entry.metadata?.forfeitAmount ?? 0;
         } else if (entry.amount < 0) {
-          const key = entry.type;
-          if (key in expenseByType) expenseByType[key] += Math.abs(entry.amount);
+          if (entry.type in expenseByType) expenseByType[entry.type] += Math.abs(entry.amount);
+        } else if (entry.amount > 0 && entry.type !== "initial_budget") {
+          if (entry.type in incomeByType) incomeByType[entry.type] += entry.amount;
         }
       }
     }
     const expenseTotal = Object.values(expenseByType).reduce((s, n) => s + n, 0);
+    const incomeTotal = Object.values(incomeByType).reduce((s, n) => s + n, 0);
     const expenseBreakdown = { total: expenseTotal, byType: expenseByType };
+    const incomeBreakdown = { total: incomeTotal, byType: incomeByType };
+
+    // Purse + summary totals come from the ledger so they agree with Finance by construction.
+    // Falls back to the persisted column / formula on the (impossible) path where the ledger build
+    // returned null — defensive only.
+    const initialBudget = leagueRow[0]?.initialBudget ?? 0;
+    const ledgerPurse = ledgerData?.currentPurse ?? calculatePurse(initialBudget, totalIncome, t.totalSpent ?? 0, t.totalRefunds ?? 0);
+    const ledgerTotalSpent = ledgerData?.summary.totalSpent ?? (t.totalSpent ?? 0);
+    const ledgerTotalIncome = ledgerData?.summary.totalIncome ?? totalIncome;
+    const ledgerTotalRefunds = ledgerData?.summary.totalRefunds ?? totalRefunds;
 
     // GW deadline (next upcoming gameweek)
     const now = new Date();
@@ -1152,27 +1181,32 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         id: t.id,
         name: t.name,
       },
-      purse: calculatePurse(leagueRow[0]?.initialBudget ?? 0, totalIncome, t.totalSpent ?? 0, t.totalRefunds ?? 0),
-      initialBudget: leagueRow[0]?.initialBudget ?? 0,
-      totalSpent: t.totalSpent ?? 0,
-      totalIncome,
-      totalRefunds,
+      purse: ledgerPurse,
+      initialBudget,
+      totalSpent: ledgerTotalSpent,
+      totalIncome: ledgerTotalIncome,
+      totalRefunds: ledgerTotalRefunds,
       totalForfeit,
       releases,
       expenseBreakdown,
+      incomeBreakdown,
       totalPoints,
       squadValue,
       squadSize: squad.length,
-      squad: squad.map(p => ({
-        id: p.id,
-        fplElementId: p.fplElementId,
-        playerName: p.playerName,
-        purchasePrice: p.purchasePrice,
-        acquiredGw: p.acquiredGw,
-        status: p.status,
-        elementType: p.elementType ?? null,
-        totalPoints: playerPointsMap.get(p.fplElementId) ?? 0,
-      })),
+      squad: squad.map(p => {
+        const pts = playerPointsMap.get(p.fplElementId) ?? 0;
+        return {
+          id: p.id,
+          fplElementId: p.fplElementId,
+          playerName: p.playerName,
+          purchasePrice: p.purchasePrice,
+          fmv: calculateFMV(p.purchasePrice, pts),
+          acquiredGw: p.acquiredGw,
+          status: p.status,
+          elementType: p.elementType ?? null,
+          totalPoints: pts,
+        };
+      }),
       rank: myRank,
       totalManagers: allTeams.length,
       standings: standings.slice(0, 10), // top 10 for mini-table
