@@ -45,6 +45,7 @@ import {
 } from "@/lib/data/pl-standings-seed";
 import type { ClubTier } from "@/lib/db/schema";
 import { createNotification } from "@/lib/notifications";
+import { getPlTeamFullName } from "@/lib/data/pl-team-full-names";
 
 const CLUB_FLOOR_BID = 500_000; // Same floor as player auction
 
@@ -89,16 +90,18 @@ export async function computeClubResultBonus(
     return { bonus: 0, summary: "Blank GW — no fixture, no bonus" };
   }
 
-  // PL team-name lookup for the scoreline summary ("Brentford 3-0 Man Utd → +3").
+  // PL team-name lookup for the scoreline summary ("BRE 3-0 MUN → +3"). The 3-letter `short_name`
+  // is used here because the scoreline is rendered inside cramped tooltip rows next to the bonus
+  // number; the full club name appears separately in the tooltip's header.
   // Best-effort: on FPL outage we fall back to "team#<id>".
-  const plNameById = new Map<number, string>();
+  const plShortById = new Map<number, string>();
   try {
     const bootstrap = await fetchBootstrapData();
-    for (const t of (bootstrap.teams ?? []) as Array<{ id: number; name: string }>) {
-      plNameById.set(t.id, t.name);
+    for (const t of (bootstrap.teams ?? []) as Array<{ id: number; short_name: string; name: string }>) {
+      plShortById.set(t.id, t.short_name ?? t.name);
     }
   } catch { /* leave map empty; nameFor() falls back to "team#<id>" */ }
-  const nameFor = (id: number): string => plNameById.get(id) ?? `team#${id}`;
+  const nameFor = (id: number): string => plShortById.get(id) ?? `team#${id}`;
 
   let total = 0;
   const lines: string[] = [];
@@ -447,7 +450,7 @@ export async function resolveClubBid(bid: BidRow): Promise<"sold" | "unsold" | "
       leagueId: bid.leagueId,
       teamId: fresh.currentHighBidderId,
       plTeamId: fresh.fplElementId,
-      plTeamName: fresh.playerName,
+      plTeamName: getPlTeamFullName(fresh.fplElementId, fresh.playerName),
       plTeamShort,
       tier,
       purchasePrice: fresh.currentHighBid,
@@ -552,7 +555,9 @@ export async function getClubOwnershipsByTeam(
   for (const r of rows) {
     result[r.teamId] = {
       plTeamId: r.plTeamId,
-      plTeamName: r.plTeamName,
+      // Normalise legacy rows (stored as FPL short form) to the full PL name. New writes are already
+      // full names, but this read-side override means we don't need a one-off backfill.
+      plTeamName: getPlTeamFullName(r.plTeamId, r.plTeamName),
       plTeamShort: r.plTeamShort,
       tier: r.tier as ClubTier,
     };
@@ -625,7 +630,7 @@ export async function simulateClubAuction(
       leagueId,
       teamId: team.id,
       plTeamId: club.id,
-      plTeamName: club.name,
+      plTeamName: getPlTeamFullName(club.id, club.name),
       plTeamShort: club.short,
       tier: club.tier,
       purchasePrice: price,

@@ -8,6 +8,7 @@ import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
 import { calculatePurse, calculateRefund } from "@/lib/formats/auction/economy";
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
+import { buildTeamLedger } from "@/lib/formats/auction/finance";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
@@ -1084,6 +1085,9 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         return {
           id: at.id,
           name: ownedClub?.plTeamName ?? at.name,
+          // Compact 3-letter form for cramped surfaces (dashboard mini-table). Falls back to the
+          // first 3 chars of the team name when no club is owned.
+          shortName: ownedClub?.plTeamShort ?? at.name.slice(0, 3).toUpperCase(),
           totalPoints: teamPointsMap.get(at.id) || 0,
           ownedClub,
         };
@@ -1108,6 +1112,32 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     // Last GW result
     const lastGw = scores.length > 0 ? scores[scores.length - 1] : null;
 
+    // Expense breakdown — bifurcates all cash outflows by transaction type for the "Expenses" card.
+    // Sourced from the finance ledger so it stays in sync with the Finance page automatically.
+    // Release entries store the refund (positive) in `amount`; the matching forfeit is in metadata.
+    const ledgerData = await buildTeamLedger(leagueId, teamId);
+    const expenseByType: Record<string, number> = {
+      purchase: 0,
+      club_purchase: 0,
+      release_forfeit: 0,
+      trade_cash_out: 0,
+      trade_swap: 0,
+      transfer_fee: 0,
+    };
+    if (ledgerData) {
+      for (const entry of ledgerData.ledger) {
+        if (entry.type === "release_refund") {
+          // The 50% that didn't come back is the expense.
+          expenseByType.release_forfeit += entry.metadata?.forfeitAmount ?? 0;
+        } else if (entry.amount < 0) {
+          const key = entry.type;
+          if (key in expenseByType) expenseByType[key] += Math.abs(entry.amount);
+        }
+      }
+    }
+    const expenseTotal = Object.values(expenseByType).reduce((s, n) => s + n, 0);
+    const expenseBreakdown = { total: expenseTotal, byType: expenseByType };
+
     // GW deadline (next upcoming gameweek)
     const now = new Date();
     const nextGw = await db.select().from(gameweeks)
@@ -1129,6 +1159,7 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
       totalRefunds,
       totalForfeit,
       releases,
+      expenseBreakdown,
       totalPoints,
       squadValue,
       squadSize: squad.length,

@@ -5,7 +5,8 @@ import { getAllCachedScores, getCachedStandings, setCachedStandings } from "@/li
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { computeAuctionStandings } from "@/lib/formats/auction/standings";
 import { calculateFMV } from "@/lib/formats/auction/economy";
-import { getClubOwnershipsByTeam } from "@/lib/formats/auction/club-auction";
+import { getClubOwnershipsByTeam, computeClubResultBonus } from "@/lib/formats/auction/club-auction";
+import { fetchBootstrapData } from "@/lib/fpl";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
 
@@ -159,14 +160,42 @@ export async function GET(request: NextRequest) {
         teamName: clubByTeamId[s.teamId]?.plTeamName ?? s.teamName,
       }));
 
+      // Current GW for the multi-GW club tooltip: max of "highest scored GW" and "FPL is_current/is_next".
+      // The tooltip renders rows 1..currentGwNumber so it always reflects in-flight progress.
+      let currentGwNumber = 0;
+      try {
+        const bootstrap = await fetchBootstrapData();
+        const events = (bootstrap.events ?? []) as Array<{ id: number; is_current?: boolean; is_next?: boolean }>;
+        const fplCurrent = events.find((e) => e.is_current)?.id ?? events.find((e) => e.is_next)?.id ?? 0;
+        const maxScoredGw = scores.reduce((m, s) => Math.max(m, gwNumbers.get(s.gameweekId) ?? 0), 0);
+        currentGwNumber = Math.max(maxScoredGw, fplCurrent);
+      } catch {
+        // FPL outage — currentGwNumber stays 0 and the tooltip falls back to scored history only.
+      }
+
+      // When the current GW hasn't been scored by admin yet, compute the live owned-club result for
+      // each team so the tooltip can show the in-progress scoreline. One FPL fixtures fetch (cached
+      // inside computeClubResultBonus) covers all 14 teams.
+      const maxScoredGw = scores.reduce((m, s) => Math.max(m, gwNumbers.get(s.gameweekId) ?? 0), 0);
+      const liveClubResultByTeam: Record<string, { summary: string; bonus: number } | null> = {};
+      const liveBranch = currentGwNumber > maxScoredGw && currentGwNumber > 0;
+      if (liveBranch) {
+        for (const [teamId, owned] of Object.entries(clubByTeamId)) {
+          liveClubResultByTeam[teamId] = await computeClubResultBonus(owned.plTeamId, owned.tier, currentGwNumber);
+        }
+      }
+
       const responseData = {
         format: "auction" as const,
         standings: renamedStandings,
         totalTeams: leagueTeams.length,
         clubByTeamId,
+        currentGwNumber,
+        liveClubResultByTeam,
       };
 
-      setCachedStandings(leagueId, responseData).catch(() => {});
+      // Skip cache write during the live in-progress branch — TTL would make the live scoreline stale.
+      if (!liveBranch) setCachedStandings(leagueId, responseData).catch(() => {});
       return NextResponse.json(responseData);
     }
 

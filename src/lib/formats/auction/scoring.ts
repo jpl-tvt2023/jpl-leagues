@@ -9,6 +9,7 @@ import { fetchElementGameweekPoints, fetchElementInfo } from "../../fpl";
 import { db, auctionOwnership, auctionClubOwnership } from "../../db";
 import { eq, and, lt, gte, or, isNull } from "drizzle-orm";
 import { computeClubResultBonus } from "./club-auction";
+import { getPlTeamFullName } from "../../data/pl-team-full-names";
 import type { ClubTier } from "../../db/schema";
 
 export interface AuctionPlayerBreakdown {
@@ -146,7 +147,7 @@ export async function calculateAuctionTeamScore(
       clubResultSummary = result.summary;
     } else {
       // FPL outage — caller logs; default to 0 for now.
-      clubResultSummary = `${clubRow[0].plTeamName}: result unavailable (FPL fixtures fetch failed)`;
+      clubResultSummary = `${getPlTeamFullName(clubRow[0].plTeamId, clubRow[0].plTeamName)}: result unavailable (FPL fixtures fetch failed)`;
     }
   }
 

@@ -348,6 +348,17 @@ function ChipBadge({ used, name }: { used: boolean; name: string }) {
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
+// Bifurcated expense rows for the dashboard "Expenses" card popover. Rendered in this order; rows
+// with zero amount are hidden so a team that hasn't traded sees just Purchase / Club / Forfeit etc.
+const EXPENSE_ROWS: Array<{ key: keyof AuctionDashboardData["expenseBreakdown"]["byType"]; label: string }> = [
+  { key: "purchase",         label: "Player purchases" },
+  { key: "club_purchase",    label: "PL club purchase" },
+  { key: "release_forfeit",  label: "Release forfeits" },
+  { key: "trade_cash_out",   label: "Trade cash out" },
+  { key: "trade_swap",       label: "Trade swap cash" },
+  { key: "transfer_fee",     label: "Transfer tax" },
+];
+
 // ===== Auction Dashboard Types & Component =====
 interface AuctionDashboardData {
   leagueSlug: string;
@@ -360,13 +371,24 @@ interface AuctionDashboardData {
   totalRefunds: number;
   totalForfeit: number;
   releases: { id: string; playerName: string; purchasePrice: number; refund: number; forfeit: number; releasedGw: number | null }[];
+  expenseBreakdown: {
+    total: number;
+    byType: {
+      purchase: number;
+      club_purchase: number;
+      release_forfeit: number;
+      trade_cash_out: number;
+      trade_swap: number;
+      transfer_fee: number;
+    };
+  };
   totalPoints: number;
   squadValue: number;
   squadSize: number;
   squad: { id: string; fplElementId: number; playerName: string; purchasePrice: number; acquiredGw: number; status: string; elementType: number | null; totalPoints: number }[];
   rank: number;
   totalManagers: number;
-  standings: { id: string; name: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
+  standings: { id: string; name: string; shortName: string; totalPoints: number; rank: number; isCurrentTeam: boolean }[];
   gwHistory: { gameweek: number; points: number; rank: number | null; income: number }[];
   lastGwResult: { gameweek: number; points: number; rank: number | null; income: number } | null;
   auctionSession: { id: string; type: string; status: string } | null;
@@ -481,27 +503,26 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
             <div className="text-xs text-gray-500 mt-1">Budget + Income + Refunds − Spent</div>
           </div>
           <div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur cursor-default">
-            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Lost to Releases</div>
-            <div className={`text-xl sm:text-2xl font-bold ${data.totalForfeit > 0 ? "text-red-400" : "text-gray-500"}`}>
-              {data.totalForfeit > 0 ? `-${formatCurrency(data.totalForfeit)}` : "£0"}
+            <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Expenses</div>
+            <div className={`text-xl sm:text-2xl font-bold ${data.expenseBreakdown.total > 0 ? "text-red-400" : "text-gray-500"}`}>
+              {data.expenseBreakdown.total > 0 ? `-${formatCurrency(data.expenseBreakdown.total)}` : "£0"}
             </div>
-            <div className="text-xs text-gray-500 mt-1">{data.releases.length > 0 ? `${data.releases.length} released` : "No releases"}</div>
-            {data.releases.length > 0 && (
-              <div className="hidden group-hover:block absolute z-20 left-0 top-full mt-2 w-72 rounded-xl border border-white/10 bg-slate-800/95 backdrop-blur-xl shadow-xl p-3">
-                <div className="text-xs text-gray-400 font-semibold mb-2 uppercase tracking-wider">Release Breakdown</div>
-                {data.releases.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
-                    <div>
-                      <div className="text-sm text-white font-semibold">{r.playerName}</div>
-                      <div className="text-[10px] text-gray-500">{r.releasedGw != null ? `GW${r.releasedGw}` : "—"}</div>
+            <div className="text-xs text-gray-500 mt-1">Since club auction</div>
+            {data.expenseBreakdown.total > 0 && (
+              <div className="hidden group-hover:block absolute z-20 right-0 top-full mt-2 w-72 rounded-xl border border-white/10 bg-slate-800/95 backdrop-blur-xl shadow-xl p-3">
+                <div className="text-xs text-gray-400 font-semibold mb-2 uppercase tracking-wider">Expense Breakdown</div>
+                {EXPENSE_ROWS
+                  .filter(({ key }) => (data.expenseBreakdown.byType[key] ?? 0) > 0)
+                  .map(({ key, label }) => (
+                    <div key={key} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                      <span className="text-sm text-gray-200">{label}</span>
+                      <span className="text-sm font-mono text-red-300">-{formatCurrency(data.expenseBreakdown.byType[key])}</span>
                     </div>
-                    <div className="text-right text-xs">
-                      <div className="text-gray-400">Bought {formatCurrency(r.purchasePrice)}</div>
-                      <div className="text-green-400">Refund {formatCurrency(r.refund)}</div>
-                      <div className="text-red-400 font-bold">Lost {formatCurrency(r.forfeit)}</div>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                <div className="flex items-center justify-between pt-2 mt-1 border-t border-white/10">
+                  <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Total</span>
+                  <span className="text-sm font-mono font-bold text-red-400">-{formatCurrency(data.expenseBreakdown.total)}</span>
+                </div>
               </div>
             )}
           </div>
@@ -625,8 +646,11 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 w-6">#{s.rank}</span>
-                      <span className={`text-sm ${s.isCurrentTeam ? "text-yellow-300 font-semibold" : "text-white"}`}>
-                        {s.name}
+                      <span
+                        className={`text-sm font-mono ${s.isCurrentTeam ? "text-yellow-300 font-semibold" : "text-white"}`}
+                        title={s.name}
+                      >
+                        {s.shortName}
                       </span>
                     </div>
                     <span className="text-sm text-white font-mono">{s.totalPoints}</span>
