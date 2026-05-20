@@ -220,6 +220,20 @@ export default function MarketplacePage() {
     return arr;
   }, [ownershipMap]);
 
+  // Active = pending|accepted, matching the `filtered` predicate so the tab count never lies about
+  // what the tab will render. Computed once per proposal-list change rather than per-tab-render.
+  const tabCounts = useMemo(() => {
+    if (!myTeamId) return { incoming: 0, outgoing: 0 };
+    let incoming = 0, outgoing = 0;
+    for (const p of proposals) {
+      const active = p.status === "pending" || p.status === "accepted";
+      if (!active) continue;
+      if (p.targetTeamId === myTeamId) incoming++;
+      else if (p.proposerTeamId === myTeamId) outgoing++;
+    }
+    return { incoming, outgoing };
+  }, [proposals, myTeamId]);
+
   const teamName = (tid: string) => teamList.find((t) => t.teamId === tid)?.teamName ?? tid.slice(0, 6);
 
   const resolvePlayers = (ids: string[]): SquadPlayer[] => {
@@ -434,7 +448,11 @@ export default function MarketplacePage() {
                     ? `Pending Releases (${pendingReleases.length})`
                     : t === "live"
                       ? `Live Offers (${liveOffers.length})`
-                      : t}
+                      : t === "incoming"
+                        ? `Incoming (${tabCounts.incoming})`
+                        : t === "outgoing"
+                          ? `Outgoing (${tabCounts.outgoing})`
+                          : t}
                 </button>
               ))}
             </div>

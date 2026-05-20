@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
@@ -11,6 +12,100 @@ import type { TeamClubOwnership } from "@/lib/teams/display-name";
 import { getTeamDisplayName } from "@/lib/teams/display-name";
 import { formatPts } from "@/lib/format-points";
 import { normalizeClubSummary } from "@/lib/formats/auction/club-summary";
+
+interface ClubTooltipCellProps {
+  clubResultBonus: number;
+  gwHistory: AuctionGwHistoryEntry[];
+  currentGwNumber: number;
+  liveResult: { summary: string; bonus: number } | null;
+  clubName: string;
+}
+
+// Cell + popover for the per-team Club column. The popover is portalled to body and positioned via
+// the cell's bounding rect so it escapes the table's `overflow-x-auto` clipping context.
+function ClubTooltipCell({ clubResultBonus, gwHistory, currentGwNumber, liveResult, clubName }: ClubTooltipCellProps) {
+  const ref = useRef<HTMLTableCellElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const show = () => {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    // Anchor below the cell, right-aligned to the cell's right edge.
+    setPos({ top: r.bottom + 6, left: r.right });
+  };
+  const hide = () => setPos(null);
+
+  const hasPopover = currentGwNumber > 0 && (gwHistory.length > 0 || liveResult);
+  const popoverWidth = 320;
+
+  return (
+    <td
+      ref={ref}
+      onMouseEnter={hasPopover ? show : undefined}
+      onMouseLeave={hide}
+      onFocus={hasPopover ? show : undefined}
+      onBlur={hide}
+      className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono relative ${clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
+    >
+      {clubResultBonus > 0 ? `+${clubResultBonus}` : "0"}
+      {mounted && pos && hasPopover && createPortal(
+        <div
+          className="fixed z-50 rounded-xl border border-white/10 bg-slate-800/95 backdrop-blur-xl shadow-xl p-3 text-left pointer-events-none"
+          style={{ top: pos.top, left: Math.max(8, pos.left - popoverWidth), width: popoverWidth }}
+        >
+          <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-2">
+            {clubName} — Club result by GW
+          </div>
+          <table className="w-full text-xs">
+            <tbody>
+              {Array.from({ length: currentGwNumber }, (_, i) => i + 1).map((gwN) => {
+                const h = gwHistory.find((x) => x.gw === gwN);
+                const scored = !!h;
+                const live = !scored ? liveResult : null;
+                const hasLive = !scored && !!live;
+                const summary = scored
+                  ? (h!.clubResultSummary ? normalizeClubSummary(h!.clubResultSummary) : null)
+                  : (hasLive ? live!.summary : null);
+                const labelCls = scored || hasLive ? "text-gray-200" : "text-gray-500 italic";
+                const valueCls =
+                  (scored && h!.clubResultBonus > 0) || (hasLive && live!.bonus > 0)
+                    ? "text-emerald-300 font-bold"
+                    : "text-gray-500";
+                return (
+                  <tr key={gwN} className="border-t border-white/5 first:border-t-0 align-top">
+                    <td className="py-1 pr-2 text-gray-400 font-mono w-10">GW{gwN}</td>
+                    <td className={`py-1 ${labelCls}`}>
+                      {scored ? (
+                        summary ?? "—"
+                      ) : hasLive ? (
+                        <>
+                          {summary}
+                          <span className="text-[10px] text-amber-300 font-semibold uppercase ml-1">live</span>
+                        </>
+                      ) : (
+                        "yet to play"
+                      )}
+                    </td>
+                    <td className={`py-1 pl-2 text-right font-mono whitespace-nowrap ${valueCls}`}>
+                      {scored
+                        ? (h!.clubResultBonus > 0 ? `+${h!.clubResultBonus}` : "0")
+                        : hasLive
+                          ? `+${live!.bonus}`
+                          : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>,
+        document.body
+      )}
+    </td>
+  );
+}
 
 interface AuctionGwHistoryEntry {
   gw: number;
@@ -70,6 +165,8 @@ export function AuctionStandings() {
 
   const [auctionStandings, setAuctionStandings] = useState<AuctionStandingRow[]>([]);
   const [clubByTeamId, setClubByTeamId] = useState<Record<string, TeamClubOwnership>>({});
+  const [currentGwNumber, setCurrentGwNumber] = useState<number>(0);
+  const [liveClubResultByTeam, setLiveClubResultByTeam] = useState<Record<string, { summary: string; bonus: number } | null>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,6 +183,8 @@ export function AuctionStandings() {
         const data = await response.json();
         setAuctionStandings(data.standings || []);
         setClubByTeamId(data.clubByTeamId ?? {});
+        setCurrentGwNumber(data.currentGwNumber ?? 0);
+        setLiveClubResultByTeam(data.liveClubResultByTeam ?? {});
       } catch (err) {
         console.error("Error fetching standings:", err);
         setError("Failed to load standings. Please try again later.");
@@ -298,19 +397,13 @@ export function AuctionStandings() {
                             >
                               {row.synergyBonus > 0 ? `+${formatPts(row.synergyBonus)}` : "0"}
                             </td>
-                            <td
-                              className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
-                              title={
-                                row.clubResultBonus > 0
-                                  ? row.gwHistory
-                                      .filter((h) => h.clubResultBonus > 0 && h.clubResultSummary)
-                                      .map((h) => `GW${h.gw} - ${normalizeClubSummary(h.clubResultSummary)} points`)
-                                      .join("\n") || undefined
-                                  : undefined
-                              }
-                            >
-                              {row.clubResultBonus > 0 ? `+${row.clubResultBonus}` : "0"}
-                            </td>
+                            <ClubTooltipCell
+                              clubResultBonus={row.clubResultBonus}
+                              gwHistory={row.gwHistory}
+                              currentGwNumber={currentGwNumber}
+                              liveResult={liveClubResultByTeam[row.teamId] ?? null}
+                              clubName={clubByTeamId[row.teamId]?.plTeamName ?? row.teamName}
+                            />
                             <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">{formatPts(row.totalPoints)}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">{formatCurrency(row.purse)}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{formatCurrency(row.squadValue)}</td>
