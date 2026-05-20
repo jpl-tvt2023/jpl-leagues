@@ -55,6 +55,7 @@ export default function LeagueHelpPage() {
         currentPage="help"
         format={isAuction ? "auction" : isTripleCrown ? "triple-crown" : "tvt"}
         teamSize={league.teamSize}
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={viewer.authenticated}
         dashboardHref={viewer.dashboardHref}
         onSignOut={handleSignOut}

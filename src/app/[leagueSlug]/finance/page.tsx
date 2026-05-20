@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { useEnforceFormat } from "@/lib/league-context";
+import { useEnforceFormat, useLeague } from "@/lib/league-context";
 
 type TransactionType =
   | "initial_budget"
@@ -85,6 +85,7 @@ const FALLBACK_STYLE = { label: "Other", badge: "bg-gray-500/20 text-gray-300 bo
 
 export default function FinancePage() {
   useEnforceFormat(["auction"]);
+  const { league } = useLeague();
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
@@ -152,6 +153,7 @@ export default function FinancePage() {
         leagueName={leagueSlug}
         currentPage="finance"
         format="auction"
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={true}
         dashboardHref="/dashboard"
         onSignOut={handleSignOut}

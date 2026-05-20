@@ -87,6 +87,7 @@ export default async function LeagueLayout({
       playoffStartGw: leagues.playoffStartGw,
       enabledChips: leagues.enabledChips,
       initialBudget: leagues.initialBudget,
+      auctionTier: leagues.auctionTier,
     })
     .from(leagues)
     .where(eq(leagues.slug, leagueSlug))
@@ -107,6 +108,7 @@ export default async function LeagueLayout({
     playoffStartGw: row.playoffStartGw,
     enabledChips: parseEnabledChips(row.enabledChips),
     initialBudget: row.initialBudget,
+    auctionTier: row.auctionTier,
   };
 
   const viewer = await resolveViewer();

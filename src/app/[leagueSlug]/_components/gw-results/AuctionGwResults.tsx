@@ -182,6 +182,7 @@ export function AuctionGwResults() {
         leagueName={league.name}
         currentPage="gw-results"
         format="auction"
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={viewer.authenticated}
         dashboardHref={viewer.dashboardHref}
         onSignOut={handleSignOut}

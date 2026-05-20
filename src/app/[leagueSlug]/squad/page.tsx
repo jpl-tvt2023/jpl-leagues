@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { SlotStatus, type SlotStatusData } from "@/components/SlotStatus";
-import { useEnforceFormat } from "@/lib/league-context";
+import { useEnforceFormat, useLeague } from "@/lib/league-context";
 
 interface SquadPlayer {
   ownershipId: string;
@@ -34,11 +34,13 @@ interface SquadResponse {
 function SquadSlotStatusInline({
   slotStatus,
   teamId,
+  auctionTier,
   onChanged,
-}: { slotStatus: SlotStatusData; teamId: string; onChanged: () => void | Promise<void> }) {
+}: { slotStatus: SlotStatusData; teamId: string; auctionTier?: "primary" | "complete" | null; onChanged: () => void | Promise<void> }) {
   return (
     <SlotStatus
       slotStatus={slotStatus}
+      auctionTier={auctionTier}
       onUnlock={async () => {
         const cost = slotStatus.nextUnlockCost;
         if (!cost) return;
@@ -124,6 +126,7 @@ function formatCurrency(amount: number): string {
 
 export default function SquadPage() {
   useEnforceFormat(["auction"]);
+  const { league } = useLeague();
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
@@ -356,6 +359,7 @@ export default function SquadPage() {
         leagueName={leagueSlug}
         currentPage="squad"
         format="auction"
+        auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={true}
         dashboardHref="/dashboard"
         onSignOut={handleSignOut}
@@ -376,7 +380,7 @@ export default function SquadPage() {
                   <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">{squadData.teamName}</h1>
                   <div className="flex flex-wrap items-center gap-2 text-sm">
                     {squadData.slotStatus ? (
-                      <SquadSlotStatusInline slotStatus={squadData.slotStatus} teamId={squadData.teamId} onChanged={loadAll} />
+                      <SquadSlotStatusInline slotStatus={squadData.slotStatus} teamId={squadData.teamId} auctionTier={league.auctionTier ?? "complete"} onChanged={loadAll} />
                     ) : (
                       <span className="rounded-full bg-white/10 px-3 py-1 text-white">{squadData.activeCount}/14 active</span>
                     )}

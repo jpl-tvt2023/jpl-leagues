@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget, isSimulated, clubAuctionEnabled } = body;
+  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget, isSimulated, clubAuctionEnabled, auctionTier } = body;
 
   if (!slug || !name || !sport || !format || !season) {
     return NextResponse.json({ error: "slug, name, sport, format, and season are required" }, { status: 400 });
@@ -100,6 +100,10 @@ export async function POST(request: NextRequest) {
 
   const id = generateId();
   const resolvedBudget = format === "auction" ? (initialBudget ?? 100_000_000) : 100_000_000;
+  // Default Complete tier; only meaningful for auction leagues. Anything other than the literal
+  // "primary" string falls back to "complete".
+  const resolvedAuctionTier: "primary" | "complete" =
+    format === "auction" && auctionTier === "primary" ? "primary" : "complete";
 
   try {
     let createdTeams = 0;
@@ -115,6 +119,7 @@ export async function POST(request: NextRequest) {
         isSimulated: format === "auction" ? (isSimulated ?? false) : false,
         // PL Club Auction toggle — only meaningful on auction leagues; force false elsewhere
         clubAuctionEnabled: format === "auction" ? Boolean(clubAuctionEnabled) : false,
+        auctionTier: resolvedAuctionTier,
       });
 
       // For TVT, pre-create the PL groups and split teams across them so the
