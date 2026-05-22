@@ -314,8 +314,14 @@ export function AuctionStandings() {
                                 {r.synergyBonus > 0 ? `+${formatPts(r.synergyBonus)}` : "0"}
                               </td>
                               <td
-                                className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${r.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
-                                title={r.clubResultBonus > 0 && r.clubResultSummary ? `${r.clubResultSummary} points` : undefined}
+                                className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${r.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : r.clubResultSummary ? "text-gray-400 cursor-help" : "text-gray-600"}`}
+                                title={
+                                  r.clubResultSummary
+                                    ? `${r.clubResultSummary} → +${r.clubResultBonus}`
+                                    : r.clubResultBonus > 0
+                                      ? `+${r.clubResultBonus} (no fixture detail)`
+                                      : undefined
+                                }
                               >
                                 {r.clubResultBonus > 0 ? `+${r.clubResultBonus}` : "0"}
                               </td>

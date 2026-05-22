@@ -46,6 +46,7 @@ import {
 import type { ClubTier } from "@/lib/db/schema";
 import { createNotification } from "@/lib/notifications";
 import { getPlTeamFullName } from "@/lib/data/pl-team-full-names";
+import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
 
 const CLUB_FLOOR_BID = 500_000; // Same floor as player auction
 
@@ -299,6 +300,7 @@ export async function autoNominateNextClub(sessionId: string): Promise<string | 
   const clubLess = await getClubLessTeamIds(leagueId);
   if (clubLess.length === 0) {
     await db.update(auctionSessions).set({ status: "completed" }).where(eq(auctionSessions.id, sessionId));
+    await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
     return null;
   }
 
@@ -318,6 +320,7 @@ export async function autoNominateNextClub(sessionId: string): Promise<string | 
   if (cursor >= queue.length) {
     if (cycleNumber >= 2) {
       await db.update(auctionSessions).set({ status: "completed" }).where(eq(auctionSessions.id, sessionId));
+      await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
       return null;
     }
     const bootstrap = await fetchBootstrapData();
@@ -325,6 +328,7 @@ export async function autoNominateNextClub(sessionId: string): Promise<string | 
     const unsold = await getUnsoldClubIds(leagueId, allIds);
     if (unsold.length === 0) {
       await db.update(auctionSessions).set({ status: "completed" }).where(eq(auctionSessions.id, sessionId));
+      await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
       return null;
     }
     const newQueue = shuffleInPlace(unsold);
@@ -660,6 +664,8 @@ export async function simulateClubAuction(
     .update(auctionSessions)
     .set({ status: "completed" })
     .where(eq(auctionSessions.id, sessionId));
+
+  await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
 
   return { allocated: ownershipRecords.length };
 }

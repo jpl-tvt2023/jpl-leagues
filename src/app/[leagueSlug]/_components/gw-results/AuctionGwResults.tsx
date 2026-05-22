@@ -316,10 +316,10 @@ export function AuctionGwResults() {
                                     {row.synergyBonus > 0 ? `+${formatPts(row.synergyBonus)}` : "0"}
                                   </td>
                                   <td
-                                    className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
+                                    className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : row.clubResultSummary ? "text-gray-400 cursor-help" : "text-gray-600"}`}
                                     title={
                                       row.clubResultSummary
-                                        ? `${normalizeClubSummary(row.clubResultSummary)} points`
+                                        ? `${normalizeClubSummary(row.clubResultSummary)} → +${row.clubResultBonus}`
                                         : row.clubResultBonus > 0
                                         ? `+${row.clubResultBonus} (no fixture detail)`
                                         : undefined
