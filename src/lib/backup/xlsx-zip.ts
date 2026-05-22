@@ -22,6 +22,24 @@ export async function buildBackupZip(rows: BackupRows): Promise<ArrayBuffer> {
   if (rows.auctionTeamsState) zip.file("auction_teams_state.xlsx", buildXlsxBuffer(rows.auctionTeamsState, "Teams State"));
   if (rows.auctionSquads) zip.file("auction_squads.xlsx", buildXlsxBuffer(rows.auctionSquads, "Squads"));
   if (rows.auctionClubs) zip.file("auction_clubs.xlsx", buildXlsxBuffer(rows.auctionClubs, "Clubs"));
+  // Auction event-history sheets (migration 0012). Each emitted only when the corresponding array
+  // is non-empty so TVT/TC backups don't get a bunch of empty workbooks.
+  if (rows.auctionTrades && rows.auctionTrades.length > 0)
+    zip.file("auction_trades.xlsx", buildXlsxBuffer(rows.auctionTrades, "Trades"));
+  if (rows.auctionPenaltyRedemptions && rows.auctionPenaltyRedemptions.length > 0)
+    zip.file("auction_penalty_redemptions.xlsx", buildXlsxBuffer(rows.auctionPenaltyRedemptions, "Penalty Redemptions"));
+  if (rows.auctionSlotUnlocks && rows.auctionSlotUnlocks.length > 0)
+    zip.file("auction_slot_unlocks.xlsx", buildXlsxBuffer(rows.auctionSlotUnlocks, "Slot Unlocks"));
+  if (rows.auctionWishlists && rows.auctionWishlists.length > 0)
+    zip.file("auction_wishlists.xlsx", buildXlsxBuffer(rows.auctionWishlists, "Wishlists"));
+  if (rows.auctionNotifications && rows.auctionNotifications.length > 0)
+    zip.file("auction_notifications.xlsx", buildXlsxBuffer(rows.auctionNotifications, "Notifications"));
+  if (rows.auctionSessionsHistory && rows.auctionSessionsHistory.length > 0)
+    zip.file("auction_sessions.xlsx", buildXlsxBuffer(rows.auctionSessionsHistory, "Sessions"));
+  if (rows.auctionBids && rows.auctionBids.length > 0)
+    zip.file("auction_bids.xlsx", buildXlsxBuffer(rows.auctionBids, "Bids"));
+  if (rows.auctionBidLogs && rows.auctionBidLogs.length > 0)
+    zip.file("auction_bid_logs.xlsx", buildXlsxBuffer(rows.auctionBidLogs, "Bid Logs"));
   // Gameweeks shape — always emitted when the league has gameweeks; restore reads this.
   if (rows.gameweeks.length > 0) zip.file("gameweeks.xlsx", buildXlsxBuffer(rows.gameweeks, "Gameweeks"));
   return zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });

@@ -63,6 +63,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     auctionSquads: row.auctionSquadsJson ? JSON.parse(row.auctionSquadsJson) : null,
     auctionClubs: row.auctionClubsJson ? JSON.parse(row.auctionClubsJson) : null,
     gameweeks: row.gameweeksJson ? JSON.parse(row.gameweeksJson) : [],
+    // Migration 0012 — auction event-history snapshots. `null` for pre-PR rows.
+    auctionTrades: row.tradesJson ? JSON.parse(row.tradesJson) : null,
+    auctionPenaltyRedemptions: row.penaltyRedemptionsJson ? JSON.parse(row.penaltyRedemptionsJson) : null,
+    auctionSlotUnlocks: row.slotUnlocksJson ? JSON.parse(row.slotUnlocksJson) : null,
+    auctionWishlists: row.wishlistsJson ? JSON.parse(row.wishlistsJson) : null,
+    auctionNotifications: row.notificationsJson ? JSON.parse(row.notificationsJson) : null,
+    auctionSessionsHistory: row.auctionSessionsJson ? JSON.parse(row.auctionSessionsJson) : null,
+    auctionBids: row.auctionBidsJson ? JSON.parse(row.auctionBidsJson) : null,
+    auctionBidLogs: row.auctionBidLogsJson ? JSON.parse(row.auctionBidLogsJson) : null,
   };
 
   const zipBuf = await buildBackupZip(rows);

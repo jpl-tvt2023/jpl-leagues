@@ -87,6 +87,15 @@ export async function POST(request: NextRequest) {
       auctionSquadsJson: rows.auctionSquads ? JSON.stringify(rows.auctionSquads) : null,
       auctionClubsJson: rows.auctionClubs ? JSON.stringify(rows.auctionClubs) : null,
       gameweeksJson: JSON.stringify(rows.gameweeks),
+      // Migration 0012 — auction event-history snapshots
+      tradesJson: rows.auctionTrades ? JSON.stringify(rows.auctionTrades) : null,
+      penaltyRedemptionsJson: rows.auctionPenaltyRedemptions ? JSON.stringify(rows.auctionPenaltyRedemptions) : null,
+      slotUnlocksJson: rows.auctionSlotUnlocks ? JSON.stringify(rows.auctionSlotUnlocks) : null,
+      wishlistsJson: rows.auctionWishlists ? JSON.stringify(rows.auctionWishlists) : null,
+      notificationsJson: rows.auctionNotifications ? JSON.stringify(rows.auctionNotifications) : null,
+      auctionSessionsJson: rows.auctionSessionsHistory ? JSON.stringify(rows.auctionSessionsHistory) : null,
+      auctionBidsJson: rows.auctionBids ? JSON.stringify(rows.auctionBids) : null,
+      auctionBidLogsJson: rows.auctionBidLogs ? JSON.stringify(rows.auctionBidLogs) : null,
     });
     return NextResponse.json({
       success: true,
@@ -100,6 +109,14 @@ export async function POST(request: NextRequest) {
         auctionSquads: rows.auctionSquads?.length ?? 0,
         auctionClubs: rows.auctionClubs?.length ?? 0,
         gameweeks: rows.gameweeks.length,
+        auctionTrades: rows.auctionTrades?.length ?? 0,
+        auctionPenaltyRedemptions: rows.auctionPenaltyRedemptions?.length ?? 0,
+        auctionSlotUnlocks: rows.auctionSlotUnlocks?.length ?? 0,
+        auctionWishlists: rows.auctionWishlists?.length ?? 0,
+        auctionNotifications: rows.auctionNotifications?.length ?? 0,
+        auctionSessions: rows.auctionSessionsHistory?.length ?? 0,
+        auctionBids: rows.auctionBids?.length ?? 0,
+        auctionBidLogs: rows.auctionBidLogs?.length ?? 0,
       },
     });
   } catch (err) {

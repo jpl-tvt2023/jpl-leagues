@@ -17,8 +17,25 @@
  */
 
 import { db } from "@/lib/db";
-import { leagues, teams, gameweeks, fixtures, gameweekCaptains, gameweekChips, auctionOwnership, auctionClubOwnership } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import {
+  leagues,
+  teams,
+  gameweeks,
+  fixtures,
+  gameweekCaptains,
+  gameweekChips,
+  auctionOwnership,
+  auctionClubOwnership,
+  tradeProposals,
+  teamPenalties,
+  teamSlotUnlocks,
+  auctionWishlists,
+  notifications,
+  auctionSessions,
+  auctionBids,
+  auctionBidLogs,
+} from "@/lib/db/schema";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 
 export type TeamRow = {
   "Team ID": string;
@@ -84,6 +101,99 @@ export type GameweekRow = {
   "Is Playoffs": boolean;
 };
 
+// ── Auction event-history rows (migration 0012). Auction-only; null for TVT/TC. ──
+// Column names mirror the DB columns they restore to so the restore step is a straight map.
+
+export type TradeRow = {
+  "Trade ID": string;
+  Status: string;                  // pending | accepted | rejected | vetoed | expired | completed | cancelled
+  "Proposer Team ID": string;
+  "Target Team ID": string;
+  "Offered Player IDs": string;    // JSON-stringified array of auctionOwnership IDs
+  "Requested Player IDs": string;
+  "Cash Offered": number;
+  "Veto Deadline": string | null;
+  "Veto Votes": string;            // JSON-stringified { teamId: "veto" | "approve" }
+  "Created At": string;
+  "Updated At": string;
+};
+
+export type PenaltyRedemptionRow = {
+  "Penalty ID": string;
+  "Team ID": string;
+  "Session ID": string | null;
+  "Incurred Cycle": number;
+  "Redeemed At": string;
+  "Redemption Price": number;
+  "Created At": string;
+};
+
+export type SlotUnlockRow = {
+  "Unlock ID": string;
+  "Team ID": string;
+  "Slot Number": number;
+  Cost: number;
+  "Unlocked At": string;
+};
+
+export type WishlistRow = {
+  "Wishlist ID": string;
+  "Team ID": string;
+  "FPL Element ID": number;
+  "Player Name": string;
+  Priority: number;
+  "Created At": string;
+};
+
+export type NotificationRow = {
+  "Notification ID": string;
+  "Team ID": string;
+  Type: string;
+  Title: string;
+  Body: string;
+  Link: string | null;
+  "Read At": string | null;
+  "Created At": string;
+};
+
+export type AuctionSessionRow = {
+  "Session ID": string;
+  Type: string;                   // "initial" | "mini-auction" | "club-auction"
+  Status: string;                 // "completed" | "cancelled" — active/pending intentionally excluded
+  "Cycle Number": number;
+  "Snake Order": string;          // JSON array
+  "Current Nominator Index": number;
+  "Nomination Deadline": string | null;
+  "Scheduled At": string | null;
+  "Bid Timer Seconds": number;
+  "Nomination Timeout Seconds": number;
+  "Created At": string;
+};
+
+export type AuctionBidRow = {
+  "Bid ID": string;
+  "Session ID": string;
+  "Nominator Team ID": string;
+  "FPL Element ID": number;
+  "Player Name": string;
+  "Current High Bid": number;
+  "Current High Bidder ID": string;
+  "Min Bid": number;
+  Status: string;                 // "open" | "sold" | "unsold" | "cancelled"
+  "Expires At": string;
+  "Created At": string;
+  "Updated At": string;
+};
+
+export type AuctionBidLogRow = {
+  "Bid Log ID": string;
+  "Bid ID": string;
+  "Team ID": string;
+  Amount: number;
+  Type: string;                   // "nomination" | "bid" | "sold" | "unsold"
+  "Created At": string;
+};
+
 // Identity payload written into the .zip as meta.json. Restore endpoints validate the source
 // leagueId against the target before any destructive operation — prevents restoring League A's
 // backup into League B by accident.
@@ -111,6 +221,15 @@ export type BackupRows = {
   auctionClubs: AuctionClubRow[] | null;
   // Available for every format — the restore endpoint reads this when recreating GW rows.
   gameweeks: GameweekRow[];
+  // Auction event-history sheets (migration 0012). Auction-only; null for TVT/TC.
+  auctionTrades: TradeRow[] | null;
+  auctionPenaltyRedemptions: PenaltyRedemptionRow[] | null;
+  auctionSlotUnlocks: SlotUnlockRow[] | null;
+  auctionWishlists: WishlistRow[] | null;
+  auctionNotifications: NotificationRow[] | null;
+  auctionSessionsHistory: AuctionSessionRow[] | null;
+  auctionBids: AuctionBidRow[] | null;
+  auctionBidLogs: AuctionBidLogRow[] | null;
 };
 
 /**
@@ -286,8 +405,28 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
   let auctionTeamsState: AuctionTeamStateRow[] | null = null;
   let auctionSquads: AuctionSquadRow[] | null = null;
   let auctionClubs: AuctionClubRow[] | null = null;
+  // Event-history sheets (migration 0012). Auction-only.
+  let auctionTradesRows: TradeRow[] | null = null;
+  let auctionPenaltyRedemptionsRows: PenaltyRedemptionRow[] | null = null;
+  let auctionSlotUnlocksRows: SlotUnlockRow[] | null = null;
+  let auctionWishlistsRows: WishlistRow[] | null = null;
+  let auctionNotificationsRows: NotificationRow[] | null = null;
+  let auctionSessionsHistoryRows: AuctionSessionRow[] | null = null;
+  let auctionBidsRows: AuctionBidRow[] | null = null;
+  let auctionBidLogsRows: AuctionBidLogRow[] | null = null;
   if (league.format === "auction") {
-    const [auctionTeamRows, ownershipRows, clubRows] = await Promise.all([
+    const [
+      auctionTeamRows,
+      ownershipRows,
+      clubRows,
+      tradeRows,
+      penaltyRows,
+      slotUnlockRows,
+      wishlistRowsRaw,
+      notificationRows,
+      sessionRows,
+      bidRows,
+    ] = await Promise.all([
       db.select({
         id: teams.id,
         teamLoginId: teams.teamLoginId,
@@ -303,7 +442,27 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
         .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false))),
       db.select().from(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId)),
       db.select().from(auctionClubOwnership).where(eq(auctionClubOwnership.leagueId, leagueId)),
+      // All trade proposals — every status, so the audit trail is preserved.
+      db.select().from(tradeProposals).where(eq(tradeProposals.leagueId, leagueId)),
+      // Only REDEEMED penalty rows — pending penalties live on the active teamsState (penaltySlots).
+      db.select().from(teamPenalties).where(
+        and(eq(teamPenalties.leagueId, leagueId), isNotNull(teamPenalties.redeemedAt)),
+      ),
+      db.select().from(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId)),
+      db.select().from(auctionWishlists).where(eq(auctionWishlists.leagueId, leagueId)),
+      db.select().from(notifications).where(eq(notifications.leagueId, leagueId)),
+      // Only completed/cancelled sessions — active/pending intentionally excluded (admin reschedules).
+      db.select().from(auctionSessions).where(
+        and(eq(auctionSessions.leagueId, leagueId), inArray(auctionSessions.status, ["completed", "cancelled"])),
+      ),
+      db.select().from(auctionBids).where(eq(auctionBids.leagueId, leagueId)),
     ]);
+
+    // Bid logs are joined via bidId — only pull logs whose bids belong to this league.
+    const bidIds = bidRows.map((b) => b.id);
+    const bidLogRows = bidIds.length > 0
+      ? await db.select().from(auctionBidLogs).where(inArray(auctionBidLogs.bidId, bidIds))
+      : [];
 
     auctionTeamsState = auctionTeamRows.map((t) => ({
       "Team ID": t.id,
@@ -339,6 +498,96 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
       "Purchase Price": c.purchasePrice,
       "Acquired At": c.acquiredAt.toISOString(),
     }));
+
+    auctionTradesRows = tradeRows.map((t) => ({
+      "Trade ID": t.id,
+      Status: t.status,
+      "Proposer Team ID": t.proposerTeamId,
+      "Target Team ID": t.targetTeamId,
+      "Offered Player IDs": t.offeredPlayerIds,
+      "Requested Player IDs": t.requestedPlayerIds,
+      "Cash Offered": t.cashOffered,
+      "Veto Deadline": t.vetoDeadline ? t.vetoDeadline.toISOString() : null,
+      "Veto Votes": t.vetoVotes,
+      "Created At": t.createdAt.toISOString(),
+      "Updated At": t.updatedAt.toISOString(),
+    }));
+
+    auctionPenaltyRedemptionsRows = penaltyRows.map((p) => ({
+      "Penalty ID": p.id,
+      "Team ID": p.teamId,
+      "Session ID": p.sessionId,
+      "Incurred Cycle": p.incurredCycle,
+      "Redeemed At": p.redeemedAt!.toISOString(), // isNotNull filter guarantees non-null
+      "Redemption Price": p.redemptionPrice ?? 0,
+      "Created At": p.createdAt.toISOString(),
+    }));
+
+    auctionSlotUnlocksRows = slotUnlockRows.map((u) => ({
+      "Unlock ID": u.id,
+      "Team ID": u.teamId,
+      "Slot Number": u.slotNumber,
+      Cost: u.cost,
+      "Unlocked At": u.unlockedAt.toISOString(),
+    }));
+
+    auctionWishlistsRows = wishlistRowsRaw.map((w) => ({
+      "Wishlist ID": w.id,
+      "Team ID": w.teamId,
+      "FPL Element ID": w.fplElementId,
+      "Player Name": w.playerName,
+      Priority: w.priority,
+      "Created At": w.createdAt.toISOString(),
+    }));
+
+    auctionNotificationsRows = notificationRows.map((n) => ({
+      "Notification ID": n.id,
+      "Team ID": n.teamId,
+      Type: n.type,
+      Title: n.title,
+      Body: n.body,
+      Link: n.link,
+      "Read At": n.readAt ? n.readAt.toISOString() : null,
+      "Created At": n.createdAt.toISOString(),
+    }));
+
+    auctionSessionsHistoryRows = sessionRows.map((s) => ({
+      "Session ID": s.id,
+      Type: s.type,
+      Status: s.status,
+      "Cycle Number": s.cycleNumber,
+      "Snake Order": s.snakeOrder,
+      "Current Nominator Index": s.currentNominatorIndex,
+      "Nomination Deadline": s.nominationDeadline ? s.nominationDeadline.toISOString() : null,
+      "Scheduled At": s.scheduledAt ? s.scheduledAt.toISOString() : null,
+      "Bid Timer Seconds": s.bidTimerSeconds,
+      "Nomination Timeout Seconds": s.nominationTimeoutSeconds,
+      "Created At": s.createdAt.toISOString(),
+    }));
+
+    auctionBidsRows = bidRows.map((b) => ({
+      "Bid ID": b.id,
+      "Session ID": b.sessionId,
+      "Nominator Team ID": b.nominatorTeamId,
+      "FPL Element ID": b.fplElementId,
+      "Player Name": b.playerName,
+      "Current High Bid": b.currentHighBid,
+      "Current High Bidder ID": b.currentHighBidderId,
+      "Min Bid": b.minBid,
+      Status: b.status,
+      "Expires At": b.expiresAt.toISOString(),
+      "Created At": b.createdAt.toISOString(),
+      "Updated At": b.updatedAt.toISOString(),
+    }));
+
+    auctionBidLogsRows = bidLogRows.map((l) => ({
+      "Bid Log ID": l.id,
+      "Bid ID": l.bidId,
+      "Team ID": l.teamId,
+      Amount: l.amount,
+      Type: l.type,
+      "Created At": l.createdAt.toISOString(),
+    }));
   }
 
   return {
@@ -352,6 +601,14 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
     auctionSquads,
     auctionClubs,
     gameweeks: gameweeksRows,
+    auctionTrades: auctionTradesRows,
+    auctionPenaltyRedemptions: auctionPenaltyRedemptionsRows,
+    auctionSlotUnlocks: auctionSlotUnlocksRows,
+    auctionWishlists: auctionWishlistsRows,
+    auctionNotifications: auctionNotificationsRows,
+    auctionSessionsHistory: auctionSessionsHistoryRows,
+    auctionBids: auctionBidsRows,
+    auctionBidLogs: auctionBidLogsRows,
   };
 }
 
