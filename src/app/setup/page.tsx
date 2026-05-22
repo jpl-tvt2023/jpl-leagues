@@ -257,13 +257,12 @@ export default function SetupPage() {
         {/* Header */}
         <div className="text-center mb-6 sm:mb-8">
           <h1 className="text-xl sm:text-3xl font-bold text-white mb-2">Complete Your Profile</h1>
-          <p className="text-gray-400 text-xs sm:text-sm">{isAuction ? "Set up your manager profile" : `Step ${currentStep} of ${totalSteps}`}</p>
+          <p className="text-gray-400 text-xs sm:text-sm">{isAuction ? "Step 1 of 1 — Manager profile" : `Step ${currentStep} of ${totalSteps}`}</p>
         </div>
 
-        {/* Progress indicator */}
-        {!isAuction && (
+        {/* Progress indicator — single filled bar for auction (1 step), 3-bar bar for TVT/TC. */}
         <div className="flex gap-2 mb-8 sm:mb-12">
-          {[1, 2, 3].map((step) => (
+          {(isAuction ? [1] : [1, 2, 3]).map((step) => (
             <div
               key={step}
               className={`h-1 flex-1 rounded-full transition-colors ${
@@ -272,7 +271,6 @@ export default function SetupPage() {
             />
           ))}
         </div>
-        )}
 
         {/* Error message */}
         {errors.global && (

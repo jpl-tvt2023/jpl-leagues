@@ -61,24 +61,37 @@ export default function NotificationsPage() {
   };
 
   const markAll = async () => {
-    await fetch("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    });
-    setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() })));
-    setUnread(0);
+    try {
+      const res = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      if (!res.ok) { console.error("[notifications] markAll failed:", res.status); return; }
+      setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() })));
+      setUnread(0);
+    } catch (e) {
+      console.error("[notifications] markAll network error:", e);
+    }
   };
 
   const handleClick = async (n: NotificationItem) => {
     if (!n.readAt) {
-      await fetch("/api/notifications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [n.id] }),
-      });
-      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x)));
-      setUnread((u) => Math.max(0, u - 1));
+      try {
+        const res = await fetch("/api/notifications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: [n.id] }),
+        });
+        if (res.ok) {
+          setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x)));
+          setUnread((u) => Math.max(0, u - 1));
+        } else {
+          console.error("[notifications] markRead failed:", res.status);
+        }
+      } catch (e) {
+        console.error("[notifications] markRead network error:", e);
+      }
     }
     if (n.link) window.location.href = n.link;
   };

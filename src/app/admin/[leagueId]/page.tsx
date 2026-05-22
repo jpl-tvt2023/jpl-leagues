@@ -6,6 +6,7 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TierChip } from "@/components/TierChip";
+import { formatCurrency } from "@/lib/format/currency";
 
 interface Team {
   id: string;
@@ -1037,13 +1038,7 @@ export default function AdminDashboard() {
 
   // ---- Live Auction Monitor helpers ----
 
-  function formatAuctionCurrency(amount: number): string {
-    const abs = Math.abs(amount);
-    const sign = amount < 0 ? "-" : "";
-    if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
-    if (abs >= 1_000) return `${sign}£${(abs / 1_000).toFixed(0)}K`;
-    return `${sign}£${abs}`;
-  }
+  const formatAuctionCurrency = formatCurrency;
 
   const addLiveFeed = useCallback((text: string, kind: string) => {
     setLiveFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now() }, ...prev]);
@@ -4227,7 +4222,7 @@ export default function AdminDashboard() {
                                   </span>
                                 </td>
                                 <td className="py-2 px-3 text-right font-mono text-gray-200 whitespace-nowrap">
-                                  £{(totalSpent / 1_000_000).toFixed(1)}M
+                                  {formatCurrency(totalSpent)}
                                 </td>
                                 <td className="py-2 px-3 text-right font-mono text-[#00ff85] whitespace-nowrap">
                                   {totalPoints}
@@ -4297,10 +4292,10 @@ export default function AdminDashboard() {
                                                             {player.totalPoints}
                                                           </td>
                                                           <td className="py-1 px-2 text-right font-mono text-gray-300">
-                                                            £{(player.purchasePrice / 1_000_000).toFixed(1)}M
+                                                            {formatCurrency(player.purchasePrice)}
                                                           </td>
                                                           <td className="py-1 px-2 text-right font-mono text-cyan-300 font-semibold">
-                                                            £{(player.fmv / 1_000_000).toFixed(1)}M
+                                                            {formatCurrency(player.fmv)}
                                                           </td>
                                                         </tr>
                                                       ))
@@ -4355,7 +4350,7 @@ export default function AdminDashboard() {
                           </div>
                           <div className="text-xs text-gray-400 mt-1">
                             {trade.offeredPlayerIds.length} player(s) offered | {trade.requestedPlayerIds.length} requested
-                            {trade.cashOffered !== 0 && ` | Cash: ${(Math.abs(trade.cashOffered) / 1_000_000).toFixed(1)}M ${trade.cashOffered > 0 ? "(proposer pays)" : "(target pays)"}`}
+                            {trade.cashOffered !== 0 && ` | Cash: ${formatCurrency(Math.abs(trade.cashOffered))} ${trade.cashOffered > 0 ? "(proposer pays)" : "(target pays)"}`}
                           </div>
                           {trade.vetoDeadline && (
                             <div className="text-xs text-gray-500 mt-0.5">
@@ -4734,13 +4729,7 @@ interface AdminSquadCache {
   [teamId: string]: { teamName: string; squad: { ownershipId: string; playerName: string; status: string; purchasePrice: number }[] };
 }
 
-function fmtMoney(n: number): string {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}£${(abs / 1_000).toFixed(0)}K`;
-  return `${sign}£${abs}`;
-}
+const fmtMoney = formatCurrency;
 
 const CHIP_NAMES: Record<string, string> = {
   W: "Win-Win",

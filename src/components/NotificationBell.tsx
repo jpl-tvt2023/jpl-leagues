@@ -75,23 +75,42 @@ export function NotificationBell() {
 
   async function markRead(ids: string[]) {
     if (ids.length === 0) return;
-    await fetch("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    });
-    setItems((prev) => prev.map((n) => (ids.includes(n.id) && !n.readAt ? { ...n, readAt: new Date().toISOString() } : n)));
-    setUnread((u) => Math.max(0, u - ids.length));
+    // Only flip local state if the server confirms persistence. Without this check, a 500/network
+    // error would leave the badge showing "read" while the DB row stays unread — and the next
+    // refresh would tick the badge count back up, confusing the user.
+    try {
+      const res = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) {
+        console.error("[NotificationBell] markRead failed:", res.status);
+        return;
+      }
+      setItems((prev) => prev.map((n) => (ids.includes(n.id) && !n.readAt ? { ...n, readAt: new Date().toISOString() } : n)));
+      setUnread((u) => Math.max(0, u - ids.length));
+    } catch (e) {
+      console.error("[NotificationBell] markRead network error:", e);
+    }
   }
 
   async function markAll() {
-    await fetch("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    });
-    setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() })));
-    setUnread(0);
+    try {
+      const res = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      if (!res.ok) {
+        console.error("[NotificationBell] markAll failed:", res.status);
+        return;
+      }
+      setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() })));
+      setUnread(0);
+    } catch (e) {
+      console.error("[NotificationBell] markAll network error:", e);
+    }
   }
 
   function handleClick(n: NotificationItem) {

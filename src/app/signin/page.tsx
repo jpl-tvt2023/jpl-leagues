@@ -31,18 +31,14 @@ export default function SignInPage() {
       }
 
       setMessage({ type: "success", text: "Signed in successfully!" });
-      
-      // Redirect based on role and status
-      if (data.user) {
-        // Admin login — respect mustChangePassword redirect
-        window.location.href = data.redirectTo || "/admin";
-      } else if (data.team) {
-        // Team login
-        if (data.team.mustChangePassword) {
-          window.location.href = "/change-password";
-        } else {
-          window.location.href = "/dashboard";
-        }
+
+      // Trust the server's `redirectTo` for both admin and team flows. The server is the single
+      // source of truth (it knows mustChangePassword, isProfileComplete, role). Falling back to
+      // local conditionals would only re-introduce divergence between paths.
+      if (data.redirectTo) {
+        window.location.href = data.redirectTo;
+      } else {
+        window.location.href = data.user ? "/admin" : "/dashboard";
       }
     } catch {
       setMessage({ type: "error", text: "Network error. Please try again." });
