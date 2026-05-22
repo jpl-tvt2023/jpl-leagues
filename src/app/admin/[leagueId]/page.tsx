@@ -3081,7 +3081,9 @@ export default function AdminDashboard() {
                 <button
                   onClick={handleTakeBackupNow}
                   disabled={takingBackupNow}
-                  title="Persists a snapshot row in the database so it survives league resets. Recommended right after the auction concludes."
+                  title={isAuctionFormat
+                    ? "Persists a snapshot row in the database so it survives league resets. Recommended right after the auction concludes."
+                    : "Persists a snapshot row in the database so it survives league resets. Recommended after major changes (fixtures, captains, chips)."}
                   className="rounded-lg bg-gradient-to-r from-emerald-500/30 to-green-600/30 border border-emerald-500/40 px-6 py-3 font-semibold text-emerald-200 hover:from-emerald-500/40 hover:to-green-600/40 transition disabled:opacity-50"
                 >
                   {takingBackupNow ? "Saving..." : "Take Backup Now"}
