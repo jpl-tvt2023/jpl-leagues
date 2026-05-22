@@ -1533,7 +1533,20 @@ export default function AdminDashboard() {
     }
   };
 
-  // Saved historical snapshots — GW1 auto-snapshot + admin-triggered manual snapshots.
+  // Saved historical snapshots — auto-snapshots (per-GW + per-auction-session) + admin-triggered manual snapshots.
+  // Parses the trigger string into a friendly label for the UI.
+  function formatBackupTrigger(trigger: string): string {
+    if (trigger === "gw1-lock") return "GW1 lock-in";
+    if (trigger === "manual") return "Manual";
+    const gw = /^gw(\d+)-auto$/.exec(trigger);
+    if (gw) return `GW${gw[1]} (auto)`;
+    if (trigger === "auction-initial-c0") return "Initial auction complete";
+    if (trigger === "auction-club-c0") return "Club auction complete";
+    const mini = /^auction-mini-c(\d+)$/.exec(trigger);
+    if (mini) return `Mini-auction cycle ${mini[1]} complete`;
+    return trigger;
+  }
+
   type SavedBackup = {
     id: string;
     trigger: string;
@@ -2198,7 +2211,7 @@ export default function AdminDashboard() {
                 : "bg-white/5 text-gray-300 hover:bg-white/10"
             }`}
           >
-            Bulk Upload
+            Backup
           </button>
           <button
             onClick={() => { setActiveTab("scoring"); setMessage(null); setScoringResults([]); }}
@@ -3108,7 +3121,7 @@ export default function AdminDashboard() {
                   <ul className="space-y-2">
                     {savedBackups.map(snap => {
                       const created = new Date(snap.createdAt);
-                      const triggerLabel = snap.trigger === "gw1-lock" ? "GW1 lock-in" : snap.trigger;
+                      const triggerLabel = formatBackupTrigger(snap.trigger);
                       const includedParts = [
                         snap.includes.teams && "teams",
                         snap.includes.fixtures && "fixtures",
@@ -4615,7 +4628,7 @@ export default function AdminDashboard() {
                         .filter(s => isAuctionFormat ? (s.includes.auctionSquads || s.includes.auctionClubs) : true)
                         .map(s => (
                           <option key={s.id} value={s.id}>
-                            {s.trigger === "gw1-lock" ? "GW1 lock-in" : s.trigger} · {new Date(s.createdAt).toLocaleString()}
+                            {formatBackupTrigger(s.trigger)} · {new Date(s.createdAt).toLocaleString()}
                           </option>
                         ))}
                     </select>

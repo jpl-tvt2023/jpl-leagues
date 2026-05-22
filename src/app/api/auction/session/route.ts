@@ -21,6 +21,7 @@ import {
   loadStandingsConfig,
 } from "@/lib/formats/auction/club-auction";
 import { resolveTier } from "@/lib/data/pl-standings-seed";
+import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
 
 /**
  * Auto-resolve expired open bids that SSE may have missed.
@@ -373,6 +374,13 @@ export async function POST(request: NextRequest) {
     .update(auctionSessions)
     .set({ status: newStatus })
     .where(eq(auctionSessions.id, sessionId));
+
+  // Admin-initiated session completion (real / non-simulated path). Mini-auctions wind down here in
+  // production; initial + club auctions also pass through this branch when an admin force-completes.
+  // Idempotent — `writeAutoSnapshot` skips if a snapshot for this (leagueId, trigger) pair exists.
+  if (newStatus === "completed") {
+    await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
+  }
 
   // When starting a mini-auction, finalize any pending player releases first
   if (newStatus === "active" && action === "start" && sessionRow[0].type === "mini-auction") {

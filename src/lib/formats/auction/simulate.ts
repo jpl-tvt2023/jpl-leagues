@@ -24,6 +24,7 @@ import {
   validateAddPlayer,
   type SquadCounts,
 } from "./squad-rules";
+import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
 
 const DEFAULT_MIN_BID = 500_000;
 
@@ -185,6 +186,8 @@ export async function simulateAuction(
     .update(auctionSessions)
     .set({ status: "completed" })
     .where(eq(auctionSessions.id, sessionId));
+
+  await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
 
   return { playersAssigned: totalAssigned };
 }
