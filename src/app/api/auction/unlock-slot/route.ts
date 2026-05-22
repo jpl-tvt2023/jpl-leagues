@@ -106,12 +106,12 @@ export async function POST(request: NextRequest) {
   );
   if (availablePurse < cost) {
     return NextResponse.json(
-      { error: `Insufficient purse: need £${(cost / 1_000_000).toFixed(1)}M, have £${(availablePurse / 1_000_000).toFixed(2)}M` },
+      { error: `Insufficient purse: need £${(cost / 1_000_000).toFixed(2)}M, have £${(availablePurse / 1_000_000).toFixed(2)}M` },
       { status: 400 }
     );
   }
 
-  const slotNumber = MAX_SQUAD_SIZE + currentBonusSlots + 1; // The slot being unlocked (15 or 16).
+  const slotNumber = MAX_SQUAD_SIZE + currentBonusSlots + 1; // The slot being unlocked (16, 17, or 18 — base 15 cap + N bonus unlocked + 1).
   const unlockedAt = new Date();
 
   // Apply the unlock atomically — column updates + audit row in one transaction.

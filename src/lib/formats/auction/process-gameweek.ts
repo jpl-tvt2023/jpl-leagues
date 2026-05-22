@@ -160,8 +160,42 @@ export async function processAuctionGameweek(
   const refundByTeam = new Map<string, number>();
   const releaseCountByTeam = new Map<string, number>();
 
-  // Atomically write scores and update purses
+  // Atomically write scores and update purses.
+  // Race-safety: re-check duplicate scores INSIDE the transaction. If a concurrent caller wrote
+  // them between our outer check and our transaction start, we abort and return their persisted
+  // state. Closes the window where two callers both run INSERTs — one succeeds, the loser
+  // throws a UNIQUE constraint violation.
+  type RaceLossScore = { teamId: string; teamName: string; totalPoints: number; rank: number; payout: number };
+  let raceLossDetected: RaceLossScore[] | null = null;
+
   await db.transaction(async (tx) => {
+    // Re-check inside the transaction: closes the race window from the outer check above.
+    if (!forceReprocess) {
+      const existingInTx = await tx
+        .select()
+        .from(auctionScores)
+        .where(
+          and(
+            eq(auctionScores.leagueId, leagueId),
+            eq(auctionScores.gameweekId, gameweekId),
+          ),
+        );
+      if (existingInTx.length > 0) {
+        // The caller only reads teamId/teamName/totalPoints/rank/payout from the response shape.
+        raceLossDetected = existingInTx.map((s) => {
+          const team = leagueTeams.find((t) => t.id === s.teamId);
+          return {
+            teamId: s.teamId,
+            teamName: team?.name ?? "",
+            totalPoints: s.totalPoints,
+            rank: s.rank ?? 0,
+            payout: s.payout,
+          };
+        });
+        return; // skip the rest of the transaction body
+      }
+    }
+
     // Delete existing scores for this GW if reprocessing
     if (forceReprocess) {
       // Delete one by one since Drizzle SQLite doesn't support compound where on delete easily
@@ -257,6 +291,18 @@ export async function processAuctionGameweek(
       }
     }
   });
+
+  // Race-loss path: another concurrent caller scored this GW between our outer check and the
+  // transaction. Return their persisted state instead of running notifications a second time.
+  // Cast through `unknown` because TS can't narrow the closure-mutated variable.
+  const raceLoss = raceLossDetected as unknown as RaceLossScore[] | null;
+  if (raceLoss) {
+    return {
+      success: true,
+      teamsProcessed: raceLoss.length,
+      scores: raceLoss,
+    };
+  }
 
   // Post-commit notification fan-out. Failures must never bubble up — scoring
   // already succeeded. Best-effort: a logged warning per team is enough.
