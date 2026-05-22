@@ -1,3 +1,8 @@
+// @deprecated The Bulk Upload tab no longer exposes a Teams upload block; team accounts are
+// either created at league creation (auction) or preserved across backup/restore (TVT + TC).
+// This endpoint stays for backwards compatibility with any external scripts; remove in a future
+// pass once we're confident nothing depends on it.
+
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups, leagues } from "@/lib/db";
 import { eq, and, ne, inArray } from "drizzle-orm";

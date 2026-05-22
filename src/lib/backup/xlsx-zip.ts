@@ -11,6 +11,9 @@ import type { BackupRows } from "./generate";
 
 export async function buildBackupZip(rows: BackupRows): Promise<ArrayBuffer> {
   const zip = new JSZip();
+  // meta.json carries the source league identity. Restore endpoints validate this against the
+  // target league before doing anything destructive. Always written, regardless of format.
+  zip.file("meta.json", JSON.stringify(rows.meta, null, 2));
   if (rows.teams) zip.file("teams.xlsx", buildXlsxBuffer(rows.teams, "Teams"));
   zip.file("fixtures.xlsx", buildXlsxBuffer(rows.fixtures, "Fixtures"));
   if (rows.captains) zip.file("captains.xlsx", buildXlsxBuffer(rows.captains, "Captains"));

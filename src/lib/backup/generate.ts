@@ -84,7 +84,22 @@ export type GameweekRow = {
   "Is Playoffs": boolean;
 };
 
+// Identity payload written into the .zip as meta.json. Restore endpoints validate the source
+// leagueId against the target before any destructive operation — prevents restoring League A's
+// backup into League B by accident.
+export type BackupMeta = {
+  leagueId: string;
+  leagueSlug: string;
+  leagueName: string;
+  format: string;
+  season: string;
+  generatedAt: string;
+  /** Bumped when the BackupRows payload shape changes in a breaking way. */
+  backupVersion: 1;
+};
+
 export type BackupRows = {
+  meta: BackupMeta;
   format: string;
   teams: TeamRow[] | null;
   fixtures: FixtureRow[];
@@ -108,11 +123,27 @@ const PASSWORD_PLACEHOLDER = "RESET_REQUIRED";
 
 export async function generateBackupRows(leagueId: string): Promise<BackupRows> {
   const [league] = await db
-    .select({ id: leagues.id, format: leagues.format })
+    .select({
+      id: leagues.id,
+      slug: leagues.slug,
+      name: leagues.name,
+      format: leagues.format,
+      season: leagues.season,
+    })
     .from(leagues)
     .where(eq(leagues.id, leagueId))
     .limit(1);
   if (!league) throw new Error(`League ${leagueId} not found`);
+
+  const meta: BackupMeta = {
+    leagueId: league.id,
+    leagueSlug: league.slug,
+    leagueName: league.name,
+    format: league.format,
+    season: league.season,
+    generatedAt: new Date().toISOString(),
+    backupVersion: 1,
+  };
 
   // ── Teams + players + group ──
   let teamsRows: TeamRow[] | null = null;
@@ -311,6 +342,7 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
   }
 
   return {
+    meta,
     format: league.format,
     teams: teamsRows,
     fixtures: fixturesRows,
