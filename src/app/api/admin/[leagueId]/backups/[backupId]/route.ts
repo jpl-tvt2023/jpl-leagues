@@ -34,14 +34,26 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   if (!row) return NextResponse.json({ error: "Backup not found" }, { status: 404 });
 
   const [league] = await db
-    .select({ slug: leagues.slug, format: leagues.format })
+    .select({ slug: leagues.slug, name: leagues.name, format: leagues.format, season: leagues.season })
     .from(leagues)
     .where(eq(leagues.id, leagueId))
     .limit(1);
   if (!league) return NextResponse.json({ error: "League not found" }, { status: 404 });
 
   // Re-hydrate the stored JSON into the BackupRows shape that `buildBackupZip` expects.
+  // Synthesise the meta from the current league row + the snapshot's createdAt — older snapshots
+  // don't carry their own meta, but the (leagueId, format) identity is unchanged for restore-time
+  // validation purposes.
   const rows: BackupRows = {
+    meta: {
+      leagueId,
+      leagueSlug: league.slug,
+      leagueName: league.name,
+      format: league.format,
+      season: league.season,
+      generatedAt: new Date(row.createdAt).toISOString(),
+      backupVersion: 1,
+    },
     format: league.format,
     teams: row.teamsJson ? JSON.parse(row.teamsJson) : null,
     fixtures: row.fixturesJson ? JSON.parse(row.fixturesJson) : [],

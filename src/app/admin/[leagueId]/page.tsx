@@ -1670,20 +1670,32 @@ export default function AdminDashboard() {
     }
   };
 
-  // POST /api/admin/[leagueId]/restore-auction — accepts either a backup ID (from saved snapshots)
-  // or a multipart file upload of the original .zip. Wipes current auction state and rebuilds
-  // ownership + clubs; scores are NOT restored — admin reprocesses GWs to regenerate them.
+  // POST /api/admin/[leagueId]/restore-{format} — accepts either a backup ID (from saved snapshots)
+  // or a multipart file upload of the original .zip. Dispatch by league format:
+  //   - auction: wipes auction state + rebuilds ownership/clubs; admin reprocesses GWs.
+  //   - tvt: preserves teams, wipes+restores fixtures (captains/chips deferred).
+  //   - triple-crown: same as tvt; cup-fixtures/UEFA not in backup yet.
+  // Cross-league + format guards enforced server-side (meta.json + leagueId match).
   const handleRestoreAuction = async () => {
     if (restoringAuction) return;
     if (!restoreBackupId && !restoreFile) {
       setMessage({ type: "error", text: "Choose a saved snapshot or upload a .zip file." });
       return;
     }
-    if (!confirm(
-      "This will wipe the league's current auction state (sessions, bids, ownership, clubs, " +
-      "trades, scores) and rebuild from the backup. Reprocess each GW after restore to regenerate " +
-      "scores. Continue?",
-    )) return;
+    const format = leagueConfig?.format ?? "";
+    const endpoint =
+      format === "auction" ? "restore-auction"
+      : format === "tvt" ? "restore-tvt"
+      : format === "triple-crown" ? "restore-triple-crown"
+      : null;
+    if (!endpoint) {
+      setMessage({ type: "error", text: `Restore is not supported for ${format || "this"} league format.` });
+      return;
+    }
+    const confirmMsg = format === "auction"
+      ? "This will wipe the league's current auction state (sessions, bids, ownership, clubs, trades, scores) and rebuild from the backup. Reprocess each GW after restore to regenerate scores. Continue?"
+      : "This will wipe and re-import fixtures from the backup. Teams + accounts are preserved. Captains/Chips restore is a follow-up — use the Import blocks if those need to be applied. Continue?";
+    if (!confirm(confirmMsg)) return;
     setRestoringAuction(true);
     setMessage(null);
     try {
@@ -1691,13 +1703,13 @@ export default function AdminDashboard() {
       if (restoreFile) {
         const form = new FormData();
         form.append("file", restoreFile);
-        res = await fetch(`/api/admin/${leagueId}/restore-auction`, {
+        res = await fetch(`/api/admin/${leagueId}/${endpoint}`, {
           method: "POST",
           credentials: "include",
           body: form,
         });
       } else {
-        res = await fetch(`/api/admin/${leagueId}/restore-auction`, {
+        res = await fetch(`/api/admin/${leagueId}/${endpoint}`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -1709,11 +1721,12 @@ export default function AdminDashboard() {
         setMessage({ type: "error", text: data?.error ?? "Restore failed" });
         return;
       }
-      const r = data.restored ?? {};
-      setMessage({
-        type: "success",
-        text: `Restored: ${r.squads ?? 0} squad rows · ${r.clubs ?? 0} clubs · ${r.teamsState ?? 0} team-state rows. Reprocess each GW from the Scoring tab to regenerate scores.`,
-      });
+      // Auction response: { restored: { squads, clubs, teamsState } }
+      // TVT/TC response: { fixturesInserted, warnings, message }
+      const successText = format === "auction"
+        ? `Restored: ${(data.restored?.squads ?? 0)} squad rows · ${(data.restored?.clubs ?? 0)} clubs · ${(data.restored?.teamsState ?? 0)} team-state rows. Reprocess each GW from the Scoring tab to regenerate scores.`
+        : data.message ?? `Restored ${data.fixturesInserted ?? 0} fixture(s).`;
+      setMessage({ type: "success", text: successText });
       setShowRestoreModal(false);
       setRestoreBackupId(null);
       setRestoreFile(null);
@@ -3073,14 +3086,14 @@ export default function AdminDashboard() {
                 >
                   {takingBackupNow ? "Saving..." : "Take Backup Now"}
                 </button>
-                {isAuctionFormat && (
-                  <button
-                    onClick={() => setShowRestoreModal(true)}
-                    className="rounded-lg bg-gradient-to-r from-purple-500/30 to-fuchsia-600/30 border border-purple-500/40 px-6 py-3 font-semibold text-purple-200 hover:from-purple-500/40 hover:to-fuchsia-600/40 transition"
-                  >
-                    Restore from Backup
-                  </button>
-                )}
+                {/* Restore from Backup — available on every format. Server-side guards reject
+                    cross-league or wrong-format restore before any destructive operation. */}
+                <button
+                  onClick={() => setShowRestoreModal(true)}
+                  className="rounded-lg bg-gradient-to-r from-purple-500/30 to-fuchsia-600/30 border border-purple-500/40 px-6 py-3 font-semibold text-purple-200 hover:from-purple-500/40 hover:to-fuchsia-600/40 transition"
+                >
+                  Restore from Backup
+                </button>
               </div>
 
               {/* Saved snapshots — auto-archived at GW1 lock-in (or future manual archives) */}
@@ -3105,7 +3118,11 @@ export default function AdminDashboard() {
                         snap.includes.gameweeks && "gameweeks",
                       ].filter(Boolean).join(", ");
                       const isDownloading = downloadingSnapshotId === snap.id;
-                      const canRestoreFromSnapshot = isAuctionFormat && (snap.includes.auctionSquads || snap.includes.auctionClubs);
+                      // Restore button appears on every format. For auction, the snapshot must
+                      // contain squads/clubs. For TVT/TC, fixtures are enough.
+                      const canRestoreFromSnapshot = isAuctionFormat
+                        ? (snap.includes.auctionSquads || snap.includes.auctionClubs)
+                        : true;
                       return (
                         <li key={snap.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
                           <div className="min-w-0 text-xs">
@@ -3140,87 +3157,8 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            <div className="grid gap-8">
-              {/* Teams Upload — full-details, recovery / dev-test only. Hidden for auction leagues. */}
-              {leagueConfig?.format !== "auction" && (
-                <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-6 backdrop-blur">
-                  <div className="flex items-start justify-between gap-4 mb-2">
-                    <h3 className="text-xl font-bold text-white">Upload Teams (Full Details)</h3>
-                    <span className="text-[10px] uppercase tracking-wide text-red-400 bg-red-500/10 border border-red-500/30 rounded px-2 py-0.5 shrink-0">
-                      Recovery / Dev Only
-                    </span>
-                  </div>
-                  <p className="text-red-300 text-sm mb-2">
-                    ⚠ Destructive: replaces ALL existing teams in this league (and cascades to players, fixtures, results, chip plays, captain assignments).
-                  </p>
-                  <p className="text-gray-400 text-sm mb-4">
-                    Excel columns: <code className="text-gray-300">teamLoginId, teamName, password, player1Name, player1FplId, player2Name, player2FplId, group</code> (group is optional: A, B, or blank). The legacy <code className="text-gray-300">abbreviation</code> column is accepted but ignored.
-                  </p>
-
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={(e) => handleFileUpload(e, "teams")}
-                      className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-red-500/20 file:text-red-300 hover:file:bg-red-500/30"
-                    />
-                  </div>
-
-                  {teamsFileName && (
-                    <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
-                      <p className="text-green-400 text-sm">
-                        ✓ Loaded: {teamsFileName} ({teamsData.length} rows)
-                      </p>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={handleBulkUploadTeams}
-                    disabled={bulkUploading || teamsData.length === 0}
-                    className="w-full rounded-lg bg-gradient-to-r from-red-500 to-red-700 px-6 py-3 font-semibold text-white hover:from-red-400 hover:to-red-600 transition disabled:opacity-50"
-                  >
-                    {bulkUploading ? "Uploading..." : "Replace All Teams"}
-                  </button>
-                </div>
-              )}
-
-              {/* Fixtures Upload — H2H/TVT only; auction leagues don't use H2H fixtures. */}
-              {leagueConfig?.format !== "auction" && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                  <h3 className="text-xl font-bold text-white mb-4">Upload Fixtures</h3>
-                  <p className="text-gray-400 text-sm mb-4">
-                    Excel columns: Gameweek, Home Team, Away Team
-                  </p>
-
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Upload Excel File</label>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={(e) => handleFileUpload(e, "fixtures")}
-                      className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-purple-500/20 file:text-purple-400 hover:file:bg-purple-500/30"
-                    />
-                  </div>
-
-                  {fixturesFileName && (
-                    <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
-                      <p className="text-green-400 text-sm">
-                        ✓ Loaded: {fixturesFileName} ({fixturesData.length} rows)
-                      </p>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={handleBulkUploadFixtures}
-                    disabled={bulkUploading || fixturesData.length === 0}
-                    className="w-full rounded-lg bg-gradient-to-r from-purple-400 to-purple-600 px-6 py-3 font-semibold text-white hover:from-purple-300 hover:to-purple-500 transition disabled:opacity-50"
-                  >
-                    {bulkUploading ? "Uploading..." : "Upload Fixtures"}
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Legacy per-file Teams + Fixtures uploads removed — use Backup/Restore above instead.
+                Captains + Chips blocks remain below until backup-driven restore covers them. */}
 
             {/* Captain Import Section — H2H/TVT only; auction doesn't use captains. */}
             {leagueConfig?.format !== "auction" && (
@@ -4527,70 +4465,6 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* Restore Auction Modal */}
-            {showRestoreModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => !restoringAuction && setShowRestoreModal(false)}>
-                <div className="w-full max-w-lg rounded-2xl border border-purple-500/30 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
-                  <h3 className="text-xl font-bold text-purple-300 mb-3">Restore Auction State</h3>
-                  <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 text-[11px] text-purple-200/90 mb-4 space-y-1">
-                    <p>This <strong>wipes the league&apos;s current auction state</strong> (sessions, bids, ownership, clubs, trades, scores, penalty slots) and restores from the chosen backup.</p>
-                    <p>After restore, reprocess each GW from the Scoring tab to regenerate scores from the restored squads + clubs.</p>
-                    <p className="text-purple-300/70">Team accounts and login IDs are <strong>not</strong> touched.</p>
-                  </div>
-
-                  <div className="mb-4">
-                    <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Source</label>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-gray-400 block mb-1">Saved snapshot</label>
-                        <select
-                          value={restoreBackupId ?? ""}
-                          onChange={(e) => { setRestoreBackupId(e.target.value || null); if (e.target.value) setRestoreFile(null); }}
-                          className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 text-sm"
-                        >
-                          <option value="">— choose a snapshot —</option>
-                          {savedBackups.filter(s => s.includes.auctionSquads || s.includes.auctionClubs).map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.trigger === "gw1-lock" ? "GW1 lock-in" : s.trigger} · {new Date(s.createdAt).toLocaleString()}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="text-center text-[10px] uppercase tracking-wider text-gray-500">— or —</div>
-                      <div>
-                        <label className="text-xs text-gray-400 block mb-1">Upload .zip backup</label>
-                        <input
-                          type="file"
-                          accept=".zip"
-                          onChange={(e) => { const f = e.target.files?.[0] ?? null; setRestoreFile(f); if (f) setRestoreBackupId(null); }}
-                          className="w-full text-xs text-gray-300 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-purple-500/20 file:text-purple-200 file:cursor-pointer cursor-pointer"
-                        />
-                        {restoreFile && (
-                          <p className="text-[11px] text-purple-300/80 mt-1">Selected: {restoreFile.name}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleRestoreAuction}
-                      disabled={restoringAuction || (!restoreBackupId && !restoreFile)}
-                      className="flex-1 px-4 py-2 rounded-lg bg-purple-500 text-white font-bold hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                    >
-                      {restoringAuction ? "Restoring..." : "Restore Now"}
-                    </button>
-                    <button
-                      onClick={() => setShowRestoreModal(false)}
-                      disabled={restoringAuction}
-                      className="px-4 py-2 rounded-lg bg-white/10 text-gray-400 hover:bg-white/20 transition disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -4698,6 +4572,85 @@ export default function AdminDashboard() {
               )}
             </div>
 
+          </div>
+        )}
+
+        {/* Restore Modal — rendered at the page-root level so it shows regardless of activeTab.
+            Server-side guards (meta.json + leagueId + format) reject cross-league restore before
+            any destructive operation; the UI just dispatches to the right /restore-{format} route. */}
+        {showRestoreModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => !restoringAuction && setShowRestoreModal(false)}>
+            <div className="w-full max-w-lg rounded-2xl border border-purple-500/30 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-xl font-bold text-purple-300 mb-3">Restore from Backup</h3>
+              <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 text-[11px] text-purple-200/90 mb-4 space-y-1">
+                {isAuctionFormat ? (
+                  <>
+                    <p>This <strong>wipes the league&apos;s current auction state</strong> (sessions, bids, ownership, clubs, trades, scores, penalty slots) and restores from the chosen backup.</p>
+                    <p>After restore, reprocess each GW from the Scoring tab to regenerate scores from the restored squads + clubs.</p>
+                  </>
+                ) : (
+                  <>
+                    <p>This <strong>wipes the league&apos;s current fixtures</strong> (and cascade-deletes results) and re-imports from the chosen backup.</p>
+                    <p>Captains + Chips restore via this path is a tracked follow-up — use the Import Captain Data / Import Chip Data blocks if those need to be re-applied.</p>
+                  </>
+                )}
+                <p className="text-purple-300/70">Team accounts and login IDs are <strong>not</strong> touched.</p>
+                <p className="text-amber-300/90 pt-1">This backup must have been taken from this same league. Cross-league restore is rejected automatically.</p>
+              </div>
+
+              <div className="mb-4">
+                <label className="text-xs text-gray-400 mb-1.5 block uppercase tracking-wider">Source</label>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Saved snapshot</label>
+                    <select
+                      value={restoreBackupId ?? ""}
+                      onChange={(e) => { setRestoreBackupId(e.target.value || null); if (e.target.value) setRestoreFile(null); }}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 text-sm"
+                    >
+                      <option value="">— choose a snapshot —</option>
+                      {savedBackups
+                        .filter(s => isAuctionFormat ? (s.includes.auctionSquads || s.includes.auctionClubs) : true)
+                        .map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.trigger === "gw1-lock" ? "GW1 lock-in" : s.trigger} · {new Date(s.createdAt).toLocaleString()}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="text-center text-[10px] uppercase tracking-wider text-gray-500">— or —</div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Upload .zip backup</label>
+                    <input
+                      type="file"
+                      accept=".zip"
+                      onChange={(e) => { const f = e.target.files?.[0] ?? null; setRestoreFile(f); if (f) setRestoreBackupId(null); }}
+                      className="w-full text-xs text-gray-300 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-purple-500/20 file:text-purple-200 file:cursor-pointer cursor-pointer"
+                    />
+                    {restoreFile && (
+                      <p className="text-[11px] text-purple-300/80 mt-1">Selected: {restoreFile.name}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRestoreAuction}
+                  disabled={restoringAuction || (!restoreBackupId && !restoreFile)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-purple-500 text-white font-bold hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  {restoringAuction ? "Restoring..." : "Restore Now"}
+                </button>
+                <button
+                  onClick={() => setShowRestoreModal(false)}
+                  disabled={restoringAuction}
+                  className="px-4 py-2 rounded-lg bg-white/10 text-gray-400 hover:bg-white/20 transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

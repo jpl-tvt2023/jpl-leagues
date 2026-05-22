@@ -1,3 +1,7 @@
+// @deprecated The Bulk Upload tab no longer exposes a Fixtures upload block — the unified
+// Backup/Restore .zip now covers fixture restore. This endpoint stays for backwards compatibility;
+// remove in a future pass.
+
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, groups, gameweeks, fixtures, leagues } from "@/lib/db";
 import { eq, and, inArray } from "drizzle-orm";

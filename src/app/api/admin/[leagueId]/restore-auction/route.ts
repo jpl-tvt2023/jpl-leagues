@@ -80,6 +80,19 @@ interface ParsedPayload {
   clubs: AuctionClubRow[];
 }
 
+// Identity payload extracted from meta.json inside the .zip. Cross-league + cross-format restore
+// is rejected before any destructive operation. Returns null when the .zip has no meta.json (pre-PR
+// backups) — caller decides whether to allow.
+interface ZipMeta {
+  leagueId?: string;
+  leagueSlug?: string;
+  leagueName?: string;
+  format?: string;
+  season?: string;
+  generatedAt?: string;
+  backupVersion?: number;
+}
+
 function parseSheetFromBuffer<T>(buf: ArrayBuffer): T[] {
   const wb = XLSX.read(buf, { type: "array" });
   const sheetName = wb.SheetNames[0];
@@ -88,7 +101,7 @@ function parseSheetFromBuffer<T>(buf: ArrayBuffer): T[] {
   return XLSX.utils.sheet_to_json<T>(sheet);
 }
 
-async function parseFromZip(file: Blob): Promise<ParsedPayload> {
+async function parseFromZip(file: Blob): Promise<{ payload: ParsedPayload; meta: ZipMeta | null }> {
   const buf = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(buf);
   const grab = async <T>(name: string): Promise<T[]> => {
@@ -97,10 +110,23 @@ async function parseFromZip(file: Blob): Promise<ParsedPayload> {
     const ab = await entry.async("arraybuffer");
     return parseSheetFromBuffer<T>(ab);
   };
+  let meta: ZipMeta | null = null;
+  const metaFile = zip.file("meta.json");
+  if (metaFile) {
+    try {
+      meta = JSON.parse(await metaFile.async("string")) as ZipMeta;
+    } catch {
+      // Malformed meta.json — treat as missing so the caller surfaces the friendly error.
+      meta = null;
+    }
+  }
   return {
-    teamsState: await grab<AuctionTeamStateRow>("auction_teams_state.xlsx"),
-    squads: await grab<AuctionSquadRow>("auction_squads.xlsx"),
-    clubs: await grab<AuctionClubRow>("auction_clubs.xlsx"),
+    payload: {
+      teamsState: await grab<AuctionTeamStateRow>("auction_teams_state.xlsx"),
+      squads: await grab<AuctionSquadRow>("auction_squads.xlsx"),
+      clubs: await grab<AuctionClubRow>("auction_clubs.xlsx"),
+    },
+    meta,
   };
 }
 
@@ -142,7 +168,28 @@ export async function POST(request: NextRequest) {
       if (!(file instanceof Blob)) {
         return NextResponse.json({ error: "Missing 'file' field in multipart body" }, { status: 400 });
       }
-      payload = await parseFromZip(file);
+      const parsed = await parseFromZip(file);
+      // Cross-league + format guard. Reject before any destructive operation. Saved-snapshot path
+      // already enforces leagueId via the SELECT's WHERE clause.
+      if (!parsed.meta) {
+        return NextResponse.json(
+          { error: "Backup zip is missing meta.json — please re-export from this league via Download Backup." },
+          { status: 400 }
+        );
+      }
+      if (parsed.meta.leagueId && parsed.meta.leagueId !== leagueId) {
+        return NextResponse.json(
+          { error: `League mismatch — this backup was taken from a different league (${parsed.meta.leagueSlug ?? parsed.meta.leagueId}). Restore aborted before any change.` },
+          { status: 400 }
+        );
+      }
+      if (parsed.meta.format && parsed.meta.format !== "auction") {
+        return NextResponse.json(
+          { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is auction.` },
+          { status: 400 }
+        );
+      }
+      payload = parsed.payload;
     } else {
       const body = await request.json();
       const backupId = typeof body?.backupId === "string" ? body.backupId : null;
