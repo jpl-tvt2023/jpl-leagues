@@ -25,7 +25,12 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = request.nextUrl;
   const leagueId = searchParams.get("leagueId");
-  const gameweek = parseInt(searchParams.get("gameweek") ?? "0", 10);
+  // `gameweek` is optional — the client no longer exposes a GW selector since the table renders
+  // season-cumulative points. Default to 38 so per-GW joins (ownership acquired/released bounds)
+  // include the full season. Per-GW point fetch with GW=38 returns final-week points which we
+  // don't display anyway.
+  const gameweekParam = searchParams.get("gameweek");
+  const gameweek = gameweekParam ? parseInt(gameweekParam, 10) : 38;
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
   const pageSize = Math.min(100, Math.max(10, parseInt(searchParams.get("pageSize") ?? "50", 10)));
   const positionFilter = searchParams.get("position") ? parseInt(searchParams.get("position")!, 10) : null;

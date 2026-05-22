@@ -16,15 +16,18 @@ import {
   auctionOwnership,
   auctionSessions,
   auctionWishlists,
+  auditLogs,
   teamPenalties,
   teams,
 } from "@/lib/db/schema";
-import { eq, and, asc, sql, lte } from "drizzle-orm";
+import { eq, and, asc, sql, lte, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchElementInfo } from "@/lib/fpl";
 import { leagues } from "@/lib/db/schema";
 import { calculatePurse } from "./economy";
-import { countsFromOwnership, validateAddPlayer, effectiveMaxSquadSize } from "./squad-rules";
+import { countsFromOwnership, validateAddPlayer, effectiveMaxSquadSize, MIN_QUOTA } from "./squad-rules";
+import { ownerOfPlayer } from "./ownership";
+import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
 import {
   CLUB_AUCTION_SESSION_TYPE,
   resolveClubBid,
@@ -83,6 +86,35 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
   const fresh = updated[0];
   const winnerId = fresh.currentHighBidderId;
   const winAmount = fresh.currentHighBid;
+
+  // Double-sell guard: if another bid for the same player already produced an active ownership
+  // row (race window where two `auctionBids` rows for the same fplElementId both reached this
+  // point), treat THIS bid as a duplicate. Mark its status, log the cancellation, do not insert
+  // ownership, do not deduct purse, and return false so the caller does NOT advance the
+  // nominator (the other winning bid is responsible for that). This was the root cause of the
+  // "Wharton sold to two teams" bug.
+  const existingOwner = await ownerOfPlayer(bid.leagueId, fresh.fplElementId);
+  if (existingOwner) {
+    await db
+      .update(auctionBids)
+      .set({ status: "cancelled-duplicate", updatedAt: now })
+      .where(eq(auctionBids.id, bid.id));
+    await db.insert(auctionBidLogs).values({
+      id: generateId(),
+      bidId: bid.id,
+      teamId: winnerId,
+      amount: winAmount,
+      type: "cancelled-duplicate",
+    });
+    console.error("[resolveBidToSold] duplicate active ownership detected — bid cancelled, no purse deducted", {
+      bidId: bid.id,
+      leagueId: bid.leagueId,
+      fplElementId: fresh.fplElementId,
+      existingOwnerTeamId: existingOwner,
+      wouldBeWinnerTeamId: winnerId,
+    });
+    return false;
+  }
 
   // Look up element type from FPL cache for position quota tracking
   let elementType: number | null = null;
@@ -177,15 +209,46 @@ export async function resolveExpiredBid(
 // ---- Nominator Advancement ----
 
 /**
+ * True if `teamId` has at least one open slot in their squad given current ownership + penalty +
+ * bonus slot config. Used by `advanceNominator` to proactively skip squad-full teams instead of
+ * giving them a turn that always times out.
+ */
+async function isNominatorEligible(leagueId: string, teamId: string): Promise<boolean> {
+  const [teamRow, ownership] = await Promise.all([
+    db.select({ penaltySlots: teams.penaltySlots, bonusSlots: teams.bonusSlots }).from(teams).where(eq(teams.id, teamId)).limit(1),
+    db
+      .select({ elementType: auctionOwnership.elementType })
+      .from(auctionOwnership)
+      .where(
+        and(
+          eq(auctionOwnership.leagueId, leagueId),
+          eq(auctionOwnership.teamId, teamId),
+          eq(auctionOwnership.status, "active"),
+        ),
+      ),
+  ]);
+  if (teamRow.length === 0) return false;
+  const counts = countsFromOwnership(ownership);
+  const maxSize = effectiveMaxSquadSize(teamRow[0].penaltySlots ?? 0, teamRow[0].bonusSlots ?? 0);
+  return counts.total < maxSize;
+}
+
+/**
  * Advance to the next nominator. For a **player auction** this rolls the snake-order cursor and sets
  * a fresh nomination deadline for the next team. For a **club auction** this advances the queue cursor
  * and immediately auto-nominates the next PL club (no human in the loop).
+ *
+ * Proactively skips squad-full teams: after incrementing the cursor, we check whether the new
+ * nominator has any open slot left. If not, we keep incrementing. If every team in the order is
+ * full, the session is marked `completed` — there's nothing left to auction.
  */
 export async function advanceNominator(sessionId: string): Promise<void> {
   const sessionRow = await db
     .select({
+      leagueId: auctionSessions.leagueId,
       type: auctionSessions.type,
       snakeOrder: auctionSessions.snakeOrder,
+      currentNominatorIndex: auctionSessions.currentNominatorIndex,
       nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds,
     })
     .from(auctionSessions)
@@ -201,28 +264,102 @@ export async function advanceNominator(sessionId: string): Promise<void> {
   const snakeOrder: string[] = JSON.parse(sessionRow[0].snakeOrder);
   if (snakeOrder.length === 0) return;
 
-  const nomTimeout = sessionRow[0].nominationTimeoutSeconds ?? 60;
-  const deadline = new Date(Date.now() + nomTimeout * 1000);
+  const leagueId = sessionRow[0].leagueId;
+  const startIndex = sessionRow[0].currentNominatorIndex ?? 0;
 
-  // Atomic increment — prevents concurrent callers from computing the same nextIndex
+  // Walk forward up to snakeOrder.length steps to find the first eligible (squad-not-full) team.
+  for (let step = 1; step <= snakeOrder.length; step++) {
+    const nextIndex = (startIndex + step) % snakeOrder.length;
+    const candidateTeamId = snakeOrder[nextIndex];
+    if (!candidateTeamId) continue;
+    const eligible = await isNominatorEligible(leagueId, candidateTeamId);
+    if (eligible) {
+      const nomTimeout = sessionRow[0].nominationTimeoutSeconds ?? 60;
+      const deadline = new Date(Date.now() + nomTimeout * 1000);
+      await db
+        .update(auctionSessions)
+        .set({ currentNominatorIndex: nextIndex, nominationDeadline: deadline })
+        .where(eq(auctionSessions.id, sessionId));
+      return;
+    }
+  }
+
+  // No eligible nominators left — every team's squad is full. Complete the session so the
+  // auction-completion auto-snapshot fires and the UI flips to "complete".
+  console.info("[advanceNominator] no eligible nominators (all squads full) — completing session", {
+    sessionId,
+    leagueId,
+    snakeOrderSize: snakeOrder.length,
+  });
+
+  // Composition audit: walk every team in the snake order and flag any squad below 1/3/3/1.
+  // We can't force a team to fix composition once the auction has run out, but admins get a
+  // single audit_logs row so the league can be addressed out-of-band. Never blocks completion.
+  try {
+    const allOwnership = await db
+      .select({ teamId: auctionOwnership.teamId, elementType: auctionOwnership.elementType })
+      .from(auctionOwnership)
+      .where(
+        and(
+          eq(auctionOwnership.leagueId, leagueId),
+          inArray(auctionOwnership.teamId, snakeOrder),
+          eq(auctionOwnership.status, "active"),
+        ),
+      );
+    const byTeam = new Map<string, { elementType: number | null }[]>();
+    for (const r of allOwnership) {
+      const list = byTeam.get(r.teamId) ?? [];
+      list.push(r);
+      byTeam.set(r.teamId, list);
+    }
+    const offenders: Array<{ teamId: string; missing: Record<string, number> }> = [];
+    for (const teamId of snakeOrder) {
+      const counts = countsFromOwnership(byTeam.get(teamId) ?? []);
+      const missing: Record<string, number> = {};
+      for (const t of [1, 2, 3, 4] as const) {
+        const need = Math.max(0, MIN_QUOTA[t] - counts[t]);
+        if (need > 0) missing[`pos${t}`] = need;
+      }
+      if (Object.keys(missing).length > 0) {
+        offenders.push({ teamId, missing });
+      }
+    }
+    if (offenders.length > 0) {
+      await db.insert(auditLogs).values({
+        id: generateId(),
+        type: "AUCTION_COMPLETED_COMPOSITION_WARNING",
+        description: `Session ${sessionId} (league ${leagueId}) auto-completed at all-teams-full but ${offenders.length} team(s) finish below 1/3/3/1 minimum: ${JSON.stringify(offenders).slice(0, 1500)}`,
+        pointsAffected: 0,
+      });
+      console.warn("[advanceNominator] composition warning at completion", { sessionId, leagueId, offenders });
+    }
+  } catch (e) {
+    console.error("[advanceNominator] composition audit failed (continuing to complete session anyway):", e);
+  }
+
   await db
     .update(auctionSessions)
-    .set({
-      currentNominatorIndex: sql`(${auctionSessions.currentNominatorIndex} + 1) % ${snakeOrder.length}`,
-      nominationDeadline: deadline,
-    })
+    .set({ status: "completed", nominationDeadline: null })
     .where(eq(auctionSessions.id, sessionId));
+  await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
 }
 
 /**
  * Set the nomination deadline for the current nominator (e.g. on session start, or whenever the SSE
  * stream notices no deadline). For a **club auction** this triggers auto-nomination of the next club
  * instead — there is no per-team nomination turn in club auctions.
+ *
+ * If the current nominator is already squad-full (mini-auction starting where someone hit cap last
+ * cycle, or initial auction starting after a prior session left squad state), delegate to
+ * `advanceNominator` which will proactively walk to the next eligible team.
  */
 export async function setNominationDeadline(sessionId: string): Promise<void> {
   const sessionRow = await db
     .select({
+      leagueId: auctionSessions.leagueId,
       type: auctionSessions.type,
+      snakeOrder: auctionSessions.snakeOrder,
+      currentNominatorIndex: auctionSessions.currentNominatorIndex,
       nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds,
     })
     .from(auctionSessions)
@@ -231,6 +368,18 @@ export async function setNominationDeadline(sessionId: string): Promise<void> {
   if (sessionRow[0]?.type === CLUB_AUCTION_SESSION_TYPE) {
     await advanceClubQueue(sessionId);
     return;
+  }
+  if (!sessionRow.length) return;
+  const snakeOrder: string[] = JSON.parse(sessionRow[0].snakeOrder);
+  const currentIdx = sessionRow[0].currentNominatorIndex ?? 0;
+  const currentTeamId = snakeOrder[currentIdx];
+  if (currentTeamId) {
+    const eligible = await isNominatorEligible(sessionRow[0].leagueId, currentTeamId);
+    if (!eligible) {
+      // Walk forward to find someone who can actually nominate.
+      await advanceNominator(sessionId);
+      return;
+    }
   }
   const nomTimeout = sessionRow[0]?.nominationTimeoutSeconds ?? 60;
   const deadline = new Date(Date.now() + nomTimeout * 1000);
@@ -356,19 +505,10 @@ export async function autoNominateFromWishlist(
   const elementById = new Map(elements.map((e) => [e.id, e]));
 
   for (const entry of wishlist) {
-    // Skip if player is already owned by anyone
-    const owned = await db
-      .select({ id: auctionOwnership.id })
-      .from(auctionOwnership)
-      .where(
-        and(
-          eq(auctionOwnership.leagueId, leagueId),
-          eq(auctionOwnership.fplElementId, entry.fplElementId),
-          eq(auctionOwnership.status, "active")
-        )
-      )
-      .limit(1);
-    if (owned.length > 0) continue;
+    // Skip if player is already owned (or pending_release) by any team — single source of truth
+    // via `ownerOfPlayer`, which keeps this auto-nominate path consistent with the nominate route
+    // and `resolveBidToSold`'s pre-INSERT check.
+    if (await ownerOfPlayer(leagueId, entry.fplElementId)) continue;
 
     // Skip if we can't afford even the minimum bid
     if (availablePurse < DEFAULT_MIN_BID) return false;

@@ -102,7 +102,9 @@ export async function POST(request: NextRequest) {
       proposerTeam[0]?.penaltySlots ?? 0,
       targetTeam[0]?.penaltySlots ?? 0,
       buildPositionMap(proposerSquad),
-      buildPositionMap(targetSquad)
+      buildPositionMap(targetSquad),
+      proposerTeam[0]?.bonusSlots ?? 0,
+      targetTeam[0]?.bonusSlots ?? 0,
     );
 
     if (!revalidation.valid) {

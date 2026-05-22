@@ -221,7 +221,9 @@ export async function POST(request: NextRequest) {
     proposerTeam[0]?.penaltySlots ?? 0,
     targetTeam[0]?.penaltySlots ?? 0,
     proposerPositions,
-    targetPositions
+    targetPositions,
+    proposerTeam[0]?.bonusSlots ?? 0,
+    targetTeam[0]?.bonusSlots ?? 0,
   );
 
   if (!validation.valid) {
@@ -378,7 +380,9 @@ export async function PATCH(request: NextRequest) {
     proposerTeamFresh[0]?.penaltySlots ?? 0,
     targetTeamFresh[0]?.penaltySlots ?? 0,
     buildPositionMap(proposerSquadFresh),
-    buildPositionMap(targetSquadFresh)
+    buildPositionMap(targetSquadFresh),
+    proposerTeamFresh[0]?.bonusSlots ?? 0,
+    targetTeamFresh[0]?.bonusSlots ?? 0,
   );
 
   if (!revalidation.valid) {

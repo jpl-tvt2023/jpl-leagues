@@ -2,6 +2,7 @@
 // Validates trade proposals
 
 import { calculateFMV, calculateFMVFloor } from "./economy";
+import { effectiveMaxSquadSize } from "./squad-rules";
 
 export interface TradePlayer {
   ownershipId: string;
@@ -32,7 +33,7 @@ export function buildPositionMap(squad: { elementType?: number | null }[]): Map<
 
 /**
  * Validate a trade proposal to ensure it meets all rules:
- * 1. Both teams must remain with valid squad sizes (max 14 - penalty slots, min 11)
+ * 1. Both teams must remain with valid squad sizes (max via `effectiveMaxSquadSize`, min 11)
  * 2. Cash offered must not exceed available purse
  * 3. Trade value must meet the 80% FMV floor
  * 4. Both squads must maintain minimum position quotas after trade
@@ -48,15 +49,19 @@ export function validateTradeProposal(
   proposerPenaltySlots: number = 0,
   targetPenaltySlots: number = 0,
   proposerPositions?: Map<number, number>, // optional: current position counts for proposer
-  targetPositions?: Map<number, number>    // optional: current position counts for target
+  targetPositions?: Map<number, number>,   // optional: current position counts for target
+  proposerBonusSlots: number = 0,          // bonus slots unlocked by proposer
+  targetBonusSlots: number = 0,            // bonus slots unlocked by target
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
-  // Squad size checks after trade
+  // Squad size checks after trade — must use the same `effectiveMaxSquadSize` formula the
+  // nomination + bid path uses; otherwise a team with bonus slots unlocked sees their trades
+  // wrongly rejected at the base cap.
   const proposerAfter = proposerSquadSize - offeredPlayers.length + requestedPlayers.length;
   const targetAfter = targetSquadSize + offeredPlayers.length - requestedPlayers.length;
-  const proposerMax = 14 - proposerPenaltySlots;
-  const targetMax = 14 - targetPenaltySlots;
+  const proposerMax = effectiveMaxSquadSize(proposerPenaltySlots, proposerBonusSlots);
+  const targetMax = effectiveMaxSquadSize(targetPenaltySlots, targetBonusSlots);
 
   if (proposerAfter > proposerMax) {
     errors.push(`Proposer would exceed ${proposerMax}-player squad limit`);

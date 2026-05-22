@@ -7,6 +7,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { SlotStatus, type SlotStatusData } from "@/components/SlotStatus";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
+import { MAX_SQUAD_SIZE } from "@/lib/formats/auction/squad-rules";
 
 interface SquadPlayer {
   ownershipId: string;
@@ -44,7 +45,7 @@ function SquadSlotStatusInline({
       onUnlock={async () => {
         const cost = slotStatus.nextUnlockCost;
         if (!cost) return;
-        if (!confirm(`Unlock slot ${14 + slotStatus.bonusSlots + 1} for £${(cost / 1_000_000).toFixed(1)}M? This is non-refundable.`)) return;
+        if (!confirm(`Unlock slot ${MAX_SQUAD_SIZE + slotStatus.bonusSlots + 1} for £${(cost / 1_000_000).toFixed(1)}M? This is non-refundable.`)) return;
         const res = await fetch(`/api/auction/unlock-slot`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -274,8 +275,8 @@ export default function SquadPage() {
     }
   };
 
-  const netPL = economy ? economy.initialBudget + economy.totalIncome + economy.totalRefunds - economy.totalSpent : 0;
-  const squadValue = squadData?.squad.reduce((sum, p) => sum + p.fmv, 0) ?? 0;
+  const fmvSquadValue = squadData?.squad.reduce((sum, p) => sum + p.fmv, 0) ?? 0;
+  const oldSquadValue = squadData?.squad.reduce((sum, p) => sum + p.purchasePrice, 0) ?? 0;
 
   const wishlistElementIds = new Set(wishlist.map((w) => w.fplElementId));
   const teamId = squadData?.teamId;
@@ -400,15 +401,11 @@ export default function SquadPage() {
                 </div>
               </div>
               {/* Economy summary — always visible */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-3 border-t border-white/10 text-sm">
-                <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Initial Budget</div><div className="font-mono text-white">{formatCurrency(economy.initialBudget)}</div></div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-white/10 text-sm">
                 <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Total Spent</div><div className="font-mono text-red-300">{formatCurrency(economy.totalSpent)}</div></div>
                 <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Total Income</div><div className="font-mono text-green-300">{formatCurrency(economy.totalIncome)}</div></div>
-                <div>
-                  <div className="text-[10px] text-gray-400 uppercase mb-0.5">Net P&amp;L</div>
-                  <div className={`font-mono ${netPL >= 0 ? "text-green-300" : "text-red-300"}`}>{netPL >= 0 ? "+" : ""}{formatCurrency(netPL)}</div>
-                </div>
-                <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Squad Value</div><div className="font-mono text-white">{formatCurrency(squadValue)}</div></div>
+                <div title="Sum of purchase prices — what you originally paid"><div className="text-[10px] text-gray-400 uppercase mb-0.5">Old Squad Value</div><div className="font-mono text-white">{formatCurrency(oldSquadValue)}</div></div>
+                <div title="Sum of current fair-market values (purchase + point appreciation)"><div className="text-[10px] text-gray-400 uppercase mb-0.5">FMV Squad Value</div><div className="font-mono text-white">{formatCurrency(fmvSquadValue)}</div></div>
               </div>
             </div>
 

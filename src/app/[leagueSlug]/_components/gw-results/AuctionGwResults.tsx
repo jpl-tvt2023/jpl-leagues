@@ -306,9 +306,9 @@ export function AuctionGwResults() {
                                       row.synergyBonus > 0
                                         ? row.players
                                             .filter((p) => p.synergyBonus > 0)
-                                            // Show raw × 1.5 = boosted so admins/teams can verify the math at a glance.
-                                            // e.g. "Salah: 6 × 1.5 = +9"
-                                            .map((p) => `${p.name}: ${p.rawPoints} × 1.5 = +${formatPts(p.rawPoints + p.synergyBonus)}`)
+                                            // Show raw × 0.5 = bonus so the displayed value matches the +bonus
+                                            // applied to the player's score. e.g. "Salah: 6 × 0.5 = +3".
+                                            .map((p) => `${p.name}: ${p.rawPoints} × 0.5 = +${formatPts(p.synergyBonus)}`)
                                             .join("\n") || undefined
                                         : undefined
                                     }

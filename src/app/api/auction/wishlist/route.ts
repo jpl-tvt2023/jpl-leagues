@@ -58,9 +58,14 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/auction/wishlist
- * Add a player to the team's wishlist (appended at bottom).
+ * Add player(s) to the team's wishlist (appended at bottom).
  *
- * Body: { leagueId, teamId, fplElementId, playerName }
+ * Body (single): { leagueId, teamId, fplElementId, playerName }
+ * Body (bulk):   { leagueId, teamId, players: [{ fplElementId, playerName }, ...] }
+ *
+ * The bulk form is used by the auction page's Unsold-players multi-select. Duplicate
+ * fplElementIds (already in wishlist) are silently skipped — the response reports how many
+ * were actually inserted.
  */
 export async function POST(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
@@ -72,60 +77,68 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { leagueId, teamId, fplElementId, playerName } = body;
+  const { leagueId, teamId, fplElementId, playerName, players } = body as {
+    leagueId?: string;
+    teamId?: string;
+    fplElementId?: number;
+    playerName?: string;
+    players?: Array<{ fplElementId: number; playerName: string }>;
+  };
 
-  if (!leagueId || !teamId || !fplElementId || !playerName) {
-    return NextResponse.json(
-      { error: "leagueId, teamId, fplElementId, and playerName are required" },
-      { status: 400 }
-    );
+  if (!leagueId || !teamId) {
+    return NextResponse.json({ error: "leagueId and teamId are required" }, { status: 400 });
   }
-
   if (!isAdmin && session?.id !== teamId) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  // Check for duplicate
-  const existing = await db
-    .select({ id: auctionWishlists.id })
-    .from(auctionWishlists)
-    .where(
-      and(
-        eq(auctionWishlists.leagueId, leagueId),
-        eq(auctionWishlists.teamId, teamId),
-        eq(auctionWishlists.fplElementId, fplElementId)
-      )
-    )
-    .limit(1);
+  // Normalize to an array regardless of input shape so the rest of the handler is one path.
+  const toAdd: Array<{ fplElementId: number; playerName: string }> = Array.isArray(players)
+    ? players.filter((p) => typeof p?.fplElementId === "number" && typeof p?.playerName === "string")
+    : fplElementId && playerName
+      ? [{ fplElementId, playerName }]
+      : [];
 
-  if (existing.length > 0) {
-    return NextResponse.json({ error: "Player already in wishlist" }, { status: 400 });
+  if (toAdd.length === 0) {
+    return NextResponse.json({ error: "Provide fplElementId+playerName or a non-empty players array" }, { status: 400 });
   }
 
-  // Get max priority to append at bottom
+  // One query for all existing wishlist fplElementIds — used to skip duplicates without N+1.
+  const existingRows = await db
+    .select({ fplElementId: auctionWishlists.fplElementId })
+    .from(auctionWishlists)
+    .where(and(eq(auctionWishlists.leagueId, leagueId), eq(auctionWishlists.teamId, teamId)));
+  const existing = new Set(existingRows.map((r) => r.fplElementId));
+
   const maxRow = await db
     .select({ maxPriority: sql<number>`COALESCE(MAX(${auctionWishlists.priority}), 0)` })
     .from(auctionWishlists)
-    .where(
-      and(
-        eq(auctionWishlists.leagueId, leagueId),
-        eq(auctionWishlists.teamId, teamId)
-      )
-    );
+    .where(and(eq(auctionWishlists.leagueId, leagueId), eq(auctionWishlists.teamId, teamId)));
+  let nextPriority = (maxRow[0]?.maxPriority ?? 0) + 1;
 
-  const nextPriority = (maxRow[0]?.maxPriority ?? 0) + 1;
+  let inserted = 0;
+  let skipped = 0;
+  for (const p of toAdd) {
+    if (existing.has(p.fplElementId)) {
+      skipped++;
+      continue;
+    }
+    await db.insert(auctionWishlists).values({
+      id: generateId(),
+      leagueId,
+      teamId,
+      fplElementId: p.fplElementId,
+      playerName: p.playerName,
+      priority: nextPriority,
+    });
+    existing.add(p.fplElementId);
+    nextPriority++;
+    inserted++;
+  }
 
-  const id = generateId();
-  await db.insert(auctionWishlists).values({
-    id,
-    leagueId,
-    teamId,
-    fplElementId,
-    playerName,
-    priority: nextPriority,
-  });
-
-  return NextResponse.json({ success: true, id, priority: nextPriority });
+  // Backwards-compat shape: single-insert callers expect `success` + (legacy) `id`/`priority`.
+  // Bulk callers can read `inserted` / `skipped`.
+  return NextResponse.json({ success: true, inserted, skipped });
 }
 
 /**

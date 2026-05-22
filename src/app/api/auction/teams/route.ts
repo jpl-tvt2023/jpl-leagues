@@ -6,6 +6,7 @@ import { calculateFMV } from "@/lib/formats/auction/economy";
 import { computeAuctionStandings } from "@/lib/formats/auction/standings";
 import { fetchElementInfo } from "@/lib/fpl";
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
+import { MAX_SQUAD_SIZE } from "@/lib/formats/auction/squad-rules";
 
 /**
  * GET /api/auction/teams?leagueId=xxx
@@ -101,7 +102,9 @@ export async function GET(request: NextRequest) {
     const slots = slotsByTeam.get(s.teamId) ?? { penaltySlots: 0, bonusSlots: 0 };
     return {
       teamId: s.teamId,
-      name: ownedClub?.plTeamName ?? s.teamName,
+      // Teams page shows the user-supplied team name + a separate ownedClub chip — no override here.
+      // (Every other auction surface still applies the club-name override via its own API helpers.)
+      name: s.teamName,
       rank: s.rank,
       totalPoints: s.totalPoints,
       purse: s.purse,
@@ -109,7 +112,7 @@ export async function GET(request: NextRequest) {
       squadSize: squadSize.get(s.teamId) ?? 0,
       penaltySlots: slots.penaltySlots,
       bonusSlots: slots.bonusSlots,
-      effectiveMax: 14 + slots.bonusSlots - slots.penaltySlots,
+      effectiveMax: MAX_SQUAD_SIZE + slots.bonusSlots - slots.penaltySlots,
       topPerformer: tp
         ? { name: elementName.get(tp.elementId) ?? `#${tp.elementId}`, points: tp.points }
         : null,

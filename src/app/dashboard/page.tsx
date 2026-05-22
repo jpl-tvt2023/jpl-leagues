@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { NotificationBell } from "@/components/NotificationBell";
+import { TierChip } from "@/components/TierChip";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
 
@@ -372,7 +373,11 @@ const INCOME_ROWS: Array<{ key: keyof AuctionDashboardData["incomeBreakdown"]["b
 interface AuctionDashboardData {
   leagueSlug: string;
   leagueFormat: "auction";
-  team: { id: string; name: string };
+  team: {
+    id: string;
+    name: string;
+    ownedClub?: { plTeamId: number; plTeamName: string; plTeamShort: string; tier: "top8" | "mid" | "promoted" } | null;
+  };
   purse: number;
   initialBudget: number;
   totalSpent: number;
@@ -483,6 +488,13 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
         <div className="mb-8">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
             <h1 className="text-2xl sm:text-4xl font-bold text-white truncate">{data.team.name}</h1>
+            {data.team.ownedClub && (
+              <TierChip
+                tier={data.team.ownedClub.tier}
+                clubName={data.team.ownedClub.plTeamName}
+                short={data.team.ownedClub.plTeamShort}
+              />
+            )}
             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-300">
               Rank #{data.rank} of {data.totalManagers}
             </span>
