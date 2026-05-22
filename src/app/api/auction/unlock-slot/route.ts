@@ -19,7 +19,7 @@ import { generateId } from "@/lib/id";
  * `teams.bonusSlots` increments by 1. Gated on the initial auction having completed for the league
  * — locked slots are not available during the initial auction.
  *
- * Pricing comes from `BONUS_SLOT_PRICES` in squad-rules.ts (£10M for slot 15, £25M for slot 16).
+ * Pricing comes from `BONUS_SLOT_PRICES` in squad-rules.ts (£10M for slot 16, £20M for slot 17, £30M for slot 18).
  */
 export async function POST(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;

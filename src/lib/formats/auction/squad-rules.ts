@@ -1,14 +1,14 @@
 // JPL Auction — Squad composition rules.
 // Centralised so nominate, auto-nominate, and bid endpoints share one truth.
 
-// Base cap — what the initial auction fills. Slots 15 and 16 are locked behind purse-purchases
+// Base cap — what the initial auction fills. Slots 16, 17, 18 are locked behind purse-purchases
 // (see BONUS_SLOT_PRICES) and only unlockable after the initial auction completes.
-export const MAX_SQUAD_SIZE = 14;
-// How many extra slots a team can buy past the base cap (slot 15, slot 16). Absolute cap = 16.
-export const MAX_BONUS_SLOTS = 2;
+export const MAX_SQUAD_SIZE = 15;
+// How many extra slots a team can buy past the base cap (slot 16, 17, 18). Absolute cap = 18.
+export const MAX_BONUS_SLOTS = 3;
 export const ABSOLUTE_SQUAD_CAP = MAX_SQUAD_SIZE + MAX_BONUS_SLOTS;
-// Sequential per-slot unlock costs. Index 0 = price to unlock slot 15; index 1 = slot 16.
-export const BONUS_SLOT_PRICES = [10_000_000, 25_000_000] as const;
+// Sequential per-slot unlock costs. Index 0 = slot 16 (£10M); 1 = slot 17 (£20M); 2 = slot 18 (£30M).
+export const BONUS_SLOT_PRICES = [10_000_000, 20_000_000, 30_000_000] as const;
 
 // element_type → minimum required in final squad
 // 1 = GKP, 2 = DEF, 3 = MID, 4 = FWD

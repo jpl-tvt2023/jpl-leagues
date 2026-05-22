@@ -358,7 +358,7 @@ const EXPENSE_ROWS: Array<{ key: keyof AuctionDashboardData["expenseBreakdown"][
   { key: "trade_cash_out",   label: "Trade cash out" },
   { key: "trade_swap",       label: "Trade swap cash" },
   { key: "transfer_fee",     label: "Transfer tax" },
-  { key: "slot_unlock",      label: "Slot unlocks (15/16)" },
+  { key: "slot_unlock",      label: "Slot unlocks (16/17/18)" },
   { key: "slot_redeem",      label: "Penalty slot buyback" },
 ];
 
@@ -488,7 +488,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
             </span>
           </div>
           <p className="text-sm sm:text-base text-gray-400">
-            {data.totalPoints} total points • {data.squadSize}/14 players
+            {data.totalPoints} total points • {data.squadSize}/15 players
           </p>
         </div>
 
@@ -533,7 +533,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <EconomyCard
             label="Squad Value"
             value={formatCurrency(data.squadValue)}
-            caption={`${data.squadSize}/14 players`}
+            caption={`${data.squadSize}/15 players`}
             tooltipWidth={340}
             tooltip={
               <>

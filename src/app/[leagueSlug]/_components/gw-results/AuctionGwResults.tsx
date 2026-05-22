@@ -260,8 +260,8 @@ export function AuctionGwResults() {
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Raw FPL points">Raw</th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="+50% bonus on owned-club players">Syn</th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Per-fixture bonus when owned club wins/draws">Club</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="+50% bonus on owned-club players. Hover the value to see per-player breakdown.">Syn <span className="text-gray-500" aria-hidden>ⓘ</span></th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Per-fixture bonus when owned club wins/draws. Hover the value to see the fixture scoreline.">Club <span className="text-gray-500" aria-hidden>ⓘ</span></th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Total = Raw + Synergy + Club">Total</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Rank</th>
@@ -443,6 +443,7 @@ export function AuctionGwResults() {
                 </div>
 
                 <div className="mt-4 text-center text-xs text-gray-500">
+                  <span className="block mb-1">💡 Hover the Syn or Club value to see the per-player / fixture breakdown.</span>
                   Showing GW{selectedGw} · {processedGws.length} gameweek{processedGws.length === 1 ? "" : "s"} processed so far
                 </div>
               </div>

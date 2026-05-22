@@ -382,7 +382,7 @@ export default function SquadPage() {
                     {squadData.slotStatus ? (
                       <SquadSlotStatusInline slotStatus={squadData.slotStatus} teamId={squadData.teamId} auctionTier={league.auctionTier ?? "complete"} onChanged={loadAll} />
                     ) : (
-                      <span className="rounded-full bg-white/10 px-3 py-1 text-white">{squadData.activeCount}/14 active</span>
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-white">{squadData.activeCount}/15 active</span>
                     )}
                     {squadData.deadwoodCount > 0 && (
                       <span className="rounded-full bg-yellow-500/20 text-yellow-300 px-3 py-1 border border-yellow-500/30">

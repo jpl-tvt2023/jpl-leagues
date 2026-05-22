@@ -309,7 +309,7 @@ export default function PlayersPage() {
 
             {/* PL Team filter */}
             <div className="flex items-center gap-2">
-              <label className="text-xs text-gray-400 uppercase tracking-wider">Team</label>
+              <label className="text-xs text-gray-400 uppercase tracking-wider">PL Team</label>
               <select
                 value={plTeamFilter}
                 onChange={(e) => setPlTeamFilter(e.target.value)}
@@ -324,7 +324,8 @@ export default function PlayersPage() {
               </select>
             </div>
 
-            {/* Ownership filter */}
+            {/* Ownership filter — my team first (labelled explicitly), then other league teams
+                in alphabetical order so the dropdown is easy to scan when the league has 14+ teams. */}
             <div className="flex items-center gap-2">
               <label className="text-xs text-gray-400 uppercase tracking-wider">Owner</label>
               <select
@@ -334,9 +335,18 @@ export default function PlayersPage() {
               >
                 <option value="all" className="bg-slate-800">All</option>
                 <option value="free" className="bg-slate-800">Free Agents</option>
-                {myTeamId && <option value="mine" className="bg-slate-800">My Squad</option>}
+                {myTeamId && (() => {
+                  const myTeam = leagueTeams.find((t) => t.id === myTeamId);
+                  return myTeam ? (
+                    <option value="mine" className="bg-slate-800">{myTeam.name} (my team)</option>
+                  ) : (
+                    <option value="mine" className="bg-slate-800">My Squad</option>
+                  );
+                })()}
                 {leagueTeams
                   .filter((t) => t.id !== myTeamId)
+                  .slice()
+                  .sort((a, b) => a.name.localeCompare(b.name))
                   .map((t) => (
                     <option key={t.id} value={t.id} className="bg-slate-800">
                       {t.name}

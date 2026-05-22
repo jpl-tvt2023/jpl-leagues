@@ -7,7 +7,8 @@ import { getPayoutForRank } from "@/lib/formats/auction/economy";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
 import { getInFlightGameweekNumber } from "@/lib/gameweeks/in-flight";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
-import { getClubOwnershipsByTeam, computeClubResultBonus } from "@/lib/formats/auction/club-auction";
+import { getClubOwnershipsByTeam } from "@/lib/formats/auction/club-auction";
+import { backfillClubSummaries } from "@/lib/formats/auction/club-summary-backfill";
 
 /**
  * GET /api/auction/gw-summary?leagueSlug=xxx&gw=N
@@ -390,25 +391,23 @@ export async function GET(request: NextRequest) {
   );
 
   // Backfill clubResultSummary on the fly for rows scored BEFORE the `club_result_summary` column
-  // existed (legacy rows have null + clubResultBonus > 0). New rows already carry the persisted
-  // value; this block is a no-op for them. We do not write back to the DB — recomputing each read
-  // is cheap (FPL fixtures + bootstrap are both Redis-cached) and keeps GET handlers side-effect-free.
+  // existed (legacy rows have null + clubResultBonus > 0). Shared helper — same logic powers the
+  // /api/standings tooltip.
   const scoredThisGw = allScores.filter((s) => s.gameweekId === targetGameweek.id);
-  const fallbackSummaryByTeam = new Map<string, string>();
-  await Promise.all(
-    scoredThisGw
-      .filter((s) => s.clubResultSummary == null && (s.clubResultBonus ?? 0) > 0)
-      .map(async (s) => {
-        const club = clubByTeamId[s.teamId];
-        if (!club) return;
-        try {
-          const result = await computeClubResultBonus(club.plTeamId, club.tier, selectedGw);
-          if (result && result.summary) fallbackSummaryByTeam.set(s.teamId, result.summary);
-        } catch (e) {
-          console.warn("[gw-summary] backfill computeClubResultBonus failed", { teamId: s.teamId, gw: selectedGw, error: e });
-        }
-      })
+  const backfilled = await backfillClubSummaries(
+    scoredThisGw.map((s) => ({
+      teamId: s.teamId,
+      gameweek: selectedGw,
+      clubResultBonus: s.clubResultBonus ?? 0,
+      clubResultSummary: s.clubResultSummary,
+    })),
+    clubByTeamId,
   );
+  const fallbackSummaryByTeam = new Map<string, string>();
+  for (const [key, value] of backfilled) {
+    const [teamId] = key.split(":");
+    fallbackSummaryByTeam.set(teamId, value);
+  }
 
   const rows = scoredThisGw
     .map((s) => {

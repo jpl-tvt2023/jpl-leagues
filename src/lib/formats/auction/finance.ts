@@ -356,7 +356,8 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     });
   }
 
-  // 6. Bonus slot unlocks (slot 15 / 16) — sourced from teamSlotUnlocks audit table.
+  // 6. Bonus slot unlocks (slot 16 / 17 / 18 — legacy rows may reference slot 15 / 16) — sourced
+  //    from teamSlotUnlocks audit table.
   for (const u of slotUnlocks) {
     entries.push({
       id: `slot-unlock-${u.id}`,
