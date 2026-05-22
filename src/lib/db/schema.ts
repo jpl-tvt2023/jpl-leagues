@@ -460,6 +460,7 @@ export const auctionSessions = sqliteTable("auction_sessions", {
   scheduledAt: integer("scheduled_at", { mode: "timestamp" }), // When the auction is scheduled to start (shown to users as countdown)
   bidTimerSeconds: integer("bid_timer_seconds").notNull().default(20), // Seconds per bid round (admin-configurable)
   nominationTimeoutSeconds: integer("nomination_timeout_seconds").notNull().default(60), // Seconds to nominate (admin-configurable)
+  pausedAt: integer("paused_at", { mode: "timestamp" }), // Set when status flips to "paused"; on resume, all open deadlines shift forward by (now - pausedAt)
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 

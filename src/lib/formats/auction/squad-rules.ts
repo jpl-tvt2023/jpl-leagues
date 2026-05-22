@@ -16,7 +16,7 @@ export const MIN_QUOTA: Record<number, number> = { 1: 1, 2: 3, 3: 3, 4: 1 };
 
 /**
  * Effective squad cap for a team:
- *   base (14) + bonus unlocks (0-2) − penalty slots (unlimited).
+ *   base (15) + bonus unlocks (0-3) − penalty slots (unlimited).
  *
  * The default `bonusSlots = 0` keeps callers that haven't been updated correct for the base case.
  */
@@ -52,7 +52,7 @@ export function countsFromOwnership(
       c[o.elementType as 1 | 2 | 3 | 4]++;
       c.total++;
     } else {
-      // Legacy row with no elementType — still counts toward the 14 cap
+      // Legacy row with no elementType — still counts toward the 15 cap
       c.total++;
     }
   }

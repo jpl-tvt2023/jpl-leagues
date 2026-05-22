@@ -1174,12 +1174,18 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
       .orderBy(asc(gameweeks.number))
       .limit(1);
 
+    // Owned-club info for THIS team — surfaced so the dashboard header can render the team's
+    // user-supplied name alongside a club chip (per user preference; everywhere else the
+    // existing club-name override still applies).
+    const myClub = clubByTeamId.get(t.id) ?? null;
+
     return NextResponse.json({
       leagueSlug,
       leagueFormat: "auction",
       team: {
         id: t.id,
         name: t.name,
+        ownedClub: myClub,
       },
       purse: ledgerPurse,
       initialBudget,

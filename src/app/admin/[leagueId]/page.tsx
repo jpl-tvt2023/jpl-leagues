@@ -1053,6 +1053,12 @@ export default function AdminDashboard() {
     return teams.find((t) => t.id === id)?.name ?? id;
   }, [teams]);
 
+  // Heartbeat watchdog ref — tracks last "heartbeat" event timestamp so we can detect a silently
+  // dropped SSE connection (e.g. Vercel edge timeout, browser tab suspension) and force a reconnect.
+  // Without this, the admin live monitor would freeze on a stale timer until manual refresh.
+  const lastHeartbeatRef = useRef<number>(Date.now());
+  const reconnectTickRef = useRef<number>(0);
+
   // SSE connection for live monitor
   useEffect(() => {
     if (!isAuctionFormat || !auctionActiveSession || auctionActiveSession.status !== "active") {
@@ -1060,10 +1066,17 @@ export default function AdminDashboard() {
       return;
     }
 
+    lastHeartbeatRef.current = Date.now();
     const es = new EventSource(`/api/auction/session/stream?sessionId=${auctionActiveSession.id}`);
     liveEsRef.current = es;
 
+    // The stream emits "heartbeat" every 15s. Track it so we can detect connection death.
+    es.addEventListener("heartbeat", () => {
+      lastHeartbeatRef.current = Date.now();
+    });
+
     es.addEventListener("auction-state", (e) => {
+      lastHeartbeatRef.current = Date.now();
       const data = JSON.parse((e as MessageEvent).data);
       setLiveCurrentBid(data);
       if (data.bidId && data.bidId !== lastLiveBidIdRef.current) {
@@ -1132,6 +1145,27 @@ export default function AdminDashboard() {
     }, 200);
     return () => clearInterval(interval);
   }, [liveCurrentBid?.expiresAt]);
+
+  // SSE heartbeat watchdog. If no event (heartbeat or otherwise) lands for > 25s while the session
+  // is supposed to be active, the connection is presumed dead — force-reopen by bumping a tick
+  // counter the SSE-setup effect depends on. Server emits a heartbeat every 15s so 25s is a safe
+  // bound. Bumping the tick triggers cleanup + reconnect via the existing useEffect dependency.
+  useEffect(() => {
+    if (!isAuctionFormat || !auctionActiveSession || auctionActiveSession.status !== "active") return;
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastHeartbeatRef.current > 25_000) {
+        console.warn("[admin SSE] no heartbeat in 25s — reconnecting");
+        if (liveEsRef.current) { liveEsRef.current.close(); liveEsRef.current = null; }
+        reconnectTickRef.current += 1;
+        lastHeartbeatRef.current = Date.now();
+        // Trigger reconnect by re-running the SSE setup effect via a fetch (cheap, also re-syncs
+        // the auctionActiveSession state if the session closed during the silent period).
+        fetchAuctionData();
+      }
+    }, 5000);
+    return () => clearInterval(watchdog);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuctionFormat, auctionActiveSession?.id, auctionActiveSession?.status]);
 
   // ---- Auction Corrections helpers ----
 
@@ -3738,7 +3772,7 @@ export default function AdminDashboard() {
                               Nominated by {teamNameById(liveCurrentBid.nominatorTeamId)} — Base {formatAuctionCurrency(liveCurrentBid.minBid)}
                             </div>
                           </div>
-                          <div className={`text-3xl font-mono font-bold ${liveTimerSec <= 5 ? "text-red-400" : "text-white"}`}>
+                          <div className={`text-5xl sm:text-6xl font-mono font-bold ${liveTimerSec <= 5 ? "text-red-400 animate-pulse" : "text-amber-300"}`}>
                             {liveTimerSec}s
                           </div>
                         </div>

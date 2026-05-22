@@ -9,6 +9,7 @@ import {
 } from "@/lib/formats/auction/resolve-bid";
 import { calculatePurse } from "@/lib/formats/auction/economy";
 import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
+import { ownerOfPlayer } from "@/lib/formats/auction/ownership";
 import { fetchElementInfo } from "@/lib/fpl";
 import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
 
@@ -124,22 +125,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Another item is still open for bidding" }, { status: 400 });
   }
 
-  // Check player isn't already owned in this league
-  const existingOwner = await db
-    .select()
-    .from(auctionOwnership)
-    .where(
-      and(
-        eq(auctionOwnership.leagueId, leagueId),
-        eq(auctionOwnership.fplElementId, fplElementId),
-        eq(auctionOwnership.status, "active")
-      )
-    )
-    .limit(1);
-
-  if (existingOwner.length > 0) {
-    console.error("[nominate] 400: player already owned", { sessionId, fplElementId });
-    return NextResponse.json({ error: "Player is already owned" }, { status: 400 });
+  // Defense in depth: even though the client filters owned players out of the nominate modal
+  // (refreshOwned() runs on open), an SSE-stale tab or a direct API call could try to nominate
+  // a player who's already been sold. Return 409 with a clear error so the UI can re-fetch.
+  const ownerTeamId = await ownerOfPlayer(leagueId, fplElementId);
+  if (ownerTeamId) {
+    console.error("[nominate] 409: player already owned", { sessionId, fplElementId, ownerTeamId });
+    return NextResponse.json({ error: "Player is already owned by another team" }, { status: 409 });
   }
 
   // Compose starting bid first so subsequent guards can use it

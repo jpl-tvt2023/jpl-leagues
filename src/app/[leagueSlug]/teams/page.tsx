@@ -337,8 +337,8 @@ export default function TeamsPage() {
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-blue-300">{formatCurrency(t.squadValue)}</td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-white">
                               <span className="inline-flex items-center gap-1.5">
-                                <span title={`${t.squadSize} active · effective max ${t.effectiveMax ?? 14}`}>
-                                  {t.squadSize} / {t.effectiveMax ?? 14}
+                                <span title={`${t.squadSize} active · effective max ${t.effectiveMax ?? 15}`}>
+                                  {t.squadSize} / {t.effectiveMax ?? 15}
                                 </span>
                                 {(t.penaltySlots ?? 0) > 0 && (
                                   <span className="text-[10px] text-red-400" title={`${t.penaltySlots} penalty slot(s) lost`}>✕{t.penaltySlots}</span>

@@ -17,7 +17,7 @@ export interface AuctionProcessResult {
 
 /**
  * Process a gameweek for an auction league:
- * 1. Calculate each team's squad score (sum of 14 owned elements' GW points)
+ * 1. Calculate each team's squad score (sum of owned elements' GW points)
  * 2. Rank teams by GW score
  * 3. Assign income payouts based on rank
  * 4. Update teams.purse and teams.totalIncome

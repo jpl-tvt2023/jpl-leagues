@@ -370,10 +370,57 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  await db
-    .update(auctionSessions)
-    .set({ status: newStatus })
-    .where(eq(auctionSessions.id, sessionId));
+  // Pause/resume must preserve remaining time on deadlines. We record `pausedAt` on pause and on
+  // resume shift every active deadline (nomination + open bids) forward by the elapsed pause
+  // duration. Otherwise a 60s window paused for 50s would either expire instantly (no shift) or
+  // reset to a fresh 60s (incorrectly favorable). See plan Section E.5.
+  const now = new Date();
+  if (action === "pause") {
+    await db
+      .update(auctionSessions)
+      .set({ status: newStatus, pausedAt: now })
+      .where(eq(auctionSessions.id, sessionId));
+  } else if (action === "resume") {
+    const pausedAt = sessionRow[0].pausedAt;
+    if (pausedAt) {
+      const elapsedMs = now.getTime() - new Date(pausedAt).getTime();
+      // Shift nomination deadline forward if set
+      if (sessionRow[0].nominationDeadline) {
+        const newDeadline = new Date(new Date(sessionRow[0].nominationDeadline).getTime() + elapsedMs);
+        await db
+          .update(auctionSessions)
+          .set({ status: newStatus, pausedAt: null, nominationDeadline: newDeadline })
+          .where(eq(auctionSessions.id, sessionId));
+      } else {
+        await db
+          .update(auctionSessions)
+          .set({ status: newStatus, pausedAt: null })
+          .where(eq(auctionSessions.id, sessionId));
+      }
+      // Shift open bid expiries by the same elapsed amount
+      const openBids = await db
+        .select({ id: auctionBids.id, expiresAt: auctionBids.expiresAt })
+        .from(auctionBids)
+        .where(and(eq(auctionBids.sessionId, sessionId), eq(auctionBids.status, "open")));
+      for (const bid of openBids) {
+        if (bid.expiresAt) {
+          const shifted = new Date(new Date(bid.expiresAt).getTime() + elapsedMs);
+          await db.update(auctionBids).set({ expiresAt: shifted }).where(eq(auctionBids.id, bid.id));
+        }
+      }
+    } else {
+      // No pausedAt recorded (legacy paused session pre-migration) — just resume without shift.
+      await db
+        .update(auctionSessions)
+        .set({ status: newStatus, pausedAt: null })
+        .where(eq(auctionSessions.id, sessionId));
+    }
+  } else {
+    await db
+      .update(auctionSessions)
+      .set({ status: newStatus })
+      .where(eq(auctionSessions.id, sessionId));
+  }
 
   // Admin-initiated session completion (real / non-simulated path). Mini-auctions wind down here in
   // production; initial + club auctions also pass through this branch when an admin force-completes.
@@ -388,9 +435,10 @@ export async function POST(request: NextRequest) {
     await finalizePendingReleasesNow(leagueId, gwNumber);
   }
 
-  // When starting/resuming a player auction, set the nomination deadline for the current nominator.
-  // For a club auction, there is no per-team nomination — the system auto-nominates one PL club at a time.
-  if (newStatus === "active") {
+  // When starting a player auction (first-time only, not resume — resume already restored the
+  // shifted deadline above), set the nomination deadline for the current nominator. For a club
+  // auction, there is no per-team nomination — the system auto-nominates one PL club at a time.
+  if (newStatus === "active" && action === "start") {
     if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
       await autoNominateNextClub(sessionId);
     } else {

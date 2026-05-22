@@ -9,6 +9,7 @@ import { TierChip } from "@/components/TierChip";
 import { SlotStatus } from "@/components/SlotStatus";
 import type { ClubTier } from "@/lib/db/schema";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
+import { MAX_SQUAD_SIZE, effectiveMaxSquadSize } from "@/lib/formats/auction/squad-rules";
 
 const CLUB_AUCTION_TYPE = "club-auction";
 
@@ -257,6 +258,12 @@ export default function AuctionRoomPage() {
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
   const [wlTeamFilter, setWlTeamFilter] = useState<number | null>(null);
+  // Tabbed panel: "wishlist" (existing list) vs "unsold" (players nominated this session but received
+  // no bid). The Unsold tab supports multi-select + bulk add to wishlist.
+  const [wishlistTab, setWishlistTab] = useState<"wishlist" | "unsold">("wishlist");
+  const [unsoldPlayers, setUnsoldPlayers] = useState<Array<{ bidId: string; fplElementId: number; playerName: string; nominatedAt: string }>>([]);
+  const [unsoldSelections, setUnsoldSelections] = useState<Set<number>>(new Set());
+  const [bulkAddingWishlist, setBulkAddingWishlist] = useState(false);
   const [nominationDeadlineSec, setNominationDeadlineSec] = useState<number>(0);
   const eventSourceRef = useRef<EventSource | null>(null);
   const teamMapRef = useRef<Map<string, StandingEntry>>(new Map());
@@ -564,6 +571,11 @@ export default function AuctionRoomPage() {
       const data = JSON.parse((e as MessageEvent).data);
       addFeed(`UNSOLD: ${data.playerName}${playerTag(data.fplElementId)}`, "unsold", data.bidId);
       setCurrentBid(null);
+      // Keep the Unsold tab fresh — a new unsold-bid row exists on the server.
+      const lid = leagueIdRef.current;
+      if (lid) {
+        fetch(`/api/auction/unsold?leagueId=${lid}`).then((r) => r.json()).then((d) => setUnsoldPlayers(d.unsold ?? []));
+      }
     });
     es.addEventListener("session-status", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
@@ -681,8 +693,8 @@ export default function AuctionRoomPage() {
   const myActiveCount = mySummary?.players?.length ?? 0;
   const myPenaltySlots = mySummary?.penaltySlots ?? 0;
   const myBonusSlots = mySummary?.bonusSlots ?? 0;
-  // Squad-full check: base 14 + bonus slots unlocked − penalty slots lost.
-  const mySquadFull = myActiveCount >= 14 + myBonusSlots - myPenaltySlots;
+  // Squad-full check via the shared helper: base MAX_SQUAD_SIZE + bonus unlocks − penalty slots.
+  const mySquadFull = myActiveCount >= effectiveMaxSquadSize(myPenaltySlots, myBonusSlots);
   const cannotAffordNomination = myPurse < NOMINATE_MIN_BID;
   const nominateBlockedReason = mySquadFull
     ? "Squad full"
@@ -800,6 +812,51 @@ export default function AuctionRoomPage() {
     }
   }, [myTeamId]);
 
+  // Fetch the league's unsold players for the most-recent auction session — populates the Unsold
+  // tab in the wishlist panel. Lazy-loaded when the user switches tabs.
+  const refreshUnsold = useCallback(async () => {
+    if (!leagueId) return;
+    const res = await fetch(`/api/auction/unsold?leagueId=${leagueId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setUnsoldPlayers(data.unsold ?? []);
+    }
+  }, [leagueId]);
+
+  const handleBulkAddToWishlist = async () => {
+    if (!leagueId || !myTeamId || unsoldSelections.size === 0 || bulkAddingWishlist) return;
+    setBulkAddingWishlist(true);
+    try {
+      const players = unsoldPlayers
+        .filter((p) => unsoldSelections.has(p.fplElementId))
+        .map((p) => ({ fplElementId: p.fplElementId, playerName: p.playerName }));
+      const res = await fetch("/api/auction/wishlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leagueId, teamId: myTeamId, players }),
+      });
+      if (res.ok) {
+        setUnsoldSelections(new Set());
+        await refreshWishlist();
+      }
+    } finally {
+      setBulkAddingWishlist(false);
+    }
+  };
+
+  // Pulls the current league-wide owned-players list. Called explicitly when the nominate modal
+  // opens so a freshly-sold player is filtered out immediately, before the user can attempt to
+  // nominate them. SSE events also drive this set but can be in-flight on slow networks.
+  const refreshOwned = useCallback(async () => {
+    if (!leagueId) return;
+    const res = await fetch(`/api/auction/league-owned?leagueId=${leagueId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setOwnedElementIds(new Set(data.ownedElementIds ?? []));
+      if (data.teamSummaries) setTeamSummaries(data.teamSummaries);
+    }
+  }, [leagueId]);
+
   const handleAddToWishlist = async (elementId: number, playerName: string) => {
     if (!leagueId || !myTeamId) return;
     const res = await fetch("/api/auction/wishlist", {
@@ -896,7 +953,7 @@ export default function AuctionRoomPage() {
 
             {/* Always-visible squad-slot summary: open / penalty / locked. Replaces the old
                 conditional "Penalty slots: N" + RedeemPenaltyButton pair so users see slot economy
-                even when they're at the default 14 cap with no penalties. */}
+                even when they're at the default 15 cap with no penalties. */}
             {mySlotStatus && (
               <div className="mb-4">
                 <SlotStatus
@@ -906,7 +963,7 @@ export default function AuctionRoomPage() {
                     if (!myTeamId) return;
                     const cost = mySlotStatus.nextUnlockCost;
                     if (!cost) return;
-                    if (!confirm(`Unlock slot ${14 + mySlotStatus.bonusSlots + 1} for £${(cost / 1_000_000).toFixed(1)}M? This is non-refundable.`)) return;
+                    if (!confirm(`Unlock slot ${MAX_SQUAD_SIZE + mySlotStatus.bonusSlots + 1} for £${(cost / 1_000_000).toFixed(1)}M? This is non-refundable.`)) return;
                     try {
                       const res = await fetch(`/api/auction/unlock-slot`, {
                         method: "POST",
@@ -1041,7 +1098,7 @@ export default function AuctionRoomPage() {
                       </div>
                       <div>
                         <div className="text-[10px] uppercase text-gray-400">Timer</div>
-                        <div className={`text-lg sm:text-2xl font-mono font-bold ${timerSec <= 5 ? "text-red-400 animate-pulse" : "text-white"}`}>{timerSec}s</div>
+                        <div className={`text-3xl sm:text-5xl font-mono font-bold ${timerSec <= 5 ? "text-red-400 animate-pulse" : "text-amber-300"}`}>{timerSec}s</div>
                       </div>
                     </div>
                     {isHighBidder ? (
@@ -1091,7 +1148,7 @@ export default function AuctionRoomPage() {
                           </div>
                         )}
                         <button
-                          onClick={() => setShowNominate(true)}
+                          onClick={() => { void refreshOwned(); setShowNominate(true); }}
                           disabled={!!nominateBlockedReason}
                           className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -1245,70 +1302,153 @@ export default function AuctionRoomPage() {
 
             {/* Row 2: Wishlist + Live Feed — full width, side by side */}
             <div className="mt-4 grid grid-cols-1 lg:grid-cols-5 gap-4">
-              {/* Wishlist (2 cols) */}
+              {/* Wishlist / Unsold tabs (2 cols) */}
               <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">Your Wishlist</h3>
-                  <span className="text-[10px] text-gray-500">{isWlFiltered ? `${filteredWishlist.length}/${wishlist.length}` : wishlist.length}</span>
+                <div className="flex items-center gap-1 mb-3 border-b border-white/10">
+                  <button
+                    onClick={() => setWishlistTab("wishlist")}
+                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px transition ${
+                      wishlistTab === "wishlist" ? "border-yellow-400 text-yellow-300" : "border-transparent text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Wishlist <span className="text-[10px] text-gray-500 ml-1">({wishlist.length})</span>
+                  </button>
+                  <button
+                    onClick={() => { setWishlistTab("unsold"); void refreshUnsold(); }}
+                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px transition ${
+                      wishlistTab === "unsold" ? "border-yellow-400 text-yellow-300" : "border-transparent text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Unsold <span className="text-[10px] text-gray-500 ml-1">({unsoldPlayers.length})</span>
+                  </button>
                 </div>
-                {wishlist.length > 0 && (
-                  <div className="flex gap-1.5 mb-2">
-                    <select
-                      value={wlPositionFilter ?? ""}
-                      onChange={(e) => setWlPositionFilter(e.target.value ? Number(e.target.value) : null)}
-                      className="flex-1 bg-white/10 border border-white/20 text-white text-[10px] rounded px-1.5 py-1 outline-none"
-                    >
-                      <option value="">All Positions</option>
-                      <option value="1">GKP</option>
-                      <option value="2">DEF</option>
-                      <option value="3">MID</option>
-                      <option value="4">FWD</option>
-                    </select>
-                    <select
-                      value={wlTeamFilter ?? ""}
-                      onChange={(e) => setWlTeamFilter(e.target.value ? Number(e.target.value) : null)}
-                      className="flex-1 bg-white/10 border border-white/20 text-white text-[10px] rounded px-1.5 py-1 outline-none"
-                    >
-                      <option value="">All Teams</option>
-                      {wlTeamOptions.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {wishlist.length === 0 ? (
-                  <div className="text-[10px] text-gray-500 py-2 text-center">
-                    Empty — add players from the nomination modal.
-                  </div>
-                ) : filteredWishlist.length === 0 ? (
-                  <div className="text-[10px] text-gray-500 py-2 text-center">
-                    No players match filters.
-                  </div>
-                ) : (
-                  <div className="space-y-0.5 max-h-52 overflow-y-auto">
-                    {filteredWishlist.map((entry) => {
-                      const el = elementById.get(entry.fplElementId);
-                      const realIdx = wishlist.findIndex((w) => w.id === entry.id);
-                      return (
-                        <div
-                          key={entry.id}
-                          className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
+
+                {wishlistTab === "wishlist" ? (
+                  <>
+                    {wishlist.length > 0 && (
+                      <div className="flex gap-1.5 mb-2">
+                        <select
+                          value={wlPositionFilter ?? ""}
+                          onChange={(e) => setWlPositionFilter(e.target.value ? Number(e.target.value) : null)}
+                          className="flex-1 bg-white/10 border border-white/20 text-white text-[10px] rounded px-1.5 py-1 outline-none"
                         >
-                          <span className="w-4 text-right text-[10px] text-gray-500">{entry.priority}.</span>
-                          {el && <span className="text-[9px] text-gray-500 w-6">{POSITION_LABELS[el.element_type] ?? ""}</span>}
-                          <span className="flex-1 truncate text-white">{entry.playerName}</span>
-                          {el && <span className="text-[9px] text-gray-500">{plTeams.get(el.team)?.short_name ?? ""}</span>}
-                          {!isWlFiltered && (
-                            <>
-                              <button onClick={() => handleReorderWishlist(realIdx, realIdx - 1)} disabled={realIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
-                              <button onClick={() => handleReorderWishlist(realIdx, realIdx + 1)} disabled={realIdx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
-                            </>
-                          )}
-                          <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
+                          <option value="">All Positions</option>
+                          <option value="1">GKP</option>
+                          <option value="2">DEF</option>
+                          <option value="3">MID</option>
+                          <option value="4">FWD</option>
+                        </select>
+                        <select
+                          value={wlTeamFilter ?? ""}
+                          onChange={(e) => setWlTeamFilter(e.target.value ? Number(e.target.value) : null)}
+                          className="flex-1 bg-white/10 border border-white/20 text-white text-[10px] rounded px-1.5 py-1 outline-none"
+                        >
+                          <option value="">All Teams</option>
+                          {wlTeamOptions.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {wishlist.length === 0 ? (
+                      <div className="text-[10px] text-gray-500 py-2 text-center">
+                        Empty — add players from the nomination modal or the Unsold tab.
+                      </div>
+                    ) : filteredWishlist.length === 0 ? (
+                      <div className="text-[10px] text-gray-500 py-2 text-center">
+                        No players match filters.
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5 max-h-52 overflow-y-auto">
+                        {filteredWishlist.map((entry) => {
+                          const el = elementById.get(entry.fplElementId);
+                          const realIdx = wishlist.findIndex((w) => w.id === entry.id);
+                          return (
+                            <div
+                              key={entry.id}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
+                            >
+                              <span className="w-4 text-right text-[10px] text-gray-500">{entry.priority}.</span>
+                              {el && <span className="text-[9px] text-gray-500 w-6">{POSITION_LABELS[el.element_type] ?? ""}</span>}
+                              <span className="flex-1 truncate text-white">{entry.playerName}</span>
+                              {el && <span className="text-[9px] text-gray-500">{plTeams.get(el.team)?.short_name ?? ""}</span>}
+                              {!isWlFiltered && (
+                                <>
+                                  <button onClick={() => handleReorderWishlist(realIdx, realIdx - 1)} disabled={realIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
+                                  <button onClick={() => handleReorderWishlist(realIdx, realIdx + 1)} disabled={realIdx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
+                                </>
+                              )}
+                              <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {unsoldPlayers.length === 0 ? (
+                      <div className="text-[10px] text-gray-500 py-2 text-center">
+                        No unsold players in the current session yet.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-gray-400 hover:text-white select-none">
+                            <input
+                              type="checkbox"
+                              className="accent-yellow-400"
+                              checked={unsoldPlayers.length > 0 && unsoldPlayers.every((p) => unsoldSelections.has(p.fplElementId) || wishlistElementIds.has(p.fplElementId))}
+                              onChange={(ev) => {
+                                if (ev.target.checked) {
+                                  setUnsoldSelections(new Set(unsoldPlayers.filter((p) => !wishlistElementIds.has(p.fplElementId)).map((p) => p.fplElementId)));
+                                } else {
+                                  setUnsoldSelections(new Set());
+                                }
+                              }}
+                            />
+                            Select all
+                          </label>
+                          <button
+                            onClick={handleBulkAddToWishlist}
+                            disabled={unsoldSelections.size === 0 || bulkAddingWishlist}
+                            className="rounded-md bg-yellow-400/20 hover:bg-yellow-400/30 text-yellow-200 text-[10px] font-bold uppercase px-2 py-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            {bulkAddingWishlist ? "Adding…" : `Add ${unsoldSelections.size} to wishlist`}
+                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="space-y-0.5 max-h-52 overflow-y-auto">
+                          {unsoldPlayers.map((p) => {
+                            const el = elementById.get(p.fplElementId);
+                            const inWl = wishlistElementIds.has(p.fplElementId);
+                            const selected = unsoldSelections.has(p.fplElementId);
+                            return (
+                              <div key={p.bidId} className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs ${selected ? "bg-yellow-400/10" : "bg-white/5"}`}>
+                                <input
+                                  type="checkbox"
+                                  className="accent-yellow-400 cursor-pointer"
+                                  checked={selected}
+                                  disabled={inWl}
+                                  onChange={(ev) => {
+                                    setUnsoldSelections((prev) => {
+                                      const next = new Set(prev);
+                                      if (ev.target.checked) next.add(p.fplElementId);
+                                      else next.delete(p.fplElementId);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                {el && <span className="text-[9px] text-gray-500 w-6">{POSITION_LABELS[el.element_type] ?? ""}</span>}
+                                <span className="flex-1 truncate text-white">{p.playerName}</span>
+                                {el && <span className="text-[9px] text-gray-500">{plTeams.get(el.team)?.short_name ?? ""}</span>}
+                                {inWl && <span className="text-yellow-400 text-[10px]" title="Already in wishlist">★</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -1395,7 +1535,7 @@ export default function AuctionRoomPage() {
                     ))}
                   </div>
                   <div className="mb-3">
-                    <span className="text-xs text-gray-500">Opening bid: £500K (fixed) • Showing top {searchResults.length} by points</span>
+                    <span className="text-xs text-gray-500">Opening bid: £500K (fixed) • Showing top {searchResults.length} by points • Owned players excluded (refreshed live)</span>
                   </div>
                   <div className="max-h-80 overflow-y-auto space-y-1">
                     {searchResults.length === 0 ? (

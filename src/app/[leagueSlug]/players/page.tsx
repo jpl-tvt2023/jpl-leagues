@@ -102,8 +102,6 @@ export default function PlayersPage() {
   const [leagueTeams, setLeagueTeams] = useState<{ id: string; name: string }[]>([]);
 
   // Filters
-  const [gameweek, setGameweek] = useState(1);
-  const [maxGw, setMaxGw] = useState(1);
   const [page, setPage] = useState(1);
   const [positionFilter, setPositionFilter] = useState<string>("");
   const [plTeamFilter, setPlTeamFilter] = useState<string>("");
@@ -154,21 +152,6 @@ export default function PlayersPage() {
           setPlTeams(boot.teams ?? []);
         }
 
-        // Determine current GW from scoring status
-        try {
-          const statusRes = await fetch(`/api/auction/scoring-status?leagueId=${league.id}`);
-          if (statusRes.ok) {
-            const statusData = await statusRes.json();
-            const gws = (statusData.gameweeks ?? []) as { number: number }[];
-            if (gws.length > 0) {
-              const maxGwNum = Math.max(...gws.map((g: { number: number }) => g.number));
-              setMaxGw(maxGwNum);
-              setGameweek(maxGwNum);
-            }
-          }
-        } catch {
-          // fallback: GW 1
-        }
       } catch (err) {
         console.error(err);
         setError("Failed to initialize");
@@ -187,12 +170,11 @@ export default function PlayersPage() {
 
   // Fetch players data when filters change
   const fetchPlayers = useCallback(async () => {
-    if (!leagueId || gameweek < 1) return;
+    if (!leagueId) return;
 
     try {
       const params = new URLSearchParams({
         leagueId,
-        gameweek: String(gameweek),
         page: String(page),
         pageSize: String(pageSize),
       });
@@ -211,7 +193,7 @@ export default function PlayersPage() {
     } catch (err) {
       console.error(err);
     }
-  }, [leagueId, gameweek, page, positionFilter, plTeamFilter, ownershipFilter, debouncedSearch]);
+  }, [leagueId, page, positionFilter, plTeamFilter, ownershipFilter, debouncedSearch]);
 
   useEffect(() => {
     fetchPlayers();
@@ -220,7 +202,7 @@ export default function PlayersPage() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [positionFilter, plTeamFilter, ownershipFilter, debouncedSearch, gameweek]);
+  }, [positionFilter, plTeamFilter, ownershipFilter, debouncedSearch]);
 
   // Sorted PL teams for dropdown
   const sortedPlTeams = useMemo(
@@ -275,22 +257,6 @@ export default function PlayersPage() {
         {/* Filters bar */}
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur mb-6">
           <div className="flex flex-wrap items-center gap-3">
-            {/* GW selector */}
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-gray-400 uppercase tracking-wider">GW</label>
-              <select
-                value={gameweek}
-                onChange={(e) => setGameweek(parseInt(e.target.value))}
-                className="bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white"
-              >
-                {Array.from({ length: maxGw }, (_, i) => i + 1).map((gw) => (
-                  <option key={gw} value={gw} className="bg-slate-800">
-                    GW{gw}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {/* Position filter */}
             <div className="flex items-center gap-2">
               <label className="text-xs text-gray-400 uppercase tracking-wider">Pos</label>
