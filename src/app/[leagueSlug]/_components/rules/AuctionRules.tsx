@@ -30,14 +30,14 @@ export function AuctionRules() {
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
         <SectionHeader letter="C" color="yellow" title="Squad Requirements" />
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
-          <RuleItem>Initial auction fills <strong className="text-white">14 active players</strong> per squad. Minimum position requirements: <strong className="text-white">1 GK, 3 DEF, 3 MID, 1 FWD</strong>.</RuleItem>
+          <RuleItem>Initial auction fills <strong className="text-white">15 active players</strong> per squad. Minimum position requirements: <strong className="text-white">1 GK, 3 DEF, 3 MID, 1 FWD</strong>.</RuleItem>
           <RuleItem>
-            <strong className="text-white">Bonus slots (slots 15 &amp; 16):</strong> after the initial auction completes, teams can unlock additional squad slots with purse money — <strong className="text-purple-300">£10M for slot 15</strong>, then <strong className="text-purple-300">£25M for slot 16</strong>. Sequential — slot 16 only unlocks after slot 15. Locked slots cannot be filled during the initial auction.
+            <strong className="text-white">Bonus slots (slots 16, 17 &amp; 18):</strong> after the initial auction completes, teams can unlock additional squad slots with purse money — <strong className="text-purple-300">£10M for slot 16</strong>, <strong className="text-purple-300">£20M for slot 17</strong>, then <strong className="text-purple-300">£30M for slot 18</strong>. Sequential — each slot only unlocks after the previous one. Locked slots cannot be filled during the initial auction.
           </RuleItem>
           <RuleItem>
             <strong className="text-white">Penalty slots:</strong> if you miss a nomination with an empty wishlist, your effective squad cap drops by 1. Redeem from your purse — <strong className="text-cyan-300">£2.5M same cycle</strong> / <strong className="text-cyan-300">£5M later cycle</strong>.
           </RuleItem>
-          <RuleItem>Effective max squad size = 14 (base) + unlocked bonus slots − penalty slots. Absolute ceiling is 16.</RuleItem>
+          <RuleItem>Effective max squad size = 15 (base) + unlocked bonus slots − penalty slots. Absolute ceiling is 18.</RuleItem>
           <RuleItem>No FPL player can be owned by more than one team in the same league simultaneously.</RuleItem>
           <RuleItem>Players marked as <strong className="text-yellow-400">deadwood</strong> remain in your squad but do not score. They still count toward your squad size.</RuleItem>
         </ul>
@@ -90,7 +90,7 @@ export function AuctionRules() {
           <RuleItem>Trades are subject to an <strong className="text-white">80% Fair Market Value (FMV) floor</strong>: the total value given by each side must be at least 80% of what they receive.</RuleItem>
           <RuleItem>FMV is calculated based on purchase price and cumulative points earned.</RuleItem>
           <RuleItem>A <strong className="text-white">5% transfer tax</strong> is charged on all cash received in a trade. If you receive £10M, you keep £9.5M.</RuleItem>
-          <RuleItem>Both squads must maintain valid size (11–14 players) and position minimums after any trade.</RuleItem>
+          <RuleItem>Both squads must maintain valid size (8–18 players, depending on bonus slots) and position minimums after any trade.</RuleItem>
         </ul>
       </section>
 

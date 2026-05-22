@@ -1453,7 +1453,7 @@ export default function SuperAdminDashboard() {
                                 />
                                 <div>
                                   <p className="text-white text-sm font-medium">Complete</p>
-                                  <p className="text-gray-500 text-xs">All features: trades, slot 15/16 unlocks (£10M / £25M), redemption, club auction.</p>
+                                  <p className="text-gray-500 text-xs">All features: trades, slot 16/17/18 unlocks (£10M / £20M / £30M), redemption, club auction.</p>
                                 </div>
                               </label>
                             </div>

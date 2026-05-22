@@ -5,8 +5,8 @@
  * without sitting through an entire live auction.
  *
  * When a session is started in a simulated league, this runs instead of
- * the live nomination/bidding flow. Each team gets 14 players assigned
- * by snake order, sorted by FPL total_points descending.
+ * the live nomination/bidding flow. Each team gets MAX_SQUAD_SIZE players
+ * assigned by snake order, sorted by FPL total_points descending.
  *
  * Purchase price = FPL now_cost × 100,000 (e.g. Haaland 130 → £13M).
  * If a player would exceed remaining purse, use 500K floor price.
@@ -31,7 +31,7 @@ const DEFAULT_MIN_BID = 500_000;
  * Run a simulated snake draft for a league's auction session.
  *
  * 1. Fetches FPL bootstrap → sorted by total_points desc
- * 2. Iterates snake order for 14 rounds, assigning best available player
+ * 2. Iterates snake order for MAX_SQUAD_SIZE rounds, assigning best available player
  * 3. Creates auctionOwnership records, deducts purse/totalSpent
  * 4. Marks session as "completed"
  */
@@ -162,7 +162,7 @@ export async function simulateAuction(
     }
   }
 
-  // Single bulk insert — one DB round trip instead of 140 sequential awaits
+  // Single bulk insert — one DB round trip instead of 150 sequential awaits
   if (ownershipRecords.length > 0) {
     await db.insert(auctionOwnership).values(ownershipRecords);
   }

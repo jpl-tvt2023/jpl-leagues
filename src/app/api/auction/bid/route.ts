@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
         return { error: "You already own a PL club — only club-less teams may bid in the club auction", status: 400 };
       }
     } else {
-      // Check bidder doesn't already have 14 active players
+      // Check bidder hasn't already filled their squad cap (15 base + unlocked bonus slots)
       const activeOwned = await tx
         .select()
         .from(auctionOwnership)

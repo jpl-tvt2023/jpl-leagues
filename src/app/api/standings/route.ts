@@ -7,6 +7,7 @@ import { computeAuctionStandings } from "@/lib/formats/auction/standings";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { getClubOwnershipsByTeam, computeClubResultBonus } from "@/lib/formats/auction/club-auction";
 import { fetchBootstrapData } from "@/lib/fpl";
+import { backfillClubSummaries } from "@/lib/formats/auction/club-summary-backfill";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
 
@@ -152,12 +153,28 @@ export async function GET(request: NextRequest) {
       const standings = computeAuctionStandings(leagueTeams, scores, gwNumbers, squadValues);
       const clubByTeamId = await getClubOwnershipsByTeam(leagueId);
 
-      // Apply PL Club Auction rename to each standings row's `teamName` so downstream consumers that
-      // only read `teamName` (e.g., marketplace's team picker) pick up the rename automatically.
-      // The standings UI uses `clubByTeamId` separately for the tier chip; both are wire-compatible.
+      // On-the-fly backfill for legacy rows where clubResultBonus > 0 but clubResultSummary is null
+      // (rows scored before migration 0007 added the column). Recomputes the scoreline via FPL data
+      // so the standings tooltip shows the actual fixture rather than "—".
+      const backfillRows = standings.flatMap((s) =>
+        s.gwHistory.map((h) => ({
+          teamId: s.teamId,
+          gameweek: h.gw,
+          clubResultBonus: h.clubResultBonus,
+          clubResultSummary: h.clubResultSummary,
+        }))
+      );
+      const backfilledSummaries = await backfillClubSummaries(backfillRows, clubByTeamId);
+
+      // Apply PL Club Auction rename to each standings row's `teamName` + backfill missing
+      // clubResultSummary entries in gwHistory.
       const renamedStandings = standings.map((s) => ({
         ...s,
         teamName: clubByTeamId[s.teamId]?.plTeamName ?? s.teamName,
+        gwHistory: s.gwHistory.map((h) => ({
+          ...h,
+          clubResultSummary: h.clubResultSummary ?? backfilledSummaries.get(`${s.teamId}:${h.gw}`) ?? null,
+        })),
       }));
 
       // Current GW for the multi-GW club tooltip: max of "highest scored GW" and "FPL is_current/is_next".

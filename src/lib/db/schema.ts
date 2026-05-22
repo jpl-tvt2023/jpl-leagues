@@ -105,11 +105,13 @@ export const teams = sqliteTable("teams", {
   totalRefunds: integer("total_refunds").notNull().default(0),
   totalIncome: integer("total_income").notNull().default(0),
 
-  // JPL Auction: Penalty slots (missed nominations reduce max squad size from 14)
+  // JPL Auction: Penalty slots (missed nominations reduce max squad size from 15)
   penaltySlots: integer("penalty_slots").notNull().default(0),
-  // JPL Auction: Bonus slots unlocked via purse purchase (0 = default 14-slot cap;
-  // 1 = slot 15 unlocked for £10M; 2 = slot 16 unlocked for an additional £25M).
+  // JPL Auction: Bonus slots unlocked via purse purchase (0 = default 15-slot cap;
+  // 1 = slot 16 unlocked for £10M; 2 = slot 17 unlocked for £20M; 3 = slot 18 unlocked for £30M).
   // Locked-slot unlocks are only allowed after the initial auction completes.
+  // Legacy data: older leagues that paid under the previous pricing (£10M for slot 15 / £25M for
+  // slot 16) keep their existing bonusSlots value; new unlocks above that use the new prices.
   bonusSlots: integer("bonus_slots").notNull().default(0),
   
   // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)

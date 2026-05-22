@@ -81,7 +81,10 @@ function ClubTooltipCell({ clubResultBonus, gwHistory, currentGwNumber, liveResu
                     <td className="py-1 pr-2 text-gray-400 font-mono w-10">GW{gwN}</td>
                     <td className={`py-1 ${labelCls}`}>
                       {scored ? (
-                        summary ?? "—"
+                        // Scored GW. If we have a summary, render it. Otherwise — when bonus > 0
+                        // but the backfill couldn't recover the scoreline (FPL outage / pre-club-
+                        // auction league) — explain why instead of showing a bare "—".
+                        summary ?? (h!.clubResultBonus > 0 ? <span className="text-gray-500 italic">fixture detail unavailable</span> : "—")
                       ) : hasLive ? (
                         <>
                           {summary}
@@ -276,8 +279,8 @@ export function AuctionStandings() {
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">GW Points</th>
-                            <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="+50% bonus on owned-club players (this GW)">Syn</th>
-                            <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Club W/D bonus (this GW)">Club</th>
+                            <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="+50% bonus on owned-club players (this GW). Hover the value to see per-player breakdown.">Syn <span className="text-gray-500" aria-hidden>ⓘ</span></th>
+                            <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Club W/D bonus (this GW). Hover the value to see per-GW fixture breakdown.">Club <span className="text-gray-500" aria-hidden>ⓘ</span></th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Squad Value</th>
                             <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Purse</th>
@@ -343,8 +346,8 @@ export function AuctionStandings() {
                           <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
                           <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Cumulative raw FPL points">Raw</th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Cumulative +50% bonus on owned-club players">Syn</th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Cumulative club W/D bonus">Club</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Cumulative +50% bonus on owned-club players. Hover the value to see per-GW breakdown.">Syn <span className="text-gray-500" aria-hidden>ⓘ</span></th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Cumulative club W/D bonus. Hover the value to see per-GW fixtures.">Club <span className="text-gray-500" aria-hidden>ⓘ</span></th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Raw + Synergy + Club">Total</th>
                           <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Purse</th>
                           <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Squad Value</th>
@@ -418,6 +421,7 @@ export function AuctionStandings() {
                     </div>
                   </div>
                   <div className="mt-4 sm:mt-6 text-center text-xs text-gray-500 px-2">
+                    <span className="block mb-1">💡 Hover the Syn or Club value to see the per-GW breakdown.</span>
                     Total = Raw + Synergy + Club result · Synergy = +50% on owned-club players · Club = per-fixture W/D bonus by tier · Squad Value uses RAW points only (synergy doesn&apos;t inflate FMV)
                   </div>
                 </div>
