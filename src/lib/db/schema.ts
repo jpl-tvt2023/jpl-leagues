@@ -335,6 +335,16 @@ export const backups = sqliteTable("backups", {
   // Gameweeks list — id/number/deadline/isPlayoffs — preserved so restore can recreate GW rows when
   // restoring into a fresh league (or repair missing GW rows).
   gameweeksJson: text("gameweeks_json"),
+  // Auction event-history snapshots (migration 0012). All auction-only; null for TVT/TC.
+  // Used by restore-auction to rebuild the full Finance ledger + audit trail + wishlists + inbox.
+  tradesJson: text("trades_json"),
+  penaltyRedemptionsJson: text("penalty_redemptions_json"),
+  slotUnlocksJson: text("slot_unlocks_json"),
+  wishlistsJson: text("wishlists_json"),
+  notificationsJson: text("notifications_json"),
+  auctionSessionsJson: text("auction_sessions_json"),
+  auctionBidsJson: text("auction_bids_json"),
+  auctionBidLogsJson: text("auction_bid_logs_json"),
 });
 
 // Admin-configurable settings (key-value store, scoped per league)

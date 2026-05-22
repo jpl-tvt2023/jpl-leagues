@@ -281,6 +281,15 @@ async function maybeWriteGw1Snapshot(leagueId: string): Promise<void> {
     auctionSquadsJson: rows.auctionSquads ? JSON.stringify(rows.auctionSquads) : null,
     auctionClubsJson: rows.auctionClubs ? JSON.stringify(rows.auctionClubs) : null,
     gameweeksJson: JSON.stringify(rows.gameweeks),
+    // Migration 0012 — auction event-history snapshots.
+    tradesJson: rows.auctionTrades ? JSON.stringify(rows.auctionTrades) : null,
+    penaltyRedemptionsJson: rows.auctionPenaltyRedemptions ? JSON.stringify(rows.auctionPenaltyRedemptions) : null,
+    slotUnlocksJson: rows.auctionSlotUnlocks ? JSON.stringify(rows.auctionSlotUnlocks) : null,
+    wishlistsJson: rows.auctionWishlists ? JSON.stringify(rows.auctionWishlists) : null,
+    notificationsJson: rows.auctionNotifications ? JSON.stringify(rows.auctionNotifications) : null,
+    auctionSessionsJson: rows.auctionSessionsHistory ? JSON.stringify(rows.auctionSessionsHistory) : null,
+    auctionBidsJson: rows.auctionBids ? JSON.stringify(rows.auctionBids) : null,
+    auctionBidLogsJson: rows.auctionBidLogs ? JSON.stringify(rows.auctionBidLogs) : null,
   });
 }
 
