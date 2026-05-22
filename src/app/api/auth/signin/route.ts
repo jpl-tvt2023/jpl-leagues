@@ -79,8 +79,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Determine redirect: password change → setup wizard → dashboard
-      let redirectTo = "/";
+      // Determine redirect: password change → setup wizard → dashboard.
+      // Single source of truth; the signin client trusts this value directly (no local override).
+      let redirectTo = "/dashboard";
       if (team.mustChangePassword) {
         redirectTo = "/change-password";
       } else if (!team.isProfileComplete) {
