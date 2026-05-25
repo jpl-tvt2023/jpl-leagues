@@ -1,0 +1,2091 @@
+{
+  "moduleId": "SLOTS",
+  "moduleName": "Auction Slots & Club Auction",
+  "sheetName": "Slots & Club",
+  "status": "qa-signed-off",
+  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "requirements": {
+    "version": 1,
+    "businessContext": "This module owns three squad-shape mechanics that sit outside the player-bidding flow: (1) bonus-slot purchases that raise the 15-player squad cap up to a hard ceiling of 18 (slots 16/17/18 cost £10M/£20M/£30M respectively, Complete tier only, only after the initial player auction has completed); (2) penalty-slot redemption, which buys back a squad slot lost via a missed nomination, with redemption priced by whether the penalty was incurred in the current auction cycle (£2.5M) or a previous one (£5M); and (3) the optional PL Club Auction — a separate auction session (type='club-auction') that runs BEFORE the initial player auction when the league has clubAuctionEnabled=true, allocates one PL club per fantasy team (and one fantasy team per PL club) at a £500K floor over a two-round randomised queue, and snapshots the club's tier (top8/mid/promoted) for downstream synergy and result-bonus scoring (scoring math itself is owned by module 11).",
+    "userStories": [
+      {
+        "id": "US-SLOTS-001",
+        "asA": "team owner in a Complete-tier auction league",
+        "iWant": "to unlock additional bonus squad slots (16, 17, 18) by spending purse money after the initial auction completes",
+        "soThat": "I can expand my squad beyond the base 15-player cap up to the absolute ceiling of 18",
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:24-166",
+          "src/lib/formats/auction/squad-rules.ts:6-32"
+        ]
+      },
+      {
+        "id": "US-SLOTS-002",
+        "asA": "team owner who incurred a penalty slot",
+        "iWant": "to view my outstanding penalty rows and the current redemption price for each",
+        "soThat": "I can decide which penalty to buy back and when it's cheapest to do so",
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:49-89"
+        ]
+      },
+      {
+        "id": "US-SLOTS-003",
+        "asA": "team owner with penalty slots",
+        "iWant": "to redeem a single penalty slot by paying from purse",
+        "soThat": "my effective squad cap is restored by one slot",
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:99-222",
+          "src/lib/formats/auction/squad-rules.ts:18-25"
+        ]
+      },
+      {
+        "id": "US-SLOTS-004",
+        "asA": "team owner in any auction league",
+        "iWant": "to see the set of FPL players and PL clubs already owned by teams in my league plus per-team purse and ownership detail",
+        "soThat": "the auction lobby and nomination-order tables show me who has bought what",
+        "sourceRefs": [
+          "src/app/api/auction/league-owned/route.ts:15-99"
+        ]
+      },
+      {
+        "id": "US-SLOTS-005",
+        "asA": "league admin in a club-auction-enabled league",
+        "iWant": "to create a single club-auction session before the initial player auction",
+        "soThat": "every team in the league has a chance to own one PL club whose results feed into per-GW bonus scoring",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:163-223",
+          "src/lib/formats/auction/club-auction.ts:191-216"
+        ]
+      },
+      {
+        "id": "US-SLOTS-006",
+        "asA": "league admin running a live club auction",
+        "iWant": "the system to auto-nominate the next PL club from a randomised queue when no bid is open",
+        "soThat": "the club auction progresses without each team having to take a turn",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:273-398"
+        ]
+      },
+      {
+        "id": "US-SLOTS-007",
+        "asA": "team owner during the club auction",
+        "iWant": "to be the highest bidder when an open club nomination's timer expires",
+        "soThat": "I take ownership of that PL club for the season, with its tier snapshotted at purchase",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:421-515"
+        ]
+      },
+      {
+        "id": "US-SLOTS-008",
+        "asA": "league admin running a simulated auction league",
+        "iWant": "the club-auction session to auto-allocate one PL club per team at the floor price when started",
+        "soThat": "simulated leagues can short-circuit live bidding while still producing valid club ownerships",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:588-671",
+          "src/app/api/auction/session/route.ts:339-349"
+        ]
+      },
+      {
+        "id": "US-SLOTS-009",
+        "asA": "team owner who lost a club bid",
+        "iWant": "unsold clubs from round 1 to be re-queued randomly for a second-pass round",
+        "soThat": "every PL club gets at least two chances to be sold before the club auction completes",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:319-345",
+          "src/lib/formats/auction/club-auction.ts:241-248"
+        ]
+      },
+      {
+        "id": "US-SLOTS-010",
+        "asA": "team that already owns a PL club",
+        "iWant": "to be excluded from bidding on further clubs",
+        "soThat": "the one-club-per-team rule is enforced and round-2 bidding is reserved for club-less teams",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:224-235",
+          "src/lib/db/schema.ts:434-435"
+        ]
+      },
+      {
+        "id": "US-SLOTS-011",
+        "asA": "league admin",
+        "iWant": "the club auction session to mark itself completed once all teams own a club or round 2 has exhausted unsold clubs",
+        "soThat": "the initial player auction is unblocked and a completion snapshot is taken",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:300-345",
+          "src/lib/formats/auction/club-auction.ts:521-536"
+        ]
+      },
+      {
+        "id": "US-SLOTS-012",
+        "asA": "winning bidder of a PL club",
+        "iWant": "to receive a 'club_purchased' notification confirming the club, tier and price",
+        "soThat": "I have an audit trail of my purchase and know my season-long team-display name",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:483-493"
+        ]
+      },
+      {
+        "id": "US-SLOTS-013",
+        "asA": "team owner who just unlocked or redeemed a slot",
+        "iWant": "to receive a notification with the cost and new cap / remaining penalty count",
+        "soThat": "I can confirm the deduction happened",
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:146-157",
+          "src/app/api/auction/redeem-slot/route.ts:200-213"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-SLOTS-001",
+        "rule": "POST /api/auction/unlock-slot requires either a valid team session cookie or a superadmin cookie; otherwise responds 401 'Authentication required'.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:25-31"]
+      },
+      {
+        "id": "BR-SLOTS-002",
+        "rule": "POST /api/auction/unlock-slot requires a string teamId in the body; missing/non-string returns 400 'teamId is required'.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:33-37"]
+      },
+      {
+        "id": "BR-SLOTS-003",
+        "rule": "A team session may only unlock slots for its own team; mismatched session.id vs body teamId returns 403 'Can only unlock slots for your own team'. Superadmin is exempt.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:40-42"]
+      },
+      {
+        "id": "BR-SLOTS-004",
+        "rule": "Unknown teamId returns 404 'Team not found'.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:44-47"]
+      },
+      {
+        "id": "BR-SLOTS-005",
+        "rule": "Unlock is rejected with 400 'Not an auction league' when the team's league.format is not 'auction'.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:50-57"]
+      },
+      {
+        "id": "BR-SLOTS-006",
+        "rule": "Slot expansion is blocked at the API for Primary-tier leagues (`auctionTier='primary'`) with 403 'Slot expansion is not available in Primary tier'; only Complete-tier leagues may unlock bonus slots.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:60-64"]
+      },
+      {
+        "id": "BR-SLOTS-007",
+        "rule": "Maximum bonus slots per team is 3 (MAX_BONUS_SLOTS); reaching the cap returns 400 'All bonus slots already unlocked (squad cap 18)' (= MAX_SQUAD_SIZE 15 + MAX_BONUS_SLOTS 3).",
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:67-73",
+          "src/lib/formats/auction/squad-rules.ts:6-9"
+        ]
+      },
+      {
+        "id": "BR-SLOTS-008",
+        "rule": "Bonus-slot pricing is sequential: 1st unlock (slot 16) costs £10M, 2nd (slot 17) £20M, 3rd (slot 18) £30M. nextBonusSlotCost(bonusSlots) returns the next price or null when at cap.",
+        "sourceRefs": [
+          "src/lib/formats/auction/squad-rules.ts:11",
+          "src/lib/formats/auction/squad-rules.ts:28-32",
+          "src/app/api/auction/unlock-slot/route.ts:95-98"
+        ]
+      },
+      {
+        "id": "BR-SLOTS-009",
+        "rule": "Unlock requires that an 'initial' auction session exists for the league; otherwise responds 409 'Cannot unlock bonus slots before the initial auction has been created'.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:75-87"]
+      },
+      {
+        "id": "BR-SLOTS-010",
+        "rule": "Unlock requires the initial auction session status to be 'completed'; if status is pending/active/paused it returns 409 'Cannot unlock bonus slots while the initial auction is in progress — must wait until it completes'.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:88-93"]
+      },
+      {
+        "id": "BR-SLOTS-011",
+        "rule": "Available purse = initialBudget + totalIncome + totalRefunds − totalSpent (calculatePurse). Unlock rejects with 400 'Insufficient purse: need £X.XXM, have £Y.YYM' when available purse < next unlock cost.",
+        "sourceRefs": [
+          "src/lib/formats/auction/economy.ts:34-41",
+          "src/app/api/auction/unlock-slot/route.ts:100-112"
+        ]
+      },
+      {
+        "id": "BR-SLOTS-012",
+        "rule": "On successful unlock, in a single DB transaction: (a) decrement teams.purse by cost, (b) increment teams.totalSpent by cost, (c) increment teams.bonusSlots by 1, (d) insert a teamSlotUnlocks audit row with leagueId, teamId, slotNumber (MAX_SQUAD_SIZE + previous bonusSlots + 1 ⇒ 16/17/18), cost and unlockedAt. // CODE-CONFIRMED: may be a defect — purse column is decremented separately from the calculatePurse-derived available purse, creating dual bookkeeping that can drift from the canonical formula.",
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:117-139",
+          "src/lib/db/schema.ts:521-528"
+        ]
+      },
+      {
+        "id": "BR-SLOTS-013",
+        "rule": "Successful unlock response body is { success:true, bonusSlots:<new>, newCap:<15+bonusSlots>, spent:<cost>, nextUnlockCost:<next-or-null> }.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:159-165"]
+      },
+      {
+        "id": "BR-SLOTS-014",
+        "rule": "After unlock, a best-effort 'slot_unlocked' notification is created with title 'Unlocked slot <N>' and a body stating the deduction and new cap. Notification failures are logged but never fail the unlock response.",
+        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:146-157"]
+      },
+      {
+        "id": "BR-SLOTS-015",
+        "rule": "GET /api/auction/redeem-slot?teamId=<id> requires an authenticated session (any type) and a teamId query param; otherwise 401 Unauthorized or 400 'teamId is required'.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:49-60"]
+      },
+      {
+        "id": "BR-SLOTS-016",
+        "rule": "Penalty redemption pricing: £2.5M (SAME_CYCLE_COST) when penalty.incurredCycle === currentCycle, otherwise £5M (LATER_CYCLE_COST). priceForPenalty implements this rule.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:10-12", "src/app/api/auction/redeem-slot/route.ts:40-42"]
+      },
+      {
+        "id": "BR-SLOTS-017",
+        "rule": "currentCycle is the cycleNumber of any active/paused session for the league, falling back to the maximum cycleNumber across the league's sessions, falling back to 0 when no sessions exist.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:18-38"]
+      },
+      {
+        "id": "BR-SLOTS-018",
+        "rule": "GET /api/auction/redeem-slot returns { currentCycle, penalties: [{ id, incurredCycle, sessionId, cost, createdAt }], legacyUnledgeredSlots, legacyCost: £5M } — penalties are unredeemed rows ordered by createdAt ASC, plus a legacyUnledgeredSlots count for pre-migration penalties without ledger rows.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:70-89"]
+      },
+      {
+        "id": "BR-SLOTS-019",
+        "rule": "POST /api/auction/redeem-slot requires a team session whose id matches body.teamId; superadmin sessions and other-team sessions are rejected with 401 'Team authentication required' or 403 'Not authorized'. // CODE-CONFIRMED: may be a defect — POST excludes superadmin while POST /unlock-slot allows it, creating an asymmetric admin-support contract.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:100-116"]
+      },
+      {
+        "id": "BR-SLOTS-020",
+        "rule": "Redemption requires teams.penaltySlots > 0; otherwise 400 'No penalty slots to redeem'.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:124-126"]
+      },
+      {
+        "id": "BR-SLOTS-021",
+        "rule": "If body.penaltyId is provided it must match an unredeemed penalty for the team; otherwise 404 'Penalty not found or already redeemed'. If omitted, the cheapest unredeemed penalty is chosen (sorted by cost ASC, then incurredCycle ASC).",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:142-162"]
+      },
+      {
+        "id": "BR-SLOTS-022",
+        "rule": "Legacy fallback: if teams.penaltySlots>0 but no ledger rows exist, redemption charges £5M (LATER_CYCLE_COST) with no row to mark redeemed.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:164-166"]
+      },
+      {
+        "id": "BR-SLOTS-023",
+        "rule": "Redemption purse check uses calculatePurse(initialBudget,totalIncome,totalSpent,totalRefunds); insufficient purse returns 400 'Insufficient purse. Redemption costs £X.XXM'.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:167-179"]
+      },
+      {
+        "id": "BR-SLOTS-024",
+        "rule": "On successful redemption, in a single DB transaction: (a) set teamPenalties.redeemedAt=now and redemptionPrice=cost on the chosen row (if any), (b) decrement teams.penaltySlots by 1, (c) increment teams.totalSpent by cost. // CODE-CONFIRMED: may be a defect — teams.purse column is NOT decremented here even though it IS decremented in unlock-slot, creating asymmetry and potential drift of the purse column from the canonical formula.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:181-196"]
+      },
+      {
+        "id": "BR-SLOTS-025",
+        "rule": "Redemption response body is { success:true, cost, incurredCycle, currentCycle, remainingPenaltySlots }, and a best-effort 'slot_redeemed' notification is created with a deep link to /<slug>/auction. Notification failures are logged but never fail the response.",
+        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:198-221"]
+      },
+      {
+        "id": "BR-SLOTS-026",
+        "rule": "GET /api/auction/league-owned?leagueId=<id> requires an authenticated session (any type) and a leagueId query param; the target league.format must be 'auction'.",
+        "sourceRefs": ["src/app/api/auction/league-owned/route.ts:15-34"]
+      },
+      {
+        "id": "BR-SLOTS-027",
+        "rule": "GET /api/auction/league-owned returns { ownedElementIds:[fplElementId], ownerByElementId:{ id→teamId }, teamSummaries:{ teamId → { purse, penaltySlots, bonusSlots, players:[{fplElementId, playerName, purchasePrice}] } } }. Only auctionOwnership rows with status='active' are included; purse is calculated via calculatePurse.",
+        "sourceRefs": ["src/app/api/auction/league-owned/route.ts:38-98"]
+      },
+      {
+        "id": "BR-SLOTS-028",
+        "rule": "A club-auction session is only allowed when leagues.clubAuctionEnabled=true; creation otherwise returns 400 'Club auction is not enabled for this league'.",
+        "sourceRefs": ["src/app/api/auction/session/route.ts:182-185"]
+      },
+      {
+        "id": "BR-SLOTS-029",
+        "rule": "Only one club-auction session may exist per league; a second creation returns 409 'A club auction session already exists for this league'.",
+        "sourceRefs": ["src/app/api/auction/session/route.ts:186-189"]
+      },
+      {
+        "id": "BR-SLOTS-030",
+        "rule": "Session-ordering: club-auction → initial → mini-auction. A club-auction cannot be created after an initial session exists (409); an initial session cannot be created until any enabled club auction has status='completed' (409); a mini-auction requires a completed initial session.",
+        "sourceRefs": ["src/app/api/auction/session/route.ts:166-249"]
+      },
+      {
+        "id": "BR-SLOTS-031",
+        "rule": "Club-auction creation calls fetchAllPLClubsWithTiers (FPL bootstrap + standings config). Failures return 502 'Failed to load PL clubs from FPL'; an empty list returns 502 'FPL bootstrap returned no PL clubs'.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:197-206",
+          "src/lib/formats/auction/club-auction.ts:191-200"
+        ]
+      },
+      {
+        "id": "BR-SLOTS-032",
+        "rule": "buildInitialClubQueue produces a randomly shuffled copy of the PL team IDs; the resulting array is stored in auctionSessions.snakeOrder as JSON, cycleNumber=1, currentNominatorIndex=0, status='pending'.",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:202-216",
+          "src/app/api/auction/session/route.ts:207-222"
+        ]
+      },
+      {
+        "id": "BR-SLOTS-033",
+        "rule": "resolveTier(plTeamId, config) returns 'top8' / 'mid' / 'promoted' depending on which list the FPL team ID is in, or null if absent. Standings config is auto-seeded on first read from PL_STANDINGS_SEED_TOP8/MID/PROMOTED.",
+        "sourceRefs": [
+          "src/lib/data/pl-standings-seed.ts:39-51",
+          "src/lib/formats/auction/club-auction.ts:148-176"
+        ]
+      },
+      {
+        "id": "BR-SLOTS-034",
+        "rule": "autoNominateNextClub is a no-op (returns null) unless the session is type='club-auction' AND status='active' AND has no open bid for the session.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:273-289"]
+      },
+      {
+        "id": "BR-SLOTS-035",
+        "rule": "Eligibility for the club auction: a team may bid only if it is non-ghost AND has no auctionClubOwnership row in the league (getClubLessTeamIds). When zero club-less teams remain the session is marked 'completed' immediately.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:224-235", "src/lib/formats/auction/club-auction.ts:300-305"]
+      },
+      {
+        "id": "BR-SLOTS-036",
+        "rule": "Queue exhaustion: when cursor exceeds queue.length on cycleNumber=1, the unsold-clubs list (PL IDs without an auctionClubOwnership row) is re-shuffled and stored as a new snakeOrder with currentNominatorIndex=0 and cycleNumber=2. When exhausted on cycle 2 (or no unsold clubs remain), the session status flips to 'completed' and writeAuctionCompleteSnapshot is invoked.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:319-345"]
+      },
+      {
+        "id": "BR-SLOTS-037",
+        "rule": "Each club nomination creates an auctionBids row with currentHighBid=minBid=£500K (CLUB_FLOOR_BID), fplElementId set to the PL team id, playerName set to the PL team name, status='open', and expiresAt=now+bidTimerSeconds. nominatorTeamId/currentHighBidderId are a sentinel (the first non-ghost team in the league), and a 'nomination' auctionBidLog row is inserted.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:362-389"]
+      },
+      {
+        "id": "BR-SLOTS-038",
+        "rule": "Club-bid resolution is idempotent and inspects auctionBidLogs.type='bid' rows: ≥1 real bid → 'sold' to currentHighBidderId, 0 real bids → 'unsold'. Status is flipped from 'open' atomically; an already-resolved bid returns 'already-resolved'.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:421-515"]
+      },
+      {
+        "id": "BR-SLOTS-039",
+        "rule": "On SOLD: insert an auctionClubOwnership row {teamId=currentHighBidderId, plTeamId=fplElementId, plTeamName=getPlTeamFullName(...), plTeamShort, tier=resolveTier(...) defaulting to 'mid' if null, purchasePrice=currentHighBid, acquiredAt=now}, append a 'sold' auctionBidLog, and deduct purse via SQL (teams.purse -= price, teams.totalSpent += price).",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:438-481"]
+      },
+      {
+        "id": "BR-SLOTS-040",
+        "rule": "One-club-per-team and one-owner-per-club are enforced by uniqueIndex constraints (leagueId+teamId, leagueId+plTeamId) on auctionClubOwnership; the resolver's club-less filter prevents double-insertion under normal flow.",
+        "sourceRefs": ["src/lib/db/schema.ts:422-436"]
+      },
+      {
+        "id": "BR-SLOTS-041",
+        "rule": "On SOLD a best-effort 'club_purchased' notification is created with title 'You bought <plTeamName>' and a body stating price (in M to 1dp) and tier. Failures are logged, never throwing.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:483-493"]
+      },
+      {
+        "id": "BR-SLOTS-042",
+        "rule": "On UNSOLD: update bid status='unsold' (atomic claim) and append an 'unsold' auctionBidLog with amount=0 and teamId=nominator (sentinel). No ownership row, no purse change.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:498-514"]
+      },
+      {
+        "id": "BR-SLOTS-043",
+        "rule": "advanceClubQueue advances currentNominatorIndex by 1 then calls autoNominateNextClub, which either nominates the next club or marks the session 'completed' (and writes a backup snapshot) when no more nominations are possible.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:521-536"]
+      },
+      {
+        "id": "BR-SLOTS-044",
+        "rule": "simulateClubAuction is the auto-allocator for isSimulated leagues: it shuffles non-ghost teams and the 20 PL clubs (with tier), pairs index-by-index up to min(teams.length, clubs.length), inserts auctionClubOwnership rows at the £500K floor, decrements purse / increments totalSpent per allocated team, then marks the session 'completed' and writes a snapshot. Pairings whose club.tier is null are skipped with a warning.",
+        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:588-671"]
+      },
+      {
+        "id": "BR-SLOTS-045",
+        "rule": "fetchAllPLClubsWithTiers expects exactly the 20 PL clubs from FPL bootstrap and resolves each through the active standings config (top8 length 8, mid length 9, promoted length 3 ⇒ 20 total). Returned rows include {id, name, short, tier|null}.",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:180-200",
+          "src/lib/data/pl-standings-seed.ts:23-37"
+        ]
+      },
+      {
+        "id": "BR-SLOTS-046",
+        "rule": "auctionClubOwnership snapshots plTeamName, plTeamShort and tier at purchase time so display and scoring survive future FPL bootstrap drift or standings-config edits.",
+        "sourceRefs": ["src/lib/db/schema.ts:419-436"]
+      },
+      {
+        "id": "BR-SLOTS-047",
+        "rule": "teamSlotUnlocks stores slotNumber=16/17/18 — derived as MAX_SQUAD_SIZE + previous bonusSlots + 1 — even though the schema column comment still says '15 or 16'. // CODE-CONFIRMED: may be a defect — schema comment and route doc comment are stale (mention £25M and slots 15/16) but code is authoritative.",
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:114",
+          "src/lib/db/schema.ts:521-528",
+          "src/lib/db/schema.ts:110-115"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-SLOTS-001",
+        "given": "an unauthenticated request",
+        "when": "POST /api/auction/unlock-slot is called with any body",
+        "then": "the response is 401 with body { error: 'Authentication required' } and no DB writes occur",
+        "linksTo": "BR-SLOTS-001"
+      },
+      {
+        "id": "AC-SLOTS-002",
+        "given": "an authenticated team session for team A",
+        "when": "POST /api/auction/unlock-slot is called with body.teamId = team B's id",
+        "then": "the response is 403 with body.error 'Can only unlock slots for your own team'",
+        "linksTo": "BR-SLOTS-003"
+      },
+      {
+        "id": "AC-SLOTS-003",
+        "given": "a superadmin cookie",
+        "when": "POST /api/auction/unlock-slot is called with another team's id",
+        "then": "the request is accepted (admin bypass) and proceeds to the remaining checks",
+        "linksTo": "BR-SLOTS-003"
+      },
+      {
+        "id": "AC-SLOTS-004",
+        "given": "a Primary-tier auction league",
+        "when": "POST /api/auction/unlock-slot is called for one of its teams",
+        "then": "the response is 403 with body.error 'Slot expansion is not available in Primary tier' and bonusSlots is unchanged",
+        "linksTo": "BR-SLOTS-006"
+      },
+      {
+        "id": "AC-SLOTS-005",
+        "given": "a Complete-tier team with bonusSlots = 3",
+        "when": "POST /api/auction/unlock-slot is called",
+        "then": "the response is 400 'All bonus slots already unlocked (squad cap 18)' and no DB writes occur",
+        "linksTo": "BR-SLOTS-007"
+      },
+      {
+        "id": "AC-SLOTS-006",
+        "given": "no initial auction session exists for the league",
+        "when": "POST /api/auction/unlock-slot is called",
+        "then": "the response is 409 'Cannot unlock bonus slots before the initial auction has been created'",
+        "linksTo": "BR-SLOTS-009"
+      },
+      {
+        "id": "AC-SLOTS-007",
+        "given": "the initial auction session exists with status in {pending, active, paused}",
+        "when": "POST /api/auction/unlock-slot is called",
+        "then": "the response is 409 'Cannot unlock bonus slots while the initial auction is in progress — must wait until it completes'",
+        "linksTo": "BR-SLOTS-010"
+      },
+      {
+        "id": "AC-SLOTS-008",
+        "given": "a Complete-tier team with bonusSlots=0 and available purse £5M, initial auction completed",
+        "when": "POST /api/auction/unlock-slot is called",
+        "then": "the response is 400 with body.error matching 'Insufficient purse: need £10.00M, have £5.00M'",
+        "linksTo": "BR-SLOTS-011"
+      },
+      {
+        "id": "AC-SLOTS-009",
+        "given": "a Complete-tier team with bonusSlots=0, available purse ≥ £10M, initial auction completed",
+        "when": "POST /api/auction/unlock-slot is called",
+        "then": "the response is 200 with { success:true, bonusSlots:1, newCap:16, spent:10_000_000, nextUnlockCost:20_000_000 }, teams.bonusSlots becomes 1, teams.totalSpent increases by 10M, teams.purse decreases by 10M, a teamSlotUnlocks row {slotNumber:16, cost:10_000_000} is inserted, and a 'slot_unlocked' notification is created",
+        "linksTo": "BR-SLOTS-008"
+      },
+      {
+        "id": "AC-SLOTS-010",
+        "given": "a team with bonusSlots=1",
+        "when": "POST /api/auction/unlock-slot succeeds",
+        "then": "the inserted teamSlotUnlocks row has slotNumber=17 and cost=20_000_000",
+        "linksTo": "BR-SLOTS-008"
+      },
+      {
+        "id": "AC-SLOTS-011",
+        "given": "a team with bonusSlots=2",
+        "when": "POST /api/auction/unlock-slot succeeds",
+        "then": "the inserted teamSlotUnlocks row has slotNumber=18, cost=30_000_000 and the response.nextUnlockCost is null",
+        "linksTo": "BR-SLOTS-008"
+      },
+      {
+        "id": "AC-SLOTS-012",
+        "given": "the notifications service throws when called from POST /unlock-slot",
+        "when": "the unlock has otherwise succeeded",
+        "then": "the response is still 200 success and the failure is logged with prefix '[unlock-slot] notify slot_unlocked failed'",
+        "linksTo": "BR-SLOTS-014"
+      },
+      {
+        "id": "AC-SLOTS-013",
+        "given": "GET /api/auction/redeem-slot?teamId=<id> for an authenticated team",
+        "when": "the team has two unredeemed penalties — one with incurredCycle=currentCycle, one with incurredCycle<currentCycle",
+        "then": "the response contains penalties ordered by createdAt ASC, with costs £2_500_000 (current cycle) and £5_000_000 (older), plus the current cycle number",
+        "linksTo": "BR-SLOTS-018"
+      },
+      {
+        "id": "AC-SLOTS-014",
+        "given": "a team with penaltySlots=2 but only 1 teamPenalties row",
+        "when": "GET /api/auction/redeem-slot is called",
+        "then": "the response includes legacyUnledgeredSlots=1 and legacyCost=5_000_000",
+        "linksTo": "BR-SLOTS-022"
+      },
+      {
+        "id": "AC-SLOTS-015",
+        "given": "a superadmin cookie (no team session)",
+        "when": "POST /api/auction/redeem-slot is called",
+        "then": "the response is 401 'Team authentication required' — admins cannot redeem on behalf of a team",
+        "linksTo": "BR-SLOTS-019"
+      },
+      {
+        "id": "AC-SLOTS-016",
+        "given": "a team session whose id ≠ body.teamId",
+        "when": "POST /api/auction/redeem-slot is called",
+        "then": "the response is 403 'Not authorized'",
+        "linksTo": "BR-SLOTS-019"
+      },
+      {
+        "id": "AC-SLOTS-017",
+        "given": "teams.penaltySlots=0",
+        "when": "POST /api/auction/redeem-slot is called",
+        "then": "the response is 400 'No penalty slots to redeem'",
+        "linksTo": "BR-SLOTS-020"
+      },
+      {
+        "id": "AC-SLOTS-018",
+        "given": "two unredeemed penalties — A (incurredCycle=current, cost £2.5M) and B (older, cost £5M)",
+        "when": "POST /api/auction/redeem-slot is called WITHOUT penaltyId",
+        "then": "row A is chosen (cheapest first), teamPenalties.redeemedAt and redemptionPrice are set on A, teams.penaltySlots decrements by 1, teams.totalSpent increases by 2_500_000, the response cost is 2_500_000",
+        "linksTo": "BR-SLOTS-021"
+      },
+      {
+        "id": "AC-SLOTS-019",
+        "given": "an unknown penaltyId or one already redeemed for the team",
+        "when": "POST /api/auction/redeem-slot is called with that penaltyId",
+        "then": "the response is 404 'Penalty not found or already redeemed'",
+        "linksTo": "BR-SLOTS-021"
+      },
+      {
+        "id": "AC-SLOTS-020",
+        "given": "available purse < the chosen redemption cost",
+        "when": "POST /api/auction/redeem-slot is called",
+        "then": "the response is 400 with body.error matching 'Insufficient purse. Redemption costs £X.XXM' and no DB writes occur",
+        "linksTo": "BR-SLOTS-023"
+      },
+      {
+        "id": "AC-SLOTS-021",
+        "given": "legacy state — penaltySlots>0 but no ledger rows",
+        "when": "POST /api/auction/redeem-slot is called",
+        "then": "cost is £5M (LATER_CYCLE_COST), teams.penaltySlots decrements by 1, teams.totalSpent increases by 5_000_000, and no teamPenalties row is updated",
+        "linksTo": "BR-SLOTS-022"
+      },
+      {
+        "id": "AC-SLOTS-022",
+        "given": "a successful redemption",
+        "when": "the response is built",
+        "then": "the body is { success:true, cost, incurredCycle, currentCycle, remainingPenaltySlots } and a 'slot_redeemed' notification is created with link '/<slug>/auction' when a slug exists",
+        "linksTo": "BR-SLOTS-025"
+      },
+      {
+        "id": "AC-SLOTS-023",
+        "given": "an unauthenticated GET /api/auction/league-owned?leagueId=...",
+        "when": "the endpoint is called",
+        "then": "the response is 401 Unauthorized",
+        "linksTo": "BR-SLOTS-026"
+      },
+      {
+        "id": "AC-SLOTS-024",
+        "given": "a non-auction league",
+        "when": "GET /api/auction/league-owned is called",
+        "then": "the response is 400 'Not an auction league'",
+        "linksTo": "BR-SLOTS-026"
+      },
+      {
+        "id": "AC-SLOTS-025",
+        "given": "an auction league with two teams and three active auctionOwnership rows plus one released row",
+        "when": "GET /api/auction/league-owned is called",
+        "then": "ownedElementIds contains only the 3 active fplElementIds, ownerByElementId maps each to its teamId, and teamSummaries[teamId].purse equals calculatePurse(initialBudget,totalIncome,totalSpent,totalRefunds) with the correct players list and penaltySlots/bonusSlots",
+        "linksTo": "BR-SLOTS-027"
+      },
+      {
+        "id": "AC-SLOTS-026",
+        "given": "a league with clubAuctionEnabled=false",
+        "when": "POST /api/auction/session is called with action='create' and type='club-auction'",
+        "then": "the response is 400 'Club auction is not enabled for this league'",
+        "linksTo": "BR-SLOTS-028"
+      },
+      {
+        "id": "AC-SLOTS-027",
+        "given": "an enabled league that already has a club-auction session",
+        "when": "a second creation of type='club-auction' is attempted",
+        "then": "the response is 409 'A club auction session already exists for this league'",
+        "linksTo": "BR-SLOTS-029"
+      },
+      {
+        "id": "AC-SLOTS-028",
+        "given": "an enabled league with an initial auction already created",
+        "when": "type='club-auction' creation is attempted",
+        "then": "the response is 409 'Cannot create a club auction after an initial player auction has been scheduled. Allowed order: club-auction → initial → mini-auction.'",
+        "linksTo": "BR-SLOTS-030"
+      },
+      {
+        "id": "AC-SLOTS-029",
+        "given": "an enabled league whose club auction is not yet completed",
+        "when": "type='initial' creation is attempted",
+        "then": "the response is 409 'Club auction must be completed before creating the initial player auction…'",
+        "linksTo": "BR-SLOTS-030"
+      },
+      {
+        "id": "AC-SLOTS-030",
+        "given": "FPL bootstrap throws while creating a club auction",
+        "when": "POST /api/auction/session create type='club-auction' is called",
+        "then": "the response is 502 'Failed to load PL clubs from FPL' and no auctionSessions row is inserted",
+        "linksTo": "BR-SLOTS-031"
+      },
+      {
+        "id": "AC-SLOTS-031",
+        "given": "a successful club-auction creation with 20 PL clubs returned",
+        "when": "the session row is persisted",
+        "then": "snakeOrder is a JSON array of 20 unique PL team IDs in randomised order, cycleNumber=1, currentNominatorIndex=0, status='pending', and the response is { success:true, id, queueLength:20 }",
+        "linksTo": "BR-SLOTS-032"
+      },
+      {
+        "id": "AC-SLOTS-032",
+        "given": "an active club-auction session with no open bid and the next queue entry maps to a known PL club",
+        "when": "autoNominateNextClub(sessionId) runs",
+        "then": "it inserts an auctionBids row (status='open', minBid=£500K, currentHighBid=£500K, expiresAt=now+bidTimerSeconds), an auctionBidLogs 'nomination' row, and returns the bidId",
+        "linksTo": "BR-SLOTS-037"
+      },
+      {
+        "id": "AC-SLOTS-033",
+        "given": "the session already has an 'open' auctionBids row",
+        "when": "autoNominateNextClub is called",
+        "then": "it returns null and inserts nothing",
+        "linksTo": "BR-SLOTS-034"
+      },
+      {
+        "id": "AC-SLOTS-034",
+        "given": "cursor reaches the end of the queue on cycleNumber=1 and at least one club is unsold",
+        "when": "autoNominateNextClub runs",
+        "then": "a re-shuffled queue of unsold PL clubs is written back to snakeOrder, currentNominatorIndex=0, cycleNumber=2, and nomination proceeds from the new cursor",
+        "linksTo": "BR-SLOTS-036"
+      },
+      {
+        "id": "AC-SLOTS-035",
+        "given": "cursor reaches the end of the queue on cycleNumber=2",
+        "when": "autoNominateNextClub runs",
+        "then": "the session status is updated to 'completed', writeAuctionCompleteSnapshot is invoked, and the function returns null",
+        "linksTo": "BR-SLOTS-036"
+      },
+      {
+        "id": "AC-SLOTS-036",
+        "given": "all teams in the league already own a club",
+        "when": "autoNominateNextClub runs",
+        "then": "the session status is updated to 'completed' immediately and no further nomination is created",
+        "linksTo": "BR-SLOTS-035"
+      },
+      {
+        "id": "AC-SLOTS-037",
+        "given": "an open club bid whose timer has expired with at least one auctionBidLogs.type='bid' row",
+        "when": "resolveClubBid runs",
+        "then": "auctionBids.status flips to 'sold', an auctionClubOwnership row is inserted with tier=resolveTier(plTeamId) (defaulting to 'mid' if null), an auctionBidLogs 'sold' row is appended, teams.purse decreases and teams.totalSpent increases by currentHighBid, and a 'club_purchased' notification is created",
+        "linksTo": "BR-SLOTS-039"
+      },
+      {
+        "id": "AC-SLOTS-038",
+        "given": "an open club bid whose timer has expired with zero auctionBidLogs.type='bid' rows",
+        "when": "resolveClubBid runs",
+        "then": "auctionBids.status flips to 'unsold', an auctionBidLogs 'unsold' row with amount=0 is appended, no auctionClubOwnership row is created, and no purse is deducted",
+        "linksTo": "BR-SLOTS-042"
+      },
+      {
+        "id": "AC-SLOTS-039",
+        "given": "resolveClubBid is invoked twice in quick succession on the same open bid",
+        "when": "the second call runs",
+        "then": "it returns 'already-resolved' and produces no duplicate ownership/log rows",
+        "linksTo": "BR-SLOTS-038"
+      },
+      {
+        "id": "AC-SLOTS-040",
+        "given": "a team that already has an auctionClubOwnership row in the league",
+        "when": "getClubLessTeamIds(leagueId) is computed",
+        "then": "the team's id is omitted from the returned list, regardless of bidding state",
+        "linksTo": "BR-SLOTS-035"
+      },
+      {
+        "id": "AC-SLOTS-041",
+        "given": "an attempt to insert a second auctionClubOwnership row for the same league+teamId or league+plTeamId",
+        "when": "the insert reaches the database",
+        "then": "the uniqueIndex constraint rejects the row",
+        "linksTo": "BR-SLOTS-040"
+      },
+      {
+        "id": "AC-SLOTS-042",
+        "given": "a simulated auction league with 6 non-ghost teams and 20 PL clubs",
+        "when": "simulateClubAuction runs",
+        "then": "exactly 6 auctionClubOwnership rows are inserted at £500K each, teams.purse decreases and teams.totalSpent increases by £500K per team, the session is marked 'completed' and writeAuctionCompleteSnapshot is invoked",
+        "linksTo": "BR-SLOTS-044"
+      },
+      {
+        "id": "AC-SLOTS-043",
+        "given": "simulateClubAuction is called on a non-club-auction session",
+        "when": "it runs",
+        "then": "it throws Error('simulateClubAuction called on a non-club-auction session') and writes no rows",
+        "linksTo": "BR-SLOTS-044"
+      },
+      {
+        "id": "AC-SLOTS-044",
+        "given": "a PL team id present in PL_STANDINGS_SEED_TOP8 / _MID / _PROMOTED respectively",
+        "when": "resolveTier is called",
+        "then": "it returns 'top8' / 'mid' / 'promoted' and returns null for unknown ids",
+        "linksTo": "BR-SLOTS-033"
+      },
+      {
+        "id": "AC-SLOTS-045",
+        "given": "auctionClubOwnership has been persisted at purchase time",
+        "when": "the standings config is later edited to move that plTeamId to a different tier",
+        "then": "the snapshotted tier on auctionClubOwnership does NOT change (snapshot survives later config edits)",
+        "linksTo": "BR-SLOTS-046"
+      }
+    ]
+  },
+  "testCases": [
+    {
+      "id": "TC-SLOTS-001",
+      "feature": "Unlock Slot Auth",
+      "scenario": "Unauthenticated POST /unlock-slot is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie present",
+      "testData": "body={ teamId:'team-A' }, no cookies",
+      "testSteps": [
+        "1. Send POST /api/auction/unlock-slot with no session cookies",
+        "2. Inspect response status and body",
+        "3. Inspect teams row to confirm bonusSlots unchanged"
+      ],
+      "expectedResult": "401 with body { error: 'Authentication required' }; no DB writes occur",
+      "postconditions": "teams.bonusSlots and teams.purse unchanged",
+      "requirementId": "AC-SLOTS-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-002",
+      "feature": "Unlock Slot Validation",
+      "scenario": "Missing teamId returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Authenticated team session",
+      "testData": "body={} (no teamId)",
+      "testSteps": [
+        "1. Sign in as team owner",
+        "2. POST /api/auction/unlock-slot with empty body",
+        "3. Inspect response"
+      ],
+      "expectedResult": "400 with body.error 'teamId is required'",
+      "postconditions": "No DB writes",
+      "requirementId": "BR-SLOTS-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-003",
+      "feature": "Unlock Slot Auth",
+      "scenario": "Team A session may not unlock slot for Team B",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A signed in; Team B exists in same Complete-tier league",
+      "testData": "session.id=teamA.id, body.teamId=teamB.id",
+      "testSteps": [
+        "1. Authenticate as Team A",
+        "2. POST /api/auction/unlock-slot with body.teamId=teamB.id"
+      ],
+      "expectedResult": "403 with body.error 'Can only unlock slots for your own team'; no writes on either team",
+      "postconditions": "teamB unchanged",
+      "requirementId": "AC-SLOTS-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-004",
+      "feature": "Unlock Slot Auth",
+      "scenario": "Superadmin cookie bypasses team-ownership check and proceeds to remaining checks",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid superadmin cookie; Complete-tier league with completed initial auction; team has bonusSlots=0 and purse ≥ £10M",
+      "testData": "admin cookie set; body.teamId=team-B.id (not admin's team)",
+      "testSteps": [
+        "1. Set superadmin cookie",
+        "2. POST /api/auction/unlock-slot with body.teamId of another team",
+        "3. Verify request bypasses ownership check"
+      ],
+      "expectedResult": "Request not rejected at 403; proceeds to unlock; returns 200 with success",
+      "postconditions": "team-B.bonusSlots increments by 1",
+      "requirementId": "AC-SLOTS-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-005",
+      "feature": "Unlock Slot Validation",
+      "scenario": "Unknown teamId returns 404",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Superadmin authenticated",
+      "testData": "body.teamId='does-not-exist'",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot with non-existent teamId"
+      ],
+      "expectedResult": "404 with body.error 'Team not found'",
+      "postconditions": "No writes",
+      "requirementId": "BR-SLOTS-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-006",
+      "feature": "Unlock Slot Validation",
+      "scenario": "Non-auction league rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "League.format='TVT-8' (not 'auction'); team belongs to this league",
+      "testData": "body.teamId=team in non-auction league",
+      "testSteps": [
+        "1. Authenticate as that team",
+        "2. POST /api/auction/unlock-slot"
+      ],
+      "expectedResult": "400 with body.error 'Not an auction league'",
+      "postconditions": "No writes",
+      "requirementId": "BR-SLOTS-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-007",
+      "feature": "Tier Gate",
+      "scenario": "Primary-tier league blocks slot expansion",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League.format='auction', auctionTier='primary'; team belongs to that league; bonusSlots=0",
+      "testData": "body.teamId=team-id",
+      "testSteps": [
+        "1. Authenticate as team",
+        "2. POST /api/auction/unlock-slot",
+        "3. Inspect response and bonusSlots"
+      ],
+      "expectedResult": "403 with body.error 'Slot expansion is not available in Primary tier'; bonusSlots unchanged",
+      "postconditions": "bonusSlots=0, purse unchanged",
+      "requirementId": "AC-SLOTS-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-008",
+      "feature": "Bonus Slot Cap",
+      "scenario": "Already at bonusSlots=3 returns cap-reached error",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Complete-tier team with bonusSlots=3 (squad cap 18 already unlocked); initial auction completed",
+      "testData": "body.teamId=team-id",
+      "testSteps": [
+        "1. Seed team with bonusSlots=3",
+        "2. POST /api/auction/unlock-slot"
+      ],
+      "expectedResult": "400 with body.error 'All bonus slots already unlocked (squad cap 18)'; no writes",
+      "postconditions": "bonusSlots=3, no new teamSlotUnlocks row",
+      "requirementId": "AC-SLOTS-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-009",
+      "feature": "Cycle Gate",
+      "scenario": "No initial auction session returns 409",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Complete-tier auction league with no 'initial' session in auctionSessions",
+      "testData": "body.teamId=team-id",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot"
+      ],
+      "expectedResult": "409 with body.error 'Cannot unlock bonus slots before the initial auction has been created'",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-010",
+      "feature": "Cycle Gate",
+      "scenario": "Initial auction in 'active' status blocks unlock",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Initial auction session.status='active'",
+      "testData": "body.teamId=team-id",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot while initial session is active"
+      ],
+      "expectedResult": "409 with body.error 'Cannot unlock bonus slots while the initial auction is in progress — must wait until it completes'",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-011",
+      "feature": "Cycle Gate",
+      "scenario": "Initial auction in 'pending' status blocks unlock",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Initial auction session.status='pending'",
+      "testData": "body.teamId=team-id",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot"
+      ],
+      "expectedResult": "409 with same in-progress error",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-012",
+      "feature": "Cycle Gate",
+      "scenario": "Initial auction in 'paused' status blocks unlock",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Initial auction session.status='paused'",
+      "testData": "body.teamId=team-id",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot"
+      ],
+      "expectedResult": "409 with same in-progress error",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-013",
+      "feature": "Purse Check",
+      "scenario": "Insufficient purse for first unlock returns 400 with formatted error",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Complete-tier team, bonusSlots=0, available purse £5M, initial auction completed",
+      "testData": "body.teamId=team-id; team purse=5_000_000",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot",
+        "2. Inspect response body.error"
+      ],
+      "expectedResult": "400 with body.error matching 'Insufficient purse: need £10.00M, have £5.00M'",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-014",
+      "feature": "Bonus Slot Pricing",
+      "scenario": "First unlock (slot 16) succeeds at £10M",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Complete-tier team, bonusSlots=0, available purse ≥ £10M, initial auction completed",
+      "testData": "body.teamId=team-id; purse=50_000_000",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot",
+        "2. Assert response 200 and body matches { success:true, bonusSlots:1, newCap:16, spent:10_000_000, nextUnlockCost:20_000_000 }",
+        "3. Query teams row: bonusSlots, purse, totalSpent",
+        "4. Query teamSlotUnlocks for new row",
+        "5. Query notifications for slot_unlocked"
+      ],
+      "expectedResult": "200; teams.bonusSlots=1, teams.totalSpent +10M, teams.purse −10M; teamSlotUnlocks row { slotNumber:16, cost:10_000_000 } inserted; 'slot_unlocked' notification created",
+      "postconditions": "Audit and notification persisted",
+      "requirementId": "AC-SLOTS-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-015",
+      "feature": "Bonus Slot Pricing",
+      "scenario": "Second unlock (slot 17) costs £20M",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Complete-tier team, bonusSlots=1, available purse ≥ £20M",
+      "testData": "body.teamId=team-id; purse=50_000_000",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot",
+        "2. Inspect teamSlotUnlocks for slotNumber=17 and cost=20_000_000"
+      ],
+      "expectedResult": "200; inserted teamSlotUnlocks row has slotNumber=17, cost=20_000_000; response.nextUnlockCost=30_000_000",
+      "postconditions": "teams.bonusSlots=2",
+      "requirementId": "AC-SLOTS-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-016",
+      "feature": "Bonus Slot Pricing",
+      "scenario": "Third unlock (slot 18) costs £30M and nextUnlockCost becomes null",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Complete-tier team, bonusSlots=2, available purse ≥ £30M",
+      "testData": "body.teamId=team-id; purse=50_000_000",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot",
+        "2. Inspect response.nextUnlockCost",
+        "3. Inspect teamSlotUnlocks for slotNumber=18, cost=30_000_000"
+      ],
+      "expectedResult": "200; teamSlotUnlocks { slotNumber:18, cost:30_000_000 }; response.nextUnlockCost=null",
+      "postconditions": "teams.bonusSlots=3 (cap)",
+      "requirementId": "AC-SLOTS-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-017",
+      "feature": "Unlock Notification Resilience",
+      "scenario": "Notification service failure does not fail the unlock",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Complete-tier team, bonusSlots=0, purse ≥ £10M; notifications service stubbed to throw",
+      "testData": "body.teamId=team-id",
+      "testSteps": [
+        "1. Stub notify creator to throw",
+        "2. POST /api/auction/unlock-slot",
+        "3. Inspect server logs"
+      ],
+      "expectedResult": "200 success; teams.bonusSlots=1; server logs '[unlock-slot] notify slot_unlocked failed'",
+      "postconditions": "Unlock persisted; no notification row",
+      "requirementId": "AC-SLOTS-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-018",
+      "feature": "Unlock Audit (Schema)",
+      "scenario": "teamSlotUnlocks row encodes slot 16/17/18 (not legacy 15/16)",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "Three sequential unlocks for one team",
+      "testData": "purse seeded high enough for all three unlocks",
+      "testSteps": [
+        "1. Unlock first slot",
+        "2. Unlock second slot",
+        "3. Unlock third slot",
+        "4. Query teamSlotUnlocks for the team ORDER BY unlockedAt"
+      ],
+      "expectedResult": "Rows have slotNumber values [16,17,18] and costs [10_000_000,20_000_000,30_000_000] — current code, not stale '15 or 16' / '£25M' schema comments",
+      "postconditions": "All three rows persisted",
+      "requirementId": "BR-SLOTS-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SLOTS-003 (stale schema comments) — verifies runtime authoritative values"
+    },
+    {
+      "id": "TC-SLOTS-019",
+      "feature": "Purse Column Bookkeeping (Unlock)",
+      "scenario": "Unlock decrements teams.purse column in same transaction",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Complete-tier team purse=50M, bonusSlots=0",
+      "testData": "body.teamId=team-id",
+      "testSteps": [
+        "1. Read teams.purse before",
+        "2. POST /api/auction/unlock-slot",
+        "3. Read teams.purse after"
+      ],
+      "expectedResult": "teams.purse decreases by exactly 10_000_000; teams.totalSpent increases by 10_000_000; teams.bonusSlots=1 — confirms unlock-slot maintains the denormalised purse column",
+      "postconditions": "Column matches expectation",
+      "requirementId": "BR-SLOTS-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SLOTS-002 (purse column drift) by establishing baseline unlock behaviour"
+    },
+    {
+      "id": "TC-SLOTS-020",
+      "feature": "Redeem Slot Auth (GET)",
+      "scenario": "Unauthenticated GET /redeem-slot rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie",
+      "testData": "?teamId=team-id",
+      "testSteps": [
+        "1. GET /api/auction/redeem-slot?teamId=... without cookie"
+      ],
+      "expectedResult": "401 Unauthorized",
+      "postconditions": "No state change",
+      "requirementId": "BR-SLOTS-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-021",
+      "feature": "Redeem Slot Validation (GET)",
+      "scenario": "Missing teamId param returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Authenticated session",
+      "testData": "no teamId query param",
+      "testSteps": [
+        "1. GET /api/auction/redeem-slot"
+      ],
+      "expectedResult": "400 'teamId is required'",
+      "postconditions": "No state change",
+      "requirementId": "BR-SLOTS-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-022",
+      "feature": "Penalty Pricing GET",
+      "scenario": "GET returns mixed-cycle penalties priced £2.5M and £5M",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team has two unredeemed teamPenalties — one with incurredCycle=currentCycle (created earlier), one older (incurredCycle<currentCycle, created later)",
+      "testData": "?teamId=team-id; currentCycle=3; penalty A incurredCycle=3 createdAt=t1; penalty B incurredCycle=2 createdAt=t2; t1<t2",
+      "testSteps": [
+        "1. GET /api/auction/redeem-slot?teamId=...",
+        "2. Inspect penalties array order and costs",
+        "3. Inspect currentCycle field"
+      ],
+      "expectedResult": "penalties ordered by createdAt ASC: [A cost 2_500_000, B cost 5_000_000]; currentCycle=3",
+      "postconditions": "No state change",
+      "requirementId": "AC-SLOTS-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-023",
+      "feature": "Current Cycle Resolution",
+      "scenario": "currentCycle falls back to max(cycleNumber) when no active/paused session",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "League has three sessions all in 'completed', max cycleNumber=4",
+      "testData": "?teamId=team-id",
+      "testSteps": [
+        "1. GET /api/auction/redeem-slot",
+        "2. Inspect currentCycle"
+      ],
+      "expectedResult": "currentCycle=4",
+      "postconditions": "No state change",
+      "requirementId": "BR-SLOTS-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-024",
+      "feature": "Current Cycle Resolution",
+      "scenario": "currentCycle=0 when no sessions exist",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "League has zero auction sessions",
+      "testData": "?teamId=team-id (team in such league)",
+      "testSteps": [
+        "1. GET /api/auction/redeem-slot",
+        "2. Inspect currentCycle"
+      ],
+      "expectedResult": "currentCycle=0",
+      "postconditions": "No state change",
+      "requirementId": "BR-SLOTS-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-025",
+      "feature": "Legacy Penalty Listing",
+      "scenario": "legacyUnledgeredSlots reflects penaltySlots minus ledger rows",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "teams.penaltySlots=2 but only 1 teamPenalties row exists for the team",
+      "testData": "?teamId=team-id",
+      "testSteps": [
+        "1. GET /api/auction/redeem-slot",
+        "2. Inspect legacyUnledgeredSlots and legacyCost"
+      ],
+      "expectedResult": "Response includes legacyUnledgeredSlots=1 and legacyCost=5_000_000",
+      "postconditions": "No state change",
+      "requirementId": "AC-SLOTS-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-026",
+      "feature": "Redeem Slot Auth (POST)",
+      "scenario": "Superadmin cookie cannot redeem on behalf of a team",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Valid superadmin cookie; target team has penaltySlots=1",
+      "testData": "admin cookie set; body={ teamId: someTeamId }",
+      "testSteps": [
+        "1. Set superadmin cookie (no team session)",
+        "2. POST /api/auction/redeem-slot with body.teamId",
+        "3. Inspect response"
+      ],
+      "expectedResult": "401 with body.error 'Team authentication required' — admin path is blocked even though /unlock-slot would accept the same cookie",
+      "postconditions": "team.penaltySlots unchanged",
+      "requirementId": "AC-SLOTS-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SLOTS-001 (asymmetric admin contract between unlock and redeem)"
+    },
+    {
+      "id": "TC-SLOTS-027",
+      "feature": "Redeem Slot Auth (POST)",
+      "scenario": "Team A session cannot redeem for Team B",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A signed in; Team B has penaltySlots=1",
+      "testData": "body.teamId=teamB.id",
+      "testSteps": [
+        "1. Authenticate as Team A",
+        "2. POST /api/auction/redeem-slot with body.teamId=teamB.id"
+      ],
+      "expectedResult": "403 'Not authorized'; teamB.penaltySlots unchanged",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-028",
+      "feature": "Redeem Slot Validation",
+      "scenario": "penaltySlots=0 rejects redemption",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team session for team-id; teams.penaltySlots=0",
+      "testData": "body={ teamId:team-id }",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot"
+      ],
+      "expectedResult": "400 'No penalty slots to redeem'",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-029",
+      "feature": "Penalty Redemption",
+      "scenario": "Cheapest-first redemption when penaltyId omitted",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team has two unredeemed penalties — A (incurredCycle=current, cost £2.5M, createdAt=earlier) and B (older cycle, cost £5M); purse ≥ £5M",
+      "testData": "body={ teamId:team-id } (no penaltyId)",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot",
+        "2. Inspect chosen redemption",
+        "3. Query teamPenalties for A and B"
+      ],
+      "expectedResult": "Row A is chosen: A.redeemedAt set, A.redemptionPrice=2_500_000; teams.penaltySlots decrements by 1; teams.totalSpent +2_500_000; response.cost=2_500_000",
+      "postconditions": "B remains unredeemed",
+      "requirementId": "AC-SLOTS-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-030",
+      "feature": "Penalty Redemption Pricing",
+      "scenario": "Older-cycle penalty redeemed at £5M when explicitly chosen",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team has penalty B (incurredCycle<currentCycle); purse ≥ £5M",
+      "testData": "body={ teamId, penaltyId:B.id }",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot with penaltyId=B.id",
+        "2. Inspect response.cost"
+      ],
+      "expectedResult": "response.cost=5_000_000; B.redemptionPrice=5_000_000; teams.totalSpent +5_000_000",
+      "postconditions": "B.redeemedAt set",
+      "requirementId": "BR-SLOTS-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-031",
+      "feature": "Penalty Redemption Validation",
+      "scenario": "Unknown or already-redeemed penaltyId returns 404",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team has penaltySlots>0; a penalty C already has redeemedAt set",
+      "testData": "body={ teamId, penaltyId:C.id }",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot with C.id",
+        "2. POST again with completely unknown id"
+      ],
+      "expectedResult": "404 'Penalty not found or already redeemed' for both",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-032",
+      "feature": "Redemption Purse Check",
+      "scenario": "Insufficient purse rejects redemption",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team has £5M-priced penalty; available purse=£3M",
+      "testData": "body={ teamId, penaltyId:B.id }",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot",
+        "2. Inspect response"
+      ],
+      "expectedResult": "400 with body.error matching 'Insufficient purse. Redemption costs £5.00M'; no writes",
+      "postconditions": "B not redeemed; penaltySlots unchanged",
+      "requirementId": "AC-SLOTS-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-033",
+      "feature": "Legacy Penalty Redemption",
+      "scenario": "Legacy fallback charges £5M with no ledger row",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "teams.penaltySlots=1; zero teamPenalties rows; purse ≥ £5M",
+      "testData": "body={ teamId } (no penaltyId)",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot",
+        "2. Query teams and teamPenalties"
+      ],
+      "expectedResult": "cost=5_000_000; teams.penaltySlots decremented by 1; teams.totalSpent +5_000_000; no teamPenalties row updated/inserted",
+      "postconditions": "Legacy slot drained",
+      "requirementId": "AC-SLOTS-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-034",
+      "feature": "Redemption Response & Notification",
+      "scenario": "Successful redemption response shape and slot_redeemed notification",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team has penalty A (same cycle, £2.5M); league has slug 'lg-1'; purse sufficient",
+      "testData": "body={ teamId, penaltyId:A.id }",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot",
+        "2. Inspect response body keys",
+        "3. Query notifications"
+      ],
+      "expectedResult": "Body = { success:true, cost:2_500_000, incurredCycle, currentCycle, remainingPenaltySlots }; 'slot_redeemed' notification created with link='/lg-1/auction'",
+      "postconditions": "Notification persisted",
+      "requirementId": "AC-SLOTS-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-035",
+      "feature": "Purse Column Bookkeeping (Redeem)",
+      "scenario": "Redeem does NOT decrement teams.purse column (drift vs unlock)",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Team purse column=50_000_000; penalty A (£2.5M same cycle); purse-derived available ≥ £2.5M",
+      "testData": "body={ teamId, penaltyId:A.id }",
+      "testSteps": [
+        "1. Read teams.purse before",
+        "2. POST /api/auction/redeem-slot",
+        "3. Read teams.purse and teams.totalSpent after"
+      ],
+      "expectedResult": "teams.totalSpent increases by 2_500_000 (canonical), but teams.purse column is unchanged (drift); confirms the asymmetric bookkeeping that DEF-SLOTS-002 captures",
+      "postconditions": "Pins current divergent behaviour",
+      "requirementId": "BR-SLOTS-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SLOTS-002 — when fixed, expected purse delta will change; case must be updated alongside fix"
+    },
+    {
+      "id": "TC-SLOTS-036",
+      "feature": "League Owned Auth",
+      "scenario": "Unauthenticated GET /league-owned rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "No session cookie",
+      "testData": "?leagueId=lg-1",
+      "testSteps": [
+        "1. GET /api/auction/league-owned"
+      ],
+      "expectedResult": "401 Unauthorized",
+      "postconditions": "No state change",
+      "requirementId": "AC-SLOTS-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-037",
+      "feature": "League Owned Validation",
+      "scenario": "Non-auction league rejected on /league-owned",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "League format='TVT-8'; user is a member",
+      "testData": "?leagueId=non-auction-id",
+      "testSteps": [
+        "1. GET /api/auction/league-owned"
+      ],
+      "expectedResult": "400 'Not an auction league'",
+      "postconditions": "No state change",
+      "requirementId": "AC-SLOTS-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-038",
+      "feature": "League Owned Response Shape",
+      "scenario": "Active ownership rows feed ownedElementIds, ownerByElementId, teamSummaries",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league with 2 teams; 3 auctionOwnership rows status='active' (one per player), 1 row status='released'; teams have varying penaltySlots/bonusSlots; purse derived from calculatePurse",
+      "testData": "?leagueId=lg-1",
+      "testSteps": [
+        "1. Authenticate as a league member",
+        "2. GET /api/auction/league-owned",
+        "3. Assert ownedElementIds contains exactly the 3 active fplElementIds (released one absent)",
+        "4. Assert ownerByElementId mapping is correct",
+        "5. Assert teamSummaries[teamId].purse equals calculatePurse(initialBudget,totalIncome,totalSpent,totalRefunds)",
+        "6. Assert players list, penaltySlots, bonusSlots correct per team"
+      ],
+      "expectedResult": "Response matches the shape and excludes released row; purse value matches calculatePurse",
+      "postconditions": "No state change",
+      "requirementId": "AC-SLOTS-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-039",
+      "feature": "Club Auction Creation Guard",
+      "scenario": "clubAuctionEnabled=false blocks creation",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Auction league with leagues.clubAuctionEnabled=false; admin authenticated",
+      "testData": "POST /api/auction/session body={ action:'create', type:'club-auction', leagueId }",
+      "testSteps": [
+        "1. POST /api/auction/session",
+        "2. Assert response"
+      ],
+      "expectedResult": "400 'Club auction is not enabled for this league'; no auctionSessions row inserted",
+      "postconditions": "No new session",
+      "requirementId": "AC-SLOTS-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-040",
+      "feature": "One-Club-Auction-Per-League",
+      "scenario": "Second club-auction creation rejected as 409",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League has clubAuctionEnabled=true and an existing club-auction session",
+      "testData": "POST body={ action:'create', type:'club-auction' }",
+      "testSteps": [
+        "1. POST /api/auction/session twice"
+      ],
+      "expectedResult": "Second call 409 'A club auction session already exists for this league'",
+      "postconditions": "Still exactly one club-auction session",
+      "requirementId": "AC-SLOTS-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-041",
+      "feature": "Session Order Guard",
+      "scenario": "Cannot create club-auction after initial exists",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "League has an 'initial' auction session already",
+      "testData": "POST body={ action:'create', type:'club-auction' }",
+      "testSteps": [
+        "1. POST /api/auction/session"
+      ],
+      "expectedResult": "409 'Cannot create a club auction after an initial player auction has been scheduled. Allowed order: club-auction → initial → mini-auction.'",
+      "postconditions": "No club-auction created",
+      "requirementId": "AC-SLOTS-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-042",
+      "feature": "Session Order Guard",
+      "scenario": "Cannot create initial auction before club auction completes",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "League with clubAuctionEnabled=true; club-auction session status='active' (not completed)",
+      "testData": "POST body={ action:'create', type:'initial' }",
+      "testSteps": [
+        "1. POST /api/auction/session"
+      ],
+      "expectedResult": "409 with body.error mentioning 'Club auction must be completed before creating the initial player auction'",
+      "postconditions": "No initial session created",
+      "requirementId": "AC-SLOTS-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-043",
+      "feature": "FPL Bootstrap Failure",
+      "scenario": "FPL fetch error returns 502 and persists nothing",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Stub fetchAllPLClubsWithTiers to throw or return []",
+      "testData": "POST body={ action:'create', type:'club-auction' }; FPL stubbed",
+      "testSteps": [
+        "1. POST /api/auction/session with stubbed failure",
+        "2. Query auctionSessions"
+      ],
+      "expectedResult": "502 'Failed to load PL clubs from FPL' (or 'FPL bootstrap returned no PL clubs'); no auctionSessions row inserted",
+      "postconditions": "No partial session",
+      "requirementId": "AC-SLOTS-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-044",
+      "feature": "Club Auction Snake Order",
+      "scenario": "Successful creation persists 20 unique randomised PL IDs",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League clubAuctionEnabled=true; no existing sessions; FPL bootstrap returns 20 valid clubs",
+      "testData": "POST body={ action:'create', type:'club-auction' }",
+      "testSteps": [
+        "1. POST /api/auction/session",
+        "2. Inspect response body",
+        "3. Query auctionSessions row and parse snakeOrder"
+      ],
+      "expectedResult": "Response { success:true, id, queueLength:20 }; auctionSessions row has type='club-auction', cycleNumber=1, currentNominatorIndex=0, status='pending', snakeOrder is a 20-element JSON array of unique PL team IDs (not lexicographically sorted — randomised)",
+      "postconditions": "Session persisted",
+      "requirementId": "AC-SLOTS-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-045",
+      "feature": "Auto Nominate (Open Bid Exists)",
+      "scenario": "autoNominateNextClub no-op when an open bid is present",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "club-auction session.status='active' with an auctionBids row status='open'",
+      "testData": "sessionId of that session",
+      "testSteps": [
+        "1. Call autoNominateNextClub(sessionId)",
+        "2. Count auctionBids rows before and after"
+      ],
+      "expectedResult": "Returns null; no new auctionBids or auctionBidLogs rows inserted",
+      "postconditions": "Open bid remains the only one",
+      "requirementId": "AC-SLOTS-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-046",
+      "feature": "Auto Nominate Nomination",
+      "scenario": "autoNominateNextClub creates floor bid + nomination log",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "club-auction session.status='active'; no open bid; queue cursor points to a known PL club id",
+      "testData": "sessionId; bidTimerSeconds=60",
+      "testSteps": [
+        "1. Call autoNominateNextClub(sessionId)",
+        "2. Query auctionBids and auctionBidLogs"
+      ],
+      "expectedResult": "Returns the new bidId; auctionBids row inserted with status='open', minBid=500_000, currentHighBid=500_000, fplElementId=plTeamId, playerName=PL club name, expiresAt≈now+60s; auctionBidLogs row type='nomination' inserted",
+      "postconditions": "Open bid exists",
+      "requirementId": "AC-SLOTS-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-047",
+      "feature": "Queue Re-Shuffle",
+      "scenario": "End of cycle 1 triggers cycle 2 re-shuffle of unsold clubs",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Cycle 1 queue exhausted; some PL clubs have no auctionClubOwnership row",
+      "testData": "sessionId at cursor end of cycle 1",
+      "testSteps": [
+        "1. Call autoNominateNextClub at end-of-queue",
+        "2. Re-read auctionSessions row"
+      ],
+      "expectedResult": "snakeOrder replaced with re-shuffled list of unsold PL ids; currentNominatorIndex=0; cycleNumber=2; new nomination begins from the new queue",
+      "postconditions": "Cycle advanced",
+      "requirementId": "AC-SLOTS-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-048",
+      "feature": "Club Auction Completion",
+      "scenario": "End of cycle 2 marks session completed",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "cycleNumber=2 and cursor reaches end of queue",
+      "testData": "sessionId at end-of-queue cycle 2",
+      "testSteps": [
+        "1. Call autoNominateNextClub",
+        "2. Inspect session.status and snapshot writer invocation"
+      ],
+      "expectedResult": "Returns null; session.status='completed'; writeAuctionCompleteSnapshot invoked once",
+      "postconditions": "Auction complete; initial auction unblocked",
+      "requirementId": "AC-SLOTS-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-049",
+      "feature": "Club Auction Completion (No Club-less)",
+      "scenario": "Session completes immediately if every team already owns a club",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "All non-ghost teams already have an auctionClubOwnership row",
+      "testData": "active club-auction sessionId",
+      "testSteps": [
+        "1. Call autoNominateNextClub",
+        "2. Inspect session status and auctionBids"
+      ],
+      "expectedResult": "session.status='completed' immediately; no new nomination is created",
+      "postconditions": "Auction complete",
+      "requirementId": "AC-SLOTS-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-050",
+      "feature": "Club Bid Resolution SOLD",
+      "scenario": "Sold flow inserts ownership, deducts purse, fires notification",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Open club bid; auctionBidLogs has ≥1 'bid' row by team-T; expired timer; resolveTier returns 'top8' for the plTeamId",
+      "testData": "bidId; currentHighBidderId=team-T; currentHighBid=2_500_000",
+      "testSteps": [
+        "1. Call resolveClubBid(bidId)",
+        "2. Query auctionBids, auctionClubOwnership, auctionBidLogs, teams, notifications"
+      ],
+      "expectedResult": "auctionBids.status='sold'; auctionClubOwnership row inserted with tier='top8', plTeamName/short snapshotted, purchasePrice=2_500_000, acquiredAt set; 'sold' auctionBidLog appended; teams.purse −2_500_000; teams.totalSpent +2_500_000; 'club_purchased' notification created",
+      "postconditions": "Club owned by team-T",
+      "requirementId": "AC-SLOTS-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-051",
+      "feature": "Club Bid Resolution UNSOLD",
+      "scenario": "No real bids → status flips to unsold",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Open club bid with zero auctionBidLogs.type='bid' rows; expired timer",
+      "testData": "bidId",
+      "testSteps": [
+        "1. Call resolveClubBid(bidId)",
+        "2. Query auctionBids, auctionClubOwnership, auctionBidLogs, teams"
+      ],
+      "expectedResult": "auctionBids.status='unsold'; auctionBidLogs 'unsold' row appended with amount=0 and teamId=nominator sentinel; no auctionClubOwnership row; no purse deduction",
+      "postconditions": "Club remains unsold",
+      "requirementId": "AC-SLOTS-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-052",
+      "feature": "Club Bid Resolution Idempotency",
+      "scenario": "Double-call returns 'already-resolved'",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Open bid that has just been resolved by first call",
+      "testData": "bidId",
+      "testSteps": [
+        "1. Call resolveClubBid twice in quick succession",
+        "2. Check counts of ownership and log rows"
+      ],
+      "expectedResult": "Second call returns 'already-resolved'; no duplicate auctionClubOwnership or 'sold' auctionBidLog rows",
+      "postconditions": "Single ownership row",
+      "requirementId": "AC-SLOTS-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-053",
+      "feature": "Club Eligibility",
+      "scenario": "Team owning a club is excluded from getClubLessTeamIds",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team-X has an auctionClubOwnership row in the league; team-Y does not; both non-ghost",
+      "testData": "leagueId",
+      "testSteps": [
+        "1. Call getClubLessTeamIds(leagueId)"
+      ],
+      "expectedResult": "Returned array contains team-Y.id but NOT team-X.id, regardless of bidding state",
+      "postconditions": "No state change",
+      "requirementId": "AC-SLOTS-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-054",
+      "feature": "Uniqueness Invariant",
+      "scenario": "Duplicate auctionClubOwnership rejected by uniqueIndex (one club per team)",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team-X already has an auctionClubOwnership row for league L with plTeamId=1",
+      "testData": "Insert another row leagueId=L, teamId=X, plTeamId=99",
+      "testSteps": [
+        "1. Attempt direct DB insert of a second ownership row for same league+teamId"
+      ],
+      "expectedResult": "DB raises uniqueIndex constraint violation; row not inserted",
+      "postconditions": "Original ownership intact",
+      "requirementId": "AC-SLOTS-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-055",
+      "feature": "Uniqueness Invariant",
+      "scenario": "Duplicate auctionClubOwnership rejected for same league+plTeamId (one team per club)",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "auctionClubOwnership row exists for league L, plTeamId=5 owned by team-X",
+      "testData": "Insert leagueId=L, teamId=Y, plTeamId=5",
+      "testSteps": [
+        "1. Attempt direct DB insert of a second ownership row for same league+plTeamId"
+      ],
+      "expectedResult": "uniqueIndex violation; insert fails",
+      "postconditions": "Only one owner per club",
+      "requirementId": "AC-SLOTS-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-056",
+      "feature": "Simulated Club Auction",
+      "scenario": "simulateClubAuction allocates one club per team at £500K",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Simulated league with 6 non-ghost teams; club-auction session exists; FPL bootstrap returns 20 PL clubs with valid tiers",
+      "testData": "sessionId",
+      "testSteps": [
+        "1. Call simulateClubAuction(sessionId)",
+        "2. Query auctionClubOwnership for the league",
+        "3. Query teams for purse/totalSpent",
+        "4. Query session.status and snapshot"
+      ],
+      "expectedResult": "Exactly 6 auctionClubOwnership rows inserted at purchasePrice=500_000; each team's purse −500_000 and totalSpent +500_000; session.status='completed'; writeAuctionCompleteSnapshot invoked",
+      "postconditions": "Simulated allocation complete",
+      "requirementId": "AC-SLOTS-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-057",
+      "feature": "Simulated Club Auction Guard",
+      "scenario": "simulateClubAuction on non-club-auction session throws",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "auctionSessions row with type='initial' (not 'club-auction')",
+      "testData": "that sessionId",
+      "testSteps": [
+        "1. Call simulateClubAuction with the initial sessionId",
+        "2. Inspect thrown error"
+      ],
+      "expectedResult": "Throws Error('simulateClubAuction called on a non-club-auction session'); no auctionClubOwnership rows written",
+      "postconditions": "No writes",
+      "requirementId": "AC-SLOTS-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-058",
+      "feature": "Simulated Tier Skip",
+      "scenario": "Pairings with null club tier are skipped with a warning",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Simulated league; standings config deliberately missing one PL team (resolveTier returns null for it); 6 teams, 20 clubs",
+      "testData": "sessionId",
+      "testSteps": [
+        "1. Stub or seed standings config to omit one PL club",
+        "2. Call simulateClubAuction",
+        "3. Inspect logs and auctionClubOwnership"
+      ],
+      "expectedResult": "Pairing whose club tier is null is skipped; warning logged; remaining valid pairings inserted; session still marks 'completed'",
+      "postconditions": "Affected club remains unowned",
+      "requirementId": "BR-SLOTS-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-059",
+      "feature": "Tier Resolver",
+      "scenario": "resolveTier returns correct tier per seed list and null for unknown id",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Active plStandingsConfig matches PL_STANDINGS_SEED_TOP8/MID/PROMOTED",
+      "testData": "PL ids drawn from each list and an unknown id e.g. 9999",
+      "testSteps": [
+        "1. resolveTier(top8Id) → 'top8'",
+        "2. resolveTier(midId) → 'mid'",
+        "3. resolveTier(promotedId) → 'promoted'",
+        "4. resolveTier(9999) → null"
+      ],
+      "expectedResult": "Each call returns its expected value",
+      "postconditions": "No state change",
+      "requirementId": "AC-SLOTS-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-060",
+      "feature": "Tier Snapshot",
+      "scenario": "Ownership tier snapshot survives later standings-config edits",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "auctionClubOwnership row inserted at purchase with tier='top8'",
+      "testData": "Update plStandingsConfig to move that plTeamId to 'mid'",
+      "testSteps": [
+        "1. Read auctionClubOwnership.tier before",
+        "2. Edit standings config to demote the club",
+        "3. Re-read auctionClubOwnership.tier"
+      ],
+      "expectedResult": "Snapshotted tier remains 'top8' (and plTeamName/plTeamShort unchanged); resolveTier(plTeamId) now returns 'mid' but ownership row is untouched",
+      "postconditions": "Snapshot integrity preserved",
+      "requirementId": "AC-SLOTS-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-061",
+      "feature": "Tier Fallback (Resolution)",
+      "scenario": "resolveClubBid silently writes tier='mid' when resolveTier returns null",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Open club bid for a plTeamId that has been removed from all standings lists (resolveTier returns null); ≥1 'bid' log row",
+      "testData": "bidId; misconfigured plStandingsConfig",
+      "testSteps": [
+        "1. Stub/edit standings to exclude the plTeamId",
+        "2. Call resolveClubBid(bidId)",
+        "3. Query auctionClubOwnership.tier and server logs"
+      ],
+      "expectedResult": "auctionClubOwnership row inserted with tier='mid' (silent fallback); no warning emitted to logs and no admin notification — pins current divergent behaviour vs simulateClubAuction which skips+warns",
+      "postconditions": "Owner gets 'mid' scoring for the season unless fixed",
+      "requirementId": "BR-SLOTS-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SLOTS-004 — fix should make this test fail (refuse-or-warn behaviour)"
+    },
+    {
+      "id": "TC-SLOTS-062",
+      "feature": "FPL Bootstrap Count",
+      "scenario": "fetchAllPLClubsWithTiers returns exactly 20 clubs with shape",
+      "type": "Smoke",
+      "priority": "P3",
+      "preconditions": "Live FPL bootstrap available or fixture set; active standings config seeded (top8=8, mid=9, promoted=3)",
+      "testData": "n/a",
+      "testSteps": [
+        "1. Call fetchAllPLClubsWithTiers",
+        "2. Assert length === 20",
+        "3. Assert every row has { id:number, name:string, short:string, tier:'top8'|'mid'|'promoted'|null }"
+      ],
+      "expectedResult": "Returns 20 PL clubs; each tier list lengths 8/9/3 sum to 20",
+      "postconditions": "No state change",
+      "requirementId": "BR-SLOTS-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SLOTS-063",
+      "feature": "Advance Queue",
+      "scenario": "advanceClubQueue increments cursor then nominates",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Active club-auction session; no open bid; currentNominatorIndex=2 mid-queue",
+      "testData": "sessionId",
+      "testSteps": [
+        "1. Call advanceClubQueue(sessionId)",
+        "2. Read session row and any new auctionBids"
+      ],
+      "expectedResult": "currentNominatorIndex increments to 3; autoNominateNextClub is invoked and creates the next open bid",
+      "postconditions": "Queue progressed",
+      "requirementId": "BR-SLOTS-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": [],
+  "defects": [
+    {
+      "id": "DEF-SLOTS-001",
+      "title": "POST /api/auction/redeem-slot blocks superadmin while POST /unlock-slot allows it",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "POST /api/auction/redeem-slot rejects any session whose type is not 'team' (src/app/api/auction/redeem-slot/route.ts:103). POST /api/auction/unlock-slot accepts either a team session OR a superadmin cookie (src/app/api/auction/unlock-slot/route.ts:25-31, 39-42). The two sibling endpoints have asymmetric admin contracts.",
+      "expectedBehaviour": "Either both endpoints accept superadmin (so admins can support teams who can't log in), or both refuse — but the two should be consistent.",
+      "actualBehaviour": "Superadmins can unlock bonus slots on behalf of any team but cannot redeem penalty slots on behalf of any team; admin gets 401 'Team authentication required' from redeem-slot.",
+      "sourceRefs": [
+        "src/app/api/auction/redeem-slot/route.ts:99-116",
+        "src/app/api/auction/unlock-slot/route.ts:24-42"
+      ],
+      "linkedBusinessRules": ["BR-SLOTS-019"],
+      "linkedAcceptanceCriteria": ["AC-SLOTS-015"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-SLOTS-026"],
+      "notes": "Fix options: (a) add an `isSuperAdmin(request)` bypass to redeem-slot mirroring unlock-slot; or (b) document that admin support is intentionally write-restricted for penalty redemption. Option (a) is the lower-risk default. Risk/impact: blocks admin-side recovery when a team locks itself out mid-cycle.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-SLOTS-002",
+      "title": "redeem-slot does not decrement teams.purse column; unlock-slot does — purse column drifts",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "POST /api/auction/unlock-slot decrements teams.purse via SQL alongside totalSpent (src/app/api/auction/unlock-slot/route.ts:118-127). POST /api/auction/redeem-slot only updates teams.penaltySlots and teams.totalSpent — it does NOT touch teams.purse (src/app/api/auction/redeem-slot/route.ts:188-196). Because the canonical purse is computed by calculatePurse(initialBudget,totalIncome,totalSpent,totalRefunds), the stored teams.purse column will diverge over time depending on which endpoints have run.",
+      "expectedBehaviour": "Either both endpoints maintain teams.purse as a denormalised cache (decrement on every cost), or neither does (and reads use calculatePurse). Behaviour must be uniform across all economy-affecting endpoints.",
+      "actualBehaviour": "After a penalty redemption, teams.purse is stale by `cost` until some other code path refreshes it; after an unlock, teams.purse reflects the deduction immediately. UI surfaces that read teams.purse directly (vs. computing it) will show inconsistent numbers depending on which path the team last took.",
+      "sourceRefs": [
+        "src/app/api/auction/redeem-slot/route.ts:181-196",
+        "src/app/api/auction/unlock-slot/route.ts:117-139",
+        "src/lib/formats/auction/economy.ts:34-41"
+      ],
+      "linkedBusinessRules": ["BR-SLOTS-012", "BR-SLOTS-024"],
+      "linkedAcceptanceCriteria": ["AC-SLOTS-009", "AC-SLOTS-018", "AC-SLOTS-021"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-SLOTS-019", "TC-SLOTS-035"],
+      "notes": "Fix options: (a) add `purse: sql\\`${teams.purse} - ${cost}\\`` to the redeem-slot UPDATE so behaviour matches unlock-slot; or (b) drop the column-level decrement from unlock-slot and have every consumer call calculatePurse on read. Option (a) preserves existing UI assumptions; option (b) eliminates an entire class of drift bug but is broader. Risk/impact: money/economy integrity — players see wrong purse values; trade/unlock guards downstream may use the wrong source.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-SLOTS-003",
+      "title": "Schema column comment on teamSlotUnlocks.slotNumber is stale ('15 or 16') and bonusSlots comment mentions £25M legacy price",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/lib/db/schema.ts:525 documents teamSlotUnlocks.slotNumber as '15 or 16'; route code writes 16/17/18 (src/app/api/auction/unlock-slot/route.ts:114). src/lib/db/schema.ts:113-114 mentions a legacy £25M price; current code uses £10M/£20M/£30M (src/lib/formats/auction/squad-rules.ts:11). The doc comment block above POST /unlock-slot (src/app/api/auction/unlock-slot/route.ts:18-22) is also out of date — refers to 'slot 15, then 16'.",
+      "expectedBehaviour": "Comments match code: slot numbers stored are 16/17/18; bonus-slot prices are £10M/£20M/£30M.",
+      "actualBehaviour": "Documentation conflicts with implementation, which can confuse downstream readers, QA, and finance ledger consumers reading slotNumber.",
+      "sourceRefs": [
+        "src/lib/db/schema.ts:518-528",
+        "src/lib/db/schema.ts:108-115",
+        "src/app/api/auction/unlock-slot/route.ts:14-23"
+      ],
+      "linkedBusinessRules": ["BR-SLOTS-047"],
+      "linkedAcceptanceCriteria": [],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-SLOTS-018"],
+      "notes": "Documentation-only — no runtime impact. Update three comment blocks to match current pricing/slot indices.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-SLOTS-004",
+      "title": "resolveTier null fallback hard-coded to 'mid' in club-bid resolution masks misconfigured standings",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "When resolveClubBid creates an auctionClubOwnership row on SOLD, it calls resolveTier(fresh.fplElementId, config) and falls back to 'mid' if the PL team id is in none of the standings lists (src/lib/formats/auction/club-auction.ts:439-440). resolveTier itself is documented to return null only if the team isn't in any tier list ('shouldn't happen for the 20 PL clubs' — src/lib/data/pl-standings-seed.ts:42-44). The silent fallback means a misconfigured plStandingsConfig (e.g. a 19-club list after a manual edit, or a season-rollover seed mismatch) results in the owning team getting 'mid' scoring quietly instead of an error or admin alert.",
+      "expectedBehaviour": "Either fail the resolution and surface the misconfiguration to the admin, or log a loud warning so it can be corrected before the season scores any GWs.",
+      "actualBehaviour": "Owner team silently gets 'mid' tier with no log line, no notification, no admin alert. simulateClubAuction takes a stricter approach (it skips and warns — src/lib/formats/auction/club-auction.ts:625-631), so the two flows are inconsistent.",
+      "sourceRefs": [
+        "src/lib/formats/auction/club-auction.ts:436-463",
+        "src/lib/formats/auction/club-auction.ts:625-644",
+        "src/lib/data/pl-standings-seed.ts:39-51"
+      ],
+      "linkedBusinessRules": ["BR-SLOTS-033", "BR-SLOTS-039"],
+      "linkedAcceptanceCriteria": ["AC-SLOTS-037"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-SLOTS-061"],
+      "notes": "Fix options: (a) match simulateClubAuction — refuse to write an ownership row with a null tier and emit a warning; (b) emit a notification to superadmin when fallback triggers; (c) accept current behaviour but log at warn level. Risk/impact: incorrect club-result bonus scoring for the affected team for the rest of the season; hard to detect after the fact because the row still looks valid.",
+      "resolution": null,
+      "resolutionDate": null
+    }
+  ]
+}

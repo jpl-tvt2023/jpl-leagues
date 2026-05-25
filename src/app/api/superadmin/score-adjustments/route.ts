@@ -4,6 +4,7 @@ import { auctionScores, gameweeks, leagues, teams, auditLogs } from "@/lib/db/sc
 import { eq, and, desc, asc } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
+import { getPayoutForRank } from "@/lib/formats/auction/economy";
 
 /**
  * GET /api/superadmin/score-adjustments?leagueId=...&gameweek=...
@@ -136,6 +137,50 @@ export async function PATCH(request: NextRequest) {
         totalPoints: newTotal,
       })
       .where(eq(auctionScores.id, id));
+
+    // Re-rank + recompute payouts for the whole GW so leaderboard and finance ledger stay in sync.
+    // A swap-changing adjustment (e.g. T2 overtakes T1) must move both rows' rank/payout columns,
+    // not just the patched row's totalPoints. Tiebreak by teamId asc for determinism — the full
+    // GW processor uses squad-value/purse tiebreakers which require FMV recompute (out of scope
+    // for an inline PATCH and explicitly flagged on the defect as too heavy).
+    const gwRows = await tx
+      .select()
+      .from(auctionScores)
+      .where(and(eq(auctionScores.leagueId, row.leagueId), eq(auctionScores.gameweekId, row.gameweekId)));
+
+    const ordered = [...gwRows].sort((a, b) => {
+      if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+      return a.teamId.localeCompare(b.teamId);
+    });
+
+    for (let i = 0; i < ordered.length; i++) {
+      const sr = ordered[i];
+      const newRank = i + 1;
+      const newPayout = getPayoutForRank(newRank);
+      if (sr.rank === newRank && sr.payout === newPayout) continue;
+
+      await tx
+        .update(auctionScores)
+        .set({ rank: newRank, payout: newPayout })
+        .where(eq(auctionScores.id, sr.id));
+
+      // Keep teams.purse and teams.totalIncome consistent with the new payout — buildAllTeamsSummary
+      // reads teams.purse directly, so a stale value here desyncs the admin finance overview.
+      const payoutDelta = newPayout - sr.payout;
+      if (payoutDelta !== 0) {
+        const teamRow = await tx.select().from(teams).where(eq(teams.id, sr.teamId)).limit(1);
+        if (teamRow.length > 0) {
+          await tx
+            .update(teams)
+            .set({
+              purse: teamRow[0].purse + payoutDelta,
+              totalIncome: teamRow[0].totalIncome + payoutDelta,
+              updatedAt: now,
+            })
+            .where(eq(teams.id, sr.teamId));
+        }
+      }
+    }
 
     const beforeAfter = [
       `synergy ${row.synergyBonus} → ${newSynergy}`,

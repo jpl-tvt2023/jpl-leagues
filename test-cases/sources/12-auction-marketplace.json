@@ -1,0 +1,2578 @@
+{
+  "moduleId": "TRADE",
+  "moduleName": "Auction Marketplace",
+  "sheetName": "Marketplace",
+  "status": "qa-signed-off",
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
+  "requirements": {
+    "version": 1,
+    "businessContext": "The Auction Marketplace lets teams in Complete-tier auction leagues trade rostered players and cash between themselves, or release players back into the mini-auction pool. Every accepted P2P trade requires a final admin approval, and superadmins also hold direct override tools (force-approve / force-reject / cancel) plus low-level corrections (undo-sale, manual-transfer) for auction results. The marketplace is locked while a live auction session is running, and pending proposals are purged when a session begins.",
+    "userStories": [
+      {
+        "id": "US-TRADE-001",
+        "asA": "team (Complete tier)",
+        "iWant": "to propose a player + cash trade to another team in my league",
+        "soThat": "I can restructure my squad outside of auction sessions",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:109-258"
+        ]
+      },
+      {
+        "id": "US-TRADE-002",
+        "asA": "team that received a proposal",
+        "iWant": "to accept or reject an incoming trade proposal",
+        "soThat": "I control which trades happen to my squad",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:266-416"
+        ]
+      },
+      {
+        "id": "US-TRADE-003",
+        "asA": "team",
+        "iWant": "to see all my outgoing and incoming proposals, and (separately) league-wide live offers excluding my own",
+        "soThat": "I can monitor open negotiations and discover deals others are publicising",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:36-101"
+        ]
+      },
+      {
+        "id": "US-TRADE-004",
+        "asA": "team",
+        "iWant": "any pending proposal I leave untouched to expire after 24 hours",
+        "soThat": "the marketplace does not fill up with stale offers",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:12-29",
+          "src/app/api/auction/trade/route.ts:293-300"
+        ]
+      },
+      {
+        "id": "US-TRADE-005",
+        "asA": "superadmin",
+        "iWant": "to approve an accepted trade so players, cash, and the 5% transfer fee actually move",
+        "soThat": "I am the final gatekeeper before economy state changes",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:62-136",
+          "src/lib/formats/auction/trade.ts:31-116"
+        ]
+      },
+      {
+        "id": "US-TRADE-006",
+        "asA": "superadmin",
+        "iWant": "to reject a pending or accepted trade outright (force-reject)",
+        "soThat": "I can block trades I judge collusive or illegal",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:138-160"
+        ]
+      },
+      {
+        "id": "US-TRADE-007",
+        "asA": "superadmin",
+        "iWant": "to cancel any non-completed trade (force-revoke)",
+        "soThat": "I can clear the queue when an auction session is about to start or after a dispute",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:162-181"
+        ]
+      },
+      {
+        "id": "US-TRADE-008",
+        "asA": "team",
+        "iWant": "to mark a player for release",
+        "soThat": "I recover purse at the next GW10/20/30 boundary and let the player return to the mini-auction pool",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:14-84"
+        ]
+      },
+      {
+        "id": "US-TRADE-009",
+        "asA": "team",
+        "iWant": "to cancel a pending release I no longer want",
+        "soThat": "I keep the player on my active roster",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:92-144"
+        ]
+      },
+      {
+        "id": "US-TRADE-010",
+        "asA": "league admin (or superadmin)",
+        "iWant": "to undo a mistakenly sold auction bid",
+        "soThat": "I can correct admin errors that produced a wrong sale",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:21-82"
+        ]
+      },
+      {
+        "id": "US-TRADE-011",
+        "asA": "league admin (or superadmin)",
+        "iWant": "to manually move a player to another team (or back to the unowned pool) with a custom price",
+        "soThat": "I can fix ownership errors without unwinding a full auction session",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:84-147"
+        ]
+      },
+      {
+        "id": "US-TRADE-012",
+        "asA": "auction system",
+        "iWant": "to purge every pending/accepted trade the moment a live auction session starts",
+        "soThat": "stale proposals cannot execute against squads that are about to change",
+        "sourceRefs": [
+          "src/lib/formats/auction/live-session.ts:22-45"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-TRADE-001",
+        "rule": "Trade endpoints require a valid team session. POST /api/auction/trade and PATCH /api/auction/trade return 401 'Team authentication required' for guest or superadmin sessions.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:110-115",
+          "src/app/api/auction/trade/route.ts:267-272"
+        ]
+      },
+      {
+        "id": "BR-TRADE-002",
+        "rule": "POST /api/auction/trade requires non-empty `leagueId` and `targetTeamId` in the body — missing either returns 400.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:117-122"
+        ]
+      },
+      {
+        "id": "BR-TRADE-003",
+        "rule": "A team cannot propose a trade to itself: when `session.id === targetTeamId` the server returns 400 'Cannot trade with yourself'.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:124-126"
+        ]
+      },
+      {
+        "id": "BR-TRADE-004",
+        "rule": "Trades are restricted to leagues with `format = 'auction'`. Any other format returns 400 'Not an auction league'.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:128-132"
+        ]
+      },
+      {
+        "id": "BR-TRADE-005",
+        "rule": "Tier gate: when `leagues.auctionTier === 'primary'` the POST endpoint returns 403 'Trades are not available in Primary tier'. PATCH applies the same gate so that already-pending proposals from before a tier change cannot be accepted or rejected. // CODE-CONFIRMED: may be a defect — the gate is implemented as 'not primary' rather than 'complete only'; any future tier value other than 'primary' would silently re-enable trades. Confirm intended behaviour with product owner.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:134-137",
+          "src/app/api/auction/trade/route.ts:306-311"
+        ]
+      },
+      {
+        "id": "BR-TRADE-006",
+        "rule": "Marketplace is closed during a live auction: if `isAuctionLive(leagueId)` returns true, POST and PATCH return 409 'Marketplace is closed during a live auction'.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:139-144",
+          "src/app/api/auction/trade/route.ts:313-318",
+          "src/lib/formats/auction/live-session.ts:1-20"
+        ]
+      },
+      {
+        "id": "BR-TRADE-007",
+        "rule": "Every offered ownership ID must belong to the proposer (`auctionOwnership.teamId === session.id`); every requested ownership ID must belong to the target. Mismatch returns 400 with the offending player's name.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:185-197"
+        ]
+      },
+      {
+        "id": "BR-TRADE-008",
+        "rule": "Only ownership rows with `status = 'active'` are eligible. Released or pending_release ownerships are silently excluded by `buildTradePlayers` and will surface later as a 'don't own player' validation error.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:148-180"
+        ]
+      },
+      {
+        "id": "BR-TRADE-009",
+        "rule": "Trade validity is enforced by `validateTradeProposal`: post-trade squad size must stay between 11 and `effectiveMaxSquadSize(penaltySlots, bonusSlots)` on both sides.",
+        "sourceRefs": [
+          "src/lib/formats/auction/marketplace.ts:58-77"
+        ]
+      },
+      {
+        "id": "BR-TRADE-010",
+        "rule": "Post-trade position quotas must be respected on both sides: at least 1 GK, 3 DEF, 3 MID, 1 FWD remaining. When position data is available, violations return per-side per-position error messages.",
+        "sourceRefs": [
+          "src/lib/formats/auction/marketplace.ts:17-18",
+          "src/lib/formats/auction/marketplace.ts:122-154"
+        ]
+      },
+      {
+        "id": "BR-TRADE-011",
+        "rule": "Cash check: if `cashOffered > 0` the proposer must have enough purse; if `cashOffered < 0` the target must have enough purse. Insufficient purse on either side fails validation.",
+        "sourceRefs": [
+          "src/lib/formats/auction/marketplace.ts:79-85"
+        ]
+      },
+      {
+        "id": "BR-TRADE-012",
+        "rule": "FMV floor: each side must give at least 80% of the total FMV it receives (FMV math defined in module 11). Floors are computed as `Math.floor(otherSideGivesValue * 0.8)` and undervaluation produces a 'Trade undervalues what X gives' error.",
+        "sourceRefs": [
+          "src/lib/formats/auction/marketplace.ts:87-115"
+        ]
+      },
+      {
+        "id": "BR-TRADE-013",
+        "rule": "A proposal must involve at least one player on at least one side — cash-only trades (offered=[] and requested=[]) are rejected with 'Trade must involve at least one player'.",
+        "sourceRefs": [
+          "src/lib/formats/auction/marketplace.ts:117-120"
+        ]
+      },
+      {
+        "id": "BR-TRADE-014",
+        "rule": "On successful POST the proposal is written to `tradeProposals` with `status='pending'`, the provided cashOffered (default 0), JSON-stringified player ID arrays, and server-generated `id` + timestamps.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:233-243",
+          "src/lib/db/schema.ts:531-544"
+        ]
+      },
+      {
+        "id": "BR-TRADE-015",
+        "rule": "On POST success a `trade_proposed` notification is created for the target team only. Body uses the proposer's PL Club Auction rename when present, else the team's name, else 'A team'. The link deeplinks to `<leagueSlug>/marketplace?tab=incoming`.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:245-256"
+        ]
+      },
+      {
+        "id": "BR-TRADE-016",
+        "rule": "Lazy expiry: every GET and every PATCH first marks any pending proposal whose `createdAt` is older than 24h as `expired` before doing anything else.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:12-29",
+          "src/app/api/auction/trade/route.ts:53",
+          "src/app/api/auction/trade/route.ts:293-300"
+        ]
+      },
+      {
+        "id": "BR-TRADE-017",
+        "rule": "PATCH /api/auction/trade requires `proposalId` and `action ∈ {'accept','reject'}`. Any other action value returns 400.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:274-279"
+        ]
+      },
+      {
+        "id": "BR-TRADE-018",
+        "rule": "PATCH requires the proposal to be in `status='pending'`. Already accepted/rejected/cancelled/completed/expired proposals return 400 'Proposal is no longer pending'. Stale-pending proposals past 24h return 410 'Proposal expired (24h limit)'.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:293-304"
+        ]
+      },
+      {
+        "id": "BR-TRADE-019",
+        "rule": "Only the target team can respond to a proposal — `session.id !== proposal.targetTeamId` returns 403 'Only the target team can respond'.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:320-323"
+        ]
+      },
+      {
+        "id": "BR-TRADE-020",
+        "rule": "On `reject` the proposal moves to `status='rejected'`, `updatedAt` is bumped, and a single `trade_rejected` notification is sent to the proposer using the target's club/team display name and a `tab=outgoing` deeplink.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:325-346"
+        ]
+      },
+      {
+        "id": "BR-TRADE-021",
+        "rule": "On `accept` the server re-runs `validateTradeProposal` against fresh squad/purse/penalty/bonus data and returns 400 'Trade is no longer valid' if validation now fails — accepting a stale proposal cannot execute the trade.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:348-393"
+        ]
+      },
+      {
+        "id": "BR-TRADE-022",
+        "rule": "On `accept` success the proposal moves to `status='accepted'` and a `trade_accepted` notification with body '<target> accepted your trade — awaiting admin approval' is sent to the proposer. Players and cash do NOT move yet — they move only after admin approval.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:395-415"
+        ]
+      },
+      {
+        "id": "BR-TRADE-023",
+        "rule": "POST /api/auction/trade/veto is permanently deprecated and always returns 410 'Veto system has been removed. Trades now require admin approval.' regardless of the request body. // CODE-CONFIRMED: may be a defect — the `tradeProposals` schema still defines `vetoDeadline` and `vetoVotes` columns, and `status` still lists 'vetoed' as a valid value. Dead columns / dead status. Confirm cleanup plan with product owner.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/veto/route.ts:1-12",
+          "src/lib/db/schema.ts:539-541"
+        ]
+      },
+      {
+        "id": "BR-TRADE-024",
+        "rule": "POST /api/auction/trade/admin is restricted to superadmins via `isSuperAdmin(request)`. League admins do NOT have access. Returns 403 'Admin access required' for everyone else.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:35-38"
+        ]
+      },
+      {
+        "id": "BR-TRADE-025",
+        "rule": "Admin actions accepted: `action ∈ {'approve','reject','cancel'}`. Any other value (or missing proposalId) returns 400.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:40-48"
+        ]
+      },
+      {
+        "id": "BR-TRADE-026",
+        "rule": "Admin `approve` is only allowed when `proposal.status === 'accepted'`. Pending/rejected/cancelled/expired/completed proposals return 400 with the current status echoed back.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:62-69"
+        ]
+      },
+      {
+        "id": "BR-TRADE-027",
+        "rule": "Before executing the trade the admin path re-validates squad sizes, purses, penalty/bonus slots, and position quotas with `validateTradeProposal`. If validation fails the trade is NOT executed and 400 'Trade is no longer valid' is returned.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:71-115"
+        ]
+      },
+      {
+        "id": "BR-TRADE-028",
+        "rule": "`executeTrade` runs as a single DB transaction: all offered ownerships are reassigned to the target, all requested ownerships to the proposer, cash + 5% transfer fee is applied, and the proposal is marked `status='completed'`. Partial failures roll the whole thing back.",
+        "sourceRefs": [
+          "src/lib/formats/auction/trade.ts:31-116"
+        ]
+      },
+      {
+        "id": "BR-TRADE-029",
+        "rule": "Cash transfer applies a 5% transfer fee to the recipient: when `cashOffered > 0` the proposer's purse drops by the gross amount and totalSpent rises by the gross; the target's purse rises by `gross - round(gross * 0.05)` and totalIncome rises by the same net. When `cashOffered < 0` the roles flip. (The 5% rate definition lives in module 11; module 12 covers WHEN it is applied — at admin approval.)",
+        "sourceRefs": [
+          "src/lib/formats/auction/trade.ts:8-9",
+          "src/lib/formats/auction/trade.ts:53-104"
+        ]
+      },
+      {
+        "id": "BR-TRADE-030",
+        "rule": "On admin `approve` success both proposer and target receive a `trade_approved` notification with body 'Admin approved the trade — players & cash have been transferred' and a `tab=history` deeplink.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:127-133",
+          "src/app/api/auction/trade/admin/route.ts:9-26"
+        ]
+      },
+      {
+        "id": "BR-TRADE-031",
+        "rule": "Admin `reject` is allowed only when current status is `pending` or `accepted`; sets `status='rejected'`, bumps `updatedAt`, and sends both parties a `trade_admin_rejected` notification.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:138-160"
+        ]
+      },
+      {
+        "id": "BR-TRADE-032",
+        "rule": "Admin `cancel` is allowed for any proposal that is NOT `completed`; sets `status='cancelled'` and sends both parties a `trade_cancelled` notification. Cancelling a completed trade returns 400 'Cannot cancel a completed trade'.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:162-181"
+        ]
+      },
+      {
+        "id": "BR-TRADE-033",
+        "rule": "POST /api/auction/release accepts either a team session (owning the player) or a superadmin. Anonymous callers receive 401.",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:14-22",
+          "src/app/api/auction/release/route.ts:50-54"
+        ]
+      },
+      {
+        "id": "BR-TRADE-034",
+        "rule": "POST /api/auction/release requires `ownershipId`. Missing returns 400, unknown ID returns 404, league not in `auction` format returns 400 'Not an auction league'.",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:24-40",
+          "src/app/api/auction/release/route.ts:56-60"
+        ]
+      },
+      {
+        "id": "BR-TRADE-035",
+        "rule": "Release moves the ownership from `status='active'` to `status='pending_release'` only. Players already `released` return 400 'Player is already released'; players already `pending_release` return 400 'Player is already marked for release'. Purse and totalRefunds are NOT credited yet — the actual refund finalises at GW10/20/30 boundaries.",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:42-49",
+          "src/app/api/auction/release/route.ts:62-72"
+        ]
+      },
+      {
+        "id": "BR-TRADE-036",
+        "rule": "Release response returns a *projected* refund computed via `calculateRefund(purchasePrice)` (50% of purchase price) for display only, plus the projected forfeit (the other 50%).",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:62-83"
+        ]
+      },
+      {
+        "id": "BR-TRADE-037",
+        "rule": "DELETE /api/auction/release reverts a pending-release ownership back to `status='active'`. Calling DELETE on a row that is not `pending_release` returns 400 'Player is not pending release'.",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:92-143"
+        ]
+      },
+      {
+        "id": "BR-TRADE-038",
+        "rule": "POST /api/auction/release does NOT enforce any auction-tier check. // CODE-CONFIRMED: may be a defect — releases are a Complete-tier-only feature per the marketplace scope brief, but the endpoint is reachable by Primary-tier teams. Confirm tier gate requirement with product owner.",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:14-72"
+        ]
+      },
+      {
+        "id": "BR-TRADE-039",
+        "rule": "POST /api/auction/release does NOT check `isAuctionLive(leagueId)` before flipping the ownership status. // CODE-CONFIRMED: may be a defect — the trade endpoint blocks during a live auction (BR-TRADE-006) but release does not, so a team can mark a player for release mid-auction, which `purgePendingTrades` does not handle. Confirm with product owner.",
+        "sourceRefs": [
+          "src/app/api/auction/release/route.ts:14-72",
+          "src/lib/formats/auction/live-session.ts:1-20"
+        ]
+      },
+      {
+        "id": "BR-TRADE-040",
+        "rule": "POST /api/admin/[leagueId]/auction-corrections is authorised through `getAuthorizedLeagueId`, which admits superadmins AND league admins of an active league. This is a wider auth surface than the trade-admin endpoint (BR-TRADE-024). Unauthorised callers receive 403 'Forbidden'.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:14-17",
+          "src/lib/league-auth.ts:13-18"
+        ]
+      },
+      {
+        "id": "BR-TRADE-041",
+        "rule": "`action='undo-sale'` requires `bidId` in the body. The bid must exist (404 otherwise) and must be in `status='sold'` (400 'Bid is not in sold status' otherwise).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:21-37"
+        ]
+      },
+      {
+        "id": "BR-TRADE-042",
+        "rule": "Undo-sale finds the matching active `auctionOwnership` row (by leagueId + fplElementId), deletes it, refunds the buyer by decrementing `teams.totalSpent` by `ownership.purchasePrice`, and marks the bid `status='cancelled'`. All of this happens inside a single DB transaction.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:25-76"
+        ]
+      },
+      {
+        "id": "BR-TRADE-043",
+        "rule": "Undo-sale and manual-transfer adjust `teams.totalSpent` but never write to `teams.purse`. // CODE-CONFIRMED: may be a defect — purse stays at its post-sale value, leaving the team's spendable cash inconsistent with totalSpent until a future recompute. Major impact: an admin who undoes a sale has refunded the spend in the ledger but the team's purse field still reflects the deducted balance. Confirm intended behaviour with product owner.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:56-62",
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:101-124"
+        ]
+      },
+      {
+        "id": "BR-TRADE-044",
+        "rule": "`action='manual-transfer'` requires `ownershipId` and `toTeamId`. Missing either returns 400; unknown ownership returns 404 'Ownership not found'.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:84-97"
+        ]
+      },
+      {
+        "id": "BR-TRADE-045",
+        "rule": "Manual-transfer with `toTeamId === 'unowned'` deletes the ownership row and credits `teams.totalSpent` back to the original owner (decrement by purchasePrice).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:100-109"
+        ]
+      },
+      {
+        "id": "BR-TRADE-046",
+        "rule": "Manual-transfer with a real `toTeamId` reassigns the ownership row to the new team, sets `purchasePrice` to the supplied `price` (falling back to the existing price), refunds the original owner's totalSpent, and charges the new owner's totalSpent — all within a transaction.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:111-141"
+        ]
+      },
+      {
+        "id": "BR-TRADE-047",
+        "rule": "Any unknown `action` value returns 400 'Unknown action' with no DB writes.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:149-150"
+        ]
+      },
+      {
+        "id": "BR-TRADE-048",
+        "rule": "When a league's auction session transitions to active, `purgePendingTrades(leagueId)` flips every `pending` or `accepted` proposal in that league to `status='cancelled'` in one bulk update and returns the count purged. (Detailed handling lives in module 10; module 12 records this as the trigger that clears the marketplace.)",
+        "sourceRefs": [
+          "src/lib/formats/auction/live-session.ts:22-45"
+        ]
+      },
+      {
+        "id": "BR-TRADE-049",
+        "rule": "GET /api/auction/trade supports three modes selected by query params: (a) `scope=public` returns league-wide live offers — only `pending` or `accepted` proposals, and for team sessions excludes proposals where the caller is the proposer or the target; (b) `teamId=...` returns proposals where that team is proposer OR target; (c) no params returns every proposal in the league.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:55-85"
+        ]
+      },
+      {
+        "id": "BR-TRADE-050",
+        "rule": "GET response normalises each proposal to: id, proposerTeamId, targetTeamId, offeredPlayerIds (parsed array), requestedPlayerIds (parsed array), cashOffered, status, vetoDeadline (ISO string or null), vetoVotes (parsed object), createdAt. The veto fields are exposed even though the veto endpoint is deprecated (see BR-TRADE-023).",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:87-101"
+        ]
+      },
+      {
+        "id": "BR-TRADE-051",
+        "rule": "Notification triggers WHAT (not UI rendering — UI is module 15): a successful POST fires `trade_proposed` to the target; a successful PATCH `accept` fires `trade_accepted` to the proposer; a successful PATCH `reject` fires `trade_rejected` to the proposer; admin `approve` fires `trade_approved` to both parties; admin `reject` fires `trade_admin_rejected` to both parties; admin `cancel` fires `trade_cancelled` to both parties.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:247-256",
+          "src/app/api/auction/trade/route.ts:336-344",
+          "src/app/api/auction/trade/route.ts:405-413",
+          "src/app/api/auction/trade/admin/route.ts:127-133",
+          "src/app/api/auction/trade/admin/route.ts:151-157",
+          "src/app/api/auction/trade/admin/route.ts:172-178"
+        ]
+      },
+      {
+        "id": "BR-TRADE-052",
+        "rule": "`tradeProposals.status` lifecycle observed in code: `pending` → (team accepts → `accepted` | team rejects → `rejected` | 24h passes → `expired`); `accepted` → (admin approves → `completed` | admin rejects → `rejected` | admin cancels → `cancelled`); `pending` can also be admin-cancelled or admin-rejected. Bulk-cancel by `purgePendingTrades` flips `pending`/`accepted` → `cancelled`. The legacy `vetoed` value defined in the schema is no longer produced anywhere.",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:539",
+          "src/app/api/auction/trade/route.ts:327-329",
+          "src/app/api/auction/trade/route.ts:395-398",
+          "src/app/api/auction/trade/admin/route.ts:117-125",
+          "src/app/api/auction/trade/admin/route.ts:146-149",
+          "src/app/api/auction/trade/admin/route.ts:167-170",
+          "src/lib/formats/auction/live-session.ts:39-43"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-TRADE-001",
+        "given": "an unauthenticated client",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 401 'Team authentication required' and no row is inserted into tradeProposals",
+        "linksTo": "BR-TRADE-001"
+      },
+      {
+        "id": "AC-TRADE-002",
+        "given": "a superadmin session (no team session)",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 401 'Team authentication required' — superadmins cannot create P2P proposals on behalf of a team",
+        "linksTo": "BR-TRADE-001"
+      },
+      {
+        "id": "AC-TRADE-003",
+        "given": "a team session and a body missing `targetTeamId`",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 'leagueId and targetTeamId are required'",
+        "linksTo": "BR-TRADE-002"
+      },
+      {
+        "id": "AC-TRADE-004",
+        "given": "team A is logged in and submits `targetTeamId = A.id`",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 'Cannot trade with yourself'",
+        "linksTo": "BR-TRADE-003"
+      },
+      {
+        "id": "AC-TRADE-005",
+        "given": "a TVT (non-auction) league",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 'Not an auction league'",
+        "linksTo": "BR-TRADE-004"
+      },
+      {
+        "id": "AC-TRADE-006",
+        "given": "an auction league with `auctionTier = 'primary'`",
+        "when": "a team calls POST /api/auction/trade",
+        "then": "the server responds 403 'Trades are not available in Primary tier'",
+        "linksTo": "BR-TRADE-005"
+      },
+      {
+        "id": "AC-TRADE-007",
+        "given": "an auction league with `auctionTier = 'primary'` and an old `pending` proposal still in the DB",
+        "when": "the target team calls PATCH /api/auction/trade with action=accept",
+        "then": "the server responds 403 'Trades are not available in Primary tier' and the proposal stays `pending` until it expires",
+        "linksTo": "BR-TRADE-005"
+      },
+      {
+        "id": "AC-TRADE-008",
+        "given": "a live auction session is active for the league",
+        "when": "any team calls POST /api/auction/trade",
+        "then": "the server responds 409 'Marketplace is closed during a live auction'",
+        "linksTo": "BR-TRADE-006"
+      },
+      {
+        "id": "AC-TRADE-009",
+        "given": "team A proposes a trade that offers an ownership row belonging to team B",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with message containing 'You don't own player <name>'",
+        "linksTo": "BR-TRADE-007"
+      },
+      {
+        "id": "AC-TRADE-010",
+        "given": "team A proposes a trade requesting an ownership row that does not belong to the targetTeamId",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with message containing 'Target doesn't own player <name>'",
+        "linksTo": "BR-TRADE-007"
+      },
+      {
+        "id": "AC-TRADE-011",
+        "given": "an offered player whose ownership.status is `released` or `pending_release`",
+        "when": "POST /api/auction/trade is called",
+        "then": "that player is silently excluded from the trade and (because the proposer no longer 'owns' it as active) the request fails validation",
+        "linksTo": "BR-TRADE-008"
+      },
+      {
+        "id": "AC-TRADE-012",
+        "given": "a proposer with 15 active players, 0 bonus slots, 0 penalty slots — offering 0 and requesting 1",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with details containing 'Proposer would exceed 15-player squad limit'",
+        "linksTo": "BR-TRADE-009"
+      },
+      {
+        "id": "AC-TRADE-013",
+        "given": "a target with 11 active players — offering 1 and requesting 0",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with details containing 'Target would drop below 11-player minimum'",
+        "linksTo": "BR-TRADE-009"
+      },
+      {
+        "id": "AC-TRADE-014",
+        "given": "a proposer whose GK count would fall to 0 after the trade",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with details containing 'Proposer would have only 0 GK(s) — minimum is 1'",
+        "linksTo": "BR-TRADE-010"
+      },
+      {
+        "id": "AC-TRADE-015",
+        "given": "a proposer with purse=10 offering cashOffered=20",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with details containing 'Proposer does not have enough purse for the cash offered'",
+        "linksTo": "BR-TRADE-011"
+      },
+      {
+        "id": "AC-TRADE-016",
+        "given": "a target with purse=10 and the proposer asking for cash (cashOffered=-50)",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with details containing 'Target does not have enough purse for the cash requested'",
+        "linksTo": "BR-TRADE-011"
+      },
+      {
+        "id": "AC-TRADE-017",
+        "given": "a proposer giving FMV total 100 receiving FMV total 200",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with a 'Trade undervalues what proposer gives' message because the floor is floor(200*0.8)=160 and 100 < 160",
+        "linksTo": "BR-TRADE-012"
+      },
+      {
+        "id": "AC-TRADE-018",
+        "given": "a proposal with offered=[] and requested=[] (cash-only)",
+        "when": "POST /api/auction/trade is called",
+        "then": "the server responds 400 with 'Trade must involve at least one player'",
+        "linksTo": "BR-TRADE-013"
+      },
+      {
+        "id": "AC-TRADE-019",
+        "given": "a valid trade proposal",
+        "when": "POST /api/auction/trade succeeds",
+        "then": "a row is inserted into tradeProposals with status='pending', cashOffered defaulted to 0 when omitted, and the response returns `{ success: true, proposalId }`",
+        "linksTo": "BR-TRADE-014"
+      },
+      {
+        "id": "AC-TRADE-020",
+        "given": "a successful trade proposal where the proposer owns a PL club rename",
+        "when": "POST /api/auction/trade succeeds",
+        "then": "exactly one notification is created — `type='trade_proposed'`, recipient=targetTeamId, body uses the rename's plTeamName, link=`/<leagueSlug>/marketplace?tab=incoming`",
+        "linksTo": "BR-TRADE-015"
+      },
+      {
+        "id": "AC-TRADE-021",
+        "given": "a pending proposal with createdAt 25 hours ago",
+        "when": "any GET /api/auction/trade is called",
+        "then": "the proposal status is flipped to `expired` before the read returns and the response shows status='expired'",
+        "linksTo": "BR-TRADE-016"
+      },
+      {
+        "id": "AC-TRADE-022",
+        "given": "a pending proposal 25 hours old",
+        "when": "the target calls PATCH with action=accept",
+        "then": "the server responds 410 'Proposal expired (24h limit)' and the row is now status='expired'",
+        "linksTo": "BR-TRADE-016"
+      },
+      {
+        "id": "AC-TRADE-023",
+        "given": "PATCH /api/auction/trade body action='vetoed'",
+        "when": "called by the target team",
+        "then": "the server responds 400 because action must be 'accept' or 'reject'",
+        "linksTo": "BR-TRADE-017"
+      },
+      {
+        "id": "AC-TRADE-024",
+        "given": "a proposal already in status='rejected'",
+        "when": "the target team calls PATCH with action=accept",
+        "then": "the server responds 400 'Proposal is no longer pending'",
+        "linksTo": "BR-TRADE-018"
+      },
+      {
+        "id": "AC-TRADE-025",
+        "given": "a pending proposal where session.id is not the target",
+        "when": "PATCH /api/auction/trade is called",
+        "then": "the server responds 403 'Only the target team can respond'",
+        "linksTo": "BR-TRADE-019"
+      },
+      {
+        "id": "AC-TRADE-026",
+        "given": "a valid pending proposal",
+        "when": "the target calls PATCH with action=reject",
+        "then": "the proposal status becomes `rejected`, updatedAt is bumped, and a single `trade_rejected` notification is sent to the proposer with `tab=outgoing` link",
+        "linksTo": "BR-TRADE-020"
+      },
+      {
+        "id": "AC-TRADE-027",
+        "given": "a pending proposal whose proposer's squad has changed (e.g. a player was sold via undo-sale) so revalidation now fails",
+        "when": "the target calls PATCH with action=accept",
+        "then": "the server responds 400 'Trade is no longer valid (squads may have changed)' with the validator's error list and the proposal stays `pending`",
+        "linksTo": "BR-TRADE-021"
+      },
+      {
+        "id": "AC-TRADE-028",
+        "given": "a valid pending proposal",
+        "when": "the target calls PATCH with action=accept",
+        "then": "the proposal status becomes `accepted`, a `trade_accepted` notification with body containing 'awaiting admin approval' is sent to the proposer, and NO ownership rows or purses have moved yet",
+        "linksTo": "BR-TRADE-022"
+      },
+      {
+        "id": "AC-TRADE-029",
+        "given": "any caller, any body",
+        "when": "POST /api/auction/trade/veto is called",
+        "then": "the server responds 410 'Veto system has been removed. Trades now require admin approval.'",
+        "linksTo": "BR-TRADE-023"
+      },
+      {
+        "id": "AC-TRADE-030",
+        "given": "a team session (not superadmin)",
+        "when": "POST /api/auction/trade/admin is called",
+        "then": "the server responds 403 'Admin access required'",
+        "linksTo": "BR-TRADE-024"
+      },
+      {
+        "id": "AC-TRADE-031",
+        "given": "a superadmin and action='destroy'",
+        "when": "POST /api/auction/trade/admin is called",
+        "then": "the server responds 400 because action must be approve/reject/cancel",
+        "linksTo": "BR-TRADE-025"
+      },
+      {
+        "id": "AC-TRADE-032",
+        "given": "a proposal in status='pending' (not yet team-accepted)",
+        "when": "the superadmin calls /api/auction/trade/admin with action=approve",
+        "then": "the server responds 400 'Only accepted proposals can be approved. Current status: pending'",
+        "linksTo": "BR-TRADE-026"
+      },
+      {
+        "id": "AC-TRADE-033",
+        "given": "an accepted proposal where the proposer has since released a key player and revalidation now fails",
+        "when": "the superadmin calls action=approve",
+        "then": "the server responds 400 'Trade is no longer valid (squads may have changed since acceptance)' and the proposal stays `accepted` without any ownership/purse changes",
+        "linksTo": "BR-TRADE-027"
+      },
+      {
+        "id": "AC-TRADE-034",
+        "given": "an accepted proposal that still revalidates",
+        "when": "the superadmin calls action=approve",
+        "then": "ownership of every offered player moves to the target, every requested player to the proposer, cash moves with a 5% recipient fee, proposal status='completed', and both teams receive `trade_approved` notifications with `tab=history` links — all inside a single DB transaction",
+        "linksTo": "BR-TRADE-028"
+      },
+      {
+        "id": "AC-TRADE-035",
+        "given": "an approved trade with cashOffered=100 from proposer → target",
+        "when": "executeTrade runs",
+        "then": "proposer.purse decreases by 100 and totalSpent rises by 100; target.purse rises by 95 and totalIncome rises by 95 (5% fee = 5)",
+        "linksTo": "BR-TRADE-029"
+      },
+      {
+        "id": "AC-TRADE-036",
+        "given": "an approved trade with cashOffered=-200 (target pays proposer)",
+        "when": "executeTrade runs",
+        "then": "target.purse decreases by 200 and totalSpent rises by 200; proposer.purse rises by 190 and totalIncome rises by 190",
+        "linksTo": "BR-TRADE-029"
+      },
+      {
+        "id": "AC-TRADE-037",
+        "given": "an accepted proposal",
+        "when": "the superadmin calls action=reject",
+        "then": "the proposal status flips to `rejected` and both proposer and target receive a `trade_admin_rejected` notification with body 'Admin rejected the trade'",
+        "linksTo": "BR-TRADE-031"
+      },
+      {
+        "id": "AC-TRADE-038",
+        "given": "a proposal in status='expired'",
+        "when": "the superadmin calls action=reject",
+        "then": "the server responds 400 because only pending or accepted proposals can be admin-rejected",
+        "linksTo": "BR-TRADE-031"
+      },
+      {
+        "id": "AC-TRADE-039",
+        "given": "a proposal in status='accepted'",
+        "when": "the superadmin calls action=cancel",
+        "then": "the proposal status flips to `cancelled` and both teams receive a `trade_cancelled` notification",
+        "linksTo": "BR-TRADE-032"
+      },
+      {
+        "id": "AC-TRADE-040",
+        "given": "a proposal in status='completed'",
+        "when": "the superadmin calls action=cancel",
+        "then": "the server responds 400 'Cannot cancel a completed trade' and no state changes",
+        "linksTo": "BR-TRADE-032"
+      },
+      {
+        "id": "AC-TRADE-041",
+        "given": "an anonymous client",
+        "when": "POST /api/auction/release is called",
+        "then": "the server responds 401 'Authentication required'",
+        "linksTo": "BR-TRADE-033"
+      },
+      {
+        "id": "AC-TRADE-042",
+        "given": "team A is logged in and submits ownershipId belonging to team B",
+        "when": "POST /api/auction/release is called",
+        "then": "the server responds 403 'You don't own this player'",
+        "linksTo": "BR-TRADE-033"
+      },
+      {
+        "id": "AC-TRADE-043",
+        "given": "a superadmin submits any team's ownershipId",
+        "when": "POST /api/auction/release is called",
+        "then": "the release proceeds — admin bypasses the ownership check",
+        "linksTo": "BR-TRADE-033"
+      },
+      {
+        "id": "AC-TRADE-044",
+        "given": "a body missing ownershipId, or an unknown ownershipId, or a TVT league",
+        "when": "POST /api/auction/release is called",
+        "then": "the server responds 400/404/400 with the matching error message",
+        "linksTo": "BR-TRADE-034"
+      },
+      {
+        "id": "AC-TRADE-045",
+        "given": "an active ownership row",
+        "when": "POST /api/auction/release succeeds",
+        "then": "the row's status becomes `pending_release`, updatedAt is bumped, and team.purse and team.totalRefunds are unchanged",
+        "linksTo": "BR-TRADE-035"
+      },
+      {
+        "id": "AC-TRADE-046",
+        "given": "an ownership row already in pending_release",
+        "when": "POST /api/auction/release is called again on the same row",
+        "then": "the server responds 400 'Player is already marked for release'",
+        "linksTo": "BR-TRADE-035"
+      },
+      {
+        "id": "AC-TRADE-047",
+        "given": "a player with purchasePrice=80",
+        "when": "POST /api/auction/release succeeds",
+        "then": "the response includes projectedRefund=40 and projectedForfeit=40 (50%/50%)",
+        "linksTo": "BR-TRADE-036"
+      },
+      {
+        "id": "AC-TRADE-048",
+        "given": "an ownership row in `pending_release`",
+        "when": "DELETE /api/auction/release is called by the owning team",
+        "then": "the row's status reverts to `active` and updatedAt is bumped",
+        "linksTo": "BR-TRADE-037"
+      },
+      {
+        "id": "AC-TRADE-049",
+        "given": "an ownership row in status='active' (not pending_release)",
+        "when": "DELETE /api/auction/release is called",
+        "then": "the server responds 400 'Player is not pending release'",
+        "linksTo": "BR-TRADE-037"
+      },
+      {
+        "id": "AC-TRADE-050",
+        "given": "a Primary-tier league",
+        "when": "a team calls POST /api/auction/release",
+        "then": "the release succeeds — the endpoint does not gate on tier (CODE-CONFIRMED behaviour; see DEF-TRADE-002)",
+        "linksTo": "BR-TRADE-038"
+      },
+      {
+        "id": "AC-TRADE-051",
+        "given": "a live auction session is active",
+        "when": "a team calls POST /api/auction/release",
+        "then": "the release succeeds — the endpoint does not gate on isAuctionLive (CODE-CONFIRMED behaviour; see DEF-TRADE-003)",
+        "linksTo": "BR-TRADE-039"
+      },
+      {
+        "id": "AC-TRADE-052",
+        "given": "a league admin of an active league",
+        "when": "POST /api/admin/[leagueId]/auction-corrections is called with a valid action",
+        "then": "the request is authorised — getAuthorizedLeagueId admits league admins of active leagues",
+        "linksTo": "BR-TRADE-040"
+      },
+      {
+        "id": "AC-TRADE-053",
+        "given": "no league context headers / unauthorised caller",
+        "when": "POST /api/admin/[leagueId]/auction-corrections is called",
+        "then": "the server responds 403 'Forbidden'",
+        "linksTo": "BR-TRADE-040"
+      },
+      {
+        "id": "AC-TRADE-054",
+        "given": "action=undo-sale with bidId pointing to a bid in status='unsold'",
+        "when": "the endpoint is called by an authorised admin",
+        "then": "the server responds 400 'Bid is not in sold status' and no ownership changes",
+        "linksTo": "BR-TRADE-041"
+      },
+      {
+        "id": "AC-TRADE-055",
+        "given": "action=undo-sale on a sold bid that has a matching active ownership row",
+        "when": "the endpoint runs to completion",
+        "then": "the ownership row is deleted, the buyer's teams.totalSpent decreases by purchasePrice, the bid status becomes `cancelled`, and the response message reads 'Undone: <playerName> sale reverted' — all inside a transaction",
+        "linksTo": "BR-TRADE-042"
+      },
+      {
+        "id": "AC-TRADE-056",
+        "given": "an undo-sale on a player with purchasePrice=50, buyer.purse=100, buyer.totalSpent=50",
+        "when": "the endpoint runs",
+        "then": "buyer.totalSpent becomes 0 but buyer.purse stays at 100 (CODE-CONFIRMED; see DEF-TRADE-004 — purse not credited back)",
+        "linksTo": "BR-TRADE-043"
+      },
+      {
+        "id": "AC-TRADE-057",
+        "given": "action=manual-transfer with missing toTeamId",
+        "when": "the endpoint is called",
+        "then": "the server responds 400 'ownershipId and toTeamId are required'",
+        "linksTo": "BR-TRADE-044"
+      },
+      {
+        "id": "AC-TRADE-058",
+        "given": "action=manual-transfer with toTeamId='unowned' on an ownership with purchasePrice=60",
+        "when": "the endpoint runs",
+        "then": "the ownership row is deleted and the original owner's totalSpent decreases by 60 (purse remains stale — see DEF-TRADE-004)",
+        "linksTo": "BR-TRADE-045"
+      },
+      {
+        "id": "AC-TRADE-059",
+        "given": "action=manual-transfer with toTeamId=teamX and price=75 on an ownership currently with purchasePrice=60",
+        "when": "the endpoint runs",
+        "then": "the ownership row's teamId becomes teamX and purchasePrice becomes 75; original owner's totalSpent drops by 60; teamX's totalSpent rises by 75",
+        "linksTo": "BR-TRADE-046"
+      },
+      {
+        "id": "AC-TRADE-060",
+        "given": "action=manual-transfer with no price field",
+        "when": "the endpoint runs",
+        "then": "transferPrice defaults to the existing ownership.purchasePrice (no net change in totalSpent for the cross-team move beyond the swap)",
+        "linksTo": "BR-TRADE-046"
+      },
+      {
+        "id": "AC-TRADE-061",
+        "given": "action='something-else'",
+        "when": "POST /api/admin/[leagueId]/auction-corrections is called",
+        "then": "the server responds 400 'Unknown action' and no DB writes occur",
+        "linksTo": "BR-TRADE-047"
+      },
+      {
+        "id": "AC-TRADE-062",
+        "given": "a league with 3 pending and 2 accepted trade proposals",
+        "when": "the auction session transitions to active and purgePendingTrades(leagueId) runs",
+        "then": "all 5 proposals are flipped to status='cancelled' in a single bulk update and the function returns 5",
+        "linksTo": "BR-TRADE-048"
+      },
+      {
+        "id": "AC-TRADE-063",
+        "given": "a team session calling GET /api/auction/trade?leagueId=L&scope=public",
+        "when": "the request runs",
+        "then": "the response only includes proposals with status pending or accepted, AND excludes any proposal where the caller is the proposer or the target",
+        "linksTo": "BR-TRADE-049"
+      },
+      {
+        "id": "AC-TRADE-064",
+        "given": "a team session calling GET /api/auction/trade?leagueId=L&teamId=X",
+        "when": "the request runs",
+        "then": "the response includes every proposal in L where X is proposer OR target, regardless of status",
+        "linksTo": "BR-TRADE-049"
+      },
+      {
+        "id": "AC-TRADE-065",
+        "given": "any GET /api/auction/trade response",
+        "when": "the response body is inspected",
+        "then": "each proposal exposes id, proposerTeamId, targetTeamId, offeredPlayerIds (array), requestedPlayerIds (array), cashOffered, status, vetoDeadline (ISO or null), vetoVotes (object), createdAt — the legacy veto fields are present even though the veto endpoint is deprecated",
+        "linksTo": "BR-TRADE-050"
+      },
+      {
+        "id": "AC-TRADE-066",
+        "given": "a successful admin approval of an accepted trade",
+        "when": "the action completes",
+        "then": "exactly two notifications are created — one for the proposer and one for the target, both with type='trade_approved', title='Trade approved', and the same `marketplace?tab=history` link",
+        "linksTo": "BR-TRADE-051"
+      },
+      {
+        "id": "AC-TRADE-067",
+        "given": "a proposal moves through the lifecycle pending → accepted → completed",
+        "when": "each transition fires",
+        "then": "no transition ever produces status='vetoed' — that legacy value documented in the schema is unreachable in the current code paths",
+        "linksTo": "BR-TRADE-052"
+      }
+    ]
+  },
+  "defects": [
+    {
+      "id": "DEF-TRADE-001",
+      "title": "Trade tier gate matches 'not primary' instead of 'complete only'",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "Both POST and PATCH on /api/auction/trade gate trades by checking `leagues.auctionTier === 'primary'`. The product brief specifies trades as Complete-tier ONLY. The current code therefore allows trades on any tier other than 'primary' — if a third tier is added (or `auctionTier` is null/unset/typoed), trades would silently be enabled.",
+      "expectedBehaviour": "Allow trades only when `auctionTier === 'complete'`. Any other value (including null, primary, or future tiers) should return 403.",
+      "actualBehaviour": "Any tier that is not literally the string 'primary' lets trades through.",
+      "sourceRefs": [
+        "src/app/api/auction/trade/route.ts:134-137",
+        "src/app/api/auction/trade/route.ts:306-311"
+      ],
+      "linkedBusinessRules": [
+        "BR-TRADE-005"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TRADE-006",
+        "AC-TRADE-007"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TRADE-006",
+        "TC-TRADE-007"
+      ],
+      "notes": "Low risk today because only 'primary' and 'complete' tier values exist, but trivially exploitable if a new tier label is introduced or a migration leaves the column null. Fix: switch to explicit allowlist `auctionTier === 'complete'`.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-TRADE-002",
+      "title": "/api/auction/release lacks a tier gate (Primary tier can release players)",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "POST /api/auction/release never reads `leagues.auctionTier`. According to the module 12 scope brief, marketplace features (including releases) are Complete-tier ONLY. The trade endpoint enforces this server-side; the release endpoint does not.",
+      "expectedBehaviour": "Return 403 'Releases are not available in Primary tier' when `leagues.auctionTier === 'primary'` (mirror BR-TRADE-005).",
+      "actualBehaviour": "A Primary-tier team can flip any of its players to pending_release through this endpoint, which would later forfeit purse at the GW10/20/30 boundary in a tier that should not support releases at all.",
+      "sourceRefs": [
+        "src/app/api/auction/release/route.ts:14-72"
+      ],
+      "linkedBusinessRules": [
+        "BR-TRADE-038"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TRADE-050"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TRADE-053"
+      ],
+      "notes": "Direct economy impact at the next refund boundary. Fix: add the same `auctionTier === 'primary'` (or 'complete' allowlist) check the trade route uses.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-TRADE-003",
+      "title": "/api/auction/release is not blocked during a live auction session",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The trade endpoint refuses to operate while `isAuctionLive(leagueId)` is true. The release endpoint never calls isAuctionLive at all, so a team can flip any of its players to pending_release while the auction is in progress. `purgePendingTrades` clears proposals when a session starts but does not undo or block in-flight releases.",
+      "expectedBehaviour": "Return 409 'Marketplace is closed during a live auction' (same as BR-TRADE-006) when there is an active or paused session for the league.",
+      "actualBehaviour": "Release proceeds during a live auction; the player remains scoring for the team until the next GW boundary, but the marketplace was supposed to be closed.",
+      "sourceRefs": [
+        "src/app/api/auction/release/route.ts:14-72",
+        "src/lib/formats/auction/live-session.ts:1-20"
+      ],
+      "linkedBusinessRules": [
+        "BR-TRADE-039"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TRADE-051"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TRADE-054"
+      ],
+      "notes": "Inconsistency with the trade path. Fix: add `if (await isAuctionLive(leagueId)) return 409 ...` to both POST and DELETE on the release route.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-TRADE-004",
+      "title": "auction-corrections (undo-sale / manual-transfer) adjusts totalSpent but never touches teams.purse",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "Both undo-sale and manual-transfer update only `teams.totalSpent` (the ledger counter) and leave `teams.purse` (the spendable balance) untouched. The result: after admin reverts a sale of price=50, the team's totalSpent is correctly reduced by 50 but its purse is still at the post-sale value as if the cash were spent. The same drift happens on manual-transfer in either direction (refund of original owner, charge of new owner).",
+      "expectedBehaviour": "Mirror the totalSpent adjustments on `teams.purse`: refund purse on undo-sale and unowned-transfer, and debit/credit purse on cross-team manual transfers.",
+      "actualBehaviour": "Purse stays at the pre-correction value. teams.totalSpent and teams.purse become inconsistent until a recompute job (if any) runs.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/auction-corrections/route.ts:56-62",
+        "src/app/api/admin/[leagueId]/auction-corrections/route.ts:101-124"
+      ],
+      "linkedBusinessRules": [
+        "BR-TRADE-043"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TRADE-056",
+        "AC-TRADE-058"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TRADE-059",
+        "TC-TRADE-061"
+      ],
+      "notes": "Direct economy / money bug — affects what a team can spend in the next session. Fix: add purse updates to every branch in the corrections transaction. Cross-reference module 11 to confirm purse/totalSpent invariants.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-TRADE-005",
+      "title": "Dead schema columns and dead status value left over from removed veto system",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The `/api/auction/trade/veto` endpoint now returns 410 unconditionally — the veto system has been removed. However the `tradeProposals` table still defines `veto_deadline` and `veto_votes` columns with NOT NULL + default values, the schema comment lists `vetoed` as a valid status, and the GET endpoint still returns vetoDeadline / vetoVotes on every proposal.",
+      "expectedBehaviour": "Either restore the veto system or drop the dead columns / remove the unreachable 'vetoed' status from the documented set and stop exposing veto fields on read.",
+      "actualBehaviour": "Schema, status enum, and GET response advertise a veto lifecycle that no code path can produce — confusing for API consumers and a perpetual source of dead test cases.",
+      "sourceRefs": [
+        "src/lib/db/schema.ts:539-541",
+        "src/app/api/auction/trade/route.ts:96-97",
+        "src/app/api/auction/trade/veto/route.ts:1-12"
+      ],
+      "linkedBusinessRules": [
+        "BR-TRADE-023",
+        "BR-TRADE-050",
+        "BR-TRADE-052"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TRADE-029",
+        "AC-TRADE-065",
+        "AC-TRADE-067"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TRADE-025",
+        "TC-TRADE-031",
+        "TC-TRADE-068",
+        "TC-TRADE-070"
+      ],
+      "notes": "No active data risk, but adds documentation/test maintenance cost and confuses API consumers. Fix: schema migration to drop columns + status-enum comment update + remove veto fields from the GET projection.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-TRADE-006",
+      "title": "Trade-admin endpoint and auction-corrections endpoint disagree on who counts as admin",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "POST /api/auction/trade/admin gates with `isSuperAdmin` only — league admins cannot use it. POST /api/admin/[leagueId]/auction-corrections gates with `getAuthorizedLeagueId` which admits BOTH superadmins AND league admins of an active league. So a league admin can do low-level corrections (undo-sale, manual-transfer) but cannot force-approve / force-reject / cancel a P2P trade in their own league.",
+      "expectedBehaviour": "Pick one model and apply it consistently — either restrict both admin surfaces to superadmins, or open both to league admins of active leagues.",
+      "actualBehaviour": "Inconsistent admin authority across the two override surfaces for the same league economy.",
+      "sourceRefs": [
+        "src/app/api/auction/trade/admin/route.ts:35-38",
+        "src/app/api/admin/[leagueId]/auction-corrections/route.ts:14-17"
+      ],
+      "linkedBusinessRules": [
+        "BR-TRADE-024",
+        "BR-TRADE-040"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TRADE-030",
+        "AC-TRADE-052"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TRADE-032",
+        "TC-TRADE-055"
+      ],
+      "notes": "Likely a product decision (trades are higher-trust than ownership corrections) but worth confirming. Fix is a one-line auth change in whichever direction product picks.",
+      "resolution": null,
+      "resolutionDate": null
+    }
+  ],
+  "testCases": [
+    {
+      "id": "TC-TRADE-001",
+      "feature": "Trade auth",
+      "scenario": "Anonymous client cannot POST a trade proposal",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie; an auction league L1 exists",
+      "testData": "POST /api/auction/trade body={leagueId:L1,targetTeamId:T2}",
+      "testSteps": [
+        "1. Clear session cookies",
+        "2. POST /api/auction/trade with valid body",
+        "3. Inspect response and tradeProposals table"
+      ],
+      "expectedResult": "401 'Team authentication required'; no row inserted into tradeProposals",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-TRADE-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-002",
+      "feature": "Trade auth",
+      "scenario": "Superadmin (no team session) cannot POST a P2P trade",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Superadmin session cookie active, no team session",
+      "testData": "POST /api/auction/trade body={leagueId:L1,targetTeamId:T2}",
+      "testSteps": [
+        "1. Sign in as superadmin only",
+        "2. POST /api/auction/trade",
+        "3. Read response"
+      ],
+      "expectedResult": "401 'Team authentication required' (superadmin is not a team)",
+      "postconditions": "No proposal row created",
+      "requirementId": "AC-TRADE-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-003",
+      "feature": "Trade body validation",
+      "scenario": "POST with missing targetTeamId returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team A session in Complete-tier auction league L1",
+      "testData": "body={leagueId:L1} (no targetTeamId)",
+      "testSteps": [
+        "1. Sign in as team A",
+        "2. POST /api/auction/trade with body missing targetTeamId"
+      ],
+      "expectedResult": "400 'leagueId and targetTeamId are required'",
+      "postconditions": "No proposal row created",
+      "requirementId": "AC-TRADE-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-004",
+      "feature": "Self trade guard",
+      "scenario": "Team cannot propose a trade to itself",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team A session id = A.id in league L1",
+      "testData": "body={leagueId:L1,targetTeamId:A.id}",
+      "testSteps": [
+        "1. Sign in as team A",
+        "2. POST /api/auction/trade with targetTeamId=A.id"
+      ],
+      "expectedResult": "400 'Cannot trade with yourself'",
+      "postconditions": "No proposal row created",
+      "requirementId": "AC-TRADE-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-005",
+      "feature": "Format gate",
+      "scenario": "TVT league rejects trade proposal",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "League L_TVT with format='tvt'",
+      "testData": "body={leagueId:L_TVT,targetTeamId:T2}",
+      "testSteps": [
+        "1. Sign in as team A in TVT league",
+        "2. POST /api/auction/trade"
+      ],
+      "expectedResult": "400 'Not an auction league'",
+      "postconditions": "No proposal row created",
+      "requirementId": "AC-TRADE-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-006",
+      "feature": "Tier gate (POST)",
+      "scenario": "Primary-tier league blocks new trade proposal",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Auction league L1 with auctionTier='primary'",
+      "testData": "Valid trade body in L1",
+      "testSteps": [
+        "1. Sign in as team A in L1",
+        "2. POST /api/auction/trade with valid offered/requested IDs"
+      ],
+      "expectedResult": "403 'Trades are not available in Primary tier'; no proposal row created",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-TRADE-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-001 — gate currently checks 'not primary' rather than 'complete only'"
+    },
+    {
+      "id": "TC-TRADE-007",
+      "feature": "Tier gate (PATCH)",
+      "scenario": "Primary-tier league blocks accept on a stale pending proposal",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "L1 has an existing pending proposal P1; admin then flips L1.auctionTier to 'primary'",
+      "testData": "PATCH body={proposalId:P1,action:'accept'}",
+      "testSteps": [
+        "1. As target team, PATCH /api/auction/trade to accept P1"
+      ],
+      "expectedResult": "403 'Trades are not available in Primary tier'; P1 stays pending until expiry",
+      "postconditions": "P1.status === 'pending'",
+      "requirementId": "AC-TRADE-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-001 on PATCH path"
+    },
+    {
+      "id": "TC-TRADE-008",
+      "feature": "Live-session gate (POST)",
+      "scenario": "Marketplace closed during a live auction",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "L1 has an active auction session (isAuctionLive=true)",
+      "testData": "Valid trade body for L1",
+      "testSteps": [
+        "1. Start an auction session in L1",
+        "2. As team A, POST /api/auction/trade"
+      ],
+      "expectedResult": "409 'Marketplace is closed during a live auction'",
+      "postconditions": "No proposal row created",
+      "requirementId": "AC-TRADE-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-009",
+      "feature": "Ownership check (offered)",
+      "scenario": "Proposer offers a player they don't own",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A logged in; ownership O_X belongs to team B",
+      "testData": "body offers O_X",
+      "testSteps": [
+        "1. As team A, POST /api/auction/trade offering O_X"
+      ],
+      "expectedResult": "400 with message containing \"You don't own player <name>\"",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-010",
+      "feature": "Ownership check (requested)",
+      "scenario": "Proposer requests a player not owned by target",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Ownership O_Y belongs to team C (not target B)",
+      "testData": "body requests O_Y, targetTeamId=B",
+      "testSteps": [
+        "1. As team A, POST /api/auction/trade requesting O_Y from B"
+      ],
+      "expectedResult": "400 with message containing \"Target doesn't own player <name>\"",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-011",
+      "feature": "Active-only ownership",
+      "scenario": "Offering a player whose ownership is pending_release fails validation",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team A's ownership O_R is in status='pending_release'",
+      "testData": "body offers O_R",
+      "testSteps": [
+        "1. As team A, POST /api/auction/trade offering O_R"
+      ],
+      "expectedResult": "400 — O_R silently excluded by buildTradePlayers, validation surfaces 'You don't own player <name>'",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-012",
+      "feature": "Squad size cap",
+      "scenario": "Proposer at 15 active players cannot receive a player",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Proposer has 15 active, 0 bonus, 0 penalty slots",
+      "testData": "offered=[] requested=[playerY]",
+      "testSteps": [
+        "1. POST /api/auction/trade requesting 1 player while at 15"
+      ],
+      "expectedResult": "400 with details containing 'Proposer would exceed 15-player squad limit'",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-013",
+      "feature": "Squad size floor",
+      "scenario": "Target at 11 active cannot drop below the minimum",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Target has exactly 11 active players",
+      "testData": "offered=[playerX] requested=[] (still must include at least one player overall — offered counts)",
+      "testSteps": [
+        "1. POST a trade that net-decreases target's roster"
+      ],
+      "expectedResult": "400 with 'Target would drop below 11-player minimum'",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-014",
+      "feature": "Position quota (GK)",
+      "scenario": "Proposer would have 0 GK after trade",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Proposer has 1 GK and trades it away with no GK incoming",
+      "testData": "offered=[onlyGK] requested=[outfielder]",
+      "testSteps": [
+        "1. POST trade that strips proposer's GK"
+      ],
+      "expectedResult": "400 with 'Proposer would have only 0 GK(s) — minimum is 1'",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-015",
+      "feature": "Position quota (DEF)",
+      "scenario": "Target would have only 2 DEF after trade — below the minimum of 3",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Target has 3 DEF, trade removes 1 without DEF coming back",
+      "testData": "requested=[targetDef] offered=[midfielder]",
+      "testSteps": [
+        "1. POST trade"
+      ],
+      "expectedResult": "400 with 'Target would have only 2 DEF(s) — minimum is 3'",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Same guard rule (BR-TRADE-010), DEF boundary"
+    },
+    {
+      "id": "TC-TRADE-016",
+      "feature": "Purse check (proposer)",
+      "scenario": "Proposer purse too low for cashOffered",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Proposer purse=10",
+      "testData": "cashOffered=20",
+      "testSteps": [
+        "1. POST trade with cashOffered=20"
+      ],
+      "expectedResult": "400 with 'Proposer does not have enough purse for the cash offered'",
+      "postconditions": "Purse unchanged",
+      "requirementId": "AC-TRADE-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-017",
+      "feature": "Purse check (target)",
+      "scenario": "Target purse too low for cashOffered<0 (target pays proposer)",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Target purse=10",
+      "testData": "cashOffered=-50",
+      "testSteps": [
+        "1. POST trade requesting 50 cash from target (cashOffered=-50)"
+      ],
+      "expectedResult": "400 with 'Target does not have enough purse for the cash requested'",
+      "postconditions": "Purse unchanged",
+      "requirementId": "AC-TRADE-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-018",
+      "feature": "FMV floor",
+      "scenario": "Proposer giving FMV 100 vs receiving FMV 200 (floor 160) is rejected",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Proposer FMV given = 100, target FMV given = 200, floor = floor(200*0.8)=160",
+      "testData": "Trade where proposerGives totalFMV=100, targetGives totalFMV=200",
+      "testSteps": [
+        "1. POST trade with this imbalance"
+      ],
+      "expectedResult": "400 with 'Trade undervalues what proposer gives'",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-019",
+      "feature": "FMV floor (boundary pass)",
+      "scenario": "Proposer giving exactly the floor passes",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "proposerGives FMV=160, targetGives FMV=200 (floor exactly 160)",
+      "testData": "Trade at FMV floor",
+      "testSteps": [
+        "1. POST trade at FMV floor"
+      ],
+      "expectedResult": "200 success — proposal created (>= floor passes)",
+      "postconditions": "Proposal row created, status='pending'",
+      "requirementId": "AC-TRADE-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary inverse: floor passes"
+    },
+    {
+      "id": "TC-TRADE-020",
+      "feature": "Cash-only trade guard",
+      "scenario": "Empty offered + empty requested with cash only is rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid Complete-tier league",
+      "testData": "offered=[] requested=[] cashOffered=100",
+      "testSteps": [
+        "1. POST trade with no players on either side"
+      ],
+      "expectedResult": "400 with 'Trade must involve at least one player'",
+      "postconditions": "No proposal row",
+      "requirementId": "AC-TRADE-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-021",
+      "feature": "Trade proposal write",
+      "scenario": "Valid proposal creates a pending row and returns proposalId",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Complete-tier auction league, valid offered/requested, no live session",
+      "testData": "Valid body; cashOffered omitted",
+      "testSteps": [
+        "1. POST /api/auction/trade",
+        "2. Read response",
+        "3. Query tradeProposals row"
+      ],
+      "expectedResult": "200 { success:true, proposalId:<id> }; row has status='pending', cashOffered=0, offered/requested stored as JSON strings",
+      "postconditions": "One new pending row in tradeProposals",
+      "requirementId": "AC-TRADE-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-022",
+      "feature": "Trade proposed notification",
+      "scenario": "Successful POST creates exactly one trade_proposed notification using PL Club rename",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Proposer has a PL club auction rename (e.g., plTeamName='Red Devils')",
+      "testData": "Valid proposal in league L1 (slug='gauntlet')",
+      "testSteps": [
+        "1. POST trade",
+        "2. Query notifications for target team"
+      ],
+      "expectedResult": "Exactly 1 notification: type='trade_proposed', recipient=targetTeamId, body includes 'Red Devils', link='/gauntlet/marketplace?tab=incoming'",
+      "postconditions": "1 notification row inserted",
+      "requirementId": "AC-TRADE-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-023",
+      "feature": "Lazy expiry on GET",
+      "scenario": "GET marks a 25-hour-old pending proposal as expired before returning",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Proposal P1 with createdAt=now-25h, status='pending'",
+      "testData": "GET /api/auction/trade?leagueId=L1&teamId=A",
+      "testSteps": [
+        "1. GET the endpoint",
+        "2. Read response",
+        "3. Re-query DB row"
+      ],
+      "expectedResult": "Response shows P1.status='expired'; DB row now status='expired'",
+      "postconditions": "Row flipped to expired before read",
+      "requirementId": "AC-TRADE-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-024",
+      "feature": "Lazy expiry on PATCH",
+      "scenario": "Accepting a 25-hour-old proposal returns 410 and flips status to expired",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Proposal P1 createdAt=now-25h, status='pending'",
+      "testData": "PATCH body={proposalId:P1,action:'accept'} from target team",
+      "testSteps": [
+        "1. PATCH /api/auction/trade",
+        "2. Re-read row"
+      ],
+      "expectedResult": "410 'Proposal expired (24h limit)'; P1.status='expired'",
+      "postconditions": "Row is expired, not accepted",
+      "requirementId": "AC-TRADE-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-025",
+      "feature": "PATCH action validation",
+      "scenario": "Action='vetoed' is rejected",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Valid pending proposal P1",
+      "testData": "PATCH body={proposalId:P1, action:'vetoed'}",
+      "testSteps": [
+        "1. PATCH as target with action='vetoed'"
+      ],
+      "expectedResult": "400 — action must be 'accept' or 'reject'",
+      "postconditions": "P1 unchanged",
+      "requirementId": "AC-TRADE-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-005 (legacy veto value rejected by action validator)"
+    },
+    {
+      "id": "TC-TRADE-026",
+      "feature": "PATCH on non-pending",
+      "scenario": "Accepting an already-rejected proposal returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Proposal P1 status='rejected'",
+      "testData": "PATCH body={proposalId:P1,action:'accept'}",
+      "testSteps": [
+        "1. PATCH P1 with action=accept"
+      ],
+      "expectedResult": "400 'Proposal is no longer pending'",
+      "postconditions": "P1.status still 'rejected'",
+      "requirementId": "AC-TRADE-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-027",
+      "feature": "Target-only PATCH",
+      "scenario": "A non-target team cannot accept/reject a proposal",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Pending proposal P1 with target=B; session is team C",
+      "testData": "PATCH body={proposalId:P1,action:'accept'}",
+      "testSteps": [
+        "1. Sign in as team C",
+        "2. PATCH P1"
+      ],
+      "expectedResult": "403 'Only the target team can respond'",
+      "postconditions": "P1 unchanged",
+      "requirementId": "AC-TRADE-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-028",
+      "feature": "Reject flow",
+      "scenario": "Target rejects a valid pending proposal",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Valid pending P1, target=B",
+      "testData": "PATCH body={proposalId:P1,action:'reject'}",
+      "testSteps": [
+        "1. As B, PATCH P1 with action=reject",
+        "2. Query DB and notifications"
+      ],
+      "expectedResult": "P1.status='rejected', updatedAt bumped; 1 'trade_rejected' notification to proposer with link `…/marketplace?tab=outgoing`",
+      "postconditions": "Proposal rejected, exactly 1 notification",
+      "requirementId": "AC-TRADE-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-029",
+      "feature": "Accept revalidation",
+      "scenario": "Stale proposal fails revalidation on accept (e.g., proposer's player got undone)",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Pending P1 references player X; admin undoes X's sale before accept",
+      "testData": "PATCH body={proposalId:P1,action:'accept'}",
+      "testSteps": [
+        "1. Admin undo-sale on player X",
+        "2. Target PATCHes accept on P1"
+      ],
+      "expectedResult": "400 'Trade is no longer valid (squads may have changed)' with validator errors; P1 stays pending",
+      "postconditions": "P1.status='pending', no economy movement",
+      "requirementId": "AC-TRADE-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-030",
+      "feature": "Accept happy path",
+      "scenario": "Valid pending proposal accepted by target — no economy movement yet",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid pending P1",
+      "testData": "PATCH body={proposalId:P1,action:'accept'}",
+      "testSteps": [
+        "1. PATCH accept",
+        "2. Query proposal, ownerships, purses, notifications"
+      ],
+      "expectedResult": "P1.status='accepted'; 1 'trade_accepted' notification to proposer mentioning 'awaiting admin approval'; ownerships and purses UNCHANGED",
+      "postconditions": "Awaiting admin approval",
+      "requirementId": "AC-TRADE-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-031",
+      "feature": "Deprecated veto endpoint",
+      "scenario": "POST /api/auction/trade/veto returns 410 regardless of body",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "Any caller",
+      "testData": "POST /api/auction/trade/veto with arbitrary body",
+      "testSteps": [
+        "1. POST the veto endpoint",
+        "2. Read response"
+      ],
+      "expectedResult": "410 'Veto system has been removed. Trades now require admin approval.'",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-TRADE-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-005 — confirms veto endpoint stays 410 while dead schema columns persist"
+    },
+    {
+      "id": "TC-TRADE-032",
+      "feature": "Trade-admin auth",
+      "scenario": "League admin (not superadmin) is denied trade-admin",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Session is a league admin of L1, not a superadmin",
+      "testData": "POST /api/auction/trade/admin body={proposalId:P1,action:'approve'}",
+      "testSteps": [
+        "1. Sign in as league admin",
+        "2. POST trade/admin endpoint"
+      ],
+      "expectedResult": "403 'Admin access required'",
+      "postconditions": "No state change",
+      "requirementId": "AC-TRADE-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-006 — auth mismatch (league admin allowed on auction-corrections but not on trade-admin)"
+    },
+    {
+      "id": "TC-TRADE-033",
+      "feature": "Trade-admin auth (positive)",
+      "scenario": "Superadmin reaches the trade-admin endpoint",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Superadmin session, accepted P1 exists",
+      "testData": "body={proposalId:P1,action:'approve'}",
+      "testSteps": [
+        "1. Sign in as superadmin",
+        "2. POST trade/admin"
+      ],
+      "expectedResult": "200 success path (or downstream validation result), not 403",
+      "postconditions": "Auth passes",
+      "requirementId": "AC-TRADE-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Positive complement to TC-TRADE-032"
+    },
+    {
+      "id": "TC-TRADE-034",
+      "feature": "Trade-admin action validation",
+      "scenario": "Unknown action 'destroy' returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session",
+      "testData": "body={proposalId:P1,action:'destroy'}",
+      "testSteps": [
+        "1. POST trade/admin with bad action"
+      ],
+      "expectedResult": "400 — action must be approve/reject/cancel",
+      "postconditions": "No state change",
+      "requirementId": "AC-TRADE-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-035",
+      "feature": "Admin approve gate",
+      "scenario": "Approve on a pending (not-yet-team-accepted) proposal is rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "P1 in status='pending' (target has not accepted)",
+      "testData": "body={proposalId:P1,action:'approve'}",
+      "testSteps": [
+        "1. As superadmin, POST approve"
+      ],
+      "expectedResult": "400 'Only accepted proposals can be approved. Current status: pending'",
+      "postconditions": "P1 unchanged",
+      "requirementId": "AC-TRADE-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-036",
+      "feature": "Admin approve revalidation",
+      "scenario": "Approve fails when revalidation flags squad change since acceptance",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Accepted P1; proposer released a key player after acceptance",
+      "testData": "body={proposalId:P1,action:'approve'}",
+      "testSteps": [
+        "1. As superadmin, POST approve"
+      ],
+      "expectedResult": "400 'Trade is no longer valid (squads may have changed since acceptance)'; P1 stays 'accepted'; no ownership/purse changes",
+      "postconditions": "Economy unchanged",
+      "requirementId": "AC-TRADE-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-037",
+      "feature": "Admin approve happy path",
+      "scenario": "Accepted, valid trade approves and executes atomically",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Accepted P1 with offered=[X], requested=[Y], cashOffered=0",
+      "testData": "body={proposalId:P1,action:'approve'}",
+      "testSteps": [
+        "1. POST approve",
+        "2. Query ownerships, purses, notifications, proposal status"
+      ],
+      "expectedResult": "X moves to target, Y moves to proposer; cash logic applied; P1.status='completed'; two trade_approved notifications with `tab=history` link",
+      "postconditions": "Trade fully executed",
+      "requirementId": "AC-TRADE-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-038",
+      "feature": "5% transfer fee (proposer pays)",
+      "scenario": "cashOffered=100 from proposer charges 100, target receives 95",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Accepted P1 with cashOffered=100; baseline purses recorded",
+      "testData": "Approve P1",
+      "testSteps": [
+        "1. Snapshot proposer/target purse and totalSpent/totalIncome",
+        "2. Approve P1",
+        "3. Re-snapshot"
+      ],
+      "expectedResult": "proposer.purse -=100, proposer.totalSpent +=100; target.purse +=95, target.totalIncome +=95",
+      "postconditions": "Net 5 absorbed as fee",
+      "requirementId": "AC-TRADE-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-039",
+      "feature": "5% transfer fee (target pays)",
+      "scenario": "cashOffered=-200 (target pays proposer) — target -200, proposer +190",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Accepted P1 with cashOffered=-200",
+      "testData": "Approve P1",
+      "testSteps": [
+        "1. Snapshot purses",
+        "2. Approve P1",
+        "3. Re-snapshot"
+      ],
+      "expectedResult": "target.purse -=200, target.totalSpent +=200; proposer.purse +=190, proposer.totalIncome +=190",
+      "postconditions": "5% fee absorbed",
+      "requirementId": "AC-TRADE-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-040",
+      "feature": "Admin reject (accepted)",
+      "scenario": "Superadmin rejects an accepted proposal",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Accepted P1",
+      "testData": "body={proposalId:P1,action:'reject'}",
+      "testSteps": [
+        "1. POST reject",
+        "2. Query notifications and status"
+      ],
+      "expectedResult": "P1.status='rejected'; both proposer and target receive 'trade_admin_rejected' notification with body 'Admin rejected the trade'",
+      "postconditions": "Proposal rejected, notifications sent",
+      "requirementId": "AC-TRADE-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-041",
+      "feature": "Admin reject gate",
+      "scenario": "Admin reject on expired proposal returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "P1 status='expired'",
+      "testData": "body={proposalId:P1,action:'reject'}",
+      "testSteps": [
+        "1. POST reject on expired"
+      ],
+      "expectedResult": "400 — only pending/accepted are admin-rejectable",
+      "postconditions": "P1 unchanged",
+      "requirementId": "AC-TRADE-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-042",
+      "feature": "Admin cancel (accepted)",
+      "scenario": "Superadmin cancels an accepted proposal",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Accepted P1",
+      "testData": "body={proposalId:P1,action:'cancel'}",
+      "testSteps": [
+        "1. POST cancel"
+      ],
+      "expectedResult": "P1.status='cancelled'; both teams receive 'trade_cancelled' notification",
+      "postconditions": "Proposal cancelled",
+      "requirementId": "AC-TRADE-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-043",
+      "feature": "Admin cancel gate",
+      "scenario": "Cancelling a completed trade returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "P1 status='completed'",
+      "testData": "body={proposalId:P1,action:'cancel'}",
+      "testSteps": [
+        "1. POST cancel on completed"
+      ],
+      "expectedResult": "400 'Cannot cancel a completed trade'; no state change",
+      "postconditions": "P1 unchanged",
+      "requirementId": "AC-TRADE-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-044",
+      "feature": "Release auth",
+      "scenario": "Anonymous call to release is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session",
+      "testData": "POST /api/auction/release body={ownershipId:O1}",
+      "testSteps": [
+        "1. POST release without session"
+      ],
+      "expectedResult": "401 'Authentication required'",
+      "postconditions": "No row change",
+      "requirementId": "AC-TRADE-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-045",
+      "feature": "Release ownership check",
+      "scenario": "Team cannot release another team's player",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Ownership O1 belongs to team B; team A is logged in",
+      "testData": "body={ownershipId:O1}",
+      "testSteps": [
+        "1. As A, POST release on O1"
+      ],
+      "expectedResult": "403 \"You don't own this player\"",
+      "postconditions": "O1 unchanged",
+      "requirementId": "AC-TRADE-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-046",
+      "feature": "Release as superadmin",
+      "scenario": "Superadmin bypass — can release any team's player",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Superadmin session; O1 belongs to team B in Complete-tier league with no live session",
+      "testData": "body={ownershipId:O1}",
+      "testSteps": [
+        "1. Superadmin POSTs release on O1"
+      ],
+      "expectedResult": "200 success; O1.status='pending_release'",
+      "postconditions": "O1 flagged pending_release",
+      "requirementId": "AC-TRADE-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-047",
+      "feature": "Release body validation",
+      "scenario": "Missing ownershipId returns 400, unknown returns 404, TVT league returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team A session",
+      "testData": "Three cases: missing id; id='nonexistent'; league.format='tvt'",
+      "testSteps": [
+        "1. POST with no ownershipId — expect 400",
+        "2. POST with unknown id — expect 404",
+        "3. POST in TVT league — expect 400 'Not an auction league'"
+      ],
+      "expectedResult": "Each case returns matching status + message; no row changes",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-TRADE-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-048",
+      "feature": "Release happy path",
+      "scenario": "Active ownership flips to pending_release; purse and totalRefunds unchanged",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Active ownership O1 of team A in Complete-tier league, no live session",
+      "testData": "body={ownershipId:O1}",
+      "testSteps": [
+        "1. Snapshot team A purse and totalRefunds",
+        "2. POST release",
+        "3. Re-query O1 and team"
+      ],
+      "expectedResult": "O1.status='pending_release', updatedAt bumped; purse and totalRefunds unchanged",
+      "postconditions": "Refund deferred to GW boundary",
+      "requirementId": "AC-TRADE-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-049",
+      "feature": "Release idempotency guard",
+      "scenario": "Releasing an already pending_release row returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "O1 already pending_release",
+      "testData": "body={ownershipId:O1}",
+      "testSteps": [
+        "1. POST release on O1 again"
+      ],
+      "expectedResult": "400 'Player is already marked for release'",
+      "postconditions": "O1 unchanged",
+      "requirementId": "AC-TRADE-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-050",
+      "feature": "Projected refund/forfeit",
+      "scenario": "purchasePrice=80 yields projectedRefund=40 and projectedForfeit=40",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "O1 purchasePrice=80, active",
+      "testData": "body={ownershipId:O1}",
+      "testSteps": [
+        "1. POST release",
+        "2. Inspect response payload"
+      ],
+      "expectedResult": "Response includes projectedRefund=40, projectedForfeit=40",
+      "postconditions": "Display fields only — purse unaffected",
+      "requirementId": "AC-TRADE-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-051",
+      "feature": "Cancel release",
+      "scenario": "DELETE reverts pending_release back to active",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "O1 status='pending_release'",
+      "testData": "DELETE /api/auction/release body={ownershipId:O1}",
+      "testSteps": [
+        "1. As owning team, DELETE release",
+        "2. Re-query O1"
+      ],
+      "expectedResult": "O1.status='active', updatedAt bumped",
+      "postconditions": "Player back on active roster",
+      "requirementId": "AC-TRADE-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-052",
+      "feature": "Cancel release guard",
+      "scenario": "DELETE on an active ownership returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "O1 status='active'",
+      "testData": "DELETE body={ownershipId:O1}",
+      "testSteps": [
+        "1. DELETE on active ownership"
+      ],
+      "expectedResult": "400 'Player is not pending release'",
+      "postconditions": "O1 unchanged",
+      "requirementId": "AC-TRADE-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-053",
+      "feature": "Release tier gate (defect)",
+      "scenario": "Primary-tier release currently succeeds (pinning current buggy behaviour)",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "League L1 auctionTier='primary'; O1 active",
+      "testData": "body={ownershipId:O1}",
+      "testSteps": [
+        "1. As owning team in Primary tier, POST release"
+      ],
+      "expectedResult": "200 success today (no tier gate); O1.status='pending_release' — see DEF-TRADE-002. Post-fix: 403 'Releases are not available in Primary tier'",
+      "postconditions": "Pinning record of defect behaviour",
+      "requirementId": "AC-TRADE-050",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-002"
+    },
+    {
+      "id": "TC-TRADE-054",
+      "feature": "Release live-session block (defect)",
+      "scenario": "Release during a live auction currently succeeds (pinning current buggy behaviour)",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "L1 has active auction session; O1 active",
+      "testData": "body={ownershipId:O1}",
+      "testSteps": [
+        "1. With live session running, POST release"
+      ],
+      "expectedResult": "200 success today (no isAuctionLive check); O1.status='pending_release' — see DEF-TRADE-003. Post-fix: 409 'Marketplace is closed during a live auction'",
+      "postconditions": "Pinning record of defect behaviour",
+      "requirementId": "AC-TRADE-051",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-003"
+    },
+    {
+      "id": "TC-TRADE-055",
+      "feature": "Auction-corrections auth (positive)",
+      "scenario": "League admin of active league is admitted to auction-corrections",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Caller is league admin of L1 (active); valid action payload",
+      "testData": "POST /api/admin/L1/auction-corrections body={action:'undo-sale',bidId:B1}",
+      "testSteps": [
+        "1. Sign in as league admin",
+        "2. POST endpoint with valid body"
+      ],
+      "expectedResult": "Authorised — request proceeds to action logic (not 403)",
+      "postconditions": "Auth surface is wider than trade-admin",
+      "requirementId": "AC-TRADE-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-006 — auth mismatch (league admin allowed here, denied on trade-admin)"
+    },
+    {
+      "id": "TC-TRADE-056",
+      "feature": "Auction-corrections auth (negative)",
+      "scenario": "Unauthorised caller receives 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Caller is neither superadmin nor league admin of L1",
+      "testData": "POST /api/admin/L1/auction-corrections (no league context)",
+      "testSteps": [
+        "1. Sign in as random team",
+        "2. POST endpoint"
+      ],
+      "expectedResult": "403 'Forbidden'",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-TRADE-053",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-057",
+      "feature": "Undo-sale status guard",
+      "scenario": "undo-sale on a non-sold bid returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Bid B1 status='unsold'",
+      "testData": "body={action:'undo-sale',bidId:B1}",
+      "testSteps": [
+        "1. As superadmin, POST undo-sale on unsold bid"
+      ],
+      "expectedResult": "400 'Bid is not in sold status'; no ownership changes",
+      "postconditions": "B1 unchanged",
+      "requirementId": "AC-TRADE-054",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-058",
+      "feature": "Undo-sale happy path",
+      "scenario": "Sold bid is undone — ownership deleted, bid cancelled, totalSpent decremented",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Bid B1 status='sold' with matching active ownership O1 (purchasePrice=50, buyer=B)",
+      "testData": "body={action:'undo-sale',bidId:B1}",
+      "testSteps": [
+        "1. Snapshot buyer.totalSpent and ownership row",
+        "2. POST undo-sale",
+        "3. Re-query"
+      ],
+      "expectedResult": "O1 row deleted; buyer.totalSpent -= 50; B1.status='cancelled'; message 'Undone: <playerName> sale reverted'; all atomic",
+      "postconditions": "Bid reverted",
+      "requirementId": "AC-TRADE-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-059",
+      "feature": "Undo-sale purse drift (defect)",
+      "scenario": "Undo-sale on purchasePrice=50 leaves buyer.purse unchanged",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Buyer B has purse=100, totalSpent=50; undo a sale of 50",
+      "testData": "body={action:'undo-sale',bidId:B1}",
+      "testSteps": [
+        "1. Snapshot purse=100, totalSpent=50",
+        "2. POST undo-sale",
+        "3. Re-query buyer"
+      ],
+      "expectedResult": "buyer.totalSpent=0 but buyer.purse still 100 (CODE-CONFIRMED bug) — see DEF-TRADE-004. Post-fix: purse should rise to 150",
+      "postconditions": "Pinning record of purse drift",
+      "requirementId": "AC-TRADE-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-004"
+    },
+    {
+      "id": "TC-TRADE-060",
+      "feature": "Manual-transfer body validation",
+      "scenario": "Missing toTeamId returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Authorised caller; ownership O1 exists",
+      "testData": "body={action:'manual-transfer',ownershipId:O1}",
+      "testSteps": [
+        "1. POST without toTeamId"
+      ],
+      "expectedResult": "400 'ownershipId and toTeamId are required'",
+      "postconditions": "O1 unchanged",
+      "requirementId": "AC-TRADE-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-061",
+      "feature": "Manual-transfer to unowned",
+      "scenario": "toTeamId='unowned' deletes ownership and refunds original owner's totalSpent",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "O1 purchasePrice=60, owner team B; B.totalSpent baseline X",
+      "testData": "body={action:'manual-transfer',ownershipId:O1,toTeamId:'unowned'}",
+      "testSteps": [
+        "1. Snapshot",
+        "2. POST manual-transfer",
+        "3. Re-query"
+      ],
+      "expectedResult": "O1 deleted; B.totalSpent = X - 60; B.purse unchanged (stale) — DEF-TRADE-004 applies",
+      "postconditions": "Player back to unowned pool",
+      "requirementId": "AC-TRADE-058",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-004 (purse stale on unowned transfer)"
+    },
+    {
+      "id": "TC-TRADE-062",
+      "feature": "Manual-transfer cross-team",
+      "scenario": "Move ownership to teamX at price=75 (from B's 60)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "O1 owned by B at price 60; B.totalSpent=60; X.totalSpent=0",
+      "testData": "body={action:'manual-transfer',ownershipId:O1,toTeamId:X,price:75}",
+      "testSteps": [
+        "1. POST manual-transfer",
+        "2. Re-query ownership + teams"
+      ],
+      "expectedResult": "O1.teamId=X, O1.purchasePrice=75; B.totalSpent -=60; X.totalSpent +=75",
+      "postconditions": "Cross-team ownership move applied",
+      "requirementId": "AC-TRADE-059",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-063",
+      "feature": "Manual-transfer price default",
+      "scenario": "Omitting price uses existing purchasePrice",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "O1 purchasePrice=60",
+      "testData": "body={action:'manual-transfer',ownershipId:O1,toTeamId:X} (no price)",
+      "testSteps": [
+        "1. POST without price"
+      ],
+      "expectedResult": "transferPrice falls back to 60; B.totalSpent -=60 and X.totalSpent +=60 (net zero across teams)",
+      "postconditions": "Ownership transferred at original price",
+      "requirementId": "AC-TRADE-060",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-064",
+      "feature": "Unknown corrections action",
+      "scenario": "Unknown action returns 400 and writes nothing",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Authorised caller",
+      "testData": "body={action:'frobnicate'}",
+      "testSteps": [
+        "1. POST with bogus action"
+      ],
+      "expectedResult": "400 'Unknown action'; no DB writes",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-TRADE-061",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-065",
+      "feature": "Live-session purge",
+      "scenario": "Live auction start flips all pending+accepted to cancelled",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League L1 has 3 pending and 2 accepted proposals",
+      "testData": "Trigger purgePendingTrades(L1) via session activation",
+      "testSteps": [
+        "1. Snapshot 5 proposals",
+        "2. Start a live auction session",
+        "3. Query proposals + function return value"
+      ],
+      "expectedResult": "All 5 proposals now status='cancelled' via one bulk update; function returns 5",
+      "postconditions": "Marketplace cleared",
+      "requirementId": "AC-TRADE-062",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-066",
+      "feature": "GET public scope",
+      "scenario": "Public scope excludes caller's own proposals and only returns pending/accepted",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team A session; 5 proposals: 2 involve A, 3 don't; mix of statuses",
+      "testData": "GET /api/auction/trade?leagueId=L1&scope=public",
+      "testSteps": [
+        "1. As team A, GET endpoint with scope=public"
+      ],
+      "expectedResult": "Response only includes proposals where A is neither proposer nor target AND status in ('pending','accepted')",
+      "postconditions": "Correctly filtered",
+      "requirementId": "AC-TRADE-063",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-067",
+      "feature": "GET teamId scope",
+      "scenario": "teamId scope returns all statuses where given team is proposer OR target",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "L1 has proposals across all status values for team X",
+      "testData": "GET /api/auction/trade?leagueId=L1&teamId=X",
+      "testSteps": [
+        "1. GET with teamId=X"
+      ],
+      "expectedResult": "Every proposal in L1 where X is proposer OR target is returned, regardless of status",
+      "postconditions": "Status filter not applied",
+      "requirementId": "AC-TRADE-064",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-068",
+      "feature": "GET response shape (veto fields)",
+      "scenario": "GET still exposes vetoDeadline and vetoVotes on every proposal",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "Any GET returning at least one proposal",
+      "testData": "GET /api/auction/trade?leagueId=L1&teamId=X",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect each proposal object"
+      ],
+      "expectedResult": "Each proposal has id, proposerTeamId, targetTeamId, offeredPlayerIds[], requestedPlayerIds[], cashOffered, status, vetoDeadline (ISO|null), vetoVotes (object), createdAt",
+      "postconditions": "Legacy fields still present (see DEF-TRADE-005)",
+      "requirementId": "AC-TRADE-065",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-005 — dead vetoDeadline/vetoVotes still exposed"
+    },
+    {
+      "id": "TC-TRADE-069",
+      "feature": "Admin approve notifications",
+      "scenario": "Approve produces exactly 2 notifications (proposer + target)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Accepted P1, valid revalidation",
+      "testData": "Approve P1",
+      "testSteps": [
+        "1. Approve",
+        "2. Query notifications for proposer and target"
+      ],
+      "expectedResult": "Exactly 2 notifications: type='trade_approved', title='Trade approved', link contains 'marketplace?tab=history'",
+      "postconditions": "Both parties notified",
+      "requirementId": "AC-TRADE-066",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TRADE-070",
+      "feature": "Lifecycle has no vetoed state",
+      "scenario": "End-to-end pending->accepted->completed never produces status='vetoed'",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "Fresh proposal P1",
+      "testData": "Drive P1 through PATCH accept then admin approve",
+      "testSteps": [
+        "1. POST P1",
+        "2. PATCH accept",
+        "3. Admin approve",
+        "4. Inspect status at every step"
+      ],
+      "expectedResult": "Statuses observed: pending → accepted → completed. 'vetoed' never appears (legacy enum value unreachable)",
+      "postconditions": "Lifecycle confirmed",
+      "requirementId": "AC-TRADE-067",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TRADE-005 — confirms 'vetoed' status is dead code"
+    },
+    {
+      "id": "TC-TRADE-071",
+      "feature": "Trade Propose",
+      "scenario": "Offering a player you do not own returns 400 with ownership error",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A signed in; an auctionOwnership row exists for fplElementId X belonging to team B",
+      "testData": "POST /api/auction/trade with offeredPlayerIds=[<team-B ownership id>]",
+      "testSteps": [
+        "1. Sign in as team A",
+        "2. POST /api/auction/trade { targetTeamId: team-C, offeredPlayerIds: [<id owned by team B>], requestedPlayerIds: [...], cashOffered: 0 }"
+      ],
+      "expectedResult": "HTTP 400 with body.error matching /You don.t own player/",
+      "postconditions": "No trade proposal row created",
+      "requirementId": "AC-TRADE-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins BR-TRADE-007 ownership check on the offered side"
+    }
+  ],
+  "gapFlags": []
+}

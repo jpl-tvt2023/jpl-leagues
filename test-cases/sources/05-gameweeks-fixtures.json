@@ -1,0 +1,2826 @@
+{
+  "moduleId": "GWFIX",
+  "moduleName": "Gameweeks & Fixtures",
+  "sheetName": "Gameweeks & Fixtures",
+  "status": "qa-signed-off",
+  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "requirements": {
+    "version": 1,
+    "businessContext": "The Gameweeks & Fixtures module owns the lifecycle of the 38-GW season skeleton and the round-robin fixture pipeline that pairs teams for every league-stage GW. Admins seed GW1-38 from live FPL bootstrap deadlines, generate fixtures sized to their format (TVT 8/16/32-team using `(playoffStartGw-1)/(teamsPerGroup-1)` repetitions; Triple Crown PL = 20 teams x 2 reps = 38 GWs), optionally override fixtures via CSV/XLSX bulk upload, and then run per-GW processing that calculates TVT match scores, chips, and bonus points. A superadmin process-all orchestrator (plan -> per-league-GW -> finish) catches up scoring across every active league with FPL-finalized gameweeks, while public visitors can read fixture lists and live scores.",
+    "userStories": [
+      {
+        "id": "US-GWFIX-001",
+        "asA": "admin",
+        "iWant": "to create all 38 gameweeks for my league using real FPL event deadlines",
+        "soThat": "deadlines match the actual Premier League season and idempotently skip any GW that already exists",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/create-gameweeks/route.ts:12-67"]
+      },
+      {
+        "id": "US-GWFIX-002",
+        "asA": "admin",
+        "iWant": "to generate league-stage fixtures with one click sized to my team count and group config",
+        "soThat": "an 8-team league gets 35 GWs (5 reps), 16/32-team gets 30 GWs (2 reps), and Triple Crown gets 38 GWs (2 reps) without manual entry",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:17-293",
+          "src/lib/formats/tvt/fixtures.ts:25-94"
+        ]
+      },
+      {
+        "id": "US-GWFIX-003",
+        "asA": "admin",
+        "iWant": "to check fixture-generation readiness for my league before clicking generate",
+        "soThat": "I can see total fixtures, group sizes, and whether the league is ready to generate",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:299-349"]
+      },
+      {
+        "id": "US-GWFIX-004",
+        "asA": "admin",
+        "iWant": "to wipe league-stage fixtures and gameweeks so I can re-generate after fixing a config mistake",
+        "soThat": "playoff fixtures are preserved while the league phase is rebuilt cleanly",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:356-404"]
+      },
+      {
+        "id": "US-GWFIX-005",
+        "asA": "admin",
+        "iWant": "to bulk-upload fixture rows from CSV/XLSX with per-row validation",
+        "soThat": "I can override the round-robin output with custom pairings while the system reports per-row errors",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:22-182"]
+      },
+      {
+        "id": "US-GWFIX-006",
+        "asA": "admin",
+        "iWant": "to download a fixture CSV template with my league's team list",
+        "soThat": "I can fill it out without guessing team login IDs or column names",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:188-210"]
+      },
+      {
+        "id": "US-GWFIX-007",
+        "asA": "admin",
+        "iWant": "to process a single gameweek that fetches FPL scores, computes TVT match results, awards bonus points, and processes chips",
+        "soThat": "team standings, bonus counts, and chip ledgers all advance for that GW in one call",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:235-1145"]
+      },
+      {
+        "id": "US-GWFIX-008",
+        "asA": "admin",
+        "iWant": "to force-reprocess a gameweek that reverts existing results, chip payouts, and team points before re-running",
+        "soThat": "I can fix scoring bugs without leaving doubled points on a team",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:350-435"]
+      },
+      {
+        "id": "US-GWFIX-009",
+        "asA": "superadmin",
+        "iWant": "to preview a process-all plan listing dueGws and active leagues",
+        "soThat": "I can see exactly which (league, gameweek) pairs the orchestrator will hit and why others were skipped",
+        "sourceRefs": [
+          "src/app/api/admin/process-all/plan/route.ts:13-26",
+          "src/lib/cron/process-all.ts:171-243"
+        ]
+      },
+      {
+        "id": "US-GWFIX-010",
+        "asA": "superadmin",
+        "iWant": "to process one (league, gw) pair at a time from the browser orchestrator",
+        "soThat": "each request stays under the 60s Vercel ceiling and the UI can show per-GW progress chips",
+        "sourceRefs": [
+          "src/app/api/admin/process-all/league-gw/route.ts:16-48",
+          "src/lib/cron/process-all.ts:285-456"
+        ]
+      },
+      {
+        "id": "US-GWFIX-011",
+        "asA": "superadmin",
+        "iWant": "to finalize a process-all run that writes the audit row and warms live caches",
+        "soThat": "the run history shows a single CRON_RUN_END entry and standings/fixtures pages are pre-warmed",
+        "sourceRefs": [
+          "src/app/api/admin/process-all/finish/route.ts:14-40",
+          "src/lib/cron/process-all.ts:540-580"
+        ]
+      },
+      {
+        "id": "US-GWFIX-012",
+        "asA": "public visitor",
+        "iWant": "to view all fixtures for a league with optional gameweek and group filters",
+        "soThat": "I can browse the fixture list by GW or by group without logging in",
+        "sourceRefs": ["src/app/api/fixtures/route.ts:10-121"]
+      },
+      {
+        "id": "US-GWFIX-013",
+        "asA": "public visitor",
+        "iWant": "to view gameweek metadata, fixtures, results, captains, and survival counters",
+        "soThat": "I can follow the league without logging in",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:47-162"]
+      },
+      {
+        "id": "US-GWFIX-014",
+        "asA": "public visitor",
+        "iWant": "to see live (deadline-passed, not-yet-processed) fixture scores cached for 10 minutes",
+        "soThat": "the fixtures page updates without me hammering FPL or the live cache",
+        "sourceRefs": ["src/app/api/fixtures/live/route.ts:20-246"]
+      },
+      {
+        "id": "US-GWFIX-015",
+        "asA": "team member",
+        "iWant": "to refresh live scores on demand from a match card",
+        "soThat": "I see the latest FPL totals without waiting for the 10-minute cache to expire",
+        "sourceRefs": ["src/app/api/fixtures/live/refresh/route.ts:14-151"]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-GWFIX-001",
+        "rule": "POST /api/admin/[leagueId]/create-gameweeks requires admin/superadmin session resolved via getAuthorizedLeagueId; an unauthorized caller returns HTTP 403 with `{ error: 'Forbidden' }`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/create-gameweeks/route.ts:13-15"]
+      },
+      {
+        "id": "BR-GWFIX-002",
+        "rule": "create-gameweeks fetches `https://fantasy.premierleague.com/api/bootstrap-static/` with `cache: 'no-store'`; any non-OK response surfaces HTTP 502 with `{ error: 'Failed to fetch FPL gameweek data' }`, and an empty `events` array surfaces HTTP 502 with `{ error: 'No FPL events found' }`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/create-gameweeks/route.ts:17-29"]
+      },
+      {
+        "id": "BR-GWFIX-003",
+        "rule": "Only FPL events with `id` in the inclusive range 1..38 are eligible for gameweek creation; out-of-range events are silently skipped.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/create-gameweeks/route.ts:42"]
+      },
+      {
+        "id": "BR-GWFIX-004",
+        "rule": "Any GW number that already exists for the league increments the `skipped` counter without re-inserting; the response always reports both `created` and `skipped` counts.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/create-gameweeks/route.ts:36-62"]
+      },
+      {
+        "id": "BR-GWFIX-005",
+        "rule": "New gameweek rows are inserted with `isPlayoffs: false` and `deadline` derived from FPL `event.deadline_time` parsed as a Date; the `gameweeks_league_number_unique` composite index on (leagueId, number) enforces one row per (league, gw) pair at the DB layer.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-gameweeks/route.ts:49-58",
+          "src/lib/db/schema.ts:158-171"
+        ]
+      },
+      {
+        "id": "BR-GWFIX-006",
+        "rule": "create-gameweeks is on the expensive-route bucket: a per-admin 30 POSTs/min rate limit (keyed by session ID) applies; exceeding it returns HTTP 429.",
+        "sourceRefs": ["src/middleware.ts:108-119", "src/middleware.ts:195-203"]
+      },
+      {
+        "id": "BR-GWFIX-007",
+        "rule": "POST /api/admin/[leagueId]/generate-fixtures requires admin/superadmin via getAuthorizedLeagueId; missing league config returns HTTP 404 `League not found`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:19-36"]
+      },
+      {
+        "id": "BR-GWFIX-008",
+        "rule": "generate-fixtures refuses to run if any fixture already exists for the league; the response is HTTP 400 with message `Fixtures have already been generated for this league. Delete existing fixtures first.`",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:44-55"]
+      },
+      {
+        "id": "BR-GWFIX-009",
+        "rule": "League format dispatch: `format === 'triple-crown'` runs the Triple Crown PL path (38 GWs, 2 reps, single PL group); all other formats use the TVT path.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:39-138"]
+      },
+      {
+        "id": "BR-GWFIX-010",
+        "rule": "Triple Crown PL path uses Group A teams when Group A exists and has >=2 teams; otherwise it falls back to fetching every team in the league (groupless leagues supported).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:67-88"]
+      },
+      {
+        "id": "BR-GWFIX-011",
+        "rule": "Triple Crown path uses a hardcoded 2 repetitions and produces fixtures across all 38 GWs (number*2 reps formula assumes exactly 20 teams to hit 19*2=38). Repetitions are NOT scaled if team count != 20. // CODE-CONFIRMED: may be a defect — confirm with product owner",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:108-110"]
+      },
+      {
+        "id": "BR-GWFIX-012",
+        "rule": "Triple Crown path inserts any missing GW 1-38 with `isPlayoffs: false` and `deadline: new Date()` (current time) when not previously created via FPL bootstrap.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:91-103"]
+      },
+      {
+        "id": "BR-GWFIX-013",
+        "rule": "Triple Crown fixtures are tagged with `competitionType: 'pl'` and inherit the Group A `groupId` when present; null otherwise.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:112-119"]
+      },
+      {
+        "id": "BR-GWFIX-014",
+        "rule": "TVT single-group format (`groupCount === 1`, i.e. 8 or 16-team leagues): use Group A if it has >=2 teams; otherwise fall back to all league teams. <2 teams returns HTTP 400 with `League must have at least 2 teams (has N)`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:151-169"]
+      },
+      {
+        "id": "BR-GWFIX-015",
+        "rule": "TVT two-group format (32-team) requires Group A and Group B records to exist and each to contain >=2 teams; missing records or under-filled groups return HTTP 400 with specific error messages.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:170-200"]
+      },
+      {
+        "id": "BR-GWFIX-016",
+        "rule": "TVT repetitions are computed by formula `(playoffStartGw - 1) / (teamsPerGroup - 1)` where `teamsPerGroup = teamSize / groupCount`; effectivePlayoffStart defaults to 31 if null. 32-team: 30/15=2 reps; 16-team: 30/15=2 reps; 8-team: 35/7=5 reps.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:38-41", "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:202-205"]
+      },
+      {
+        "id": "BR-GWFIX-017",
+        "rule": "TVT path creates league-stage gameweeks only if NO non-playoff GW exists for the league; created GWs have `isPlayoffs: false` and `deadline: new Date()` (current time, not FPL-derived). `generateGameweeks(playoffStartGw)` is the helper used to compute the GW list. // CODE-CONFIRMED: may be a defect — confirm with product owner (placeholder deadlines diverge from create-gameweeks' real FPL deadlines)",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:208-224",
+          "src/lib/formats/tvt/fixtures.ts:88-94"
+        ]
+      },
+      {
+        "id": "BR-GWFIX-018",
+        "rule": "Round-robin generator: appends a `BYE` placeholder for odd team counts, runs `repetitions` full passes, alternates home/away on odd-indexed repetitions, and skips matches involving the BYE so each round has fewer than `n/2` fixtures.",
+        "sourceRefs": ["src/lib/formats/tvt/fixtures.ts:25-81"]
+      },
+      {
+        "id": "BR-GWFIX-019",
+        "rule": "Each TVT fixture row carries `groupId` (Group A or Group B id) so bonus calculation and standings can scope per-group; missing groupId disables bonus eligibility for that fixture.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:240-260",
+          "src/app/api/gameweeks/[gw]/route.ts:772-799"
+        ]
+      },
+      {
+        "id": "BR-GWFIX-020",
+        "rule": "GET /api/admin/[leagueId]/generate-fixtures returns `{ fixturesGenerated, totalFixtures, leagueConfig, groups, readyToGenerate }`; `readyToGenerate` requires Group A >= 2 teams AND (groupCount === 1 OR Group B >= 2 teams).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:299-349"]
+      },
+      {
+        "id": "BR-GWFIX-021",
+        "rule": "DELETE /api/admin/[leagueId]/generate-fixtures deletes only league-stage gameweeks (`isPlayoffs = false`), cascading deletions to their fixtures and results; playoff GWs/fixtures are preserved. Returns `{ deletedGameweeks, deletedFixtures }` counts.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:356-404"]
+      },
+      {
+        "id": "BR-GWFIX-022",
+        "rule": "DELETE no-ops with HTTP 200 `No league-stage fixtures to delete` when no `isPlayoffs=false` GWs exist for the league.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:367-369"]
+      },
+      {
+        "id": "BR-GWFIX-023",
+        "rule": "All three generate-fixtures verbs (POST/GET/DELETE) invalidate the league page cache via `invalidateLeaguePageCache(leagueId)` on success.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/generate-fixtures/route.ts:125", "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:266", "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:393"]
+      },
+      {
+        "id": "BR-GWFIX-024",
+        "rule": "bulk-upload-fixtures rejects requests with missing/non-array/empty `fixtures` array (HTTP 400 `No fixtures data provided`) and rejects >500 rows (HTTP 400 `Too many rows. Maximum 500 fixtures per upload.`).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:33-45"]
+      },
+      {
+        "id": "BR-GWFIX-025",
+        "rule": "bulk-upload-fixtures resolves teams by case-insensitive `teamLoginId` lookup; gameweek number must be 1..38; rows with missing fields, unknown teams, mismatched groups, or invalid GW are reported in `errors[]` and the row is skipped.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:86-116"]
+      },
+      {
+        "id": "BR-GWFIX-026",
+        "rule": "bulk-upload-fixtures rejects rows where homeTeam.groupId !== awayTeam.groupId; cross-group fixtures cannot be uploaded.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:112-116"]
+      },
+      {
+        "id": "BR-GWFIX-027",
+        "rule": "bulk-upload-fixtures synthesizes a gameweek deadline as `today + (7 * gwNumber)` days at 11:00 local time when creating a missing gameweek; this differs from `create-gameweeks` which uses real FPL deadlines. // CODE-CONFIRMED: may be a defect — confirm with product owner",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:118-136"]
+      },
+      {
+        "id": "BR-GWFIX-028",
+        "rule": "bulk-upload-fixtures computes `isPlayoffs: gwNumber >= playoffStartGw` when creating a gameweek; if `playoffStartGw` is null (league config not set) the comparison `>= null` evaluates to false, silently marking what should be playoff GWs as non-playoff. // CODE-CONFIRMED: may be a defect — confirm with product owner",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:53-59", "src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:131"]
+      },
+      {
+        "id": "BR-GWFIX-029",
+        "rule": "bulk-upload-fixtures duplicate guard: if a fixture row for the same (gameweekId, homeTeamId, awayTeamId) already exists, the new row is rejected with `Fixture already exists` error; order matters (Home vs Away swap produces a different identity).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:139-150"]
+      },
+      {
+        "id": "BR-GWFIX-030",
+        "rule": "bulk-upload-fixtures `clearExisting: true` deletes all fixtures across all gameweeks of the league before processing rows (NOT scoped to league-stage GWs only); playoff fixtures are also wiped. // CODE-CONFIRMED: may be a defect — confirm with product owner",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:72-78"]
+      },
+      {
+        "id": "BR-GWFIX-031",
+        "rule": "bulk-upload-fixtures is annotated `@deprecated` (file header) — the Bulk Upload tab no longer exposes a Fixtures block; the unified Backup/Restore zip is the documented replacement. The endpoint remains for backwards compatibility.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:1-3"]
+      },
+      {
+        "id": "BR-GWFIX-032",
+        "rule": "GET /api/gameweeks/[gw] is a public route per middleware (matches `/^\\/api\\/gameweeks\\/\\d+$/` on GET) and does not require a session.",
+        "sourceRefs": ["src/middleware.ts:64-68"]
+      },
+      {
+        "id": "BR-GWFIX-033",
+        "rule": "GET /api/gameweeks/[gw] validates gameweek number 1..38, returning HTTP 400 `Invalid gameweek number (must be 1-38)` for non-numeric or out-of-range values.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:50-57"]
+      },
+      {
+        "id": "BR-GWFIX-034",
+        "rule": "GET /api/gameweeks/[gw] accepts an optional `leagueId` query param accepting either a UUID or a league slug; non-UUID values are resolved to the league UUID via the slug lookup.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:59-65"]
+      },
+      {
+        "id": "BR-GWFIX-035",
+        "rule": "GET /api/gameweeks/[gw] returns 404 `Gameweek not found` when no row matches; with no `leagueId` it picks the first match across all leagues nondeterministically.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:66-103"]
+      },
+      {
+        "id": "BR-GWFIX-036",
+        "rule": "GET /api/gameweeks/[gw] response includes `gameweek.fixturesCount`, `gameweek.resultsProcessed` (count of fixtures with a result), `survivalCount` and `survivalRanked` (Challenger Survival entries scoped to that GW), plus arrays of `fixtures` (with `isChallenge`, `isPlayoff`, `result` if present) and `captains`.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:105-154"]
+      },
+      {
+        "id": "BR-GWFIX-037",
+        "rule": "POST /api/gameweeks/[gw] requires `x-session-type` of `admin` or `superadmin` (defense-in-depth on top of middleware); missing/wrong header returns HTTP 403 `Admin access required`. Middleware classifies POST as an admin-only route.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:237-242", "src/middleware.ts:73-78"]
+      },
+      {
+        "id": "BR-GWFIX-038",
+        "rule": "POST /api/gameweeks/[gw] supports `?force=true` to revert existing results, chip payouts, and team `leaguePoints`/`bonusPoints` (clamped at 0) before reprocessing; Double Pointer-doubled bonuses are correctly reverted as 2 pts and Challenge chip payouts are also rolled back.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:347-435"]
+      },
+      {
+        "id": "BR-GWFIX-039",
+        "rule": "POST /api/gameweeks/[gw] dispatches by league format: `triple-crown` -> processTripleCrownGameweek, `auction` -> processAuctionGameweek, anything else -> in-route TVT scoring. The format dispatcher reads `leagues.format` for the resolved leagueId.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:296-343"]
+      },
+      {
+        "id": "BR-GWFIX-040",
+        "rule": "POST /api/gameweeks/[gw] with no leagueId param and no matching league returns the TVT default path (leagueRow[0]?.format is undefined). Combined with cross-league GW number ambiguity this can process the wrong league's GW. // CODE-CONFIRMED: may be a defect — confirm with product owner",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:257-302", "src/app/api/gameweeks/[gw]/route.ts:346-347"]
+      },
+      {
+        "id": "BR-GWFIX-041",
+        "rule": "TVT processing: only unprocessed fixtures (no result row) are scored; if all fixtures already have results, HTTP 200 `All fixtures already processed` with processed=0 is returned.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:437-445"]
+      },
+      {
+        "id": "BR-GWFIX-042",
+        "rule": "TVT processing builds a carry-forward hit map from GW(N-1) cached scores: any player whose `transferHits > 12` last GW has their full hits subtracted from their team's effective score this GW, with an audit log row of type `HIT_CARRY_FORWARD`.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:450-466", "src/app/api/gameweeks/[gw]/route.ts:838-867"]
+      },
+      {
+        "id": "BR-GWFIX-043",
+        "rule": "TVT bonus point eligibility: a winning team with absolute score margin >= 75 in a group qualifies; per group, only the team(s) with the HIGHEST margin receives 1 bonus point (2 if Double Pointer chip used). Ties on highest margin all receive bonus.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:879-936"]
+      },
+      {
+        "id": "BR-GWFIX-044",
+        "rule": "TVT processing invalidates the league page cache (`invalidateLeaguePageCache`) at the end so standings/fixtures/playoffs pages reflect new results.",
+        "sourceRefs": ["src/app/api/gameweeks/[gw]/route.ts:1122-1125"]
+      },
+      {
+        "id": "BR-GWFIX-045",
+        "rule": "POST /api/admin/process-all/plan is superadmin-only via `isSuperAdmin(request)`; returns HTTP 403 `Superadmin only` otherwise. `maxDuration = 30s`.",
+        "sourceRefs": ["src/app/api/admin/process-all/plan/route.ts:5-26"]
+      },
+      {
+        "id": "BR-GWFIX-046",
+        "rule": "computePlan() writes a CRON_RUN_START audit row, fetches FPL bootstrap once, and includes a GW in `dueGws` only if (a) the deadline has passed, (b) the GW has fixtures, and (c) the FPL bootstrap reports `finished === true` for that event id.",
+        "sourceRefs": ["src/lib/cron/process-all.ts:171-243", "src/lib/cron/process-all.ts:141-160"]
+      },
+      {
+        "id": "BR-GWFIX-047",
+        "rule": "computePlan() returns active leagues only (`leagues.isActive = true`); inactive leagues are excluded from the orchestrator's loop.",
+        "sourceRefs": ["src/lib/cron/process-all.ts:226-241"]
+      },
+      {
+        "id": "BR-GWFIX-048",
+        "rule": "POST /api/admin/process-all/league-gw is superadmin-only with `maxDuration = 60s`; body requires `league` (LeaguePlanItem) and `gw` (number); invalid JSON returns HTTP 400.",
+        "sourceRefs": ["src/app/api/admin/process-all/league-gw/route.ts:16-29"]
+      },
+      {
+        "id": "BR-GWFIX-049",
+        "rule": "process-all/league-gw is on the expensive-route bucket (label `process-all-gw`): per-admin 30 POSTs/min rate limit applies.",
+        "sourceRefs": ["src/middleware.ts:108-119"]
+      },
+      {
+        "id": "BR-GWFIX-050",
+        "rule": "processOneLeagueOneGw runs three steps in order: (1) score (auction-format uses processAuctionGameweek, others call the in-process POST handler with x-session-type=superadmin headers), (2) generate (only if `getPlayoffGenerateAction` returns a hit for this league/GW), (3) advance (only if GW falls in the playoff advance window and `hasAdvanceWork` returns true).",
+        "sourceRefs": ["src/lib/cron/process-all.ts:285-456"]
+      },
+      {
+        "id": "BR-GWFIX-051",
+        "rule": "processOneLeagueOneGw clears live cache for the GW at the start of each call (non-fatal on failure) and writes a per-GW auto-snapshot tagged `gw{N}-auto` if scoring succeeded or was skipped without errors.",
+        "sourceRefs": ["src/lib/cron/process-all.ts:305", "src/lib/cron/process-all.ts:428-440"]
+      },
+      {
+        "id": "BR-GWFIX-052",
+        "rule": "POST /api/admin/process-all/finish is superadmin-only with `maxDuration = 60s`; body requires `runId`, `dueGws` (array), `results` (array); missing fields return HTTP 400.",
+        "sourceRefs": ["src/app/api/admin/process-all/finish/route.ts:14-27"]
+      },
+      {
+        "id": "BR-GWFIX-053",
+        "rule": "finishRun() detects the live GW via `detectLiveGameweek()` and populates the live cache for it if it falls in 31..38, then writes a CRON_RUN_END audit row with rolled-up summary (description trimmed to 1900 chars).",
+        "sourceRefs": ["src/lib/cron/process-all.ts:540-580"]
+      },
+      {
+        "id": "BR-GWFIX-054",
+        "rule": "GET /api/fixtures is public (matches PUBLIC_ROUTES). Returns HTTP 400 `leagueSlug parameter is required` if missing; HTTP 404 `League not found` if slug doesn't resolve.",
+        "sourceRefs": ["src/middleware.ts:47-71", "src/app/api/fixtures/route.ts:16-32"]
+      },
+      {
+        "id": "BR-GWFIX-055",
+        "rule": "GET /api/fixtures returns `getCachedFixtures(leagueId)` directly when no `gameweek`/`group` filter is set and cache is warm; cache miss/Redis error falls through to DB. Writes the response back to cache (fire-and-forget) for future unfiltered hits.",
+        "sourceRefs": ["src/app/api/fixtures/route.ts:38-46", "src/app/api/fixtures/route.ts:107-110"]
+      },
+      {
+        "id": "BR-GWFIX-056",
+        "rule": "GET /api/fixtures scopes the fixtures query to the league via `inArray(fixtures.gameweekId, leagueGwIds)`; if the league has zero GWs the result is empty (no DB call).",
+        "sourceRefs": ["src/app/api/fixtures/route.ts:50-67"]
+      },
+      {
+        "id": "BR-GWFIX-057",
+        "rule": "GET /api/fixtures sorts by GW number then group name and groups fixtures by gameweek number; response includes `totalFixtures`, `fixtures` (keyed by GW number), `playoffStartGw`, and `format`. On unknown errors a safe `{ fixtures: {}, playoffStartGw: 31 }` is returned instead of HTTP 500.",
+        "sourceRefs": ["src/app/api/fixtures/route.ts:81-120"]
+      },
+      {
+        "id": "BR-GWFIX-058",
+        "rule": "GET /api/fixtures filters: `?gameweek=N` filters in memory to matching gw number; `?group=A|B` filters in memory to matching group name; any other group value is ignored (no filter applied).",
+        "sourceRefs": ["src/app/api/fixtures/route.ts:69-78"]
+      },
+      {
+        "id": "BR-GWFIX-059",
+        "rule": "GET /api/fixtures/live requires `?gameweek=N` (HTTP 400 if missing) and 1..38 (HTTP 400 invalid otherwise); resolves `leagueSlug` to leagueId for scoped lookups.",
+        "sourceRefs": ["src/app/api/fixtures/live/route.ts:22-42"]
+      },
+      {
+        "id": "BR-GWFIX-060",
+        "rule": "GET /api/fixtures/live returns `{ isLive: false, fixtures: [] }` if no GW row exists, no fixtures exist, or the deadline has NOT passed (`reason: 'deadline_not_passed'`).",
+        "sourceRefs": ["src/app/api/fixtures/live/route.ts:43-72"]
+      },
+      {
+        "id": "BR-GWFIX-061",
+        "rule": "GET /api/fixtures/live returns stored result data (`isLive: false`, `reason: 'already_processed'`) when EVERY fixture in the GW has a result row.",
+        "sourceRefs": ["src/app/api/fixtures/live/route.ts:74-92"]
+      },
+      {
+        "id": "BR-GWFIX-062",
+        "rule": "GET /api/fixtures/live consults the 10-minute Redis live cache via `getLiveCachedScores`; on cache miss it falls back to DB partial results, then to a fresh FPL fetch which is written back to cache for 10 minutes.",
+        "sourceRefs": ["src/app/api/fixtures/live/route.ts:94-226"]
+      },
+      {
+        "id": "BR-GWFIX-063",
+        "rule": "GET /api/fixtures/live live-score computation: for each TVT team it sums per-player FPL net scores (fplScore - transferHits) and doubles the captain's contribution. If no captain row exists or the row was auto-assigned (`isValid === false`), `pickTempCaptain` selects the lowest-scoring player as temp captain and the response flags `isTempCaptain: true`.",
+        "sourceRefs": ["src/app/api/fixtures/live/route.ts:264-313"]
+      },
+      {
+        "id": "BR-GWFIX-064",
+        "rule": "GET /api/fixtures/live/refresh always fetches fresh from FPL (no cache read) and returns the new data; it does NOT write back to the 10-minute live cache, so the cache stays whatever `getLiveCachedScores` had.",
+        "sourceRefs": ["src/app/api/fixtures/live/refresh/route.ts:14-151"]
+      },
+      {
+        "id": "BR-GWFIX-065",
+        "rule": "GET /api/fixtures/live/refresh shares the same per-player TVT computation as /live but uses `fetchLiveGameweek` to map element ids -> live stats and respects captain `multiplier` rules (vice captain takes over with the captain's multiplier when captain didn't play).",
+        "sourceRefs": ["src/app/api/fixtures/live/refresh/route.ts:156-235"]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-GWFIX-001",
+        "given": "an authenticated admin owning a league with no prior gameweeks",
+        "when": "POST /api/admin/[leagueId]/create-gameweeks is called and FPL bootstrap returns 38 events",
+        "then": "the response is HTTP 200 with `success: true, created: 38, skipped: 0` and 38 gameweek rows are inserted with `isPlayoffs: false` and deadlines from FPL `event.deadline_time`",
+        "linksTo": "US-GWFIX-001"
+      },
+      {
+        "id": "AC-GWFIX-002",
+        "given": "an admin whose league already has GW1-10 created",
+        "when": "POST /api/admin/[leagueId]/create-gameweeks is called again",
+        "then": "the response reports `created: 28, skipped: 10` and no duplicate rows are inserted (composite unique index protects)",
+        "linksTo": "BR-GWFIX-004"
+      },
+      {
+        "id": "AC-GWFIX-003",
+        "given": "FPL bootstrap responds 500 or returns an empty events array",
+        "when": "POST /api/admin/[leagueId]/create-gameweeks is called",
+        "then": "the response is HTTP 502 with either `Failed to fetch FPL gameweek data` or `No FPL events found` and zero rows are inserted",
+        "linksTo": "BR-GWFIX-002"
+      },
+      {
+        "id": "AC-GWFIX-004",
+        "given": "an unauthenticated request",
+        "when": "POST /api/admin/[leagueId]/create-gameweeks is called",
+        "then": "the response is HTTP 403 with `{ error: 'Forbidden' }`",
+        "linksTo": "BR-GWFIX-001"
+      },
+      {
+        "id": "AC-GWFIX-005",
+        "given": "an admin who has hit 30 expensive-route POSTs in the last minute",
+        "when": "they POST /api/admin/[leagueId]/create-gameweeks one more time",
+        "then": "middleware returns HTTP 429 `Too many requests on this endpoint. Please slow down.`",
+        "linksTo": "BR-GWFIX-006"
+      },
+      {
+        "id": "AC-GWFIX-006",
+        "given": "a 32-team TVT league with Group A (16 teams) and Group B (16 teams) and no fixtures",
+        "when": "POST /api/admin/[leagueId]/generate-fixtures is called",
+        "then": "the response reports `format: '32-team (2 groups)', repetitions: 2, leagueStageGws: 30, totalFixtures: 480`, fixtures are tagged with the correct `groupId`, and the league-stage gameweeks 1-30 are created with `isPlayoffs: false`",
+        "linksTo": "BR-GWFIX-016"
+      },
+      {
+        "id": "AC-GWFIX-007",
+        "given": "an 8-team TVT league with `groupCount=1` and `playoffStartGw=36`",
+        "when": "fixtures are generated",
+        "then": "the response reports `repetitions: 5, leagueStageGws: 35, totalFixtures: 140` (28 fixtures per rep across 7 GWs * 5 reps)",
+        "linksTo": "BR-GWFIX-016"
+      },
+      {
+        "id": "AC-GWFIX-008",
+        "given": "a 16-team TVT league with `groupCount=1` and `playoffStartGw=31`",
+        "when": "fixtures are generated",
+        "then": "the response reports `repetitions: 2, leagueStageGws: 30` and GWs 1-30 exist",
+        "linksTo": "BR-GWFIX-016"
+      },
+      {
+        "id": "AC-GWFIX-009",
+        "given": "a Triple Crown league with 20 teams in Group A",
+        "when": "POST /api/admin/[leagueId]/generate-fixtures is called",
+        "then": "the response reports `format: 'Triple Crown (20-team, 1 PL group)', repetitions: 2, leagueStageGws: 38` and all 38 gameweeks exist as non-playoff",
+        "linksTo": "BR-GWFIX-009"
+      },
+      {
+        "id": "AC-GWFIX-010",
+        "given": "a 32-team TVT league where Group B has only 1 team",
+        "when": "generate-fixtures is called",
+        "then": "the response is HTTP 400 with `Group B must have at least 2 teams (has 1)` and no fixtures are inserted",
+        "linksTo": "BR-GWFIX-015"
+      },
+      {
+        "id": "AC-GWFIX-011",
+        "given": "a TVT league that already has any fixture row",
+        "when": "generate-fixtures POST is called",
+        "then": "the response is HTTP 400 `Fixtures have already been generated for this league. Delete existing fixtures first.`",
+        "linksTo": "BR-GWFIX-008"
+      },
+      {
+        "id": "AC-GWFIX-012",
+        "given": "an admin with a 32-team league where Group A has 16 teams and Group B has 14",
+        "when": "GET /api/admin/[leagueId]/generate-fixtures is called",
+        "then": "the response includes `readyToGenerate: true`, `groups: { A: 16, B: 14 }`, `fixturesGenerated: false`, and the league config (`teamSize`, `groupCount`, `playoffStartGw`)",
+        "linksTo": "BR-GWFIX-020"
+      },
+      {
+        "id": "AC-GWFIX-013",
+        "given": "a TVT league with league-stage fixtures and playoff fixtures",
+        "when": "DELETE /api/admin/[leagueId]/generate-fixtures is called",
+        "then": "league-stage gameweeks/fixtures/results are deleted (counts reported in `deletedGameweeks`, `deletedFixtures`) while playoff fixtures remain, and the league page cache is invalidated",
+        "linksTo": "BR-GWFIX-021"
+      },
+      {
+        "id": "AC-GWFIX-014",
+        "given": "a league with no league-stage gameweeks",
+        "when": "DELETE /api/admin/[leagueId]/generate-fixtures is called",
+        "then": "the response is HTTP 200 `No league-stage fixtures to delete`",
+        "linksTo": "BR-GWFIX-022"
+      },
+      {
+        "id": "AC-GWFIX-015",
+        "given": "a CSV upload with 501 rows",
+        "when": "POST /api/admin/[leagueId]/bulk-upload-fixtures is called",
+        "then": "the response is HTTP 400 `Too many rows. Maximum 500 fixtures per upload.`",
+        "linksTo": "BR-GWFIX-024"
+      },
+      {
+        "id": "AC-GWFIX-016",
+        "given": "a CSV row with `gameweek=39`",
+        "when": "bulk-upload-fixtures processes the row",
+        "then": "the row is rejected with `Row N: Invalid gameweek number (must be 1-38)` and no fixture is created",
+        "linksTo": "BR-GWFIX-025"
+      },
+      {
+        "id": "AC-GWFIX-017",
+        "given": "a CSV row where home and away teams belong to different groups",
+        "when": "bulk-upload-fixtures processes the row",
+        "then": "the row is rejected with `Row N: Teams must be in the same group`",
+        "linksTo": "BR-GWFIX-026"
+      },
+      {
+        "id": "AC-GWFIX-018",
+        "given": "a CSV row referencing a gameweek number that doesn't yet exist for the league",
+        "when": "bulk-upload-fixtures processes it",
+        "then": "a new gameweek row is created with deadline = today + (7*N) days at 11:00 and `isPlayoffs = (gwNumber >= playoffStartGw)`, then the fixture is inserted",
+        "linksTo": "BR-GWFIX-027"
+      },
+      {
+        "id": "AC-GWFIX-019",
+        "given": "a duplicate CSV row (same GW + home + away as an existing fixture)",
+        "when": "bulk-upload-fixtures processes it",
+        "then": "the row is reported under `errors[]` with `Fixture already exists`",
+        "linksTo": "BR-GWFIX-029"
+      },
+      {
+        "id": "AC-GWFIX-020",
+        "given": "a CSV upload with `clearExisting: true` to a league with both league-stage and playoff fixtures",
+        "when": "bulk-upload-fixtures runs",
+        "then": "ALL fixtures across ALL gameweeks of the league are deleted before insertion (NOT scoped to league-stage)",
+        "linksTo": "BR-GWFIX-030"
+      },
+      {
+        "id": "AC-GWFIX-021",
+        "given": "an admin in a league with 32 teams",
+        "when": "GET /api/admin/[leagueId]/bulk-upload-fixtures is called",
+        "then": "the response includes the CSV template columns, header, an example row, and an `existingTeams` array listing each team's name and group",
+        "linksTo": "US-GWFIX-006"
+      },
+      {
+        "id": "AC-GWFIX-022",
+        "given": "a public visitor",
+        "when": "GET /api/gameweeks/12 is called",
+        "then": "no session is required; the response includes gameweek metadata, fixtures (with optional result), captains list, and survival counters",
+        "linksTo": "BR-GWFIX-032"
+      },
+      {
+        "id": "AC-GWFIX-023",
+        "given": "any caller",
+        "when": "GET /api/gameweeks/39 or /api/gameweeks/abc is called",
+        "then": "the response is HTTP 400 `Invalid gameweek number (must be 1-38)`",
+        "linksTo": "BR-GWFIX-033"
+      },
+      {
+        "id": "AC-GWFIX-024",
+        "given": "a caller passing `?leagueId=my-league-slug`",
+        "when": "GET /api/gameweeks/5 is called",
+        "then": "the slug is resolved to the league UUID, then the GW is matched within that league only",
+        "linksTo": "BR-GWFIX-034"
+      },
+      {
+        "id": "AC-GWFIX-025",
+        "given": "an admin session and a league with unscored fixtures in GW5",
+        "when": "POST /api/gameweeks/5?leagueId=<id> is called",
+        "then": "the response includes `processed: N`, results are persisted with chip-adjusted match points, `homePlayerScores`/`awayPlayerScores` JSON is populated, league points are updated, and the league page cache is invalidated",
+        "linksTo": "US-GWFIX-007"
+      },
+      {
+        "id": "AC-GWFIX-026",
+        "given": "an admin reprocessing GW3 with existing results",
+        "when": "POST /api/gameweeks/3?force=true&leagueId=<id> is called",
+        "then": "existing match points (including doubled bonuses when DP was used) and chip payouts are reverted (clamped at 0), chip processing flags reset, and the GW is rescored",
+        "linksTo": "BR-GWFIX-038"
+      },
+      {
+        "id": "AC-GWFIX-027",
+        "given": "a TVT league processed for GW2 where a player took 14 hits in GW1 (above the 12-cap)",
+        "when": "GW2 is processed",
+        "then": "that player's team has 14 points subtracted from its effective GW2 score and an `auditLogs` row of type `HIT_CARRY_FORWARD` is written for the team",
+        "linksTo": "BR-GWFIX-042"
+      },
+      {
+        "id": "AC-GWFIX-028",
+        "given": "GW7 processing in Group A where Fixture X wins by 80 (highest margin) and Fixture Y wins by 60",
+        "when": "the bonus phase runs",
+        "then": "only the winning team in Fixture X gets bonus (1 pt; 2 pts if Double Pointer used); `homeGotBonus`/`awayGotBonus` is set, the team's `leaguePoints` and `bonusPoints` counters update",
+        "linksTo": "BR-GWFIX-043"
+      },
+      {
+        "id": "AC-GWFIX-029",
+        "given": "GW8 with two fixtures tied on a 90-point margin in the same group",
+        "when": "the bonus phase runs",
+        "then": "BOTH winning teams receive bonus points (margin ties allow shared bonuses)",
+        "linksTo": "BR-GWFIX-043"
+      },
+      {
+        "id": "AC-GWFIX-030",
+        "given": "a Triple Crown league's GW12",
+        "when": "POST /api/gameweeks/12?leagueId=<tc-league> is called",
+        "then": "processing is delegated to `processTripleCrownGameweek`, the response is normalized into `{ success, gameweek, processed, failed, results: [], errors, message }`, and TVT in-route scoring is skipped",
+        "linksTo": "BR-GWFIX-039"
+      },
+      {
+        "id": "AC-GWFIX-031",
+        "given": "an auction-format league",
+        "when": "POST /api/gameweeks/N?leagueId=<auction-league> is called",
+        "then": "processing is delegated to `processAuctionGameweek` and the response reports `teamsProcessed` as `processed`",
+        "linksTo": "BR-GWFIX-039"
+      },
+      {
+        "id": "AC-GWFIX-032",
+        "given": "a non-admin session",
+        "when": "POST /api/gameweeks/5 is called",
+        "then": "the response is HTTP 403 `Admin access required` (middleware OR the in-route header check)",
+        "linksTo": "BR-GWFIX-037"
+      },
+      {
+        "id": "AC-GWFIX-033",
+        "given": "a superadmin",
+        "when": "GET /api/admin/process-all/plan is called",
+        "then": "the response includes a `runId`, sorted `dueGws` (GWs whose deadline has passed AND FPL `finished===true`), active leagues, and `globalErrors[]` describing any skipped GW reasons; a CRON_RUN_START audit row is written",
+        "linksTo": "BR-GWFIX-046"
+      },
+      {
+        "id": "AC-GWFIX-034",
+        "given": "a regular admin (not superadmin)",
+        "when": "GET /api/admin/process-all/plan is called",
+        "then": "the response is HTTP 403 `Superadmin only`",
+        "linksTo": "BR-GWFIX-045"
+      },
+      {
+        "id": "AC-GWFIX-035",
+        "given": "FPL bootstrap fetch failing during plan computation",
+        "when": "computePlan() runs",
+        "then": "`globalErrors` contains `FPL bootstrap fetch failed: <message>` and `dueGws` is empty (no GW can be considered finalized without bootstrap)",
+        "linksTo": "BR-GWFIX-046"
+      },
+      {
+        "id": "AC-GWFIX-036",
+        "given": "a superadmin orchestrator running process-all/league-gw for league L and GW5",
+        "when": "POST is sent with `{ league, gw: 5 }`",
+        "then": "the response includes `scored`, `scoreSkipped`, `generated`, `generatedAlready`, `advanced`, `advanceSkipped`, `advanceWindowFuture`, and `errors[]`; an auto-snapshot tagged `gw5-auto` is written if scoring succeeded without errors",
+        "linksTo": "BR-GWFIX-050"
+      },
+      {
+        "id": "AC-GWFIX-037",
+        "given": "process-all/league-gw with missing `league` or `gw` field",
+        "when": "the POST is processed",
+        "then": "the response is HTTP 400 `Missing league or gw` (or `Invalid JSON body` for bad JSON)",
+        "linksTo": "BR-GWFIX-048"
+      },
+      {
+        "id": "AC-GWFIX-038",
+        "given": "a superadmin calling process-all/finish with a valid runId and results",
+        "when": "POST is sent",
+        "then": "a CRON_RUN_END audit row is written (description trimmed to 1900 chars) and the live cache is populated for the current GW if it falls in 31..38",
+        "linksTo": "BR-GWFIX-053"
+      },
+      {
+        "id": "AC-GWFIX-039",
+        "given": "process-all/finish with missing `runId` or `dueGws` or `results`",
+        "when": "POST is processed",
+        "then": "the response is HTTP 400 `Missing runId / dueGws / results`",
+        "linksTo": "BR-GWFIX-052"
+      },
+      {
+        "id": "AC-GWFIX-040",
+        "given": "a public visitor",
+        "when": "GET /api/fixtures?leagueSlug=my-league is called",
+        "then": "the response includes `totalFixtures`, fixtures grouped by GW number, `playoffStartGw`, `format`; sorted by GW number then group name; cached unfiltered responses are returned from Redis when warm",
+        "linksTo": "BR-GWFIX-055"
+      },
+      {
+        "id": "AC-GWFIX-041",
+        "given": "GET /api/fixtures with no `leagueSlug`",
+        "when": "the request is processed",
+        "then": "the response is HTTP 400 `leagueSlug parameter is required`",
+        "linksTo": "BR-GWFIX-054"
+      },
+      {
+        "id": "AC-GWFIX-042",
+        "given": "GET /api/fixtures?leagueSlug=...&gameweek=5&group=A",
+        "when": "the request is processed",
+        "then": "only fixtures with GW number 5 AND group name 'A' are returned (filters applied in memory, not from cache)",
+        "linksTo": "BR-GWFIX-058"
+      },
+      {
+        "id": "AC-GWFIX-043",
+        "given": "a GW whose deadline has not yet passed",
+        "when": "GET /api/fixtures/live?gameweek=N is called",
+        "then": "the response is `{ isLive: false, fixtures: [], reason: 'deadline_not_passed' }`",
+        "linksTo": "BR-GWFIX-060"
+      },
+      {
+        "id": "AC-GWFIX-044",
+        "given": "a GW where every fixture already has a result row",
+        "when": "GET /api/fixtures/live?gameweek=N is called",
+        "then": "the response is `{ isLive: false, reason: 'already_processed' }` with stored player breakdowns",
+        "linksTo": "BR-GWFIX-061"
+      },
+      {
+        "id": "AC-GWFIX-045",
+        "given": "a GW past deadline with no results yet and a cold live cache",
+        "when": "GET /api/fixtures/live?gameweek=N is called",
+        "then": "fresh FPL scores are fetched per team, the captain is doubled (or temp captain auto-picked via `pickTempCaptain` with rotate-on-tie), and the result is written to the 10-minute Redis live cache",
+        "linksTo": "BR-GWFIX-062"
+      },
+      {
+        "id": "AC-GWFIX-046",
+        "given": "GET /api/fixtures/live with no `gameweek` param",
+        "when": "the request is processed",
+        "then": "the response is HTTP 400 `gameweek parameter required`",
+        "linksTo": "BR-GWFIX-059"
+      },
+      {
+        "id": "AC-GWFIX-047",
+        "given": "a team member clicking refresh on a match card",
+        "when": "GET /api/fixtures/live/refresh?gameweek=N is called",
+        "then": "fresh FPL scores are fetched (no cache read), live multipliers honor vice-captain takeover when captain has 0 minutes, and the response returns `{ gameweek, fixtures, cachedAt }`; the 10-minute cache is NOT updated",
+        "linksTo": "BR-GWFIX-064"
+      },
+      {
+        "id": "AC-GWFIX-048",
+        "given": "GET /api/fixtures/live/refresh with a non-existent GW for the league",
+        "when": "the request is processed",
+        "then": "the response is HTTP 404 `Gameweek not found`",
+        "linksTo": "BR-GWFIX-065"
+      },
+      {
+        "id": "AC-GWFIX-049",
+        "given": "a TVT round-robin with 8 teams and 5 repetitions",
+        "when": "`generateRoundRobinFixtures(teams, 5)` is invoked",
+        "then": "exactly 140 fixtures are produced across GW1-35 with each team appearing as home in some reps and away in others (sides swap on odd repetition indexes)",
+        "linksTo": "BR-GWFIX-018"
+      },
+      {
+        "id": "AC-GWFIX-050",
+        "given": "a TVT round-robin with 7 teams (odd)",
+        "when": "`generateRoundRobinFixtures` runs",
+        "then": "a BYE placeholder is appended; matches involving BYE are omitted; each round therefore has 3 fixtures (n*(n-1)/2 per rep across n-1 rounds)",
+        "linksTo": "BR-GWFIX-018"
+      }
+    ]
+  },
+  "defects": [
+    {
+      "id": "DEF-GWFIX-001",
+      "title": "Triple Crown fixture generation hardcodes 2 repetitions and assumes exactly 20 teams",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The Triple Crown path in generate-fixtures uses `const tcRepetitions = 2;` and only validates `plTeams.length >= 2`. The summary message states '20-team, 1 PL group' but the code never enforces 20. With any team count other than 20, the resulting fixtures do not span exactly 38 GWs (e.g., 10 teams x 2 reps = 18 GWs, 22 teams x 2 reps = 42 GWs which exceeds the 38 inserted gameweeks).",
+      "expectedBehaviour": "Either (a) hard-error if Triple Crown team count != 20 (the Triple Crown `generatePLFixtures` helper in lib/formats/triple-crown/fixtures.ts asserts exactly 20), or (b) scale repetitions to keep the total GWs at 38.",
+      "actualBehaviour": "Any team count >= 2 produces fixtures, with the GW span scaling unpredictably; fixtures referencing `gameweekMap.get(f.gameweekNumber)` beyond 38 are filtered out with no error, silently losing fixtures.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:65-137",
+        "src/lib/formats/triple-crown/fixtures.ts:13-59"
+      ],
+      "linkedBusinessRules": ["BR-GWFIX-011"],
+      "linkedAcceptanceCriteria": ["AC-GWFIX-009"],
+      "pinningTestCases": ["TC-GWFIX-076", "TC-GWFIX-077"],
+      "notes": "Fix option A (preferred): import `generatePLFixtures` from `lib/formats/triple-crown/fixtures.ts` which has the 20-team assert, and let it throw a 400. Fix option B: compute `tcRepetitions = 38 / (teamCount - 1)` and validate exact divisibility. Either path also requires aligning the summary string with reality.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-GWFIX-002",
+      "title": "TVT generate-fixtures inserts league-stage gameweeks with `deadline: new Date()` placeholder",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "When generate-fixtures runs and no non-playoff GW exists for the league, the route creates 1..(playoffStartGw-1) gameweek rows with `deadline: new Date()` (the moment the admin clicked the button). This diverges from create-gameweeks, which uses real FPL `event.deadline_time`. Admins who call generate-fixtures without first running create-gameweeks will have all league-stage deadlines stamped with one identical timestamp.",
+      "expectedBehaviour": "Either require create-gameweeks to have been run first (HTTP 400 'Run create-gameweeks first'), or fetch FPL bootstrap inside generate-fixtures and use real deadlines.",
+      "actualBehaviour": "Gameweek rows are silently created with synthetic deadlines that are not the actual PL kickoff times. Downstream live-mode detection (which compares `gw.deadline > now`) and cron `dueGws` selection both depend on real deadlines.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:207-224",
+        "src/app/api/admin/[leagueId]/create-gameweeks/route.ts:49-58"
+      ],
+      "linkedBusinessRules": ["BR-GWFIX-017"],
+      "linkedAcceptanceCriteria": ["AC-GWFIX-006"],
+      "pinningTestCases": ["TC-GWFIX-078"],
+      "notes": "Same issue exists in the Triple Crown branch (line 91-103). Could fix once at a helper level: refuse to create GW rows here, or share the FPL-fetch logic from create-gameweeks.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-GWFIX-003",
+      "title": "bulk-upload-fixtures synthesizes wrong deadlines and mis-classifies playoff GWs when playoffStartGw is null",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "bulk-upload-fixtures creates missing gameweeks with `deadline = today + 7*N days` at 11:00 (not real FPL deadlines) and computes `isPlayoffs: gwNumber >= playoffStartGw`. If `playoffStartGw` is null in league config, `gwNumber >= null` is always false in JS, so playoff-range GWs (e.g. 31-38) are inserted as `isPlayoffs: false`. Downstream playoff generators and cron windows depend on `isPlayoffs` to scope their queries.",
+      "expectedBehaviour": "(a) Either reject the upload if league has no gameweeks (require create-gameweeks first) or fetch FPL bootstrap to seed real deadlines. (b) Reject the upload if `playoffStartGw` is null, or default it to 31 (matching effectivePlayoffStart elsewhere).",
+      "actualBehaviour": "Silent data corruption: synthetic deadlines bleed into live-mode + cron logic, and playoff GWs get the wrong `isPlayoffs` flag when league config is incomplete.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:53-59",
+        "src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:118-136"
+      ],
+      "linkedBusinessRules": ["BR-GWFIX-027", "BR-GWFIX-028"],
+      "linkedAcceptanceCriteria": ["AC-GWFIX-018"],
+      "pinningTestCases": ["TC-GWFIX-079", "TC-GWFIX-080"],
+      "notes": "Endpoint is annotated `@deprecated`, but `Wont Fix` is only acceptable if the route is also removed. While it still accepts POSTs, this bug is reachable.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-GWFIX-004",
+      "title": "bulk-upload-fixtures `clearExisting=true` wipes playoff fixtures too",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The clearExisting branch builds `leagueGwIds = allGameweeks.map(gw => gw.id)` which includes ALL gameweeks (playoff + league-stage). The subsequent `db.delete(fixtures).where(inArray(fixtures.gameweekId, leagueGwIds))` therefore deletes playoff fixtures along with league-stage fixtures. By contrast, the DELETE endpoint on generate-fixtures explicitly preserves playoff fixtures.",
+      "expectedBehaviour": "Either filter to non-playoff GWs (mirror DELETE generate-fixtures) or document this destructive behaviour as intentional in the UI; the discrepancy with DELETE generate-fixtures is misleading.",
+      "actualBehaviour": "An admin re-uploading league-stage fixtures via CSV with `clearExisting: true` silently loses playoff brackets and results.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/bulk-upload-fixtures/route.ts:72-78",
+        "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:360-391"
+      ],
+      "linkedBusinessRules": ["BR-GWFIX-030"],
+      "linkedAcceptanceCriteria": ["AC-GWFIX-020"],
+      "pinningTestCases": ["TC-GWFIX-081"],
+      "notes": "Endpoint is deprecated, but until removed this is a destructive footgun. One-line fix: filter `allGameweeks` to `gw => !gw.isPlayoffs` before mapping ids.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-GWFIX-005",
+      "title": "POST /api/gameweeks/[gw] without leagueId falls through to TVT default and can score the wrong league",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "When the POST handler receives no `leagueId` query param, the format lookup runs `eq(leagues.id, leagueId || '')` which never matches a real row; `leagueRow[0]?.format` becomes undefined and the route falls through to the TVT path. Meanwhile the gameweek lookup uses `eq(gameweeks.number, gameweekNumber)` (no league filter) and `gwList[0]` picks whichever league's GW happens to be first. The net effect: an unscoped POST can score the wrong league's TVT GW (or run TVT scoring against a triple-crown/auction league's data).",
+      "expectedBehaviour": "Either require a `leagueId` query param (return HTTP 400 if missing) or read the leagueId off the gameweek row found and re-dispatch by that league's format.",
+      "actualBehaviour": "Unscoped calls bypass format dispatch and process a nondeterministic league's GW.",
+      "sourceRefs": [
+        "src/app/api/gameweeks/[gw]/route.ts:257-302",
+        "src/app/api/gameweeks/[gw]/route.ts:346-347"
+      ],
+      "linkedBusinessRules": ["BR-GWFIX-040"],
+      "linkedAcceptanceCriteria": ["AC-GWFIX-025"],
+      "pinningTestCases": ["TC-GWFIX-082", "TC-GWFIX-083"],
+      "notes": "Process-all orchestrator always passes leagueId, so the in-prod path is safe. Risk is direct admin POSTs or future tooling that forgets the query. The GET handler has the same nondeterminism (BR-GWFIX-035) but is read-only so the impact is lower.",
+      "resolution": null,
+      "resolutionDate": null
+    }
+  ],
+  "testCases": [
+    {
+      "id": "TC-GWFIX-001",
+      "feature": "Create Gameweeks",
+      "scenario": "Admin seeds 38 gameweeks from FPL bootstrap on a clean league",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Admin session resolves to leagueId via getAuthorizedLeagueId; league has zero gameweek rows; FPL bootstrap-static returns 38 events with valid deadline_time.",
+      "testData": "POST /api/admin/<leagueId>/create-gameweeks (no body)",
+      "testSteps": [
+        "1. Sign in as the admin owning the league",
+        "2. Issue POST /api/admin/<leagueId>/create-gameweeks",
+        "3. Inspect the response JSON",
+        "4. Query gameweeks table for the league"
+      ],
+      "expectedResult": "HTTP 200 with `{ success: true, created: 38, skipped: 0 }`; 38 rows inserted with isPlayoffs=false and deadline parsed from FPL event.deadline_time.",
+      "postconditions": "Gameweeks 1..38 exist for the league with real FPL deadlines.",
+      "requirementId": "AC-GWFIX-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-002",
+      "feature": "Create Gameweeks",
+      "scenario": "Idempotent re-run skips already-existing gameweeks",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Admin owns a league that already contains GW1..GW10 rows; FPL bootstrap returns 38 events.",
+      "testData": "POST /api/admin/<leagueId>/create-gameweeks (no body)",
+      "testSteps": [
+        "1. Confirm 10 gameweek rows exist for the league",
+        "2. POST /api/admin/<leagueId>/create-gameweeks",
+        "3. Check the response counts and DB row count"
+      ],
+      "expectedResult": "HTTP 200 with `created: 28, skipped: 10`; total gameweeks for league becomes 38 with no duplicate (leagueId, number) violations.",
+      "postconditions": "38 gameweeks for league, only 28 newly inserted.",
+      "requirementId": "AC-GWFIX-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-003",
+      "feature": "Create Gameweeks",
+      "scenario": "FPL bootstrap responds 500 -> HTTP 502 surfaced to admin",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Admin session; FPL bootstrap endpoint mocked or proxied to respond with HTTP 500.",
+      "testData": "POST /api/admin/<leagueId>/create-gameweeks",
+      "testSteps": [
+        "1. Stub the FPL bootstrap fetch to return status 500",
+        "2. POST /api/admin/<leagueId>/create-gameweeks",
+        "3. Check response status and body",
+        "4. Verify no gameweek rows were inserted"
+      ],
+      "expectedResult": "HTTP 502 with `{ error: 'Failed to fetch FPL gameweek data' }`; zero gameweek rows inserted.",
+      "postconditions": "No mutation to gameweeks table.",
+      "requirementId": "AC-GWFIX-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-004",
+      "feature": "Create Gameweeks",
+      "scenario": "FPL bootstrap returns empty events array -> HTTP 502 No FPL events found",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Admin session; FPL bootstrap stubbed to return 200 with `{ events: [] }`.",
+      "testData": "POST /api/admin/<leagueId>/create-gameweeks",
+      "testSteps": [
+        "1. Stub bootstrap to return events:[]",
+        "2. POST create-gameweeks",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 502 with `{ error: 'No FPL events found' }`; zero rows inserted.",
+      "postconditions": "Gameweeks table unchanged.",
+      "requirementId": "AC-GWFIX-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-005",
+      "feature": "Create Gameweeks",
+      "scenario": "Unauthenticated POST returns HTTP 403 Forbidden",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No active session cookie / no admin context resolvable via getAuthorizedLeagueId.",
+      "testData": "POST /api/admin/<leagueId>/create-gameweeks without auth headers",
+      "testSteps": [
+        "1. Clear cookies / use anonymous client",
+        "2. POST create-gameweeks",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 403 with `{ error: 'Forbidden' }`.",
+      "postconditions": "No mutation occurred.",
+      "requirementId": "AC-GWFIX-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-006",
+      "feature": "Create Gameweeks",
+      "scenario": "Team-member session cannot create gameweeks",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Active team-member session (not admin/superadmin) on the league.",
+      "testData": "POST /api/admin/<leagueId>/create-gameweeks with team-member cookie",
+      "testSteps": [
+        "1. Sign in as a team member",
+        "2. POST create-gameweeks",
+        "3. Check response"
+      ],
+      "expectedResult": "HTTP 403 with `{ error: 'Forbidden' }` (getAuthorizedLeagueId rejects non-admin).",
+      "postconditions": "No gameweek rows inserted.",
+      "requirementId": "AC-GWFIX-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-001 guard."
+    },
+    {
+      "id": "TC-GWFIX-007",
+      "feature": "Create Gameweeks",
+      "scenario": "Rate limit exceeded -> HTTP 429",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Admin session has already issued 30 expensive-route POSTs in the current minute window.",
+      "testData": "31st POST /api/admin/<leagueId>/create-gameweeks within 60s",
+      "testSteps": [
+        "1. Burst 30 expensive-route POSTs (e.g. repeated create-gameweeks calls)",
+        "2. Issue a 31st POST within the same minute",
+        "3. Capture status and body"
+      ],
+      "expectedResult": "HTTP 429 with body `Too many requests on this endpoint. Please slow down.`",
+      "postconditions": "Limiter window remains in effect until rollover.",
+      "requirementId": "AC-GWFIX-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-008",
+      "feature": "Create Gameweeks",
+      "scenario": "Out-of-range FPL event ids (0, 39, 99) are silently skipped",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "FPL bootstrap stubbed to return events with ids [0, 1, 2, ..., 38, 39, 99] and valid deadlines.",
+      "testData": "POST /api/admin/<leagueId>/create-gameweeks on clean league",
+      "testSteps": [
+        "1. Stub bootstrap with extra out-of-range ids",
+        "2. POST create-gameweeks",
+        "3. Query inserted gameweeks"
+      ],
+      "expectedResult": "Only 38 rows inserted (ids 1..38); ids 0, 39, 99 are skipped without error.",
+      "postconditions": "No invalid GW numbers persisted.",
+      "requirementId": "AC-GWFIX-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-003."
+    },
+    {
+      "id": "TC-GWFIX-009",
+      "feature": "Generate Fixtures",
+      "scenario": "32-team TVT league generates 30 GWs of fixtures with 2 reps and groupIds",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Admin owns 32-team TVT league; Group A has 16 teams, Group B has 16 teams; no fixtures exist; playoffStartGw=31.",
+      "testData": "POST /api/admin/<leagueId>/generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures",
+        "2. Inspect response payload",
+        "3. Query fixtures + gameweeks tables"
+      ],
+      "expectedResult": "HTTP 200 with `format: '32-team (2 groups)'`, `repetitions: 2`, `leagueStageGws: 30`, `totalFixtures: 480`; fixtures carry the correct groupId; GW1..30 created as isPlayoffs=false.",
+      "postconditions": "30 league-stage GWs and 480 fixtures persisted.",
+      "requirementId": "AC-GWFIX-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-010",
+      "feature": "Generate Fixtures",
+      "scenario": "8-team TVT league: 5 reps -> 35 GWs / 140 fixtures",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Admin owns 8-team TVT league with groupCount=1, playoffStartGw=36.",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures",
+        "2. Verify counts in response",
+        "3. Check GW1..35 created as isPlayoffs=false"
+      ],
+      "expectedResult": "HTTP 200 `repetitions: 5, leagueStageGws: 35, totalFixtures: 140`.",
+      "postconditions": "8-team round-robin x5 reps persisted.",
+      "requirementId": "AC-GWFIX-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-011",
+      "feature": "Generate Fixtures",
+      "scenario": "16-team TVT league: 2 reps -> 30 GWs",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Admin owns 16-team league with groupCount=1, playoffStartGw=31.",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures",
+        "2. Check response payload",
+        "3. Confirm GW1..30 exist"
+      ],
+      "expectedResult": "HTTP 200 `repetitions: 2, leagueStageGws: 30`.",
+      "postconditions": "30 league-stage GWs with fixtures.",
+      "requirementId": "AC-GWFIX-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-012",
+      "feature": "Generate Fixtures (Triple Crown)",
+      "scenario": "Triple Crown 20-team Group A generates 38 GWs",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Triple Crown league with exactly 20 teams in Group A; no fixtures; format='triple-crown'.",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures on triple-crown league",
+        "2. Inspect response",
+        "3. Verify GW1..38 inserted and fixtures tagged competitionType='pl'"
+      ],
+      "expectedResult": "HTTP 200 `format: 'Triple Crown (20-team, 1 PL group)', repetitions: 2, leagueStageGws: 38`; 38 non-playoff GWs exist.",
+      "postconditions": "Triple Crown PL fixtures persisted.",
+      "requirementId": "AC-GWFIX-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-013",
+      "feature": "Generate Fixtures",
+      "scenario": "32-team league with Group B under-filled rejects with HTTP 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "32-team TVT league where Group A has 16 teams, Group B has 1 team; no fixtures exist.",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures",
+        "2. Verify response status/message",
+        "3. Confirm no fixtures inserted"
+      ],
+      "expectedResult": "HTTP 400 with `Group B must have at least 2 teams (has 1)`; zero fixtures persisted.",
+      "postconditions": "League fixtures unchanged.",
+      "requirementId": "AC-GWFIX-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-014",
+      "feature": "Generate Fixtures",
+      "scenario": "32-team league with Group B record missing entirely",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "32-team TVT league with Group A only (Group B record absent).",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures",
+        "2. Inspect error message"
+      ],
+      "expectedResult": "HTTP 400 with the Group B missing-record error message; no fixtures inserted.",
+      "postconditions": "League fixtures unchanged.",
+      "requirementId": "AC-GWFIX-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-015 missing-group branch."
+    },
+    {
+      "id": "TC-GWFIX-015",
+      "feature": "Generate Fixtures",
+      "scenario": "Single-group league with <2 teams rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "16-team-config league but only 1 team has been added to Group A.",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `League must have at least 2 teams (has 1)`.",
+      "postconditions": "No fixtures inserted.",
+      "requirementId": "AC-GWFIX-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-014."
+    },
+    {
+      "id": "TC-GWFIX-016",
+      "feature": "Generate Fixtures",
+      "scenario": "Generate-fixtures refuses when fixtures already exist",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Admin owns TVT league that already has at least one fixture row.",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. Confirm at least one fixture in DB",
+        "2. POST generate-fixtures",
+        "3. Inspect status + message"
+      ],
+      "expectedResult": "HTTP 400 `Fixtures have already been generated for this league. Delete existing fixtures first.`",
+      "postconditions": "No new fixtures inserted.",
+      "requirementId": "AC-GWFIX-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-017",
+      "feature": "Generate Fixtures",
+      "scenario": "Generate-fixtures missing league config -> HTTP 404",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "leagueId param refers to a non-existent league or one missing config row.",
+      "testData": "POST /api/admin/<bad-leagueId>/generate-fixtures",
+      "testSteps": [
+        "1. Sign in as superadmin",
+        "2. POST generate-fixtures with bad leagueId",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 404 with `League not found`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-007 guard."
+    },
+    {
+      "id": "TC-GWFIX-018",
+      "feature": "Generate Fixtures (Readiness)",
+      "scenario": "GET returns readyToGenerate true with group counts and config",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Admin in a 32-team league with Group A=16, Group B=14; no fixtures.",
+      "testData": "GET /api/admin/<leagueId>/generate-fixtures",
+      "testSteps": [
+        "1. GET generate-fixtures",
+        "2. Inspect response shape"
+      ],
+      "expectedResult": "HTTP 200 with `readyToGenerate: true`, `groups: { A: 16, B: 14 }`, `fixturesGenerated: false`, includes teamSize, groupCount, playoffStartGw.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-019",
+      "feature": "Generate Fixtures (Readiness)",
+      "scenario": "readyToGenerate false when Group B under-filled in 2-group league",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "32-team league: Group A 16 teams, Group B 1 team.",
+      "testData": "GET generate-fixtures",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect readyToGenerate flag"
+      ],
+      "expectedResult": "`readyToGenerate: false`, group counts reflect actual numbers.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-020 false branch."
+    },
+    {
+      "id": "TC-GWFIX-020",
+      "feature": "Generate Fixtures (Delete)",
+      "scenario": "DELETE removes league-stage GWs/fixtures but preserves playoff fixtures",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League has league-stage GWs 1..30 with fixtures + results AND playoff GWs 31..38 with fixtures.",
+      "testData": "DELETE /api/admin/<leagueId>/generate-fixtures",
+      "testSteps": [
+        "1. Snapshot fixture counts before",
+        "2. DELETE generate-fixtures",
+        "3. Inspect response counts",
+        "4. Verify playoff GWs/fixtures still present"
+      ],
+      "expectedResult": "HTTP 200 reporting `deletedGameweeks` and `deletedFixtures` matching the league-stage counts; playoff GWs/fixtures untouched; league page cache invalidated.",
+      "postconditions": "Only league-stage rows removed.",
+      "requirementId": "AC-GWFIX-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-021",
+      "feature": "Generate Fixtures (Delete)",
+      "scenario": "DELETE no-op when no league-stage GWs exist",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "League has only playoff GWs (or no GWs at all).",
+      "testData": "DELETE generate-fixtures",
+      "testSteps": [
+        "1. DELETE endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 `No league-stage fixtures to delete`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-022",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "501-row upload rejected with HTTP 400",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Admin session; valid league.",
+      "testData": "POST /api/admin/<leagueId>/bulk-upload-fixtures with `fixtures` array of length 501",
+      "testSteps": [
+        "1. Build payload with 501 valid rows",
+        "2. POST bulk-upload-fixtures",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `Too many rows. Maximum 500 fixtures per upload.`; no fixtures inserted.",
+      "postconditions": "No DB mutation.",
+      "requirementId": "AC-GWFIX-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-023",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "500-row upload accepted (boundary just below cap)",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Admin session; valid league with sufficient teams.",
+      "testData": "POST bulk-upload-fixtures with 500 valid rows",
+      "testSteps": [
+        "1. Build 500 valid rows",
+        "2. POST upload",
+        "3. Verify response"
+      ],
+      "expectedResult": "HTTP 200; 500 fixtures processed (created or per-row errors reported); no `Too many rows` error.",
+      "postconditions": "Up to 500 fixtures persisted.",
+      "requirementId": "AC-GWFIX-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary at exactly 500."
+    },
+    {
+      "id": "TC-GWFIX-024",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Missing/non-array/empty fixtures payload rejected",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Admin session.",
+      "testData": "POST bulk-upload-fixtures with `{ fixtures: [] }` and again with `{}`",
+      "testSteps": [
+        "1. POST with fixtures=[]",
+        "2. POST with no fixtures key",
+        "3. Inspect both responses"
+      ],
+      "expectedResult": "Both calls return HTTP 400 `No fixtures data provided`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-024."
+    },
+    {
+      "id": "TC-GWFIX-025",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Row with gameweek=39 rejected with invalid-GW message",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Admin session; league configured.",
+      "testData": "POST with one row `{ gameweek: 39, ... }`",
+      "testSteps": [
+        "1. POST with gameweek=39 row",
+        "2. Inspect errors[] and DB"
+      ],
+      "expectedResult": "Row in `errors[]` with `Row N: Invalid gameweek number (must be 1-38)`; no fixture created.",
+      "postconditions": "No fixture row inserted for that GW.",
+      "requirementId": "AC-GWFIX-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-026",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Row with gameweek=0 rejected (lower boundary)",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Admin session.",
+      "testData": "POST with gameweek=0 row",
+      "testSteps": [
+        "1. POST upload with gameweek=0",
+        "2. Inspect errors[]"
+      ],
+      "expectedResult": "Row reported with `Invalid gameweek number (must be 1-38)`.",
+      "postconditions": "No fixture inserted.",
+      "requirementId": "AC-GWFIX-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-027",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Cross-group home/away pairing rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "32-team league with Group A and Group B teams.",
+      "testData": "Row with home in Group A and away in Group B",
+      "testSteps": [
+        "1. POST upload with mixed-group row",
+        "2. Inspect errors[]"
+      ],
+      "expectedResult": "Row reported with `Row N: Teams must be in the same group`; no fixture created.",
+      "postconditions": "No fixture inserted.",
+      "requirementId": "AC-GWFIX-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-028",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Unknown teamLoginId rejected",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Admin session; row references homeTeamLoginId that doesn't exist in this league.",
+      "testData": "Row with homeTeamLoginId='nonexistent-team'",
+      "testSteps": [
+        "1. POST upload with unknown team",
+        "2. Inspect errors[]"
+      ],
+      "expectedResult": "Row reported with home/away team-not-found error; no fixture inserted.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-025 unknown-team branch."
+    },
+    {
+      "id": "TC-GWFIX-029",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Case-insensitive teamLoginId lookup succeeds",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Team exists with loginId 'team-alpha'.",
+      "testData": "Row using 'TEAM-Alpha' as homeTeamLoginId",
+      "testSteps": [
+        "1. POST upload with mixed-case loginId",
+        "2. Verify fixture created"
+      ],
+      "expectedResult": "Fixture inserted using resolved team id; no errors[] entry for that row.",
+      "postconditions": "Fixture persisted.",
+      "requirementId": "AC-GWFIX-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-025 case-insensitive lookup."
+    },
+    {
+      "id": "TC-GWFIX-030",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Row referencing missing GW auto-creates gameweek with synthetic deadline",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League has no gameweek 7 yet; playoffStartGw=31.",
+      "testData": "Row `{ gameweek: 7, home: 'A1', away: 'A2', ... }`",
+      "testSteps": [
+        "1. POST upload",
+        "2. Verify gameweek 7 created",
+        "3. Inspect deadline + isPlayoffs"
+      ],
+      "expectedResult": "GW7 inserted with deadline = today + 49 days at 11:00 and isPlayoffs=false (since 7<31); fixture inserted.",
+      "postconditions": "GW7 + fixture persisted.",
+      "requirementId": "AC-GWFIX-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-031",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Duplicate fixture row reported via errors[]",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Fixture (GW5, homeTeamA, awayTeamB) already exists.",
+      "testData": "Re-upload the same (GW5, homeTeamA, awayTeamB)",
+      "testSteps": [
+        "1. POST upload duplicate",
+        "2. Inspect errors[] and row count"
+      ],
+      "expectedResult": "Row reported with `Fixture already exists`; no duplicate row inserted.",
+      "postconditions": "Single fixture remains.",
+      "requirementId": "AC-GWFIX-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-032",
+      "feature": "Bulk Upload Fixtures (Template)",
+      "scenario": "GET template returns CSV columns + example + existingTeams list",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Admin session in a 32-team league with named teams in Group A and B.",
+      "testData": "GET /api/admin/<leagueId>/bulk-upload-fixtures",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect template/header/example/existingTeams"
+      ],
+      "expectedResult": "HTTP 200 with template columns, header row, an example row, and `existingTeams` listing each team's name and group.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-033",
+      "feature": "Bulk Upload Fixtures",
+      "scenario": "Unauthenticated POST to bulk-upload returns 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session.",
+      "testData": "POST bulk-upload-fixtures with valid rows but anonymous client",
+      "testSteps": [
+        "1. POST without auth",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 403 Forbidden; no mutation.",
+      "postconditions": "DB unchanged.",
+      "requirementId": "AC-GWFIX-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Auth guard on the bulk-upload endpoint."
+    },
+    {
+      "id": "TC-GWFIX-034",
+      "feature": "Public Gameweek",
+      "scenario": "GET /api/gameweeks/12 returns public payload without session",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "GW12 row exists for at least one league with fixtures, captains, and survival entries.",
+      "testData": "GET /api/gameweeks/12 (anonymous, no leagueId param)",
+      "testSteps": [
+        "1. GET endpoint without cookies",
+        "2. Inspect response shape"
+      ],
+      "expectedResult": "HTTP 200; payload includes gameweek metadata, fixtures with optional result + isChallenge + isPlayoff flags, captains, survival counters; no auth required.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-032 public-route classification + BR-GWFIX-036 response shape."
+    },
+    {
+      "id": "TC-GWFIX-035",
+      "feature": "Public Gameweek",
+      "scenario": "GW out of 1..38 range rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Any caller.",
+      "testData": "GET /api/gameweeks/39 and /api/gameweeks/abc",
+      "testSteps": [
+        "1. GET /api/gameweeks/39",
+        "2. GET /api/gameweeks/abc",
+        "3. Inspect both responses"
+      ],
+      "expectedResult": "HTTP 400 with `Invalid gameweek number (must be 1-38)` in each case.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-036",
+      "feature": "Public Gameweek",
+      "scenario": "GW=0 lower boundary rejected",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Any caller.",
+      "testData": "GET /api/gameweeks/0",
+      "testSteps": [
+        "1. GET /api/gameweeks/0",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `Invalid gameweek number (must be 1-38)`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-037",
+      "feature": "Public Gameweek",
+      "scenario": "leagueId query param accepts slug and resolves to UUID",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League slug 'my-league' resolves to a specific UUID with GW5 present.",
+      "testData": "GET /api/gameweeks/5?leagueId=my-league",
+      "testSteps": [
+        "1. GET with slug",
+        "2. Inspect response gameweek id and leagueId"
+      ],
+      "expectedResult": "Slug resolved to UUID; GW5 returned scoped to that league only.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-038",
+      "feature": "Public Gameweek",
+      "scenario": "leagueId=uuid scopes lookup to that league",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Two leagues both have GW5 rows.",
+      "testData": "GET /api/gameweeks/5?leagueId=<uuidA>",
+      "testSteps": [
+        "1. GET with uuid",
+        "2. Verify returned gw.leagueId matches uuidA"
+      ],
+      "expectedResult": "Returned row belongs to league A only.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-039",
+      "feature": "Public Gameweek",
+      "scenario": "Unknown leagueId returns 404",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "leagueId references nothing.",
+      "testData": "GET /api/gameweeks/5?leagueId=does-not-exist",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 404 `Gameweek not found`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-035."
+    },
+    {
+      "id": "TC-GWFIX-040",
+      "feature": "Process Gameweek (TVT)",
+      "scenario": "Admin scores GW5 with unscored fixtures",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Admin session; TVT league with GW5 fixtures present and no result rows.",
+      "testData": "POST /api/gameweeks/5?leagueId=<id> with x-session-type=admin",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect response payload",
+        "3. Query results table and team leaguePoints"
+      ],
+      "expectedResult": "HTTP 200 with `processed: N`; results persisted with chip-adjusted match points; `homePlayerScores`/`awayPlayerScores` JSON populated; team leaguePoints updated; league page cache invalidated.",
+      "postconditions": "Result rows persisted; standings updated.",
+      "requirementId": "AC-GWFIX-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-041",
+      "feature": "Process Gameweek (TVT)",
+      "scenario": "All fixtures already processed returns 200 with processed=0",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Every fixture in GW5 already has a result row.",
+      "testData": "POST /api/gameweeks/5?leagueId=<id>",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 `All fixtures already processed` with processed=0.",
+      "postconditions": "No new results inserted.",
+      "requirementId": "AC-GWFIX-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-041."
+    },
+    {
+      "id": "TC-GWFIX-042",
+      "feature": "Process Gameweek (Force)",
+      "scenario": "force=true reverts existing scores and reprocesses",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Admin session; GW3 already processed with results, chip payouts, and Double Pointer-doubled bonus on at least one team.",
+      "testData": "POST /api/gameweeks/3?force=true&leagueId=<id> with x-session-type=admin",
+      "testSteps": [
+        "1. Snapshot team leaguePoints, bonusPoints, and chip ledgers",
+        "2. POST force-reprocess",
+        "3. Inspect post-state and reverted ledgers"
+      ],
+      "expectedResult": "Existing match points reverted (clamped at 0); doubled DP bonuses correctly subtracted as 2; chip processing flags reset; GW3 rescored producing fresh result rows.",
+      "postconditions": "GW3 has a single set of fresh results; no doubled points.",
+      "requirementId": "AC-GWFIX-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-043",
+      "feature": "Process Gameweek (Hit Carry-Forward)",
+      "scenario": "Player taking 14 hits in GW1 reduces team's GW2 effective score by 14",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league processed GW1 where player P had transferHits=14 (above 12-cap). GW2 fixtures unscored.",
+      "testData": "POST /api/gameweeks/2?leagueId=<id>",
+      "testSteps": [
+        "1. POST process GW2",
+        "2. Inspect P's team effective GW2 score",
+        "3. Query auditLogs for HIT_CARRY_FORWARD type"
+      ],
+      "expectedResult": "P's team effective GW2 score decreased by 14; HIT_CARRY_FORWARD audit row written for that team.",
+      "postconditions": "Audit row + adjusted score persisted.",
+      "requirementId": "AC-GWFIX-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-044",
+      "feature": "Process Gameweek (Bonus)",
+      "scenario": "Highest-margin winner in group gets 1 bonus point",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "GW7 Group A with Fixture X winning by 80 margin, Fixture Y winning by 60; both >=75 cutoff for X, Y just under for Y.",
+      "testData": "POST /api/gameweeks/7?leagueId=<id>",
+      "testSteps": [
+        "1. POST process GW7",
+        "2. Inspect homeGotBonus/awayGotBonus flags on Fixture X and Y",
+        "3. Verify team leaguePoints + bonusPoints updated"
+      ],
+      "expectedResult": "Only Fixture X's winner receives 1 bonus point (2 if DP used); Fixture Y's winner does NOT get bonus (margin <75 if cutoff applies, OR not highest margin); flags set accordingly; counters updated.",
+      "postconditions": "Bonus persisted on Fixture X only.",
+      "requirementId": "AC-GWFIX-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-045",
+      "feature": "Process Gameweek (Bonus)",
+      "scenario": "Tied highest margins share bonus across all tied winners",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "GW8 Group A: two fixtures both win by exactly 90 margin.",
+      "testData": "POST /api/gameweeks/8?leagueId=<id>",
+      "testSteps": [
+        "1. POST process GW8",
+        "2. Inspect both fixtures' bonus flags",
+        "3. Verify both winning teams' bonusPoints updated"
+      ],
+      "expectedResult": "BOTH winning teams receive 1 bonus point (2 if DP); both fixtures' bonus flag set.",
+      "postconditions": "Two bonuses awarded in same group.",
+      "requirementId": "AC-GWFIX-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-046",
+      "feature": "Process Gameweek (Triple Crown)",
+      "scenario": "Triple Crown league delegates to processTripleCrownGameweek",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Triple Crown league with GW12 fixtures unscored; admin session.",
+      "testData": "POST /api/gameweeks/12?leagueId=<tc-league>",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect normalized response",
+        "3. Confirm TVT in-route scoring did NOT run (no TVT result rows for non-TC fixtures)"
+      ],
+      "expectedResult": "HTTP 200; response normalized to `{ success, gameweek, processed, failed, results: [], errors, message }`; TripleCrown handler ran.",
+      "postconditions": "TC-style scoring persisted.",
+      "requirementId": "AC-GWFIX-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-047",
+      "feature": "Process Gameweek (Auction)",
+      "scenario": "Auction league delegates to processAuctionGameweek",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction-format league with GW7 fixtures or auction-scoring data ready.",
+      "testData": "POST /api/gameweeks/7?leagueId=<auction-league>",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect response shape",
+        "3. Confirm teamsProcessed surfaced as processed"
+      ],
+      "expectedResult": "HTTP 200; processAuctionGameweek invoked; `teamsProcessed` reported as `processed`.",
+      "postconditions": "Auction-scoring persisted.",
+      "requirementId": "AC-GWFIX-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-048",
+      "feature": "Process Gameweek (Auth)",
+      "scenario": "Non-admin session rejected with HTTP 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team-member session active.",
+      "testData": "POST /api/gameweeks/5 with x-session-type=team",
+      "testSteps": [
+        "1. Sign in as team member",
+        "2. POST process",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 403 `Admin access required`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-049",
+      "feature": "Process Gameweek (Auth)",
+      "scenario": "Missing x-session-type header rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Direct POST bypassing middleware would still hit in-route header guard.",
+      "testData": "POST /api/gameweeks/5 with no x-session-type header",
+      "testSteps": [
+        "1. POST with no x-session-type",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 403 `Admin access required` (defense-in-depth).",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-037 in-route guard."
+    },
+    {
+      "id": "TC-GWFIX-050",
+      "feature": "Process-All Plan",
+      "scenario": "Superadmin GET returns runId, dueGws, leagues, globalErrors",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Superadmin session; FPL bootstrap online; at least one league with a finished GW past its deadline.",
+      "testData": "GET /api/admin/process-all/plan",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect payload",
+        "3. Query auditLogs for CRON_RUN_START row"
+      ],
+      "expectedResult": "HTTP 200 with `runId`, sorted `dueGws`, active leagues, `globalErrors[]`; CRON_RUN_START audit row written.",
+      "postconditions": "Audit row exists.",
+      "requirementId": "AC-GWFIX-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-051",
+      "feature": "Process-All Plan",
+      "scenario": "Regular admin gets HTTP 403 Superadmin only",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin (not superadmin) session.",
+      "testData": "GET /api/admin/process-all/plan",
+      "testSteps": [
+        "1. Sign in as admin",
+        "2. GET plan",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 403 `Superadmin only`.",
+      "postconditions": "No audit row written.",
+      "requirementId": "AC-GWFIX-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-052",
+      "feature": "Process-All Plan",
+      "scenario": "FPL bootstrap failure populates globalErrors and empty dueGws",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "FPL bootstrap stubbed to fail.",
+      "testData": "GET /api/admin/process-all/plan (superadmin)",
+      "testSteps": [
+        "1. Stub FPL bootstrap to throw",
+        "2. GET plan",
+        "3. Inspect globalErrors and dueGws"
+      ],
+      "expectedResult": "`globalErrors` includes `FPL bootstrap fetch failed: <message>`; `dueGws` is empty.",
+      "postconditions": "Audit row records the failure context.",
+      "requirementId": "AC-GWFIX-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-053",
+      "feature": "Process-All Plan",
+      "scenario": "Inactive leagues excluded from plan",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "League L1 isActive=true, L2 isActive=false; both have due GWs.",
+      "testData": "GET /api/admin/process-all/plan",
+      "testSteps": [
+        "1. GET plan",
+        "2. Inspect leagues[] array"
+      ],
+      "expectedResult": "Only L1 appears; L2 omitted.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-047."
+    },
+    {
+      "id": "TC-GWFIX-054",
+      "feature": "Process-All League-GW",
+      "scenario": "Superadmin processes a single (league, gw) pair",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Superadmin session; valid league plan item; GW5 due.",
+      "testData": "POST /api/admin/process-all/league-gw with body `{ league, gw: 5 }`",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect response keys",
+        "3. Confirm auto-snapshot tagged gw5-auto written"
+      ],
+      "expectedResult": "HTTP 200 with `scored`, `scoreSkipped`, `generated`, `generatedAlready`, `advanced`, `advanceSkipped`, `advanceWindowFuture`, `errors[]`; `gw5-auto` snapshot created when scoring succeeded.",
+      "postconditions": "Scoring + snapshot persisted.",
+      "requirementId": "AC-GWFIX-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-055",
+      "feature": "Process-All League-GW",
+      "scenario": "Missing league or gw -> HTTP 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Superadmin session.",
+      "testData": "POST league-gw with `{ gw: 5 }` (no league) and again with `{ league }` (no gw)",
+      "testSteps": [
+        "1. POST missing league",
+        "2. POST missing gw",
+        "3. Inspect both responses"
+      ],
+      "expectedResult": "HTTP 400 `Missing league or gw` for both.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-056",
+      "feature": "Process-All League-GW",
+      "scenario": "Invalid JSON body -> HTTP 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "POST league-gw with body `not json`",
+      "testSteps": [
+        "1. POST malformed payload",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `Invalid JSON body`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-048 invalid-JSON branch."
+    },
+    {
+      "id": "TC-GWFIX-057",
+      "feature": "Process-All League-GW",
+      "scenario": "Non-superadmin rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin (not super) session.",
+      "testData": "POST league-gw",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect status"
+      ],
+      "expectedResult": "HTTP 403 Superadmin only.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-048 auth guard."
+    },
+    {
+      "id": "TC-GWFIX-058",
+      "feature": "Process-All League-GW",
+      "scenario": "Rate limit 30/min on league-gw triggers HTTP 429",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Superadmin has issued 30 POSTs to league-gw in current minute.",
+      "testData": "31st POST",
+      "testSteps": [
+        "1. Burst 30 league-gw POSTs",
+        "2. Issue a 31st",
+        "3. Inspect status"
+      ],
+      "expectedResult": "HTTP 429 from middleware.",
+      "postconditions": "Limiter window enforced.",
+      "requirementId": "AC-GWFIX-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-049."
+    },
+    {
+      "id": "TC-GWFIX-059",
+      "feature": "Process-All Finish",
+      "scenario": "Finish writes CRON_RUN_END and warms live cache for GW31..38",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Superadmin; valid runId from a prior plan call; current live GW is 33.",
+      "testData": "POST /api/admin/process-all/finish with `{ runId, dueGws, results }`",
+      "testSteps": [
+        "1. POST finish",
+        "2. Query auditLogs for CRON_RUN_END row",
+        "3. Inspect live cache for GW33"
+      ],
+      "expectedResult": "CRON_RUN_END row written with description <=1900 chars; live cache populated for GW33.",
+      "postconditions": "Audit + cache persisted.",
+      "requirementId": "AC-GWFIX-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-060",
+      "feature": "Process-All Finish",
+      "scenario": "Missing required fields -> HTTP 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Superadmin session.",
+      "testData": "POST finish missing runId; again missing dueGws; again missing results",
+      "testSteps": [
+        "1. POST each missing-field variant",
+        "2. Inspect responses"
+      ],
+      "expectedResult": "HTTP 400 `Missing runId / dueGws / results` for each variant.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-061",
+      "feature": "Process-All Finish",
+      "scenario": "Non-superadmin rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin (not super) session.",
+      "testData": "POST finish with valid body",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect status"
+      ],
+      "expectedResult": "HTTP 403 Superadmin only.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-052 auth guard."
+    },
+    {
+      "id": "TC-GWFIX-062",
+      "feature": "Public Fixtures List",
+      "scenario": "Public GET returns fixtures grouped by GW with format + playoffStartGw",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League 'my-league' has fixtures across multiple GWs.",
+      "testData": "GET /api/fixtures?leagueSlug=my-league",
+      "testSteps": [
+        "1. GET endpoint anonymously",
+        "2. Inspect totalFixtures, fixtures map, playoffStartGw, format"
+      ],
+      "expectedResult": "HTTP 200; fixtures sorted by GW number then group name; warm cache returned when present.",
+      "postconditions": "No mutation; cache may be written.",
+      "requirementId": "AC-GWFIX-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-063",
+      "feature": "Public Fixtures List",
+      "scenario": "Missing leagueSlug -> HTTP 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Any caller.",
+      "testData": "GET /api/fixtures",
+      "testSteps": [
+        "1. GET without query params",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `leagueSlug parameter is required`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-064",
+      "feature": "Public Fixtures List",
+      "scenario": "Unknown leagueSlug -> HTTP 404",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "No league exists with slug 'nope'.",
+      "testData": "GET /api/fixtures?leagueSlug=nope",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 404 `League not found`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-054 unknown slug."
+    },
+    {
+      "id": "TC-GWFIX-065",
+      "feature": "Public Fixtures List (Filters)",
+      "scenario": "gameweek + group filters applied in memory",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "League with fixtures in GW5 across groups A and B.",
+      "testData": "GET /api/fixtures?leagueSlug=...&gameweek=5&group=A",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect returned fixtures"
+      ],
+      "expectedResult": "Only GW5 group A fixtures returned.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-066",
+      "feature": "Public Fixtures List (Filters)",
+      "scenario": "Unknown group filter is ignored",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "League with fixtures in groups A and B.",
+      "testData": "GET /api/fixtures?leagueSlug=...&group=Z",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect returned fixtures"
+      ],
+      "expectedResult": "All fixtures returned (group filter ignored when value not 'A' or 'B').",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-058."
+    },
+    {
+      "id": "TC-GWFIX-067",
+      "feature": "Public Fixtures List",
+      "scenario": "League with zero GWs returns empty payload safely",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "League exists but has no gameweek rows.",
+      "testData": "GET /api/fixtures?leagueSlug=empty-league",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 with `totalFixtures: 0`, empty fixtures object, format + playoffStartGw still populated; no DB call for fixtures.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-056."
+    },
+    {
+      "id": "TC-GWFIX-068",
+      "feature": "Public Fixtures List",
+      "scenario": "DB error returns safe default instead of HTTP 500",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Force a DB error mid-query (e.g. by injecting a stub).",
+      "testData": "GET /api/fixtures?leagueSlug=my-league",
+      "testSteps": [
+        "1. Trigger DB error",
+        "2. GET endpoint",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 with `{ fixtures: {}, playoffStartGw: 31 }` safe default.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-057 error fallback."
+    },
+    {
+      "id": "TC-GWFIX-069",
+      "feature": "Live Fixtures",
+      "scenario": "Deadline not passed -> isLive false with reason",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "GW6 deadline is in the future.",
+      "testData": "GET /api/fixtures/live?leagueSlug=my-league&gameweek=6",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "`{ isLive: false, fixtures: [], reason: 'deadline_not_passed' }`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-070",
+      "feature": "Live Fixtures",
+      "scenario": "All fixtures already processed -> isLive false reason=already_processed",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "GW5 every fixture has a result row.",
+      "testData": "GET /api/fixtures/live?leagueSlug=...&gameweek=5",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect response and player breakdowns"
+      ],
+      "expectedResult": "`{ isLive: false, reason: 'already_processed' }` with stored player breakdowns.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-071",
+      "feature": "Live Fixtures",
+      "scenario": "Cold cache: fresh FPL fetch + temp captain auto-pick + cache write",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "GW4 past deadline; no results; live cache cold; one team has no captain row (or autoassigned isValid=false).",
+      "testData": "GET /api/fixtures/live?leagueSlug=...&gameweek=4",
+      "testSteps": [
+        "1. Ensure cache empty",
+        "2. GET endpoint",
+        "3. Inspect temp captain flag for that team",
+        "4. Verify cache populated with 10-min TTL"
+      ],
+      "expectedResult": "FPL scores fetched, captain doubled (or pickTempCaptain selects lowest scorer with `isTempCaptain: true`), response cached for 10 min.",
+      "postconditions": "Redis live cache for that GW populated.",
+      "requirementId": "AC-GWFIX-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-062/063."
+    },
+    {
+      "id": "TC-GWFIX-072",
+      "feature": "Live Fixtures",
+      "scenario": "Missing gameweek param -> HTTP 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Any caller.",
+      "testData": "GET /api/fixtures/live?leagueSlug=my-league",
+      "testSteps": [
+        "1. GET without gameweek",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `gameweek parameter required`.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-073",
+      "feature": "Live Fixtures",
+      "scenario": "Out-of-range gameweek rejected",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Any caller.",
+      "testData": "GET /api/fixtures/live?leagueSlug=...&gameweek=39",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 invalid-gameweek error.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-059."
+    },
+    {
+      "id": "TC-GWFIX-074",
+      "feature": "Live Fixtures Refresh",
+      "scenario": "Refresh always bypasses cache and does not write back",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team-member session; GW5 past deadline; live cache has stale data.",
+      "testData": "GET /api/fixtures/live/refresh?leagueSlug=...&gameweek=5",
+      "testSteps": [
+        "1. Snapshot existing cache value",
+        "2. GET refresh endpoint",
+        "3. Verify cache value unchanged afterwards"
+      ],
+      "expectedResult": "HTTP 200 with `{ gameweek, fixtures, cachedAt }`; fresh FPL fetch; vice-captain takeover honored when captain played 0 minutes; cache NOT updated.",
+      "postconditions": "Cache unchanged.",
+      "requirementId": "AC-GWFIX-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-075",
+      "feature": "Live Fixtures Refresh",
+      "scenario": "Refresh for non-existent GW -> HTTP 404",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "League has no GW42 row (impossible for the league).",
+      "testData": "GET /api/fixtures/live/refresh?leagueSlug=...&gameweek=42",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 404 `Gameweek not found` (or HTTP 400 for invalid-range 42); per BR-GWFIX-059 it would be 400 for out-of-range. For an in-range GW not present in the league (e.g. league missing GW5), 404 is returned.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Use a within-range GW that has no row for the league (e.g. league only has 1..4 created)."
+    },
+    {
+      "id": "TC-GWFIX-076",
+      "feature": "Triple Crown Fixtures (Defect Pin)",
+      "scenario": "Regression: 10-team Triple Crown league still generates fixtures with hardcoded 2 reps (current defective behaviour)",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Triple Crown league configured with only 10 teams in Group A; no fixtures exist.",
+      "testData": "POST /api/admin/<leagueId>/generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures",
+        "2. Inspect response and inserted fixtures",
+        "3. Count distinct gameweek numbers used"
+      ],
+      "expectedResult": "Today's behaviour: HTTP 200 with `repetitions: 2`, fixtures spanning only ~18 GWs (10 teams x 2 reps = 18 round-robin GWs), but summary message still claims '20-team, 1 PL group'. No HTTP 400 raised. This test pins this incorrect behaviour until DEF-GWFIX-001 is fixed.",
+      "postconditions": "Fixtures partially span <38 GWs.",
+      "requirementId": "BR-GWFIX-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-GWFIX-001 (under-20 case)."
+    },
+    {
+      "id": "TC-GWFIX-077",
+      "feature": "Triple Crown Fixtures (Defect Pin)",
+      "scenario": "Regression: 22-team Triple Crown league silently drops fixtures beyond GW38",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Triple Crown league with 22 teams; no fixtures.",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. POST generate-fixtures",
+        "2. Inspect summary",
+        "3. Confirm any fixture with gameweekNumber>38 was silently filtered out via gameweekMap.get()"
+      ],
+      "expectedResult": "Today's behaviour: HTTP 200, fixtures generated for 22 x 2 reps = 42 round-robin GWs but only GWs 1..38 persist; fixtures for GW39..42 silently lost with no error. This pins DEF-GWFIX-001 (over-20 case).",
+      "postconditions": "Partial fixture set persisted.",
+      "requirementId": "BR-GWFIX-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-GWFIX-001 over-20 silent-loss case."
+    },
+    {
+      "id": "TC-GWFIX-078",
+      "feature": "Generate Fixtures TVT (Defect Pin)",
+      "scenario": "Regression: TVT generate-fixtures creates GWs with placeholder `new Date()` deadlines when create-gameweeks was not run first",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "TVT league with no gameweeks at all (create-gameweeks NOT yet run). Group A has 16 teams.",
+      "testData": "POST /api/admin/<leagueId>/generate-fixtures",
+      "testSteps": [
+        "1. Confirm gameweeks table is empty for this league",
+        "2. Capture current time T0",
+        "3. POST generate-fixtures",
+        "4. Query gameweek rows for the league and inspect each deadline"
+      ],
+      "expectedResult": "Today's behaviour: HTTP 200; league-stage GW rows inserted with `deadline` approximately equal to T0 (server time at click moment) rather than real FPL kickoff times. All league-stage GWs share the same/near-identical deadline. This pins DEF-GWFIX-002.",
+      "postconditions": "GWs persisted with synthetic deadlines.",
+      "requirementId": "BR-GWFIX-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-GWFIX-002."
+    },
+    {
+      "id": "TC-GWFIX-079",
+      "feature": "Bulk Upload Fixtures (Defect Pin)",
+      "scenario": "Regression: bulk-upload synthesizes deadline = today + 7*N days at 11:00 instead of using real FPL deadlines",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "League has no GW7 row yet.",
+      "testData": "POST bulk-upload-fixtures with row referencing gameweek=7",
+      "testSteps": [
+        "1. Capture today's date",
+        "2. POST upload",
+        "3. Query GW7 row deadline"
+      ],
+      "expectedResult": "Today's behaviour: GW7 inserted with deadline = today + 49 days at 11:00 local time (not real FPL kickoff). This pins DEF-GWFIX-003 (synthetic deadline branch).",
+      "postconditions": "GW7 persisted with synthetic deadline.",
+      "requirementId": "BR-GWFIX-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-GWFIX-003 deadline branch."
+    },
+    {
+      "id": "TC-GWFIX-080",
+      "feature": "Bulk Upload Fixtures (Defect Pin)",
+      "scenario": "Regression: bulk-upload with null playoffStartGw mis-classifies playoff GWs (e.g. GW35) as isPlayoffs=false",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "League config has `playoffStartGw = null`; no GW35 row yet.",
+      "testData": "POST bulk-upload-fixtures with row referencing gameweek=35",
+      "testSteps": [
+        "1. Ensure league_config.playoffStartGw is null",
+        "2. POST upload",
+        "3. Query GW35 isPlayoffs flag"
+      ],
+      "expectedResult": "Today's behaviour: GW35 inserted with isPlayoffs=false because `35 >= null` evaluates to false in JS. This is silent data corruption pinning DEF-GWFIX-003 (>= null branch).",
+      "postconditions": "Misclassified GW35 persisted.",
+      "requirementId": "BR-GWFIX-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-GWFIX-003 null-playoffStartGw branch."
+    },
+    {
+      "id": "TC-GWFIX-081",
+      "feature": "Bulk Upload Fixtures (Defect Pin)",
+      "scenario": "Regression: bulk-upload `clearExisting: true` wipes playoff fixtures too",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "League has league-stage fixtures in GW1..30 AND playoff fixtures in GW31..38.",
+      "testData": "POST bulk-upload-fixtures with `clearExisting: true` and at least one valid row",
+      "testSteps": [
+        "1. Snapshot playoff fixture row count",
+        "2. POST upload with clearExisting=true",
+        "3. Query playoff fixtures after"
+      ],
+      "expectedResult": "Today's behaviour: ALL fixtures (league-stage AND playoff) are deleted prior to insertion. Playoff fixtures are silently lost. Contrasts with DELETE /generate-fixtures which preserves them. This pins DEF-GWFIX-004.",
+      "postconditions": "Playoff fixtures gone.",
+      "requirementId": "BR-GWFIX-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-GWFIX-004."
+    },
+    {
+      "id": "TC-GWFIX-082",
+      "feature": "Process Gameweek (Defect Pin)",
+      "scenario": "Regression: POST /api/gameweeks/5 without leagueId nondeterministically scores some league",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Two TVT leagues both contain GW5 fixtures with no results. Admin session.",
+      "testData": "POST /api/gameweeks/5 with x-session-type=admin and NO leagueId query param",
+      "testSteps": [
+        "1. Ensure both leagues have unscored GW5",
+        "2. POST endpoint without leagueId",
+        "3. Inspect which league's results table was modified"
+      ],
+      "expectedResult": "Today's behaviour: one of the two leagues' GW5 gets processed (whichever the DB happens to return first via `gwList[0]`), the other is untouched; no HTTP 400 raised demanding leagueId. Pins DEF-GWFIX-005.",
+      "postconditions": "Wrong-league GW may be scored.",
+      "requirementId": "BR-GWFIX-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-GWFIX-005 nondeterministic dispatch."
+    },
+    {
+      "id": "TC-GWFIX-083",
+      "feature": "Process Gameweek (Defect Pin)",
+      "scenario": "Regression: POST /api/gameweeks/N without leagueId runs TVT path on triple-crown league",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Only league with GW8 unscored is a triple-crown league.",
+      "testData": "POST /api/gameweeks/8 (no leagueId)",
+      "testSteps": [
+        "1. POST endpoint without leagueId",
+        "2. Inspect which handler executed",
+        "3. Verify TVT in-route scoring ran (not processTripleCrownGameweek)"
+      ],
+      "expectedResult": "Today's behaviour: leagueRow lookup fails (`eq(leagues.id, '')`), format is undefined, falls through to TVT default path, running TVT scoring against triple-crown data. Pins DEF-GWFIX-005 format misdispatch.",
+      "postconditions": "Wrong format scoring applied.",
+      "requirementId": "BR-GWFIX-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-GWFIX-005 format-fallthrough branch."
+    },
+    {
+      "id": "TC-GWFIX-084",
+      "feature": "Round-Robin Generator",
+      "scenario": "8 teams x 5 reps -> 140 fixtures with home/away alternation on odd reps",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Unit-style test against `generateRoundRobinFixtures` with 8 distinct team ids.",
+      "testData": "generateRoundRobinFixtures(teams[8], 5)",
+      "testSteps": [
+        "1. Call helper with 8 teams, 5 reps",
+        "2. Assert total fixtures = 140",
+        "3. Assert each team appears as home in some reps and away in others on odd-indexed reps"
+      ],
+      "expectedResult": "Exactly 140 fixtures spanning GW1..35; sides swap on odd-indexed repetitions.",
+      "postconditions": "Generator deterministic for fixed input.",
+      "requirementId": "AC-GWFIX-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-GWFIX-085",
+      "feature": "Round-Robin Generator",
+      "scenario": "Odd team count (7) appends BYE and omits BYE matches",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Unit-style call with 7 team ids.",
+      "testData": "generateRoundRobinFixtures(teams[7], 1)",
+      "testSteps": [
+        "1. Call helper",
+        "2. Count fixtures per round",
+        "3. Assert no fixture contains BYE"
+      ],
+      "expectedResult": "BYE placeholder appended internally; each round has 3 fixtures (n*(n-1)/2 = 21 total across 7 rounds for 1 rep); no BYE in output.",
+      "postconditions": "Generator handles odd team counts.",
+      "requirementId": "AC-GWFIX-050",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-018."
+    },
+    {
+      "id": "TC-GWFIX-086",
+      "feature": "Generate Fixtures (Cache)",
+      "scenario": "POST generate-fixtures invalidates league page cache on success",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "League page cache pre-warmed via prior GET.",
+      "testData": "POST generate-fixtures (then GET league page)",
+      "testSteps": [
+        "1. Warm cache",
+        "2. POST generate-fixtures",
+        "3. Verify cache invalidation observed (next GET re-queries DB)"
+      ],
+      "expectedResult": "invalidateLeaguePageCache(leagueId) called; cache invalidated.",
+      "postconditions": "Cache cold for league page.",
+      "requirementId": "AC-GWFIX-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-023 (POST branch)."
+    },
+    {
+      "id": "TC-GWFIX-087",
+      "feature": "TVT Processing (Cache)",
+      "scenario": "Process GW invalidates league page cache",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "League page cache warm; TVT GW unscored.",
+      "testData": "POST /api/gameweeks/N?leagueId=<id>",
+      "testSteps": [
+        "1. Warm league page cache",
+        "2. POST process GW",
+        "3. Verify cache invalidation"
+      ],
+      "expectedResult": "invalidateLeaguePageCache called after processing.",
+      "postconditions": "Cache cold.",
+      "requirementId": "AC-GWFIX-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-044."
+    },
+    {
+      "id": "TC-GWFIX-088",
+      "feature": "Process-All League-GW (Live Cache Clear)",
+      "scenario": "processOneLeagueOneGw clears live cache at start (non-fatal on failure)",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Live cache for GW5 has stale data; superadmin orchestrator.",
+      "testData": "POST league-gw with `{ league, gw: 5 }`",
+      "testSteps": [
+        "1. Pre-populate live cache GW5",
+        "2. POST league-gw",
+        "3. Inspect cache state at function start (via instrumentation) and verify clear occurred"
+      ],
+      "expectedResult": "Live cache cleared at start; if clear fails, processing still continues (no early exit).",
+      "postconditions": "Cache cleared and possibly re-populated after scoring.",
+      "requirementId": "AC-GWFIX-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-051."
+    },
+    {
+      "id": "TC-GWFIX-089",
+      "feature": "Bulk Upload Fixtures (Deprecation)",
+      "scenario": "Endpoint annotated @deprecated still accepts POSTs",
+      "type": "Smoke",
+      "priority": "P3",
+      "preconditions": "Admin session; valid payload.",
+      "testData": "POST bulk-upload-fixtures with 1 valid row",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 (endpoint remains functional despite @deprecated annotation).",
+      "postconditions": "Fixture inserted.",
+      "requirementId": "AC-GWFIX-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-031 deprecation."
+    },
+    {
+      "id": "TC-GWFIX-090",
+      "feature": "Generate Fixtures (Triple Crown groupless fallback)",
+      "scenario": "Triple Crown with no Group A record falls back to all league teams",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Triple Crown league with 20 teams but Group A row absent.",
+      "testData": "POST generate-fixtures",
+      "testSteps": [
+        "1. POST endpoint",
+        "2. Inspect response and fixture groupId values"
+      ],
+      "expectedResult": "Fixtures generated using all league teams; groupId is null on each fixture; HTTP 200.",
+      "postconditions": "Fixtures persisted with null groupId.",
+      "requirementId": "AC-GWFIX-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-010 + BR-GWFIX-013 null-groupId branch."
+    },
+    {
+      "id": "TC-GWFIX-092",
+      "feature": "Bulk Upload Fixtures (clearExisting)",
+      "scenario": "clearExisting=true wipes ALL fixtures across all gameweeks before insertion",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League has both league-stage and playoff fixtures.",
+      "testData": "POST bulk-upload-fixtures with `clearExisting: true` and valid rows",
+      "testSteps": [
+        "1. Snapshot fixture counts (league-stage + playoff)",
+        "2. POST with clearExisting=true",
+        "3. Verify all fixtures (across all GWs) were deleted then new rows inserted"
+      ],
+      "expectedResult": "All pre-existing fixtures (league-stage AND playoff) deleted; only new rows from this upload exist afterwards.",
+      "postconditions": "Fixture table contains only the uploaded set.",
+      "requirementId": "AC-GWFIX-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Documents current (defective per DEF-GWFIX-004) behaviour as the documented spec; the regression pin lives in TC-GWFIX-081."
+    },
+    {
+      "id": "TC-GWFIX-091",
+      "feature": "GET Gameweek (response shape)",
+      "scenario": "Response includes fixturesCount, resultsProcessed, survival counters",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "GW7 has 8 fixtures, 5 with results, 3 survival entries.",
+      "testData": "GET /api/gameweeks/7?leagueId=<id>",
+      "testSteps": [
+        "1. GET endpoint",
+        "2. Inspect gameweek.fixturesCount, resultsProcessed, survivalCount, survivalRanked"
+      ],
+      "expectedResult": "fixturesCount=8, resultsProcessed=5, survivalCount=3, survivalRanked populated; fixtures include isChallenge/isPlayoff flags and optional result.",
+      "postconditions": "No mutation.",
+      "requirementId": "AC-GWFIX-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers BR-GWFIX-036."
+    }
+  ],
+  "gapFlags": []
+}

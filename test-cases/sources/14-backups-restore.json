@@ -1,0 +1,1970 @@
+{
+  "moduleId": "BACKUP",
+  "moduleName": "Backups & Restore",
+  "sheetName": "Backups",
+  "status": "qa-signed-off",
+  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "requirements": {
+    "version": 1,
+    "businessContext": "Backups & Restore covers the snapshot lifecycle for a league: an on-demand .zip download of current state, persisted JSON snapshots in the `backups` table (manual, gw1-lock, auction-complete triggers), per-format restore endpoints (TVT, triple-crown, auction) that wipe-then-reinsert fixtures or auction state from a parsed .zip or stored snapshot, and the idempotent auto-snapshot helper invoked from session-completion and the cron's per-GW pipeline. Restore is destructive and operates per-format with strict cross-league + cross-format guards on the multipart upload path; saved-snapshot path enforces league ownership via the SELECT's WHERE clause.",
+    "userStories": [
+      {
+        "id": "US-BACKUP-001",
+        "asA": "admin",
+        "iWant": "to download a .zip of the league's current state (teams, fixtures, captains, chips, auction sheets, gameweeks, meta.json) via a single GET request",
+        "soThat": "I can keep an offline backup or hand it off as input to a restore",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backup/route.ts:19-50", "src/lib/backup/xlsx-zip.ts:12-46"]
+      },
+      {
+        "id": "US-BACKUP-002",
+        "asA": "admin",
+        "iWant": "to create a persisted manual snapshot in the `backups` table on demand",
+        "soThat": "I have an audit-trail row I can later restore from without uploading a file",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:69-129"]
+      },
+      {
+        "id": "US-BACKUP-003",
+        "asA": "admin",
+        "iWant": "to list all backup snapshots for my league ordered newest-first with the trigger and which sheets are included",
+        "soThat": "I can pick the right one to download or restore from",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:17-57"]
+      },
+      {
+        "id": "US-BACKUP-004",
+        "asA": "admin",
+        "iWant": "to download a specific stored snapshot by ID as a .zip",
+        "soThat": "I can inspect or re-import an older state via the per-format import blocks",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:23-89"]
+      },
+      {
+        "id": "US-BACKUP-005",
+        "asA": "admin",
+        "iWant": "to delete an unwanted backup row",
+        "soThat": "I can prune snapshots that are no longer relevant",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:1-89"]
+      },
+      {
+        "id": "US-BACKUP-006",
+        "asA": "admin of a TVT league",
+        "iWant": "to restore PL fixtures from an uploaded backup .zip or stored snapshot",
+        "soThat": "I can recover from a corrupted fixture state without rebuilding manually",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-tvt/route.ts:23-101", "src/lib/backup/restore-tvt.ts:103-186"]
+      },
+      {
+        "id": "US-BACKUP-007",
+        "asA": "admin of a triple-crown league",
+        "iWant": "to restore PL fixtures from an uploaded backup .zip or stored snapshot",
+        "soThat": "I can recover the league-format portion (cup + UEFA knockouts deferred)",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:20-97"]
+      },
+      {
+        "id": "US-BACKUP-008",
+        "asA": "admin of an auction league",
+        "iWant": "to restore auction state (teamsState, squads, clubs, sessions, bids, bid logs, trades, penalties, slot unlocks, wishlists, notifications) from a backup",
+        "soThat": "I can recover from a bad bid-resolution or accidental Reset Auction",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:263-592"]
+      },
+      {
+        "id": "US-BACKUP-009",
+        "asA": "system",
+        "iWant": "an idempotent helper to write an auction-complete snapshot whenever a session is marked completed",
+        "soThat": "every session-completion event leaves a recoverable checkpoint without duplicating rows on retries",
+        "sourceRefs": ["src/lib/backup/snapshot.ts:15-72", "src/app/api/auction/session/route.ts:427-430"]
+      },
+      {
+        "id": "US-BACKUP-010",
+        "asA": "system",
+        "iWant": "the cron's per-GW pipeline to write an automatic snapshot once scoring succeeds",
+        "soThat": "we always have a per-GW rollback target without admin intervention",
+        "sourceRefs": ["src/lib/cron/process-all.ts:433-438"]
+      },
+      {
+        "id": "US-BACKUP-011",
+        "asA": "admin",
+        "iWant": "restore endpoints to reject backups taken from a different league or a different format BEFORE any destructive write",
+        "soThat": "I can't accidentally overwrite League A's state with League B's data",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:288-307", "src/app/api/admin/[leagueId]/restore-tvt/route.ts:46-66", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:43-62"]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-BACKUP-001",
+        "rule": "All backup/restore endpoints require an authorized league via `getAuthorizedLeagueId` (`x-session-type`, `x-session-id`, `x-league-id` headers); on failure return 403 Forbidden.",
+        "sourceRefs": ["src/lib/league-auth.ts:13-56", "src/app/api/admin/[leagueId]/backup/route.ts:21-22", "src/app/api/admin/[leagueId]/backups/route.ts:18-19", "src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:24-25", "src/app/api/admin/[leagueId]/restore-auction/route.ts:264-265", "src/app/api/admin/[leagueId]/restore-tvt/route.ts:24-25", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:21-22"]
+      },
+      {
+        "id": "BR-BACKUP-002",
+        "rule": "Active-league enforcement: admins (non-superadmin) only get a leagueId when the league `isActive=true`; otherwise authorization returns null → 403.",
+        "sourceRefs": ["src/lib/league-auth.ts:39-52"]
+      },
+      {
+        "id": "BR-BACKUP-003",
+        "rule": "GET /backup returns a .zip with Content-Type `application/zip`, `Content-Disposition: attachment; filename=\"backup-<slug>-<YYYYMMDD-HHmm>.zip\"`, and `Cache-Control: no-store`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backup/route.ts:33-42", "src/lib/backup/xlsx-zip.ts:48-50", "src/lib/backup/xlsx-zip.ts:59-62"]
+      },
+      {
+        "id": "BR-BACKUP-004",
+        "rule": "GET /backup returns 404 when the league row does not exist (after the auth check passes).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backup/route.ts:24-29"]
+      },
+      {
+        "id": "BR-BACKUP-005",
+        "rule": "The .zip always contains `meta.json` (leagueId, slug, name, format, season, generatedAt, backupVersion=1) so restore endpoints can validate identity.",
+        "sourceRefs": ["src/lib/backup/generate.ts:200-209", "src/lib/backup/generate.ts:257-265", "src/lib/backup/xlsx-zip.ts:14-16"]
+      },
+      {
+        "id": "BR-BACKUP-006",
+        "rule": "`teams.xlsx` and `captains.xlsx` are emitted only when `league.format !== \"auction\"` (auction has its own onboarding); `chips.xlsx` is emitted only when `league.format === \"tvt\"`.",
+        "sourceRefs": ["src/lib/backup/generate.ts:268-287", "src/lib/backup/generate.ts:311-350", "src/lib/backup/generate.ts:353-383", "src/lib/backup/xlsx-zip.ts:17-20"]
+      },
+      {
+        "id": "BR-BACKUP-007",
+        "rule": "Auction sheets (`auction_teams_state.xlsx`, `auction_squads.xlsx`, `auction_clubs.xlsx`) are emitted only when `league.format === \"auction\"`.",
+        "sourceRefs": ["src/lib/backup/generate.ts:404-417", "src/lib/backup/xlsx-zip.ts:22-24"]
+      },
+      {
+        "id": "BR-BACKUP-008",
+        "rule": "Auction event-history sheets (trades, penalty_redemptions, slot_unlocks, wishlists, notifications, sessions, bids, bid_logs) are auction-only and each sheet is only included in the .zip when its row array is non-empty.",
+        "sourceRefs": ["src/lib/backup/generate.ts:417-591", "src/lib/backup/xlsx-zip.ts:27-42"]
+      },
+      {
+        "id": "BR-BACKUP-009",
+        "rule": "Backup fixtures include PL fixtures only; playoff fixtures (`isPlayoff=true`) are excluded because they're regenerated by the advance flow.",
+        "sourceRefs": ["src/lib/backup/generate.ts:289-308"]
+      },
+      {
+        "id": "BR-BACKUP-010",
+        "rule": "Team rows in backup carry the placeholder password `RESET_REQUIRED` (bcrypt hashes are not reversible); admin must reset passwords after a teams-restore.",
+        "sourceRefs": ["src/lib/backup/generate.ts:241-242", "src/lib/backup/generate.ts:274-286"]
+      },
+      {
+        "id": "BR-BACKUP-011",
+        "rule": "Ghost teams (`isGhost=true`) are excluded from all backup row arrays (teams, captains, chips, auction state).",
+        "sourceRefs": ["src/lib/backup/generate.ts:270-272", "src/lib/backup/generate.ts:330-334", "src/lib/backup/generate.ts:372-375", "src/lib/backup/generate.ts:440-443"]
+      },
+      {
+        "id": "BR-BACKUP-012",
+        "rule": "Captain matrix has one row per (team, player); column `n` (1..38) is \"C\" when that player was captain in GW n, else \"\".",
+        "sourceRefs": ["src/lib/backup/generate.ts:336-349"]
+      },
+      {
+        "id": "BR-BACKUP-013",
+        "rule": "Chip matrix has one row per team; cell value follows the import-chips alphabet: \"W\"/\"D\"/\"C\"/\"SL\"/\"CB\"/\"UD\" for valid, suffix \"W\" for wasted, \"C:<opponentLoginId>\" for Challenge Chips with an opponent.",
+        "sourceRefs": ["src/lib/backup/generate.ts:622-630", "src/lib/backup/generate.ts:355-383"]
+      },
+      {
+        "id": "BR-BACKUP-014",
+        "rule": "Auction sessions sheet includes only sessions whose status is \"completed\" or \"cancelled\"; active/pending sessions are intentionally excluded so admin reschedules after restore.",
+        "sourceRefs": ["src/lib/backup/generate.ts:455-457", "src/lib/backup/generate.ts:159-171"]
+      },
+      {
+        "id": "BR-BACKUP-015",
+        "rule": "Penalty redemptions sheet includes only rows with `redeemedAt IS NOT NULL`; pending penalties live on the active team's `penaltySlots` and aren't snapshotted again.",
+        "sourceRefs": ["src/lib/backup/generate.ts:447-450"]
+      },
+      {
+        "id": "BR-BACKUP-016",
+        "rule": "POST /backups inserts a row with `trigger=\"manual\"`, generated id, current timestamp, and JSON-serialised non-null payloads; returns `{ success:true, id, trigger, createdAt, counts:{...} }`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:69-129"]
+      },
+      {
+        "id": "BR-BACKUP-017",
+        "rule": "POST /backups always writes `fixturesJson` (column is `.notNull()`); other format-specific JSON columns are null when the corresponding format-gated row array is null/empty.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:82-99", "src/lib/db/schema.ts:327"]
+      },
+      {
+        "id": "BR-BACKUP-018",
+        "rule": "GET /backups returns `{ backups: [{ id, trigger, createdAt, includes:{ teams, fixtures, captains, chips, auctionTeamsState, auctionSquads, auctionClubs, gameweeks } }] }` ordered by `createdAt DESC`; JSON blobs are NOT included to keep the list response lean.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:21-56"]
+      },
+      {
+        "id": "BR-BACKUP-019",
+        "rule": "GET /backups `includes.fixtures` is derived from `backups.fixturesJson` truthiness; because `fixturesJson` is `.notNull()`, this flag is effectively always `true`. // CODE-CONFIRMED: may be a defect — flag is non-informative.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:26-48", "src/lib/db/schema.ts:327"]
+      },
+      {
+        "id": "BR-BACKUP-020",
+        "rule": "GET /backups `includes` map does NOT surface migration-0012 event-history columns (trades, slot unlocks, wishlists, notifications, auctionSessions, bids, bidLogs, penaltyRedemptions); UI cannot tell whether those were captured. // CODE-CONFIRMED: may be a defect — missing flags.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:21-56"]
+      },
+      {
+        "id": "BR-BACKUP-021",
+        "rule": "GET /backups/[backupId] returns 404 when the (backupId, leagueId) pair does not match a row — cross-league lookup is blocked by the WHERE clause.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:29-34"]
+      },
+      {
+        "id": "BR-BACKUP-022",
+        "rule": "GET /backups/[backupId] also returns 404 if the league row itself is missing (after backup row resolves).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:36-41"]
+      },
+      {
+        "id": "BR-BACKUP-023",
+        "rule": "GET /backups/[backupId] re-hydrates stored JSON into the BackupRows shape and rebuilds the .zip live, so later formatting changes naturally apply to old snapshots without data migration.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:43-77"]
+      },
+      {
+        "id": "BR-BACKUP-024",
+        "rule": "GET /backups/[backupId] synthesises `meta` from the current league row + snapshot's `createdAt` (older snapshots don't store their own meta); the resulting .zip carries the CURRENT league's leagueId/format, not necessarily the league state at snapshot time. // CODE-CONFIRMED: may be a defect — meta drift if league.format changes.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:47-56"]
+      },
+      {
+        "id": "BR-BACKUP-025",
+        "rule": "Downloaded snapshot filename is `backup-<slug>-<trigger>-<YYYYMMDD-HHmm>.zip` where HHmm is derived from the row's `createdAt`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:78-79", "src/lib/backup/xlsx-zip.ts:48-50"]
+      },
+      {
+        "id": "BR-BACKUP-026",
+        "rule": "There is NO DELETE handler implemented on /api/admin/[leagueId]/backups/[backupId] — Next.js will return 405 for DELETE requests despite the task contract listing it as in-scope. // CODE-CONFIRMED: may be a defect — missing endpoint.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:1-89"]
+      },
+      {
+        "id": "BR-BACKUP-027",
+        "rule": "POST /restore-tvt rejects with 400 when `league.format !== \"tvt\"`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-tvt/route.ts:33-35"]
+      },
+      {
+        "id": "BR-BACKUP-028",
+        "rule": "POST /restore-triple-crown rejects with 400 when `league.format !== \"triple-crown\"`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:30-32"]
+      },
+      {
+        "id": "BR-BACKUP-029",
+        "rule": "POST /restore-auction rejects with 400 when `league.format !== \"auction\"`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:273-275"]
+      },
+      {
+        "id": "BR-BACKUP-030",
+        "rule": "Restore endpoints accept either `multipart/form-data` with a `file` Blob or JSON `{ backupId: string }`; missing/invalid input returns 400 with the helpful message `\"Provide either a multipart `file` upload or JSON `{ backupId }`\"`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-tvt/route.ts:37-77", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:34-73", "src/app/api/admin/[leagueId]/restore-auction/route.ts:278-318"]
+      },
+      {
+        "id": "BR-BACKUP-031",
+        "rule": "Multipart restore path rejects with 400 if the uploaded .zip is missing `meta.json` (\"please re-export from this league via Download Backup\").",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-tvt/route.ts:50-54", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:45-49", "src/app/api/admin/[leagueId]/restore-auction/route.ts:290-295"]
+      },
+      {
+        "id": "BR-BACKUP-032",
+        "rule": "Multipart restore path rejects with 400 if `meta.leagueId` is present and does not equal the target league (cross-league restore blocked before any destructive op).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-tvt/route.ts:55-60", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:51-56", "src/app/api/admin/[leagueId]/restore-auction/route.ts:296-301"]
+      },
+      {
+        "id": "BR-BACKUP-033",
+        "rule": "Multipart restore path rejects with 400 if `meta.format` is present and does not equal the target league's format.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-tvt/route.ts:61-66", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:57-62", "src/app/api/admin/[leagueId]/restore-auction/route.ts:302-307"]
+      },
+      {
+        "id": "BR-BACKUP-034",
+        "rule": "Saved-snapshot restore path (`{ backupId }`) blocks cross-league restore via the SELECT's `eq(backups.id, backupId) AND eq(backups.leagueId, leagueId)` clause; mismatched id+league pair returns 404 \"Snapshot not found for this league\"/\"Backup not found\".",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:80-86", "src/app/api/admin/[leagueId]/restore-auction/route.ts:240-246"]
+      },
+      {
+        "id": "BR-BACKUP-035",
+        "rule": "Saved-snapshot restore path for TVT/triple-crown does NOT check the backup's original format — `loadRestoreSnapshot` synthesises `meta: { leagueId: row.leagueId }` only (no `format`), so a triple-crown snapshot restored via /restore-tvt skips the format guard. // CODE-CONFIRMED: may be a defect — format guard only fires on multipart path.",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:80-97", "src/app/api/admin/[leagueId]/restore-tvt/route.ts:61-66"]
+      },
+      {
+        "id": "BR-BACKUP-036",
+        "rule": "`restoreFixtures` always deletes existing fixtures (`inArray(fixtures.gameweekId, leagueGwIds)`) before re-inserting, even if the payload's `fixtures` array is empty — there is no \"empty payload\" guard. // CODE-CONFIRMED: may be a defect — silently nukes fixtures if the upload was empty.",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:128-132"]
+      },
+      {
+        "id": "BR-BACKUP-037",
+        "rule": "Fixture wipe cascades to results via `ON DELETE CASCADE` on `results.fixture_id`; admins lose recorded results unless the new fixtures regenerate them.",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:128-132"]
+      },
+      {
+        "id": "BR-BACKUP-038",
+        "rule": "Fixture row resolution is case-insensitive on `teamLoginId`; rows whose home or away login isn't found are skipped and a warning is added (not a 4xx).",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:114-149"]
+      },
+      {
+        "id": "BR-BACKUP-039",
+        "rule": "Fixture row with `Gameweek` outside [1, 38] or non-numeric is skipped with warning `Row N: invalid gameweek ...`.",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:139-143"]
+      },
+      {
+        "id": "BR-BACKUP-040",
+        "rule": "If a backup references a GW number that has no row in the target league, restore auto-creates the gameweek with a placeholder deadline (now + 7*gw days at 11:00) and `isPlayoffs = gwNumber >= league.playoffStartGw`.",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:151-166"]
+      },
+      {
+        "id": "BR-BACKUP-041",
+        "rule": "Restore-tvt preserves teams (no wipe of accounts/passwords) and defers captains + chips restore — non-empty arrays add warnings instructing the admin to use the legacy import-* blocks.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-tvt/route.ts:86-93", "src/lib/backup/restore-tvt.ts:178-184"]
+      },
+      {
+        "id": "BR-BACKUP-042",
+        "rule": "Restore-tvt success response: `{ success:true, fixturesInserted, warnings:[], message:\"Restored N fixture(s). Captains + chips restore is a tracked follow-up...\" }`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-tvt/route.ts:87-93"]
+      },
+      {
+        "id": "BR-BACKUP-043",
+        "rule": "Restore-triple-crown reuses `restoreFixtures` from restore-tvt; cup fixtures + UCL/UEL knockouts are NOT in the backup payload today (tracked follow-up — see DEF-TC-003). Only PL fixtures are restored.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:5-6", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:82-89"]
+      },
+      {
+        "id": "BR-BACKUP-044",
+        "rule": "Restore-tvt leaves stale `playoff_ties` rows after the fixtures wipe — cross-module defect tracked as DEF-PLAYOFF-003 in module 08; not re-logged here.",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:128-132"]
+      },
+      {
+        "id": "BR-BACKUP-045",
+        "rule": "Restore-auction validates every referenced teamId (teamsState, squads, clubs, trades [proposer+target], penaltyRedemptions, slotUnlocks, wishlists, notifications, bids [nominator+highBidder], bidLogs) against the league's current teams; orphan ids return 400 listing up to 3 + count.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:328-353"]
+      },
+      {
+        "id": "BR-BACKUP-046",
+        "rule": "Restore-auction wipes auction state in strict order (bid logs → bids → sessions → ownership → club ownership → team penalties → auction scores → trade proposals → slot unlocks → wishlists → notifications), then resets per-team economy to defaults (`purse=initialBudget`, totalSpent/totalRefunds/totalIncome/penaltySlots = 0).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:356-387"]
+      },
+      {
+        "id": "BR-BACKUP-047",
+        "rule": "Restore-auction does NOT restore `auctionScores`; admin must reprocess each GW after restore so the scorer regenerates them from the rebuilt ownership state.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:42-46", "src/app/api/admin/[leagueId]/restore-auction/route.ts:367-369", "src/app/api/admin/[leagueId]/restore-auction/route.ts:590-591"]
+      },
+      {
+        "id": "BR-BACKUP-048",
+        "rule": "Restore-auction restores per-team economy from the snapshot — Purse, Total Spent, Total Income, Total Refunds, Penalty Slots, Bonus Slots (defaults to 0 when the older backup omits the column).",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:424-439"]
+      },
+      {
+        "id": "BR-BACKUP-049",
+        "rule": "Restore-auction inserts event-history in FK order: sessions → bids (orphans dropped if sessionId not restored) → bidLogs (orphans dropped if bidId not restored) → penalty redemptions (`sessionId` set to null when its session wasn't restored — schema FK is `ON DELETE SET NULL`) → slot unlocks → trades → wishlists → notifications.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:441-566"]
+      },
+      {
+        "id": "BR-BACKUP-050",
+        "rule": "Restore-auction is NOT transactional — if an insert fails mid-write, the wipe has already happened and league state is partially modified; response is 500 `\"Restore failed mid-write — league state may be partially modified\"`. // CODE-CONFIRMED: may be a defect — destructive without rollback.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:567-573"]
+      },
+      {
+        "id": "BR-BACKUP-051",
+        "rule": "Restore-auction success response: `{ success:true, restored:{ squads, clubs, teamsState, sessions, bids, bidLogs, penaltyRedemptions, slotUnlocks, trades, wishlists, notifications }, next:\"Admin should reprocess each GW...\" }`.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:575-591"]
+      },
+      {
+        "id": "BR-BACKUP-052",
+        "rule": "`writeAutoSnapshot(leagueId, trigger)` is idempotent on the (leagueId, trigger) pair — if a row already exists for that pair, the function no-ops (returns without inserting).",
+        "sourceRefs": ["src/lib/backup/snapshot.ts:15-22"]
+      },
+      {
+        "id": "BR-BACKUP-053",
+        "rule": "`writeAuctionCompleteSnapshot(sessionId)` derives the trigger string from session type/cycleNumber: `initial → \"auction-initial-c0\"`, `club-auction → \"auction-club-c0\"`, `mini-auction → \"auction-mini-c<cycleNumber>\"`. The schema-comment label \"auction-complete\" is a category, not a literal trigger value.",
+        "sourceRefs": ["src/lib/backup/snapshot.ts:55-72", "src/lib/db/schema.ts:324"]
+      },
+      {
+        "id": "BR-BACKUP-054",
+        "rule": "Session-completion paths that call `writeAuctionCompleteSnapshot` swallow errors with `.catch((e) => console.error(...))` — a snapshot failure never blocks the auction state transition.",
+        "sourceRefs": ["src/app/api/auction/session/route.ts:427-430", "src/lib/formats/auction/resolve-bid.ts:344", "src/lib/formats/auction/simulate.ts:190", "src/lib/formats/auction/club-auction.ts:303"]
+      },
+      {
+        "id": "BR-BACKUP-055",
+        "rule": "Cron per-GW pipeline calls `writeAutoSnapshot(leagueId, \"gw<N>-auto\")` only when scoring succeeded AND there were no errors; the trigger label format is `gw<N>-auto`, NOT the schema-comment value \"gw1-lock\". // CODE-CONFIRMED: may be a defect — schema comment claims \"gw1-lock\" but cron emits \"gw<N>-auto\".",
+        "sourceRefs": ["src/lib/cron/process-all.ts:433-438", "src/lib/db/schema.ts:316-324"]
+      },
+      {
+        "id": "BR-BACKUP-056",
+        "rule": "Backup row cascade-deletes when the parent league is deleted (`leagues.id` FK with `onDelete: \"cascade\"`).",
+        "sourceRefs": ["src/lib/db/schema.ts:322-323"]
+      },
+      {
+        "id": "BR-BACKUP-057",
+        "rule": "All restore + backup-download endpoints set `export const maxDuration = 60` to allow long-running zip generation.",
+        "sourceRefs": ["src/app/api/admin/[leagueId]/backup/route.ts:9", "src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:13", "src/app/api/admin/[leagueId]/restore-auction/route.ts:25", "src/app/api/admin/[leagueId]/restore-tvt/route.ts:21", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:18"]
+      },
+      {
+        "id": "BR-BACKUP-058",
+        "rule": "Malformed `meta.json` inside the .zip is treated as missing (caught silently in JSON.parse) so the route surfaces the friendly \"missing meta.json\" error instead of a parse stack trace.",
+        "sourceRefs": ["src/lib/backup/restore-tvt.ts:52-60", "src/app/api/admin/[leagueId]/restore-auction/route.ts:211-220"]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-BACKUP-001",
+        "given": "an admin authenticated for league X with valid headers",
+        "when": "they GET /api/admin/<X>/backup",
+        "then": "the response is 200 with Content-Type=application/zip, Content-Disposition attachment filename `backup-<slug>-<YYYYMMDD-HHmm>.zip`, Cache-Control no-store, and the zip contains meta.json + fixtures.xlsx at minimum",
+        "linksTo": "US-BACKUP-001"
+      },
+      {
+        "id": "AC-BACKUP-002",
+        "given": "a request with no/invalid x-session headers",
+        "when": "GET /api/admin/<X>/backup is called",
+        "then": "the response is 403 Forbidden with body `{ error: \"Forbidden\" }`",
+        "linksTo": "BR-BACKUP-001"
+      },
+      {
+        "id": "AC-BACKUP-003",
+        "given": "an admin (non-superadmin) whose league is `isActive=false`",
+        "when": "they call any backup/restore endpoint",
+        "then": "the response is 403 Forbidden",
+        "linksTo": "BR-BACKUP-002"
+      },
+      {
+        "id": "AC-BACKUP-004",
+        "given": "a league with format=\"tvt\"",
+        "when": "GET /backup is called",
+        "then": "the zip contains teams.xlsx, captains.xlsx, chips.xlsx, fixtures.xlsx, gameweeks.xlsx, meta.json — no auction_*.xlsx files",
+        "linksTo": "BR-BACKUP-006"
+      },
+      {
+        "id": "AC-BACKUP-005",
+        "given": "a league with format=\"triple-crown\"",
+        "when": "GET /backup is called",
+        "then": "the zip contains teams.xlsx, captains.xlsx, fixtures.xlsx, gameweeks.xlsx, meta.json — NO chips.xlsx and NO auction_*.xlsx",
+        "linksTo": "BR-BACKUP-006"
+      },
+      {
+        "id": "AC-BACKUP-006",
+        "given": "an auction league with no completed sessions or trades",
+        "when": "GET /backup is called",
+        "then": "the zip contains meta.json, fixtures.xlsx, gameweeks.xlsx, auction_teams_state.xlsx, auction_squads.xlsx (if any), auction_clubs.xlsx (if any) — and NO event-history sheets (since they'd be empty)",
+        "linksTo": "BR-BACKUP-008"
+      },
+      {
+        "id": "AC-BACKUP-007",
+        "given": "an auction league with completed sessions + bids + trades",
+        "when": "GET /backup is called",
+        "then": "the zip additionally contains auction_sessions.xlsx, auction_bids.xlsx, auction_bid_logs.xlsx, auction_trades.xlsx (and any other non-empty event-history sheets)",
+        "linksTo": "BR-BACKUP-008"
+      },
+      {
+        "id": "AC-BACKUP-008",
+        "given": "the league has playoff fixtures (`isPlayoff=true`)",
+        "when": "GET /backup is called",
+        "then": "fixtures.xlsx contains only PL fixtures (no playoff rows)",
+        "linksTo": "BR-BACKUP-009"
+      },
+      {
+        "id": "AC-BACKUP-009",
+        "given": "any team row exported in teams.xlsx",
+        "when": "the row is inspected",
+        "then": "the Password column equals \"RESET_REQUIRED\"",
+        "linksTo": "BR-BACKUP-010"
+      },
+      {
+        "id": "AC-BACKUP-010",
+        "given": "a league with ghost teams (`isGhost=true`)",
+        "when": "GET /backup is called",
+        "then": "ghost teams do NOT appear in teams.xlsx, captains.xlsx, chips.xlsx, or auction_teams_state.xlsx",
+        "linksTo": "BR-BACKUP-011"
+      },
+      {
+        "id": "AC-BACKUP-011",
+        "given": "a TVT team with player1 captained in GW3 and GW5",
+        "when": "captains.xlsx is opened",
+        "then": "the row {Team=loginId, Players=player1Name} has \"C\" in columns 3 and 5 and \"\" in all other GW columns 1..38",
+        "linksTo": "BR-BACKUP-012"
+      },
+      {
+        "id": "AC-BACKUP-012",
+        "given": "a TVT team used a wasted Wildcard in GW2 and a Challenge Chip targeting opponent \"alpha\" in GW7",
+        "when": "chips.xlsx is opened",
+        "then": "the team's row has \"WW\" in column 2 and \"C:alpha\" in column 7",
+        "linksTo": "BR-BACKUP-013"
+      },
+      {
+        "id": "AC-BACKUP-013",
+        "given": "an auction league with active + pending + completed sessions",
+        "when": "GET /backup is called",
+        "then": "auction_sessions.xlsx contains only completed and cancelled sessions (active/pending excluded)",
+        "linksTo": "BR-BACKUP-014"
+      },
+      {
+        "id": "AC-BACKUP-014",
+        "given": "auction penalties with mixed redeemedAt (null and non-null)",
+        "when": "GET /backup is called",
+        "then": "auction_penalty_redemptions.xlsx contains only the redeemed rows",
+        "linksTo": "BR-BACKUP-015"
+      },
+      {
+        "id": "AC-BACKUP-015",
+        "given": "an authorized admin",
+        "when": "they POST /api/admin/<X>/backups with no body",
+        "then": "a new row is inserted with `trigger=\"manual\"`, and the response is `{ success:true, id, trigger:\"manual\", createdAt, counts:{...} }`",
+        "linksTo": "US-BACKUP-002"
+      },
+      {
+        "id": "AC-BACKUP-016",
+        "given": "an authorized admin",
+        "when": "they GET /api/admin/<X>/backups",
+        "then": "the response is `{ backups: [...] }` ordered by createdAt DESC, with each entry exposing `id`, `trigger`, `createdAt`, and an `includes` map of 8 booleans",
+        "linksTo": "US-BACKUP-003"
+      },
+      {
+        "id": "AC-BACKUP-017",
+        "given": "any backup row (trigger=manual, gw<N>-auto, or auction-*-c<N>)",
+        "when": "GET /api/admin/<X>/backups is called",
+        "then": "`includes.fixtures` is true in every entry because `fixturesJson` is a NOT NULL column",
+        "linksTo": "BR-BACKUP-019"
+      },
+      {
+        "id": "AC-BACKUP-018",
+        "given": "an auction backup that captured trades, slot unlocks, wishlists, sessions, bids, bid logs, notifications",
+        "when": "GET /api/admin/<X>/backups is called",
+        "then": "the `includes` object exposes NO flags for those event-history columns — the UI cannot tell event-history was captured from this endpoint alone",
+        "linksTo": "BR-BACKUP-020"
+      },
+      {
+        "id": "AC-BACKUP-019",
+        "given": "a stored backup row with id=B in league X",
+        "when": "an admin for league X GETs /api/admin/<X>/backups/B",
+        "then": "the response is a 200 .zip with filename `backup-<slug>-<trigger>-<YYYYMMDD-HHmm>.zip` where the timestamp uses the row's createdAt",
+        "linksTo": "BR-BACKUP-025"
+      },
+      {
+        "id": "AC-BACKUP-020",
+        "given": "an admin for league X attempts to read a backup row belonging to league Y",
+        "when": "they GET /api/admin/<X>/backups/<Y-row-id>",
+        "then": "the response is 404 \"Backup not found\" (id+leagueId WHERE filter)",
+        "linksTo": "BR-BACKUP-021"
+      },
+      {
+        "id": "AC-BACKUP-021",
+        "given": "a stored backup that was taken when the league was format=\"tvt\" but the league has since been re-formatted to \"triple-crown\"",
+        "when": "GET /backups/<id> is called",
+        "then": "the rebuilt zip's meta.json shows `format=\"triple-crown\"` (current league row) not the snapshot-time format — meta drifts",
+        "linksTo": "BR-BACKUP-024"
+      },
+      {
+        "id": "AC-BACKUP-022",
+        "given": "an admin sends DELETE /api/admin/<X>/backups/<id>",
+        "when": "the request reaches the route handler",
+        "then": "Next.js returns 405 Method Not Allowed because no DELETE export exists — the UI's delete affordance is non-functional",
+        "linksTo": "BR-BACKUP-026"
+      },
+      {
+        "id": "AC-BACKUP-023",
+        "given": "an admin of a TVT league",
+        "when": "they POST /restore-tvt against a triple-crown league",
+        "then": "the response is 400 \"Restore is for TVT-format leagues only\"",
+        "linksTo": "BR-BACKUP-027"
+      },
+      {
+        "id": "AC-BACKUP-024",
+        "given": "an admin of a triple-crown league",
+        "when": "they POST /restore-triple-crown against a TVT league",
+        "then": "the response is 400 \"Restore is for triple-crown leagues only\"",
+        "linksTo": "BR-BACKUP-028"
+      },
+      {
+        "id": "AC-BACKUP-025",
+        "given": "an admin of an auction league",
+        "when": "they POST /restore-auction against a TVT league",
+        "then": "the response is 400 \"Restore is auction-format only\"",
+        "linksTo": "BR-BACKUP-029"
+      },
+      {
+        "id": "AC-BACKUP-026",
+        "given": "an admin POSTs /restore-tvt with neither a multipart `file` field nor a JSON `{ backupId }`",
+        "when": "the route resolves the input",
+        "then": "the response is 400 \"Provide either a multipart `file` upload or JSON `{ backupId }`\"",
+        "linksTo": "BR-BACKUP-030"
+      },
+      {
+        "id": "AC-BACKUP-027",
+        "given": "an admin uploads a .zip with no meta.json to /restore-auction",
+        "when": "the route parses the zip",
+        "then": "the response is 400 \"Backup zip is missing meta.json — please re-export from this league via Download Backup.\" and NO destructive op runs",
+        "linksTo": "BR-BACKUP-031"
+      },
+      {
+        "id": "AC-BACKUP-028",
+        "given": "an admin uploads a .zip whose meta.leagueId belongs to a different league",
+        "when": "/restore-tvt parses the zip",
+        "then": "the response is 400 \"League mismatch — this backup was taken from a different league (<otherSlug>). Restore aborted before any change.\" and fixtures table is untouched",
+        "linksTo": "BR-BACKUP-032"
+      },
+      {
+        "id": "AC-BACKUP-029",
+        "given": "an admin uploads a TVT backup zip into a triple-crown league",
+        "when": "/restore-triple-crown parses the zip",
+        "then": "the response is 400 \"Format mismatch — this backup is for a tvt league but the target is triple-crown.\"",
+        "linksTo": "BR-BACKUP-033"
+      },
+      {
+        "id": "AC-BACKUP-030",
+        "given": "an admin POSTs /restore-tvt JSON `{ backupId }` referencing a backup row that belongs to a DIFFERENT league",
+        "when": "the saved-snapshot lookup runs",
+        "then": "the response is 404 \"Snapshot not found for this league\" and no fixtures are wiped",
+        "linksTo": "BR-BACKUP-034"
+      },
+      {
+        "id": "AC-BACKUP-031",
+        "given": "league X is TVT and league Y is triple-crown; an admin for X holds a backupId from a triple-crown snapshot taken in X back when X was triple-crown",
+        "when": "the admin POSTs /restore-tvt with `{ backupId }` for that snapshot",
+        "then": "the route accepts it (no format check on saved-snapshot path) and wipes/restores PL fixtures — the format guard only fires on the multipart upload path",
+        "linksTo": "BR-BACKUP-035"
+      },
+      {
+        "id": "AC-BACKUP-032",
+        "given": "a TVT restore payload whose `fixtures` array is empty",
+        "when": "`restoreFixtures` runs",
+        "then": "the route still deletes ALL existing fixtures for the league (cascades to results) and returns `{ success:true, fixturesInserted:0 }` — no abort or warning for the empty payload",
+        "linksTo": "BR-BACKUP-036"
+      },
+      {
+        "id": "AC-BACKUP-033",
+        "given": "the league has recorded results on existing fixtures",
+        "when": "a restore wipes fixtures",
+        "then": "results rows cascade-delete via the `ON DELETE CASCADE` FK on `results.fixture_id`",
+        "linksTo": "BR-BACKUP-037"
+      },
+      {
+        "id": "AC-BACKUP-034",
+        "given": "a fixture row has Home Team \"ALPHA\" but the league only has team login \"alpha\"",
+        "when": "restore-tvt processes the row",
+        "then": "the row is inserted (lookup is case-insensitive) — no warning",
+        "linksTo": "BR-BACKUP-038"
+      },
+      {
+        "id": "AC-BACKUP-035",
+        "given": "a fixture row references a team login that does not exist",
+        "when": "restore-tvt processes the row",
+        "then": "the row is skipped with a warning `Row N: home team \"<name>\" not found` and the run continues",
+        "linksTo": "BR-BACKUP-038"
+      },
+      {
+        "id": "AC-BACKUP-036",
+        "given": "a fixture row has Gameweek=0, 39, or \"foo\"",
+        "when": "restore-tvt processes the row",
+        "then": "the row is skipped with warning `Row N: invalid gameweek <value>`",
+        "linksTo": "BR-BACKUP-039"
+      },
+      {
+        "id": "AC-BACKUP-037",
+        "given": "a backup references GW20 but the target league has no GW20 row",
+        "when": "restore-tvt processes that fixture",
+        "then": "a new gameweeks row is created with deadline = now + 7*20 days at 11:00 and isPlayoffs computed against `league.playoffStartGw`",
+        "linksTo": "BR-BACKUP-040"
+      },
+      {
+        "id": "AC-BACKUP-038",
+        "given": "a restore-tvt payload carries 12 captain rows + 4 chip rows",
+        "when": "restoreFixtures finishes",
+        "then": "two warnings are appended: \"Captains restore deferred — 12 row(s) in backup. Use the Import Captain Data block to apply.\" and \"Chips restore deferred — 4 row(s) in backup. Use the Import Chip Data block to apply.\"",
+        "linksTo": "BR-BACKUP-041"
+      },
+      {
+        "id": "AC-BACKUP-039",
+        "given": "a successful restore-tvt run",
+        "when": "the response body is read",
+        "then": "the body is `{ success:true, fixturesInserted:N, warnings:[...], message:\"Restored N fixture(s). Captains + chips restore is a tracked follow-up...\" }`",
+        "linksTo": "BR-BACKUP-042"
+      },
+      {
+        "id": "AC-BACKUP-040",
+        "given": "a triple-crown league with cup fixtures + UCL/UEL knockouts before restore",
+        "when": "restore-triple-crown succeeds with a PL-only payload",
+        "then": "cup + UEFA knockout state is NOT in the backup payload and is not restored (cross-module DEF-TC-003); the success message warns that those need separate handling",
+        "linksTo": "BR-BACKUP-043"
+      },
+      {
+        "id": "AC-BACKUP-041",
+        "given": "an auction backup that references a teamId not present in the target league's `teams` table",
+        "when": "restore-auction validates",
+        "then": "the response is 400 `\"Backup references team IDs that don't exist in this league: <id1>, <id2>, <id3> (+N more)\"` and NO destructive op runs",
+        "linksTo": "BR-BACKUP-045"
+      },
+      {
+        "id": "AC-BACKUP-042",
+        "given": "an auction league with existing bids, sessions, ownership, club ownership, penalties, scores, trades, slot unlocks, wishlists, and notifications",
+        "when": "restore-auction begins the wipe phase",
+        "then": "rows are deleted in the order: bid logs → bids → sessions → ownership → club ownership → team penalties → auction scores → trade proposals → slot unlocks → wishlists → notifications, and per-team economy is reset to league defaults",
+        "linksTo": "BR-BACKUP-046"
+      },
+      {
+        "id": "AC-BACKUP-043",
+        "given": "a successful restore-auction with squads + clubs",
+        "when": "the admin reads the response",
+        "then": "`auctionScores` is NOT in the `restored` map and the response's `next` field instructs the admin to reprocess each GW",
+        "linksTo": "BR-BACKUP-047"
+      },
+      {
+        "id": "AC-BACKUP-044",
+        "given": "a restore-auction payload with bonusSlots ABSENT from older backup",
+        "when": "the per-team economy restore runs",
+        "then": "the team's `bonusSlots` is set to 0 (`Number(undefined ?? 0)`); other economy fields take the backup values exactly",
+        "linksTo": "BR-BACKUP-048"
+      },
+      {
+        "id": "AC-BACKUP-045",
+        "given": "an auction backup with a bid whose sessionId is missing from `sessions.xlsx`",
+        "when": "restore-auction inserts event-history",
+        "then": "that bid is dropped (FK-orphan guard) and any logs referencing the dropped bid are also dropped",
+        "linksTo": "BR-BACKUP-049"
+      },
+      {
+        "id": "AC-BACKUP-046",
+        "given": "an auction backup with a penalty redemption whose sessionId is missing from `sessions.xlsx`",
+        "when": "restore-auction inserts penalties",
+        "then": "the row is inserted with `sessionId=null` (schema FK uses ON DELETE SET NULL fallback)",
+        "linksTo": "BR-BACKUP-049"
+      },
+      {
+        "id": "AC-BACKUP-047",
+        "given": "restore-auction has wiped state but the ownership insert fails (e.g. constraint violation)",
+        "when": "the route reaches the catch block",
+        "then": "the response is 500 `\"Restore failed mid-write — league state may be partially modified\"` — there is no transaction so the wipe is NOT rolled back",
+        "linksTo": "BR-BACKUP-050"
+      },
+      {
+        "id": "AC-BACKUP-048",
+        "given": "an auction session is marked completed and `writeAuctionCompleteSnapshot` is invoked",
+        "when": "a snapshot row for `(leagueId, derivedTrigger)` already exists",
+        "then": "the helper returns without inserting a duplicate row",
+        "linksTo": "BR-BACKUP-052"
+      },
+      {
+        "id": "AC-BACKUP-049",
+        "given": "a mini-auction session of cycleNumber=3 is completed",
+        "when": "`writeAuctionCompleteSnapshot(sessionId)` runs",
+        "then": "a new backup row is inserted with `trigger=\"auction-mini-c3\"`",
+        "linksTo": "BR-BACKUP-053"
+      },
+      {
+        "id": "AC-BACKUP-050",
+        "given": "an initial auction session is completed",
+        "when": "`writeAuctionCompleteSnapshot(sessionId)` runs",
+        "then": "a new backup row is inserted with `trigger=\"auction-initial-c0\"`",
+        "linksTo": "BR-BACKUP-053"
+      },
+      {
+        "id": "AC-BACKUP-051",
+        "given": "the cron's process-all loop scores GW5 successfully with no errors",
+        "when": "the post-scoring snapshot block runs",
+        "then": "`writeAutoSnapshot(leagueId, \"gw5-auto\")` is called — no row is written if `(leagueId, \"gw5-auto\")` already exists",
+        "linksTo": "BR-BACKUP-055"
+      },
+      {
+        "id": "AC-BACKUP-052",
+        "given": "the cron scores GW1 successfully",
+        "when": "the post-scoring snapshot block runs",
+        "then": "the trigger column stores `\"gw1-auto\"` (the schema comment says \"gw1-lock\" but the code never emits that literal — comment drifts from code)",
+        "linksTo": "BR-BACKUP-055"
+      },
+      {
+        "id": "AC-BACKUP-053",
+        "given": "scoring fails or returns errors",
+        "when": "the cron post-scoring block evaluates",
+        "then": "`writeAutoSnapshot` is NOT called and no row is inserted",
+        "linksTo": "BR-BACKUP-055"
+      },
+      {
+        "id": "AC-BACKUP-054",
+        "given": "a session completion fires but `writeAuctionCompleteSnapshot` rejects (DB error)",
+        "when": "the awaited call's `.catch` runs",
+        "then": "the error is logged via console.error and the session transition still succeeds — the admin sees no error",
+        "linksTo": "BR-BACKUP-054"
+      },
+      {
+        "id": "AC-BACKUP-055",
+        "given": "a league row is deleted",
+        "when": "the cascade runs",
+        "then": "all `backups` rows for that league are removed via `onDelete: cascade`",
+        "linksTo": "BR-BACKUP-056"
+      },
+      {
+        "id": "AC-BACKUP-056",
+        "given": "an uploaded .zip contains meta.json with malformed JSON",
+        "when": "restore-* parses the zip",
+        "then": "meta is treated as null and the caller returns the friendly `\"Backup zip is missing meta.json...\"` error (NOT a parse stack trace)",
+        "linksTo": "BR-BACKUP-058"
+      }
+    ]
+  },
+  "testCases": [
+    {
+      "id": "TC-BACKUP-001",
+      "feature": "Download Backup",
+      "scenario": "Admin downloads .zip of league state via GET /backup",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Authenticated admin for active TVT league X with teams, fixtures, captains, chips, gameweeks present",
+      "testData": "leagueId=X (TVT), slug=jpl-2025, headers x-session-type=admin + x-session-id=valid + x-league-id=X",
+      "testSteps": ["1. Send GET /api/admin/X/backup with valid session headers", "2. Inspect response status, headers, and zip contents"],
+      "expectedResult": "200; Content-Type=application/zip; Content-Disposition=attachment; filename=backup-jpl-2025-YYYYMMDD-HHmm.zip; Cache-Control=no-store; zip contains meta.json and fixtures.xlsx at minimum",
+      "postconditions": "No state change in DB; .zip file downloaded",
+      "requirementId": "AC-BACKUP-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-002",
+      "feature": "Download Backup",
+      "scenario": "Unauthorized request returns 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X exists",
+      "testData": "No x-session headers (or invalid)",
+      "testSteps": ["1. Send GET /api/admin/X/backup without x-session-type / x-session-id / x-league-id"],
+      "expectedResult": "403 Forbidden with body { error: \"Forbidden\" }",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-003",
+      "feature": "Active-league enforcement",
+      "scenario": "Admin of inactive league cannot access backup endpoints",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X has isActive=false; user is league-admin (not superadmin)",
+      "testData": "leagueId=X (isActive=false), valid admin headers",
+      "testSteps": ["1. Call GET /api/admin/X/backup", "2. Call GET /api/admin/X/backups", "3. Call POST /api/admin/X/restore-tvt"],
+      "expectedResult": "All three return 403 Forbidden because getAuthorizedLeagueId returns null on inactive leagues for non-superadmins",
+      "postconditions": "No state change",
+      "requirementId": "AC-BACKUP-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-004",
+      "feature": "Format-conditional sheets",
+      "scenario": "TVT backup contains teams/captains/chips, no auction sheets",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X format=tvt with teams, captains, chips, fixtures, gameweeks",
+      "testData": "leagueId=X (tvt)",
+      "testSteps": ["1. GET /api/admin/X/backup", "2. List zip entries"],
+      "expectedResult": "Zip contains teams.xlsx, captains.xlsx, chips.xlsx, fixtures.xlsx, gameweeks.xlsx, meta.json; NO auction_*.xlsx entries",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-005",
+      "feature": "Format-conditional sheets",
+      "scenario": "Triple-crown backup omits chips.xlsx and auction sheets",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X format=triple-crown with teams, captains, fixtures",
+      "testData": "leagueId=X (triple-crown)",
+      "testSteps": ["1. GET /api/admin/X/backup", "2. List zip entries"],
+      "expectedResult": "Zip contains teams.xlsx, captains.xlsx, fixtures.xlsx, gameweeks.xlsx, meta.json; NO chips.xlsx; NO auction_*.xlsx",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-006",
+      "feature": "Format-conditional sheets",
+      "scenario": "Auction league with no completed sessions omits empty event-history sheets",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X format=auction; sessions/bids/trades/wishlists all empty arrays",
+      "testData": "leagueId=X (auction, fresh)",
+      "testSteps": ["1. GET /api/admin/X/backup", "2. Enumerate zip entries"],
+      "expectedResult": "Zip contains meta.json, fixtures.xlsx, gameweeks.xlsx, auction_teams_state.xlsx (and squads/clubs if non-empty); NO auction_sessions, auction_bids, auction_bid_logs, auction_trades, etc.",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-007",
+      "feature": "Auction event-history sheets",
+      "scenario": "Auction league with completed sessions + bids + trades exports event-history sheets",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league X has >=1 completed session, >=1 bid, >=1 bid log, >=1 trade",
+      "testData": "leagueId=X (auction, with history)",
+      "testSteps": ["1. GET /api/admin/X/backup", "2. Enumerate zip entries"],
+      "expectedResult": "Zip additionally contains auction_sessions.xlsx, auction_bids.xlsx, auction_bid_logs.xlsx, auction_trades.xlsx",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-008",
+      "feature": "PL-only fixtures",
+      "scenario": "Playoff fixtures excluded from fixtures.xlsx",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X has 50 PL fixtures and 4 playoff fixtures (isPlayoff=true)",
+      "testData": "leagueId=X with playoff fixtures present",
+      "testSteps": ["1. GET /api/admin/X/backup", "2. Open fixtures.xlsx; count rows"],
+      "expectedResult": "fixtures.xlsx contains 50 rows; no rows where isPlayoff=true",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-009",
+      "feature": "Password placeholder",
+      "scenario": "Teams.xlsx Password column equals RESET_REQUIRED for every team",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league X with 10 teams each holding bcrypt hash passwords",
+      "testData": "leagueId=X",
+      "testSteps": ["1. GET /api/admin/X/backup", "2. Open teams.xlsx", "3. Inspect Password column for each row"],
+      "expectedResult": "Every Password cell equals literal string 'RESET_REQUIRED'; original bcrypt hashes are not exposed",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-010",
+      "feature": "Ghost team exclusion",
+      "scenario": "Ghost teams excluded from teams/captains/chips/auction_teams_state",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "League X has 8 real teams and 2 ghost teams (isGhost=true)",
+      "testData": "leagueId=X with ghost teams seeded",
+      "testSteps": ["1. GET /api/admin/X/backup", "2. Open teams.xlsx, captains.xlsx, chips.xlsx (TVT) or auction_teams_state.xlsx", "3. Count rows"],
+      "expectedResult": "Only 8 team rows in each; the two ghost teams do not appear",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-011",
+      "feature": "Captain matrix shape",
+      "scenario": "Captain row has 'C' in GW3 and GW5 columns only",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT team alpha with player1 captained in GW3 and GW5",
+      "testData": "leagueId=X, team=alpha, player1 captained GW3+GW5",
+      "testSteps": ["1. GET backup", "2. Open captains.xlsx", "3. Find row {Team='alpha', Player='player1Name'}"],
+      "expectedResult": "Columns labelled 3 and 5 contain 'C'; columns 1,2,4,6..38 contain ''",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-012",
+      "feature": "Chip matrix encoding",
+      "scenario": "Wasted wildcard and Challenge Chip with opponent encoded correctly",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT team beta used wasted Wildcard in GW2 and a Challenge Chip targeting opponent 'alpha' in GW7",
+      "testData": "leagueId=X, team=beta, wasted W GW2, C:alpha GW7",
+      "testSteps": ["1. GET backup", "2. Open chips.xlsx", "3. Read row Team='beta', columns 2 and 7"],
+      "expectedResult": "Column 2 = 'WW' (wasted wildcard), Column 7 = 'C:alpha'",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-013",
+      "feature": "Auction sessions sheet filter",
+      "scenario": "Only completed and cancelled sessions are exported",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league X has sessions: active, pending, completed, cancelled",
+      "testData": "leagueId=X with mixed session statuses",
+      "testSteps": ["1. GET backup", "2. Open auction_sessions.xlsx", "3. Inspect status column"],
+      "expectedResult": "Sheet contains only completed and cancelled session rows; active/pending excluded",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-014",
+      "feature": "Penalty redemption filter",
+      "scenario": "Only rows with redeemedAt IS NOT NULL exported",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league has 3 redeemed penalties and 2 pending (redeemedAt=null)",
+      "testData": "leagueId=X with mixed penalty redemptions",
+      "testSteps": ["1. GET backup", "2. Open auction_penalty_redemptions.xlsx"],
+      "expectedResult": "Sheet contains 3 rows (the redeemed ones); 2 pending penalties excluded",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-015",
+      "feature": "Create manual snapshot",
+      "scenario": "POST /backups with no body inserts trigger=manual row",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Authorized admin; league X has teams/fixtures",
+      "testData": "POST /api/admin/X/backups, empty body",
+      "testSteps": ["1. POST /api/admin/X/backups", "2. Inspect response", "3. Query backups table"],
+      "expectedResult": "Response { success:true, id, trigger:'manual', createdAt, counts:{...} }; a new row exists with trigger='manual'",
+      "postconditions": "One new backups row exists",
+      "requirementId": "AC-BACKUP-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-016",
+      "feature": "List backups",
+      "scenario": "GET /backups returns DESC-ordered list with includes booleans",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X has 3 backups created at different times",
+      "testData": "leagueId=X with backups B1<B2<B3 by createdAt",
+      "testSteps": ["1. GET /api/admin/X/backups", "2. Read response.backups array"],
+      "expectedResult": "Response { backups:[B3,B2,B1] }; each entry has id, trigger, createdAt, includes:{teams, fixtures, captains, chips, auctionTeamsState, auctionSquads, auctionClubs, gameweeks} (8 booleans)",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-017",
+      "feature": "List backups - includes.fixtures defect",
+      "scenario": "REGRESSION: includes.fixtures is true even when snapshot fixturesJson='[]'",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "League X has a backup row whose fixturesJson is literal '[]' (empty array stored)",
+      "testData": "Backup row B with fixturesJson='[]'",
+      "testSteps": ["1. GET /api/admin/X/backups", "2. Find entry for B", "3. Read includes.fixtures"],
+      "expectedResult": "includes.fixtures=true (pins current defect — column is NOT NULL so truthiness check always returns true; non-informative flag)",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-BACKUP-005. When fixed, flag should be false for empty-array fixtures."
+    },
+    {
+      "id": "TC-BACKUP-018",
+      "feature": "List backups - includes map omits event-history",
+      "scenario": "REGRESSION: includes does not surface trades/sessions/bids/etc flags",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "Auction backup row captured trades, slot unlocks, wishlists, sessions, bids, bid logs, notifications, penalty redemptions",
+      "testData": "Backup row B with non-null tradesJson/slotUnlocksJson/wishlistsJson/notificationsJson/auctionSessionsJson/auctionBidsJson/auctionBidLogsJson/penaltyRedemptionsJson",
+      "testSteps": ["1. GET /api/admin/X/backups", "2. Read includes map keys for entry B"],
+      "expectedResult": "includes map contains exactly 8 keys (teams, fixtures, captains, chips, auctionTeamsState, auctionSquads, auctionClubs, gameweeks); no keys for trades/sessions/bids/etc.",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-BACKUP-006."
+    },
+    {
+      "id": "TC-BACKUP-019",
+      "feature": "Fetch stored backup",
+      "scenario": "GET /backups/[id] returns zip with trigger-styled filename",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Backup row B for league X exists with trigger='manual', createdAt=2026-05-23T10:30:00Z, slug='jpl-2025'",
+      "testData": "GET /api/admin/X/backups/B",
+      "testSteps": ["1. GET /api/admin/X/backups/B", "2. Inspect status and Content-Disposition"],
+      "expectedResult": "200 with Content-Type=application/zip; filename=backup-jpl-2025-manual-20260523-1030.zip (HHmm from createdAt)",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-020",
+      "feature": "Cross-league lookup blocked",
+      "scenario": "GET backup row belonging to another league returns 404",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Backup row B belongs to league Y; admin is authenticated for league X",
+      "testData": "leagueId=X (target), backupId=B (Y's row)",
+      "testSteps": ["1. GET /api/admin/X/backups/B with X's session headers"],
+      "expectedResult": "404 'Backup not found' (WHERE clause filters by leagueId AND id)",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-021",
+      "feature": "Meta drift on format change",
+      "scenario": "REGRESSION: stored TVT snapshot downloaded after league re-formatted to triple-crown shows current format in meta",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "Backup row B was taken when league X format=tvt; league X has since been changed to format=triple-crown",
+      "testData": "leagueId=X (now triple-crown), backupId=B (taken when tvt)",
+      "testSteps": ["1. GET /api/admin/X/backups/B", "2. Open downloaded zip", "3. Read meta.json.format"],
+      "expectedResult": "meta.json.format='triple-crown' (current league row), NOT 'tvt' (snapshot-time format) — pins current drift",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-BACKUP-008."
+    },
+    {
+      "id": "TC-BACKUP-022",
+      "feature": "Missing DELETE handler",
+      "scenario": "REGRESSION: DELETE /backups/[id] returns 405 Method Not Allowed",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Backup row B exists for league X; admin authorized",
+      "testData": "DELETE /api/admin/X/backups/B",
+      "testSteps": ["1. Send DELETE /api/admin/X/backups/B with valid headers", "2. Inspect status code", "3. Verify row B still exists in DB"],
+      "expectedResult": "405 Method Not Allowed (no DELETE export on route handler); row B still present in backups table",
+      "postconditions": "No DB change",
+      "requirementId": "AC-BACKUP-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-BACKUP-001. When fixed, expect 200 and row removed."
+    },
+    {
+      "id": "TC-BACKUP-023",
+      "feature": "Restore-TVT format guard",
+      "scenario": "POST /restore-tvt against a non-TVT league returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X format=triple-crown; admin authorized for X",
+      "testData": "leagueId=X (triple-crown), POST /restore-tvt with any payload",
+      "testSteps": ["1. POST /api/admin/X/restore-tvt"],
+      "expectedResult": "400 'Restore is for TVT-format leagues only'",
+      "postconditions": "No state change",
+      "requirementId": "AC-BACKUP-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-024",
+      "feature": "Restore-triple-crown format guard",
+      "scenario": "POST /restore-triple-crown against a TVT league returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X format=tvt; admin authorized for X",
+      "testData": "leagueId=X (tvt)",
+      "testSteps": ["1. POST /api/admin/X/restore-triple-crown"],
+      "expectedResult": "400 'Restore is for triple-crown leagues only'",
+      "postconditions": "No state change",
+      "requirementId": "AC-BACKUP-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-025",
+      "feature": "Restore-auction format guard",
+      "scenario": "POST /restore-auction against a TVT league returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X format=tvt; admin authorized for X",
+      "testData": "leagueId=X (tvt)",
+      "testSteps": ["1. POST /api/admin/X/restore-auction"],
+      "expectedResult": "400 'Restore is auction-format only'",
+      "postconditions": "No state change",
+      "requirementId": "AC-BACKUP-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-026",
+      "feature": "Missing restore payload",
+      "scenario": "POST /restore-tvt with neither file nor backupId returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X format=tvt",
+      "testData": "POST /api/admin/X/restore-tvt with empty body and no multipart file",
+      "testSteps": ["1. POST with Content-Type=application/json and body {}"],
+      "expectedResult": "400 'Provide either a multipart `file` upload or JSON `{ backupId }`'",
+      "postconditions": "No state change",
+      "requirementId": "AC-BACKUP-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-027",
+      "feature": "Missing meta.json",
+      "scenario": "Restore-auction with zip lacking meta.json returns 400 before any destructive op",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X format=auction with seeded ownership and bids",
+      "testData": "Multipart upload of a .zip containing fixtures.xlsx but no meta.json",
+      "testSteps": ["1. POST /api/admin/X/restore-auction with multipart file=<zip>", "2. After response, query bids/sessions/ownership"],
+      "expectedResult": "400 'Backup zip is missing meta.json — please re-export from this league via Download Backup.'; ownership/bids tables unchanged",
+      "postconditions": "Auction state intact",
+      "requirementId": "AC-BACKUP-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-028",
+      "feature": "Cross-league multipart restore blocked",
+      "scenario": "Restore-tvt with meta.leagueId belonging to a different league returns 400 with no destructive op",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X format=tvt with fixtures; backup zip's meta.leagueId=Y (different)",
+      "testData": "Multipart upload of zip whose meta.json has leagueId=Y, slug=other",
+      "testSteps": ["1. POST /api/admin/X/restore-tvt with multipart file", "2. Verify fixtures untouched"],
+      "expectedResult": "400 'League mismatch — this backup was taken from a different league (other). Restore aborted before any change.'; fixtures table for X untouched",
+      "postconditions": "X's fixtures intact",
+      "requirementId": "AC-BACKUP-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-029",
+      "feature": "Cross-format multipart restore blocked",
+      "scenario": "Restore-triple-crown with TVT backup zip returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X format=triple-crown; uploaded zip meta.format='tvt'",
+      "testData": "Multipart upload of zip with meta.format=tvt",
+      "testSteps": ["1. POST /api/admin/X/restore-triple-crown with multipart file"],
+      "expectedResult": "400 'Format mismatch — this backup is for a tvt league but the target is triple-crown.'",
+      "postconditions": "X's fixtures intact",
+      "requirementId": "AC-BACKUP-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-030",
+      "feature": "Cross-league saved-snapshot blocked",
+      "scenario": "POST /restore-tvt with backupId from another league returns 404",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X format=tvt; backup row B belongs to league Y",
+      "testData": "POST /api/admin/X/restore-tvt body={backupId: B}",
+      "testSteps": ["1. POST with JSON body { backupId: B }", "2. Verify X's fixtures untouched"],
+      "expectedResult": "404 'Snapshot not found for this league'; X's fixtures table untouched (WHERE id=B AND leagueId=X yields no row)",
+      "postconditions": "X's fixtures intact",
+      "requirementId": "AC-BACKUP-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-031",
+      "feature": "Saved-snapshot format guard bypass",
+      "scenario": "REGRESSION: triple-crown snapshot restored via /restore-tvt on same-league re-format succeeds (guard skipped)",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "League X currently format=tvt; backup row B was taken when X was format=triple-crown (B.leagueId=X, no format stored)",
+      "testData": "POST /api/admin/X/restore-tvt body={backupId: B}",
+      "testSteps": ["1. POST with { backupId: B }", "2. Inspect response", "3. Inspect fixtures table"],
+      "expectedResult": "200 success (no format mismatch raised because loadRestoreSnapshot returns meta without format field); fixtures wipe+restore runs — pins guard bypass",
+      "postconditions": "X's fixtures replaced from triple-crown snapshot — invalid cross-format state",
+      "requirementId": "AC-BACKUP-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-BACKUP-002."
+    },
+    {
+      "id": "TC-BACKUP-032",
+      "feature": "Empty payload wipes fixtures",
+      "scenario": "REGRESSION: restore-tvt with empty fixtures array wipes existing fixtures with no warning",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "League X format=tvt has 60 existing fixtures and 30 recorded results",
+      "testData": "Restore payload (multipart zip OR snapshot) whose fixtures array is empty",
+      "testSteps": ["1. POST /api/admin/X/restore-tvt with empty-fixtures payload", "2. Inspect response", "3. Query fixtures+results tables"],
+      "expectedResult": "200 { success:true, fixturesInserted:0, warnings:[] }; fixtures table for X is EMPTY (all 60 rows deleted); results table also empty (cascade) — pins data-loss defect",
+      "postconditions": "X has 0 fixtures and 0 results",
+      "requirementId": "AC-BACKUP-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-BACKUP-003."
+    },
+    {
+      "id": "TC-BACKUP-033",
+      "feature": "Cascade fixture wipe to results",
+      "scenario": "Restore wipes fixtures; results cascade-delete",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League X has 60 fixtures and 30 results linked via results.fixture_id",
+      "testData": "Restore-tvt payload with 60 NEW fixtures",
+      "testSteps": ["1. POST /restore-tvt with full payload", "2. Query results table"],
+      "expectedResult": "All 30 original results rows are deleted via ON DELETE CASCADE on results.fixture_id; new fixtures inserted but results not regenerated by restore",
+      "postconditions": "Fixtures restored, results empty until rescore",
+      "requirementId": "AC-BACKUP-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-034",
+      "feature": "Case-insensitive team login match",
+      "scenario": "Fixture row 'ALPHA' matches existing team login 'alpha'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X has team login 'alpha'; restore payload has Home Team='ALPHA'",
+      "testData": "Fixture row with case-mismatched login id",
+      "testSteps": ["1. POST restore-tvt with payload containing 'ALPHA' fixture", "2. Inspect inserted fixture row"],
+      "expectedResult": "Row inserted, homeTeamId resolves to team 'alpha'; no warning logged",
+      "postconditions": "Fixture present",
+      "requirementId": "AC-BACKUP-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-035",
+      "feature": "Unknown team login skipped",
+      "scenario": "Fixture row with non-existent home team is skipped with warning",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "League X has no team login 'ghost-team'",
+      "testData": "Fixture row Home Team='ghost-team'",
+      "testSteps": ["1. POST restore-tvt with row N referencing 'ghost-team'", "2. Inspect response.warnings"],
+      "expectedResult": "Row N skipped; response.warnings includes 'Row N: home team \"ghost-team\" not found'; other valid rows still inserted; run continues",
+      "postconditions": "Other fixtures inserted; ghost-team row not",
+      "requirementId": "AC-BACKUP-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-036",
+      "feature": "Invalid gameweek skipped",
+      "scenario": "Fixture row with Gameweek=0, 39, or 'foo' is skipped with warning",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "League X (tvt) ready for restore",
+      "testData": "Payload has 3 invalid rows: GW=0, GW=39, GW='foo'",
+      "testSteps": ["1. POST restore-tvt", "2. Inspect warnings array"],
+      "expectedResult": "All 3 rows skipped; warnings include 'Row N: invalid gameweek 0', 'Row N: invalid gameweek 39', 'Row N: invalid gameweek foo'; GW=1 and GW=38 ARE accepted",
+      "postconditions": "Only valid GW [1,38] rows inserted",
+      "requirementId": "AC-BACKUP-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary covers GW=0 (below) and GW=39 (above) and non-numeric."
+    },
+    {
+      "id": "TC-BACKUP-037",
+      "feature": "Auto-create missing GW row",
+      "scenario": "Backup references GW20 but target league has no GW20 row",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X has gameweeks 1..15 only; playoffStartGw=30; payload contains GW20 fixture",
+      "testData": "Restore payload with GW20 fixture",
+      "testSteps": ["1. POST restore-tvt", "2. Query gameweeks table"],
+      "expectedResult": "A new gameweeks row for GW20 is created with deadline = now + 140 days at 11:00 and isPlayoffs=(20>=30)=false; fixture inserted referencing the new GW20",
+      "postconditions": "Gameweeks table has new GW20 row",
+      "requirementId": "AC-BACKUP-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-038",
+      "feature": "Captains/chips restore deferred",
+      "scenario": "Restore-tvt with captains+chips arrays appends deferral warnings",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Restore payload has 12 captain rows and 4 chip rows",
+      "testData": "POST restore-tvt payload",
+      "testSteps": ["1. POST restore-tvt", "2. Inspect response.warnings"],
+      "expectedResult": "Warnings include 'Captains restore deferred — 12 row(s) in backup. Use the Import Captain Data block to apply.' and 'Chips restore deferred — 4 row(s) in backup. Use the Import Chip Data block to apply.'",
+      "postconditions": "Captains and chips DB tables untouched",
+      "requirementId": "AC-BACKUP-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-039",
+      "feature": "Restore-tvt success response shape",
+      "scenario": "Successful restore returns expected JSON envelope",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Valid restore payload with N=50 fixtures",
+      "testData": "POST restore-tvt with 50 valid fixtures",
+      "testSteps": ["1. POST restore-tvt", "2. Parse response JSON"],
+      "expectedResult": "Body { success:true, fixturesInserted:50, warnings:[], message:'Restored 50 fixture(s). Captains + chips restore is a tracked follow-up...' }",
+      "postconditions": "50 fixtures in table",
+      "requirementId": "AC-BACKUP-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-040",
+      "feature": "Triple-crown restore covers PL only",
+      "scenario": "Cup + UCL/UEL knockout state is not restored (cross-module DEF-TC-003)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Triple-crown league X has cup fixtures and UCL/UEL knockouts seeded",
+      "testData": "Restore payload with PL fixtures only",
+      "testSteps": ["1. POST /restore-triple-crown", "2. Query cup_fixtures and uefa_knockout tables", "3. Inspect response.message"],
+      "expectedResult": "PL fixtures restored; cup + UEFA knockout tables NOT touched by this endpoint; response message warns those need separate handling",
+      "postconditions": "PL restored; cup/UEFA untouched",
+      "requirementId": "AC-BACKUP-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Cross-references DEF-TC-003 in module 08."
+    },
+    {
+      "id": "TC-BACKUP-041",
+      "feature": "Restore-auction orphan team id validation",
+      "scenario": "Restore-auction with backup referencing unknown teamIds returns 400 before destructive op",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Auction league X has 10 teams; backup payload references 5 orphan teamIds (not in X)",
+      "testData": "Backup with teamsState/squads/bids referencing teamId={t1,t2,t3,t4,t5} (none in X)",
+      "testSteps": ["1. POST /restore-auction", "2. Inspect response and auction state"],
+      "expectedResult": "400 'Backup references team IDs that don't exist in this league: t1, t2, t3 (+2 more)'; auction state for X completely untouched",
+      "postconditions": "Auction state intact",
+      "requirementId": "AC-BACKUP-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-042",
+      "feature": "Restore-auction wipe order",
+      "scenario": "Wipe deletes tables in declared order and resets per-team economy",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction league X with bid logs, bids, sessions, ownership, club ownership, penalties, scores, trades, slot unlocks, wishlists, notifications populated; teams have non-default purse/totalSpent/totalIncome/totalRefunds/penaltySlots",
+      "testData": "Restore-auction payload validly referencing X's teams",
+      "testSteps": ["1. POST /restore-auction", "2. Snapshot DB state before and after"],
+      "expectedResult": "Wipe order observed: bid logs → bids → sessions → ownership → club ownership → team penalties → auction scores → trade proposals → slot unlocks → wishlists → notifications; per-team economy reset to defaults (purse=initialBudget, totalSpent=totalRefunds=totalIncome=0, penaltySlots=0)",
+      "postconditions": "Tables wiped; economy reset; then restored from payload",
+      "requirementId": "AC-BACKUP-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-043",
+      "feature": "Restore-auction omits auctionScores",
+      "scenario": "Response.restored has no auctionScores key; next field instructs rescoring",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Successful restore-auction payload",
+      "testData": "Valid restore-auction payload",
+      "testSteps": ["1. POST /restore-auction", "2. Inspect response.restored keys and response.next"],
+      "expectedResult": "restored map contains squads/clubs/teamsState/sessions/bids/bidLogs/penaltyRedemptions/slotUnlocks/trades/wishlists/notifications but NO auctionScores key; response.next instructs admin to reprocess each GW",
+      "postconditions": "AuctionScores table empty post-restore",
+      "requirementId": "AC-BACKUP-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-044",
+      "feature": "Older backup missing bonusSlots",
+      "scenario": "Restore-auction defaults bonusSlots to 0 when column absent",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Backup payload's teamsState rows lack bonusSlots field",
+      "testData": "TeamsState row {purse:100, totalSpent:50, totalIncome:0, totalRefunds:0, penaltySlots:1} (no bonusSlots)",
+      "testSteps": ["1. POST /restore-auction", "2. Query teamsState row"],
+      "expectedResult": "bonusSlots=0 (Number(undefined ?? 0)); other economy fields take payload values exactly",
+      "postconditions": "Team state has bonusSlots=0",
+      "requirementId": "AC-BACKUP-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-045",
+      "feature": "Bid orphan dropped",
+      "scenario": "Bid whose sessionId is missing from sessions.xlsx is dropped, and its logs too",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Backup has bid B with sessionId=S not present in sessions array; bidLogs contains entries for B",
+      "testData": "Backup payload",
+      "testSteps": ["1. POST /restore-auction", "2. Query bids and bidLogs tables"],
+      "expectedResult": "Bid B not inserted; all bidLogs referencing B also not inserted",
+      "postconditions": "Bids/bidLogs free of orphans",
+      "requirementId": "AC-BACKUP-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-046",
+      "feature": "Penalty redemption with missing session",
+      "scenario": "Penalty redemption whose sessionId is missing is inserted with sessionId=null",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Backup has penalty redemption row PR referencing sessionId=S that is not in sessions array",
+      "testData": "Backup payload",
+      "testSteps": ["1. POST /restore-auction", "2. Query penaltyRedemptions"],
+      "expectedResult": "PR inserted with sessionId=null (schema FK is ON DELETE SET NULL fallback)",
+      "postconditions": "Row present with null sessionId",
+      "requirementId": "AC-BACKUP-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-047",
+      "feature": "Restore-auction transactional rollback",
+      "scenario": "Mid-write insert failure triggers full transactional rollback — zero side effects on any affected table",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction league X with full state across all 12 affected tables (auctionOwnership, auctionClubOwnership, auctionScores, teamSlotUnlocks, teamPenalties, tradeProposals, notifications, auctionSessions, auctionBids, auctionBidLogs, auctionWishlists) plus teams.purse/totalSpent/totalRefunds/totalIncome populated. Backup payload crafted to trigger a constraint violation mid-restore (e.g., duplicate squad PK on the auctionOwnership insert, or FK violation on bids->sessions).",
+      "testData": "Pre-restore snapshot of all 12 tables + teams economy columns captured for diff; backup with one row that violates a unique/FK constraint after the wipe phase",
+      "testSteps": ["1. Snapshot every row in the 12 affected tables + teams.purse/totalSpent/totalRefunds/totalIncome for league X", "2. POST /restore-auction with the poisoned payload", "3. Inspect response status/body", "4. Re-snapshot the same 12 tables + teams economy columns and diff against step 1"],
+      "expectedResult": "Response is 500 with body containing 'Restore failed — transaction rolled back, league state unchanged'. Post-restore diff shows ZERO side effects: every row in auctionOwnership, auctionClubOwnership, auctionScores, teamSlotUnlocks, teamPenalties, tradeProposals, notifications, auctionSessions, auctionBids, auctionBidLogs, auctionWishlists is byte-identical to the pre-restore snapshot, AND teams.purse / teams.totalSpent / teams.totalRefunds / teams.totalIncome are unchanged for every team in league X (db.transaction rolled the whole wipe+insert sequence back atomically).",
+      "postconditions": "League X is in exactly the same state as before the failed restore call; no admin intervention required",
+      "requirementId": "AC-BACKUP-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-BACKUP-004. When fixed (transaction wrap), expect 500 plus all-or-nothing rollback.\n[QA-VERIFY] Updated post-DEF-BACKUP-004 fix on 2026-05-25."
+    },
+    {
+      "id": "TC-BACKUP-048",
+      "feature": "Idempotent auction-complete snapshot",
+      "scenario": "writeAuctionCompleteSnapshot no-ops when row for (leagueId, derivedTrigger) exists",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league X already has a backups row with trigger='auction-mini-c3'; a second mini-auction session completes with cycleNumber=3",
+      "testData": "Second session completion event",
+      "testSteps": ["1. Trigger session completion calling writeAuctionCompleteSnapshot(sessionId)", "2. Count rows where (leagueId=X, trigger='auction-mini-c3')"],
+      "expectedResult": "Count remains 1 — no duplicate row inserted",
+      "postconditions": "No duplicate snapshot",
+      "requirementId": "AC-BACKUP-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-049",
+      "feature": "Mini-auction trigger label",
+      "scenario": "Completed mini-auction cycleNumber=3 produces trigger='auction-mini-c3'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Mini-auction session with cycleNumber=3 transitions to completed",
+      "testData": "sessionId for that mini-auction",
+      "testSteps": ["1. Invoke writeAuctionCompleteSnapshot(sessionId)", "2. Inspect inserted backups row"],
+      "expectedResult": "New backups row with trigger='auction-mini-c3'",
+      "postconditions": "Backup row created",
+      "requirementId": "AC-BACKUP-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-050",
+      "feature": "Initial auction trigger label",
+      "scenario": "Initial auction completion produces trigger='auction-initial-c0'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Initial auction session transitions to completed",
+      "testData": "sessionId for initial auction",
+      "testSteps": ["1. Invoke writeAuctionCompleteSnapshot(sessionId)", "2. Inspect inserted backups row"],
+      "expectedResult": "New backups row with trigger='auction-initial-c0'",
+      "postconditions": "Backup row created",
+      "requirementId": "AC-BACKUP-050",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-051",
+      "feature": "Cron per-GW snapshot",
+      "scenario": "After successful GW5 scoring, writeAutoSnapshot writes trigger='gw5-auto' (idempotent)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Cron pipeline scores GW5 successfully with no errors",
+      "testData": "leagueId=X, GW=5",
+      "testSteps": ["1. Run cron process-all", "2. Inspect backups row for trigger='gw5-auto'", "3. Re-run cron"],
+      "expectedResult": "First run inserts row trigger='gw5-auto'; second run is a no-op (idempotent on (leagueId, trigger))",
+      "postconditions": "Exactly one gw5-auto row",
+      "requirementId": "AC-BACKUP-051",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-052",
+      "feature": "Cron trigger label vs schema comment drift",
+      "scenario": "REGRESSION: schema comment says 'gw1-lock' but cron emits 'gw1-auto'",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "Cron pipeline scores GW1 successfully",
+      "testData": "leagueId=X, GW=1",
+      "testSteps": ["1. Run cron for GW1", "2. Inspect backups row's trigger column"],
+      "expectedResult": "trigger='gw1-auto' (NOT 'gw1-lock' as schema comment claims) — pins documentation drift",
+      "postconditions": "gw1-auto row present",
+      "requirementId": "AC-BACKUP-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-BACKUP-007."
+    },
+    {
+      "id": "TC-BACKUP-053",
+      "feature": "Cron skips snapshot on scoring failure",
+      "scenario": "When scoring fails or returns errors, no snapshot row is written",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Cron's scoring step returns errors for GW7",
+      "testData": "Force scoring to return errors:[<some>] for GW7",
+      "testSteps": ["1. Run cron process-all", "2. Query backups for trigger='gw7-auto'"],
+      "expectedResult": "No row inserted with trigger='gw7-auto'; writeAutoSnapshot not invoked",
+      "postconditions": "No GW7 backup",
+      "requirementId": "AC-BACKUP-053",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-054",
+      "feature": "Session-completion snapshot error swallowed",
+      "scenario": "writeAuctionCompleteSnapshot DB error does not block session transition",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "writeAuctionCompleteSnapshot is mocked to throw on insert; auction session transitioning to completed",
+      "testData": "Trigger session completion flow",
+      "testSteps": ["1. Complete the session", "2. Observe console.error capture", "3. Verify session.status='completed' regardless"],
+      "expectedResult": "console.error logs the snapshot error; session transition still succeeds; admin response unaffected",
+      "postconditions": "Session marked completed; no snapshot row",
+      "requirementId": "AC-BACKUP-054",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-055",
+      "feature": "Cascade delete of backups",
+      "scenario": "Deleting parent league removes all its backups rows",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X has 5 backups rows; delete league X via cascade-supporting path",
+      "testData": "leagueId=X",
+      "testSteps": ["1. Delete league X", "2. Query backups WHERE leagueId=X"],
+      "expectedResult": "0 backups rows remain for X (onDelete:cascade applied)",
+      "postconditions": "No orphan backups",
+      "requirementId": "AC-BACKUP-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-056",
+      "feature": "Malformed meta.json",
+      "scenario": "Upload zip with malformed meta.json content returns friendly missing-meta error",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Zip's meta.json contains invalid JSON (e.g., '{ bad json }')",
+      "testData": "Multipart upload of zip with corrupted meta.json",
+      "testSteps": ["1. POST /restore-auction with multipart file", "2. Inspect response"],
+      "expectedResult": "400 'Backup zip is missing meta.json — please re-export from this league via Download Backup.' (JSON.parse failure caught silently)",
+      "postconditions": "No state change",
+      "requirementId": "AC-BACKUP-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-057",
+      "feature": "Restore-auction smoke",
+      "scenario": "End-to-end happy path restore-auction with snapshot",
+      "type": "Smoke",
+      "priority": "P1",
+      "preconditions": "Auction league X with seeded full state; valid saved snapshot B exists for X",
+      "testData": "POST /restore-auction body={ backupId: B }",
+      "testSteps": ["1. POST", "2. Verify response success", "3. Verify squads/clubs/teamsState restored; bids/sessions etc. populated"],
+      "expectedResult": "200 { success:true, restored:{ squads, clubs, teamsState, sessions, bids, bidLogs, penaltyRedemptions, slotUnlocks, trades, wishlists, notifications }, next: 'Admin should reprocess each GW...' }",
+      "postconditions": "Auction state restored",
+      "requirementId": "US-BACKUP-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-058",
+      "feature": "GET /backups/[backupId] - missing league",
+      "scenario": "Backup row exists but league row was deleted between fetch operations returns 404",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Edge case: backup row B resolves but the league row is missing (e.g., partial delete state)",
+      "testData": "leagueId=X (no row), backupId=B (orphan in transit)",
+      "testSteps": ["1. GET /api/admin/X/backups/B"],
+      "expectedResult": "404 (league row missing path triggers second 404 branch)",
+      "postconditions": "No DB change",
+      "requirementId": "BR-BACKUP-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Hard to reproduce in normal flow due to FK cascade (BR-BACKUP-056); included for code-path completeness."
+    },
+    {
+      "id": "TC-BACKUP-059",
+      "feature": "GET /backup 404 when league missing",
+      "scenario": "Backup download returns 404 when league row absent after auth passes",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Auth returns leagueId=X but the leagues row for X is missing",
+      "testData": "leagueId=X (no row)",
+      "testSteps": ["1. GET /api/admin/X/backup"],
+      "expectedResult": "404 (league row not found)",
+      "postconditions": "No DB change",
+      "requirementId": "BR-BACKUP-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-060",
+      "feature": "POST /backups inserts fixturesJson NOT NULL",
+      "scenario": "Manual snapshot always populates fixturesJson column",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League X has zero fixtures",
+      "testData": "POST /backups",
+      "testSteps": ["1. POST /api/admin/X/backups", "2. Query the inserted backups row's fixturesJson"],
+      "expectedResult": "fixturesJson is non-null (at minimum '[]'); NOT NULL constraint never violated",
+      "postconditions": "Row inserted",
+      "requirementId": "BR-BACKUP-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-BACKUP-061",
+      "feature": "Restore endpoints maxDuration",
+      "scenario": "Long-running restore completes within configured maxDuration=60s",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Auction league with large backup (12 tables, hundreds of rows)",
+      "testData": "Large restore-auction payload",
+      "testSteps": ["1. POST /restore-auction", "2. Time the response"],
+      "expectedResult": "Response within 60 seconds (route exports maxDuration=60); no Vercel timeout 504",
+      "postconditions": "Restore completed",
+      "requirementId": "BR-BACKUP-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": [],
+  "defects": [
+    {
+      "id": "DEF-BACKUP-001",
+      "title": "DELETE /api/admin/[leagueId]/backups/[backupId] handler missing",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The route file at src/app/api/admin/[leagueId]/backups/[backupId]/route.ts exports only GET — no DELETE handler exists. Next.js returns 405 Method Not Allowed for DELETE requests. The task contract (and any admin UI affordance to prune backups) cannot be fulfilled.",
+      "expectedBehaviour": "DELETE on /api/admin/[leagueId]/backups/[backupId] should remove the backup row when (id, leagueId) matches; return 404 otherwise; 403 on unauthorized.",
+      "actualBehaviour": "DELETE requests fall through to Next.js's default handler and return 405 Method Not Allowed. The row remains. There is no admin path to delete a snapshot short of direct DB access.",
+      "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:1-89"],
+      "linkedBusinessRules": ["BR-BACKUP-026"],
+      "linkedAcceptanceCriteria": ["AC-BACKUP-022"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-BACKUP-022"],
+      "notes": "Fix options: (1) Add `export async function DELETE(...)` that runs `db.delete(backups).where(and(eq(backups.id, backupId), eq(backups.leagueId, leagueId)))` with 404 fallback; (2) Add admin-only gating beyond getAuthorizedLeagueId since this is destructive. Risk: low (single-row delete cascades to nothing — `backups` is a leaf table).",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-BACKUP-002",
+      "title": "Saved-snapshot restore path skips cross-format guard for TVT/triple-crown",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "loadRestoreSnapshot (src/lib/backup/restore-tvt.ts:80-97) builds `meta: { leagueId: row.leagueId }` with NO `format` field. The route's format guard `if (parsed.meta.format && parsed.meta.format !== \"tvt\")` short-circuits as falsy because `parsed.meta.format` is undefined. A triple-crown snapshot of league X can therefore be restored into the same league (after re-format) via /restore-tvt without the format mismatch check ever firing.",
+      "expectedBehaviour": "Saved-snapshot path should either (a) persist `format` in the backups row and validate it on restore, or (b) re-derive the snapshot's format from its payload shape (e.g., presence of chips array → tvt) and compare against target.",
+      "actualBehaviour": "Format guard is silently bypassed on the `{ backupId }` path; only the multipart-upload path enforces format. Cross-format restore via saved snapshot is therefore not blocked.",
+      "sourceRefs": ["src/lib/backup/restore-tvt.ts:80-97", "src/app/api/admin/[leagueId]/restore-tvt/route.ts:61-66", "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:57-62"],
+      "linkedBusinessRules": ["BR-BACKUP-035"],
+      "linkedAcceptanceCriteria": ["AC-BACKUP-031"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-BACKUP-031"],
+      "notes": "Easiest fix: add a `format` text column to `backups` (defaulting to NULL for legacy rows) and populate from `league.format` on insert; loadRestoreSnapshot returns it; route guard checks it. Risk: cross-format restore is destructive (BR-BACKUP-036) and silently produces an invalid state.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-BACKUP-003",
+      "title": "restoreFixtures wipes existing fixtures even when payload.fixtures is empty",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/lib/backup/restore-tvt.ts:128-132 unconditionally deletes all fixtures for the league before the re-insert loop. If the uploaded zip's fixtures.xlsx is empty (or the saved snapshot's fixturesJson is `\"[]\"`), the loop inserts 0 rows but the wipe has already run — taking results with it via cascade. Admin sees `{ success:true, fixturesInserted:0 }` and no warning.",
+      "expectedBehaviour": "Refuse to wipe when payload.fixtures.length === 0 (return 400 with a guardrail message), OR run the entire restore inside a transaction so an empty insert rolls back the wipe.",
+      "actualBehaviour": "Fixtures table for the league is silently nuked. Cascade also clears `results`. The success response does not warn the admin.",
+      "sourceRefs": ["src/lib/backup/restore-tvt.ts:103-186"],
+      "linkedBusinessRules": ["BR-BACKUP-036", "BR-BACKUP-037"],
+      "linkedAcceptanceCriteria": ["AC-BACKUP-032", "AC-BACKUP-033"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-BACKUP-032"],
+      "notes": "Quick fix: `if (payload.fixtures.length === 0) return { inserted: 0, warnings: [\"Refusing to restore: payload has 0 fixtures — wipe aborted.\"] };` before the delete call. Better: wrap the whole restore in a drizzle transaction. Risk: data loss — most common when admin uploads a malformed zip or hits restore on a fresh league with no fixtures.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-BACKUP-004",
+      "title": "restore-auction is non-transactional — partial state on mid-write failure",
+      "severity": "Critical",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/admin/[leagueId]/restore-auction/route.ts:356-573 runs sequential db.delete + db.insert calls outside any transaction. If any insert throws (FK violation, NOT NULL on a malformed backup row, transient DB error), the prior wipes (bids, sessions, ownership, club ownership, team penalties, auction scores, trade proposals, slot unlocks, wishlists, notifications, per-team economy reset) have already committed. The route returns 500 with the message acknowledging \"league state may be partially modified\", but provides no recovery path.",
+      "expectedBehaviour": "Wrap the entire wipe + restore inside `db.transaction(async (tx) => { ... })` so any error rolls back the whole operation atomically. The admin should see either a fully restored league or an unchanged one.",
+      "actualBehaviour": "Partial restore leaves the auction league in an unusable state: ownership wiped + economy reset but bids/sessions not yet inserted. Admin has no automated rollback; manual DB intervention required.",
+      "sourceRefs": ["src/app/api/admin/[leagueId]/restore-auction/route.ts:356-573"],
+      "linkedBusinessRules": ["BR-BACKUP-050"],
+      "linkedAcceptanceCriteria": ["AC-BACKUP-047"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-BACKUP-047"],
+      "notes": "Drizzle on Turso supports `db.transaction` for serial writes. Risk: HIGH — this is the most destructive route in the app (12+ tables wiped). Failure during restore means an unrecoverable league for admins without DB access. Recommend transactional wrap before any GA usage.\n[DEV] Self-verified: tsc passes for the touched file (pre-existing failures only in unrelated tests/league-types/tvt-*.spec.ts), manual diff review clean — every write in the wipe + restore phase now uses `tx`, no `db.delete/insert/update` remain inside the transaction scope. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-BACKUP-047 against the fix. Inject a forced failure (e.g. malformed AuctionSessionRow, FK violation on bids->sessions) mid-restore and confirm: (a) response is 500 with the new message 'Restore failed — transaction rolled back, league state unchanged'; (b) every wipe-phase table (auction_bids, auction_sessions, auction_ownership, auction_club_ownership, team_penalties, auction_scores, trade_proposals, team_slot_unlocks, auction_wishlists, notifications) and the teams.purse/totalSpent/totalIncome/totalRefunds/penaltySlots fields are unchanged from pre-restore state.\n[QA-VERIFIED]: 2026-05-25 — TC-BACKUP-047 inverted; transactional restore confirmed.",
+      "resolution": "Wrapped the entire wipe + restore block in src/app/api/admin/[leagueId]/restore-auction/route.ts:356-563 with `await db.transaction(async (tx) => { ... })` and replaced every `db.delete/insert/update/select` inside with `tx.*`. Reads outside the wipe (league lookup, team validation, stored-backup fetch) remain on `db` since they are read-only and must complete before any destructive op. The pre-existing try/catch now reports 'Restore failed — transaction rolled back, league state unchanged' since libsql rolls back the txn on any thrown error.",
+      "resolutionDate": "2026-05-25"
+    },
+    {
+      "id": "DEF-BACKUP-005",
+      "title": "GET /backups `includes.fixtures` flag is always true (column is NOT NULL)",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The list endpoint derives `includes.fixtures` from truthiness of `backups.fixturesJson` (route:46), but the schema declares that column as `.notNull()` (schema.ts:327) so every row has a non-null string (at least `\"[]\"`). The flag is therefore non-informative — it cannot distinguish snapshots that captured fixtures from those that didn't.",
+      "expectedBehaviour": "Either drop the flag entirely OR compute it from `fixturesJson !== '[]'` so empty-fixture snapshots show false.",
+      "actualBehaviour": "UI always sees `fixtures: true` regardless of actual content; misleading audit signal.",
+      "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:26-48", "src/lib/db/schema.ts:327"],
+      "linkedBusinessRules": ["BR-BACKUP-019"],
+      "linkedAcceptanceCriteria": ["AC-BACKUP-017"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-BACKUP-017"],
+      "notes": "Trivial fix in the select projection or the boolean map. No data integrity risk.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-BACKUP-006",
+      "title": "GET /backups `includes` map omits migration-0012 event-history columns",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The list endpoint exposes booleans for teams/fixtures/captains/chips/auctionTeamsState/auctionSquads/auctionClubs/gameweeks only. The migration-0012 columns (tradesJson, penaltyRedemptionsJson, slotUnlocksJson, wishlistsJson, notificationsJson, auctionSessionsJson, auctionBidsJson, auctionBidLogsJson) are stored in the row but never surfaced. The admin UI cannot show whether a given snapshot captured event-history without downloading + inspecting the zip.",
+      "expectedBehaviour": "Extend the `includes` map to expose 8 additional booleans (trades, penalties, slotUnlocks, wishlists, notifications, sessions, bids, bidLogs) so the UI can show 'full' vs 'pre-migration' snapshots.",
+      "actualBehaviour": "Event-history capture is invisible in the list endpoint response.",
+      "sourceRefs": ["src/app/api/admin/[leagueId]/backups/route.ts:21-56"],
+      "linkedBusinessRules": ["BR-BACKUP-020"],
+      "linkedAcceptanceCriteria": ["AC-BACKUP-018"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-BACKUP-018"],
+      "notes": "Same shape as existing flag mapping — append 8 columns to the select projection and the includes object. Low risk, additive.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-BACKUP-007",
+      "title": "Schema comment claims `gw1-lock` trigger but code emits `gw<N>-auto`",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/lib/db/schema.ts:317,324 documents the trigger column as `\"gw1-lock\" | \"manual\" | \"auction-complete\"`. The actual cron at src/lib/cron/process-all.ts:435 inserts `\"gw<N>-auto\"` (e.g. gw1-auto, gw2-auto, ...). Auction completions emit `\"auction-initial-c0\" / auction-club-c0 / auction-mini-c<N>\"` (snapshot.ts:67-70). The schema comment + the documented `manual` are correct; the other labels are not. The admin UI's formatBackupTrigger (page.tsx:1568-1571) handles `gw1-lock` AND `gw<N>-auto` so the UI tolerates both, but the documentation lies.",
+      "expectedBehaviour": "Either update the schema comment to reflect the real trigger vocabulary, or change the cron to emit `gw1-lock` only for GW1 and `gw<N>-auto` for the rest, OR introduce a `trigger_category` column. The qa-tester needs the authoritative list to build tests.",
+      "actualBehaviour": "Documentation drift between schema, cron, snapshot helper, and UI label renderer.",
+      "sourceRefs": ["src/lib/db/schema.ts:316-324", "src/lib/cron/process-all.ts:433-438", "src/lib/backup/snapshot.ts:55-72", "src/app/admin/[leagueId]/page.tsx:1567-1571"],
+      "linkedBusinessRules": ["BR-BACKUP-055"],
+      "linkedAcceptanceCriteria": ["AC-BACKUP-052"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-BACKUP-052"],
+      "notes": "Documentation-only — no behavioural impact today since UI tolerates both. Promote to Major if a downstream consumer (e.g., reporting) hard-codes the schema-comment vocabulary.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-BACKUP-008",
+      "title": "GET /backups/[backupId] synthesises meta from CURRENT league row, drifting on format changes",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:47-56 builds the rebuilt zip's meta.json from the CURRENT leagues row (slug/name/format/season), not from any meta stored in the backup row. If the league has since been re-formatted (e.g., tvt → triple-crown) or renamed, the downloaded zip's meta.json reports the new identity, not the snapshot-time identity. Admins relying on the zip's meta to know what the snapshot represented will be misled.",
+      "expectedBehaviour": "Persist a `metaJson` column on the backups row at insert time (it's already generated by generateBackupRows) and emit that on download; fall back to synthesised meta only for legacy rows with no metaJson.",
+      "actualBehaviour": "Meta in the rebuilt zip reflects current state, not snapshot state. Format/slug/name changes silently rewrite history.",
+      "sourceRefs": ["src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:43-77"],
+      "linkedBusinessRules": ["BR-BACKUP-024"],
+      "linkedAcceptanceCriteria": ["AC-BACKUP-021"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-BACKUP-021"],
+      "notes": "Adds one column to backups; populated at insert time in both POST /backups and writeAutoSnapshot. Low risk, additive. Currently most leagues don't change format mid-season so user-visible impact is small, but the snapshot integrity guarantee is broken.",
+      "resolution": null,
+      "resolutionDate": null
+    }
+  ]
+}

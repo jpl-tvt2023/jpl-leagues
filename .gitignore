@@ -32,9 +32,17 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# Opt-in: .env.test contains only file:./test.db + a throwaway session secret.
+# Safe to commit so teammates/CI can run `npm run test:e2e` without extra setup.
+!.env.test
 
 # vercel
 .vercel
+
+# Playwright
+/playwright-report/
+/test-results/
+/playwright/.cache/
 
 # typescript
 *.tsbuildinfo

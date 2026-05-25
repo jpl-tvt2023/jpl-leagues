@@ -8,7 +8,7 @@
 
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
-import { db, teams, gameweeks, fixtures, leagues } from "@/lib/db";
+import { db, teams, gameweeks, fixtures, leagues, playoffTies, challengerSurvivalEntries } from "@/lib/db";
 import { eq, inArray, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { backups } from "@/lib/db/schema";
@@ -129,7 +129,9 @@ export async function restoreFixtures(leagueId: string, payload: RestorePayload)
   const leagueGwIds = allGameweeks.map((g) => g.id);
   if (leagueGwIds.length > 0) {
     await db.delete(fixtures).where(inArray(fixtures.gameweekId, leagueGwIds));
+    await db.delete(challengerSurvivalEntries).where(inArray(challengerSurvivalEntries.gameweekId, leagueGwIds));
   }
+  await db.delete(playoffTies).where(eq(playoffTies.leagueId, leagueId));
 
   // Re-insert. Skip rows that can't be resolved (logged as warnings).
   let inserted = 0;

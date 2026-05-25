@@ -1,0 +1,2728 @@
+{
+  "moduleId": "TEAMSELF",
+  "moduleName": "Team Self-Service",
+  "sheetName": "Team Self-Service",
+  "status": "qa-signed-off",
+  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "requirements": {
+    "version": 2,
+    "businessContext": "Self-service surface for a logged-in team: the 1–3 step profile-setup wizard (login ID, team name, two FPL player IDs) and the team dashboard that summarizes season stats, recent form, league position, upcoming fixture/captain/chip, and per-GW result drill-downs. The setup wizard collapses to a single step (no FPL player IDs) for auction-format leagues; the dashboard returns a separate auction-shaped payload that surfaces squad, purse, ledger totals, and active auction sessions instead of fixtures/captains/chips. Excludes auth, password change, captain/chip submission, standings/fixtures viewing, notifications, and auction trading pages — those are owned by other modules.",
+    "userStories": [
+      {
+        "id": "US-04-001",
+        "asA": "team",
+        "iWant": "to land on the setup wizard automatically the first time I sign in after admin creation, with my admin-assigned team name and login ID prefilled",
+        "soThat": "I can complete my profile without typing values the admin already chose for me",
+        "sourceRefs": [
+          "src/app/setup/page.tsx:56-103",
+          "src/app/api/team/setup/route.ts:18-68",
+          "src/app/dashboard/page.tsx:884-912"
+        ]
+      },
+      {
+        "id": "US-04-002",
+        "asA": "team",
+        "iWant": "to pick my own team login ID (3–20 letters/digits/underscore/hyphen) that I will use to sign in",
+        "soThat": "I have a personal credential separate from the auto-generated one the admin gave me",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:96-124",
+          "src/app/setup/page.tsx:143-160",
+          "src/lib/db/schema.ts:83-141"
+        ]
+      },
+      {
+        "id": "US-04-003",
+        "asA": "team",
+        "iWant": "to rename my team during setup with a name that is unique within my league (whitespace and case ignored)",
+        "soThat": "my team displays under the brand I chose without clashing with another manager in the same league",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:48-57",
+          "src/app/api/team/setup/route.ts:126-157",
+          "src/app/setup/page.tsx:124-141"
+        ]
+      },
+      {
+        "id": "US-04-004",
+        "asA": "team in a TVT or Triple-Crown league",
+        "iWant": "to register both of my real-life FPL players (name + numeric FPL Team ID) on steps 2 and 3 of the wizard",
+        "soThat": "the system can fetch our weekly FPL points and combine them into my team's score",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:185-288",
+          "src/app/setup/page.tsx:162-194",
+          "src/app/setup/page.tsx:335-401"
+        ]
+      },
+      {
+        "id": "US-04-005",
+        "asA": "team in an auction league",
+        "iWant": "the wizard to skip the FPL-player steps and only ask for my username (and optionally my display name)",
+        "soThat": "I can finish setup quickly because I'll acquire players via the auction instead of declaring them",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:8-12",
+          "src/app/api/team/setup/route.ts:159-183",
+          "src/app/setup/page.tsx:39-50",
+          "src/app/setup/page.tsx:218-247"
+        ]
+      },
+      {
+        "id": "US-04-006",
+        "asA": "team in a club-auction league",
+        "iWant": "the display-name field to be hidden so my team automatically shows as the PL club I win in the auction",
+        "soThat": "I don't have to invent a name that will be overridden anyway",
+        "sourceRefs": [
+          "src/app/setup/page.tsx:36-42",
+          "src/app/setup/page.tsx:307-330",
+          "src/app/setup/page.tsx:152-156"
+        ]
+      },
+      {
+        "id": "US-04-007",
+        "asA": "team",
+        "iWant": "live availability feedback when I tab off the login-ID or team-name field",
+        "soThat": "I know immediately whether my chosen identifier is taken without submitting the whole form",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:39-57",
+          "src/app/setup/page.tsx:105-141"
+        ]
+      },
+      {
+        "id": "US-04-008",
+        "asA": "team that has already completed setup",
+        "iWant": "to be redirected away from the setup wizard if I navigate to /setup again",
+        "soThat": "I don't accidentally overwrite or reset my profile",
+        "sourceRefs": [
+          "src/app/setup/page.tsx:77-80"
+        ]
+      },
+      {
+        "id": "US-04-009",
+        "asA": "team (TVT/Triple-Crown)",
+        "iWant": "a dashboard that shows my last GW result, recent 5-game form, season W/D/L, points for/against, bonus and chip points, plus my highest/lowest GW",
+        "soThat": "I can see my overall trajectory at a glance",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:192-405",
+          "src/app/api/team/dashboard/route.ts:655-696",
+          "src/app/dashboard/page.tsx:38-75"
+        ]
+      },
+      {
+        "id": "US-04-010",
+        "asA": "team",
+        "iWant": "an upcoming-fixture card with the opponent's name and both opponent players' FPL profile links",
+        "soThat": "I can scout the opposition before the deadline",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:150-190",
+          "src/app/api/team/dashboard/route.ts:19-24"
+        ]
+      },
+      {
+        "id": "US-04-011",
+        "asA": "team",
+        "iWant": "to see my current group rank, points-to-top, my zone (playoffs / challenger / eliminated) and a mini-table around my row",
+        "soThat": "I understand where I sit competitively without leaving the dashboard",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:518-571"
+        ]
+      },
+      {
+        "id": "US-04-012",
+        "asA": "team in a Triple-Crown league",
+        "iWant": "the dashboard to additionally show my PL-wide rank (out of all 20 non-ghost teams) and my cup-group progress (rank, UCL/UEL zone, last cup result, next cup fixture, double-header flag)",
+        "soThat": "I can track all three competitions in one place",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:725-937",
+          "src/app/dashboard/page.tsx:118-163"
+        ]
+      },
+      {
+        "id": "US-04-013",
+        "asA": "team",
+        "iWant": "to navigate to a previous or next gameweek's result from the dashboard",
+        "soThat": "I can review historical match details without scrolling another page",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/gw-result/route.ts:31-385",
+          "src/app/dashboard/page.tsx:840-882",
+          "src/app/dashboard/page.tsx:914-926"
+        ]
+      },
+      {
+        "id": "US-04-014",
+        "asA": "team in a Triple-Crown league",
+        "iWant": "to navigate cup gameweeks independently of PL gameweeks",
+        "soThat": "I can drill into cup-only history when the cup calendar diverges from PL",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/gw-result/route.ts:106-173",
+          "src/app/dashboard/page.tsx:960-970"
+        ]
+      },
+      {
+        "id": "US-04-015",
+        "asA": "team in an auction league",
+        "iWant": "a dashboard payload showing my purse, squad list (with FMV per player), total points, current rank, top-10 mini-table, GW history, owned-club chip, and any active/pending auction session",
+        "soThat": "I can monitor my finances and squad performance against the rest of the league",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:1000-1252"
+        ]
+      },
+      {
+        "id": "US-04-016",
+        "asA": "team",
+        "iWant": "the dashboard to surface a server-clock-synced countdown to the next GW deadline",
+        "soThat": "I don't miss the submission window because of client clock drift",
+        "sourceRefs": [
+          "src/app/dashboard/page.tsx:167-246",
+          "src/app/api/team/dashboard/route.ts:946-952"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-04-001",
+        "rule": "All /api/team/* routes require a valid session whose type is exactly 'team'; missing cookies return 401 and other session types (admin/superadmin) return 403.",
+        "sourceRefs": [
+          "src/middleware.ts:178-222"
+        ]
+      },
+      {
+        "id": "BR-04-002",
+        "rule": "GET /api/team/setup additionally re-verifies the session itself and returns 401 if session.type !== 'team'.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:18-25"
+        ]
+      },
+      {
+        "id": "BR-04-003",
+        "rule": "GET /api/team/setup with no query params returns { teamId, currentLoginId, currentName } for the logged-in team; if the team row is missing it returns 404.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:27-33",
+          "src/app/api/team/setup/route.ts:59-67"
+        ]
+      },
+      {
+        "id": "BR-04-004",
+        "rule": "GET /api/team/setup?checkLoginId=X returns { available: true } only if no other team owns that login ID (the current team's own ID is considered available).",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:39-46"
+        ]
+      },
+      {
+        "id": "BR-04-005",
+        "rule": "GET /api/team/setup?checkName=X compares team names within the caller's league using LOWER(REPLACE(name,' ','')) — i.e., case-insensitive and whitespace-insensitive.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:48-57"
+        ]
+      },
+      {
+        "id": "BR-04-006",
+        "rule": "teamLoginId must be a non-empty trimmed string matching /^[A-Za-z0-9_-]{3,20}$/; violations return 400 with a specific error message and the same client-side regex is enforced before submission.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:96-111",
+          "src/app/setup/page.tsx:143-150"
+        ]
+      },
+      {
+        "id": "BR-04-007",
+        "rule": "teamLoginId must be globally unique across all leagues; the unique constraint is enforced both via a pre-check in the route and by a DB unique index. // CODE-CONFIRMED: may be a defect — the check uses eq() (case-sensitive) while the team-name check is normalized, so 'Rahul' and 'rahul' would be treated as different login IDs.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:113-124",
+          "src/lib/db/schema.ts:138-141"
+        ]
+      },
+      {
+        "id": "BR-04-008",
+        "rule": "teamName must be a non-empty trimmed string; if missing/blank the server returns 400 with 'Team name is required'.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:126-135"
+        ]
+      },
+      {
+        "id": "BR-04-009",
+        "rule": "teamName must be unique within the team's league, compared case- and whitespace-insensitively; otherwise the server returns 400 'Team name is already taken in this league'.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:147-157"
+        ]
+      },
+      {
+        "id": "BR-04-010",
+        "rule": "If the team's league.format === 'auction', POST /api/team/setup persists only teamLoginId + teamName, sets isProfileComplete=true and initializes team.purse from leagues.initialBudget (defaulting to 100,000,000 when null); no player rows are created or required.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:8-12",
+          "src/app/api/team/setup/route.ts:159-183"
+        ]
+      },
+      {
+        "id": "BR-04-011",
+        "rule": "For non-auction leagues (TVT, Triple Crown), POST /api/team/setup requires player1Name + numeric player1FplId and player2Name + numeric player2FplId; non-numeric FPL IDs return 400.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:185-229",
+          "src/app/setup/page.tsx:162-194"
+        ]
+      },
+      {
+        "id": "BR-04-012",
+        "rule": "On successful non-auction setup, if 2+ player rows already exist for the team they are UPDATED in place (positions 0 and 1 of the result set); otherwise two new player rows are INSERTED. // CODE-CONFIRMED: may be a defect — the select has no orderBy, so the [0]/[1] mapping to player1/player2 is non-deterministic and a resubmit can swap the two FPL IDs.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:246-288"
+        ]
+      },
+      {
+        "id": "BR-04-013",
+        "rule": "Successful POST /api/team/setup invalidates the league's cached public pages via invalidateLeaguePageCache(leagueId) before responding.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:177-182",
+          "src/app/api/team/setup/route.ts:290-296"
+        ]
+      },
+      {
+        "id": "BR-04-014",
+        "rule": "POST /api/team/setup (auction branch) initialises team.purse from leagues.initialBudget (or 100,000,000 default) ONLY on first-time setup, i.e. when team.isProfileComplete is false. On re-submission (isProfileComplete already true) only cosmetic fields (teamLoginId, name, isProfileComplete, updatedAt) are updated; team.purse, team.totalSpent, team.totalRefunds and team.totalIncome are preserved so the economy invariant purse = initialBudget + totalIncome + totalRefunds − totalSpent is not broken. For non-auction (TVT/TC) re-submissions, name/loginId/players may still be overwritten.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:159-187",
+          "src/app/api/team/setup/route.ts:231-296"
+        ]
+      },
+      {
+        "id": "BR-04-015",
+        "rule": "The setup UI is a wizard with totalSteps = isAuction ? 1 : 3; the progress bar shows 1 segment for auction leagues and 3 segments otherwise, and the Back button is hidden in auction mode.",
+        "sourceRefs": [
+          "src/app/setup/page.tsx:39-42",
+          "src/app/setup/page.tsx:263-273",
+          "src/app/setup/page.tsx:404-414"
+        ]
+      },
+      {
+        "id": "BR-04-016",
+        "rule": "When isAuction && clubAuctionEnabled (hideTeamName=true) the wizard hides the team-name input, skips client-side validation of teamName, and submits the admin-assigned currentTeamName as-is.",
+        "sourceRefs": [
+          "src/app/setup/page.tsx:36-42",
+          "src/app/setup/page.tsx:152-156",
+          "src/app/setup/page.tsx:307-330"
+        ]
+      },
+      {
+        "id": "BR-04-017",
+        "rule": "The setup wizard prefills teamLoginId and teamName from GET /api/team/setup, then redirects to /dashboard if me.team.isProfileComplete is already true, and to /signin if me.authenticated is false or me.type !== 'team'.",
+        "sourceRefs": [
+          "src/app/setup/page.tsx:57-103"
+        ]
+      },
+      {
+        "id": "BR-04-018",
+        "rule": "After a successful POST /api/team/setup, the client redirects the team to /dashboard; on non-2xx the server's error message is shown in the global error banner.",
+        "sourceRefs": [
+          "src/app/setup/page.tsx:218-248"
+        ]
+      },
+      {
+        "id": "BR-04-019",
+        "rule": "Availability-check requests (checkLoginId / checkName) only fire on blur when the value is non-empty AND different from the current stored value (case-sensitive equality).",
+        "sourceRefs": [
+          "src/app/setup/page.tsx:105-141"
+        ]
+      },
+      {
+        "id": "BR-04-020",
+        "rule": "GET /api/team/dashboard requires x-session-id header (set by middleware); a missing header returns 401 'Not authenticated'.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:44-49"
+        ]
+      },
+      {
+        "id": "BR-04-021",
+        "rule": "When the team's league.format === 'auction', GET /api/team/dashboard returns the auction-shaped payload (purse, squad, FMV, standings top-10, GW history, auction sessions) and bypasses the TVT/TC code path entirely.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:62-65",
+          "src/app/api/team/dashboard/route.ts:1000-1252"
+        ]
+      },
+      {
+        "id": "BR-04-022",
+        "rule": "For TVT/TC dashboards the route fetches FPL bootstrap data and syncs gameweeks.deadline for the team's league; failures are caught and logged but do not break the response.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:67-81"
+        ]
+      },
+      {
+        "id": "BR-04-023",
+        "rule": "latestCompletedGW is computed from PL fixtures only (competitionType === 'pl' OR null) in Triple-Crown leagues; cup fixtures never advance the PL clock.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:125-143"
+        ]
+      },
+      {
+        "id": "BR-04-024",
+        "rule": "The match-result outcome mapping is: matchPoints===2 → 'W', matchPoints===1 → 'D', otherwise 'L' (used for last GW result, recent form, and season totals).",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:232-235",
+          "src/app/api/team/dashboard/route.ts:371-374",
+          "src/app/api/team/dashboard/route.ts:398-400"
+        ]
+      },
+      {
+        "id": "BR-04-025",
+        "rule": "When no captain data exists for a completed GW, per-player scores are inferred: captainBase = floor((total-1)/3), captainDoubled = captainBase*2, non-captain = total - captainDoubled; the player whose name sorts first alphabetically is treated as captain and the result is flagged isInferred=true.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:203-216",
+          "src/app/api/team/dashboard/gw-result/route.ts:12-24"
+        ]
+      },
+      {
+        "id": "BR-04-026",
+        "rule": "recentForm returns up to 5 PL fixtures sorted by gameweek DESC, each with { gameweek, result (W/D/L), score 'my-opp', gotBonus }.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:194-198",
+          "src/app/api/team/dashboard/route.ts:365-382"
+        ]
+      },
+      {
+        "id": "BR-04-027",
+        "rule": "currentStreak is computed by walking recentForm from newest to oldest and counting consecutive identical results; if recentForm is empty the streak is null.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:679-691",
+          "src/app/api/team/dashboard/route.ts:970"
+        ]
+      },
+      {
+        "id": "BR-04-028",
+        "rule": "highestScoringGW / lowestScoringGW are derived ONLY from fixtures whose gameweek.number < latestCompletedGW — the current GW is excluded.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:661-677"
+        ]
+      },
+      {
+        "id": "BR-04-029",
+        "rule": "Group standings sort by leaguePoints DESC, then wins DESC; zone is 'playoffs' for ranks 1–8, 'challenger' for 9–14, 'eliminated' for 15+.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:533-559"
+        ]
+      },
+      {
+        "id": "BR-04-030",
+        "rule": "miniTable surfaces up to 5 rows centered on the team (2 above + self + 2 below); ranks reflect position within full standings, and isCurrentTeam flags the caller.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:560-570"
+        ]
+      },
+      {
+        "id": "BR-04-031",
+        "rule": "For Triple-Crown leagues, miniTable is overridden to use ALL non-ghost teams in the league (sorted by leaguePoints DESC), and plPosition.rank reflects PL-wide rank out of plPosition.totalTeams.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:725-753"
+        ]
+      },
+      {
+        "id": "BR-04-032",
+        "rule": "chipStatus.currentSet is the value returned by getChipSet(nextGameweek.number); set1 and set2 each report the used flag for Double Pointer, Challenge Chip, and Win-Win.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:417-433"
+        ]
+      },
+      {
+        "id": "BR-04-033",
+        "rule": "Captain history is filtered by gameweek.number <= captainCheckLimit (38 for triple-crown, 30 otherwise); CAPTAIN_CAP is 19 for triple-crown and 15 otherwise; in TVT playoff phase (nextGameweek.number > 30) chipsRemaining returns 999 instead of the cap-based value.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:438-482"
+        ]
+      },
+      {
+        "id": "BR-04-034",
+        "rule": "upcomingCaptain is non-null only if the team has already submitted a captain for nextGameweek; the response carries playerId + playerName so the dashboard can show a switch UI.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:485-494"
+        ]
+      },
+      {
+        "id": "BR-04-035",
+        "rule": "upcomingChip is non-null only if a gameweekChips row exists for (teamId, nextGameweek.id); chipType 'D' → 'Double Pointer', 'C' → 'Challenge Chip', otherwise 'Win-Win'.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:496-513"
+        ]
+      },
+      {
+        "id": "BR-04-036",
+        "rule": "upcomingFixtures returns up to 5 unplayed PL fixtures sorted by gameweek ASC; for Triple-Crown the list is merged with cup fixtures so each PL fixture is immediately followed by the same-GW cup fixture, and standalone cup-only GWs are appended.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:574-642"
+        ]
+      },
+      {
+        "id": "BR-04-037",
+        "rule": "oppositeGroupTeams is the top-2 of the opposite group as of currentGwNumber (for Challenge Chip targeting); query failures fall back to an empty list without breaking the response.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:700-721"
+        ]
+      },
+      {
+        "id": "BR-04-038",
+        "rule": "For Triple-Crown, cupProgress includes groupName, rank within the human (non-ghost) cup-group standings, cupZone ('ucl' for rank ≤2 else 'uel'), and a mini-table of all human teams in the cup group with cumulative wins/losses/cupGroupPoints.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:791-903"
+        ]
+      },
+      {
+        "id": "BR-04-039",
+        "rule": "cupProgress.upcomingCupFixture.isDoubleHeader is true iff the cup fixture's gameweek number is in the DOUBLE_HEADER_GWS list [6,8,10,12,14,16,18,20,22,24,27,29,33,35,38].",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:13",
+          "src/app/api/team/dashboard/route.ts:922-931"
+        ]
+      },
+      {
+        "id": "BR-04-040",
+        "rule": "Each player FPL URL is built as fantasy.premierleague.com/entry/{fplId}/event/{gw} when a gameweek is provided, otherwise /entry/{fplId}/history; team members also include fplHistoryUrl.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:19-24",
+          "src/app/api/team/dashboard/route.ts:646-653"
+        ]
+      },
+      {
+        "id": "BR-04-041",
+        "rule": "GET /api/team/dashboard/gw-result requires either gw or cupGw query param (else 400) and rejects NaN or values < 1 with 'Invalid {param} parameter'.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/gw-result/route.ts:42-53"
+        ]
+      },
+      {
+        "id": "BR-04-042",
+        "rule": "If the requested gw has no completed PL fixture, the route falls back to the most-recent completed PL fixture instead of returning an error.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/gw-result/route.ts:184-187"
+        ]
+      },
+      {
+        "id": "BR-04-043",
+        "rule": "When called with cupGw the response shape is { cupGwResult, minCompletedCupGw, maxCompletedCupGw, completedCupGws }; when called with gw the response also includes lastGwResult and, for triple-crown leagues, a paired cupGwResult for the same GW number (double-header).",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/gw-result/route.ts:104-173",
+          "src/app/api/team/dashboard/gw-result/route.ts:296-380"
+        ]
+      },
+      {
+        "id": "BR-04-044",
+        "rule": "Cup match-result mapping uses only W/L (no draws) — matchPoints===2 → 'W', otherwise 'L'.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/gw-result/route.ts:164",
+          "src/app/api/team/dashboard/gw-result/route.ts:306"
+        ]
+      },
+      {
+        "id": "BR-04-045",
+        "rule": "Auction dashboard purse, totalSpent, totalIncome, totalRefunds are sourced from buildTeamLedger when available; only if the ledger build returns null do values fall back to calculatePurse(initialBudget, totalIncome, t.totalSpent, t.totalRefunds) and the persisted team columns.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:1122-1168"
+        ]
+      },
+      {
+        "id": "BR-04-046",
+        "rule": "Auction dashboard squadValue is sum of calculateFMV(purchasePrice, rawPoints) over active squad members; rawPoints prefers entry.rawPoints over entry.points from auctionScores.playerBreakdown (synergy points are excluded from FMV).",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:1050-1068",
+          "src/app/api/team/dashboard/route.ts:1112-1117"
+        ]
+      },
+      {
+        "id": "BR-04-047",
+        "rule": "Auction dashboard standings rename any team that owns a PL club to use that club's plTeamName/plTeamShort; the dashboard payload also returns ownedClub for the caller's team in the header.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:1082-1099",
+          "src/app/api/team/dashboard/route.ts:1177-1189"
+        ]
+      },
+      {
+        "id": "BR-04-048",
+        "rule": "Auction dashboard returns at most ONE active session (status 'active' or 'paused') as auctionSession, and the next 'pending' session whose scheduledAt is strictly in the future as nextAuction (earliest first).",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:1102-1110"
+        ]
+      },
+      {
+        "id": "BR-04-049",
+        "rule": "Released-player rows are reported with refund=calculateRefund(purchasePrice) and forfeit=purchasePrice-refund; totalForfeit/totalRefunds aggregate over all releases.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:1018-1033"
+        ]
+      },
+      {
+        "id": "BR-04-050",
+        "rule": "Income/expense breakdowns iterate the ledger, skip isPending entries, and bucket by entry.type; release_refund splits the refund into incomeByType.release_refund and the metadata.forfeitAmount into expenseByType.release_forfeit; initial_budget is never counted as income.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:1127-1158"
+        ]
+      },
+      {
+        "id": "BR-04-051",
+        "rule": "Auction dashboard 'next deadline' uses the earliest gameweek in the team's league whose deadline > now; if none exists deadline is { gameweek: 0, timestamp: null }.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:1170-1175",
+          "src/app/api/team/dashboard/route.ts:1242-1245"
+        ]
+      },
+      {
+        "id": "BR-04-052",
+        "rule": "TVT/TC dashboard 'deadline' is the next gameweek after latestCompletedGW; if no nextGameweek row exists deadline.gameweek=0 and deadline.timestamp=null.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:144-148",
+          "src/app/api/team/dashboard/route.ts:947-950"
+        ]
+      },
+      {
+        "id": "BR-04-053",
+        "rule": "Both dashboard endpoints embed serverTime as new Date().toISOString() so the client countdown can correct for clock drift.",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:951",
+          "src/app/api/team/dashboard/route.ts:1246",
+          "src/app/dashboard/page.tsx:170-202"
+        ]
+      },
+      {
+        "id": "BR-04-054",
+        "rule": "Team-side dashboard page redirects to /signin if not authenticated or session.type!=='team', and to /setup if me.team.isProfileComplete is false.",
+        "sourceRefs": [
+          "src/app/dashboard/page.tsx:884-912"
+        ]
+      },
+      {
+        "id": "BR-04-055",
+        "rule": "Dashboard GW navigation uses GET /api/team/dashboard/gw-result?gw=N (lightweight) instead of the full /api/team/dashboard refresh; min/maxCompletedGw bound the prev/next buttons.",
+        "sourceRefs": [
+          "src/app/dashboard/page.tsx:840-882",
+          "src/app/dashboard/page.tsx:914-926"
+        ]
+      },
+      {
+        "id": "BR-04-056",
+        "rule": "GET /api/team/setup ?checkLoginId and ?checkName both treat the caller's current row as available — i.e., a team re-submitting its existing identifier never gets a 'taken' error.",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:39-57"
+        ]
+      },
+      {
+        "id": "BR-04-057",
+        "rule": "If checkLoginId is supplied the route returns ONLY { available } and ignores checkName even when both are present (checkLoginId is evaluated first).",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:35-57"
+        ]
+      },
+      {
+        "id": "BR-04-058",
+        "rule": "Both setup and dashboard routes catch unexpected errors and return a generic 500 with a stable error message ('Failed to fetch setup info', 'Failed to complete setup', 'Failed to fetch dashboard data', 'Failed to fetch GW result', 'Failed to fetch auction dashboard').",
+        "sourceRefs": [
+          "src/app/api/team/setup/route.ts:64-67",
+          "src/app/api/team/setup/route.ts:297-303",
+          "src/app/api/team/dashboard/route.ts:991-997",
+          "src/app/api/team/dashboard/route.ts:1248-1251",
+          "src/app/api/team/dashboard/gw-result/route.ts:381-384"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-04-001",
+        "given": "no session cookie is sent",
+        "when": "the client calls any /api/team/* route",
+        "then": "the response is HTTP 401 with body { error: 'Not authenticated' }",
+        "linksTo": "BR-04-001"
+      },
+      {
+        "id": "AC-04-002",
+        "given": "the caller is signed in as an admin",
+        "when": "they call GET /api/team/dashboard",
+        "then": "the response is HTTP 403 with body { error: 'Team access required' }",
+        "linksTo": "BR-04-001"
+      },
+      {
+        "id": "AC-04-003",
+        "given": "a freshly-created team with isProfileComplete=false signs in for the first time",
+        "when": "they land on /dashboard",
+        "then": "they are redirected to /setup",
+        "linksTo": "BR-04-054"
+      },
+      {
+        "id": "AC-04-004",
+        "given": "a team with isProfileComplete=true navigates to /setup",
+        "when": "the page mounts",
+        "then": "they are redirected to /dashboard before the wizard renders",
+        "linksTo": "BR-04-017"
+      },
+      {
+        "id": "AC-04-005",
+        "given": "a logged-in team with no query params",
+        "when": "they call GET /api/team/setup",
+        "then": "the response includes teamId, currentLoginId, currentName (200 OK)",
+        "linksTo": "BR-04-003"
+      },
+      {
+        "id": "AC-04-006",
+        "given": "another team already owns login ID 'rahul99'",
+        "when": "the caller calls GET /api/team/setup?checkLoginId=rahul99",
+        "then": "the response is { available: false }",
+        "linksTo": "BR-04-004"
+      },
+      {
+        "id": "AC-04-007",
+        "given": "the caller's own current teamLoginId is 'rahul99'",
+        "when": "they call GET /api/team/setup?checkLoginId=rahul99",
+        "then": "the response is { available: true }",
+        "linksTo": "BR-04-056"
+      },
+      {
+        "id": "AC-04-008",
+        "given": "team 'DM — Rahul' already exists in the caller's league",
+        "when": "the caller calls GET /api/team/setup?checkName=dm—rahul (different casing) or GET /api/team/setup?checkName='DM   Rahul' (extra whitespace)",
+        "then": "the response is { available: false } in both cases",
+        "linksTo": "BR-04-005"
+      },
+      {
+        "id": "AC-04-009",
+        "given": "both checkLoginId and checkName are supplied",
+        "when": "the route processes the request",
+        "then": "it returns the loginId result only (checkName is ignored)",
+        "linksTo": "BR-04-057"
+      },
+      {
+        "id": "AC-04-010",
+        "given": "the setup wizard step 1 is visible",
+        "when": "the user enters teamLoginId 'ab' (too short) or 'invalid!@#'",
+        "then": "the client shows 'Must be 3–20 alphanumeric/underscore/hyphen characters' and blocks step advancement",
+        "linksTo": "BR-04-006"
+      },
+      {
+        "id": "AC-04-011",
+        "given": "the team submits POST /api/team/setup with teamLoginId='ab' (too short)",
+        "when": "the server validates input",
+        "then": "the response is 400 with body { error: 'Team ID must be 3–20 alphanumeric/underscore/hyphen characters' }",
+        "linksTo": "BR-04-006"
+      },
+      {
+        "id": "AC-04-012",
+        "given": "the team submits POST /api/team/setup with a teamLoginId already owned by a different team",
+        "when": "the server pre-checks uniqueness",
+        "then": "the response is 400 with body { error: 'Team ID is already taken' }",
+        "linksTo": "BR-04-007"
+      },
+      {
+        "id": "AC-04-013",
+        "given": "the team submits POST /api/team/setup with empty teamName",
+        "when": "the server validates",
+        "then": "the response is 400 with body { error: 'Team name is required' }",
+        "linksTo": "BR-04-008"
+      },
+      {
+        "id": "AC-04-014",
+        "given": "a different team in the same league is already called 'Team Phoenix'",
+        "when": "the caller submits teamName='team phoenix' (different case) or 'Team  Phoenix' (extra whitespace)",
+        "then": "the response is 400 with body { error: 'Team name is already taken in this league' }",
+        "linksTo": "BR-04-009"
+      },
+      {
+        "id": "AC-04-015",
+        "given": "the team belongs to an auction league with leagues.initialBudget = 150_000_000",
+        "when": "they submit POST /api/team/setup with valid teamLoginId + teamName and NO player fields",
+        "then": "the response is 200 { success: true, message: 'Profile setup completed (auction format — players acquired via auction)' } AND team.purse is set to 150_000_000 AND team.isProfileComplete is true AND no players rows are created",
+        "linksTo": "BR-04-010"
+      },
+      {
+        "id": "AC-04-016",
+        "given": "the team belongs to an auction league with leagues.initialBudget = null",
+        "when": "they submit a valid setup payload",
+        "then": "team.purse is set to 100_000_000 (the hard-coded default)",
+        "linksTo": "BR-04-010"
+      },
+      {
+        "id": "AC-04-017",
+        "given": "the team belongs to a TVT league",
+        "when": "they submit POST /api/team/setup with player1FplId='abc'",
+        "then": "the response is 400 with body { error: 'Player 1 FPL ID must be numeric' }",
+        "linksTo": "BR-04-011"
+      },
+      {
+        "id": "AC-04-018",
+        "given": "the team belongs to a Triple-Crown league",
+        "when": "they submit POST /api/team/setup with player2Name='' (blank)",
+        "then": "the response is 400 with body { error: 'Player 2 name is required' }",
+        "linksTo": "BR-04-011"
+      },
+      {
+        "id": "AC-04-019",
+        "given": "a TVT team submits valid setup for the first time (no prior players)",
+        "when": "the POST succeeds",
+        "then": "two new players rows are INSERTED for the team with the supplied names and FPL IDs, and team.isProfileComplete becomes true",
+        "linksTo": "BR-04-011"
+      },
+      {
+        "id": "AC-04-020",
+        "given": "a TVT team already has 2 players rows",
+        "when": "they POST /api/team/setup again with new player names/IDs",
+        "then": "the two existing player rows are UPDATED in place (no INSERTs), and updatedAt is bumped",
+        "linksTo": "BR-04-012"
+      },
+      {
+        "id": "AC-04-021",
+        "given": "a successful POST /api/team/setup completes",
+        "when": "the server responds",
+        "then": "invalidateLeaguePageCache is invoked with the team's leagueId before the 200 is returned",
+        "linksTo": "BR-04-013"
+      },
+      {
+        "id": "AC-04-022",
+        "given": "an auction team with isProfileComplete=true and a partially-spent purse (e.g. purse=40_000_000, totalSpent=60_000_000) re-submits POST /api/team/setup with valid teamLoginId and teamName",
+        "when": "the server processes the auction branch",
+        "then": "team.purse, team.totalSpent, team.totalRefunds and team.totalIncome are unchanged; only cosmetic fields (teamLoginId, name, isProfileComplete, updatedAt) are written, and the response is 200 success",
+        "linksTo": "BR-04-014"
+      },
+      {
+        "id": "AC-04-023",
+        "given": "the wizard is in auction mode",
+        "when": "the user views the progress bar and buttons",
+        "then": "there is exactly 1 progress segment, totalSteps=1, and the Back button is not rendered",
+        "linksTo": "BR-04-015"
+      },
+      {
+        "id": "AC-04-024",
+        "given": "the wizard is in club-auction mode (isAuction && clubAuctionEnabled)",
+        "when": "step 1 renders",
+        "then": "the team-name input is replaced with a notice ('Your team will display as the PL club…') and submission uses the admin-assigned currentTeamName without client-side teamName validation",
+        "linksTo": "BR-04-016"
+      },
+      {
+        "id": "AC-04-025",
+        "given": "the user types a new value into the loginId field and tabs out",
+        "when": "the blur handler fires",
+        "then": "fetch('/api/team/setup?checkLoginId=<value>') is called and an error 'Team ID is already taken' (or 'Username is already taken' in auction mode) is shown when available===false",
+        "linksTo": "BR-04-019"
+      },
+      {
+        "id": "AC-04-026",
+        "given": "the user types the same value as currentTeamLoginId and tabs out",
+        "when": "the blur handler runs",
+        "then": "no network request is fired",
+        "linksTo": "BR-04-019"
+      },
+      {
+        "id": "AC-04-027",
+        "given": "POST /api/team/setup succeeds",
+        "when": "the client receives the 200",
+        "then": "router.push('/dashboard') is called",
+        "linksTo": "BR-04-018"
+      },
+      {
+        "id": "AC-04-028",
+        "given": "a team in an auction league calls GET /api/team/dashboard",
+        "when": "the route resolves leagueFormat",
+        "then": "the response contains leagueFormat:'auction', purse, squad[], standings[<=10], gwHistory and does NOT contain recentForm/chipStatus/captaincyStatus/upcomingFixture",
+        "linksTo": "BR-04-021"
+      },
+      {
+        "id": "AC-04-029",
+        "given": "a team in a TVT league calls GET /api/team/dashboard",
+        "when": "the route resolves",
+        "then": "the response includes recentForm (≤5 entries newest first), seasonStats { played, wins, draws, losses, pointsFor, pointsAgainst, pointsDiff, bonusPointsEarned, chipPointsEarned, highestScoringGW, lowestScoringGW, currentStreak }, chipStatus, captaincyStatus and leaguePosition",
+        "linksTo": "BR-04-026"
+      },
+      {
+        "id": "AC-04-030",
+        "given": "a TC team has played PL fixtures in GW 1,2,3 and cup fixtures in GW 2,4",
+        "when": "the dashboard computes latestCompletedGW",
+        "then": "latestCompletedGW reflects only PL results (max=3); cup fixtures do not advance the PL clock",
+        "linksTo": "BR-04-023"
+      },
+      {
+        "id": "AC-04-031",
+        "given": "the team's most recent fixture has homeMatchPoints=2 and the team is home",
+        "when": "lastGwResult is built",
+        "then": "lastGwResult.result === 'W'",
+        "linksTo": "BR-04-024"
+      },
+      {
+        "id": "AC-04-032",
+        "given": "no gameweekCaptains row exists for the team's last completed GW with myScore=10",
+        "when": "lastGwResult.myPlayerScores is built",
+        "then": "captainBase=floor(9/3)=3, captainDoubled=6, non-captain=4; the alphabetically-first player is marked isCaptain=true with finalScore=6 and isInferred=true",
+        "linksTo": "BR-04-025"
+      },
+      {
+        "id": "AC-04-033",
+        "given": "the team has completed 7 PL fixtures",
+        "when": "recentForm is returned",
+        "then": "exactly 5 entries are returned, ordered by gameweek number DESC (newest first)",
+        "linksTo": "BR-04-026"
+      },
+      {
+        "id": "AC-04-034",
+        "given": "recentForm = [W,W,W,L,W]",
+        "when": "currentStreak is computed",
+        "then": "currentStreak === { type:'W', count:3 }",
+        "linksTo": "BR-04-027"
+      },
+      {
+        "id": "AC-04-035",
+        "given": "latestCompletedGW=5 and the team has completed fixtures in GW 1–5",
+        "when": "highestScoringGW / lowestScoringGW are computed",
+        "then": "they are derived from GW 1–4 only (gameweek.number < 5); GW 5 is excluded",
+        "linksTo": "BR-04-028"
+      },
+      {
+        "id": "AC-04-036",
+        "given": "a team is ranked 9th in its group of 16",
+        "when": "leaguePosition.zone is set",
+        "then": "zone === 'challenger' (because rank > 8 but ≤ 14)",
+        "linksTo": "BR-04-029"
+      },
+      {
+        "id": "AC-04-037",
+        "given": "a team is at rank 5 of 16",
+        "when": "miniTable is built",
+        "then": "exactly 5 rows are returned for ranks 3,4,5,6,7 with isCurrentTeam=true on rank 5",
+        "linksTo": "BR-04-030"
+      },
+      {
+        "id": "AC-04-038",
+        "given": "a Triple-Crown team",
+        "when": "the dashboard runs",
+        "then": "miniTable contains 5 entries centered on the team within ALL 20 non-ghost league teams (not the cup-group subset), and plPosition.rank/totalTeams are populated",
+        "linksTo": "BR-04-031"
+      },
+      {
+        "id": "AC-04-039",
+        "given": "nextGameweek.number=7 and getChipSet(7)===1",
+        "when": "chipStatus is built",
+        "then": "chipStatus.currentSet===1 and set1/set2 each carry boolean used flags for Double Pointer, Challenge Chip and Win-Win",
+        "linksTo": "BR-04-032"
+      },
+      {
+        "id": "AC-04-040",
+        "given": "a TVT team is past GW 30 with nextGameweek.number=33",
+        "when": "captaincyStatus is computed",
+        "then": "player1.chipsRemaining === 999 and player2.chipsRemaining === 999 (playoff phase override)",
+        "linksTo": "BR-04-033"
+      },
+      {
+        "id": "AC-04-041",
+        "given": "a team has submitted captain for nextGameweek",
+        "when": "the dashboard responds",
+        "then": "upcomingCaptain === { playerId, playerName } matching the submitted captain",
+        "linksTo": "BR-04-034"
+      },
+      {
+        "id": "AC-04-042",
+        "given": "the team submitted chipType='C' for nextGameweek",
+        "when": "upcomingChip is built",
+        "then": "upcomingChip === { type:'C', chipName:'Challenge Chip' }",
+        "linksTo": "BR-04-035"
+      },
+      {
+        "id": "AC-04-043",
+        "given": "a Triple-Crown team has upcoming PL fixtures in GW 3,4,5 and a cup fixture in GW 4",
+        "when": "upcomingFixtures is built",
+        "then": "the merged list interleaves: GW3 PL, GW4 PL, GW4 Cup, GW5 PL",
+        "linksTo": "BR-04-036"
+      },
+      {
+        "id": "AC-04-044",
+        "given": "TC: a cup fixture is scheduled for GW 8 (in DOUBLE_HEADER_GWS)",
+        "when": "cupProgress.upcomingCupFixture is built",
+        "then": "isDoubleHeader === true",
+        "linksTo": "BR-04-039"
+      },
+      {
+        "id": "AC-04-045",
+        "given": "a TC team finishes 2nd in its cup group standings",
+        "when": "cupProgress is built",
+        "then": "cupProgress.rank === 2 and cupProgress.cupZone === 'ucl'",
+        "linksTo": "BR-04-038"
+      },
+      {
+        "id": "AC-04-046",
+        "given": "a player has fplId='9999'",
+        "when": "the dashboard builds their links",
+        "then": "fplUrl === 'https://fantasy.premierleague.com/entry/9999/event/<gw>' and fplHistoryUrl === 'https://fantasy.premierleague.com/entry/9999/history'",
+        "linksTo": "BR-04-040"
+      },
+      {
+        "id": "AC-04-047",
+        "given": "no gw or cupGw param",
+        "when": "the client calls GET /api/team/dashboard/gw-result",
+        "then": "the response is 400 { error: 'gw or cupGw parameter required' }",
+        "linksTo": "BR-04-041"
+      },
+      {
+        "id": "AC-04-048",
+        "given": "gw=0 or gw=abc is supplied",
+        "when": "the route validates",
+        "then": "the response is 400 { error: 'Invalid gw parameter' }",
+        "linksTo": "BR-04-041"
+      },
+      {
+        "id": "AC-04-049",
+        "given": "the team requests gw=99 but only completed PL GWs are 1–5",
+        "when": "the route resolves the fixture",
+        "then": "the route falls back to the most-recent completed PL fixture (gw=5) instead of erroring",
+        "linksTo": "BR-04-042"
+      },
+      {
+        "id": "AC-04-050",
+        "given": "a TC team requests gw=4 and has both a PL and a cup fixture in GW 4",
+        "when": "the gw-result endpoint runs",
+        "then": "the response includes both lastGwResult (PL, W/D/L) and cupGwResult (cup, W/L) for GW 4",
+        "linksTo": "BR-04-043"
+      },
+      {
+        "id": "AC-04-051",
+        "given": "a TC team has cup matchPoints=1 (a draw in the underlying result)",
+        "when": "cupGwResult.result is set",
+        "then": "result === 'L' (only W or L are emitted for cup matches)",
+        "linksTo": "BR-04-044"
+      },
+      {
+        "id": "AC-04-052",
+        "given": "an auction team with a populated ledger",
+        "when": "the auction dashboard responds",
+        "then": "purse/totalSpent/totalIncome/totalRefunds come from buildTeamLedger, not from the persisted teams columns",
+        "linksTo": "BR-04-045"
+      },
+      {
+        "id": "AC-04-053",
+        "given": "auction player breakdown rows store both rawPoints and points (with synergy applied)",
+        "when": "playerPointsMap is built for FMV",
+        "then": "rawPoints is used in preference to points so synergy never inflates squadValue",
+        "linksTo": "BR-04-046"
+      },
+      {
+        "id": "AC-04-054",
+        "given": "an auction team owns the PL club Arsenal",
+        "when": "the auction dashboard standings are returned",
+        "then": "that team's standings row uses name='Arsenal' (plTeamName) and shortName='ARS' (plTeamShort), and team.ownedClub is populated",
+        "linksTo": "BR-04-047"
+      },
+      {
+        "id": "AC-04-055",
+        "given": "two auctions exist for the league: one paused and one pending scheduled in 24h",
+        "when": "the auction dashboard responds",
+        "then": "auctionSession reflects the paused session and nextAuction reflects the pending session with scheduledAt ISO-formatted",
+        "linksTo": "BR-04-048"
+      },
+      {
+        "id": "AC-04-056",
+        "given": "an auction team released a player for purchasePrice=10",
+        "when": "releases is built",
+        "then": "the release row contains refund=calculateRefund(10) and forfeit=10-refund, and totalForfeit aggregates across releases",
+        "linksTo": "BR-04-049"
+      },
+      {
+        "id": "AC-04-057",
+        "given": "the ledger contains a release_refund entry with amount=6 and metadata.forfeitAmount=4",
+        "when": "incomeBreakdown / expenseBreakdown are aggregated",
+        "then": "incomeByType.release_refund += 6 and expenseByType.release_forfeit += 4; initial_budget rows never contribute to income totals",
+        "linksTo": "BR-04-050"
+      },
+      {
+        "id": "AC-04-058",
+        "given": "an auction league has no future-dated gameweeks",
+        "when": "the dashboard deadline is computed",
+        "then": "deadline === { gameweek: 0, timestamp: null }",
+        "linksTo": "BR-04-051"
+      },
+      {
+        "id": "AC-04-059",
+        "given": "a TVT team has no nextGameweek (post-season)",
+        "when": "the dashboard responds",
+        "then": "deadline.gameweek===0 and deadline.timestamp===null",
+        "linksTo": "BR-04-052"
+      },
+      {
+        "id": "AC-04-060",
+        "given": "the dashboard response includes serverTime",
+        "when": "the client renders DeadlineTimer",
+        "then": "the countdown computes its offset against serverTime so client clock drift does not affect the displayed time-remaining",
+        "linksTo": "BR-04-053"
+      },
+      {
+        "id": "AC-04-061",
+        "given": "a team navigates from GW 5 to GW 4",
+        "when": "the prev-GW button is clicked",
+        "then": "the client calls /api/team/dashboard/gw-result?gw=4 (NOT the full /api/team/dashboard) and merges lastGwResult/cupGwResult into existing state",
+        "linksTo": "BR-04-055"
+      },
+      {
+        "id": "AC-04-062",
+        "given": "the dashboard data load fails with a non-2xx",
+        "when": "the route catches the error",
+        "then": "the response is 500 { error: 'Failed to fetch dashboard data' } and the client shows 'Failed to load dashboard. Please try again.'",
+        "linksTo": "BR-04-058"
+      },
+      {
+        "id": "AC-04-063",
+        "given": "POST /api/team/setup throws unexpectedly",
+        "when": "the catch handler runs",
+        "then": "the response is 500 { error: 'Failed to complete setup' }",
+        "linksTo": "BR-04-058"
+      },
+      {
+        "id": "AC-04-064",
+        "given": "a TVT team with 2 existing players resubmits setup",
+        "when": "the route maps player1/player2 to existingPlayers[0]/[1]",
+        "then": "because the underlying select has no orderBy, the row written to 'player 1' may correspond to either of the previous two players, so a resubmit can silently swap the two FPL IDs",
+        "linksTo": "BR-04-012"
+      },
+      {
+        "id": "AC-04-065",
+        "given": "team 'rahul99' (lowercase) exists",
+        "when": "a different team submits POST /api/team/setup with teamLoginId='Rahul99' (mixed case)",
+        "then": "the pre-check using eq() does not match the existing row, so the new login ID is accepted even though it differs from the existing one only by case",
+        "linksTo": "BR-04-007"
+      }
+    ]
+  },
+  "defects": [
+    {
+      "id": "DEF-04-001",
+      "title": "Auction team purse can be reset via repeat POST /api/team/setup",
+      "severity": "Critical",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "POST /api/team/setup has no guard against isProfileComplete already being true. For auction-format leagues it unconditionally re-runs the auction branch which sets team.purse = leagues.initialBudget (or 100_000_000 default) while leaving team.totalSpent, team.totalRefunds, team.totalIncome and existing auctionOwnership rows untouched. A team that has already spent purse on players can therefore reset their balance to the full initial budget by re-submitting the setup wizard (or via a crafted API call), breaking the economy invariant that purse = initialBudget + totalIncome + totalRefunds − totalSpent.",
+      "expectedBehaviour": "When team.isProfileComplete is already true, POST /api/team/setup should either (a) return 400/409 'Profile already completed', or (b) only allow updating cosmetic fields (name) without touching purse/economy columns. The purse should never be re-initialised once the team has owned any auction asset.",
+      "actualBehaviour": "Resubmitting POST /api/team/setup with the same payload sets team.purse back to leagues.initialBudget even after the team has spent purse, with no error and no cleanup of totalSpent/totalRefunds.",
+      "sourceRefs": [
+        "src/app/api/team/setup/route.ts:74-183",
+        "src/app/api/team/setup/route.ts:159-183"
+      ],
+      "linkedBusinessRules": ["BR-04-014"],
+      "linkedAcceptanceCriteria": ["AC-04-022"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-04-088"],
+      "notes": "Fix options: (1) add `if (team.isProfileComplete) return 400` at the top of POST; (2) split the route into POST (initial) and PATCH (rename only) and forbid purse changes on the latter; (3) only set purse when team.purse===0 to make the operation idempotent. Option 1 is simplest but blocks legitimate cases like the team correcting their display name post-setup — recommend option 3 plus a server-side allowlist of editable fields when isProfileComplete is true. Risk: any client (UI or curl) with the team's session can currently reset their auction economy, so this is exploitable as a self-service cheat. [DEV] Self-verified: tsc passes (no new errors in route.ts), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-04-088 against the fix — expected behaviour now: on re-submit purse is preserved (not reset to initialBudget); cosmetic fields (teamLoginId, name) still update. The pinning test will need to be inverted (it currently asserts the defective behaviour). [BA] BR-04-014 currently describes the defective behaviour — update the rule to reflect that the auction branch initialises purse only when isProfileComplete is false (first-time setup), and that re-submissions update cosmetic fields without touching economy columns. AC-04-022 should likewise be rewritten to assert purse is preserved on re-submit. [QA-VERIFIED]: 2026-05-24 — TC-04-088 inverted to assert preserved purse; fix confirmed. [BA-UPDATED]: 2026-05-24 — BR-04-014 + AC-04-022 updated to reflect fixed behaviour.",
+      "resolution": "Gated the purse initialisation in the auction branch on first-time setup. In src/app/api/team/setup/route.ts:159-183 the `purse: initialBudget` write is now only added to the update set when the team's current `isProfileComplete` is false; on re-submissions (isProfileComplete already true) only cosmetic fields (teamLoginId, name, isProfileComplete, updatedAt) are updated, preserving purse/totalSpent/totalRefunds/totalIncome and the economy invariant. This matches the defect notes' option 3 intent while still allowing legitimate display-name corrections post-setup.",
+      "resolutionDate": "2026-05-24"
+    },
+    {
+      "id": "DEF-04-002",
+      "title": "Player1/Player2 mapping non-deterministic on setup re-submit",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "When updating existing players, the route loads them via `db.select().from(players).where(eq(players.teamId, session.id))` with NO orderBy. SQLite does not guarantee a stable order without an ORDER BY clause, so existingPlayers[0] and existingPlayers[1] can correspond to either of the two previously-stored players on different requests. The route then unconditionally writes the wizard's player1 payload to existingPlayers[0].id and player2 payload to existingPlayers[1].id. Result: editing names/FPL IDs from the wizard can silently swap which player is which, corrupting captaincy history (gameweekCaptains.playerId references survive) and player stats.",
+      "expectedBehaviour": "Either order the select by a stable key (e.g. players.createdAt ASC, players.id ASC) so position 0 is always the same row, or identify each player by id from the form and update by id. The mapping wizard-slot↔db-row must be deterministic.",
+      "actualBehaviour": "On a TVT team's second submission of the setup wizard, the two stored FPL IDs may be assigned to the opposite player names than the user typed, with no error.",
+      "sourceRefs": [
+        "src/app/api/team/setup/route.ts:246-271"
+      ],
+      "linkedBusinessRules": ["BR-04-012"],
+      "linkedAcceptanceCriteria": ["AC-04-020", "AC-04-064"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-04-089", "TC-04-090"],
+      "notes": "Trivial fix: add `.orderBy(asc(players.createdAt), asc(players.id))` to the select. Long-term, the wizard should send the player id of each slot back to the server so the mapping is explicit. Combined with DEF-04-001 this is especially nasty for auction leagues, but the swap concern applies to TVT/TC. Severity Major (not Critical) because the wizard is usually a one-shot operation; only manifests on edits.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-04-003",
+      "title": "teamLoginId uniqueness is case-sensitive but team-name uniqueness is case-insensitive",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "Server-side checks are inconsistent. POST /api/team/setup checks teamLoginId uniqueness with `eq(teams.teamLoginId, trimmedLoginId)` and the DB unique index `teams_login_id_global_unique` is on the raw column — both case-sensitive. By contrast the same route checks team-name uniqueness using `LOWER(REPLACE(...))`. GET /api/team/setup?checkLoginId uses the same case-sensitive eq. Effect: 'Rahul99' and 'rahul99' are treated as two different login IDs and can both be registered, then collide on signin (depending on signin's comparison) or simply confuse users who type the wrong casing. Setup's blur-validation also exits early when value===currentTeamLoginId (case-sensitive), so a user changing only the case of their own ID triggers a uniqueness check that compares against themselves.",
+      "expectedBehaviour": "teamLoginId comparisons should be case-insensitive everywhere — at the unique index level (e.g. UNIQUE on LOWER(team_login_id)) and at the application-level pre-check — or the system should explicitly normalise login IDs to lowercase on write. The behaviour should match the team-name rule for consistency.",
+      "actualBehaviour": "Two teams can hold teamLoginId values that differ only by case; signin behaviour against them is undefined by the route file (see module 01) and at minimum the system permits ambiguous credentials.",
+      "sourceRefs": [
+        "src/app/api/team/setup/route.ts:39-46",
+        "src/app/api/team/setup/route.ts:113-124",
+        "src/lib/db/schema.ts:138-141"
+      ],
+      "linkedBusinessRules": ["BR-04-007"],
+      "linkedAcceptanceCriteria": ["AC-04-065"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-04-091", "TC-04-092"],
+      "notes": "Suggested fix: lowercase teamLoginId before storing and before comparing, and rebuild the unique index over the lowercased value. Migration impact: any existing rows with mixed case need to be detected/merged before adding the case-insensitive index. Cross-references module 01 (auth/signin) for the matching read-side fix.",
+      "resolution": null,
+      "resolutionDate": null
+    }
+  ],
+  "testCases": [
+    {
+      "id": "TC-04-001",
+      "feature": "Team API Auth",
+      "scenario": "Unauthenticated call to /api/team/dashboard returns 401",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie or x-session-id header present",
+      "testData": "GET /api/team/dashboard (no cookies)",
+      "testSteps": ["1. Issue GET /api/team/dashboard with no session cookie", "2. Inspect status code and JSON body"],
+      "expectedResult": "HTTP 401 with body { error: 'Not authenticated' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-002",
+      "feature": "Team API Auth",
+      "scenario": "Unauthenticated call to /api/team/setup returns 401",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie present",
+      "testData": "GET /api/team/setup (no cookies)",
+      "testSteps": ["1. Issue GET /api/team/setup without cookies", "2. Inspect response"],
+      "expectedResult": "HTTP 401 with body { error: 'Not authenticated' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-003",
+      "feature": "Team API Auth",
+      "scenario": "Admin session calling /api/team/dashboard returns 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Caller signed in with session.type='admin'",
+      "testData": "Cookie/session of admin user; GET /api/team/dashboard",
+      "testSteps": ["1. Sign in as admin", "2. Call GET /api/team/dashboard with admin cookie"],
+      "expectedResult": "HTTP 403 with body { error: 'Team access required' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-004",
+      "feature": "Team API Auth",
+      "scenario": "Superadmin session calling /api/team/setup returns 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Caller signed in with session.type='superadmin'",
+      "testData": "Superadmin cookie; GET /api/team/setup",
+      "testSteps": ["1. Sign in as superadmin", "2. Call GET /api/team/setup"],
+      "expectedResult": "HTTP 403 with body { error: 'Team access required' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-005",
+      "feature": "Setup Wizard Redirect",
+      "scenario": "Freshly-created team with isProfileComplete=false lands on /dashboard and is redirected to /setup",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team account created by admin; isProfileComplete=false; valid team session",
+      "testData": "Browser session as team; navigate to /dashboard",
+      "testSteps": ["1. Sign in as team", "2. Visit /dashboard", "3. Observe redirect"],
+      "expectedResult": "Client navigates to /setup before dashboard content renders",
+      "postconditions": "URL is /setup",
+      "requirementId": "AC-04-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-006",
+      "feature": "Setup Wizard Redirect",
+      "scenario": "Team with isProfileComplete=true visiting /setup is redirected to /dashboard",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team has completed setup (isProfileComplete=true)",
+      "testData": "Team browser session; navigate to /setup",
+      "testSteps": ["1. Sign in as completed team", "2. Visit /setup", "3. Observe redirect"],
+      "expectedResult": "Client navigates to /dashboard before wizard renders",
+      "postconditions": "URL is /dashboard",
+      "requirementId": "AC-04-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-007",
+      "feature": "Setup Info Fetch",
+      "scenario": "GET /api/team/setup returns teamId, currentLoginId, currentName",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Logged-in team; team row exists",
+      "testData": "GET /api/team/setup (no query params)",
+      "testSteps": ["1. Sign in as team", "2. GET /api/team/setup", "3. Parse response JSON"],
+      "expectedResult": "HTTP 200; body has teamId (number), currentLoginId (string), currentName (string)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-008",
+      "feature": "Setup Info Fetch",
+      "scenario": "GET /api/team/setup returns 404 if team row missing",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Session points to a team id that no longer exists in DB",
+      "testData": "GET /api/team/setup with stale session",
+      "testSteps": ["1. Acquire valid session", "2. Delete team row out-of-band", "3. GET /api/team/setup"],
+      "expectedResult": "HTTP 404 with appropriate error JSON",
+      "postconditions": "Session unchanged",
+      "requirementId": "AC-04-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-009",
+      "feature": "Login ID Availability",
+      "scenario": "checkLoginId returns available:false when another team owns the id",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Another team owns teamLoginId='rahul99'",
+      "testData": "GET /api/team/setup?checkLoginId=rahul99",
+      "testSteps": ["1. Sign in as different team", "2. GET /api/team/setup?checkLoginId=rahul99"],
+      "expectedResult": "HTTP 200 body { available: false }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-010",
+      "feature": "Login ID Availability",
+      "scenario": "checkLoginId returns available:true when id is unused",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "No team owns teamLoginId='brandnewid42'",
+      "testData": "GET /api/team/setup?checkLoginId=brandnewid42",
+      "testSteps": ["1. Sign in as team", "2. GET /api/team/setup?checkLoginId=brandnewid42"],
+      "expectedResult": "HTTP 200 body { available: true }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-011",
+      "feature": "Login ID Availability",
+      "scenario": "Caller's own current loginId is reported available",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Caller's currentLoginId is 'rahul99'",
+      "testData": "GET /api/team/setup?checkLoginId=rahul99 (same as caller's)",
+      "testSteps": ["1. Sign in as team owning 'rahul99'", "2. GET /api/team/setup?checkLoginId=rahul99"],
+      "expectedResult": "HTTP 200 body { available: true } (own id treated as free)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-012",
+      "feature": "Team Name Availability",
+      "scenario": "checkName treats case differences as duplicates",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team named 'DM — Rahul' exists in caller's league",
+      "testData": "GET /api/team/setup?checkName=dm%20%E2%80%94%20rahul (lowercased)",
+      "testSteps": ["1. Sign in as different team in same league", "2. GET /api/team/setup?checkName=dm — rahul"],
+      "expectedResult": "HTTP 200 body { available: false }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-013",
+      "feature": "Team Name Availability",
+      "scenario": "checkName treats extra whitespace as duplicate",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team named 'DM — Rahul' exists",
+      "testData": "GET /api/team/setup?checkName=DM%20%20%20Rahul (extra whitespace)",
+      "testSteps": ["1. Sign in as different team in same league", "2. GET with checkName='DM   Rahul'"],
+      "expectedResult": "HTTP 200 body { available: false } (whitespace normalised)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-014",
+      "feature": "Setup Query Precedence",
+      "scenario": "checkLoginId and checkName both supplied: only loginId result is returned",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Both 'rahul99' (taken) and team-name 'Phoenix' (free) exist",
+      "testData": "GET /api/team/setup?checkLoginId=rahul99&checkName=Phoenix",
+      "testSteps": ["1. Issue GET with both params", "2. Inspect body keys"],
+      "expectedResult": "HTTP 200 with body containing only the loginId availability result; checkName ignored",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-015",
+      "feature": "Login ID Validation (Client)",
+      "scenario": "Client blocks step advance for teamLoginId='ab' (too short)",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Setup wizard on step 1, non-auction league",
+      "testData": "teamLoginId='ab'",
+      "testSteps": ["1. Type 'ab' in loginId field", "2. Click Next"],
+      "expectedResult": "Client shows 'Must be 3–20 alphanumeric/underscore/hyphen characters'; step does not advance",
+      "postconditions": "Still on step 1",
+      "requirementId": "AC-04-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-016",
+      "feature": "Login ID Validation (Client)",
+      "scenario": "Client blocks step advance for teamLoginId='invalid!@#'",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Setup wizard step 1",
+      "testData": "teamLoginId='invalid!@#'",
+      "testSteps": ["1. Enter 'invalid!@#'", "2. Try Next"],
+      "expectedResult": "Validation error displayed; step does not advance",
+      "postconditions": "Still on step 1",
+      "requirementId": "AC-04-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-017",
+      "feature": "Login ID Validation (Client)",
+      "scenario": "Boundary: 3-character loginId 'abc' is accepted (lower bound)",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Setup wizard step 1",
+      "testData": "teamLoginId='abc'",
+      "testSteps": ["1. Enter 'abc'", "2. Click Next"],
+      "expectedResult": "No validation error; wizard advances to step 2",
+      "postconditions": "On step 2",
+      "requirementId": "AC-04-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-018",
+      "feature": "Login ID Validation (Client)",
+      "scenario": "Boundary: 20-character loginId is accepted (upper bound)",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Setup wizard step 1",
+      "testData": "teamLoginId='abcdefghij1234567890' (20 chars)",
+      "testSteps": ["1. Enter 20-char value", "2. Click Next"],
+      "expectedResult": "Accepted; wizard advances",
+      "postconditions": "On step 2",
+      "requirementId": "AC-04-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-019",
+      "feature": "Login ID Validation (Client)",
+      "scenario": "Boundary: 21-character loginId is rejected",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Setup wizard step 1",
+      "testData": "teamLoginId='abcdefghij12345678901' (21 chars)",
+      "testSteps": ["1. Enter 21-char value", "2. Click Next"],
+      "expectedResult": "Validation error; step does not advance",
+      "postconditions": "Still on step 1",
+      "requirementId": "AC-04-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-020",
+      "feature": "Login ID Validation (Server)",
+      "scenario": "Server returns 400 for too-short teamLoginId",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Logged-in team, non-auction league",
+      "testData": "POST /api/team/setup body { teamLoginId:'ab', teamName:'Phoenix', player1Name:'A', player1FplId:'1', player2Name:'B', player2FplId:'2' }",
+      "testSteps": ["1. POST payload with 2-char loginId", "2. Inspect response"],
+      "expectedResult": "HTTP 400 with body { error: 'Team ID must be 3–20 alphanumeric/underscore/hyphen characters' }",
+      "postconditions": "Team row unchanged; isProfileComplete still false",
+      "requirementId": "AC-04-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-021",
+      "feature": "Login ID Validation (Server)",
+      "scenario": "Server returns 400 for special-char teamLoginId",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Logged-in team",
+      "testData": "teamLoginId='abc!def'",
+      "testSteps": ["1. POST /api/team/setup with invalid chars", "2. Inspect"],
+      "expectedResult": "HTTP 400 with regex error message",
+      "postconditions": "No mutation",
+      "requirementId": "AC-04-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-022",
+      "feature": "Login ID Uniqueness",
+      "scenario": "POST with already-taken teamLoginId returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A owns teamLoginId='taken_id'; Team B attempting setup",
+      "testData": "Team B POSTs setup with teamLoginId='taken_id'",
+      "testSteps": ["1. As team B, POST /api/team/setup with taken_id", "2. Inspect status/body"],
+      "expectedResult": "HTTP 400 with body { error: 'Team ID is already taken' }",
+      "postconditions": "Team B unchanged",
+      "requirementId": "AC-04-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-023",
+      "feature": "Team Name Validation",
+      "scenario": "POST with empty teamName returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Logged-in team, non-auction league",
+      "testData": "teamName='' (empty); valid loginId & players",
+      "testSteps": ["1. POST /api/team/setup with empty teamName", "2. Inspect"],
+      "expectedResult": "HTTP 400 with body { error: 'Team name is required' }",
+      "postconditions": "No mutation",
+      "requirementId": "AC-04-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-024",
+      "feature": "Team Name Validation",
+      "scenario": "POST with whitespace-only teamName returns 400",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Logged-in team",
+      "testData": "teamName='   '",
+      "testSteps": ["1. POST with whitespace-only name", "2. Inspect"],
+      "expectedResult": "HTTP 400 'Team name is required'",
+      "postconditions": "No mutation",
+      "requirementId": "AC-04-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-025",
+      "feature": "Team Name Uniqueness",
+      "scenario": "POST teamName='team phoenix' (case-diff) clashes with 'Team Phoenix' in same league",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Another team in same league named 'Team Phoenix'",
+      "testData": "teamName='team phoenix'",
+      "testSteps": ["1. POST /api/team/setup with lowercased clash", "2. Inspect"],
+      "expectedResult": "HTTP 400 { error: 'Team name is already taken in this league' }",
+      "postconditions": "No mutation",
+      "requirementId": "AC-04-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-026",
+      "feature": "Team Name Uniqueness",
+      "scenario": "POST teamName='Team  Phoenix' (extra whitespace) clashes",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Another team named 'Team Phoenix' in same league",
+      "testData": "teamName='Team  Phoenix' (two spaces)",
+      "testSteps": ["1. POST setup", "2. Inspect"],
+      "expectedResult": "HTTP 400 'Team name is already taken in this league'",
+      "postconditions": "No mutation",
+      "requirementId": "AC-04-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-027",
+      "feature": "Auction Setup",
+      "scenario": "Auction team setup with leagues.initialBudget=150_000_000 sets purse to 150M",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team belongs to auction league with initialBudget=150_000_000",
+      "testData": "POST /api/team/setup { teamLoginId:'newuser', teamName:'Aces' } (no player fields)",
+      "testSteps": ["1. POST auction setup payload", "2. Inspect 200 body", "3. Read team row"],
+      "expectedResult": "200 { success:true, message:'Profile setup completed (auction format — players acquired via auction)' }; team.purse=150_000_000; team.isProfileComplete=true; no players rows created",
+      "postconditions": "Team isProfileComplete=true; purse=150M; no players rows",
+      "requirementId": "AC-04-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-028",
+      "feature": "Auction Setup",
+      "scenario": "Auction team setup with leagues.initialBudget=null defaults purse to 100_000_000",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Team in auction league with initialBudget=null",
+      "testData": "POST /api/team/setup { teamLoginId:'x', teamName:'Y' }",
+      "testSteps": ["1. POST setup", "2. Inspect team.purse in DB"],
+      "expectedResult": "team.purse = 100_000_000 (default)",
+      "postconditions": "Team isProfileComplete=true",
+      "requirementId": "AC-04-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-029",
+      "feature": "Player FPL ID Validation",
+      "scenario": "Non-numeric player1FplId returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "TVT league",
+      "testData": "POST setup with player1FplId='abc', player2FplId='5678'",
+      "testSteps": ["1. POST", "2. Inspect"],
+      "expectedResult": "HTTP 400 { error: 'Player 1 FPL ID must be numeric' }",
+      "postconditions": "No mutation",
+      "requirementId": "AC-04-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-030",
+      "feature": "Player Name Validation",
+      "scenario": "Empty player2Name returns 400 in Triple-Crown league",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "TC league",
+      "testData": "POST with player2Name=''",
+      "testSteps": ["1. POST setup", "2. Inspect"],
+      "expectedResult": "HTTP 400 { error: 'Player 2 name is required' }",
+      "postconditions": "No mutation",
+      "requirementId": "AC-04-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-031",
+      "feature": "Player Persistence",
+      "scenario": "First-time TVT setup INSERTs two new player rows",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT team with 0 existing players, isProfileComplete=false",
+      "testData": "POST setup { teamLoginId, teamName, player1Name:'P1', player1FplId:'1001', player2Name:'P2', player2FplId:'1002' }",
+      "testSteps": ["1. POST", "2. SELECT players WHERE teamId=...", "3. Verify rows"],
+      "expectedResult": "Two players rows inserted with matching names/FPL IDs; team.isProfileComplete=true",
+      "postconditions": "2 players rows exist; team marked complete",
+      "requirementId": "AC-04-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-032",
+      "feature": "Player Persistence",
+      "scenario": "Resubmit setup with existing 2 players UPDATEs in place (no INSERT)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT team already has 2 players rows",
+      "testData": "POST with new player1Name='P1new', player1FplId='9001', player2Name='P2new', player2FplId='9002'",
+      "testSteps": ["1. Capture original player IDs", "2. POST setup with new values", "3. SELECT players"],
+      "expectedResult": "Still exactly 2 players rows (same primary keys); names/FPL IDs updated; updatedAt bumped",
+      "postconditions": "Row count unchanged; values updated",
+      "requirementId": "AC-04-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-033",
+      "feature": "Cache Invalidation",
+      "scenario": "Successful POST /api/team/setup invokes invalidateLeaguePageCache(leagueId)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Spy/mock on invalidateLeaguePageCache; valid setup payload",
+      "testData": "Valid setup payload (auction OR non-auction)",
+      "testSteps": ["1. Hook the cache helper", "2. POST setup", "3. Assert call args"],
+      "expectedResult": "invalidateLeaguePageCache called exactly once with the team's leagueId before the 200 returns",
+      "postconditions": "Cache marked invalid",
+      "requirementId": "AC-04-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-034",
+      "feature": "Wizard UI (Auction)",
+      "scenario": "Auction wizard shows 1 progress segment and hides Back button",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Logged-in team in auction league; isProfileComplete=false",
+      "testData": "Navigate to /setup",
+      "testSteps": ["1. Open /setup", "2. Inspect progress bar segment count", "3. Inspect for Back button"],
+      "expectedResult": "Exactly 1 progress segment rendered; totalSteps=1; Back button absent",
+      "postconditions": "On step 1",
+      "requirementId": "AC-04-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-035",
+      "feature": "Wizard UI (Club Auction)",
+      "scenario": "Club-auction wizard hides team-name input and submits admin-assigned name",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Auction league with clubAuctionEnabled=true; currentTeamName='AdminAssigned'",
+      "testData": "Navigate to /setup; submit with username only",
+      "testSteps": ["1. Open /setup", "2. Verify team-name input is replaced with notice", "3. Submit", "4. Inspect server payload"],
+      "expectedResult": "Team-name field replaced with 'Your team will display as the PL club…' notice; submission sends teamName='AdminAssigned'; no client-side teamName validation runs",
+      "postconditions": "Setup completes with admin-assigned name",
+      "requirementId": "AC-04-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-036",
+      "feature": "Availability Debounce",
+      "scenario": "Blur on changed loginId fires check and shows 'Team ID is already taken'",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Setup wizard step 1; currentTeamLoginId='myid'; 'other' is taken by another team",
+      "testData": "Type 'other' in loginId field and tab out",
+      "testSteps": ["1. Focus loginId", "2. Clear and type 'other'", "3. Tab out", "4. Inspect network + UI"],
+      "expectedResult": "fetch('/api/team/setup?checkLoginId=other') is sent; on available=false UI shows 'Team ID is already taken' (or 'Username is already taken' in auction mode)",
+      "postconditions": "Error message visible; submit blocked",
+      "requirementId": "AC-04-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-037",
+      "feature": "Availability Debounce",
+      "scenario": "Blur on unchanged loginId fires no network request",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "currentTeamLoginId='myid'; field contains 'myid'",
+      "testData": "Focus loginId, tab out without editing",
+      "testSteps": ["1. Focus loginId field", "2. Tab out", "3. Inspect network panel"],
+      "expectedResult": "No /api/team/setup?checkLoginId=... request is fired",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-038",
+      "feature": "Setup Submit Redirect",
+      "scenario": "Successful POST routes client to /dashboard",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Valid setup payload",
+      "testData": "Complete setup wizard and submit",
+      "testSteps": ["1. Fill wizard with valid data", "2. Submit", "3. Observe navigation"],
+      "expectedResult": "On 200 response router.push('/dashboard') executes; URL becomes /dashboard",
+      "postconditions": "URL is /dashboard",
+      "requirementId": "AC-04-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-039",
+      "feature": "Setup Submit Error",
+      "scenario": "Non-2xx response displays error banner with server message",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "POST will fail (e.g., duplicate teamLoginId)",
+      "testData": "Submit wizard with already-taken loginId",
+      "testSteps": ["1. Submit wizard causing 400", "2. Inspect banner"],
+      "expectedResult": "Global error banner shows the server's error message (e.g., 'Team ID is already taken')",
+      "postconditions": "Wizard stays open with error",
+      "requirementId": "AC-04-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-040",
+      "feature": "Auction Dashboard Shape",
+      "scenario": "Auction-league dashboard returns auction-shaped payload",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team in auction league with profile complete",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Sign in as auction team", "2. GET dashboard", "3. Inspect payload keys"],
+      "expectedResult": "Body has leagueFormat:'auction', purse, squad[], standings (≤10 entries), gwHistory; body does NOT contain recentForm/chipStatus/captaincyStatus/upcomingFixture",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-041",
+      "feature": "TVT Dashboard Shape",
+      "scenario": "TVT-league dashboard returns full TVT payload",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team in TVT league with profile complete and several played fixtures",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Sign in as TVT team", "2. GET dashboard"],
+      "expectedResult": "Body includes recentForm (≤5 entries, newest first), seasonStats with all 11 fields (played, wins, draws, losses, pointsFor, pointsAgainst, pointsDiff, bonusPointsEarned, chipPointsEarned, highestScoringGW, lowestScoringGW, currentStreak), chipStatus, captaincyStatus, leaguePosition",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-042",
+      "feature": "TC latestCompletedGW",
+      "scenario": "Cup fixtures do not advance latestCompletedGW",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC team with PL fixtures completed in GW 1,2,3 and cup fixtures in GW 2,4",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed fixtures as described", "2. GET dashboard", "3. Inspect latestCompletedGW"],
+      "expectedResult": "latestCompletedGW === 3 (PL only); GW4 cup ignored",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-043",
+      "feature": "Match Outcome Mapping",
+      "scenario": "homeMatchPoints=2 and team is home yields lastGwResult.result='W'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Recent fixture: team is home, homeMatchPoints=2",
+      "testData": "Seed fixture with matchPoints=2; GET dashboard",
+      "testSteps": ["1. Seed", "2. GET dashboard", "3. Read lastGwResult.result"],
+      "expectedResult": "lastGwResult.result === 'W'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-044",
+      "feature": "Match Outcome Mapping",
+      "scenario": "matchPoints=1 yields 'D'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Most recent fixture with matchPoints=1",
+      "testData": "GET dashboard after seeding draw",
+      "testSteps": ["1. Seed draw", "2. GET dashboard"],
+      "expectedResult": "lastGwResult.result === 'D'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-045",
+      "feature": "Match Outcome Mapping",
+      "scenario": "matchPoints=0 yields 'L' (negative path)",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Most recent fixture with matchPoints=0",
+      "testData": "Seed loss; GET dashboard",
+      "testSteps": ["1. Seed", "2. GET dashboard"],
+      "expectedResult": "lastGwResult.result === 'L'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-046",
+      "feature": "Captain Inference",
+      "scenario": "No captain row + myScore=10 yields captainBase=3 captainDoubled=6 non-captain=4",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT team with completed GW, myScore=10, no gameweekCaptains row; players named 'A. Forward' and 'B. Defender'",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed fixture with myScore=10 and no captain row", "2. GET dashboard", "3. Read lastGwResult.myPlayerScores"],
+      "expectedResult": "captainBase=3, captainDoubled=6, non-captain=4; player 'A. Forward' (alphabetically first) flagged isCaptain=true with finalScore=6; isInferred=true on entries",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-047",
+      "feature": "Recent Form",
+      "scenario": "Team with 7 completed PL fixtures returns 5-entry recentForm newest first",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT team with 7 completed PL fixtures GW 1-7",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed 7 completed fixtures", "2. GET dashboard", "3. Inspect recentForm"],
+      "expectedResult": "recentForm length === 5; ordered by gameweek DESC; first entry corresponds to GW7 last to GW3",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-048",
+      "feature": "Current Streak",
+      "scenario": "recentForm [W,W,W,L,W] yields streak {type:'W', count:3}",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team with last 5 PL results W,W,W,L,W (newest first)",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed fixtures", "2. GET dashboard", "3. Inspect seasonStats.currentStreak"],
+      "expectedResult": "currentStreak === { type:'W', count:3 }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-049",
+      "feature": "Current Streak",
+      "scenario": "Empty recentForm yields currentStreak=null",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Team with no completed PL fixtures",
+      "testData": "GET dashboard",
+      "testSteps": ["1. GET dashboard"],
+      "expectedResult": "currentStreak === null",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-050",
+      "feature": "Highest/Lowest GW",
+      "scenario": "Current GW (latestCompletedGW=5) is excluded from highest/lowest",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Team with fixtures completed in GW 1-5 with myPoints 10,20,30,40,99 (GW5 being highest)",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed fixtures", "2. GET dashboard", "3. Read highestScoringGW/lowestScoringGW"],
+      "expectedResult": "highestScoringGW.gameweek=4 (the 40-point game); lowestScoringGW.gameweek=1 (the 10-point game); GW5 excluded entirely",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-051",
+      "feature": "Group Standings Zone",
+      "scenario": "Team ranked 9th of 16 has zone='challenger'",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Team is in 9th place by leaguePoints in a group of 16",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed standings", "2. GET dashboard", "3. Inspect leaguePosition.zone"],
+      "expectedResult": "zone === 'challenger' (rank in 9..14)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-052",
+      "feature": "Group Standings Zone",
+      "scenario": "Boundary: rank 8 is 'playoffs'; rank 14 'challenger'; rank 15 'eliminated'",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Three teams seeded at ranks 8, 14, and 15 within same group",
+      "testData": "GET dashboard for each",
+      "testSteps": ["1. Seed standings", "2. GET dashboard as each team", "3. Compare zones"],
+      "expectedResult": "rank 8 -> 'playoffs'; rank 14 -> 'challenger'; rank 15 -> 'eliminated'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-053",
+      "feature": "Mini Table",
+      "scenario": "Team at rank 5 of 16 sees miniTable for ranks 3-7",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "16-team group with caller at rank 5",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed", "2. GET dashboard", "3. Inspect miniTable"],
+      "expectedResult": "miniTable has exactly 5 rows for ranks 3,4,5,6,7; row at rank 5 has isCurrentTeam=true",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-054",
+      "feature": "Mini Table (TC)",
+      "scenario": "TC dashboard miniTable spans all 20 non-ghost league teams (not the group subset)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Triple-Crown league with 20 non-ghost teams; caller is at PL-rank 10",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed 20-team league", "2. GET dashboard", "3. Inspect miniTable and plPosition"],
+      "expectedResult": "miniTable has 5 entries centered on the team within the 20-team list; plPosition.rank=10 and plPosition.totalTeams=20",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-055",
+      "feature": "Chip Status",
+      "scenario": "nextGameweek.number=7 -> chipStatus.currentSet matches getChipSet(7)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team with nextGameweek.number=7",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Set up next GW=7", "2. GET dashboard", "3. Inspect chipStatus"],
+      "expectedResult": "chipStatus.currentSet === getChipSet(7); chipStatus.set1 and set2 each have used flags (boolean) for Double Pointer, Challenge Chip, Win-Win",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-056",
+      "feature": "TVT Playoff Captaincy",
+      "scenario": "TVT team with nextGameweek.number=33 (post GW30): chipsRemaining=999 for both players",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT team; nextGameweek.number=33",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Set next GW=33", "2. GET dashboard", "3. Read captaincyStatus"],
+      "expectedResult": "captaincyStatus.player1.chipsRemaining === 999 and player2.chipsRemaining === 999",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-057",
+      "feature": "TVT Captaincy Boundary",
+      "scenario": "TVT team with nextGameweek.number=30 returns cap-based chipsRemaining (not 999)",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "TVT team; nextGameweek.number=30",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Set next GW=30", "2. GET dashboard", "3. Compare to 999 override"],
+      "expectedResult": "chipsRemaining is computed against CAPTAIN_CAP=15, not 999 (override only applies when nextGameweek.number>30)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-058",
+      "feature": "Upcoming Captain",
+      "scenario": "Submitted captain for nextGameweek returns { playerId, playerName }",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team submitted captain (playerId=42, playerName='A. Forward') for nextGameweek",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed captain submission", "2. GET dashboard", "3. Inspect upcomingCaptain"],
+      "expectedResult": "upcomingCaptain === { playerId: 42, playerName: 'A. Forward' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-059",
+      "feature": "Upcoming Captain",
+      "scenario": "No captain submitted for nextGameweek -> upcomingCaptain is null",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Team has not yet submitted captain",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Ensure no submission", "2. GET dashboard"],
+      "expectedResult": "upcomingCaptain === null",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-060",
+      "feature": "Upcoming Chip",
+      "scenario": "chipType='C' returns { type:'C', chipName:'Challenge Chip' }",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "gameweekChips row exists with chipType='C' for (teamId, nextGameweek.id)",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed gameweekChips row", "2. GET dashboard", "3. Inspect upcomingChip"],
+      "expectedResult": "upcomingChip === { type:'C', chipName:'Challenge Chip' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-061",
+      "feature": "Upcoming Chip",
+      "scenario": "chipType='D' returns Double Pointer; chipType='W' returns Win-Win",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Separate seeds with chipType='D' and chipType='W'",
+      "testData": "GET dashboard per scenario",
+      "testSteps": ["1. Seed D", "2. GET dashboard; check chipName=Double Pointer", "3. Reseed W", "4. GET; check chipName=Win-Win"],
+      "expectedResult": "D maps to chipName 'Double Pointer'; W (or any non-D-non-C) maps to 'Win-Win'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-062",
+      "feature": "Upcoming Fixtures (TC)",
+      "scenario": "TC team with PL GW3,4,5 + cup GW4 interleaves correctly",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC team with unplayed PL fixtures in GW3,4,5 and cup fixture in GW4",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed fixtures", "2. GET dashboard", "3. Inspect upcomingFixtures order"],
+      "expectedResult": "Order: GW3 PL, GW4 PL, GW4 Cup, GW5 PL",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-063",
+      "feature": "Cup Double Header",
+      "scenario": "Cup fixture in GW8 (in DOUBLE_HEADER_GWS) flagged isDoubleHeader=true",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC team with cup fixture scheduled for GW8",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed cup fixture in GW8", "2. GET dashboard", "3. Read cupProgress.upcomingCupFixture.isDoubleHeader"],
+      "expectedResult": "isDoubleHeader === true",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-064",
+      "feature": "Cup Double Header",
+      "scenario": "Cup fixture in non-double-header GW (e.g. GW7) is isDoubleHeader=false",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "TC team with cup fixture in GW7 (not in DOUBLE_HEADER_GWS)",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed", "2. GET dashboard"],
+      "expectedResult": "isDoubleHeader === false",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-065",
+      "feature": "Cup Progress",
+      "scenario": "TC team in 2nd in cup group: rank=2, cupZone='ucl'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC team is 2nd among non-ghost teams in its cup group",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed cup group standings", "2. GET dashboard", "3. Inspect cupProgress"],
+      "expectedResult": "cupProgress.rank===2; cupProgress.cupZone==='ucl'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-066",
+      "feature": "Cup Progress",
+      "scenario": "TC team in 3rd in cup group: cupZone='uel'",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "TC team ranked 3rd among non-ghost cup-group teams",
+      "testData": "GET dashboard",
+      "testSteps": ["1. Seed", "2. GET dashboard"],
+      "expectedResult": "cupProgress.rank===3; cupProgress.cupZone==='uel'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-067",
+      "feature": "FPL URLs",
+      "scenario": "Player with fplId=9999 has correct fplUrl and fplHistoryUrl",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team has player with fplId=9999; current GW context exists",
+      "testData": "GET dashboard",
+      "testSteps": ["1. GET dashboard", "2. Inspect player URLs"],
+      "expectedResult": "fplUrl === 'https://fantasy.premierleague.com/entry/9999/event/<gw>' and fplHistoryUrl === 'https://fantasy.premierleague.com/entry/9999/history'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-068",
+      "feature": "gw-result Validation",
+      "scenario": "Missing gw and cupGw returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Logged-in team",
+      "testData": "GET /api/team/dashboard/gw-result (no query params)",
+      "testSteps": ["1. GET without params", "2. Inspect"],
+      "expectedResult": "HTTP 400 { error: 'gw or cupGw parameter required' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-069",
+      "feature": "gw-result Validation",
+      "scenario": "gw=0 returns 400 'Invalid gw parameter'",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Logged-in team",
+      "testData": "GET /api/team/dashboard/gw-result?gw=0",
+      "testSteps": ["1. GET with gw=0", "2. Inspect"],
+      "expectedResult": "HTTP 400 { error: 'Invalid gw parameter' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-070",
+      "feature": "gw-result Validation",
+      "scenario": "gw=abc returns 400 'Invalid gw parameter'",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Logged-in team",
+      "testData": "GET /api/team/dashboard/gw-result?gw=abc",
+      "testSteps": ["1. GET", "2. Inspect"],
+      "expectedResult": "HTTP 400 { error: 'Invalid gw parameter' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-071",
+      "feature": "gw-result Fallback",
+      "scenario": "gw=99 with completed GWs 1-5 falls back to GW5",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team has completed PL fixtures 1-5 only",
+      "testData": "GET /api/team/dashboard/gw-result?gw=99",
+      "testSteps": ["1. GET", "2. Inspect lastGwResult.gameweek"],
+      "expectedResult": "HTTP 200; lastGwResult corresponds to GW5 (most-recent completed)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-072",
+      "feature": "gw-result Double Header",
+      "scenario": "TC team gw=4 with both PL+cup fixtures returns lastGwResult AND cupGwResult",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC team with completed PL and cup fixtures in GW4",
+      "testData": "GET /api/team/dashboard/gw-result?gw=4",
+      "testSteps": ["1. Seed fixtures", "2. GET", "3. Inspect body"],
+      "expectedResult": "Body contains both lastGwResult (PL, W/D/L) and cupGwResult (cup, W/L) keyed to GW4",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-050",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-073",
+      "feature": "Cup Result Mapping",
+      "scenario": "Cup matchPoints=1 yields cupGwResult.result='L' (no draws)",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "TC team with cup fixture matchPoints=1",
+      "testData": "GET /api/team/dashboard/gw-result?cupGw=<n>",
+      "testSteps": ["1. Seed cup draw", "2. GET", "3. Inspect cupGwResult.result"],
+      "expectedResult": "cupGwResult.result === 'L'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-051",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-074",
+      "feature": "Auction Ledger Source",
+      "scenario": "Populated ledger: purse/totalSpent/totalIncome/totalRefunds from buildTeamLedger",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction team with ledger entries; persisted teams columns intentionally stale",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Set teams.purse=999 (stale)", "2. Ledger says purse=42000000", "3. GET dashboard", "4. Compare returned purse"],
+      "expectedResult": "Returned purse, totalSpent, totalIncome, totalRefunds equal the ledger-computed values (not the stale 999)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-075",
+      "feature": "Auction Ledger Source",
+      "scenario": "buildTeamLedger returns null -> dashboard falls back to calculatePurse + persisted columns",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Mock buildTeamLedger to return null; persisted teams columns populated",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Force ledger=null", "2. GET dashboard"],
+      "expectedResult": "Returned purse uses calculatePurse(initialBudget, totalIncome, t.totalSpent, t.totalRefunds)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-076",
+      "feature": "FMV Calculation",
+      "scenario": "Squad value uses rawPoints over points (excludes synergy)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction team owns player with auctionScores.playerBreakdown {points:50 (synergy), rawPoints:30}; purchasePrice=10",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed breakdown", "2. GET dashboard", "3. Inspect squadValue"],
+      "expectedResult": "squadValue sum uses calculateFMV(10, 30); synergy points (50) ignored",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-053",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-077",
+      "feature": "Owned Club Renaming",
+      "scenario": "Auction team owning Arsenal has standings row named 'Arsenal' / 'ARS'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction team owns PL club Arsenal (plTeamName='Arsenal', plTeamShort='ARS')",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed ownership", "2. GET dashboard", "3. Inspect standings + ownedClub"],
+      "expectedResult": "Standings entry for that team: name='Arsenal', shortName='ARS'; header.ownedClub populated for caller",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-054",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-078",
+      "feature": "Auction Sessions",
+      "scenario": "Paused session + pending session in 24h: auctionSession=paused, nextAuction=pending",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league has one paused session and one pending session scheduled 24h ahead",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed sessions", "2. GET dashboard", "3. Inspect auctionSession + nextAuction"],
+      "expectedResult": "auctionSession reflects paused session; nextAuction reflects pending session with scheduledAt as ISO string",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-079",
+      "feature": "Releases",
+      "scenario": "Released player at purchasePrice=10 reports refund=calculateRefund(10) and forfeit=10-refund",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction team has one released player; purchasePrice=10",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed release", "2. GET dashboard", "3. Inspect releases entry + totalForfeit"],
+      "expectedResult": "Release row contains refund=calculateRefund(10) and forfeit=(10-refund); totalForfeit aggregates over all releases",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-080",
+      "feature": "Income/Expense Breakdown",
+      "scenario": "release_refund amount=6 metadata.forfeitAmount=4 -> incomeByType.release_refund+=6 expenseByType.release_forfeit+=4",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Ledger contains release_refund entry { amount:6, metadata:{ forfeitAmount:4 } }",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed ledger entry", "2. GET dashboard", "3. Inspect breakdowns"],
+      "expectedResult": "incomeByType.release_refund == 6 and expenseByType.release_forfeit == 4; initial_budget contributes 0 to income totals",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-081",
+      "feature": "Income/Expense Breakdown",
+      "scenario": "Pending ledger entries are skipped from breakdowns",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Ledger has one isPending=true entry and one isPending=false entry both of type 'purchase'",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Seed entries", "2. GET dashboard"],
+      "expectedResult": "expenseByType.purchase reflects only the non-pending entry's amount",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-082",
+      "feature": "Auction Deadline",
+      "scenario": "No future gameweek -> deadline={ gameweek:0, timestamp:null }",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Auction league with no gameweeks whose deadline > now",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. Ensure all GW deadlines in the past", "2. GET dashboard"],
+      "expectedResult": "deadline === { gameweek:0, timestamp:null }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-058",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-083",
+      "feature": "TVT Deadline",
+      "scenario": "TVT team with no nextGameweek (post-season) -> deadline.gameweek=0 timestamp=null",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "TVT team after all GWs played; no nextGameweek row",
+      "testData": "GET /api/team/dashboard",
+      "testSteps": ["1. GET dashboard", "2. Inspect deadline"],
+      "expectedResult": "deadline.gameweek === 0 and deadline.timestamp === null",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-059",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-084",
+      "feature": "Server Time",
+      "scenario": "Dashboard countdown uses serverTime offset (not client clock)",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Client clock skewed by +5 min vs server; deadline 10 min away on server",
+      "testData": "Load /dashboard with system clock skewed",
+      "testSteps": ["1. Skew client clock +5 min", "2. Load dashboard", "3. Observe countdown vs actual time-remaining"],
+      "expectedResult": "Countdown shows ~10 minutes (matches server) not ~5 minutes (would be the case if using client clock)",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-060",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-085",
+      "feature": "GW Navigation",
+      "scenario": "Prev-GW button calls /api/team/dashboard/gw-result?gw=N (not full dashboard)",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Dashboard loaded showing GW5",
+      "testData": "Click prev GW button",
+      "testSteps": ["1. Load dashboard at GW5", "2. Click 'previous GW'", "3. Inspect network"],
+      "expectedResult": "Only request issued is GET /api/team/dashboard/gw-result?gw=4; no full /api/team/dashboard call. lastGwResult/cupGwResult merged into existing state",
+      "postconditions": "Dashboard updates UI for GW4 without full reload",
+      "requirementId": "AC-04-061",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-086",
+      "feature": "Dashboard 500 Handling",
+      "scenario": "Unexpected error returns 500 with stable message; client shows fallback",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Force an unexpected throw inside the dashboard route",
+      "testData": "GET /api/team/dashboard with mocked failure",
+      "testSteps": ["1. Mock failure", "2. GET dashboard", "3. Observe client behaviour"],
+      "expectedResult": "HTTP 500 { error: 'Failed to fetch dashboard data' }; client shows 'Failed to load dashboard. Please try again.'",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-062",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-087",
+      "feature": "Setup 500 Handling",
+      "scenario": "POST /api/team/setup throws -> 500 'Failed to complete setup'",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Force unexpected throw inside POST handler",
+      "testData": "POST /api/team/setup",
+      "testSteps": ["1. Mock failure", "2. POST", "3. Inspect"],
+      "expectedResult": "HTTP 500 { error: 'Failed to complete setup' }",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-063",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-04-088",
+      "feature": "DEF-04-001 Fix Verification",
+      "scenario": "Auction team re-submitting POST /api/team/setup preserves purse (economy columns untouched)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction team setup complete (isProfileComplete=true); team.purse partially spent (e.g., 60_000_000 after 40M spent of initial 100M); team.totalSpent=40_000_000; team.totalRefunds and team.totalIncome populated from prior trading",
+      "testData": "POST /api/team/setup with same teamLoginId/teamName as currently stored",
+      "testSteps": ["1. Capture team.purse=60_000_000, team.totalSpent=40_000_000, team.totalRefunds, team.totalIncome", "2. POST /api/team/setup with same payload", "3. SELECT team row again and compare all economy columns"],
+      "expectedResult": "Response is 200 { success: true, message: 'Profile setup completed (auction format — players acquired via auction)' }; team.purse remains 60_000_000 (NOT reset to initialBudget); team.totalSpent stays 40_000_000; team.totalRefunds and team.totalIncome unchanged; only cosmetic fields (teamLoginId, name, isProfileComplete, updatedAt) are written; economy invariant (purse = initialBudget + totalIncome + totalRefunds − totalSpent) preserved.",
+      "postconditions": "team economy columns identical to pre-call snapshot; isProfileComplete still true; updatedAt bumped",
+      "requirementId": "AC-04-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-04-001. [QA-VERIFY] Updated post-DEF-04-001 fix on 2026-05-24."
+    },
+    {
+      "id": "TC-04-089",
+      "feature": "DEF-04-002 Regression",
+      "scenario": "PINS DEFECT: Resubmitting TVT setup with 2 existing players may swap FPL IDs (non-deterministic SELECT order)",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "TVT team with 2 existing players rows P_A (fplId=1111, name='A') and P_B (fplId=2222, name='B'); profile complete",
+      "testData": "POST /api/team/setup with player1Name='A', player1FplId='1111', player2Name='B', player2FplId='2222'",
+      "testSteps": ["1. Confirm initial rows P_A.fplId=1111, P_B.fplId=2222", "2. Issue POST several times (or alter row insert order to influence SQLite default order)", "3. SELECT players rows by id (stable order)"],
+      "expectedResult": "CURRENT (defective) behaviour: because the in-route SELECT has no orderBy, the mapping of (player1, player2) -> (existingPlayers[0], existingPlayers[1]) is non-deterministic; under conditions where SQLite returns rows in a different order from the original insert (e.g. after VACUUM or with rowid reordering) the row that was P_A may end up assigned the player2 payload, silently swapping FPL IDs. Test must assert that the mapping is NOT guaranteed stable (e.g., one or more iterations show a swap). When DEF-04-002 is fixed this case should be replaced/inverted to assert deterministic mapping by orderBy createdAt asc, id asc.",
+      "postconditions": "Possibly-swapped player rows",
+      "requirementId": "AC-04-064",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-04-002. Reproduction needs control of SQLite physical order or mocking of db.select to return swapped order."
+    },
+    {
+      "id": "TC-04-090",
+      "feature": "DEF-04-002 Regression",
+      "scenario": "PINS DEFECT: AC-04-020 happy-path update relies on row order; assert UPDATE-by-position behaviour for documentation",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "TVT team with 2 players rows; player1 payload differs from existing player1Name",
+      "testData": "POST setup with new player1Name/FplId",
+      "testSteps": ["1. POST", "2. Capture which DB row received which value"],
+      "expectedResult": "CURRENT behaviour: route uses existingPlayers[0] (no orderBy) — pin this exact positional assignment so the next BA-iteration fix (adding orderBy) is detected as a behaviour change.",
+      "postconditions": "Players updated by position",
+      "requirementId": "AC-04-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Secondary pin for DEF-04-002 linked via AC-04-020."
+    },
+    {
+      "id": "TC-04-091",
+      "feature": "DEF-04-003 Regression",
+      "scenario": "PINS DEFECT: teamLoginId uniqueness is case-sensitive — 'Rahul99' accepted when 'rahul99' exists",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Team A already owns teamLoginId='rahul99' (all lowercase); Team B is a different team in any league with profile not yet complete",
+      "testData": "Team B POSTs /api/team/setup with teamLoginId='Rahul99' (mixed case), valid teamName, valid players for non-auction or none for auction",
+      "testSteps": ["1. Verify Team A exists with lowercased 'rahul99'", "2. As Team B, POST /api/team/setup with 'Rahul99'", "3. Inspect status code", "4. SELECT teams to confirm row created"],
+      "expectedResult": "CURRENT (defective) behaviour: HTTP 200; Team B is saved with teamLoginId='Rahul99'; two rows now exist whose lowercased loginIds collide. This test pins the case-sensitive comparison — when DEF-04-003 is fixed it should fail (expecting 400 'Team ID is already taken').",
+      "postconditions": "Two teams hold case-only-different loginIds",
+      "requirementId": "AC-04-065",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-04-003."
+    },
+    {
+      "id": "TC-04-092",
+      "feature": "DEF-04-003 Regression",
+      "scenario": "PINS DEFECT: checkLoginId availability also case-sensitive — 'Rahul99' reports available when 'rahul99' is taken",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Team A owns 'rahul99'; Team B is logged in",
+      "testData": "GET /api/team/setup?checkLoginId=Rahul99",
+      "testSteps": ["1. As Team B, GET checkLoginId=Rahul99", "2. Inspect body"],
+      "expectedResult": "CURRENT (defective) behaviour: { available: true }. When DEF-04-003 is fixed this should return { available: false }.",
+      "postconditions": "No state mutated",
+      "requirementId": "AC-04-065",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Secondary pin for DEF-04-003 covering the GET endpoint."
+    },
+    {
+      "id": "TC-04-093",
+      "feature": "Smoke",
+      "scenario": "Full happy-path TVT setup completes and lands on dashboard",
+      "type": "Smoke",
+      "priority": "P2",
+      "preconditions": "Fresh TVT team account, admin-assigned name and loginId",
+      "testData": "Valid teamLoginId, teamName, player1/2 names + numeric FPL IDs",
+      "testSteps": ["1. Sign in as new team", "2. Verify auto-redirect to /setup with prefilled fields", "3. Complete all 3 steps", "4. Submit", "5. Land on /dashboard", "6. Verify dashboard payload renders"],
+      "expectedResult": "Setup POST returns 200; client redirects to /dashboard; dashboard renders without error",
+      "postconditions": "team.isProfileComplete=true; 2 player rows exist; cache invalidated",
+      "requirementId": "AC-04-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": []
+}

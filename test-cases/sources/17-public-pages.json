@@ -1,0 +1,2732 @@
+{
+  "moduleId": "PUB",
+  "moduleName": "Public Pages",
+  "sheetName": "Public Pages",
+  "status": "qa-signed-off",
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
+  "requirements": {
+    "version": 1,
+    "businessContext": "The Public Pages module is the visitor-facing surface of JPL-Leagues. The marketing landing page (/), the format-aware league pages under /[leagueSlug]/* (rules, standings, fixtures, gw-results, teams, players, winners, playoffs), and the global LeagueNav present league state to anyone — signed in or not — and route logged-in users back into their dashboard. Middleware whitelists the read APIs that back these pages (GET /api/leagues, /api/standings, /api/fixtures, /api/playoffs/bracket, /api/playoffs/winners, /api/triple-crown/cup-standings, GET /api/gameweeks/[gw]) so anonymous browsers can render every public page without a session.",
+    "userStories": [
+      {
+        "id": "US-PUB-001",
+        "asA": "public visitor",
+        "iWant": "to land on / and see every active league with sport/format/season badges and quick links to its public pages",
+        "soThat": "I can discover which leagues exist and jump into the one I care about without signing in",
+        "sourceRefs": [
+          "src/app/page.tsx:49-176",
+          "src/app/api/leagues/route.ts:10-33"
+        ]
+      },
+      {
+        "id": "US-PUB-002",
+        "asA": "public visitor",
+        "iWant": "the landing page to label each league as Live or Coming Soon, with format-specific quick links (TVT shows Standings/Fixtures/Playoffs; Triple Crown adds PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs; Auction omits Playoffs)",
+        "soThat": "I open the right tabs for that league's format without guessing",
+        "sourceRefs": [
+          "src/app/page.tsx:124-161",
+          "src/app/api/leagues/route.ts:10-33"
+        ]
+      },
+      {
+        "id": "US-PUB-003",
+        "asA": "public visitor",
+        "iWant": "to open /[leagueSlug]/standings and read the league standings (TVT/Triple Crown classic table or Auction standings) without authenticating",
+        "soThat": "I can follow my friends' league without an account",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/standings/page.tsx:1-12",
+          "src/app/[leagueSlug]/_components/standings/ClassicStandings.tsx:34-62",
+          "src/middleware.ts:47-71"
+        ]
+      },
+      {
+        "id": "US-PUB-004",
+        "asA": "public visitor",
+        "iWant": "to open /[leagueSlug]/fixtures and browse fixtures + results by gameweek, with live-score badges and a manual Refresh button",
+        "soThat": "I can follow a match in progress without signing in",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/fixtures/page.tsx:122-444",
+          "src/middleware.ts:51"
+        ]
+      },
+      {
+        "id": "US-PUB-005",
+        "asA": "public visitor",
+        "iWant": "to open /[leagueSlug]/winners and see the Hall of Champions (filled or pending TBD slots) for each format",
+        "soThat": "I can see who lifted which trophy and which positions are still being played out",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:24-323",
+          "src/app/api/playoffs/winners/route.ts:32-67"
+        ]
+      },
+      {
+        "id": "US-PUB-006",
+        "asA": "public visitor",
+        "iWant": "to open /[leagueSlug]/playoffs and view the full bracket (tentative seeding pre-GW30, projected after, live once admin generates)",
+        "soThat": "I can follow the knockout path from season start without an account",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/playoffs/page.tsx:1-13",
+          "src/app/api/playoffs/bracket/route.ts:109-169",
+          "src/middleware.ts:52-53"
+        ]
+      },
+      {
+        "id": "US-PUB-007",
+        "asA": "public visitor",
+        "iWant": "the league chrome (LeagueNav + LeagueLayout) to be format-aware — TVT shows Standings/Fixtures/Playoffs/Winners/Rules/Help; Triple Crown shows PL+UEFA standings, PL+UEFA fixtures, Playoffs, Winners, Rules, Help; Auction shows Standings/GW Results/Teams/Auction/Squad/Players/Marketplace/Finance/Rules/Help",
+        "soThat": "I only see tabs that apply to this league's format",
+        "sourceRefs": [
+          "src/components/LeagueNav.tsx:84-164",
+          "src/app/[leagueSlug]/layout.tsx:68-168"
+        ]
+      },
+      {
+        "id": "US-PUB-008",
+        "asA": "public visitor",
+        "iWant": "every page under /[leagueSlug]/* to render the correct format palette / background even before any data loads",
+        "soThat": "the visual identity of the league is consistent across tabs",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/layout.tsx:161-167",
+          "src/lib/format-palette.ts"
+        ]
+      },
+      {
+        "id": "US-PUB-009",
+        "asA": "public visitor",
+        "iWant": "to see a Sign In button in the top-right of both the landing page and every LeagueNav header",
+        "soThat": "I can promote myself from visitor to authenticated user from any page",
+        "sourceRefs": [
+          "src/app/page.tsx:72-77",
+          "src/components/LeagueNav.tsx:147-161"
+        ]
+      },
+      {
+        "id": "US-PUB-010",
+        "asA": "authenticated team/admin/superadmin",
+        "iWant": "the LeagueNav to swap Sign In for Sign Out and to show a Dashboard link pointing back to my /dashboard, /admin/<leagueId>, or /admin",
+        "soThat": "I can return to my workspace from any public page",
+        "sourceRefs": [
+          "src/components/LeagueNav.tsx:100-103",
+          "src/components/LeagueNav.tsx:146-161",
+          "src/app/[leagueSlug]/layout.tsx:18-66"
+        ]
+      },
+      {
+        "id": "US-PUB-011",
+        "asA": "public visitor",
+        "iWant": "to open /[leagueSlug]/rules and read format-specific rules (TVT-8/16/32, Triple Crown, or Auction) including the league's chip set and team size",
+        "soThat": "I can understand how the format works before committing to play",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/rules/page.tsx:12-83",
+          "src/app/[leagueSlug]/_components/rules/TvtRules.tsx",
+          "src/app/[leagueSlug]/_components/rules/TripleCrownRules.tsx",
+          "src/app/[leagueSlug]/_components/rules/AuctionRules.tsx"
+        ]
+      },
+      {
+        "id": "US-PUB-012",
+        "asA": "public visitor",
+        "iWant": "the Hall of Champions for Triple Crown to show three independent trophy cards (PL / UCL / UEL) in canonical order rather than a ranked table",
+        "soThat": "I see three distinct trophies, not a leaderboard, because they're won independently",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:137-189",
+          "src/app/api/playoffs/winners/route.ts:149-190"
+        ]
+      },
+      {
+        "id": "US-PUB-013",
+        "asA": "public visitor",
+        "iWant": "the Hall of Champions for TVT-16/32 to render Championship and Challenger sections separately, while TVT-8 collapses to a single Championship section",
+        "soThat": "the layout matches the playoff bracket that produced the trophies",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:195-210",
+          "src/app/api/playoffs/winners/route.ts:220-254"
+        ]
+      },
+      {
+        "id": "US-PUB-014",
+        "asA": "public visitor",
+        "iWant": "the auction Hall of Champions to show a single hero Season Champion trophy that stays TBD until GW38 is fully scored",
+        "soThat": "an in-progress season never crowns a premature winner",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:289-322",
+          "src/app/api/playoffs/winners/route.ts:192-218"
+        ]
+      },
+      {
+        "id": "US-PUB-015",
+        "asA": "public visitor",
+        "iWant": "winner cards/rows to deep-link each player to their FPL Entry page for GW38",
+        "soThat": "I can verify the team behind the trophy on the FPL website",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:172-187",
+          "src/app/[leagueSlug]/winners/page.tsx:266-279",
+          "src/app/[leagueSlug]/winners/page.tsx:303-316"
+        ]
+      },
+      {
+        "id": "US-PUB-016",
+        "asA": "public visitor of a Triple Crown league",
+        "iWant": "the /fixtures page to filter out cup/knockout fixtures so only PL (league-stage) fixtures show, with knockouts living on /ucl and /europa",
+        "soThat": "each tab has a clear role and I don't see duplicate rows",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/fixtures/page.tsx:236-239"
+        ]
+      },
+      {
+        "id": "US-PUB-017",
+        "asA": "public visitor",
+        "iWant": "to hit URLs that don't match any active league slug and see the standard 404 page",
+        "soThat": "malformed or stale links fail predictably",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/layout.tsx:139"
+        ]
+      },
+      {
+        "id": "US-PUB-018",
+        "asA": "public visitor",
+        "iWant": "auction-only routes (/teams, /players, /gw-results, /squad, /auction, /finance, /marketplace) to 404 on TVT and Triple Crown leagues",
+        "soThat": "format-irrelevant URLs don't silently render a half-broken page",
+        "sourceRefs": [
+          "src/lib/league-context.tsx:64-69",
+          "src/app/[leagueSlug]/teams/page.tsx:122",
+          "src/app/[leagueSlug]/players/page.tsx:86",
+          "src/app/[leagueSlug]/gw-results/page.tsx:7",
+          "src/app/[leagueSlug]/playoffs/page.tsx:8"
+        ]
+      },
+      {
+        "id": "US-PUB-019",
+        "asA": "public visitor of an auction league",
+        "iWant": "the /playoffs route to 404 (auction has no knockout bracket — only a season-long champion)",
+        "soThat": "the nav reflects the format and I don't get an empty bracket page",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/playoffs/page.tsx:8",
+          "src/components/LeagueNav.tsx:105-120"
+        ]
+      },
+      {
+        "id": "US-PUB-020",
+        "asA": "public visitor",
+        "iWant": "while standings/fixtures/winners/bracket are loading to see a LoadingScreen or skeleton (not raw HTML or layout shift)",
+        "soThat": "I know data is being fetched and not that the page is broken",
+        "sourceRefs": [
+          "src/app/page.tsx:96-101",
+          "src/app/[leagueSlug]/loading.tsx:1-6",
+          "src/app/[leagueSlug]/fixtures/page.tsx:280",
+          "src/app/[leagueSlug]/winners/page.tsx:83"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-PUB-001",
+        "rule": "GET /api/leagues, /api/standings, /api/fixtures, /api/playoffs/bracket, /api/playoffs/winners, /api/triple-crown/cup-standings, and GET /api/gameweeks/[gw] are public (no session required). All other API routes require a session via the middleware.",
+        "sourceRefs": [
+          "src/middleware.ts:47-71",
+          "src/middleware.ts:153-156"
+        ]
+      },
+      {
+        "id": "BR-PUB-002",
+        "rule": "Public-route whitelisting only applies to GET. A POST to a whitelisted path falls through to session/admin/team enforcement.",
+        "sourceRefs": [
+          "src/middleware.ts:59-71"
+        ]
+      },
+      {
+        "id": "BR-PUB-003",
+        "rule": "GET /api/leagues returns only leagues where isActive = true; inactive leagues are hidden from the public landing page.",
+        "sourceRefs": [
+          "src/app/api/leagues/route.ts:25-26"
+        ]
+      },
+      {
+        "id": "BR-PUB-004",
+        "rule": "Each league card on the landing page picks an icon from SPORT_ICONS (fpl ⚽, cricket 🏏, fallback 🏆) and a gradient/glow first from FORMAT_* overrides (triple-crown) then from SPORT_* defaults.",
+        "sourceRefs": [
+          "src/app/page.tsx:16-47",
+          "src/app/page.tsx:107-110"
+        ]
+      },
+      {
+        "id": "BR-PUB-005",
+        "rule": "League card quick links by format: triple-crown renders PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs; auction renders Standings + Fixtures (no Playoffs); other formats render Standings, Fixtures, Playoffs.",
+        "sourceRefs": [
+          "src/app/page.tsx:145-161"
+        ]
+      },
+      {
+        "id": "BR-PUB-006",
+        "rule": "Live status badge: leagues with isActive=true render a pulsing green 'Live' chip; others render a yellow 'Coming Soon' chip.",
+        "sourceRefs": [
+          "src/app/page.tsx:124-136"
+        ]
+      },
+      {
+        "id": "BR-PUB-007",
+        "rule": "The /[leagueSlug] layout looks up the league by slug; if no row is found it calls notFound() so the URL renders the standard 404.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/layout.tsx:113-139"
+        ]
+      },
+      {
+        "id": "BR-PUB-008",
+        "rule": "The /[leagueSlug] layout retries the SELECT with a minimal column projection (omitting newer optional columns like auction_tier) when the full projection throws, defaulting auctionTier to 'complete' on the in-memory record, so pages keep rendering when a migration lags the deploy.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/layout.tsx:78-138"
+        ]
+      },
+      {
+        "id": "BR-PUB-009",
+        "rule": "The /[leagueSlug] layout wraps children in <LeagueProvider> with both league config and viewer info (authenticated, type, dashboardHref) — viewer.dashboardHref is /dashboard for team, /admin/<leagueId> (or /admin if no league assignment) for admin, /admin for superadmin, /signin when unauthenticated.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/layout.tsx:18-66",
+          "src/lib/league-context.tsx:26-34"
+        ]
+      },
+      {
+        "id": "BR-PUB-010",
+        "rule": "useEnforceFormat(allowed) calls Next.js notFound() (renders 404) when the current league's format isn't in the allowed list. Used on auction-only and TVT-only routes.",
+        "sourceRefs": [
+          "src/lib/league-context.tsx:64-69"
+        ]
+      },
+      {
+        "id": "BR-PUB-011",
+        "rule": "Auction-only pages (teams, players, gw-results, squad, auction, finance, marketplace) call useEnforceFormat(['auction']) → 404 on tvt/triple-crown leagues.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/teams/page.tsx:122",
+          "src/app/[leagueSlug]/players/page.tsx:86",
+          "src/app/[leagueSlug]/gw-results/page.tsx:7",
+          "src/app/[leagueSlug]/squad/page.tsx:129",
+          "src/app/[leagueSlug]/auction/page.tsx:222",
+          "src/app/[leagueSlug]/finance/page.tsx:87",
+          "src/app/[leagueSlug]/marketplace/page.tsx:80"
+        ]
+      },
+      {
+        "id": "BR-PUB-012",
+        "rule": "/[leagueSlug]/playoffs calls useEnforceFormat(['tvt','triple-crown']) → 404 on auction leagues; dispatches to TripleCrownPlayoffs for triple-crown, ClassicPlayoffs otherwise.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/playoffs/page.tsx:7-12"
+        ]
+      },
+      {
+        "id": "BR-PUB-013",
+        "rule": "/[leagueSlug]/standings dispatches: auction → AuctionStandings; otherwise ClassicStandings (covers tvt + triple-crown).",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/standings/page.tsx:7-11"
+        ]
+      },
+      {
+        "id": "BR-PUB-014",
+        "rule": "Rules page picks title + variant chip from league.format and league.teamSize: Auction = 'Auction League Rules & Regulations' / 'Auction Format'; Triple Crown = 'Triple Crown Rules & Regulations' / 'Triple Crown (20 Teams)'; TVT = 'TVT Rules & Regulations' with chip '8-Team' / '16-Team' / '32-Team Format' from teamSize.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/rules/page.tsx:35-52"
+        ]
+      },
+      {
+        "id": "BR-PUB-015",
+        "rule": "Rules page builds its LeagueConfig from league context: teamSize, leagueStageEnd = playoffStartGw - 1, leagueName, enabledChips defaulted to ['D','W','C'] when the league has none configured.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/rules/page.tsx:28-33"
+        ]
+      },
+      {
+        "id": "BR-PUB-016",
+        "rule": "Rules page redirects unauthenticated viewers to /signin via useEffect. // CODE-CONFIRMED: may be a defect — the task scope marks rules as a public page and middleware does not gate the route; the client-side redirect blocks anonymous browsing of /[leagueSlug]/rules.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/rules/page.tsx:19-22"
+        ]
+      },
+      {
+        "id": "BR-PUB-017",
+        "rule": "There is no /[leagueSlug]/page.tsx — visiting the bare league URL (e.g. /jpl-tvt-8) returns the standard Next.js 404. // CODE-CONFIRMED: may be a defect — task scope expects a per-league home page; the landing page links go straight to /standings etc., so the bare slug URL has no destination.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/layout.tsx:1-168",
+          "src/app/page.tsx:144-161"
+        ]
+      },
+      {
+        "id": "BR-PUB-018",
+        "rule": "Fixtures page determines available GWs by intersecting the API response keys with leaguePhaseEnd (Triple Crown = 38, TVT = playoffStartGw - 1) and defaults selectedGW to the latest GW that is at least partially scored, falling back to GW1 when nothing is scored yet.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/fixtures/page.tsx:198-222"
+        ]
+      },
+      {
+        "id": "BR-PUB-019",
+        "rule": "Fixtures page in Triple Crown filters displayed fixtures to competitionType absent or === 'pl' (cup/knockout fixtures live on /ucl /europa /uefa-fixtures).",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/fixtures/page.tsx:236-239"
+        ]
+      },
+      {
+        "id": "BR-PUB-020",
+        "rule": "Fixtures page renders Group A and Group B in a two-column layout when any fixture in any GW has group.name === 'B' and the league is not Triple Crown; otherwise a single centred column.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/fixtures/page.tsx:241-243",
+          "src/app/[leagueSlug]/fixtures/page.tsx:378-439"
+        ]
+      },
+      {
+        "id": "BR-PUB-021",
+        "rule": "Fixtures page polls /api/fixtures/live every 10 minutes for the selected GW and exposes a manual Refresh button that hits /api/fixtures/live/refresh; both endpoints surface live scores. Errors are swallowed (page still shows fixtures).",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/fixtures/page.tsx:143-184"
+        ]
+      },
+      {
+        "id": "BR-PUB-022",
+        "rule": "FixtureCard status badge: 'Final' (or 'Draw' when scores equal) when a result exists; LIVE chip (with animate-pulse) when no result but live data exists; otherwise no chip and an 'Upcoming' deadline string.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/fixtures/page.tsx:59-79",
+          "src/app/[leagueSlug]/fixtures/page.tsx:335-352"
+        ]
+      },
+      {
+        "id": "BR-PUB-023",
+        "rule": "FixtureCard player-breakdown panel: shown when expanded; if liveData has players or the result stores per-player scores, render PlayerBreakdown; else show a 'Player breakdown not yet available' fallback.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/fixtures/page.tsx:50",
+          "src/app/[leagueSlug]/fixtures/page.tsx:103-117"
+        ]
+      },
+      {
+        "id": "BR-PUB-024",
+        "rule": "/api/playoffs/winners requires leagueSlug query param (400 if missing, 404 if no matching league) and dispatches to per-format builder: triple-crown → buildTripleCrownWinners; auction → buildAuctionWinner; teamSize 8/16/32 → build8/16/32TeamWinners.",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:32-67"
+        ]
+      },
+      {
+        "id": "BR-PUB-025",
+        "rule": "/api/playoffs/winners sets concluded=true only when winnersData is non-empty AND every position has pending=false. Pending rows render TBD with a placeholder hint (e.g. 'Winner of 16T-FINAL').",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:61",
+          "src/app/api/playoffs/winners/route.ts:104-108"
+        ]
+      },
+      {
+        "id": "BR-PUB-026",
+        "rule": "Winners page shows a yellow 'Tournament in Progress' banner whenever concluded=false (hides when all positions filled).",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:108-118"
+        ]
+      },
+      {
+        "id": "BR-PUB-027",
+        "rule": "Triple Crown PL Champion (winners) is gated on GW38 being fully scored (every GW38 fixture has a result row); until then it's pending with placeholder 'Top points after GW38'.",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:129-143",
+          "src/app/api/playoffs/winners/route.ts:149-190"
+        ]
+      },
+      {
+        "id": "BR-PUB-028",
+        "rule": "Auction Season Champion is gated on GW38 being fully scored; until then it's pending with placeholder 'To be crowned at season end'.",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:192-218"
+        ]
+      },
+      {
+        "id": "BR-PUB-029",
+        "rule": "Triple Crown winners always render in canonical PL → UCL → UEL order regardless of API ordering. Each card uses a category-coloured gradient (PL blue, UCL sky, UEL amber) and dims to opacity-60 grayscale when pending.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:137-189"
+        ]
+      },
+      {
+        "id": "BR-PUB-030",
+        "rule": "TVT winners table emoji per row: position 1 🥇, 2 🥈, 3 🥉, otherwise ⭐. Top-3 rows get medal-coloured gradient backgrounds; pending rows opacity-50 + grayscale on the emoji.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:235-245"
+        ]
+      },
+      {
+        "id": "BR-PUB-031",
+        "rule": "Winner FPL player links go to https://fantasy.premierleague.com/entry/{fplId}/event/38 (GW38), open in new tab with rel='noopener noreferrer'.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/winners/page.tsx:172-185",
+          "src/app/[leagueSlug]/winners/page.tsx:266-279",
+          "src/app/[leagueSlug]/winners/page.tsx:303-316"
+        ]
+      },
+      {
+        "id": "BR-PUB-032",
+        "rule": "/api/playoffs/bracket returns mode='tentative' when latestCompletedGw < leagueStageEnd (playoffStartGw - 1), 'projected' when latestCompletedGw >= leagueStageEnd but no playoff ties exist, and 'live' once playoffTies rows exist for the league.",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:129-164"
+        ]
+      },
+      {
+        "id": "BR-PUB-033",
+        "rule": "/api/playoffs/bracket caches the live and tentative bracket per league in Redis (best-effort) and always fetches live scores fresh — TC uses GW27 as liveScoresStartGw, other formats use playoffStartGw.",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:136-164"
+        ]
+      },
+      {
+        "id": "BR-PUB-034",
+        "rule": "LeagueNav 'Dashboard / All Leagues' link: shows 'Dashboard' linking to dashboardHref when isLoggedIn; shows 'All Leagues' linking to '/' when not.",
+        "sourceRefs": [
+          "src/components/LeagueNav.tsx:100-103"
+        ]
+      },
+      {
+        "id": "BR-PUB-035",
+        "rule": "LeagueNav format tabs by format — auction: Standings, GW Results, Teams, Auction, Squad, Players, Marketplace (only when not auctionLive AND auctionTier !== 'primary'), Finance, Rules, Help. triple-crown: PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs, Winners, Rules, Help. tvt (default): Standings, Fixtures, Playoffs, Winners, Rules, Help.",
+        "sourceRefs": [
+          "src/components/LeagueNav.tsx:105-141"
+        ]
+      },
+      {
+        "id": "BR-PUB-036",
+        "rule": "LeagueNav polls /api/auction/live-status every 15s for auction leagues and hides Marketplace while auctionLive is true (mid-auction trades freeze).",
+        "sourceRefs": [
+          "src/components/LeagueNav.tsx:64-82",
+          "src/components/LeagueNav.tsx:113-116"
+        ]
+      },
+      {
+        "id": "BR-PUB-037",
+        "rule": "LeagueNav shows the NotificationBell only when isLoggedIn; the right-side action button toggles between Sign Out (logged in, hits /api/auth/signout) and Sign In (linking to /signin).",
+        "sourceRefs": [
+          "src/components/LeagueNav.tsx:143-161"
+        ]
+      },
+      {
+        "id": "BR-PUB-038",
+        "rule": "LeagueNav format badge uses palette.label, palette.badgeBg, palette.badgeText derived from (format, teamSize) — so TVT-8 / TVT-16 / TVT-32 / Triple Crown / Auction each get their own colour identity.",
+        "sourceRefs": [
+          "src/components/LeagueNav.tsx:61-97",
+          "src/lib/format-palette.ts"
+        ]
+      },
+      {
+        "id": "BR-PUB-039",
+        "rule": "/api/fpl/bootstrap requires a valid session (verifySession via cookie) and returns 401 Unauthorized for anonymous callers — NOT a public endpoint despite the FPL prefix; not in the middleware public whitelist either. // CODE-CONFIRMED: may be a defect — task scope speculated this might be public; the handler explicitly rejects unauthenticated requests.",
+        "sourceRefs": [
+          "src/app/api/fpl/bootstrap/route.ts:14-19",
+          "src/middleware.ts:47-71"
+        ]
+      },
+      {
+        "id": "BR-PUB-040",
+        "rule": "/api/fpl/players-left has no in-handler auth check, but middleware does not whitelist it (no /api/fpl/* entry, GET-only branch unchanged) → middleware enforces session for any caller. Anonymous callers receive 401 from the middleware before the handler runs.",
+        "sourceRefs": [
+          "src/app/api/fpl/players-left/route.ts:17-44",
+          "src/middleware.ts:47-71",
+          "src/middleware.ts:178-187"
+        ]
+      },
+      {
+        "id": "BR-PUB-041",
+        "rule": "Auction /teams page calls useEnforceFormat(['auction']) AND requires the visitor to be authenticated (loads from /api/auth/me, displays 'YOU' chip when isMine) — anonymous viewers cannot use this page on any format.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/teams/page.tsx:122",
+          "src/app/[leagueSlug]/teams/page.tsx:138-165"
+        ]
+      },
+      {
+        "id": "BR-PUB-042",
+        "rule": "Auction /players page redirects unauthenticated visitors to /signin via router.push when /api/auth/me returns !authenticated.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/players/page.tsx:125-139"
+        ]
+      },
+      {
+        "id": "BR-PUB-043",
+        "rule": "/api/fixtures requires leagueSlug query param (400 'leagueSlug parameter is required' if missing) and returns 404 if the slug doesn't match an active league row.",
+        "sourceRefs": [
+          "src/app/api/fixtures/route.ts:17-32"
+        ]
+      },
+      {
+        "id": "BR-PUB-044",
+        "rule": "Sign Out (from LeagueNav or AuctionStandings) issues POST /api/auth/signout and then performs window.location.href = '/signin' (full reload, no client navigation).",
+        "sourceRefs": [
+          "src/components/LeagueNav.tsx:148-153",
+          "src/app/[leagueSlug]/_components/standings/AuctionStandings.tsx:179-182",
+          "src/app/[leagueSlug]/_components/standings/ClassicStandings.tsx:29-32"
+        ]
+      },
+      {
+        "id": "BR-PUB-045",
+        "rule": "/[leagueSlug]/loading.tsx renders <LoadingScreen variant='default' label='Loading League' /> as the Next.js loading boundary for every page below the league layout.",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/loading.tsx:1-6"
+        ]
+      },
+      {
+        "id": "BR-PUB-046",
+        "rule": "Landing page Sign In button (yellow→orange gradient pill) links to /signin and is the only call-to-action — no per-league deep-link CTA on the marketing surface.",
+        "sourceRefs": [
+          "src/app/page.tsx:64-79"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-PUB-001",
+        "given": "An anonymous visitor (no session cookie)",
+        "when": "they GET /",
+        "then": "the page renders the JPL header, hero copy 'Fantasy League Hub', and one league card per active league fetched from GET /api/leagues, plus a Sign In button in the top-right",
+        "linksTo": "US-PUB-001"
+      },
+      {
+        "id": "AC-PUB-002",
+        "given": "Two leagues exist with isActive=true and one with isActive=false",
+        "when": "the visitor loads /",
+        "then": "only the two active leagues render as cards (the inactive one is omitted by the API)",
+        "linksTo": "BR-PUB-003"
+      },
+      {
+        "id": "AC-PUB-003",
+        "given": "A Triple Crown league card on the landing page",
+        "when": "the visitor inspects the card",
+        "then": "they see five quick links: PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs",
+        "linksTo": "BR-PUB-005"
+      },
+      {
+        "id": "AC-PUB-004",
+        "given": "An Auction league card on the landing page",
+        "when": "the visitor inspects the card",
+        "then": "they see Standings and Fixtures links but NOT a Playoffs link (auction has no knockout)",
+        "linksTo": "BR-PUB-005"
+      },
+      {
+        "id": "AC-PUB-005",
+        "given": "A league has isActive=true",
+        "when": "the landing page renders its card",
+        "then": "the card shows a pulsing green 'Live' chip; a league with isActive=false would show 'Coming Soon' yellow chip (no card here because BR-PUB-003 hides inactive — verifiable in code path only)",
+        "linksTo": "BR-PUB-006"
+      },
+      {
+        "id": "AC-PUB-006",
+        "given": "An anonymous visitor",
+        "when": "they GET /jpl-tvt-32/standings",
+        "then": "middleware allows /api/standings as a public GET; ClassicStandings renders the standings table; the LeagueNav header shows 'All Leagues' (not 'Dashboard') and a Sign In button",
+        "linksTo": "US-PUB-003"
+      },
+      {
+        "id": "AC-PUB-007",
+        "given": "An anonymous visitor",
+        "when": "they GET /jpl-tvt-32/fixtures",
+        "then": "the page renders the GW selector, fixture cards, status chip (Final / LIVE / Upcoming), and a Refresh button; clicking Refresh fires /api/fixtures/live/refresh and updates scores without forcing login",
+        "linksTo": "US-PUB-004"
+      },
+      {
+        "id": "AC-PUB-008",
+        "given": "An anonymous visitor on a Triple Crown league /fixtures page",
+        "when": "they pick any GW",
+        "then": "only PL (league-stage) fixtures are listed; cup-group and knockout fixtures are filtered out",
+        "linksTo": "BR-PUB-019"
+      },
+      {
+        "id": "AC-PUB-009",
+        "given": "A league with both Group A and Group B fixtures somewhere in the season (non-Triple Crown)",
+        "when": "the visitor opens /fixtures",
+        "then": "the layout splits into two columns labelled Group A (blue dot) and Group B (purple dot)",
+        "linksTo": "BR-PUB-020"
+      },
+      {
+        "id": "AC-PUB-010",
+        "given": "An anonymous visitor",
+        "when": "they GET /jpl-tvt-32/winners pre-season (no playoff ties complete)",
+        "then": "the page renders 'Hall of Champions' with every position as a TBD pending row, a yellow 'Tournament in Progress' banner above the table",
+        "linksTo": "US-PUB-005"
+      },
+      {
+        "id": "AC-PUB-011",
+        "given": "A TVT-16 league where 16T-FINAL is complete",
+        "when": "the visitor loads /winners",
+        "then": "the Champion and Runner-Up rows are filled from the tie's winnerId/loserId; Challenger Cup positions still render even when pending; both sections appear (Championship Bracket + Challenger Bracket)",
+        "linksTo": "BR-PUB-013"
+      },
+      {
+        "id": "AC-PUB-012",
+        "given": "A TVT-8 league",
+        "when": "the visitor loads /winners",
+        "then": "only the Championship section renders (no Challenger Bracket section) because TVT-8 has no challenger bracket",
+        "linksTo": "BR-PUB-013"
+      },
+      {
+        "id": "AC-PUB-013",
+        "given": "A Triple Crown league at any point in the season",
+        "when": "the visitor loads /winners",
+        "then": "three independent trophy cards render in canonical order PL → UCL → UEL; each uses a category-coloured gradient and grays out when pending",
+        "linksTo": "US-PUB-012"
+      },
+      {
+        "id": "AC-PUB-014",
+        "given": "A Triple Crown league where GW38 still has unscored fixtures",
+        "when": "the visitor loads /winners",
+        "then": "the PL Champion card stays pending with placeholder 'Top points after GW38' regardless of current leaderboard",
+        "linksTo": "BR-PUB-027"
+      },
+      {
+        "id": "AC-PUB-015",
+        "given": "An auction league where GW38 has at least one unscored fixture",
+        "when": "the visitor loads /winners",
+        "then": "the single Season Champion hero card stays pending with placeholder 'To be crowned at season end'",
+        "linksTo": "US-PUB-014"
+      },
+      {
+        "id": "AC-PUB-016",
+        "given": "A filled winner row anywhere on /winners",
+        "when": "the visitor clicks a player name",
+        "then": "a new tab opens at https://fantasy.premierleague.com/entry/{fplId}/event/38 with rel=noopener,noreferrer",
+        "linksTo": "US-PUB-015"
+      },
+      {
+        "id": "AC-PUB-017",
+        "given": "An anonymous visitor on a TVT league pre-GW30 with no playoff ties seeded",
+        "when": "they GET /playoffs",
+        "then": "the bracket renders in tentative mode with projected team names + ordinal seed labels; status='projected' on every tie; mode flips to live once admin generates",
+        "linksTo": "US-PUB-006"
+      },
+      {
+        "id": "AC-PUB-018",
+        "given": "An anonymous visitor on an auction league",
+        "when": "they GET /jpl-auction/playoffs",
+        "then": "useEnforceFormat(['tvt','triple-crown']) calls notFound() and the standard 404 page renders",
+        "linksTo": "US-PUB-019"
+      },
+      {
+        "id": "AC-PUB-019",
+        "given": "An anonymous visitor on a TVT league",
+        "when": "they GET /jpl-tvt-32/teams",
+        "then": "useEnforceFormat(['auction']) calls notFound() (404) BEFORE any auction API is hit",
+        "linksTo": "US-PUB-018"
+      },
+      {
+        "id": "AC-PUB-020",
+        "given": "An anonymous visitor on an auction league",
+        "when": "they GET /jpl-auction/players",
+        "then": "the page mounts, calls /api/auth/me, and on !authenticated calls router.push('/signin') — the player catalog is NOT a public surface",
+        "linksTo": "BR-PUB-042"
+      },
+      {
+        "id": "AC-PUB-021",
+        "given": "An anonymous visitor on any league",
+        "when": "they GET /[leagueSlug]/rules",
+        "then": "the page mounts, observes !viewer.authenticated, and router.push('/signin') — the rules page redirects to login (BR-PUB-016 / DEF-PUB-001)",
+        "linksTo": "BR-PUB-016"
+      },
+      {
+        "id": "AC-PUB-022",
+        "given": "An authenticated team viewing /jpl-tvt-32/rules",
+        "when": "the page mounts",
+        "then": "no redirect occurs; the TvtRules component renders with config { teamSize, leagueStageEnd: playoffStartGw - 1, leagueName, enabledChips: leagueChips || ['D','W','C'] } and the variant chip shows '8-Team' / '16-Team' / '32-Team Format' matching teamSize",
+        "linksTo": "BR-PUB-014"
+      },
+      {
+        "id": "AC-PUB-023",
+        "given": "An authenticated viewer on a Triple Crown league",
+        "when": "they load /rules",
+        "then": "the page title reads 'Triple Crown Rules & Regulations' and variant chip 'Triple Crown (20 Teams)'; TripleCrownRules component renders",
+        "linksTo": "US-PUB-011"
+      },
+      {
+        "id": "AC-PUB-024",
+        "given": "An authenticated viewer on an auction league",
+        "when": "they load /rules",
+        "then": "the page title reads 'Auction League Rules & Regulations' and variant chip 'Auction Format'; AuctionRules component renders",
+        "linksTo": "US-PUB-011"
+      },
+      {
+        "id": "AC-PUB-025",
+        "given": "Any visitor",
+        "when": "they GET a URL whose slug doesn't match any leagues row",
+        "then": "the layout calls notFound() and the standard 404 renders for /[leagueSlug]/* below it",
+        "linksTo": "US-PUB-017"
+      },
+      {
+        "id": "AC-PUB-026",
+        "given": "A visitor (logged in or not)",
+        "when": "they GET /jpl-tvt-32 (bare slug, no sub-route)",
+        "then": "Next.js returns its default 404 because no /[leagueSlug]/page.tsx exists (DEF-PUB-002 — no per-league home)",
+        "linksTo": "BR-PUB-017"
+      },
+      {
+        "id": "AC-PUB-027",
+        "given": "An anonymous visitor on any /[leagueSlug]/* page",
+        "when": "the LeagueNav renders",
+        "then": "the leftmost nav link reads 'All Leagues' and points to '/', and the right-side action is a Sign In pill",
+        "linksTo": "BR-PUB-034"
+      },
+      {
+        "id": "AC-PUB-028",
+        "given": "An authenticated team on any /[leagueSlug]/* page",
+        "when": "the LeagueNav renders",
+        "then": "the leftmost link reads 'Dashboard' and points to /dashboard, and the right-side action is a Sign Out pill (and the NotificationBell appears)",
+        "linksTo": "BR-PUB-037"
+      },
+      {
+        "id": "AC-PUB-029",
+        "given": "An authenticated admin (with adminLeagueId='abc') on any /[leagueSlug]/* page",
+        "when": "the LeagueNav renders",
+        "then": "the Dashboard link points to /admin/abc",
+        "linksTo": "BR-PUB-009"
+      },
+      {
+        "id": "AC-PUB-030",
+        "given": "An authenticated superadmin on any /[leagueSlug]/* page",
+        "when": "the LeagueNav renders",
+        "then": "the Dashboard link points to /admin (superadmin landing)",
+        "linksTo": "BR-PUB-009"
+      },
+      {
+        "id": "AC-PUB-031",
+        "given": "An anonymous visitor on an auction league with auctionLive=true",
+        "when": "the LeagueNav renders",
+        "then": "the Marketplace tab is hidden (mid-auction freeze); after the auction ends it reappears",
+        "linksTo": "BR-PUB-036"
+      },
+      {
+        "id": "AC-PUB-032",
+        "given": "An auction league configured with auctionTier='primary'",
+        "when": "the LeagueNav renders",
+        "then": "the Marketplace tab is hidden permanently for that league (Primary tier has no trades)",
+        "linksTo": "BR-PUB-035"
+      },
+      {
+        "id": "AC-PUB-033",
+        "given": "An anonymous visitor",
+        "when": "they directly call GET /api/leagues",
+        "then": "middleware allows the call (whitelisted), the handler returns 200 with { leagues: [...active...] } without requiring auth",
+        "linksTo": "BR-PUB-001"
+      },
+      {
+        "id": "AC-PUB-034",
+        "given": "An anonymous caller POSTing to /api/standings",
+        "when": "the middleware runs",
+        "then": "the public whitelist branch is skipped (GET-only) and the call falls through to session check; with no cookie the middleware returns 401 'Not authenticated'",
+        "linksTo": "BR-PUB-002"
+      },
+      {
+        "id": "AC-PUB-035",
+        "given": "An anonymous caller hitting GET /api/fpl/bootstrap",
+        "when": "the middleware runs",
+        "then": "the route is not whitelisted; session check fails and middleware returns 401 'Not authenticated' before the handler runs",
+        "linksTo": "BR-PUB-039"
+      },
+      {
+        "id": "AC-PUB-036",
+        "given": "An anonymous caller hitting GET /api/fpl/players-left?gw=10&elements=1,2",
+        "when": "the middleware runs",
+        "then": "the route is not whitelisted; session check fails and middleware returns 401 before validation runs in the handler",
+        "linksTo": "BR-PUB-040"
+      },
+      {
+        "id": "AC-PUB-037",
+        "given": "GET /api/fixtures with no leagueSlug param",
+        "when": "the handler runs",
+        "then": "it returns HTTP 400 { error: 'leagueSlug parameter is required' }",
+        "linksTo": "BR-PUB-043"
+      },
+      {
+        "id": "AC-PUB-038",
+        "given": "GET /api/fixtures?leagueSlug=does-not-exist",
+        "when": "the handler runs",
+        "then": "it returns HTTP 404 { error: 'League not found' }",
+        "linksTo": "BR-PUB-043"
+      },
+      {
+        "id": "AC-PUB-039",
+        "given": "GET /api/playoffs/winners with no leagueSlug",
+        "when": "the handler runs",
+        "then": "it returns HTTP 400 with { concluded: false, winners: [] }",
+        "linksTo": "BR-PUB-024"
+      },
+      {
+        "id": "AC-PUB-040",
+        "given": "GET /api/playoffs/winners?leagueSlug=unknown",
+        "when": "the handler runs",
+        "then": "it returns HTTP 404 with { concluded: false, winners: [] }",
+        "linksTo": "BR-PUB-024"
+      },
+      {
+        "id": "AC-PUB-041",
+        "given": "A team viewer signed in",
+        "when": "they click Sign Out in the LeagueNav",
+        "then": "POST /api/auth/signout fires and the browser hard-navigates (window.location.href) to /signin",
+        "linksTo": "BR-PUB-044"
+      },
+      {
+        "id": "AC-PUB-042",
+        "given": "An anonymous visitor",
+        "when": "they navigate to /[leagueSlug]/standings on an auction league",
+        "then": "the standings route dispatcher returns <AuctionStandings/>; on tvt/triple-crown leagues it returns <ClassicStandings/>",
+        "linksTo": "BR-PUB-013"
+      },
+      {
+        "id": "AC-PUB-043",
+        "given": "A Triple Crown league /[leagueSlug]/playoffs",
+        "when": "any visitor loads the page",
+        "then": "useEnforceFormat allows it and <TripleCrownPlayoffs/> renders; <ClassicPlayoffs/> renders for tvt leagues",
+        "linksTo": "BR-PUB-012"
+      },
+      {
+        "id": "AC-PUB-044",
+        "given": "A landing page click on a non-Triple-Crown card's Playoffs link",
+        "when": "the league.format === 'auction'",
+        "then": "no Playoffs link is rendered (card omits it); only Standings + Fixtures appear",
+        "linksTo": "BR-PUB-005"
+      },
+      {
+        "id": "AC-PUB-045",
+        "given": "An anonymous visitor on /standings during the initial fetch",
+        "when": "data hasn't returned yet",
+        "then": "either /[leagueSlug]/loading.tsx (LoadingScreen 'Loading League') or the page's local loading state renders — never a blank screen",
+        "linksTo": "US-PUB-020"
+      },
+      {
+        "id": "AC-PUB-046",
+        "given": "An anonymous visitor on /winners while the API is fetching",
+        "when": "data hasn't returned yet",
+        "then": "<LoadingScreen variant='standings' fullScreen /> renders until the API resolves",
+        "linksTo": "US-PUB-020"
+      },
+      {
+        "id": "AC-PUB-047",
+        "given": "An anonymous visitor on /fixtures and the API succeeds but returns no GWs",
+        "when": "the page renders",
+        "then": "an empty-state card appears with 'No Fixtures Yet — Fixtures will appear here once the league admin generates them.'",
+        "linksTo": "US-PUB-004"
+      },
+      {
+        "id": "AC-PUB-048",
+        "given": "A league with the auction_tier column missing on the running DB (migration lag)",
+        "when": "the /[leagueSlug] layout renders",
+        "then": "the full SELECT throws once, a warning is logged, the fallback SELECT (no auctionTier column) succeeds, and auctionTier defaults to 'complete' so /[leagueSlug]/* pages still render",
+        "linksTo": "BR-PUB-008"
+      },
+      {
+        "id": "AC-PUB-049",
+        "given": "An anonymous visitor on a triple-crown league's /fixtures during a live PL GW",
+        "when": "the page mounts",
+        "then": "the live-scores poller fires every 10 minutes (fetchLiveScores) and the LIVE badge appears on in-progress fixtures",
+        "linksTo": "BR-PUB-021"
+      },
+      {
+        "id": "AC-PUB-050",
+        "given": "An anonymous visitor on /fixtures who clicks Refresh while a refresh is already in flight",
+        "when": "isRefreshing is true",
+        "then": "the click is ignored (`if (!selectedGW || isRefreshing) return;`) and the spinning Refresh icon stays animated until the in-flight call resolves",
+        "linksTo": "BR-PUB-021"
+      }
+    ]
+  },
+  "defects": [
+    {
+      "id": "DEF-PUB-001",
+      "title": "Rules page redirects anonymous visitors to /signin despite being intended as public",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-24",
+      "description": "src/app/[leagueSlug]/rules/page.tsx:19-22 wraps a useEffect that calls router.push('/signin') whenever viewer.authenticated is false. The middleware (src/middleware.ts:47-71) only gates /api/* routes — the /rules page itself is reachable, but the client-side effect kicks anonymous visitors out before they can read the rules.",
+      "expectedBehaviour": "Rules pages (TVT/Triple Crown/Auction variants) are part of the marketing/educational surface and should render for everyone, signed in or not, like /standings, /fixtures, and /winners do.",
+      "actualBehaviour": "An anonymous visitor hitting /[leagueSlug]/rules is immediately redirected to /signin — they never see the rules they came to read.",
+      "sourceRefs": [
+        "src/app/[leagueSlug]/rules/page.tsx:19-22"
+      ],
+      "linkedBusinessRules": [
+        "BR-PUB-016"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-PUB-021"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-PUB-048",
+        "TC-PUB-049"
+      ],
+      "notes": "Fix: drop the useEffect redirect entirely. The page already has all the data it needs from league context and renders fine without a session. If a future change ever requires team-specific rules, gate just that section, not the page. Risk: low — removing a redirect cannot break authenticated callers.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-PUB-002",
+      "title": "No /[leagueSlug]/page.tsx — bare league URL 404s instead of presenting a league home",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-24",
+      "description": "src/app/[leagueSlug]/ contains layout.tsx, loading.tsx, and subroute directories (standings, fixtures, rules, winners, playoffs, etc.) but no top-level page.tsx. Visiting /jpl-tvt-32 directly therefore returns Next.js's default 404 — even though the layout successfully resolves the league row.",
+      "expectedBehaviour": "Either redirect /[leagueSlug] to /[leagueSlug]/standings (the canonical landing tab for every format) OR render a per-league home page with a quick summary and tab grid, matching the task scope's expectation of a 'per-league home'.",
+      "actualBehaviour": "An anonymous visitor (or a logged-in user) who types just the league slug or strips the trailing path off a shared link sees the global 404 page.",
+      "sourceRefs": [
+        "src/app/[leagueSlug]/layout.tsx:1-168",
+        "src/app/page.tsx:144-161"
+      ],
+      "linkedBusinessRules": [
+        "BR-PUB-017"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-PUB-026"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-PUB-056",
+        "TC-PUB-057"
+      ],
+      "notes": "Cheapest fix: add a `page.tsx` that returns redirect(`/${leagueSlug}/standings`). Richer fix: render a marketing-style league home with the format chip, live banner, and large tab cards. Risk: low — net-new file, no existing behaviour changes.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-PUB-003",
+      "title": "/api/fpl/bootstrap and /api/fpl/players-left require auth, contradicting their 'FPL passthrough' framing",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-24",
+      "description": "src/middleware.ts:47-71 PUBLIC_ROUTES omits /api/fpl/*; src/app/api/fpl/bootstrap/route.ts:14-19 also calls verifySession and returns 401 when the cookie is missing. /api/fpl/players-left has no in-handler auth but middleware still blocks anonymous callers. Both endpoints expose globally-public FPL data (player metadata, fixtures left to play) and would be safe to expose to anonymous visitors who land on a public page that wants to enrich its rendering.",
+      "expectedBehaviour": "Decide explicitly: either (a) whitelist /api/fpl/bootstrap and /api/fpl/players-left as GET-only public routes in middleware and drop the verifySession check from bootstrap, OR (b) keep them session-gated and update any 'public-pages-that-use-them' UI to skip the fetch when viewer.authenticated is false.",
+      "actualBehaviour": "Anonymous visitors hitting either endpoint receive 401. No public page currently relies on them for the visitor experience (they back the auction Players page, which is itself behind auth — see BR-PUB-042), so the inconsistency is dormant, but it traps any future feature that assumes the FPL prefix means public.",
+      "sourceRefs": [
+        "src/app/api/fpl/bootstrap/route.ts:14-19",
+        "src/app/api/fpl/players-left/route.ts:17-44",
+        "src/middleware.ts:47-71"
+      ],
+      "linkedBusinessRules": [
+        "BR-PUB-039",
+        "BR-PUB-040"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-PUB-035",
+        "AC-PUB-036"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-PUB-073",
+        "TC-PUB-074"
+      ],
+      "notes": "Recommend option (a): the underlying FPL bootstrap is already cached and contains no league-private data. Whitelisting makes the contract match its name and prevents accidental breakage when a future public page wants to show player metadata. Risk: low — FPL data is public upstream.",
+      "resolution": null,
+      "resolutionDate": null
+    }
+  ],
+  "testCases": [
+    {
+      "id": "TC-PUB-001",
+      "feature": "Landing Page",
+      "scenario": "Anonymous visitor loads / and sees JPL header, hero, league cards and Sign In",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "At least one active league exists; no session cookie set",
+      "testData": "URL=/, cookies cleared",
+      "testSteps": [
+        "1. Clear all cookies",
+        "2. GET /",
+        "3. Inspect rendered DOM"
+      ],
+      "expectedResult": "Page returns HTTP 200, renders JPL header, hero copy 'Fantasy League Hub', a card for every active league (from GET /api/leagues), and a Sign In pill in the top-right",
+      "postconditions": "No session created; landing page is interactive",
+      "requirementId": "AC-PUB-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-002",
+      "feature": "Landing Page",
+      "scenario": "GET /api/leagues fails — landing page surfaces the error not raw HTML",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Mock /api/leagues to return 500",
+      "testData": "URL=/, /api/leagues mocked → 500",
+      "testSteps": [
+        "1. Mock /api/leagues to 500",
+        "2. GET /",
+        "3. Observe UI state"
+      ],
+      "expectedResult": "Page renders header + hero but no league cards; an error/empty fallback is shown rather than a crash or blank page",
+      "postconditions": "User can retry; no console exception breaks subsequent interactions",
+      "requirementId": "AC-PUB-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-003",
+      "feature": "Landing Page",
+      "scenario": "Inactive leagues are hidden from the landing page",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Seed DB with 2 leagues isActive=true and 1 isActive=false",
+      "testData": "leagues: A active, B active, C inactive",
+      "testSteps": [
+        "1. Seed DB as above",
+        "2. GET /",
+        "3. Count rendered league cards"
+      ],
+      "expectedResult": "Exactly 2 league cards render (A and B); the inactive league C is omitted by GET /api/leagues",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-PUB-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-004",
+      "feature": "Landing Page",
+      "scenario": "Inactive league is NOT silently linked from landing page",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "DB has a single league isActive=false",
+      "testData": "leagues: only C inactive",
+      "testSteps": [
+        "1. Seed DB with one inactive league only",
+        "2. GET /",
+        "3. Inspect cards"
+      ],
+      "expectedResult": "No league cards render; empty state or 'no leagues yet' indication appears; no link to the inactive league exists",
+      "postconditions": "Inactive league remains hidden",
+      "requirementId": "BR-PUB-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-005",
+      "feature": "Landing Page — Triple Crown Card",
+      "scenario": "Triple Crown card renders five quick links in canonical order",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Active Triple Crown league seeded (format='triple-crown')",
+      "testData": "league.format=triple-crown, slug=jpl-tc",
+      "testSteps": [
+        "1. GET /",
+        "2. Locate the Triple Crown card",
+        "3. Enumerate quick-link anchors"
+      ],
+      "expectedResult": "Card shows exactly five links: PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs (each href targets /jpl-tc/*)",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-006",
+      "feature": "Landing Page — Auction Card",
+      "scenario": "Auction card renders Standings + Fixtures, NO Playoffs link",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Active Auction league seeded (format='auction')",
+      "testData": "league.format=auction, slug=jpl-auction",
+      "testSteps": [
+        "1. GET /",
+        "2. Locate the Auction card",
+        "3. Enumerate quick-link anchors"
+      ],
+      "expectedResult": "Card shows Standings and Fixtures links; NO Playoffs link is present",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-007",
+      "feature": "Landing Page — Auction Card",
+      "scenario": "Negative — Auction card must NOT expose a Playoffs link",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Active Auction league seeded",
+      "testData": "league.format=auction",
+      "testSteps": [
+        "1. GET /",
+        "2. Inspect Auction card DOM for anchor with text 'Playoffs'"
+      ],
+      "expectedResult": "No anchor with 'Playoffs' label exists inside the auction card",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-008",
+      "feature": "Landing Page — Live Badge",
+      "scenario": "Active league card renders pulsing green 'Live' chip",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Active league seeded",
+      "testData": "league.isActive=true",
+      "testSteps": [
+        "1. GET /",
+        "2. Inspect card status chip"
+      ],
+      "expectedResult": "Chip text is 'Live' with green colour and animate-pulse class",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-009",
+      "feature": "Landing Page — Live Badge",
+      "scenario": "Code-path verification: inactive league would render yellow 'Coming Soon' chip",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Unit/snapshot test against landing card component with mocked inactive league",
+      "testData": "league.isActive=false (mocked at component level since API filters it)",
+      "testSteps": [
+        "1. Render landing card component with isActive=false fixture",
+        "2. Inspect chip"
+      ],
+      "expectedResult": "Chip text 'Coming Soon' with yellow colour, no pulse animation",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Component-level test since BR-PUB-003 hides inactive leagues at API layer."
+    },
+    {
+      "id": "TC-PUB-010",
+      "feature": "Landing Page — Sport Icons",
+      "scenario": "FPL league gets ⚽ icon and sport gradient",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Active league with sport='fpl'",
+      "testData": "sport=fpl",
+      "testSteps": [
+        "1. GET /",
+        "2. Inspect card icon and gradient classes"
+      ],
+      "expectedResult": "Card icon is ⚽, gradient is the FPL default unless format override (e.g., triple-crown) applies",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-011",
+      "feature": "Landing Page — Sport Icons",
+      "scenario": "Unknown sport falls back to 🏆",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Seed league with sport='unknown-sport'",
+      "testData": "sport=unknown-sport",
+      "testSteps": [
+        "1. GET /",
+        "2. Inspect icon glyph"
+      ],
+      "expectedResult": "Card icon is 🏆 (fallback); no crash",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-012",
+      "feature": "Standings — Public Access",
+      "scenario": "Anonymous visitor reads TVT-32 classic standings without auth",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Active TVT-32 league jpl-tvt-32 seeded with at least one scored GW",
+      "testData": "URL=/jpl-tvt-32/standings, cookies cleared",
+      "testSteps": [
+        "1. Clear cookies",
+        "2. GET /jpl-tvt-32/standings",
+        "3. Verify table renders",
+        "4. Inspect LeagueNav header"
+      ],
+      "expectedResult": "GET /api/standings returns 200; ClassicStandings renders; LeagueNav leftmost link reads 'All Leagues' (not Dashboard); right-side action is Sign In",
+      "postconditions": "No session created",
+      "requirementId": "AC-PUB-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-013",
+      "feature": "Standings — Format Dispatch",
+      "scenario": "Auction league /standings dispatches to AuctionStandings component",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Active auction league jpl-auction seeded",
+      "testData": "URL=/jpl-auction/standings",
+      "testSteps": [
+        "1. GET /jpl-auction/standings",
+        "2. Inspect rendered component"
+      ],
+      "expectedResult": "AuctionStandings renders (not ClassicStandings); shows auction-specific columns (purse / points / etc.)",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-014",
+      "feature": "Standings — Format Dispatch",
+      "scenario": "TVT and Triple Crown both render ClassicStandings",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Active TVT-16 jpl-tvt-16 and triple-crown jpl-tc seeded",
+      "testData": "URLs=/jpl-tvt-16/standings, /jpl-tc/standings",
+      "testSteps": [
+        "1. GET each URL",
+        "2. Confirm component identity"
+      ],
+      "expectedResult": "Both URLs render ClassicStandings; no AuctionStandings rendered",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-015",
+      "feature": "Fixtures — Public Access",
+      "scenario": "Anonymous visitor browses fixtures and clicks Refresh",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Active TVT-32 with fixtures and at least one scored GW",
+      "testData": "URL=/jpl-tvt-32/fixtures, cookies cleared",
+      "testSteps": [
+        "1. Clear cookies",
+        "2. GET /jpl-tvt-32/fixtures",
+        "3. Verify GW selector + fixture cards + status chips",
+        "4. Click Refresh"
+      ],
+      "expectedResult": "Page renders GW selector, fixture cards with Final / LIVE / Upcoming chips, and Refresh button; click fires /api/fixtures/live/refresh and updates scores without forcing a login",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-016",
+      "feature": "Fixtures — Triple Crown Filter",
+      "scenario": "Triple Crown /fixtures shows only PL (competitionType absent or 'pl') fixtures",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Triple Crown league jpl-tc with mixed competitionType ('pl', 'ucl', 'uel') fixtures in GW10",
+      "testData": "URL=/jpl-tc/fixtures, selectedGW=10",
+      "testSteps": [
+        "1. GET /jpl-tc/fixtures",
+        "2. Select GW10",
+        "3. Enumerate rendered fixture rows"
+      ],
+      "expectedResult": "Only PL-typed (or competitionType missing) fixtures appear; UCL/UEL fixtures are filtered out",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-017",
+      "feature": "Fixtures — Triple Crown Filter",
+      "scenario": "Negative — TC /fixtures must NOT show a cup/knockout fixture",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Triple Crown league with at least one UCL fixture in GW10",
+      "testData": "URL=/jpl-tc/fixtures, selectedGW=10",
+      "testSteps": [
+        "1. GET /jpl-tc/fixtures",
+        "2. Search rendered DOM for the UCL fixture id"
+      ],
+      "expectedResult": "UCL fixture is absent from the rendered list",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-018",
+      "feature": "Fixtures — Group Layout",
+      "scenario": "Non-TC league with Group A + Group B fixtures renders two-column layout",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league with at least one fixture where group.name='B' exists",
+      "testData": "URL=/jpl-tvt-16/fixtures",
+      "testSteps": [
+        "1. GET /jpl-tvt-16/fixtures",
+        "2. Inspect layout columns and group labels"
+      ],
+      "expectedResult": "Layout splits into two columns labelled Group A (blue dot) and Group B (purple dot)",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-019",
+      "feature": "Fixtures — Group Layout",
+      "scenario": "League with only Group A fixtures renders single centred column",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "TVT league where no fixture has group.name='B'",
+      "testData": "URL=/jpl-tvt-8/fixtures",
+      "testSteps": [
+        "1. GET /jpl-tvt-8/fixtures",
+        "2. Inspect layout columns"
+      ],
+      "expectedResult": "Single centred column rendered; no Group B header appears",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-020",
+      "feature": "Fixtures — GW Default",
+      "scenario": "GW selector defaults to latest partially-scored GW",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "League where GW1..GW5 have results, GW6 has partial results, GW7+ unscored",
+      "testData": "URL=/jpl-tvt-32/fixtures",
+      "testSteps": [
+        "1. GET /jpl-tvt-32/fixtures",
+        "2. Inspect selected GW in selector"
+      ],
+      "expectedResult": "Selected GW = 6 (latest partially-scored); fixture cards for GW6 render",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-021",
+      "feature": "Fixtures — GW Default",
+      "scenario": "Pre-season fallback to GW1 when nothing is scored yet",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "League where no GW has any scored fixtures",
+      "testData": "URL=/jpl-tvt-32/fixtures, season pre-kickoff",
+      "testSteps": [
+        "1. GET /jpl-tvt-32/fixtures",
+        "2. Inspect selected GW"
+      ],
+      "expectedResult": "Selector defaults to GW1; no LIVE/Final chips render",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-022",
+      "feature": "Fixtures — Live Polling",
+      "scenario": "Live-scores poller fires every 10 minutes",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC league /fixtures during a live PL GW; spy on fetch('/api/fixtures/live')",
+      "testData": "URL=/jpl-tc/fixtures, selectedGW=current live GW",
+      "testSteps": [
+        "1. GET page",
+        "2. Advance fake timer by 10 minutes",
+        "3. Confirm fetchLiveScores invocation"
+      ],
+      "expectedResult": "Initial fetch on mount; subsequent fetch fires at 10-minute interval; LIVE badge appears on in-progress fixtures",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-023",
+      "feature": "Fixtures — Refresh Guard",
+      "scenario": "Refresh click ignored while a refresh is in flight",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Fixtures page mounted; mock /api/fixtures/live/refresh with 3s delay",
+      "testData": "URL=/jpl-tvt-32/fixtures",
+      "testSteps": [
+        "1. Click Refresh once",
+        "2. Immediately click Refresh again before first call resolves"
+      ],
+      "expectedResult": "Only one /api/fixtures/live/refresh call fires; second click is ignored; Refresh icon stays in spinning state until first call resolves",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-050",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-024",
+      "feature": "Fixtures — Empty State",
+      "scenario": "API returns no GWs → empty-state card renders",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Mock /api/fixtures to return empty fixtures map",
+      "testData": "URL=/jpl-tvt-32/fixtures, API mocked → {fixtures:{}}",
+      "testSteps": [
+        "1. GET page with mocked API"
+      ],
+      "expectedResult": "Empty-state card shows 'No Fixtures Yet — Fixtures will appear here once the league admin generates them.'",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-025",
+      "feature": "Fixtures — Status Chip",
+      "scenario": "FixtureCard chip shows Final / LIVE / Upcoming correctly",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "GW with 1 finished fixture, 1 in-progress, 1 not-started",
+      "testData": "URL=/jpl-tvt-32/fixtures",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect chip text on each card"
+      ],
+      "expectedResult": "Finished card shows 'Final' (or 'Draw' if equal scores); in-progress shows pulsing LIVE; not-started shows no chip and 'Upcoming' deadline string",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-026",
+      "feature": "Fixtures — Player Breakdown",
+      "scenario": "Expanded card with no live/player data shows fallback message",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Fixture with no liveData and no per-player scores in result",
+      "testData": "—",
+      "testSteps": [
+        "1. Click expand on a fixture card",
+        "2. Observe panel"
+      ],
+      "expectedResult": "'Player breakdown not yet available' fallback appears (PlayerBreakdown not rendered)",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-027",
+      "feature": "Winners — Pre-Season",
+      "scenario": "TVT-32 /winners pre-season shows all TBD with 'Tournament in Progress' banner",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Active TVT-32 league with no playoff ties seeded yet",
+      "testData": "URL=/jpl-tvt-32/winners, cookies cleared",
+      "testSteps": [
+        "1. Clear cookies",
+        "2. GET /jpl-tvt-32/winners"
+      ],
+      "expectedResult": "Hall of Champions renders with every position as pending TBD row; yellow 'Tournament in Progress' banner appears above the table",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-028",
+      "feature": "Winners — TVT-16",
+      "scenario": "TVT-16 with completed final renders Championship + Challenger sections",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-16 league where 16T-FINAL tie has winnerId + loserId",
+      "testData": "URL=/jpl-tvt-16/winners",
+      "testSteps": [
+        "1. GET page",
+        "2. Verify Champion/Runner-Up rows",
+        "3. Verify Challenger Bracket section presence"
+      ],
+      "expectedResult": "Champion + Runner-Up rows filled from finalTie winnerId/loserId; Challenger Cup positions appear even if pending; BOTH Championship and Challenger Bracket sections present",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-029",
+      "feature": "Winners — TVT-8 Boundary",
+      "scenario": "TVT-8 /winners renders only Championship (no Challenger section)",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT-8 league seeded",
+      "testData": "URL=/jpl-tvt-8/winners",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect section headers"
+      ],
+      "expectedResult": "Only Championship section renders; no 'Challenger Bracket' header appears",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-030",
+      "feature": "Winners — Triple Crown",
+      "scenario": "TC /winners renders PL → UCL → UEL cards in canonical order",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Triple Crown league; API returns winners in arbitrary (e.g., UEL first) order",
+      "testData": "URL=/jpl-tc/winners",
+      "testSteps": [
+        "1. GET page",
+        "2. Read trophy card ordering"
+      ],
+      "expectedResult": "Cards render PL → UCL → UEL regardless of API order; each card uses category-coloured gradient (PL blue, UCL sky, UEL amber); pending cards opacity-60 grayscale",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-031",
+      "feature": "Winners — Triple Crown PL Gate",
+      "scenario": "TC PL Champion stays pending when GW38 has any unscored fixture",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "TC league where GW38 has 1+ fixtures without result rows",
+      "testData": "URL=/jpl-tc/winners",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect PL card state"
+      ],
+      "expectedResult": "PL Champion card stays pending with placeholder 'Top points after GW38' regardless of any current leaderboard",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-032",
+      "feature": "Winners — Auction Gate",
+      "scenario": "Auction Season Champion pending until GW38 fully scored",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Auction league with one unscored GW38 fixture",
+      "testData": "URL=/jpl-auction/winners",
+      "testSteps": [
+        "1. GET page"
+      ],
+      "expectedResult": "Single hero Season Champion card stays pending with placeholder 'To be crowned at season end'",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-033",
+      "feature": "Winners — FPL Deep Link",
+      "scenario": "Player name link opens FPL entry page for GW38 in new tab",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Filled winner row with fplId=12345",
+      "testData": "—",
+      "testSteps": [
+        "1. Inspect anchor href and target/rel"
+      ],
+      "expectedResult": "Anchor href=https://fantasy.premierleague.com/entry/12345/event/38; target=_blank; rel='noopener noreferrer'",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-034",
+      "feature": "Winners — Concluded Banner",
+      "scenario": "Banner hides only when every position filled (concluded=true)",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "TVT-16 league where all positions filled except one pending row",
+      "testData": "URL=/jpl-tvt-16/winners",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect banner presence"
+      ],
+      "expectedResult": "Yellow 'Tournament in Progress' banner still visible because at least one position is pending",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-035",
+      "feature": "Winners — TVT Emojis",
+      "scenario": "Position emoji mapping verified for ranks 1–4",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "TVT-16 with positions 1–4 filled in Championship table",
+      "testData": "—",
+      "testSteps": [
+        "1. Read emoji glyph per row"
+      ],
+      "expectedResult": "Row 1 🥇, Row 2 🥈, Row 3 🥉, Row 4 ⭐; top-3 rows have medal-coloured gradient backgrounds",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-036",
+      "feature": "Winners — Loading State",
+      "scenario": "/winners shows LoadingScreen 'standings' variant while API in flight",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Throttle /api/playoffs/winners to 2s",
+      "testData": "URL=/jpl-tvt-16/winners",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect DOM before API resolves"
+      ],
+      "expectedResult": "<LoadingScreen variant='standings' fullScreen /> renders until API responds",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-037",
+      "feature": "Playoffs — Tentative Mode",
+      "scenario": "TVT pre-GW30 with no ties seeded → tentative bracket",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 league pre-playoffs; no playoffTies rows",
+      "testData": "URL=/jpl-tvt-32/playoffs",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect mode label and tie status"
+      ],
+      "expectedResult": "Bracket renders in mode='tentative' with projected team names + ordinal seed labels; tie status='projected' on every tie",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-038",
+      "feature": "Playoffs — Projected Mode",
+      "scenario": "TVT post-league-stage but pre-tie-generation → projected mode",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "League with latestCompletedGw >= leagueStageEnd and no playoffTies rows",
+      "testData": "URL=/jpl-tvt-32/playoffs",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect mode in API response"
+      ],
+      "expectedResult": "/api/playoffs/bracket returns mode='projected'; bracket UI reflects projection",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-039",
+      "feature": "Playoffs — Live Mode",
+      "scenario": "Once admin generates ties, mode flips to 'live'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League with playoffTies rows present",
+      "testData": "URL=/jpl-tvt-32/playoffs",
+      "testSteps": [
+        "1. GET API directly",
+        "2. Confirm mode field"
+      ],
+      "expectedResult": "/api/playoffs/bracket returns mode='live'; bracket shows real ties from DB",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-040",
+      "feature": "Playoffs — Format Guard",
+      "scenario": "Auction /playoffs returns 404",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Active auction league jpl-auction",
+      "testData": "URL=/jpl-auction/playoffs",
+      "testSteps": [
+        "1. GET /jpl-auction/playoffs"
+      ],
+      "expectedResult": "useEnforceFormat(['tvt','triple-crown']) calls notFound(); standard 404 page renders; no bracket request fires",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-041",
+      "feature": "Playoffs — Format Dispatch",
+      "scenario": "Triple Crown /playoffs renders TripleCrownPlayoffs",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC league seeded",
+      "testData": "URL=/jpl-tc/playoffs",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect rendered component"
+      ],
+      "expectedResult": "useEnforceFormat allows; <TripleCrownPlayoffs/> renders (not ClassicPlayoffs)",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-042",
+      "feature": "Playoffs — Bracket Cache",
+      "scenario": "Bracket Redis cache is best-effort: cache outage still returns data",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Mock Redis client to throw on get/set",
+      "testData": "URL=/api/playoffs/bracket?leagueSlug=jpl-tvt-32",
+      "testSteps": [
+        "1. Fail Redis",
+        "2. GET endpoint"
+      ],
+      "expectedResult": "API still returns 200 with bracket payload; live scores fetched fresh",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-043",
+      "feature": "Format Guard — Auction-Only Pages",
+      "scenario": "TVT /teams returns 404 before any auction API call",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Active TVT-32 league jpl-tvt-32",
+      "testData": "URL=/jpl-tvt-32/teams",
+      "testSteps": [
+        "1. GET page",
+        "2. Monitor network for auction API calls"
+      ],
+      "expectedResult": "useEnforceFormat(['auction']) calls notFound(); 404 renders; NO auction API request fires",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-044",
+      "feature": "Format Guard — Auction-Only Pages",
+      "scenario": "TVT /players, /gw-results, /squad, /auction, /finance, /marketplace all 404",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Active TVT-32 league",
+      "testData": "URLs=/jpl-tvt-32/{players,gw-results,squad,auction,finance,marketplace}",
+      "testSteps": [
+        "1. GET each URL"
+      ],
+      "expectedResult": "All seven auction-only pages call notFound() and render the standard 404 on a TVT league",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-045",
+      "feature": "Format Guard — Auction-Only Pages",
+      "scenario": "Triple Crown /teams also 404s",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Active TC league jpl-tc",
+      "testData": "URL=/jpl-tc/teams",
+      "testSteps": [
+        "1. GET page"
+      ],
+      "expectedResult": "404 renders (format not in ['auction'])",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-046",
+      "feature": "Auction /players Auth Redirect",
+      "scenario": "Anonymous visitor on auction /players is redirected to /signin",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Auction league; cookies cleared",
+      "testData": "URL=/jpl-auction/players",
+      "testSteps": [
+        "1. Clear cookies",
+        "2. GET /jpl-auction/players",
+        "3. Observe network + URL"
+      ],
+      "expectedResult": "Page mounts; /api/auth/me returns !authenticated; router.push('/signin') fires; browser ends up at /signin",
+      "postconditions": "No session created",
+      "requirementId": "AC-PUB-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-047",
+      "feature": "Auction /teams Auth",
+      "scenario": "Anonymous visitor on auction /teams cannot use the page",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Auction league; cookies cleared",
+      "testData": "URL=/jpl-auction/teams",
+      "testSteps": [
+        "1. GET page anonymously"
+      ],
+      "expectedResult": "useEnforceFormat passes (auction), but /api/auth/me returns !authenticated → page does not render team grid or 'YOU' chip; viewer is treated as unauthenticated",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-048",
+      "feature": "Rules — Anonymous Redirect (DEFECT)",
+      "scenario": "Regression — anonymous visitor on /rules is currently redirected to /signin (DEF-PUB-001)",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Active league; cookies cleared",
+      "testData": "URL=/jpl-tvt-32/rules",
+      "testSteps": [
+        "1. Clear cookies",
+        "2. GET /jpl-tvt-32/rules",
+        "3. Observe network + final URL"
+      ],
+      "expectedResult": "Page mounts, useEffect observes !viewer.authenticated, router.push('/signin') fires; final URL is /signin. Pins current defective behaviour; once fix lands, this case is expected to fail and be retired in favour of TC-PUB-049.",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PUB-001."
+    },
+    {
+      "id": "TC-PUB-049",
+      "feature": "Rules — Anonymous Access (post-fix)",
+      "scenario": "After DEF-PUB-001 fix, anonymous visitor must read /rules without redirect",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "DEF-PUB-001 patched (useEffect redirect removed); cookies cleared",
+      "testData": "URL=/jpl-tvt-32/rules",
+      "testSteps": [
+        "1. Clear cookies",
+        "2. GET /jpl-tvt-32/rules"
+      ],
+      "expectedResult": "No redirect; TvtRules component renders fully; variant chip matches teamSize; final URL stays /jpl-tvt-32/rules",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PUB-001 (expected post-fix state)."
+    },
+    {
+      "id": "TC-PUB-050",
+      "feature": "Rules — Authenticated TVT",
+      "scenario": "Authenticated team viewing TVT rules — no redirect, correct variant chip",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team signed in; TVT-32 league",
+      "testData": "URL=/jpl-tvt-32/rules",
+      "testSteps": [
+        "1. Sign in as team",
+        "2. GET /jpl-tvt-32/rules",
+        "3. Inspect title and chip"
+      ],
+      "expectedResult": "No redirect; TvtRules renders with config {teamSize:32, leagueStageEnd:playoffStartGw-1, leagueName, enabledChips:leagueChips || ['D','W','C']}; chip reads '32-Team Format'",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-051",
+      "feature": "Rules — TVT Variant Chips Boundary",
+      "scenario": "TVT-8 / TVT-16 / TVT-32 variant chips render correctly",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Authenticated viewer; three TVT leagues seeded with teamSize 8/16/32",
+      "testData": "URLs=/jpl-tvt-8/rules, /jpl-tvt-16/rules, /jpl-tvt-32/rules",
+      "testSteps": [
+        "1. Visit each /rules page"
+      ],
+      "expectedResult": "Chips read '8-Team', '16-Team', '32-Team Format' respectively",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-052",
+      "feature": "Rules — Triple Crown",
+      "scenario": "Authenticated viewer on TC /rules sees TC title + chip",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Authenticated viewer; TC league",
+      "testData": "URL=/jpl-tc/rules",
+      "testSteps": [
+        "1. GET page"
+      ],
+      "expectedResult": "Title 'Triple Crown Rules & Regulations'; chip 'Triple Crown (20 Teams)'; TripleCrownRules component renders",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-053",
+      "feature": "Rules — Auction",
+      "scenario": "Authenticated viewer on auction /rules sees auction title + chip",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Authenticated viewer; auction league",
+      "testData": "URL=/jpl-auction/rules",
+      "testSteps": [
+        "1. GET page"
+      ],
+      "expectedResult": "Title 'Auction League Rules & Regulations'; chip 'Auction Format'; AuctionRules component renders",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-054",
+      "feature": "Rules — Default Chips",
+      "scenario": "Rules page defaults enabledChips to ['D','W','C'] when league has none configured",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "League with leagueChips=null or []",
+      "testData": "URL=/jpl-tvt-16/rules",
+      "testSteps": [
+        "1. Render page",
+        "2. Inspect chip list passed to TvtRules"
+      ],
+      "expectedResult": "TvtRules receives enabledChips=['D','W','C']",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-055",
+      "feature": "Unknown Slug — 404",
+      "scenario": "Unknown league slug returns the standard 404",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No league with slug 'this-slug-does-not-exist'",
+      "testData": "URL=/this-slug-does-not-exist/standings",
+      "testSteps": [
+        "1. GET URL"
+      ],
+      "expectedResult": "Layout calls notFound(); standard Next.js 404 renders",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-056",
+      "feature": "Bare League Home — Missing (DEFECT)",
+      "scenario": "Regression — bare /[leagueSlug] returns Next.js default 404 (DEF-PUB-002)",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Active league jpl-tvt-32",
+      "testData": "URL=/jpl-tvt-32",
+      "testSteps": [
+        "1. GET /jpl-tvt-32 (no trailing path)"
+      ],
+      "expectedResult": "Next.js 404 renders because no /[leagueSlug]/page.tsx exists; pins current defective behaviour",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PUB-002."
+    },
+    {
+      "id": "TC-PUB-057",
+      "feature": "Bare League Home — Expected post-fix",
+      "scenario": "After DEF-PUB-002 fix, bare slug redirects (or renders) the league home",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "DEF-PUB-002 patched (page.tsx added)",
+      "testData": "URL=/jpl-tvt-32",
+      "testSteps": [
+        "1. GET /jpl-tvt-32"
+      ],
+      "expectedResult": "Either redirects to /jpl-tvt-32/standings (HTTP 307/308) OR renders a per-league home with format chip + tab grid; NOT a 404",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PUB-002 (expected post-fix state)."
+    },
+    {
+      "id": "TC-PUB-058",
+      "feature": "LeagueNav — Anonymous",
+      "scenario": "Anonymous visitor sees 'All Leagues' link + Sign In pill",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Cookies cleared",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect LeagueNav"
+      ],
+      "expectedResult": "Leftmost nav link reads 'All Leagues' → '/'; right-side action is Sign In pill linking to /signin; NotificationBell absent",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-059",
+      "feature": "LeagueNav — Authenticated Team",
+      "scenario": "Team viewer sees Dashboard link + Sign Out pill + NotificationBell",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team signed in",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. Sign in as team",
+        "2. GET page"
+      ],
+      "expectedResult": "Leftmost link reads 'Dashboard' → /dashboard; right-side action is Sign Out pill; NotificationBell visible",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-060",
+      "feature": "LeagueNav — Admin Dashboard Link",
+      "scenario": "Admin with adminLeagueId='abc' → Dashboard link points to /admin/abc",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Admin user with adminLeagueId='abc' signed in",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. Sign in as admin",
+        "2. Inspect Dashboard href"
+      ],
+      "expectedResult": "Dashboard href = /admin/abc",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-061",
+      "feature": "LeagueNav — Admin without league",
+      "scenario": "Admin with no adminLeagueId falls back to /admin",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Admin user with adminLeagueId=null",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. Sign in as admin",
+        "2. Inspect Dashboard href"
+      ],
+      "expectedResult": "Dashboard href = /admin",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-062",
+      "feature": "LeagueNav — Superadmin",
+      "scenario": "Superadmin Dashboard link = /admin",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Superadmin signed in",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. Sign in as superadmin",
+        "2. Inspect Dashboard href"
+      ],
+      "expectedResult": "Dashboard href = /admin",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-063",
+      "feature": "LeagueNav — Auction Marketplace Hide (Live)",
+      "scenario": "Marketplace tab hidden while auctionLive=true",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league; /api/auction/live-status returns {auctionLive:true}",
+      "testData": "URL=/jpl-auction/standings",
+      "testSteps": [
+        "1. Mock live-status true",
+        "2. GET page",
+        "3. Inspect nav tabs"
+      ],
+      "expectedResult": "Marketplace tab is absent from LeagueNav",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-064",
+      "feature": "LeagueNav — Auction Marketplace Re-show",
+      "scenario": "Marketplace reappears once auctionLive flips to false",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Auction league; live-status returns false",
+      "testData": "URL=/jpl-auction/standings",
+      "testSteps": [
+        "1. GET page with live-status=false"
+      ],
+      "expectedResult": "Marketplace tab visible",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-065",
+      "feature": "LeagueNav — Auction Marketplace Hide (Primary tier)",
+      "scenario": "Marketplace permanently hidden for auctionTier='primary'",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Auction league with auctionTier='primary'; live-status=false",
+      "testData": "URL=/jpl-auction-primary/standings",
+      "testSteps": [
+        "1. GET page"
+      ],
+      "expectedResult": "Marketplace tab absent regardless of live status",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-066",
+      "feature": "LeagueNav — Format Tabs (TVT)",
+      "scenario": "TVT nav exposes Standings/Fixtures/Playoffs/Winners/Rules/Help",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 league",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. GET page",
+        "2. Enumerate nav tab labels"
+      ],
+      "expectedResult": "Tab labels in order: Standings, Fixtures, Playoffs, Winners, Rules, Help",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-067",
+      "feature": "LeagueNav — Format Tabs (Triple Crown)",
+      "scenario": "TC nav exposes PL/UEFA standings+fixtures plus Playoffs/Winners/Rules/Help",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC league",
+      "testData": "URL=/jpl-tc/standings",
+      "testSteps": [
+        "1. GET page",
+        "2. Enumerate nav tabs"
+      ],
+      "expectedResult": "Tabs: PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs, Winners, Rules, Help",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-068",
+      "feature": "LeagueNav — Format Tabs (Auction)",
+      "scenario": "Auction nav exposes the auction tab set",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league non-primary, live=false",
+      "testData": "URL=/jpl-auction/standings",
+      "testSteps": [
+        "1. GET page"
+      ],
+      "expectedResult": "Tabs include Standings, GW Results, Teams, Auction, Squad, Players, Marketplace, Finance, Rules, Help",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-069",
+      "feature": "LeagueNav — Format Badge",
+      "scenario": "Format badge uses palette label/colour for each (format, teamSize)",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Five leagues: TVT-8, TVT-16, TVT-32, TC-20, Auction",
+      "testData": "Five URLs",
+      "testSteps": [
+        "1. GET each league's standings",
+        "2. Inspect badge text + bg/text classes"
+      ],
+      "expectedResult": "Each badge shows palette.label and palette.badgeBg/badgeText matching format/teamSize (distinct visual identity per league)",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-070",
+      "feature": "Public API Whitelist",
+      "scenario": "Anonymous GET /api/leagues returns 200 list of active leagues",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Cookies cleared; at least one active league",
+      "testData": "GET /api/leagues",
+      "testSteps": [
+        "1. curl GET /api/leagues with no cookie"
+      ],
+      "expectedResult": "HTTP 200 with body { leagues: [...active...] }; middleware allows the call",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-071",
+      "feature": "Public API Whitelist — GET-only",
+      "scenario": "Anonymous POST to whitelisted /api/standings returns 401",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Cookies cleared",
+      "testData": "POST /api/standings (no body)",
+      "testSteps": [
+        "1. curl POST /api/standings with no cookie"
+      ],
+      "expectedResult": "HTTP 401 'Not authenticated'; whitelist branch skipped because method is not GET",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-072",
+      "feature": "Public API Whitelist — All whitelisted GETs",
+      "scenario": "All seven whitelisted GET endpoints succeed anonymously",
+      "type": "Smoke",
+      "priority": "P1",
+      "preconditions": "Cookies cleared; valid leagueSlug=jpl-tvt-32 and GW=10",
+      "testData": "GET /api/leagues, /api/standings?leagueSlug=..., /api/fixtures?leagueSlug=..., /api/playoffs/bracket?leagueSlug=..., /api/playoffs/winners?leagueSlug=..., /api/triple-crown/cup-standings?leagueSlug=..., /api/gameweeks/10",
+      "testSteps": [
+        "1. curl each endpoint with no cookie"
+      ],
+      "expectedResult": "Each returns 2xx (or 4xx from handler validation, NEVER 401 from middleware)",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-073",
+      "feature": "FPL Passthrough Auth (DEFECT)",
+      "scenario": "Regression — anonymous GET /api/fpl/bootstrap returns 401 (DEF-PUB-003)",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Cookies cleared",
+      "testData": "GET /api/fpl/bootstrap",
+      "testSteps": [
+        "1. curl GET /api/fpl/bootstrap with no cookie"
+      ],
+      "expectedResult": "HTTP 401 'Not authenticated' (middleware blocks because route is not whitelisted; even if it were, handler also calls verifySession). Pins current defective behaviour.",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PUB-003."
+    },
+    {
+      "id": "TC-PUB-074",
+      "feature": "FPL Passthrough Auth (DEFECT)",
+      "scenario": "Regression — anonymous GET /api/fpl/players-left returns 401 (DEF-PUB-003)",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Cookies cleared",
+      "testData": "GET /api/fpl/players-left?gw=10&elements=1,2",
+      "testSteps": [
+        "1. curl GET with no cookie"
+      ],
+      "expectedResult": "HTTP 401 before in-handler validation runs (middleware blocks). Pins current defective behaviour.",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PUB-003."
+    },
+    {
+      "id": "TC-PUB-075",
+      "feature": "Fixtures API Validation",
+      "scenario": "GET /api/fixtures with no leagueSlug → 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "—",
+      "testData": "GET /api/fixtures",
+      "testSteps": [
+        "1. curl GET /api/fixtures"
+      ],
+      "expectedResult": "HTTP 400 with body { error: 'leagueSlug parameter is required' }",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-076",
+      "feature": "Fixtures API Validation",
+      "scenario": "GET /api/fixtures?leagueSlug=unknown → 404",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "No league with slug 'does-not-exist'",
+      "testData": "GET /api/fixtures?leagueSlug=does-not-exist",
+      "testSteps": [
+        "1. curl endpoint"
+      ],
+      "expectedResult": "HTTP 404 with body { error: 'League not found' }",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-077",
+      "feature": "Playoffs Winners API Validation",
+      "scenario": "GET /api/playoffs/winners with no leagueSlug → 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "—",
+      "testData": "GET /api/playoffs/winners",
+      "testSteps": [
+        "1. curl endpoint"
+      ],
+      "expectedResult": "HTTP 400 with body { concluded: false, winners: [] }",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-078",
+      "feature": "Playoffs Winners API Validation",
+      "scenario": "GET /api/playoffs/winners?leagueSlug=unknown → 404",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "No matching league",
+      "testData": "GET /api/playoffs/winners?leagueSlug=unknown",
+      "testSteps": [
+        "1. curl endpoint"
+      ],
+      "expectedResult": "HTTP 404 with body { concluded: false, winners: [] }",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-079",
+      "feature": "Sign Out — Hard Navigation",
+      "scenario": "Sign Out fires POST + window.location.href to /signin",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team signed in",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. Click Sign Out in LeagueNav",
+        "2. Monitor network and URL"
+      ],
+      "expectedResult": "POST /api/auth/signout fires (200); browser performs hard navigation (window.location.href) to /signin; no client-side router transition",
+      "postconditions": "Session cookie cleared",
+      "requirementId": "AC-PUB-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-080",
+      "feature": "Loading State — Layout Boundary",
+      "scenario": "/[leagueSlug]/standings shows LoadingScreen during initial fetch",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Throttle /api/standings",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. Throttle API",
+        "2. GET page",
+        "3. Inspect DOM pre-resolve"
+      ],
+      "expectedResult": "Either /[leagueSlug]/loading.tsx LoadingScreen ('Loading League') or the page's local loading state renders; never a blank screen",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-081",
+      "feature": "Layout — Auction Tier Fallback",
+      "scenario": "Layout retries with minimal projection when auction_tier column missing",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Mock DB so the full SELECT throws on auction_tier column missing; fallback SELECT succeeds",
+      "testData": "URL=/jpl-tvt-32/standings",
+      "testSteps": [
+        "1. GET page",
+        "2. Inspect server logs and rendered output"
+      ],
+      "expectedResult": "Full SELECT throws once; warning logged; fallback SELECT succeeds; auctionTier defaults to 'complete' on in-memory record; page renders normally",
+      "postconditions": "—",
+      "requirementId": "AC-PUB-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-082",
+      "feature": "Layout — Format Palette Background",
+      "scenario": "Each format gets correct background palette before data loads",
+      "type": "Smoke",
+      "priority": "P3",
+      "preconditions": "TVT-8, TVT-16, TVT-32, TC, Auction leagues",
+      "testData": "Five URLs (e.g. /jpl-tvt-8/standings, ...)",
+      "testSteps": [
+        "1. GET each league before API resolves",
+        "2. Inspect body background classes"
+      ],
+      "expectedResult": "Each format renders its expected palette background classes (per src/lib/format-palette.ts) before data arrives — no flash of unstyled content",
+      "postconditions": "—",
+      "requirementId": "US-PUB-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-083",
+      "feature": "Auction Playoffs Guard",
+      "scenario": "Anonymous visitor on auction /playoffs cannot access bracket",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Auction league; cookies cleared",
+      "testData": "URL=/jpl-auction/playoffs",
+      "testSteps": [
+        "1. GET page",
+        "2. Monitor network for /api/playoffs/bracket"
+      ],
+      "expectedResult": "useEnforceFormat(['tvt','triple-crown']) calls notFound() before any bracket fetch; standard 404 renders",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-084",
+      "feature": "Landing Page — Sign In CTA",
+      "scenario": "Landing Sign In pill links to /signin",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "—",
+      "testData": "URL=/",
+      "testSteps": [
+        "1. GET /",
+        "2. Inspect Sign In pill anchor"
+      ],
+      "expectedResult": "Sign In pill (yellow→orange gradient) href='/signin'; no per-league deep-link CTA on the marketing surface",
+      "postconditions": "—",
+      "requirementId": "BR-PUB-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-085",
+      "feature": "Landing Page — Sign In top-right",
+      "scenario": "Sign In button present in top-right of landing AND every LeagueNav header",
+      "type": "Smoke",
+      "priority": "P3",
+      "preconditions": "Cookies cleared",
+      "testData": "URLs=/, /jpl-tvt-32/standings",
+      "testSteps": [
+        "1. GET each page",
+        "2. Inspect top-right region"
+      ],
+      "expectedResult": "Sign In pill visible in top-right on both pages",
+      "postconditions": "—",
+      "requirementId": "US-PUB-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PUB-086",
+      "feature": "Landing Page — Quick links: TVT",
+      "scenario": "TVT card renders Standings, Fixtures, Playoffs links only",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Active TVT-16 league",
+      "testData": "URL=/",
+      "testSteps": [
+        "1. GET /",
+        "2. Enumerate TVT card links"
+      ],
+      "expectedResult": "Card shows exactly three quick links: Standings, Fixtures, Playoffs (no PL/UEFA, no GW Results)",
+      "postconditions": "—",
+      "requirementId": "US-PUB-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": []
+}

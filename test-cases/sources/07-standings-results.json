@@ -1,0 +1,2247 @@
+{
+  "moduleId": "STAND",
+  "moduleName": "Standings & Results",
+  "sheetName": "Standings",
+  "status": "qa-signed-off",
+  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "requirements": {
+    "version": 1,
+    "businessContext": "Module 07 exposes the public standings READ endpoint (`GET /api/standings`) and the standings-shaping logic that aggregates already-persisted GW results into ranked tables. It covers three computation paths — TVT league-stage standings, Triple Crown PL standings (38 GWs, no bonus margin, leaguePoints stored authoritatively by the GW processor), and JPL Auction standings (pure cumulative-points race with payout history and squad-value tie-breakers). It also serves the rank-change indicator, the CBP tooltip (chips / bonus points / hit penalty), the qualification-zone legend used by the standings UI, and the Redis-backed page cache that fronts the response. The WRITE side (computing match points, bonus, payouts during GW processing) lives in module 05; UI rendering is module 17; playoffs are module 08; cup-group standings detail is deferred to module 09.",
+    "userStories": [
+      {
+        "id": "US-STAND-001",
+        "asA": "public visitor",
+        "iWant": "to fetch the live standings for any league by slug without logging in",
+        "soThat": "I can follow the competition from outside the team-portal",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:62-108"]
+      },
+      {
+        "id": "US-STAND-002",
+        "asA": "team",
+        "iWant": "TVT league-stage standings to sort by league points first, then points scored, then chips+bonus points",
+        "soThat": "my position reflects the documented ranking rules",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:616-620"]
+      },
+      {
+        "id": "US-STAND-003",
+        "asA": "team",
+        "iWant": "to see a rank-change indicator (arrow up/down/same) versus my previous GW position",
+        "soThat": "I can tell at a glance whether I climbed or dropped after the latest GW",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:365-466", "jpl-leagues/src/app/api/standings/route.ts:629-656"]
+      },
+      {
+        "id": "US-STAND-004",
+        "asA": "team",
+        "iWant": "a CBP tooltip showing my used chips, per-GW bonus points and hit-penalty deductions",
+        "soThat": "I can verify how my chipPoints + bonusPoints total was assembled",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:546-588"]
+      },
+      {
+        "id": "US-STAND-005",
+        "asA": "team in a Triple Crown league",
+        "iWant": "PL standings to use the stored `leaguePoints` (already including hit penalty) rather than re-deriving from W/D",
+        "soThat": "the table matches the authoritative GW-processor values across all 38 GWs",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:539-543", "jpl-leagues/src/lib/formats/triple-crown/process-gameweek.ts:333-346"]
+      },
+      {
+        "id": "US-STAND-006",
+        "asA": "team in a Triple Crown league",
+        "iWant": "Ghost teams (cup-group phantoms) excluded from the PL standings table",
+        "soThat": "I only see real opponents in the public ladder",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:329-331"]
+      },
+      {
+        "id": "US-STAND-007",
+        "asA": "team in a JPL Auction league",
+        "iWant": "standings ranked by cumulative total points with squad value (ascending) and purse (descending) as tie-breakers",
+        "soThat": "lean, well-managed squads outrank bloated ones on equal points",
+        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:82-92"]
+      },
+      {
+        "id": "US-STAND-008",
+        "asA": "team in a JPL Auction league",
+        "iWant": "per-GW history showing raw points, synergy bonus, club-result bonus, rank and payout",
+        "soThat": "I can audit how my purse changed week by week",
+        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:42-63", "jpl-leagues/src/app/api/standings/route.ts:153-178"]
+      },
+      {
+        "id": "US-STAND-009",
+        "asA": "team in a JPL Auction league with a PL Club Auction club",
+        "iWant": "the standings to show my owned club's live in-progress fixture result before admin scores the GW",
+        "soThat": "I can track my club bonus while matches are still being played",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:180-203", "jpl-leagues/src/app/api/standings/route.ts:205-216"]
+      },
+      {
+        "id": "US-STAND-010",
+        "asA": "team in a multi-group TVT league",
+        "iWant": "to filter standings by group via the `group` query parameter",
+        "soThat": "I can view a single group at a time when groups have been revealed",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:64-65", "jpl-leagues/src/app/api/standings/route.ts:332-335"]
+      },
+      {
+        "id": "US-STAND-011",
+        "asA": "team",
+        "iWant": "standings to indicate my qualification zone (playoffs / challenger / eliminated)",
+        "soThat": "I know whether I'm in the title race, the consolation bracket, or already out",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:633-636", "jpl-leagues/src/app/api/standings/route.ts:697-705"]
+      },
+      {
+        "id": "US-STAND-012",
+        "asA": "admin",
+        "iWant": "standings to be served from Redis cache when available and silently fall back to DB computation on cache miss",
+        "soThat": "the public page remains fast and survives Redis outages",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:102-108", "jpl-leagues/src/app/api/standings/route.ts:673-679", "jpl-leagues/src/lib/fpl-cache.ts:363-378"]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-STAND-001",
+        "rule": "`leagueSlug` query parameter is REQUIRED — endpoint returns 400 `{ error: 'leagueSlug parameter is required' }` when missing.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:69-74"]
+      },
+      {
+        "id": "BR-STAND-002",
+        "rule": "An unknown `leagueSlug` returns 404 `{ error: 'League not found' }`; the route does not infer or default to any league.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:79-84"]
+      },
+      {
+        "id": "BR-STAND-003",
+        "rule": "League stage end is `38` for Triple Crown leagues and `playoffStartGw - 1` for all other formats; fixtures with `gameweek.number > leagueStageEnd` are excluded from W/D/L, points-for, bonus, and chip aggregation.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:87-93", "jpl-leagues/src/app/api/standings/route.ts:478-481", "jpl-leagues/src/app/api/standings/route.ts:499-502"]
+      },
+      {
+        "id": "BR-STAND-004",
+        "rule": "Only fixtures with `competitionType === 'pl'` or NULL `competitionType` count toward PL standings; cup-group, UCL-knockout and UEL-knockout fixtures are skipped.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:480-481", "jpl-leagues/src/app/api/standings/route.ts:501-502", "jpl-leagues/src/app/api/standings/route.ts:272-274"]
+      },
+      {
+        "id": "BR-STAND-005",
+        "rule": "Ghost teams (`isGhost === true`) are excluded from PL standings via `allTeams.filter(t => !t.isGhost)`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:329-331"]
+      },
+      {
+        "id": "BR-STAND-006",
+        "rule": "TVT `leaguePoints` are computed as `(wins * 2) + (draws * 1) + cbpPoints - hitPenaltyTotal` where `cbpPoints = chipPoints + bonusPoints`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:539-543", "jpl-leagues/src/app/api/standings/route.ts:521-523"]
+      },
+      {
+        "id": "BR-STAND-007",
+        "rule": "Triple Crown `leaguePoints` is read directly from `teams.leaguePoints` (stored authoritatively by `processTripleCrownGameweek`); the standings route does NOT recompute it.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:541-543", "jpl-leagues/src/lib/formats/triple-crown/process-gameweek.ts:333-346"]
+      },
+      {
+        "id": "BR-STAND-008",
+        "rule": "W/D/L are derived from RAW FPL scores (`result.homeScore` vs `result.awayScore`), NOT from chip-adjusted match points.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:486-489", "jpl-leagues/src/app/api/standings/route.ts:507-510"]
+      },
+      {
+        "id": "BR-STAND-009",
+        "rule": "Bonus points are awarded as 1 point per qualifying fixture, doubled to 2 when `homeUsedDoublePointer`/`awayUsedDoublePointer` is set on the result row.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:491-495", "jpl-leagues/src/app/api/standings/route.ts:512-516"]
+      },
+      {
+        "id": "BR-STAND-010",
+        "rule": "Hit penalty: each GW in which ANY player on the team took strictly more than 12 raw FPL transfer hits contributes −1 to `leaguePoints` (one deduction per qualifying GW, not per player).",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:524-537"]
+      },
+      {
+        "id": "BR-STAND-011",
+        "rule": "Hit-penalty data for processed GWs is loaded from Redis (`getAllCachedScores`) first; on cache miss the route fetches per-player GW scores from FPL in parallel within each GW (GW loop sequential to bound concurrency).",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:278-316"]
+      },
+      {
+        "id": "BR-STAND-012",
+        "rule": "If the FPL hit-penalty fetch throws (FPL outage / rate-limit), the route logs the error and returns standings WITHOUT hit deductions rather than 500-ing — partial correctness is preferred over total failure.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:269-320"]
+      },
+      {
+        "id": "BR-STAND-013",
+        "rule": "Triple Crown leagues SKIP the FPL hit-penalty fetch entirely because hit penalties are already baked into the stored `leaguePoints`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:263-264"]
+      },
+      {
+        "id": "BR-STAND-014",
+        "rule": "PL standings final sort order: `leaguePoints DESC`, then `pointsFor DESC`, then `cbpPoints DESC`. // CODE-CONFIRMED: may be a defect — the TVT scoring spec in `tvt/scoring.ts:215-246` documents a 4-tier tiebreaker (Overall Points → Max Wins → Head-to-Head → Bonus Points) which the route does not implement.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:616-620", "jpl-leagues/src/lib/formats/tvt/scoring.ts:215-246"]
+      },
+      {
+        "id": "BR-STAND-015",
+        "rule": "Each team's response carries BOTH `bonusPoints` (read from stored `teams.bonusPoints`) and `calculatedBonus` (re-derived from the current fixture set). // CODE-CONFIRMED: may be a defect — the two values can diverge if `teams.bonusPoints` was never updated by GW processing or has been edited; standings should use the calculated value consistently.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:600-605"]
+      },
+      {
+        "id": "BR-STAND-016",
+        "rule": "Standings response groups teams by `group.name` (excluding any group whose name starts with `cup-`, case-insensitive); groupless leagues collapse all teams into `groupA` with an empty `groupB`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:624-657", "jpl-leagues/src/app/api/standings/route.ts:659-672"]
+      },
+      {
+        "id": "BR-STAND-017",
+        "rule": "Within each group, ranks are 1-based by sort order and assigned to both `rank` and `groupRank` fields on each team row.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:629-640", "jpl-leagues/src/app/api/standings/route.ts:645-656"]
+      },
+      {
+        "id": "BR-STAND-018",
+        "rule": "Qualification zone: teamSize=8 → ranks 1–4 `playoffs`, 5–8 `eliminated` (no challenger); teamSize=16 or 32 → ranks 1–8 `playoffs`, 9–14 `challenger`, 15+ `eliminated`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:697-705"]
+      },
+      {
+        "id": "BR-STAND-019",
+        "rule": "Response includes a static `legend` block hard-coded to `{ top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }`. // CODE-CONFIRMED: may be a defect — the legend keys do not match the 8-team variant (no top-8 cutoff exists) and the legend is identical regardless of teamSize.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:667-671"]
+      },
+      {
+        "id": "BR-STAND-020",
+        "rule": "Previous-GW rank snapshot uses the SAME sort keys as the current pass (`leaguePoints` → `pointsFor` → `cbpPoints`) computed against all league-stage fixtures up to but not including `maxPlayedGw`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:396-466"]
+      },
+      {
+        "id": "BR-STAND-021",
+        "rule": "`previousRank` and `rankDelta` are only populated when `maxPlayedGw > 1`; otherwise both fields are `null` on every team row.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:451-466", "jpl-leagues/src/app/api/standings/route.ts:631-639"]
+      },
+      {
+        "id": "BR-STAND-022",
+        "rule": "`rankDelta = previousRank − currentRank` (positive = climbed, negative = dropped, zero = unchanged); is `null` when previous rank is unknown.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:637-639", "jpl-leagues/src/app/api/standings/route.ts:653-655"]
+      },
+      {
+        "id": "BR-STAND-023",
+        "rule": "Rank-change indicator is display-only and never influences playoff seeding, zone assignment, or group order; TVT playoff bracket generation uses its own helper in `tvt/playoffs.ts`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:365-370"]
+      },
+      {
+        "id": "BR-STAND-024",
+        "rule": "CBP tooltip enumerates exactly 6 chip entries (2 sets × 3 enabled chip codes) with set boundaries `[1, ceil(leagueStageEnd/2)]` and `[ceil(leagueStageEnd/2)+1, leagueStageEnd]`; the 3 chip codes come from `leagues.enabledChips` (default `[\"D\",\"W\",\"C\"]`).",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:546-579", "jpl-leagues/src/app/api/standings/route.ts:87-91"]
+      },
+      {
+        "id": "BR-STAND-025",
+        "rule": "Each CBP tooltip chip entry has `status` ∈ {`available` (no chip row), `used` (`isProcessed=true`), `pending` (row exists but not processed)} and carries `points` (0 when available), `gameweek` (when used/pending) and `opponent` (only for Challenge Chip).",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:561-577"]
+      },
+      {
+        "id": "BR-STAND-026",
+        "rule": "`chipPoints` accumulates only chips with `isProcessed=true`; a `C` (Challenge) chip is always summed (including 0-point rows) while any other chip type is summed only when `pointsAwarded > 0`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:352-358"]
+      },
+      {
+        "id": "BR-STAND-027",
+        "rule": "Chips with `gameweek.number > leagueStageEnd` (i.e. playoff GWs) are excluded from `chipPoints` and from previous-GW chip totals.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:348-351", "jpl-leagues/src/app/api/standings/route.ts:383-393"]
+      },
+      {
+        "id": "BR-STAND-028",
+        "rule": "JPL Auction standings: ranking is `totalPoints DESC` → `squadValue ASC` (lower wins) → `purse DESC` (higher wins); ranks are 1-based, no groups.",
+        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:82-92"]
+      },
+      {
+        "id": "BR-STAND-029",
+        "rule": "Auction `squadValue` is the sum of FMV of every actively-owned player, where FMV uses RAW points only (`rawPoints`, falling back to legacy `points`) — synergy bonus never compounds into FMV/squad value.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:138-151", "jpl-leagues/src/lib/formats/auction/economy.ts:62-69"]
+      },
+      {
+        "id": "BR-STAND-030",
+        "rule": "Auction `totalPoints` for a team = `Σ rawPoints + Σ synergyBonus + Σ clubResultBonus` across all GWs the team has been scored.",
+        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:48-51"]
+      },
+      {
+        "id": "BR-STAND-031",
+        "rule": "Auction `previousRank`/`rankDelta` are computed using cumulative points through `maxGw - 1`, with the same secondary keys; teams with no GW history at `previousGw` get `previousRank=null` and `rankDelta=null`.",
+        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:96-127"]
+      },
+      {
+        "id": "BR-STAND-032",
+        "rule": "GW payout schedule: rank 1=£2.5M, 2=£2.1M, 3=£1.8M, 4=£1.6M, 5=£1.4M, 6=£1.2M, 7=£1.1M, 8=£1.0M, 9=£0.9M, 10=£0.8M; rank 11+ receives the £500K floor.",
+        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/economy.ts:8-29"]
+      },
+      {
+        "id": "BR-STAND-033",
+        "rule": "FMV appreciation tiers: 0–100 raw points → £20K/pt, 100–200 → £40K/pt, 200+ → £60K/pt; negative raw points are clamped to 0 before tier accumulation.",
+        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/economy.ts:62-69"]
+      },
+      {
+        "id": "BR-STAND-034",
+        "rule": "PL Club Auction display: if a team owns a PL club, the response replaces `teamName` with the owned club's `plTeamName` from `auctionClubOwnership`.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:170-178"]
+      },
+      {
+        "id": "BR-STAND-035",
+        "rule": "Auction `currentGwNumber` = max(highest scored GW, FPL `is_current`/`is_next` event id); on FPL fetch failure it stays at the highest scored GW.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:182-191"]
+      },
+      {
+        "id": "BR-STAND-036",
+        "rule": "Auction live-club-result branch (`currentGwNumber > maxScoredGw && currentGwNumber > 0`) computes the in-progress `liveClubResultByTeam` for every owned club; the response is NOT written to the Redis cache during the live branch to prevent stale scorelines.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:196-216"]
+      },
+      {
+        "id": "BR-STAND-037",
+        "rule": "Legacy `clubResultSummary` rows (null in DB) are backfilled on-the-fly via `backfillClubSummaries` so the standings tooltip shows a real fixture string instead of em-dash.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:158-178"]
+      },
+      {
+        "id": "BR-STAND-038",
+        "rule": "Standings response is fronted by a Redis cache keyed `standings:v2:{leagueId}` with TTL = `PAGE_CACHE_TTL`; cache hits short-circuit ALL DB computation and the cached value is returned verbatim. // CODE-CONFIRMED: may be a defect — the cache key does NOT include `group` or `leagueSlug`, so a cached response built with no `group` filter will be returned even when the caller passes `?group=B` (and vice-versa).",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:102-108", "jpl-leagues/src/lib/fpl-cache.ts:363-378"]
+      },
+      {
+        "id": "BR-STAND-039",
+        "rule": "Cache writes are fire-and-forget (`.catch(() => {})`) and never block or fail the response.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:215", "jpl-leagues/src/app/api/standings/route.ts:673-677"]
+      },
+      {
+        "id": "BR-STAND-040",
+        "rule": "Top-level try/catch swallows ANY computation error and returns an empty standings payload `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }` with HTTP 200. // CODE-CONFIRMED: may be a defect — masking server errors as 200/empty makes failures invisible to clients and to monitoring; defaults of 30/32 also leak even for 8-team leagues.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:680-690"]
+      },
+      {
+        "id": "BR-STAND-041",
+        "rule": "`groupsRevealed` flag is sourced from `settings` row with `key='groupsRevealed'`, value compared as the literal string `'true'`; absence ⇒ false.",
+        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:95-100"]
+      },
+      {
+        "id": "BR-STAND-042",
+        "rule": "Cup-group standings tie-break (computed by `computeCupGroupStandings`): `cupGroupPoints DESC`, then goal-difference (GF − GA) DESC, then `goalFor` DESC. (Detailed cup-group rules deferred to module 09.)",
+        "sourceRefs": ["jpl-leagues/src/lib/formats/triple-crown/standings.ts:91-99"]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-STAND-001",
+        "given": "no `leagueSlug` query parameter on the request",
+        "when": "the client calls `GET /api/standings`",
+        "then": "the response is HTTP 400 with body `{ error: 'leagueSlug parameter is required' }`",
+        "linksTo": "BR-STAND-001"
+      },
+      {
+        "id": "AC-STAND-002",
+        "given": "a `leagueSlug` value with no matching row in `leagues`",
+        "when": "the client calls `GET /api/standings?leagueSlug=does-not-exist`",
+        "then": "the response is HTTP 404 with body `{ error: 'League not found' }`",
+        "linksTo": "BR-STAND-002"
+      },
+      {
+        "id": "AC-STAND-003",
+        "given": "a TVT league with `playoffStartGw=31` and a fixture in GW31 with a stored result",
+        "when": "standings are computed",
+        "then": "the GW31 fixture does not contribute to W/D/L, pointsFor, pointsAgainst, bonus or chip totals",
+        "linksTo": "BR-STAND-003"
+      },
+      {
+        "id": "AC-STAND-004",
+        "given": "a Triple Crown league with results stored in GWs 1–38",
+        "when": "standings are computed",
+        "then": "`leagueStageEnd` resolves to 38 and all 38 PL fixtures are considered",
+        "linksTo": "BR-STAND-003"
+      },
+      {
+        "id": "AC-STAND-005",
+        "given": "a cup-group fixture with `competitionType='cup-group'` and a result",
+        "when": "TVT/Triple Crown PL standings are computed",
+        "then": "the fixture contributes nothing to `pointsFor`/`pointsAgainst`/W-D-L for either team",
+        "linksTo": "BR-STAND-004"
+      },
+      {
+        "id": "AC-STAND-006",
+        "given": "a Triple Crown league with a ghost team in a cup group",
+        "when": "the client requests PL standings",
+        "then": "the ghost team does NOT appear in `groupA`/`groupB` rows",
+        "linksTo": "BR-STAND-005"
+      },
+      {
+        "id": "AC-STAND-007",
+        "given": "a TVT team with 5 wins, 2 draws, 1 loss, 3 bonus points, 4 chip points and 1 hit-penalty GW",
+        "when": "standings are computed",
+        "then": "`leaguePoints` equals `5*2 + 2*1 + (3 + 4) - 1 = 18`",
+        "linksTo": "BR-STAND-006"
+      },
+      {
+        "id": "AC-STAND-008",
+        "given": "a Triple Crown team whose stored `teams.leaguePoints` is 42",
+        "when": "standings are computed",
+        "then": "the response carries `leaguePoints: 42` even if `(wins*2 + draws)` would yield a different value",
+        "linksTo": "BR-STAND-007"
+      },
+      {
+        "id": "AC-STAND-009",
+        "given": "a result row with `homeScore=80, awayScore=20, homeMatchPoints=0, awayMatchPoints=2` (e.g. a TVT chip reversal)",
+        "when": "standings are computed",
+        "then": "the home team is credited with a WIN (raw scores) regardless of stored match points",
+        "linksTo": "BR-STAND-008"
+      },
+      {
+        "id": "AC-STAND-010",
+        "given": "a result row with `homeGotBonus=true, homeUsedDoublePointer=true`",
+        "when": "standings are computed",
+        "then": "the home team's `calculatedBonus` increases by 2 and the CBP tooltip BPS list records `{gameweek, points: 2}`",
+        "linksTo": "BR-STAND-009"
+      },
+      {
+        "id": "AC-STAND-011",
+        "given": "a team whose Player A took 15 transfer hits in GW7 and Player B took 13 hits in the same GW",
+        "when": "the hit-penalty fetch succeeds",
+        "then": "the team's `leaguePoints` is reduced by exactly 1 for GW7 (one deduction per qualifying GW)",
+        "linksTo": "BR-STAND-010"
+      },
+      {
+        "id": "AC-STAND-012",
+        "given": "Redis is down and the FPL API throws on every hit-penalty fetch",
+        "when": "the client requests standings",
+        "then": "the route returns 200 with standings computed WITHOUT hit-penalty deductions and logs the error server-side",
+        "linksTo": "BR-STAND-012"
+      },
+      {
+        "id": "AC-STAND-013",
+        "given": "a Triple Crown league with 38 GWs of results",
+        "when": "standings are computed",
+        "then": "no per-player FPL hit-penalty API calls are issued (the entire hit-penalty block is skipped)",
+        "linksTo": "BR-STAND-013"
+      },
+      {
+        "id": "AC-STAND-014",
+        "given": "two TVT teams tied on `leaguePoints` and `pointsFor` but team A has higher `cbpPoints`",
+        "when": "standings are sorted",
+        "then": "team A appears above team B",
+        "linksTo": "BR-STAND-014"
+      },
+      {
+        "id": "AC-STAND-015",
+        "given": "two TVT teams tied on `leaguePoints` but team A has 5 wins and team B has 6 wins (same `pointsFor`)",
+        "when": "standings are sorted",
+        "then": "the current code ranks them by `pointsFor` first and ignores the wins-based tiebreaker documented in `tvt/scoring.ts` — flag DEF-STAND-001",
+        "linksTo": "BR-STAND-014"
+      },
+      {
+        "id": "AC-STAND-016",
+        "given": "`teams.bonusPoints` was never updated by the GW processor and remains 0 while `calculatedBonus` from the fixture sweep is 4",
+        "when": "the response is returned",
+        "then": "the response shows `bonusPoints: 0` and `calculatedBonus: 4` — the two fields can disagree",
+        "linksTo": "BR-STAND-015"
+      },
+      {
+        "id": "AC-STAND-017",
+        "given": "a 2-group TVT league with groups A and B",
+        "when": "the client calls `GET /api/standings?leagueSlug=foo` (no `group`)",
+        "then": "`groupA` and `groupB` are both populated, each sorted and ranked 1..N within its group",
+        "linksTo": "BR-STAND-016"
+      },
+      {
+        "id": "AC-STAND-018",
+        "given": "a groupless 16-team league",
+        "when": "standings are returned",
+        "then": "all 16 teams appear in `groupA` ranked 1..16 and `groupB` is an empty array",
+        "linksTo": "BR-STAND-016"
+      },
+      {
+        "id": "AC-STAND-019",
+        "given": "a TVT league with `teamSize=8`",
+        "when": "qualification zones are assigned",
+        "then": "ranks 1–4 get `zone=playoffs`, ranks 5–8 get `zone=eliminated`, and NO team is assigned `challenger`",
+        "linksTo": "BR-STAND-018"
+      },
+      {
+        "id": "AC-STAND-020",
+        "given": "a TVT league with `teamSize=32` and 16 teams per group",
+        "when": "zones are assigned within a group",
+        "then": "ranks 1–8 are `playoffs`, 9–14 are `challenger`, 15–16 are `eliminated`",
+        "linksTo": "BR-STAND-018"
+      },
+      {
+        "id": "AC-STAND-021",
+        "given": "any league size",
+        "when": "the standings response is returned",
+        "then": "the `legend` block always reads `{ top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }` even for 8-team leagues where ranks 9–14 don't exist — flag DEF-STAND-002",
+        "linksTo": "BR-STAND-019"
+      },
+      {
+        "id": "AC-STAND-022",
+        "given": "a league where only GW1 has been processed",
+        "when": "standings are returned",
+        "then": "`previousRank` and `rankDelta` are `null` on every team row",
+        "linksTo": "BR-STAND-021"
+      },
+      {
+        "id": "AC-STAND-023",
+        "given": "Team X was rank 5 after GW6 and is rank 3 after GW7 (maxPlayedGw=7)",
+        "when": "standings are returned",
+        "then": "Team X has `previousRank: 5, rankDelta: 2`",
+        "linksTo": "BR-STAND-022"
+      },
+      {
+        "id": "AC-STAND-024",
+        "given": "a TVT league with `enabledChips=[\"D\",\"W\",\"C\"]` and `leagueStageEnd=30`",
+        "when": "the CBP tooltip is generated",
+        "then": "exactly 6 chip entries are emitted with labels `DP1,WW1,CC1,DP2,WW2,CC2` covering GWs 1–15 and 16–30",
+        "linksTo": "BR-STAND-024"
+      },
+      {
+        "id": "AC-STAND-025",
+        "given": "a team has used the Challenge Chip in GW8 against team T (challenge processed, 0 points awarded)",
+        "when": "the CBP tooltip is built",
+        "then": "the `CC1` entry has `status='used', points=0, gameweek=8, opponent=<T.name>`",
+        "linksTo": "BR-STAND-025"
+      },
+      {
+        "id": "AC-STAND-026",
+        "given": "a team has a Win-Win chip row in GW10 with `isProcessed=false`",
+        "when": "the CBP tooltip is built",
+        "then": "the `WW1` entry has `status='pending'` and the chip's `pointsAwarded` value is shown but does NOT count toward the team's `chipPoints` total",
+        "linksTo": "BR-STAND-026"
+      },
+      {
+        "id": "AC-STAND-027",
+        "given": "a processed Challenge Chip row with `pointsAwarded=0`",
+        "when": "`chipPoints` is accumulated",
+        "then": "the 0-point row IS summed (Challenge type bypasses the `>0` guard), so the team's tooltip shows the chip while `chipPoints` is unchanged",
+        "linksTo": "BR-STAND-026"
+      },
+      {
+        "id": "AC-STAND-028",
+        "given": "a chip row with `gameweek.number = playoffStartGw` (a playoff GW)",
+        "when": "standings are computed",
+        "then": "the chip is excluded from `chipPoints`, the previous-GW chip total, AND from the CBP tooltip's set boundaries",
+        "linksTo": "BR-STAND-027"
+      },
+      {
+        "id": "AC-STAND-029",
+        "given": "an auction league with 14 teams and 5 GWs of scores",
+        "when": "the client requests standings",
+        "then": "the response has `format: 'auction'`, ranks 1..14 assigned 1-based, and `totalTeams: 14`",
+        "linksTo": "BR-STAND-028"
+      },
+      {
+        "id": "AC-STAND-030",
+        "given": "two auction teams with identical `totalPoints` but team A has `squadValue=£40M` and team B has `squadValue=£42M`",
+        "when": "ranks are assigned",
+        "then": "team A ranks above team B (lower squadValue wins)",
+        "linksTo": "BR-STAND-028"
+      },
+      {
+        "id": "AC-STAND-031",
+        "given": "an auction team's owned player who scored 150 raw points and was bought for £8M",
+        "when": "FMV is computed",
+        "then": "FMV = `£8M + 100×£20K + 50×£40K = £12M` (synergy bonus ignored)",
+        "linksTo": "BR-STAND-029"
+      },
+      {
+        "id": "AC-STAND-032",
+        "given": "an auction team rank 1 in a given GW",
+        "when": "the standings GW history is returned",
+        "then": "the GW row's `payout` equals £2,500,000",
+        "linksTo": "BR-STAND-032"
+      },
+      {
+        "id": "AC-STAND-033",
+        "given": "an auction team rank 13 in a GW",
+        "when": "the standings GW history is returned",
+        "then": "the GW row's `payout` equals £500,000 (floor for rank 11+)",
+        "linksTo": "BR-STAND-032"
+      },
+      {
+        "id": "AC-STAND-034",
+        "given": "an auction team that owns the PL club `Arsenal` in `auctionClubOwnership`",
+        "when": "the standings response is returned",
+        "then": "the team's `teamName` field is replaced with `Arsenal` (the `plTeamName`)",
+        "linksTo": "BR-STAND-034"
+      },
+      {
+        "id": "AC-STAND-035",
+        "given": "auction scores exist for GWs 1–5 and FPL bootstrap reports `is_current=GW6`",
+        "when": "the response is built",
+        "then": "`currentGwNumber=6`, the live-branch executes, `liveClubResultByTeam` is populated for every team with an owned club, and `setCachedStandings` is NOT called",
+        "linksTo": "BR-STAND-035"
+      },
+      {
+        "id": "AC-STAND-036",
+        "given": "auction scores exist for GWs 1–6 and FPL bootstrap reports `is_current=GW6`",
+        "when": "the response is built",
+        "then": "`currentGwNumber=6`, `liveBranch` is false, `liveClubResultByTeam` is `{}`, and the response IS written to the Redis cache",
+        "linksTo": "BR-STAND-036"
+      },
+      {
+        "id": "AC-STAND-037",
+        "given": "an auction score row with `clubResultBonus>0` but `clubResultSummary=null` (legacy pre-migration-0007 row)",
+        "when": "the standings response is built",
+        "then": "`backfillClubSummaries` populates the missing summary so the GW history row carries a non-null `clubResultSummary`",
+        "linksTo": "BR-STAND-037"
+      },
+      {
+        "id": "AC-STAND-038",
+        "given": "Redis cache contains a `standings:v2:{leagueId}` entry",
+        "when": "the client requests standings",
+        "then": "the cached payload is returned verbatim and NO DB queries, no fixture sweep, and no FPL fetches occur",
+        "linksTo": "BR-STAND-038"
+      },
+      {
+        "id": "AC-STAND-039",
+        "given": "Redis cache contains a payload built from a request with no `group` filter",
+        "when": "the client requests `GET /api/standings?leagueSlug=foo&group=B`",
+        "then": "the cached (unfiltered) payload is returned even though it includes group A teams — flag DEF-STAND-003",
+        "linksTo": "BR-STAND-038"
+      },
+      {
+        "id": "AC-STAND-040",
+        "given": "the DB throws inside the standings computation",
+        "when": "the route catches the error",
+        "then": "HTTP 200 is returned with `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }` — flag DEF-STAND-004",
+        "linksTo": "BR-STAND-040"
+      },
+      {
+        "id": "AC-STAND-041",
+        "given": "the `settings` table has no row with `key='groupsRevealed'`",
+        "when": "the response is returned",
+        "then": "`groupsRevealed: false`",
+        "linksTo": "BR-STAND-041"
+      },
+      {
+        "id": "AC-STAND-042",
+        "given": "the `settings` row holds value `'true'`",
+        "when": "the response is returned",
+        "then": "`groupsRevealed: true`",
+        "linksTo": "BR-STAND-041"
+      },
+      {
+        "id": "AC-STAND-043",
+        "given": "a TVT league filtered with `?group=A`",
+        "when": "the client requests standings (cache empty)",
+        "then": "the response includes only group-A teams in `groupA` and `groupB` is an empty array",
+        "linksTo": "BR-STAND-016"
+      },
+      {
+        "id": "AC-STAND-044",
+        "given": "an auction league where the previous GW saw team X at cumulative rank 3 and current GW puts X at rank 1",
+        "when": "standings are returned",
+        "then": "team X has `previousRank: 3, rankDelta: 2`",
+        "linksTo": "BR-STAND-031"
+      },
+      {
+        "id": "AC-STAND-045",
+        "given": "an auction team that joined late and has no scores at all through `previousGw`",
+        "when": "standings are returned",
+        "then": "the team has `previousRank: null, rankDelta: null`",
+        "linksTo": "BR-STAND-031"
+      }
+    ]
+  },
+  "defects": [
+    {
+      "id": "DEF-STAND-001",
+      "title": "PL standings tiebreaker diverges from documented 4-tier rule (missing max-wins and head-to-head)",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The `/api/standings` route sorts teams by `leaguePoints DESC → pointsFor DESC → cbpPoints DESC` (src/app/api/standings/route.ts:616-620). However the TVT scoring spec at src/lib/formats/tvt/scoring.ts:215-246 defines the league-stage tiebreaker as 1) Overall Points, 2) Max Wins, 3) Head-to-Head, 4) Bonus Points. Neither `wins`, `headToHeadRecord`, nor `bonusPoints` are used by the standings sort. Two teams tied on league points and points-for will be ordered by chips+bonus, which can flip the documented ranking.",
+      "expectedBehaviour": "The sort should match `compareTiebreaker` in tvt/scoring.ts — after leaguePoints, break ties by max wins, then head-to-head record, then bonus points.",
+      "actualBehaviour": "Sort uses `pointsFor` then `cbpPoints` and ignores wins, H2H, and (stored) bonus points entirely. The previous-GW snapshot sort at route.ts:459-463 has the same divergence.",
+      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:616-620", "jpl-leagues/src/app/api/standings/route.ts:459-463", "jpl-leagues/src/lib/formats/tvt/scoring.ts:215-246"],
+      "linkedBusinessRules": ["BR-STAND-014"],
+      "linkedAcceptanceCriteria": ["AC-STAND-014", "AC-STAND-015"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-STAND-023"],
+      "notes": "Options: (a) replace the standings sort with `compareTiebreaker` from tvt/scoring.ts (requires materialising W and H2H records here); (b) update the spec to match the simpler sort if product owner approves. Risk: any cup-tied podium decided by current sort may be product-incorrect. Cross-check with playoffs.ts which uses its own `getGroupStandings`.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-STAND-002",
+      "title": "Standings legend block is hard-coded and inaccurate for 8-team leagues",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The standings response always emits `legend: { top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }` (src/app/api/standings/route.ts:667-671). For a `teamSize=8` league, ranks 9–14 and 15–16 do not exist and the actual cutoff for playoffs is top-4 (per `getQualificationZone` at line 697-705), so the legend is misleading.",
+      "expectedBehaviour": "Legend should be derived from `teamSize` and `getQualificationZone` (e.g. `{ top4: 'Playoffs', rank5to8: 'Eliminated' }` for 8-team leagues) or omitted in favour of UI-side computation.",
+      "actualBehaviour": "All leagues — including 8-team and Triple Crown — receive the 32-team legend, so UI components that key off these strings render incorrect bands.",
+      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:667-671", "jpl-leagues/src/app/api/standings/route.ts:697-705"],
+      "linkedBusinessRules": ["BR-STAND-019"],
+      "linkedAcceptanceCriteria": ["AC-STAND-021"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-STAND-029"],
+      "notes": "Low risk for the 16/32-team flagship leagues; cosmetic but actively wrong for 8-team variants. Fix is local to this route — branch on `leagueTeamSize`.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-STAND-003",
+      "title": "Redis standings cache key ignores `group` filter so cached payloads bleed across group views",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "`getCachedStandings`/`setCachedStandings` use the key `standings:v2:{leagueId}` (src/lib/fpl-cache.ts:365-378). The standings route applies the `group` query param AFTER the cache lookup (src/app/api/standings/route.ts:102-108 vs 332-335), so a payload cached from an unfiltered request is returned verbatim to a caller asking for `?group=B`, and vice-versa. The cache also does not key on `leagueSlug` vs `leagueId` aliasing.",
+      "expectedBehaviour": "Either skip the cache when a `group` filter is present, or include the group token in the cache key (`standings:v2:{leagueId}:group=B`).",
+      "actualBehaviour": "First requester wins the cache slot; subsequent requesters with different `group` filters receive the wrong slice until TTL expiry.",
+      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:102-108", "jpl-leagues/src/app/api/standings/route.ts:332-335", "jpl-leagues/src/lib/fpl-cache.ts:363-378"],
+      "linkedBusinessRules": ["BR-STAND-038"],
+      "linkedAcceptanceCriteria": ["AC-STAND-039"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-STAND-052"],
+      "notes": "Trivial fix; bump cache version (STANDINGS_CACHE_VERSION) when shipping. Impact today is minimal because the UI generally doesn't pass `group`, but any deep-link that does will be broken.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-STAND-004",
+      "title": "Top-level catch returns HTTP 200 with stub payload, masking real errors",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "Any exception thrown during standings computation is swallowed and the response is HTTP 200 with `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }` (src/app/api/standings/route.ts:680-690). This hides DB failures, drizzle relational errors, transient FPL/cache issues, and prevents Sentry/UI from differentiating a real outage from a brand-new league with no fixtures. The defaulted `leagueStageEnd: 30` / `teamSize: 32` also leak even for 8-team leagues.",
+      "expectedBehaviour": "Return a 500-class status (or distinguish 'empty league' from 'computation failed') and surface error telemetry. The narrow case of 'no fixtures yet' should be detected explicitly, not modelled as a catch-all.",
+      "actualBehaviour": "All errors collapse to a single 200/empty shape with magic defaults that misrepresent league configuration.",
+      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:680-690"],
+      "linkedBusinessRules": ["BR-STAND-040"],
+      "linkedAcceptanceCriteria": ["AC-STAND-040"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-STAND-053"],
+      "notes": "Risk: silent regressions during deploys; on-call sees no alerts. Suggested fix: tighten the catch to known empty-state cases or return `{ status: 500, error }` for unknown failures.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-STAND-005",
+      "title": "Response carries both stored `bonusPoints` and recomputed `calculatedBonus`, which can drift",
+      "severity": "Minor",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The standings team row exposes `bonusPoints: team.bonusPoints` (the stored value from `teams.bonusPoints`) AND `calculatedBonus: bonusPtsTotal` (the value derived from the current fixture+result sweep). When `teams.bonusPoints` was never updated by the GW processor, was edited manually, or was reset during a partial season-reset, these two fields can disagree — yet `leaguePoints` is computed from the calculated value while the UI may read either field.",
+      "expectedBehaviour": "Pick ONE source of truth (almost certainly the recomputed `bonusPtsTotal`) and either remove the other field or make them provably equal.",
+      "actualBehaviour": "Both fields are returned, downstream consumers can disagree about a team's bonus total, and the leaguePoints math silently uses the calculated value regardless of the stored one.",
+      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:600-605", "jpl-leagues/src/app/api/standings/route.ts:521-523"],
+      "linkedBusinessRules": ["BR-STAND-015"],
+      "linkedAcceptanceCriteria": ["AC-STAND-016"],
+      "linkedGapFlags": [],
+      "pinningTestCases": ["TC-STAND-024"],
+      "notes": "Audit: confirm whether `teams.bonusPoints` is still maintained anywhere (search GW-processing in module 05). If unused, drop the column or stop returning the field.",
+      "resolution": null,
+      "resolutionDate": null
+    }
+  ],
+  "testCases": [
+    {
+      "id": "TC-STAND-001",
+      "feature": "Standings API",
+      "scenario": "Missing leagueSlug parameter returns 400 with descriptive error",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "API server is running",
+      "testData": "URL: /api/standings (no query params)",
+      "testSteps": [
+        "1. Issue GET /api/standings with no query string",
+        "2. Capture HTTP status and response JSON"
+      ],
+      "expectedResult": "HTTP 400 returned with body `{ error: 'leagueSlug parameter is required' }`; no DB queries are issued",
+      "postconditions": "No cache writes occur",
+      "requirementId": "AC-STAND-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard for BR-STAND-001"
+    },
+    {
+      "id": "TC-STAND-002",
+      "feature": "Standings API",
+      "scenario": "Empty string leagueSlug also rejected as missing",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "API server is running",
+      "testData": "URL: /api/standings?leagueSlug=",
+      "testSteps": [
+        "1. Issue GET /api/standings?leagueSlug= (empty value)",
+        "2. Capture HTTP status and response JSON"
+      ],
+      "expectedResult": "HTTP 400 returned with body `{ error: 'leagueSlug parameter is required' }`",
+      "postconditions": "No cache reads/writes",
+      "requirementId": "AC-STAND-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-003",
+      "feature": "Standings API",
+      "scenario": "Unknown leagueSlug returns 404 League not found",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No league row exists with slug `does-not-exist`",
+      "testData": "URL: /api/standings?leagueSlug=does-not-exist",
+      "testSteps": [
+        "1. Issue GET /api/standings?leagueSlug=does-not-exist",
+        "2. Capture HTTP status and response body"
+      ],
+      "expectedResult": "HTTP 404 with body `{ error: 'League not found' }`",
+      "postconditions": "No defaulting/fallback to any other league",
+      "requirementId": "AC-STAND-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard for BR-STAND-002"
+    },
+    {
+      "id": "TC-STAND-004",
+      "feature": "Standings API",
+      "scenario": "Public visitor (no auth header) can fetch standings for valid league",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League `tvt-2026` exists with at least one processed GW result",
+      "testData": "URL: /api/standings?leagueSlug=tvt-2026 (no Authorization header)",
+      "testSteps": [
+        "1. Issue GET /api/standings?leagueSlug=tvt-2026 anonymously",
+        "2. Capture HTTP status and JSON body"
+      ],
+      "expectedResult": "HTTP 200; response contains `groupA`, `groupB`, `legend`, `leagueStageEnd`, `teamSize`, `groupsRevealed`; no auth challenge",
+      "postconditions": "Endpoint remains publicly accessible",
+      "requirementId": "US-STAND-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-005",
+      "feature": "League stage boundary",
+      "scenario": "TVT GW31 fixture (playoff) excluded from league-stage aggregation",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "TVT league with `playoffStartGw=31`; fixture in GW31 has stored result home 80-20 away with bonus rows present",
+      "testData": "leagueSlug=tvt-2026, GW31 fixture: homeScore=80, awayScore=20, homeGotBonus=true",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Locate the two teams that played the GW31 fixture",
+        "3. Inspect wins/draws/losses/pointsFor/calculatedBonus contributions"
+      ],
+      "expectedResult": "Neither team's W/D/L, pointsFor, pointsAgainst, calculatedBonus nor chipPoints include the GW31 fixture; `leagueStageEnd=30` in response",
+      "postconditions": "Standings only reflect GW1-30",
+      "requirementId": "AC-STAND-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-003 boundary"
+    },
+    {
+      "id": "TC-STAND-006",
+      "feature": "League stage boundary",
+      "scenario": "TVT GW30 fixture (last league-stage GW) IS included",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT league `playoffStartGw=31`; GW30 fixture has stored result with home win",
+      "testData": "leagueSlug=tvt-2026, GW30 result: home 70-50 away",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Verify home team got +1 win, +70 pointsFor"
+      ],
+      "expectedResult": "Home team's W/D/L and pointsFor include GW30 contribution",
+      "postconditions": "",
+      "requirementId": "AC-STAND-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary opposite of TC-005"
+    },
+    {
+      "id": "TC-STAND-007",
+      "feature": "Triple Crown stage length",
+      "scenario": "Triple Crown league uses leagueStageEnd=38 covering all PL GWs",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Triple Crown league `tc-2026` with results in GWs 1-38",
+      "testData": "leagueSlug=tc-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tc-2026",
+        "2. Inspect `leagueStageEnd` and team aggregates"
+      ],
+      "expectedResult": "`leagueStageEnd: 38`; aggregates include results from all 38 PL GWs",
+      "postconditions": "",
+      "requirementId": "AC-STAND-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-008",
+      "feature": "Competition type filter",
+      "scenario": "Cup-group fixture excluded from PL standings",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Triple Crown league has a fixture with `competitionType='cup-group'` and a stored result home 60-40 away",
+      "testData": "leagueSlug=tc-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tc-2026",
+        "2. Inspect home and away teams' pointsFor/pointsAgainst/W-D-L contributions"
+      ],
+      "expectedResult": "Neither team receives any W/D/L credit nor pointsFor/pointsAgainst from the cup-group fixture",
+      "postconditions": "",
+      "requirementId": "AC-STAND-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-004 guard"
+    },
+    {
+      "id": "TC-STAND-009",
+      "feature": "Competition type filter",
+      "scenario": "PL fixture with competitionType NULL counts toward standings",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "TVT fixture with `competitionType` IS NULL and result home 80-40 away",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Verify home team credited with a WIN and +80 pointsFor"
+      ],
+      "expectedResult": "NULL competitionType treated as PL and counted in standings",
+      "postconditions": "",
+      "requirementId": "AC-STAND-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-004 NULL handling"
+    },
+    {
+      "id": "TC-STAND-010",
+      "feature": "Ghost team exclusion",
+      "scenario": "Ghost teams in cup-group fixtures absent from PL standings tables",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Triple Crown league has 2 ghost teams (`isGhost=true`) in cup groups",
+      "testData": "leagueSlug=tc-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tc-2026",
+        "2. Walk through groupA + groupB team IDs"
+      ],
+      "expectedResult": "Neither ghost team appears in groupA nor groupB rows",
+      "postconditions": "",
+      "requirementId": "AC-STAND-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-005"
+    },
+    {
+      "id": "TC-STAND-011",
+      "feature": "TVT leaguePoints formula",
+      "scenario": "TVT leaguePoints math: 5W+2D+3bonus+4chip-1hit = 18",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT team Alpha has exactly: 5 wins, 2 draws, 1 loss across GW1-8 raw scores; bonusPoints=3 (calculated from fixture sweep); chipPoints=4; 1 GW with hit-penalty triggered",
+      "testData": "leagueSlug=tvt-2026, team=alpha",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Locate team Alpha and read `leaguePoints`"
+      ],
+      "expectedResult": "team Alpha `leaguePoints == 18` (10 + 2 + 7 - 1)",
+      "postconditions": "",
+      "requirementId": "AC-STAND-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-006 arithmetic"
+    },
+    {
+      "id": "TC-STAND-012",
+      "feature": "TVT leaguePoints formula",
+      "scenario": "Team with all losses and no chips/bonus has leaguePoints=0",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT team Zulu has 0W/0D/8L, 0 bonus, 0 chip, no hit-penalty GWs",
+      "testData": "leagueSlug=tvt-2026, team=zulu",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Read team Zulu's leaguePoints"
+      ],
+      "expectedResult": "team Zulu `leaguePoints == 0`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Floor boundary"
+    },
+    {
+      "id": "TC-STAND-013",
+      "feature": "Triple Crown leaguePoints",
+      "scenario": "Triple Crown returns stored leaguePoints verbatim",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Triple Crown team Bravo has `teams.leaguePoints=42` stored by processor; W*2+D would yield e.g. 30 if recomputed",
+      "testData": "leagueSlug=tc-2026, team=bravo",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tc-2026",
+        "2. Read team Bravo's leaguePoints"
+      ],
+      "expectedResult": "`leaguePoints: 42` (stored value), not 30",
+      "postconditions": "",
+      "requirementId": "AC-STAND-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-007"
+    },
+    {
+      "id": "TC-STAND-014",
+      "feature": "TVT raw score W/D/L derivation",
+      "scenario": "Raw 80-20 win counted despite reversed matchPoints",
+      "type": "Edge",
+      "priority": "P1",
+      "preconditions": "Result row exists with homeScore=80, awayScore=20, homeMatchPoints=0, awayMatchPoints=2 (chip reversal scenario)",
+      "testData": "leagueSlug=tvt-2026; specific fixture in GW7",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Verify home team has +1 win; away team has +1 loss"
+      ],
+      "expectedResult": "W/D/L credit follows raw FPL scores (home WIN) regardless of stored match points",
+      "postconditions": "",
+      "requirementId": "AC-STAND-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-008 guard"
+    },
+    {
+      "id": "TC-STAND-015",
+      "feature": "TVT raw score W/D/L derivation",
+      "scenario": "Equal raw scores credit both teams a draw",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Result row with homeScore=55, awayScore=55",
+      "testData": "leagueSlug=tvt-2026, GW3 result",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Verify both teams received +1 draw"
+      ],
+      "expectedResult": "Both teams `draws` incremented by 1; neither wins nor losses",
+      "postconditions": "",
+      "requirementId": "AC-STAND-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-016",
+      "feature": "Bonus points calculation",
+      "scenario": "Bonus doubled when DP used",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Result row has homeGotBonus=true AND homeUsedDoublePointer=true in GW5",
+      "testData": "leagueSlug=tvt-2026, GW5",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Locate home team; inspect calculatedBonus and CBP tooltip BPS entry for GW5"
+      ],
+      "expectedResult": "Home team `calculatedBonus` increases by 2 for GW5; CBP tooltip shows `{gameweek: 5, points: 2}` BPS entry",
+      "postconditions": "",
+      "requirementId": "AC-STAND-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-009"
+    },
+    {
+      "id": "TC-STAND-017",
+      "feature": "Bonus points calculation",
+      "scenario": "Bonus point added (no DP) gives +1",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Result row in GW6 has homeGotBonus=true, homeUsedDoublePointer=false",
+      "testData": "leagueSlug=tvt-2026, GW6",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Inspect home team's calculatedBonus delta and BPS entry"
+      ],
+      "expectedResult": "calculatedBonus +1; BPS entry `{gameweek: 6, points: 1}`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-018",
+      "feature": "Hit penalty",
+      "scenario": "Two players >12 hits in same GW => exactly -1 (not -2)",
+      "type": "Edge",
+      "priority": "P1",
+      "preconditions": "Team Charlie owns Player A (15 transfer hits GW7) and Player B (13 hits GW7)",
+      "testData": "leagueSlug=tvt-2026, team=charlie",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Compute expected leaguePoints excluding hits; subtract observed",
+        "3. Compare hit-penalty delta"
+      ],
+      "expectedResult": "Exactly -1 leaguePoints deduction for GW7 (per qualifying GW, not per player)",
+      "postconditions": "",
+      "requirementId": "AC-STAND-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-010 critical edge"
+    },
+    {
+      "id": "TC-STAND-019",
+      "feature": "Hit penalty",
+      "scenario": "Exactly 12 hits triggers no penalty (boundary)",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Team Delta has 1 player taking exactly 12 hits in GW4",
+      "testData": "leagueSlug=tvt-2026, team=delta",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Verify no hit-penalty deduction is applied for GW4"
+      ],
+      "expectedResult": "leaguePoints contains no -1 for GW4 (rule is strictly > 12)",
+      "postconditions": "",
+      "requirementId": "AC-STAND-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "12 vs 13 boundary"
+    },
+    {
+      "id": "TC-STAND-020",
+      "feature": "Hit penalty resilience",
+      "scenario": "FPL outage returns standings without hit penalties (200)",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Redis cache miss for player scores; FPL API mock returns 500 for hit-penalty fetch",
+      "testData": "leagueSlug=tvt-2026; force FPL outage",
+      "testSteps": [
+        "1. Disable Redis or invalidate score cache",
+        "2. Force FPL hit-penalty endpoint to throw",
+        "3. GET /api/standings?leagueSlug=tvt-2026",
+        "4. Inspect status, response, server logs"
+      ],
+      "expectedResult": "HTTP 200; standings returned WITHOUT hit-penalty deductions; server-side error logged",
+      "postconditions": "Partial correctness preferred over full failure",
+      "requirementId": "AC-STAND-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-012 resilience"
+    },
+    {
+      "id": "TC-STAND-021",
+      "feature": "Triple Crown skip hit-penalty fetch",
+      "scenario": "Triple Crown standings issue zero FPL hit-penalty requests",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Triple Crown league with 38 GWs; FPL outbound spy enabled",
+      "testData": "leagueSlug=tc-2026",
+      "testSteps": [
+        "1. Reset FPL outbound call counter",
+        "2. GET /api/standings?leagueSlug=tc-2026",
+        "3. Inspect outbound call log for any per-player GW fetches"
+      ],
+      "expectedResult": "Zero FPL per-player hit-penalty calls issued; stored leaguePoints used verbatim",
+      "postconditions": "",
+      "requirementId": "AC-STAND-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-013"
+    },
+    {
+      "id": "TC-STAND-022",
+      "feature": "PL tie-breakers",
+      "scenario": "Tied on leaguePoints and pointsFor: higher cbpPoints wins",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Teams Alpha and Bravo have identical leaguePoints=30 and pointsFor=600; Alpha has cbpPoints=12, Bravo has cbpPoints=8",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Read ranks of Alpha and Bravo"
+      ],
+      "expectedResult": "Alpha rank < Bravo rank (Alpha above Bravo)",
+      "postconditions": "",
+      "requirementId": "AC-STAND-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-014 tertiary sort"
+    },
+    {
+      "id": "TC-STAND-023",
+      "feature": "PL tie-breakers (regression)",
+      "scenario": "DEF-STAND-001 pin: wins-based tiebreaker ignored",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Teams Alpha and Bravo same leaguePoints=30; Alpha 6W/2D/0L pointsFor=580; Bravo 5W/4D/0L pointsFor=600 (Bravo higher pointsFor but fewer wins)",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Verify ordering of Alpha and Bravo"
+      ],
+      "expectedResult": "Bravo ranks above Alpha (current code uses pointsFor tiebreaker, ignoring the documented max-wins rule). Defect pinned.",
+      "postconditions": "",
+      "requirementId": "AC-STAND-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-STAND-001"
+    },
+    {
+      "id": "TC-STAND-024",
+      "feature": "Bonus points field drift (regression)",
+      "scenario": "DEF-STAND-005 pin: bonusPoints stored=0 vs calculatedBonus=4 returned simultaneously",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "Team Echo has teams.bonusPoints=0 (never updated by processor) but fixture sweep yields calculatedBonus=4",
+      "testData": "leagueSlug=tvt-2026, team=echo",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Inspect team Echo's `bonusPoints` and `calculatedBonus` fields"
+      ],
+      "expectedResult": "Response contains both `bonusPoints: 0` AND `calculatedBonus: 4`; leaguePoints uses calculated value. Defect pinned.",
+      "postconditions": "",
+      "requirementId": "AC-STAND-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-STAND-005"
+    },
+    {
+      "id": "TC-STAND-025",
+      "feature": "Groups (multi-group league)",
+      "scenario": "2-group TVT returns populated groupA and groupB",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league has 2 groups of 8 teams each, all results entered; groupsRevealed=true",
+      "testData": "leagueSlug=tvt-2026 (no group filter)",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Inspect groupA.length, groupB.length, and rank fields within each"
+      ],
+      "expectedResult": "groupA.length=8, groupB.length=8; each row has rank 1..8 and groupRank 1..8 with no duplicates",
+      "postconditions": "",
+      "requirementId": "AC-STAND-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-016/BR-STAND-017"
+    },
+    {
+      "id": "TC-STAND-026",
+      "feature": "Groups (groupless league)",
+      "scenario": "16-team groupless league: all in groupA, empty groupB",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "TVT league with 16 teams and no group assignments",
+      "testData": "leagueSlug=tvt-flat",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-flat",
+        "2. Inspect groupA.length, groupB, rank assignments"
+      ],
+      "expectedResult": "groupA.length=16 with ranks 1..16; groupB is an empty array",
+      "postconditions": "",
+      "requirementId": "AC-STAND-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-027",
+      "feature": "Qualification zone (8-team)",
+      "scenario": "teamSize=8 zone mapping (top 4 playoffs, bottom 4 eliminated)",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT league with teamSize=8 (one group of 8)",
+      "testData": "leagueSlug=tvt-8team",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-8team",
+        "2. For each team in groupA, read `zone`"
+      ],
+      "expectedResult": "Ranks 1-4 zone='playoffs'; ranks 5-8 zone='eliminated'; no team has zone='challenger'",
+      "postconditions": "",
+      "requirementId": "AC-STAND-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-018 8-team variant"
+    },
+    {
+      "id": "TC-STAND-028",
+      "feature": "Qualification zone (32-team)",
+      "scenario": "teamSize=32 zones: 1-8 playoffs, 9-14 challenger, 15-16 eliminated",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT league with teamSize=32 (two groups of 16)",
+      "testData": "leagueSlug=tvt-32team",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-32team",
+        "2. For each group, list zone by rank"
+      ],
+      "expectedResult": "Within each group: ranks 1-8 'playoffs', 9-14 'challenger', 15-16 'eliminated'",
+      "postconditions": "",
+      "requirementId": "AC-STAND-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-029",
+      "feature": "Legend (regression)",
+      "scenario": "DEF-STAND-002 pin: legend is identical for 8-team league as for 32-team",
+      "type": "Regression",
+      "priority": "P3",
+      "preconditions": "TVT league with teamSize=8",
+      "testData": "leagueSlug=tvt-8team",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-8team",
+        "2. Inspect `legend` block"
+      ],
+      "expectedResult": "`legend` exactly equals `{ top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }` even though ranks 9-16 do not exist for an 8-team league. Defect pinned.",
+      "postconditions": "",
+      "requirementId": "AC-STAND-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-STAND-002"
+    },
+    {
+      "id": "TC-STAND-030",
+      "feature": "Rank delta - first GW",
+      "scenario": "After only GW1 processed, previousRank and rankDelta are null on every row",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT league with maxPlayedGw=1",
+      "testData": "leagueSlug=tvt-fresh",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-fresh",
+        "2. Iterate every team in groupA/groupB"
+      ],
+      "expectedResult": "Every team row has `previousRank: null` and `rankDelta: null`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-021"
+    },
+    {
+      "id": "TC-STAND-031",
+      "feature": "Rank delta computation",
+      "scenario": "Team climbed 2 places between GW6 and GW7",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team X was rank 5 after GW6, rank 3 after GW7; maxPlayedGw=7",
+      "testData": "leagueSlug=tvt-2026, team=X",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Locate team X; inspect `previousRank` and `rankDelta`"
+      ],
+      "expectedResult": "Team X has `previousRank: 5, rankDelta: 2`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-022"
+    },
+    {
+      "id": "TC-STAND-032",
+      "feature": "Rank delta computation",
+      "scenario": "Team dropped 3 places returns negative delta",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Team Y rank 2 after GW6 then rank 5 after GW7",
+      "testData": "leagueSlug=tvt-2026, team=Y",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Locate team Y"
+      ],
+      "expectedResult": "team Y has `previousRank: 2, rankDelta: -3`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-033",
+      "feature": "CBP tooltip structure",
+      "scenario": "30-GW league with default chips emits 6 chip entries (DP1..CC2)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league enabledChips=['D','W','C'], leagueStageEnd=30",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Inspect any team's CBP tooltip chip entries"
+      ],
+      "expectedResult": "Exactly 6 entries with labels DP1,WW1,CC1 covering GWs 1-15 and DP2,WW2,CC2 covering GWs 16-30",
+      "postconditions": "",
+      "requirementId": "AC-STAND-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-024"
+    },
+    {
+      "id": "TC-STAND-034",
+      "feature": "CBP tooltip - challenge chip",
+      "scenario": "Challenge chip with 0 points awarded shows as used with opponent",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team Foxtrot used CC in GW8 against team T; processed; pointsAwarded=0",
+      "testData": "leagueSlug=tvt-2026, team=foxtrot",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Locate Foxtrot CBP.chips.CC1 entry"
+      ],
+      "expectedResult": "Entry equals `{status: 'used', points: 0, gameweek: 8, opponent: '<T.name>'}`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-025"
+    },
+    {
+      "id": "TC-STAND-035",
+      "feature": "CBP tooltip - pending chip",
+      "scenario": "Win-Win chip row isProcessed=false shows pending and excluded from chipPoints",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team Golf has WW chip in GW10 with isProcessed=false and pointsAwarded=12",
+      "testData": "leagueSlug=tvt-2026, team=golf",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Inspect WW1 tooltip entry and team chipPoints"
+      ],
+      "expectedResult": "WW1 entry status='pending' with points shown=12; team's `chipPoints` total does NOT include the 12",
+      "postconditions": "",
+      "requirementId": "AC-STAND-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-026"
+    },
+    {
+      "id": "TC-STAND-036",
+      "feature": "Challenge chip accumulation",
+      "scenario": "Processed challenge chip with 0 points still summed (tooltip shows but total unchanged)",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team Hotel has processed C-chip with pointsAwarded=0 (only chip)",
+      "testData": "leagueSlug=tvt-2026, team=hotel",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Verify chipPoints for Hotel and tooltip CC1 entry"
+      ],
+      "expectedResult": "tooltip CC1 shown as used; chipPoints==0 (0-point row summed but contributes 0)",
+      "postconditions": "",
+      "requirementId": "AC-STAND-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-026 C bypass guard"
+    },
+    {
+      "id": "TC-STAND-037",
+      "feature": "Chips past league-stage",
+      "scenario": "Chip used in playoff GW excluded from chipPoints and tooltip",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Team India played a D-chip in GW31 (playoffStartGw=31)",
+      "testData": "leagueSlug=tvt-2026, team=india",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Verify chipPoints excludes GW31 chip; tooltip DP1/DP2 entries do not reference GW31"
+      ],
+      "expectedResult": "chipPoints excludes the GW31 chip; tooltip chip entries' boundary range stops at 30",
+      "postconditions": "",
+      "requirementId": "AC-STAND-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-027"
+    },
+    {
+      "id": "TC-STAND-038",
+      "feature": "Auction standings shape",
+      "scenario": "14-team auction league with 5 GWs scored returns auction shape",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction league `auction-2026` with 14 teams and 5 GWs of auctionScores",
+      "testData": "leagueSlug=auction-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Inspect format, ranks, totalTeams"
+      ],
+      "expectedResult": "Response has `format: 'auction'`, ranks 1..14 assigned 1-based, `totalTeams: 14`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-028"
+    },
+    {
+      "id": "TC-STAND-039",
+      "feature": "Auction tiebreaker",
+      "scenario": "Equal totalPoints: lower squadValue wins",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction teams A (totalPoints=300, squadValue=40M) and B (totalPoints=300, squadValue=42M)",
+      "testData": "leagueSlug=auction-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Read ranks of A and B"
+      ],
+      "expectedResult": "team A rank < team B rank",
+      "postconditions": "",
+      "requirementId": "AC-STAND-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-028 secondary"
+    },
+    {
+      "id": "TC-STAND-040",
+      "feature": "Auction tiebreaker",
+      "scenario": "Equal points + equal squadValue: higher purse wins",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Auction teams C (300pts, 40M, 5M purse) and D (300pts, 40M, 3M purse)",
+      "testData": "leagueSlug=auction-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Read ranks of C and D"
+      ],
+      "expectedResult": "team C ranks above team D (higher purse breaks remaining tie)",
+      "postconditions": "",
+      "requirementId": "AC-STAND-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Tertiary tiebreak"
+    },
+    {
+      "id": "TC-STAND-041",
+      "feature": "Auction FMV computation",
+      "scenario": "Player with 150 raw points bought for £8M => FMV £12M",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction team Juliet owns player P; P.rawPoints=150; purchase price 8000000",
+      "testData": "leagueSlug=auction-2026, team=juliet",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Sum FMV contributions for Juliet's player P"
+      ],
+      "expectedResult": "FMV of player P == £12,000,000 (=8M + 100*20K + 50*40K); synergy bonus ignored",
+      "postconditions": "",
+      "requirementId": "AC-STAND-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-029/BR-STAND-033"
+    },
+    {
+      "id": "TC-STAND-042",
+      "feature": "Auction FMV negative points clamp",
+      "scenario": "Player with negative rawPoints clamps to 0 before appreciation",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Auction team owns player Q; Q.rawPoints=-5; purchase price 4000000",
+      "testData": "leagueSlug=auction-2026, team Kilo",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Inspect Kilo's squadValue and player Q's FMV"
+      ],
+      "expectedResult": "Player Q FMV == £4,000,000 (negative points clamped to 0; no appreciation, no depreciation)",
+      "postconditions": "",
+      "requirementId": "AC-STAND-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-033 boundary"
+    },
+    {
+      "id": "TC-STAND-043",
+      "feature": "Auction payout schedule",
+      "scenario": "Rank 1 GW payout = £2.5M",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction team Lima was rank 1 in GW3",
+      "testData": "leagueSlug=auction-2026, team=lima, gw=3",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Locate Lima's GW3 history row"
+      ],
+      "expectedResult": "GW3 history row `payout == 2500000`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-032"
+    },
+    {
+      "id": "TC-STAND-044",
+      "feature": "Auction payout schedule",
+      "scenario": "Rank 13 receives the £500K floor",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Auction team Mike was rank 13 in GW3",
+      "testData": "leagueSlug=auction-2026, team=mike, gw=3",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Locate Mike's GW3 history row"
+      ],
+      "expectedResult": "`payout == 500000`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-032 floor boundary"
+    },
+    {
+      "id": "TC-STAND-045",
+      "feature": "Auction payout schedule",
+      "scenario": "Rank 11 (first floor band) receives £500K",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Auction team November rank 11 in GW3",
+      "testData": "leagueSlug=auction-2026, team=november",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Locate November's GW3 history row"
+      ],
+      "expectedResult": "`payout == 500000`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Edge of payout table"
+    },
+    {
+      "id": "TC-STAND-046",
+      "feature": "Auction PL Club Auction display",
+      "scenario": "Team owning Arsenal has teamName replaced with 'Arsenal'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team Oscar owns club Arsenal via auctionClubOwnership; original teamName='Oscar United'",
+      "testData": "leagueSlug=auction-2026, team=oscar",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Locate Oscar's row; read `teamName`"
+      ],
+      "expectedResult": "`teamName == 'Arsenal'`; underlying teamId still resolves to Oscar",
+      "postconditions": "",
+      "requirementId": "AC-STAND-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-034"
+    },
+    {
+      "id": "TC-STAND-047",
+      "feature": "Auction PL Club Auction display",
+      "scenario": "Team with no owned club keeps original teamName",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Team Papa has no row in auctionClubOwnership",
+      "testData": "leagueSlug=auction-2026, team=papa",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Read Papa's teamName"
+      ],
+      "expectedResult": "`teamName` equals stored team name (e.g. 'Papa FC'); not replaced",
+      "postconditions": "",
+      "requirementId": "AC-STAND-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-048",
+      "feature": "Live club result branch",
+      "scenario": "Live branch fires when FPL is_current beyond scored GWs; cache not written",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction scores exist for GWs 1-5; FPL bootstrap returns is_current=6; Redis cache spy enabled",
+      "testData": "leagueSlug=auction-2026, mockFpl=is_current:6",
+      "testSteps": [
+        "1. Clear standings cache for the league",
+        "2. Stub FPL bootstrap to is_current=6",
+        "3. GET /api/standings?leagueSlug=auction-2026",
+        "4. Inspect response and Redis writes"
+      ],
+      "expectedResult": "`currentGwNumber==6`; `liveBranch==true`; `liveClubResultByTeam` populated for owned-club teams; setCachedStandings NOT called",
+      "postconditions": "Subsequent same-request still computes fresh (no stale cache)",
+      "requirementId": "AC-STAND-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-035/036"
+    },
+    {
+      "id": "TC-STAND-049",
+      "feature": "Live club result branch off",
+      "scenario": "Scores caught up with currentGw: live branch off, response cached",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction scores exist for GWs 1-6; FPL is_current=6; Redis empty",
+      "testData": "leagueSlug=auction-2026, mockFpl=is_current:6",
+      "testSteps": [
+        "1. Clear cache",
+        "2. GET /api/standings?leagueSlug=auction-2026",
+        "3. Inspect response and Redis writes"
+      ],
+      "expectedResult": "`currentGwNumber==6`; `liveBranch==false`; `liveClubResultByTeam=={}`; setCachedStandings IS called and key `standings:v2:{leagueId}` is now populated",
+      "postconditions": "",
+      "requirementId": "AC-STAND-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-036 negative-branch"
+    },
+    {
+      "id": "TC-STAND-050",
+      "feature": "Club result backfill",
+      "scenario": "Legacy null clubResultSummary populated by backfillClubSummaries",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Auction score row with clubResultBonus=2 and clubResultSummary=null (legacy pre-migration-0007)",
+      "testData": "leagueSlug=auction-2026, team=quebec, gw=2",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Locate Quebec's GW2 history row"
+      ],
+      "expectedResult": "`clubResultSummary` is non-null (e.g. 'Arsenal 2-1 Chelsea') after backfill",
+      "postconditions": "DB row may also be updated",
+      "requirementId": "AC-STAND-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-037"
+    },
+    {
+      "id": "TC-STAND-051",
+      "feature": "Standings cache - cache hit",
+      "scenario": "Cache hit returns payload verbatim with zero DB or FPL calls",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Redis key `standings:v2:{leagueId}` is pre-populated with a known payload; DB and FPL spies enabled",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. Reset DB call counter and FPL call counter",
+        "2. GET /api/standings?leagueSlug=tvt-2026",
+        "3. Compare response to the seeded cache value; inspect counters"
+      ],
+      "expectedResult": "Response is byte-equivalent to cached payload; zero DB queries (beyond initial league lookup) and zero FPL fetches",
+      "postconditions": "",
+      "requirementId": "AC-STAND-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-038 cache short-circuit"
+    },
+    {
+      "id": "TC-STAND-052",
+      "feature": "Standings cache - group bleed (regression)",
+      "scenario": "DEF-STAND-003 pin: cached unfiltered payload returned to a ?group=B request",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Cache `standings:v2:{leagueId}` contains an unfiltered payload built from a previous /api/standings?leagueSlug=foo request (both groupA and groupB populated)",
+      "testData": "leagueSlug=foo, then leagueSlug=foo&group=B",
+      "testSteps": [
+        "1. Prime cache by calling GET /api/standings?leagueSlug=foo",
+        "2. Issue GET /api/standings?leagueSlug=foo&group=B",
+        "3. Inspect groupA and groupB in the second response"
+      ],
+      "expectedResult": "Second response is identical to first (still contains groupA group-A teams) even though ?group=B was requested. Defect pinned.",
+      "postconditions": "",
+      "requirementId": "AC-STAND-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-STAND-003"
+    },
+    {
+      "id": "TC-STAND-053",
+      "feature": "Top-level catch (regression)",
+      "scenario": "DEF-STAND-004 pin: DB error swallowed, 200 with stub payload returned",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Force DB layer to throw inside the standings computation (e.g., mock drizzle to reject)",
+      "testData": "leagueSlug=tvt-2026 (causing DB error)",
+      "testSteps": [
+        "1. Inject a DB error after the league lookup",
+        "2. GET /api/standings?leagueSlug=tvt-2026",
+        "3. Capture HTTP status and JSON body"
+      ],
+      "expectedResult": "HTTP 200 with body `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }`; error logged server-side. Defect pinned.",
+      "postconditions": "",
+      "requirementId": "AC-STAND-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-STAND-004"
+    },
+    {
+      "id": "TC-STAND-054",
+      "feature": "groupsRevealed setting",
+      "scenario": "Missing groupsRevealed setting => false",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "settings table has NO row with key='groupsRevealed'",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. Ensure settings.groupsRevealed row deleted",
+        "2. GET /api/standings?leagueSlug=tvt-2026",
+        "3. Read `groupsRevealed` flag"
+      ],
+      "expectedResult": "`groupsRevealed: false`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-041 default"
+    },
+    {
+      "id": "TC-STAND-055",
+      "feature": "groupsRevealed setting",
+      "scenario": "settings row 'true' => groupsRevealed:true",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "settings row exists with key='groupsRevealed', value='true'",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. UPSERT settings row {groupsRevealed:'true'}",
+        "2. GET /api/standings?leagueSlug=tvt-2026",
+        "3. Read flag"
+      ],
+      "expectedResult": "`groupsRevealed: true`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-056",
+      "feature": "groupsRevealed setting",
+      "scenario": "settings value 'TRUE' (uppercase) not coerced => false",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "settings row {groupsRevealed: 'TRUE'} (uppercase)",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. UPSERT settings row {groupsRevealed:'TRUE'}",
+        "2. GET /api/standings?leagueSlug=tvt-2026",
+        "3. Read flag"
+      ],
+      "expectedResult": "`groupsRevealed: false` (strict equality to literal 'true')",
+      "postconditions": "",
+      "requirementId": "AC-STAND-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Strict string compare boundary"
+    },
+    {
+      "id": "TC-STAND-057",
+      "feature": "Group filter ?group=A",
+      "scenario": "Group filter returns only group A teams in groupA; groupB empty",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league with groups A and B; standings cache cleared",
+      "testData": "leagueSlug=tvt-2026, group=A",
+      "testSteps": [
+        "1. Clear Redis standings cache for the league",
+        "2. GET /api/standings?leagueSlug=tvt-2026&group=A",
+        "3. Inspect groupA/groupB"
+      ],
+      "expectedResult": "groupA contains only teams from group A; groupB is an empty array",
+      "postconditions": "",
+      "requirementId": "AC-STAND-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-016 group scope"
+    },
+    {
+      "id": "TC-STAND-058",
+      "feature": "Auction rank delta",
+      "scenario": "Auction team climbed 2 places between cumulative GWs",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction team X cumulative rank 3 through GW4; rank 1 through GW5",
+      "testData": "leagueSlug=auction-2026, team=X",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Read X's previousRank and rankDelta"
+      ],
+      "expectedResult": "`previousRank: 3, rankDelta: 2`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-031"
+    },
+    {
+      "id": "TC-STAND-059",
+      "feature": "Auction rank delta - late joiner",
+      "scenario": "Auction team with no scores at previousGw has null previousRank/rankDelta",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Auction team Y joined in GW5 only; no scores through GW4 (previousGw)",
+      "testData": "leagueSlug=auction-2026, team=Y",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Locate Y; read previousRank/rankDelta"
+      ],
+      "expectedResult": "`previousRank: null, rankDelta: null`",
+      "postconditions": "",
+      "requirementId": "AC-STAND-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-031 null branch"
+    },
+    {
+      "id": "TC-STAND-060",
+      "feature": "Auction totalPoints composition",
+      "scenario": "totalPoints = sum(rawPoints + synergyBonus + clubResultBonus) across all scored GWs",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction team Romeo has GW1 score (raw 50 + synergy 3 + clubBonus 2) and GW2 (raw 60 + synergy 1 + clubBonus 0)",
+      "testData": "leagueSlug=auction-2026, team=romeo",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Read Romeo's totalPoints"
+      ],
+      "expectedResult": "totalPoints == 50+3+2+60+1+0 = 116",
+      "postconditions": "",
+      "requirementId": "US-STAND-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-030"
+    },
+    {
+      "id": "TC-STAND-061",
+      "feature": "Auction GW history audit trail",
+      "scenario": "GW history rows expose raw, synergy, clubBonus, rank, payout for each scored GW",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction team Sierra has 3 GWs of scores",
+      "testData": "leagueSlug=auction-2026, team=sierra",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-2026",
+        "2. Inspect Sierra's GW history array"
+      ],
+      "expectedResult": "Each history row contains numeric `rawPoints`, `synergyBonus`, `clubResultBonus`, `rank`, `payout`",
+      "postconditions": "",
+      "requirementId": "US-STAND-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-062",
+      "feature": "Cup-group standings tie-break (deferred to mod 09)",
+      "scenario": "Cup-group ordering applies GD then GF after cupGroupPoints",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Triple Crown cup group with teams: A (6pts, GD+5, GF 12), B (6pts, GD+5, GF 10), C (6pts, GD+3)",
+      "testData": "leagueSlug=tc-2026, group=cup-X (computed by computeCupGroupStandings)",
+      "testSteps": [
+        "1. Invoke computeCupGroupStandings for the cup group",
+        "2. Read ordering"
+      ],
+      "expectedResult": "Order: A (highest GD+GF), B, C",
+      "postconditions": "",
+      "requirementId": "US-STAND-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-042 sanity (detail in mod 09)"
+    },
+    {
+      "id": "TC-STAND-063",
+      "feature": "groupB groups beginning with 'cup-' excluded",
+      "scenario": "Group named 'cup-quarterfinals' is filtered out of groupA/groupB",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Triple Crown league has a group with `name='cup-quarterfinals'`",
+      "testData": "leagueSlug=tc-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tc-2026",
+        "2. Walk through every team's group; ensure 'cup-quarterfinals' is not represented"
+      ],
+      "expectedResult": "Teams from cup-* groups omitted from groupA/groupB",
+      "postconditions": "",
+      "requirementId": "AC-STAND-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-016 cup-* exclusion"
+    },
+    {
+      "id": "TC-STAND-064",
+      "feature": "Previous-GW sort parity",
+      "scenario": "Previous rank snapshot uses same sort keys as current pass",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league with maxPlayedGw=8 and known ranking after GW7",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. Pre-compute expected ordering by (leaguePoints DESC, pointsFor DESC, cbpPoints DESC) considering only GW1-7 fixtures",
+        "2. GET /api/standings?leagueSlug=tvt-2026",
+        "3. For each team, verify previousRank matches expected"
+      ],
+      "expectedResult": "previousRank matches the pre-computed ordering for every team",
+      "postconditions": "",
+      "requirementId": "US-STAND-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-020"
+    },
+    {
+      "id": "TC-STAND-065",
+      "feature": "Cache write fire-and-forget",
+      "scenario": "Cache write failure does not affect response success",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Redis write mocked to reject; cache key empty (forces compute path)",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. Stub setCachedStandings to throw/reject",
+        "2. GET /api/standings?leagueSlug=tvt-2026",
+        "3. Capture status and response body"
+      ],
+      "expectedResult": "HTTP 200 with full computed payload; no error surfaced to client; write error silently swallowed",
+      "postconditions": "",
+      "requirementId": "US-STAND-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-039 fire-and-forget"
+    },
+    {
+      "id": "TC-STAND-066",
+      "feature": "Cache miss fallback",
+      "scenario": "Cache miss results in DB computation and successful response",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Redis empty for `standings:v2:{leagueId}`",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. DEL standings cache key",
+        "2. GET /api/standings?leagueSlug=tvt-2026",
+        "3. Inspect response and check cache key now exists"
+      ],
+      "expectedResult": "HTTP 200; full standings returned; cache key populated post-response",
+      "postconditions": "",
+      "requirementId": "US-STAND-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Resilience"
+    },
+    {
+      "id": "TC-STAND-067",
+      "feature": "Hit-penalty cache path",
+      "scenario": "Cached player scores used: no FPL fetches issued",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Redis getAllCachedScores returns full player score map for all processed GWs",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. Pre-warm Redis with all per-GW score map",
+        "2. Reset FPL outbound counter",
+        "3. GET /api/standings?leagueSlug=tvt-2026"
+      ],
+      "expectedResult": "Zero FPL per-player calls; hit-penalty deductions still applied correctly",
+      "postconditions": "",
+      "requirementId": "US-STAND-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-011 cache happy path"
+    },
+    {
+      "id": "TC-STAND-068",
+      "feature": "Qualification zone (16-team)",
+      "scenario": "teamSize=16 single group: 1-8 playoffs, 9-14 challenger, 15-16 eliminated",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "TVT league teamSize=16, single group",
+      "testData": "leagueSlug=tvt-16",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-16",
+        "2. List zones by rank"
+      ],
+      "expectedResult": "Ranks 1-8 'playoffs'; 9-14 'challenger'; 15-16 'eliminated'",
+      "postconditions": "",
+      "requirementId": "AC-STAND-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "16-team mirror of 32-team"
+    },
+    {
+      "id": "TC-STAND-069",
+      "feature": "Rank uniqueness",
+      "scenario": "Within a group, rank and groupRank are 1-based and unique",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Multi-team group of 8",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. Collect rank and groupRank for groupA"
+      ],
+      "expectedResult": "rank/groupRank values cover 1..N with no duplicates; rank==groupRank for each row",
+      "postconditions": "",
+      "requirementId": "AC-STAND-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-017"
+    },
+    {
+      "id": "TC-STAND-070",
+      "feature": "Empty league edge case",
+      "scenario": "League with no teams returns groupA=[] groupB=[] (no division-by-zero)",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "League `empty-league` exists with zero teams and zero fixtures",
+      "testData": "leagueSlug=empty-league",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=empty-league",
+        "2. Capture status and body"
+      ],
+      "expectedResult": "HTTP 200; groupA=[], groupB=[]; no division-by-zero or null-deref; leagueStageEnd reflects league config",
+      "postconditions": "",
+      "requirementId": "US-STAND-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard against empty-league crash"
+    },
+    {
+      "id": "TC-STAND-071",
+      "feature": "Auction standings empty league",
+      "scenario": "Auction league with no scored GWs returns empty rank list without crash",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Auction league with teams but zero auctionScores rows",
+      "testData": "leagueSlug=auction-fresh",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=auction-fresh",
+        "2. Inspect ranks and totalPoints"
+      ],
+      "expectedResult": "All teams totalPoints=0; ranked by tiebreakers only; previousRank/rankDelta null; no errors",
+      "postconditions": "",
+      "requirementId": "US-STAND-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Empty-state guard"
+    },
+    {
+      "id": "TC-STAND-072",
+      "feature": "Auction live club result",
+      "scenario": "Team owning a club sees liveClubResult during in-progress GW",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction team owns Arsenal; FPL is_current ahead of scored GWs; an Arsenal fixture is in-progress with score 1-0",
+      "testData": "leagueSlug=auction-2026, team=oscar",
+      "testSteps": [
+        "1. Stub FPL bootstrap & live data",
+        "2. GET /api/standings?leagueSlug=auction-2026",
+        "3. Read Oscar's `liveClubResult`"
+      ],
+      "expectedResult": "Oscar's row carries a `liveClubResult` summary reflecting the in-progress 1-0 score",
+      "postconditions": "",
+      "requirementId": "US-STAND-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-STAND-073",
+      "feature": "UCL/UEL knockout exclusion",
+      "scenario": "UCL knockout fixture result not counted in PL standings",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Triple Crown fixture with `competitionType='ucl-knockout'` has result 60-50",
+      "testData": "leagueSlug=tc-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tc-2026",
+        "2. Verify neither team received a W/D/L credit or pointsFor delta from the UCL fixture"
+      ],
+      "expectedResult": "PL standings unaffected by UCL knockout result",
+      "postconditions": "",
+      "requirementId": "AC-STAND-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "BR-STAND-004 UCL guard"
+    },
+    {
+      "id": "TC-STAND-074",
+      "feature": "Strict tie ordering",
+      "scenario": "Two TVT teams tied on all 3 sort keys remain stable across responses",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Teams Tango and Uniform tied on leaguePoints, pointsFor, cbpPoints",
+      "testData": "leagueSlug=tvt-2026",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026 twice",
+        "2. Compare order of Tango/Uniform across the two responses"
+      ],
+      "expectedResult": "Stable ordering (consistent within and across requests); no crash",
+      "postconditions": "",
+      "requirementId": "AC-STAND-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Edge - perfect tie"
+    },
+    {
+      "id": "TC-STAND-075",
+      "feature": "Smoke",
+      "scenario": "Smoke - standings endpoint loads for each format type",
+      "type": "Smoke",
+      "priority": "P2",
+      "preconditions": "One league of each format exists: TVT (tvt-2026), Triple Crown (tc-2026), Auction (auction-2026)",
+      "testData": "all three slugs",
+      "testSteps": [
+        "1. GET /api/standings?leagueSlug=tvt-2026",
+        "2. GET /api/standings?leagueSlug=tc-2026",
+        "3. GET /api/standings?leagueSlug=auction-2026"
+      ],
+      "expectedResult": "All three return HTTP 200 with non-empty payloads matching their respective formats (PL groups / PL ladder / auction format)",
+      "postconditions": "",
+      "requirementId": "US-STAND-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": []
+}

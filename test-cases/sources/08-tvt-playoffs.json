@@ -1,0 +1,2523 @@
+{
+  "moduleId": "PLAYOFF",
+  "moduleName": "TVT Playoffs",
+  "sheetName": "TVT Playoffs",
+  "status": "qa-signed-off",
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
+  "requirements": {
+    "version": 2,
+    "businessContext": "TVT playoff lifecycle covers bracket seeding from league-stage standings, per-gameweek advancement, Challenger Cup parallel competition (32-team), Challenger Survival individual-score round (GW33), public bracket + Hall of Champions endpoints, and restoring playoff state via the unified TVT restore endpoint. Behavior branches by league teamSize (8, 16, 32) and by playoffStartGw config — each variant has its own seeding tables, GW count, and tie-leg topology (1-leg KO, 2-leg aggregate, or 3-leg aggregate for 16T Championship Final/3rd).",
+    "userStories": [
+      {
+        "id": "US-PLAYOFF-001",
+        "asA": "admin",
+        "iWant": "to seed the initial playoff round from final league-stage standings for my league's variant",
+        "soThat": "the bracket reflects the correct rank-vs-rank matchups (RO16+C-31 for 32T, four playoff groups for 16T, SF only for 8T)",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:91-378",
+          "src/lib/formats/tvt/playoffs.ts:16-44"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-002",
+        "asA": "admin",
+        "iWant": "to delete the initial playoff ties + fixtures + results so I can regenerate",
+        "soThat": "I can fix mistakes (e.g., bad league-stage results) before the playoffs go live",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:42-84"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-003",
+        "asA": "admin",
+        "iWant": "to check whether playoffs have already been generated for my league",
+        "soThat": "the admin UI can render the right Generate/Delete button",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:26-36",
+          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:419-443"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-004",
+        "asA": "admin",
+        "iWant": "to advance the bracket one gameweek at a time after results are entered",
+        "soThat": "winners are promoted, next-round ties are seeded, and Challenger Survival is ranked at GW33",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:363-803"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-005",
+        "asA": "admin",
+        "iWant": "the advance endpoint to refuse advancing a GW that still has unscored playoff fixtures",
+        "soThat": "bracket state cannot silently desync from the UI when scoring is incomplete",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:386-416"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-006",
+        "asA": "admin",
+        "iWant": "to restore my TVT league's fixtures from a saved backup zip or snapshot",
+        "soThat": "I can recover from a botched gameweek without re-entering data team-by-team",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:23-101",
+          "src/lib/backup/restore-tvt.ts:103-186"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-007",
+        "asA": "public visitor",
+        "iWant": "to view the current bracket — tentative (from standings) before generation, live (with scores) after — in one page",
+        "soThat": "I can follow the tournament from preseason through the Final",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:109-169",
+          "src/app/[leagueSlug]/playoffs/page.tsx:1-12"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-008",
+        "asA": "public visitor",
+        "iWant": "to see live in-progress scores for the currently-playing playoff GW",
+        "soThat": "I can track aggregate progress before the admin runs Advance",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:191-273"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-009",
+        "asA": "public visitor",
+        "iWant": "to see Challenger Survival scores update during GW33 even before the admin clicks Advance",
+        "soThat": "I can follow my elimination odds in real time",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:565-630",
+          "src/app/api/playoffs/bracket/route.ts:1204-1260"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-010",
+        "asA": "public visitor",
+        "iWant": "the Hall of Champions to show every podium position with a TBD placeholder until the corresponding tie is complete",
+        "soThat": "the page reads as a structured bracket all season, not an empty list",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:32-67",
+          "src/app/api/playoffs/winners/route.ts:87-111",
+          "src/app/[leagueSlug]/winners/page.tsx:24-60"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-011",
+        "asA": "admin",
+        "iWant": "playoff GWs (31-38, or 36-38 for TVT-8) to be auto-created with real FPL deadlines if available",
+        "soThat": "I don't have to manually populate gameweek rows before generating the bracket",
+        "sourceRefs": [
+          "src/lib/formats/tvt/playoffs.ts:253-283"
+        ]
+      },
+      {
+        "id": "US-PLAYOFF-012",
+        "asA": "admin of a 32-team TVT league",
+        "iWant": "the Challenger Cup (C-31 → C-32 → C-33 Survival → C-34 → ... → C-38 Final) to run in parallel with the main bracket",
+        "soThat": "lower-ranked teams have a meaningful path through to the Challenger Final instead of being eliminated outright",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1210-1586",
+          "src/lib/formats/tvt/playoffs.ts:27-34"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-PLAYOFF-001",
+        "rule": "All admin playoff endpoints (generate-playoffs, advance-playoffs, generate-brackets, restore-tvt) require an authenticated admin or superadmin authorized for the target leagueId; otherwise respond 403 Forbidden.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:27-28",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:781-782",
+          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:30-30",
+          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:24-25"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-002",
+        "rule": "POST /api/admin/[leagueId]/generate-playoffs is idempotent-protected: if any tie with one of the initial round names for the variant (TVT-8 = ['8T-SF']; TVT-16 = ['16T-CA','16T-CB','16T-XA','16T-XB']; TVT-32 = ['RO16','C-31']) already exists for the league, returns 400 with 'Initial playoff ties already exist for this league. Delete them first to regenerate.'",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:108-120",
+          "src/lib/formats/tvt/playoffs.ts:288-292"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-003",
+        "rule": "League stage end is computed as playoffStartGw - 1; standings used to seed the bracket count only results from GW1 through that boundary (chips processed after that boundary are excluded).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:104-105",
+          "src/lib/formats/tvt/playoffs.ts:122-169"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-004",
+        "rule": "Standings sort order for seeding is leaguePoints desc → pointsFor desc → cbpPoints desc; group A/B rankings are assigned independently when both groups exist, else all teams collapse into groupA with a single 1-N ranking.",
+        "sourceRefs": [
+          "src/lib/formats/tvt/playoffs.ts:228-241"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-005",
+        "rule": "TVT-32 seeding for RO16 is cross-group: A1-B8, B1-A8, A2-B7, B2-A7, A3-B6, B3-A6, A4-B5, B4-A5 (RO16-A through RO16-H), played 2-legged at playoffStartGw + 0/+1.",
+        "sourceRefs": [
+          "src/lib/formats/tvt/playoffs.ts:16-25",
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:283-333"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-006",
+        "rule": "TVT-32 Challenger C-31 seeding pairs A9-B14, A10-B13, A11-B12, A12-B11, A13-B10, A14-B9 (single-leg, GW31) — note generate-playoffs always assigns the A-side as home for every C-31 tie. // CODE-CONFIRMED: may be a defect — public bracket route uses an alternating home-side pattern (A9-B14, B9-A14, A10-B13, B10-A13, …) so the projected/tentative bracket shows different matchups than the actual ties created.",
+        "sourceRefs": [
+          "src/lib/formats/tvt/playoffs.ts:27-34",
+          "src/app/api/playoffs/bracket/route.ts:22-26"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-007",
+        "rule": "TVT-16 seeds four 4-team playoff groups from single-group standings using snake assignment: Championship A = ranks 1,4,5,8; Championship B = ranks 2,3,6,7; Challenger A = ranks 9,12,13,16; Challenger B = ranks 10,11,14,15. Each group plays a 6-match round-robin across GW31-33 (one match per GW per pair). Requires ≥4 ranked teams per group or the endpoint returns 400.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:213-275",
+          "src/lib/formats/tvt/playoffs.ts:51-85"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-008",
+        "rule": "TVT-8 seeds two Semi-Final ties (8T-SF-A = rank1 vs rank4, 8T-SF-B = rank2 vs rank3) single-leg at playoffStartGw; Final and 3rd-place are 2-legged across playoffStartGw+1 and playoffStartGw+2.",
+        "sourceRefs": [
+          "src/lib/formats/tvt/playoffs.ts:40-43",
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:163-202",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:807-841"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-009",
+        "rule": "DELETE /api/admin/[leagueId]/generate-playoffs only removes ties whose roundName is in the variant's initial-round list — downstream ties created during advance (QF, SF, Final, 8T-FINAL, 8T-3RD, 16T-SF, 16T-FINAL, etc.) are NOT cascaded. // CODE-CONFIRMED: may be a defect — if admin regenerates mid-tournament, orphan advanced-round tie rows persist and the freshly seeded RO16/group stage can never reach them.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:50-84",
+          "src/lib/formats/tvt/playoffs.ts:288-292"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-010",
+        "rule": "DELETE generate-playoffs also deletes the fixtures linked to the targeted tieIds and (via inArray) any results for those fixtures, then invalidates the league page cache and returns counts of deleted ties and fixtures.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:65-83"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-011",
+        "rule": "When generating the bracket, the endpoint auto-creates any missing gameweek rows from playoffStartGw through GW38, populating real FPL deadlines from /bootstrap-static where available, else falling back to placeholder deadlines 7*(N+1) days from now at 11:00 with isPlayoffs=true.",
+        "sourceRefs": [
+          "src/lib/formats/tvt/playoffs.ts:253-283"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-012",
+        "rule": "Generate-playoffs creates (or reuses) one 'Playoffs' group per league and stamps every generated fixture's groupId to it; this group is also used by advance-playoffs when creating downstream ties.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:130-139",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:10-13"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-013",
+        "rule": "TVT-32 2-legged fixture IDs follow the deterministic pattern 'playoff-<tieId>-leg1' / '-leg2'; single-leg challenger fixtures use 'playoff-<tieId>'.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:302-318",
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:354",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:38-40"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-014",
+        "rule": "POST /api/admin/[leagueId]/advance-playoffs accepts the target gameweek from either query param ?gw=N or JSON body { gameweek: N }; returns 400 if neither yields a valid number.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:780-803"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-015",
+        "rule": "Advance-playoffs pre-checks every playoff fixture in the requested GW: if any fixture has no result row, the endpoint returns 400 with a list of missing tieIds (with leg suffix), before any DB write. Empty fixture set for the GW also returns 400 ('No playoff fixtures exist for GW… Generate the bracket or the previous round first.').",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:386-416"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-016",
+        "rule": "TVT-32 advance-playoffs only accepts gameweek numbers 31-38; outside that range returns 400 'Gameweek must be between 31 and 38'.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:745-748"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-017",
+        "rule": "TVT-8 advance-playoffs accepts only playoffStartGw through playoffStartGw+2; outside returns 400. GW playoffStartGw resolves SFs and creates Final+3rd; +1 marks leg1 done for Final+3rd; +2 resolves both 2-leg aggregates.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:695-718"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-018",
+        "rule": "TVT-16 advance-playoffs accepts only playoffStartGw through playoffStartGw+7. GW offsets 0/1 resolve group-stage 1-leg ties; offset 2 (GW33) resolves the final group stage round, computes standings, then creates SFs (2-leg GW34+35), Challenger QFs (1-leg GW34) and WS Seeding (1-leg GW34). Offset 3 marks SF leg1 done, resolves QFs+WS, creates CSF and WSSF (2-leg). Offset 4 resolves SF aggregates, marks CSF/WSSF leg1 done, creates the 3-LEG Championship Final + 3rd (GW36+37+38). Offset 5 resolves CSF/WSSF, marks 3-leg leg1 done, creates 2-leg Challenger Final, Challenger 3rd, WS Final, WS 3rd (GW37+38). Offset 6 records 2-leg leg1 + 3-leg leg2 done. Offset 7 resolves every final (3-leg aggregate + 2-leg aggregates).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:720-742",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:861-1148"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-019",
+        "rule": "Two-leg aggregate scoring: leg2 swaps home/away, so home aggregate = leg1.homeScore + leg2.awayScore, away aggregate = leg1.awayScore + leg2.homeScore. Home team wins on aggregate ties.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:217-255"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-020",
+        "rule": "Three-leg aggregate scoring (TVT-16 Championship Final + 3rd only): leg1 original orientation, leg2 swapped, leg3 original; home aggregate = leg1.home + leg2.away + leg3.home, away aggregate = leg1.away + leg2.home + leg3.away. Home team wins on aggregate ties.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:291-332",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:115-178"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-021",
+        "rule": "Single-leg KO scoring: home team wins on a draw (homeScore >= awayScore). Updates the tie row with homeAggregate=homeScore, awayAggregate=awayScore, winnerId, loserId, status='complete'.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:259-288"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-022",
+        "rule": "playoff_ties.status transitions: 'pending' → 'leg1_done' (after leg 1 GW advance) → for triple-leg ties → 'leg2_done' → 'complete' (after final-leg aggregate is computed). Single-leg ties go directly 'pending' → 'complete'. Resolve helpers short-circuit if status is already 'complete' and winner/loser are set.",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:300",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:218-222",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:335-346"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-023",
+        "rule": "TVT-32 GW31 advance resolves all six C-31 ties (single-leg KO), marks all eight RO16 ties leg1_done, then creates three C-32 ties pairing the C-31 winners A↔F, B↔E, C↔D (single-leg GW32).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1210-1243"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-024",
+        "rule": "TVT-32 GW32 advance resolves the eight RO16 ties (2-leg aggregate), resolves the three C-32 ties, creates four QF ties (2-leg GW33+34) seeded RO16 A↔H, B↔G, C↔F, D↔E from RO16 winners, then seeds 11 Challenger Survival entries for GW33 = the 3 C-32 winners + the 8 RO16 losers.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1245-1305"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-025",
+        "rule": "TVT-32 GW33 advance marks all four QF ties leg1_done, then computes Challenger Survival GW33 scores: for each entry it fetches FPL scores for the team's players (cache-first via calculateTeamGameweekScore), resolves the captain (announced > temp-cap fallback via pickTempCaptain using prev-GW rotation), doubles the captain's net score, sums to total, then sorts entries by total desc, assigns rank 1..N and sets advanced=true for ranks 1..8 (the top 8 of 11 advance). If FPL fetch fails for a team, the entry is recorded with total=0 and an action message asks admin to re-run.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1307-1407"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-026",
+        "rule": "After GW33 Challenger Survival ranks, generateC34AfterSurvival pairs the top-8 advanced entries 1v8, 2v7, 3v6, 4v5 into C-34-A..D (single-leg GW34). If fewer than 8 entries advanced, no C-34 ties are created (silently skipped).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1588-1617"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-027",
+        "rule": "TVT-32 GW34 advance resolves QF 2-leg aggregates and C-34 1-leg ties, creates SF-A (QF-A vs QF-D) and SF-B (QF-B vs QF-C) as 2-leg ties on GW35+36, and creates C-35 (QF loser vs C-34 winner from the opposite half).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1409-1464"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-028",
+        "rule": "TVT-32 GW35 advance marks SF leg1_done and resolves four C-35 1-leg ties, then seeds two C-36 ties (C-35-A vs C-35-D, C-35-B vs C-35-C).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1466-1498"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-029",
+        "rule": "TVT-32 GW36 advance resolves SF 2-leg aggregates and C-36 1-leg ties, creates the 2-leg Final (GW37+38) and seeds C-37-A (Loser SF-A vs Winner C-36-B) and C-37-B (Loser SF-B vs Winner C-36-A).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1500-1550"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-030",
+        "rule": "TVT-32 GW37 advance marks Final leg1_done, resolves C-37 ties, and creates C-38-A (Winner C-37-A vs Winner C-37-B) single-leg on GW38 — the Challenger Final.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1552-1576"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-031",
+        "rule": "TVT-32 GW38 advance resolves the Final (2-leg aggregate) and C-38-A; emits a 'Tournament complete!' action.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1578-1586"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-032",
+        "rule": "TVT-16 group standings (computed from playoff_ties of round names 16T-CA/CB/XA/XB once status='complete') sort by points (W=2, D=1) then GF (goals for, i.e. homeAggregate). The 'Great Cut' at GW33 routes: ChampA[0..1] + ChampB[0..1] → Championship SFs (Elite 4); ChampA[2..3] + ChampB[2..3] → Challenger QFs as 'Relegated 4'; ChallA[0..1] + ChallB[0..1] → Challenger QFs as 'Survivors 4'; ChallA[2..3] + ChallB[2..3] → WS seeding (Wooden Spoon 4). Throws if any group has fewer than 4 ranked teams.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:874-954",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1150-1206"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-033",
+        "rule": "TVT-16 Challenger QFs at GW34: QF1 = ChampA3 v ChallB2, QF2 = ChampB3 v ChallA2, QF3 = ChampA4 v ChallB1, QF4 = ChampB4 v ChallA1 (single-leg KO).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:920-934"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-034",
+        "rule": "TVT-16 WS Seeding at GW34: WS-M1 = ChallA3 v ChallB3 (winner=WS#1, loser=WS#2); WS-M2 = ChallA4 v ChallB4 (winner=WS#3, loser=WS#4). WS Semi-Finals then pair WS#1 v WS#4 and WS#2 v WS#3 (2-leg GW35+36).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:936-1028"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-035",
+        "rule": "TVT-16 final placements (built by /api/playoffs/winners): position 1=16T-FINAL winner, 2=16T-FINAL loser, 3=16T-CFINAL winner (Challenger Champion), 4=16T-CFINAL loser, 5=16T-C3RD winner, 6=16T-C3RD loser; WS Final and WS 3rd determine 13th and 15th place but are not surfaced in Hall of Champions.",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:228-237",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1104-1111"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-036",
+        "rule": "TVT-8 final placements: position 1=8T-FINAL winner, 2=8T-FINAL loser, 3=8T-3RD winner.",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:220-226"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-037",
+        "rule": "TVT-32 final placements: position 1=Final winner (TVT Champion), 2=Final loser, 3=C-38-A winner (Challenger Champion), 4=C-38-A loser, 5/6=C-37-A/B losers (Challenger SFs), 7/8=C-36-A/B losers (Challenger QFs), 9-12=C-35-A/B/C/D losers (Challenger R16).",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:239-254"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-038",
+        "rule": "GET /api/playoffs/winners requires a leagueSlug query param (returns 400 if missing, 404 if no league matches); responds with { concluded, winners[] } where each winner row carries { position, label, category, pending, placeholder?, teamId, teamName, players[] }. concluded=true only when every position is filled (no pending entries).",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:32-67"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-039",
+        "rule": "Hall of Champions pending rows carry placeholder text 'Winner of <tieId>' or 'Loser of <tieId>' depending on which side the position is sourced from; auction and Triple Crown formats gate awards on isGw38Settled (all GW38 fixtures have results).",
+        "sourceRefs": [
+          "src/app/api/playoffs/winners/route.ts:87-111",
+          "src/app/api/playoffs/winners/route.ts:129-218"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-040",
+        "rule": "GET /api/playoffs/bracket?leagueSlug=… returns three modes — 'tentative' (no ties yet, latest completed GW < league stage end), 'projected' (no ties yet but league stage complete), 'live' (any playoff_ties row exists). Tentative/projected modes label each side with both seedLabel and team name when a team can be projected; placeholder-only when standings can't yet name the team.",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:109-169",
+          "src/app/api/playoffs/bracket/route.ts:698-706"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-041",
+        "rule": "Live mode merges DB tie rows with placeholder rounds for not-yet-created downstream ties, resolving winner/loser labels to real team data once upstream ties complete; result is cached per-league via setCachedPlayoffBracket and re-read via getCachedPlayoffBracket on subsequent requests (cache misses fall through to DB).",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:136-164",
+          "src/app/api/playoffs/bracket/route.ts:979-1486"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-042",
+        "rule": "Bracket live-scores endpoint pulls scoring per GW: finished GW (every fixture has a result) reads from results table including stored homePlayerScores/awayPlayerScores JSON (legacy isAutoAssigned normalized to isTempCaptain); in-progress GW (some fixtures scored) reads from Redis live cache with FPL fallback; deadline-passed-but-unscored fetches live from FPL and seeds Redis cache.",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:228-273",
+          "src/app/api/playoffs/bracket/route.ts:355-396"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-043",
+        "rule": "Bracket live captain resolution falls back to a temp captain (pickTempCaptain on net score, rotates vs previous GW's captain on tie) when no announced captain exists, and marks the resulting player breakdown with isTempCaptain=true; auto-assigned-after-deadline captains (gameweek_captains.isValid===false) also flag isTempCaptain.",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:430-454",
+          "src/app/api/playoffs/bracket/route.ts:510-557",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1336-1383"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-044",
+        "rule": "Challenger Survival entries (GW33, TVT-32 only) are individual scores not head-to-head: row carries gameweekId, teamId, score, rank (nullable until ranked), advanced bool, optional playerScores JSON. Cascades on team or gameweek delete.",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:305-314"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-045",
+        "rule": "Survival entries are seeded with id pattern 'survival-gw33-<teamId>'; if /generate-c34 is re-run before survival ranks exist, no C-34 ties are created (the helper silently returns when ranked < 8).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1294-1301",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1598-1599"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-046",
+        "rule": "POST /api/admin/[leagueId]/restore-tvt enforces league.format === 'tvt'; non-TVT leagues respond 400 ('Restore is for TVT-format leagues only'); missing league responds 404.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:27-35"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-047",
+        "rule": "Restore-tvt accepts either multipart/form-data with a 'file' Blob (parsed via parseRestoreZip) or JSON body { backupId }. Multipart path requires meta.json present in the zip; rejects with 400 if missing, if meta.leagueId differs from target leagueId, or if meta.format is present and != 'tvt'. backupId path scopes the SELECT by (id, leagueId), preventing cross-league restore via id.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:37-77",
+          "src/lib/backup/restore-tvt.ts:80-97"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-048",
+        "rule": "Restore-tvt wipes every fixture for the league's gameweeks then re-inserts from the payload (ON DELETE CASCADE on results.fixture_id wipes results). Teams are preserved. Per-row resolution: row with non-numeric or out-of-range (1..38) gameweek is skipped with warning; row with unknown home/away login is skipped with warning. Missing gameweek rows are auto-created with placeholder deadlines and isPlayoffs=(gwNumber >= playoffStartGw).",
+        "sourceRefs": [
+          "src/lib/backup/restore-tvt.ts:103-176"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-049",
+        "rule": "Restore-tvt's wipe phase clears every fixture for the league's gameweeks, every challenger_survival_entries row whose gameweekId is in the league's gameweekIds, and every playoff_ties row for the leagueId, BEFORE re-inserting fixtures from the payload. This returns the league to a pre-playoff state matching the restored fixtures so advance-playoffs has no stale aggregate/winner rows and the public bracket route surfaces no phantom winners. Captains and chips are still deferred and surfaced as warnings.",
+        "sourceRefs": [
+          "src/lib/backup/restore-tvt.ts:128-135",
+          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:86-93"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-050",
+        "rule": "restore-tvt has maxDuration=60 (Vercel function timeout extension); response includes fixturesInserted count, warnings[], and a message reminding admin to use Import Captain/Chip Data blocks for those.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:21-21",
+          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:86-93"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-051",
+        "rule": "POST /api/admin/[leagueId]/generate-brackets and DELETE counterpart are Triple Crown ONLY: non-triple-crown formats receive 400 ('Bracket generation only available for Triple Crown format'). (TVT formats use /generate-playoffs instead.) This endpoint is therefore OUT OF SCOPE for TVT lifecycle but the format guard belongs to TVT-playoff coverage.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:42-46"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-052",
+        "rule": "Tentative bracket for TVT-16 returns a single 4-team QF (1v8, 2v7, 3v6, 4v5) plus SF and Final — it does NOT render the actual 4-group playoff group stage that generate-playoffs produces. // CODE-CONFIRMED: may be a defect — public visitors viewing the tentative bracket for a 16-team league see an entirely different topology (single bracket KO) than the live bracket renders once playoffs are generated (4-group stage → SF → 3-leg Final).",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:740-791"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-053",
+        "rule": "Public bracket fixture lookup uses two strategies: the deterministic 'playoff-<tieId>[-legN]' pattern for TVT, and a tieId+leg index for TC (where fixture IDs are random); leg2 scores are unswapped back to home/away on read so the UI shows the consistent orientation.",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:996-1042"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-054",
+        "rule": "playoff_ties.tieId is the primary key (global, not scoped by leagueId); generation/advancement queries always co-filter on leagueId so two leagues can hold their own ties for the same tieId values, but a row insert with an existing tieId is silently no-op'd via onConflictDoNothing in 1-leg/2-leg/3-leg create helpers.",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:286-288",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:79-90",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:191-202"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-055",
+        "rule": "Generate-playoffs and advance-playoffs always call invalidateLeaguePageCache(leagueId) before returning success so the next bracket/winners GET re-fetches fresh state.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:78",
+          "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:372",
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:764"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-056",
+        "rule": "When two players on the same surviving team tie on net score, pickTempCaptain rotates: it picks the player who was NOT the previous GW's captain (when previous-GW data exists), else it picks deterministically; the chosen captain's net score is doubled in the Survival total.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:1320-1383",
+          "src/app/api/playoffs/bracket/route.ts:565-630"
+        ]
+      },
+      {
+        "id": "BR-PLAYOFF-057",
+        "rule": "Standings used for tentative-mode bracket are computed from non-playoff PL fixtures only (fixture.isPlayoff=false AND (competitionType null OR 'pl')); teams in the 'Playoffs' group are excluded from the seeding pool.",
+        "sourceRefs": [
+          "src/app/api/playoffs/bracket/route.ts:1491-1583"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-PLAYOFF-001",
+        "given": "an unauthenticated request to POST /api/admin/<leagueId>/generate-playoffs",
+        "when": "the request is sent",
+        "then": "the API responds with 403 { error: 'Forbidden' } and no DB writes occur",
+        "linksTo": "BR-PLAYOFF-001"
+      },
+      {
+        "id": "AC-PLAYOFF-002",
+        "given": "a TVT-32 league with no playoff_ties rows and GW1-30 fully scored",
+        "when": "an admin POSTs generate-playoffs",
+        "then": "8 RO16 ties (status=pending, 2-legged with gw1/gw2) and 6 C-31 ties (single-leg) are inserted, plus 16+6=22 fixtures, all stamped to the league's 'Playoffs' group, and the response carries success:true with ties[] and fixtures[] arrays",
+        "linksTo": "BR-PLAYOFF-005"
+      },
+      {
+        "id": "AC-PLAYOFF-003",
+        "given": "a TVT-32 league that already has RO16 ties",
+        "when": "an admin POSTs generate-playoffs",
+        "then": "the API returns 400 with message 'Initial playoff ties already exist for this league. Delete them first to regenerate.' and no rows are written",
+        "linksTo": "BR-PLAYOFF-002"
+      },
+      {
+        "id": "AC-PLAYOFF-004",
+        "given": "a TVT-16 league with all 16 teams ranked in Group A",
+        "when": "generate-playoffs runs",
+        "then": "24 ties are created (6 per group × 4 groups) with roundName values 16T-CA / 16T-CB / 16T-XA / 16T-XB; each tie has gw1 in [playoffStartGw, playoffStartGw+1, playoffStartGw+2] per the group-stage schedule and roundType='playoff-group'",
+        "linksTo": "BR-PLAYOFF-007"
+      },
+      {
+        "id": "AC-PLAYOFF-005",
+        "given": "a TVT-16 league with fewer than 4 ranked teams in any of the four computed groups (Championship A/B, Challenger A/B)",
+        "when": "generate-playoffs runs",
+        "then": "the API returns 400 with message 'Not enough ranked teams found. Ensure the league has 16 teams ranked 1-16 in Group A.' and writes nothing",
+        "linksTo": "BR-PLAYOFF-007"
+      },
+      {
+        "id": "AC-PLAYOFF-006",
+        "given": "a TVT-8 league with playoffStartGw=36 and 8 teams ranked",
+        "when": "generate-playoffs runs",
+        "then": "two 8T-SF ties (rank1-vs-rank4, rank2-vs-rank3) are created as single-leg fixtures at GW36 with roundType='tvt'; no Final or 3rd tie is created until advance runs",
+        "linksTo": "BR-PLAYOFF-008"
+      },
+      {
+        "id": "AC-PLAYOFF-007",
+        "given": "a TVT-32 league with existing RO16 ties plus advanced QF/SF rows",
+        "when": "an admin DELETEs generate-playoffs",
+        "then": "only ties with roundName in ['RO16','C-31'] (and their fixtures+results) are removed; QF and SF rows persist and the response message reports the deleted counts",
+        "linksTo": "BR-PLAYOFF-009"
+      },
+      {
+        "id": "AC-PLAYOFF-008",
+        "given": "a league with no playoff ties at all",
+        "when": "an admin DELETEs generate-playoffs",
+        "then": "the API responds 200 with message 'No initial ties to delete' and deletedFixtures:0",
+        "linksTo": "BR-PLAYOFF-010"
+      },
+      {
+        "id": "AC-PLAYOFF-009",
+        "given": "an admin GETs /api/admin/<leagueId>/generate-playoffs",
+        "when": "at least one playoff_ties row exists for the league",
+        "then": "the response is { generated: true }; otherwise { generated: false }",
+        "linksTo": "US-PLAYOFF-003"
+      },
+      {
+        "id": "AC-PLAYOFF-010",
+        "given": "a TVT-32 league with no GW31 row before generation",
+        "when": "generate-playoffs runs",
+        "then": "GW31..GW38 rows are auto-created with isPlayoffs=true; deadlines populated from FPL bootstrap-static if available else placeholder values 7×N days from now at 11:00",
+        "linksTo": "BR-PLAYOFF-011"
+      },
+      {
+        "id": "AC-PLAYOFF-011",
+        "given": "an admin POSTs advance-playoffs without ?gw= and without a JSON body containing { gameweek }",
+        "when": "the request is processed",
+        "then": "the API returns 400 with message 'Gameweek number required (?gw=N or { gameweek: N })'",
+        "linksTo": "BR-PLAYOFF-014"
+      },
+      {
+        "id": "AC-PLAYOFF-012",
+        "given": "a TVT-32 league at GW32 with 14 of 16 RO16-leg2 fixtures scored",
+        "when": "an admin POSTs advance-playoffs?gw=32",
+        "then": "the API returns 400 with an error listing the 2 missing tieIds + leg suffixes; no QF ties are created and no statuses change",
+        "linksTo": "BR-PLAYOFF-015"
+      },
+      {
+        "id": "AC-PLAYOFF-013",
+        "given": "a TVT-32 league with no fixtures at all in GW31",
+        "when": "advance-playoffs?gw=31 runs",
+        "then": "the API returns 400 ('No playoff fixtures exist for GW31. Generate the bracket or the previous round first.')",
+        "linksTo": "BR-PLAYOFF-015"
+      },
+      {
+        "id": "AC-PLAYOFF-014",
+        "given": "a TVT-32 league with gw=30 or gw=39",
+        "when": "advance-playoffs runs",
+        "then": "the API returns 400 ('Gameweek must be between 31 and 38')",
+        "linksTo": "BR-PLAYOFF-016"
+      },
+      {
+        "id": "AC-PLAYOFF-015",
+        "given": "a TVT-32 league with all GW31 playoff fixtures scored",
+        "when": "advance-playoffs?gw=31 runs",
+        "then": "all 6 C-31 ties become status=complete with winnerId/loserId/aggregates set; all 8 RO16 ties become leg1_done; 3 C-32 ties (single-leg GW32) are created pairing C-31 A↔F, B↔E, C↔D winners",
+        "linksTo": "BR-PLAYOFF-023"
+      },
+      {
+        "id": "AC-PLAYOFF-016",
+        "given": "a TVT-32 league with all GW32 playoff fixtures scored",
+        "when": "advance-playoffs?gw=32 runs",
+        "then": "RO16 ties resolve to complete (aggregate from both legs, home wins on tie), QF ties (2-leg GW33+34) are created pairing RO16 winners A↔H, B↔G, C↔F, D↔E, C-32 winners resolve, and 11 challenger_survival_entries rows are inserted (3 C-32 winners + 8 RO16 losers) with score=0, rank=null, advanced=false",
+        "linksTo": "BR-PLAYOFF-024"
+      },
+      {
+        "id": "AC-PLAYOFF-017",
+        "given": "a 2-legged tie where leg1 was Home 5 - 3 Away and leg2 was 4 - 4",
+        "when": "the tie is resolved",
+        "then": "homeAggregate = 5 + 4 = 9, awayAggregate = 3 + 4 = 7, winnerId = homeTeamId, loserId = awayTeamId, status='complete'",
+        "linksTo": "BR-PLAYOFF-019"
+      },
+      {
+        "id": "AC-PLAYOFF-018",
+        "given": "a 2-legged tie that aggregates to a level score (e.g. homeAgg=8, awayAgg=8)",
+        "when": "resolve2LegTie runs",
+        "then": "homeTeamId is declared the winner (home wins on aggregate tie)",
+        "linksTo": "BR-PLAYOFF-019"
+      },
+      {
+        "id": "AC-PLAYOFF-019",
+        "given": "a 16T Championship Final with leg1=60-55, leg2 (swapped) home=50/away=58, leg3=62-59",
+        "when": "resolve3LegTie runs",
+        "then": "homeAggregate = 60 + 58 + 62 = 180, awayAggregate = 55 + 50 + 59 = 164, winnerId = homeTeamId",
+        "linksTo": "BR-PLAYOFF-020"
+      },
+      {
+        "id": "AC-PLAYOFF-020",
+        "given": "a single-leg C-31 fixture ending Home 70 - 70 Away",
+        "when": "advance-playoffs resolves it",
+        "then": "homeTeamId is the winner (>= rule), homeAggregate=70, awayAggregate=70, status='complete'",
+        "linksTo": "BR-PLAYOFF-021"
+      },
+      {
+        "id": "AC-PLAYOFF-021",
+        "given": "a TVT-32 league at GW33 with all 4 QF leg1 fixtures scored AND 11 challenger_survival_entries seeded",
+        "when": "advance-playoffs?gw=33 runs",
+        "then": "all 4 QF ties become leg1_done; for each survival entry the player FPL scores are fetched (cache-first), captain doubled, total computed; entries are ranked 1..11; advanced=true for ranks 1..8; playerScores JSON populated; subsequently C-34-A..D are seeded 1v8/2v7/3v6/4v5 from the top 8",
+        "linksTo": "BR-PLAYOFF-025"
+      },
+      {
+        "id": "AC-PLAYOFF-022",
+        "given": "a survival entry whose FPL fetch throws an error",
+        "when": "GW33 advance processes it",
+        "then": "the entry is recorded with total=0 and an actions[] message asks admin to re-run; other entries still process",
+        "linksTo": "BR-PLAYOFF-025"
+      },
+      {
+        "id": "AC-PLAYOFF-023",
+        "given": "fewer than 8 survival entries marked advanced (e.g. partial scoring failure)",
+        "when": "generateC34AfterSurvival is invoked",
+        "then": "no C-34 ties are created (the helper returns silently)",
+        "linksTo": "BR-PLAYOFF-026"
+      },
+      {
+        "id": "AC-PLAYOFF-024",
+        "given": "a TVT-32 league at GW34 with all QF leg2 and C-34 fixtures scored",
+        "when": "advance-playoffs?gw=34 runs",
+        "then": "QF ties resolve to complete, C-34 ties resolve, SF-A (QF-A vs QF-D) and SF-B (QF-B vs QF-C) 2-leg ties are inserted at GW35+36, and 4 C-35 ties pair each QF loser with the C-34 winner from the opposite half",
+        "linksTo": "BR-PLAYOFF-027"
+      },
+      {
+        "id": "AC-PLAYOFF-025",
+        "given": "a TVT-32 league at GW35",
+        "when": "advance-playoffs?gw=35 runs",
+        "then": "SF-A and SF-B become leg1_done; C-35-A..D resolve; C-36-A (C-35-A vs C-35-D) and C-36-B (C-35-B vs C-35-C) are created single-leg at GW36",
+        "linksTo": "BR-PLAYOFF-028"
+      },
+      {
+        "id": "AC-PLAYOFF-026",
+        "given": "a TVT-32 league at GW36",
+        "when": "advance-playoffs?gw=36 runs",
+        "then": "SF aggregates resolve; C-36 ties resolve; the 2-leg Final is created at GW37+38 between SF-A winner and SF-B winner; C-37-A and C-37-B pair SF losers with C-36 winners (loser SF-A vs winner C-36-B; loser SF-B vs winner C-36-A)",
+        "linksTo": "BR-PLAYOFF-029"
+      },
+      {
+        "id": "AC-PLAYOFF-027",
+        "given": "a TVT-32 league at GW37",
+        "when": "advance-playoffs?gw=37 runs",
+        "then": "Final becomes leg1_done; C-37 ties resolve; C-38-A (Challenger Final, single-leg GW38) is created from the C-37 winners",
+        "linksTo": "BR-PLAYOFF-030"
+      },
+      {
+        "id": "AC-PLAYOFF-028",
+        "given": "a TVT-32 league at GW38 with the Final's leg 2 scored and C-38-A scored",
+        "when": "advance-playoffs?gw=38 runs",
+        "then": "Final aggregate resolves (TVT Champion crowned), C-38-A resolves (Challenger Series Champion crowned), and actions[] includes 'Tournament complete!'",
+        "linksTo": "BR-PLAYOFF-031"
+      },
+      {
+        "id": "AC-PLAYOFF-029",
+        "given": "a TVT-8 league with playoffStartGw=36, two 8T-SF fixtures scored",
+        "when": "advance-playoffs?gw=36 runs",
+        "then": "both 8T-SF ties resolve; 8T-FINAL (winner SF-A vs winner SF-B) and 8T-3RD (loser SF-A vs loser SF-B) are inserted as 2-leg ties at GW37+38",
+        "linksTo": "BR-PLAYOFF-017"
+      },
+      {
+        "id": "AC-PLAYOFF-030",
+        "given": "a TVT-8 league requesting advance for a GW outside [playoffStartGw, playoffStartGw+2]",
+        "when": "the request is sent",
+        "then": "the API returns 400 with message including '8-team playoff gameweeks are 36–38' (or the equivalent for the configured playoffStartGw)",
+        "linksTo": "BR-PLAYOFF-017"
+      },
+      {
+        "id": "AC-PLAYOFF-031",
+        "given": "a TVT-16 league at GW33 with all 8 GW33-suffix group ties scored",
+        "when": "advance-playoffs?gw=33 runs",
+        "then": "all GW33 ties resolve, 16T group standings are computed, two SFs are created at GW34+35 (SF-A=ChampA1 vs ChampB2, SF-B=ChampB1 vs ChampA2), four Challenger QFs are created at GW34, and WS-M1/WS-M2 are created at GW34",
+        "linksTo": "BR-PLAYOFF-032"
+      },
+      {
+        "id": "AC-PLAYOFF-032",
+        "given": "a TVT-16 league at GW33 where any group has fewer than 4 played-and-resolved teams",
+        "when": "advance-playoffs?gw=33 runs",
+        "then": "the endpoint throws ('Incomplete group standings — ensure GW31, GW32, and GW33 have all been scored and advanced before GW33') and returns 500",
+        "linksTo": "BR-PLAYOFF-032"
+      },
+      {
+        "id": "AC-PLAYOFF-033",
+        "given": "a TVT-16 league at GW35",
+        "when": "advance-playoffs?gw=35 runs",
+        "then": "SF aggregates resolve; the Championship Final and 3rd-place are inserted as 3-legged ties spanning GW36+37+38 between the SF winners and losers respectively; CSF/WSSF ties get leg1_done",
+        "linksTo": "BR-PLAYOFF-018"
+      },
+      {
+        "id": "AC-PLAYOFF-034",
+        "given": "a TVT-16 league at GW38",
+        "when": "advance-playoffs?gw=38 runs",
+        "then": "16T-FINAL and 16T-3RD resolve via 3-leg aggregate; 16T-CFINAL, 16T-C3RD, 16T-WSFINAL, 16T-WS3RD resolve via 2-leg aggregate; actions[] includes a '16-team tournament complete!' message",
+        "linksTo": "BR-PLAYOFF-018"
+      },
+      {
+        "id": "AC-PLAYOFF-035",
+        "given": "GET /api/playoffs/winners without a leagueSlug query param",
+        "when": "the request is sent",
+        "then": "the API responds 400 with { concluded:false, winners:[] }",
+        "linksTo": "BR-PLAYOFF-038"
+      },
+      {
+        "id": "AC-PLAYOFF-036",
+        "given": "GET /api/playoffs/winners?leagueSlug=<unknown-slug>",
+        "when": "the request is sent",
+        "then": "the API responds 404 with { concluded:false, winners:[] }",
+        "linksTo": "BR-PLAYOFF-038"
+      },
+      {
+        "id": "AC-PLAYOFF-037",
+        "given": "a TVT-32 league early in the season (no ties resolved yet)",
+        "when": "GET /api/playoffs/winners?leagueSlug=… runs",
+        "then": "12 winner rows are returned (positions 1-12) all with pending=true and placeholders like 'Winner of Final', 'Loser of Final', 'Winner of C-38-A', 'Loser of C-37-A', etc.; concluded=false",
+        "linksTo": "BR-PLAYOFF-037"
+      },
+      {
+        "id": "AC-PLAYOFF-038",
+        "given": "a TVT-8 league with 8T-FINAL.status='complete' (winnerId=Team X, loserId=Team Y) and 8T-3RD.status='complete' (winnerId=Team Z)",
+        "when": "GET /api/playoffs/winners runs",
+        "then": "3 winner rows are returned: Champion=Team X with players list, Runner-Up=Team Y, 3rd Place=Team Z; concluded=true",
+        "linksTo": "BR-PLAYOFF-036"
+      },
+      {
+        "id": "AC-PLAYOFF-039",
+        "given": "a TVT-16 league with 16T-FINAL complete but 16T-CFINAL still pending",
+        "when": "GET /api/playoffs/winners runs",
+        "then": "positions 1-2 are filled (Champion, Runner-Up) while positions 3-6 are pending with placeholders 'Winner of 16T-CFINAL' / 'Loser of 16T-CFINAL' / 'Winner of 16T-C3RD' / 'Loser of 16T-C3RD'; concluded=false",
+        "linksTo": "BR-PLAYOFF-035"
+      },
+      {
+        "id": "AC-PLAYOFF-040",
+        "given": "a TVT-32 league before any playoff GW is scored AND latestCompletedGw < playoffStartGw-1",
+        "when": "GET /api/playoffs/bracket?leagueSlug=… runs",
+        "then": "mode='tentative'; RO16 sides show projected team names plus seedLabel like '1st (Group A)' when standings can name the team; downstream QF/SF/Final sides show placeholder labels like 'Winner of RO16-A'",
+        "linksTo": "BR-PLAYOFF-040"
+      },
+      {
+        "id": "AC-PLAYOFF-041",
+        "given": "a TVT-32 league with GW30 fully scored but no playoffTies inserted",
+        "when": "GET /api/playoffs/bracket runs",
+        "then": "mode='projected'; same shape as tentative but every RO16 side now has a definite teamId (final standings are locked)",
+        "linksTo": "BR-PLAYOFF-040"
+      },
+      {
+        "id": "AC-PLAYOFF-042",
+        "given": "a TVT-32 league with playoff_ties rows present and GW31 scored",
+        "when": "GET /api/playoffs/bracket runs",
+        "then": "mode='live'; ro16Ordered uses RO16_BRACKET_ORDER (A,H,D,E,B,G,C,F); the response includes liveScores keyed by GW31..GW38; not-yet-created downstream rounds fall back to projected placeholders that resolve winner/loser names from completed upstream ties",
+        "linksTo": "BR-PLAYOFF-041"
+      },
+      {
+        "id": "AC-PLAYOFF-043",
+        "given": "a finished playoff GW (every fixture has a result row)",
+        "when": "the bracket route compiles liveScores for that GW",
+        "then": "scores are sourced from results table including parsed homePlayerScores/awayPlayerScores JSON; rows with legacy isAutoAssigned=true (and no isTempCaptain) are normalized to isTempCaptain=true",
+        "linksTo": "BR-PLAYOFF-042"
+      },
+      {
+        "id": "AC-PLAYOFF-044",
+        "given": "a deadline-passed GW with no result rows",
+        "when": "the bracket route runs",
+        "then": "live scores are fetched from FPL API per fixture, captain resolved (announced > temp-cap with prev-GW rotation), and the resulting fixtures array is written to Redis live cache for subsequent reads",
+        "linksTo": "BR-PLAYOFF-042"
+      },
+      {
+        "id": "AC-PLAYOFF-045",
+        "given": "GW33 has passed its deadline but no challenger_survival_entries have rank assigned yet",
+        "when": "GET /api/playoffs/bracket runs",
+        "then": "computeLiveSurvivalScores fires for each entry's teamId, returning a score and playerScores JSON; the response sorts entries by score desc until anyRanked flips after the admin runs Advance GW33",
+        "linksTo": "BR-PLAYOFF-043"
+      },
+      {
+        "id": "AC-PLAYOFF-046",
+        "given": "a TVT league whose admin POSTs restore-tvt with a multipart 'file' whose meta.json has leagueId=<different-league>",
+        "when": "the request is processed",
+        "then": "the API returns 400 with a 'League mismatch — this backup was taken from a different league' error and NO fixtures are deleted or inserted",
+        "linksTo": "BR-PLAYOFF-047"
+      },
+      {
+        "id": "AC-PLAYOFF-047",
+        "given": "an admin POSTs restore-tvt with a multipart file whose zip lacks meta.json",
+        "when": "the request is processed",
+        "then": "the API returns 400 with 'Backup zip is missing meta.json — please re-export from this league via Download Backup.'",
+        "linksTo": "BR-PLAYOFF-047"
+      },
+      {
+        "id": "AC-PLAYOFF-048",
+        "given": "an admin POSTs restore-tvt with meta.json.format='triple-crown' against a TVT league",
+        "when": "the request is processed",
+        "then": "the API returns 400 ('Format mismatch — this backup is for a triple-crown league but the target is TVT.')",
+        "linksTo": "BR-PLAYOFF-047"
+      },
+      {
+        "id": "AC-PLAYOFF-049",
+        "given": "an admin POSTs restore-tvt with JSON { backupId: '<id-from-another-league>' }",
+        "when": "the request is processed",
+        "then": "loadRestoreSnapshot returns { error: 'Snapshot not found for this league' } and the API responds 404",
+        "linksTo": "BR-PLAYOFF-047"
+      },
+      {
+        "id": "AC-PLAYOFF-050",
+        "given": "a non-TVT league (format='triple-crown') receiving POST /api/admin/<leagueId>/restore-tvt",
+        "when": "the request is processed",
+        "then": "the API returns 400 ('Restore is for TVT-format leagues only')",
+        "linksTo": "BR-PLAYOFF-046"
+      },
+      {
+        "id": "AC-PLAYOFF-051",
+        "given": "an admin POSTs restore-tvt with a valid zip containing fixtures.xlsx with 50 rows, 2 of which reference unknown team logins and 1 of which has gameweek=99",
+        "when": "restore-tvt processes the payload",
+        "then": "48 fixtures are inserted (the others skipped), warnings[] contains 3 'Row N: …' entries, and the response includes a deferred-captains/chips warning if those sheets had rows",
+        "linksTo": "BR-PLAYOFF-048"
+      },
+      {
+        "id": "AC-PLAYOFF-052",
+        "given": "a TVT league with existing playoff_ties rows AND challenger_survival_entries rows AND admin POSTs restore-tvt with a successful payload",
+        "when": "restoreFixtures runs",
+        "then": "after the call completes, SELECT COUNT(*) FROM playoff_ties WHERE league_id=<leagueId> returns 0 AND SELECT COUNT(*) FROM challenger_survival_entries WHERE gameweek_id IN (league's gameweekIds) returns 0; fixtures for the league are re-inserted from the payload and the league is in a clean pre-playoff state",
+        "linksTo": "BR-PLAYOFF-049"
+      },
+      {
+        "id": "AC-PLAYOFF-053",
+        "given": "any league requesting POST /api/admin/<leagueId>/generate-brackets where league.format='tvt'",
+        "when": "the request is processed",
+        "then": "the API returns 400 ('Bracket generation only available for Triple Crown format')",
+        "linksTo": "BR-PLAYOFF-051"
+      },
+      {
+        "id": "AC-PLAYOFF-054",
+        "given": "a TVT-32 league where the generate-playoffs route creates C-31 ties and a public visitor GETs /api/playoffs/bracket in tentative mode",
+        "when": "comparing the visible C-31 home/away pairings",
+        "then": "the tentative bracket shows alternating-side seeding (C-31-A: A9 home vs B14 away; C-31-B: B9 home vs A14 away; …) while the actual generated ties have A-side always home (C-31-B: A10 home vs B13 away) // CODE-CONFIRMED: defect — public projection mismatches live state once GW31 is generated",
+        "linksTo": "BR-PLAYOFF-006"
+      },
+      {
+        "id": "AC-PLAYOFF-055",
+        "given": "a TVT-16 league at tentative mode (latestCompletedGw < playoffStartGw-1)",
+        "when": "GET /api/playoffs/bracket runs",
+        "then": "the response renders a single 8-team QF (1v8, 2v7, 3v6, 4v5) followed by SF and Final — NOT the 4-group playoff stage that generate-playoffs will actually create // CODE-CONFIRMED: defect — tentative and live topologies diverge for the 16-team format",
+        "linksTo": "BR-PLAYOFF-052"
+      },
+      {
+        "id": "AC-PLAYOFF-056",
+        "given": "a 2-leg tie row whose status is already 'complete' with winnerId/loserId set",
+        "when": "resolve2LegTie is re-invoked",
+        "then": "no update is performed and the existing winnerId/loserId are returned (idempotent)",
+        "linksTo": "BR-PLAYOFF-022"
+      },
+      {
+        "id": "AC-PLAYOFF-057",
+        "given": "a 2-leg create helper called twice for the same tieId",
+        "when": "the second call runs",
+        "then": "the playoffTies and fixtures inserts are no-op'd via onConflictDoNothing — no duplicate rows are created",
+        "linksTo": "BR-PLAYOFF-054"
+      }
+    ]
+  },
+  "testCases": [
+    {
+      "id": "TC-PLAYOFF-001",
+      "feature": "Generate Playoffs Auth",
+      "scenario": "Unauthenticated POST /generate-playoffs is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "TVT-32 league exists; no auth cookie/session sent",
+      "testData": "leagueId=TVT32-A; no Authorization header; no session cookie",
+      "testSteps": [
+        "1. Send POST /api/admin/<leagueId>/generate-playoffs without credentials",
+        "2. Capture response status, body, and DB state"
+      ],
+      "expectedResult": "HTTP 403 with body { error: 'Forbidden' }; playoff_ties and fixtures tables unchanged",
+      "postconditions": "No rows created in playoff_ties, fixtures, or results",
+      "requirementId": "AC-PLAYOFF-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-002",
+      "feature": "Generate Playoffs Auth",
+      "scenario": "Admin from another league is rejected (leagueId scoping)",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin A authorized for League X only; League Y exists",
+      "testData": "Auth as adminA; leagueId=Y",
+      "testSteps": [
+        "1. Sign in as adminA",
+        "2. POST /api/admin/Y/generate-playoffs"
+      ],
+      "expectedResult": "HTTP 403 { error: 'Forbidden' }; no DB writes",
+      "postconditions": "playoff_ties for League Y unchanged",
+      "requirementId": "AC-PLAYOFF-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule BR-PLAYOFF-001 leagueId scoping"
+    },
+    {
+      "id": "TC-PLAYOFF-003",
+      "feature": "Generate Playoffs TVT-32",
+      "scenario": "Generate-playoffs seeds 8 RO16 + 6 C-31 ties with 22 fixtures",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-32 league with no playoff_ties; GW1-30 fully scored; teams ranked in Group A (1-16) and Group B (1-16)",
+      "testData": "leagueId=TVT32-A; playoffStartGw=31",
+      "testSteps": [
+        "1. Sign in as authorized admin",
+        "2. POST /api/admin/<leagueId>/generate-playoffs",
+        "3. Inspect playoff_ties and fixtures tables"
+      ],
+      "expectedResult": "HTTP 200 success:true; 8 RO16 ties (status='pending', 2-leg) seeded A1-B8, B1-A8, A2-B7, B2-A7, A3-B6, B3-A6, A4-B5, B4-A5 at gw1=31/gw2=32; 6 C-31 ties (single-leg, GW31); 16 leg fixtures + 6 single-leg fixtures = 22 total; all stamped to 'Playoffs' group",
+      "postconditions": "Response.ties.length=14; response.fixtures.length=22",
+      "requirementId": "AC-PLAYOFF-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-004",
+      "feature": "Generate Playoffs Idempotency",
+      "scenario": "Regenerate when RO16 already present is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "TVT-32 league with RO16 ties already inserted",
+      "testData": "leagueId=TVT32-A; existing RO16-A row",
+      "testSteps": [
+        "1. Generate playoffs once (success)",
+        "2. POST /generate-playoffs again",
+        "3. Compare tie counts before/after"
+      ],
+      "expectedResult": "HTTP 400 { error: 'Initial playoff ties already exist for this league. Delete them first to regenerate.' }; tie count unchanged",
+      "postconditions": "playoff_ties count identical",
+      "requirementId": "AC-PLAYOFF-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule BR-PLAYOFF-002"
+    },
+    {
+      "id": "TC-PLAYOFF-005",
+      "feature": "Generate Playoffs TVT-16",
+      "scenario": "Generate-playoffs seeds 24 group-stage ties across 4 groups",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-16 league with all 16 teams ranked in Group A; GW1-30 scored; playoffStartGw=31",
+      "testData": "leagueId=TVT16-A; teamSize=16",
+      "testSteps": [
+        "1. POST /generate-playoffs",
+        "2. Query playoff_ties WHERE leagueId=… ORDER BY roundName, tieId"
+      ],
+      "expectedResult": "24 ties created — 6 per group × 4 groups; roundName in {16T-CA,16T-CB,16T-XA,16T-XB}; each tie roundType='playoff-group'; gw1 values populate GW31, GW32, GW33 (one match per pair per GW)",
+      "postconditions": "Group seeding follows snake: 16T-CA = ranks 1,4,5,8; 16T-CB=2,3,6,7; 16T-XA=9,12,13,16; 16T-XB=10,11,14,15",
+      "requirementId": "AC-PLAYOFF-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-006",
+      "feature": "Generate Playoffs TVT-16",
+      "scenario": "TVT-16 with fewer than 4 ranked teams in a group is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "TVT-16 league where only 15 teams have completed PL fixtures (so Challenger B has 3 ranked teams)",
+      "testData": "leagueId=TVT16-B; teamSize=16; ranked=15",
+      "testSteps": [
+        "1. POST /generate-playoffs"
+      ],
+      "expectedResult": "HTTP 400 { error: 'Not enough ranked teams found. Ensure the league has 16 teams ranked 1-16 in Group A.' }; no ties written",
+      "postconditions": "playoff_ties count = 0",
+      "requirementId": "AC-PLAYOFF-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-007",
+      "feature": "Generate Playoffs TVT-8",
+      "scenario": "Generate-playoffs seeds two single-leg 8T-SF ties for TVT-8",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-8 league with 8 teams ranked; playoffStartGw=36; GW1-35 scored",
+      "testData": "leagueId=TVT8-A; teamSize=8",
+      "testSteps": [
+        "1. POST /generate-playoffs",
+        "2. SELECT * FROM playoff_ties WHERE leagueId=…"
+      ],
+      "expectedResult": "Exactly 2 ties: 8T-SF-A (rank1 vs rank4), 8T-SF-B (rank2 vs rank3); both single-leg at GW36; roundType='tvt'; status='pending'; NO 8T-FINAL or 8T-3RD rows created yet",
+      "postconditions": "playoff_ties.length=2; fixtures.length=2",
+      "requirementId": "AC-PLAYOFF-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-008",
+      "feature": "Delete Playoffs Cascade",
+      "scenario": "DELETE removes only initial-round ties for the variant",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 league with RO16, C-31, QF, SF tie rows (QF/SF previously seeded by advance)",
+      "testData": "leagueId=TVT32-A",
+      "testSteps": [
+        "1. DELETE /api/admin/<leagueId>/generate-playoffs",
+        "2. SELECT roundName, count FROM playoff_ties WHERE leagueId=…"
+      ],
+      "expectedResult": "HTTP 200; RO16 + C-31 rows removed along with their fixtures + results; QF and SF rows still present; response message reports deleted tie/fixture counts",
+      "postconditions": "Orphan QF/SF rows remain (defect-pinning)",
+      "requirementId": "AC-PLAYOFF-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-009",
+      "feature": "Delete Playoffs Cascade",
+      "scenario": "REGRESSION DEF-002 — DELETE leaves orphan QF/SF/Final ties when admin regenerates",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "TVT-32 league mid-tournament with RO16, C-31, QF, SF, and Final rows already present (from prior advance runs)",
+      "testData": "leagueId=TVT32-A; existing roundNames: RO16-A..H, C-31-A..F, QF-A..D, SF-A, SF-B, Final",
+      "testSteps": [
+        "1. DELETE /generate-playoffs",
+        "2. SELECT roundName FROM playoff_ties WHERE leagueId=…",
+        "3. POST /generate-playoffs to regenerate",
+        "4. POST /advance-playoffs?gw=31"
+      ],
+      "expectedResult": "DELETE response counts only RO16+C-31 deletions; QF/SF/Final rows persist as orphans; regenerate succeeds and creates fresh RO16/C-31; subsequent advance encounters silently no-op'd downstream inserts via onConflictDoNothing OR fails to wire winners into existing QF rows",
+      "postconditions": "Defect persists — DB has fresh RO16 but stale advanced rounds; pins DEF-PLAYOFF-002 current behaviour",
+      "requirementId": "BR-PLAYOFF-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PLAYOFF-002"
+    },
+    {
+      "id": "TC-PLAYOFF-010",
+      "feature": "Delete Playoffs Empty",
+      "scenario": "DELETE with no ties returns 'No initial ties to delete'",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT league with zero playoff_ties rows",
+      "testData": "leagueId=TVT32-EMPTY",
+      "testSteps": [
+        "1. DELETE /generate-playoffs"
+      ],
+      "expectedResult": "HTTP 200 { message: 'No initial ties to delete', deletedFixtures: 0 }",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-PLAYOFF-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-011",
+      "feature": "Generated Status Check",
+      "scenario": "GET generate-playoffs returns generated=true when ties exist",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "League with at least one playoff_ties row",
+      "testData": "leagueId=TVT32-A",
+      "testSteps": [
+        "1. GET /api/admin/<leagueId>/generate-playoffs"
+      ],
+      "expectedResult": "HTTP 200 { generated: true }",
+      "postconditions": "No mutation",
+      "requirementId": "AC-PLAYOFF-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-012",
+      "feature": "Generated Status Check",
+      "scenario": "GET generate-playoffs returns generated=false when no ties exist",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "League with zero playoff_ties rows",
+      "testData": "leagueId=TVT32-EMPTY",
+      "testSteps": [
+        "1. GET /generate-playoffs"
+      ],
+      "expectedResult": "HTTP 200 { generated: false }",
+      "postconditions": "No mutation",
+      "requirementId": "AC-PLAYOFF-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-013",
+      "feature": "Gameweek Auto-create",
+      "scenario": "Missing GW31-38 rows are created with FPL deadlines when available",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 league with NO rows in gameweeks table for GW31-38; FPL bootstrap-static reachable",
+      "testData": "leagueId=TVT32-A; playoffStartGw=31",
+      "testSteps": [
+        "1. POST /generate-playoffs",
+        "2. SELECT * FROM gameweeks WHERE leagueId=… AND number BETWEEN 31 AND 38"
+      ],
+      "expectedResult": "8 gameweek rows inserted (GW31..GW38) with isPlayoffs=true and FPL deadlines populated",
+      "postconditions": "Bracket fixtures point to the new GW rows",
+      "requirementId": "AC-PLAYOFF-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-014",
+      "feature": "Gameweek Auto-create",
+      "scenario": "Placeholder deadlines used when bootstrap-static unreachable",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "TVT-32 league with no GW31-38 rows; FPL bootstrap-static returns 5xx (mocked)",
+      "testData": "leagueId=TVT32-A; mock FPL outage",
+      "testSteps": [
+        "1. POST /generate-playoffs"
+      ],
+      "expectedResult": "GW31..GW38 created with placeholder deadlines 7×(N+1) days from now at 11:00 UTC; isPlayoffs=true",
+      "postconditions": "Generate still succeeds",
+      "requirementId": "AC-PLAYOFF-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-015",
+      "feature": "Advance Param Validation",
+      "scenario": "Missing ?gw= and no JSON gameweek returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Authorized admin; TVT-32 league",
+      "testData": "POST body: {}; no query string",
+      "testSteps": [
+        "1. POST /api/admin/<leagueId>/advance-playoffs with empty body and no query"
+      ],
+      "expectedResult": "HTTP 400 { error: 'Gameweek number required (?gw=N or { gameweek: N })' }",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule BR-PLAYOFF-014"
+    },
+    {
+      "id": "TC-PLAYOFF-016",
+      "feature": "Advance Param Validation",
+      "scenario": "Non-numeric gw query param returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Admin auth ok",
+      "testData": "?gw=abc",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=abc"
+      ],
+      "expectedResult": "HTTP 400 — gameweek number required",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-017",
+      "feature": "Advance Auth Guard",
+      "scenario": "Unauthenticated POST /advance-playoffs is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "TVT-32 league with playoffs generated",
+      "testData": "No session",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=31 anonymously"
+      ],
+      "expectedResult": "HTTP 403 { error: 'Forbidden' }; no state change",
+      "postconditions": "playoff_ties unchanged",
+      "requirementId": "BR-PLAYOFF-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule"
+    },
+    {
+      "id": "TC-PLAYOFF-018",
+      "feature": "Advance Unscored Guard",
+      "scenario": "Advance refused when GW32 has 2 unscored leg2 fixtures",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "TVT-32 league; 14 of 16 RO16-leg2 fixtures have results; 2 missing",
+      "testData": "leagueId=TVT32-A; gw=32; missing tieIds: RO16-C-leg2, RO16-F-leg2",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=32"
+      ],
+      "expectedResult": "HTTP 400 with error body listing the 2 missing tieIds (e.g. 'RO16-C leg2', 'RO16-F leg2'); no QF rows created; no playoff_ties statuses change",
+      "postconditions": "playoff_ties statuses identical to pre-call snapshot",
+      "requirementId": "AC-PLAYOFF-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule BR-PLAYOFF-015"
+    },
+    {
+      "id": "TC-PLAYOFF-019",
+      "feature": "Advance Empty Fixture Guard",
+      "scenario": "Advance refused when GW has zero playoff fixtures",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "TVT-32 league with no fixtures at all in GW31 (generate-playoffs not yet run)",
+      "testData": "leagueId=TVT32-A; gw=31",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=31"
+      ],
+      "expectedResult": "HTTP 400 { error: 'No playoff fixtures exist for GW31. Generate the bracket or the previous round first.' }",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-020",
+      "feature": "Advance GW Range Guard TVT-32",
+      "scenario": "GW outside 31..38 is rejected for TVT-32",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT-32 league; playoffs generated",
+      "testData": "gw=30 then gw=39",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=30",
+        "2. POST /advance-playoffs?gw=39"
+      ],
+      "expectedResult": "Both return HTTP 400 'Gameweek must be between 31 and 38'",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary guard BR-PLAYOFF-016"
+    },
+    {
+      "id": "TC-PLAYOFF-021",
+      "feature": "Advance GW Boundary TVT-32",
+      "scenario": "GW=31 (lower bound) accepted",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT-32 league with all GW31 fixtures scored",
+      "testData": "gw=31",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=31"
+      ],
+      "expectedResult": "HTTP 200; advance proceeds",
+      "postconditions": "C-31 ties resolved, RO16 leg1_done",
+      "requirementId": "AC-PLAYOFF-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Lower-bound positive"
+    },
+    {
+      "id": "TC-PLAYOFF-022",
+      "feature": "Advance GW31 TVT-32",
+      "scenario": "GW31 advance resolves C-31, marks RO16 leg1_done, creates C-32",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-32 league with all GW31 playoff fixtures scored (16 RO16 leg1 + 6 C-31 single-leg)",
+      "testData": "leagueId=TVT32-A; gw=31",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=31",
+        "2. SELECT * FROM playoff_ties WHERE leagueId=… AND roundName IN ('C-31','RO16','C-32')"
+      ],
+      "expectedResult": "All 6 C-31 ties status='complete' with winnerId/loserId/aggregates; all 8 RO16 ties status='leg1_done'; 3 new C-32 ties inserted as single-leg GW32, pairing C-31 A↔F, B↔E, C↔D winners",
+      "postconditions": "playoff_ties: 6 complete + 8 leg1_done + 3 pending C-32",
+      "requirementId": "AC-PLAYOFF-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-023",
+      "feature": "Advance GW32 TVT-32",
+      "scenario": "GW32 resolves RO16+C-32, creates QFs and 11 survival entries",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-32 league; GW31 advance done; all GW32 fixtures (16 RO16 leg2 + 3 C-32) scored",
+      "testData": "leagueId=TVT32-A; gw=32",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=32",
+        "2. Inspect playoff_ties + challenger_survival_entries"
+      ],
+      "expectedResult": "All 8 RO16 ties status='complete' (2-leg aggregate, home wins on tie); all 3 C-32 ties complete; 4 QF ties (2-leg GW33+34) created seeded RO16 winners A↔H, B↔G, C↔F, D↔E; 11 challenger_survival_entries rows inserted (3 C-32 winners + 8 RO16 losers) with score=0, rank=null, advanced=false",
+      "postconditions": "QF.gw1=33, QF.gw2=34",
+      "requirementId": "AC-PLAYOFF-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-024",
+      "feature": "2-leg Aggregate",
+      "scenario": "Aggregate computed from leg1 + swapped leg2 yields correct winner",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "2-leg tie with leg1: Home=5, Away=3; leg2 (swapped orientation in fixture): home=4, away=4",
+      "testData": "leg1 home=5/away=3, leg2 home=4/away=4 — leg2 swap means original-home scored 4, original-away scored 4",
+      "testSteps": [
+        "1. Trigger resolve2LegTie on the tie",
+        "2. Read tie row"
+      ],
+      "expectedResult": "homeAggregate=5+4=9, awayAggregate=3+4=7, winnerId=originalHomeId, loserId=originalAwayId, status='complete'",
+      "postconditions": "Tie persisted complete",
+      "requirementId": "AC-PLAYOFF-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-025",
+      "feature": "2-leg Aggregate Tie-break",
+      "scenario": "Aggregate tie awards home team the win",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "2-leg tie aggregates to 8-8",
+      "testData": "leg1 4-3, leg2 (swapped) home=5/away=4 → orig-home agg = 4+4=8, orig-away agg = 3+5=8",
+      "testSteps": [
+        "1. resolve2LegTie executes"
+      ],
+      "expectedResult": "winnerId = homeTeamId (home wins on aggregate tie), status='complete'",
+      "postconditions": "Tie complete with home as winner",
+      "requirementId": "AC-PLAYOFF-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary rule BR-PLAYOFF-019"
+    },
+    {
+      "id": "TC-PLAYOFF-026",
+      "feature": "3-leg Aggregate TVT-16",
+      "scenario": "Championship Final 3-leg aggregate computed correctly",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-16 16T-FINAL with 3 legs scored: leg1 60-55, leg2 (swapped) home=50/away=58, leg3 62-59",
+      "testData": "Original home/away orientation; leg2 fixture swapped",
+      "testSteps": [
+        "1. resolve3LegTie executes"
+      ],
+      "expectedResult": "homeAggregate=60+58+62=180, awayAggregate=55+50+59=164, winnerId=originalHomeId",
+      "postconditions": "16T-FINAL complete",
+      "requirementId": "AC-PLAYOFF-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-027",
+      "feature": "Single-leg KO Tie-break",
+      "scenario": "C-31 single-leg draw 70-70 awards home the win",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "C-31 fixture homeScore=70, awayScore=70",
+      "testData": "Single-leg playoff fixture; status=complete pre-advance",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=31"
+      ],
+      "expectedResult": "Tie row: homeAggregate=70, awayAggregate=70, winnerId=homeTeamId, loserId=awayTeamId, status='complete'",
+      "postconditions": "Home wins on the >= rule",
+      "requirementId": "AC-PLAYOFF-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary rule BR-PLAYOFF-021"
+    },
+    {
+      "id": "TC-PLAYOFF-028",
+      "feature": "Challenger Survival GW33",
+      "scenario": "GW33 ranks 11 survival entries, top 8 advance, C-34 seeded 1v8/2v7/3v6/4v5",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-32 league at GW33 with all 4 QF leg1 fixtures scored AND 11 challenger_survival_entries seeded with player team rosters available",
+      "testData": "leagueId=TVT32-A; gw=33",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=33",
+        "2. SELECT score, rank, advanced FROM challenger_survival_entries ORDER BY rank",
+        "3. SELECT * FROM playoff_ties WHERE roundName='C-34'"
+      ],
+      "expectedResult": "All 4 QFs leg1_done; each survival entry has playerScores JSON populated, total computed (captain doubled), ranks 1..11 assigned; advanced=true for ranks 1..8; C-34-A..D created single-leg GW34 pairing 1v8, 2v7, 3v6, 4v5",
+      "postconditions": "11 survival rows ranked; 4 C-34 ties seeded",
+      "requirementId": "AC-PLAYOFF-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-029",
+      "feature": "Survival FPL Failure",
+      "scenario": "Entry whose FPL fetch errors records total=0 and surfaces action",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Of 11 survival entries, fetching scores for 1 team's players throws an error",
+      "testData": "Mock FPL 500 for one teamId",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=33"
+      ],
+      "expectedResult": "Failing entry stored with score=0; response actions[] contains a message asking admin to re-run; the other 10 entries process successfully",
+      "postconditions": "Partial scoring recorded; ranks reflect 0 for failed entry",
+      "requirementId": "AC-PLAYOFF-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-030",
+      "feature": "C-34 Generation Guard",
+      "scenario": "generateC34AfterSurvival silently no-ops when <8 advanced",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Only 7 survival entries have advanced=true (partial scoring failure)",
+      "testData": "ranked=7",
+      "testSteps": [
+        "1. Invoke generateC34AfterSurvival helper"
+      ],
+      "expectedResult": "No C-34 ties inserted; helper returns silently (no error)",
+      "postconditions": "playoff_ties has zero C-34 rows",
+      "requirementId": "AC-PLAYOFF-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-031",
+      "feature": "Advance GW34 TVT-32",
+      "scenario": "GW34 resolves QF + C-34, creates SF and C-35",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-32 at GW34; all 8 QF leg2 fixtures + 4 C-34 fixtures scored",
+      "testData": "leagueId=TVT32-A; gw=34",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=34",
+        "2. Inspect playoff_ties WHERE roundName IN ('QF','C-34','SF','C-35')"
+      ],
+      "expectedResult": "All 4 QFs complete; all 4 C-34 ties complete; SF-A (QF-A winner vs QF-D winner) and SF-B (QF-B vs QF-C) created as 2-leg GW35+36; 4 C-35 ties created pairing each QF loser with the C-34 winner from the opposite half (single-leg GW35)",
+      "postconditions": "SF rows pending; C-35 rows pending",
+      "requirementId": "AC-PLAYOFF-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-032",
+      "feature": "Advance GW35 TVT-32",
+      "scenario": "GW35 marks SF leg1_done, resolves C-35, creates C-36",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 at GW35; SF leg1 + C-35 fixtures scored",
+      "testData": "gw=35",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=35",
+        "2. Read playoff_ties"
+      ],
+      "expectedResult": "SF-A, SF-B status='leg1_done'; all 4 C-35 ties complete; C-36-A (C-35-A winner vs C-35-D winner) + C-36-B (C-35-B vs C-35-C) created single-leg GW36",
+      "postconditions": "C-36 pending",
+      "requirementId": "AC-PLAYOFF-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-033",
+      "feature": "Advance GW36 TVT-32",
+      "scenario": "GW36 resolves SF + C-36, creates Final and C-37",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 at GW36; SF leg2 + C-36 fixtures scored",
+      "testData": "gw=36",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=36"
+      ],
+      "expectedResult": "SF aggregates resolve; C-36-A and C-36-B complete; 2-leg Final created at GW37+38 (SF-A winner vs SF-B winner); C-37-A (loser SF-A vs winner C-36-B) and C-37-B (loser SF-B vs winner C-36-A) created single-leg GW37",
+      "postconditions": "Final + C-37 pending",
+      "requirementId": "AC-PLAYOFF-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-034",
+      "feature": "Advance GW37 TVT-32",
+      "scenario": "GW37 marks Final leg1_done, resolves C-37, creates Challenger Final",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 at GW37; Final leg1 + 2 C-37 fixtures scored",
+      "testData": "gw=37",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=37"
+      ],
+      "expectedResult": "Final status='leg1_done'; both C-37 ties complete; C-38-A (Winner C-37-A vs Winner C-37-B) created single-leg GW38",
+      "postconditions": "Challenger Final pending",
+      "requirementId": "AC-PLAYOFF-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-035",
+      "feature": "Advance GW38 TVT-32",
+      "scenario": "GW38 resolves Final + Challenger Final, emits Tournament complete",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-32 at GW38; Final leg2 + C-38-A fixture scored",
+      "testData": "gw=38",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=38"
+      ],
+      "expectedResult": "Final aggregate resolved (TVT Champion crowned, status='complete'); C-38-A resolved (Challenger Series Champion crowned); response actions[] includes 'Tournament complete!'",
+      "postconditions": "All bracket ties complete",
+      "requirementId": "AC-PLAYOFF-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-036",
+      "feature": "Advance GW36 TVT-8",
+      "scenario": "TVT-8 GW36 resolves SFs, creates 2-leg Final and 3rd",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-8 league with playoffStartGw=36; both 8T-SF single-leg fixtures scored",
+      "testData": "leagueId=TVT8-A; gw=36",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=36"
+      ],
+      "expectedResult": "8T-SF-A and 8T-SF-B both status='complete'; 8T-FINAL (SF-A winner vs SF-B winner) and 8T-3RD (SF-A loser vs SF-B loser) created as 2-leg ties at GW37+38",
+      "postconditions": "Final + 3rd pending leg1",
+      "requirementId": "AC-PLAYOFF-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-037",
+      "feature": "TVT-8 GW Range Guard",
+      "scenario": "TVT-8 advance refused outside [playoffStartGw, playoffStartGw+2]",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT-8 league; playoffStartGw=36",
+      "testData": "gw=35 (below) then gw=39 (above)",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=35",
+        "2. POST /advance-playoffs?gw=39"
+      ],
+      "expectedResult": "Both HTTP 400 with message including '8-team playoff gameweeks are 36–38'",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule BR-PLAYOFF-017"
+    },
+    {
+      "id": "TC-PLAYOFF-038",
+      "feature": "TVT-16 GW33 Great Cut",
+      "scenario": "GW33 routes Elite 4 → SFs, Relegated 4 + Survivors 4 → Challenger QFs, Wooden Spoon 4 → WS Seeding",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-16 league at GW33 with all 8 GW33 group-stage fixtures scored and GW31+GW32 already advanced (i.e., 16 group ties complete by GW33's end)",
+      "testData": "leagueId=TVT16-A; gw=33",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=33",
+        "2. SELECT roundName FROM playoff_ties WHERE leagueId=…"
+      ],
+      "expectedResult": "All GW33 group ties complete; SF-A (ChampA1 vs ChampB2) and SF-B (ChampB1 vs ChampA2) created 2-leg GW34+35; 4 Challenger QF ties created single-leg GW34 per BR-PLAYOFF-033; WS-M1 (ChallA3 v ChallB3) and WS-M2 (ChallA4 v ChallB4) created single-leg GW34",
+      "postconditions": "10 new ties created downstream",
+      "requirementId": "AC-PLAYOFF-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-039",
+      "feature": "TVT-16 GW33 Group Guard",
+      "scenario": "GW33 advance throws when any group has fewer than 4 resolved teams",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "TVT-16 league at GW33 where one Challenger group's GW31/GW32 ties never resolved",
+      "testData": "Incomplete group: 16T-XB has only 2 ties complete",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=33"
+      ],
+      "expectedResult": "HTTP 500 with error 'Incomplete group standings — ensure GW31, GW32, and GW33 have all been scored and advanced before GW33'",
+      "postconditions": "No SF/QF/WS rows created",
+      "requirementId": "AC-PLAYOFF-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-040",
+      "feature": "TVT-16 GW35",
+      "scenario": "GW35 creates 3-leg Championship Final + 3rd at GW36+37+38",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-16 league at GW35; SF leg2 scored",
+      "testData": "gw=35",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=35",
+        "2. SELECT * FROM playoff_ties WHERE roundName IN ('16T-FINAL','16T-3RD')"
+      ],
+      "expectedResult": "SF aggregates resolve; 16T-FINAL (SF winners) and 16T-3RD (SF losers) created with 3-leg fixtures spanning GW36, GW37, GW38; CSF + WSSF ties get leg1_done",
+      "postconditions": "3-leg Final pending",
+      "requirementId": "AC-PLAYOFF-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-041",
+      "feature": "TVT-16 GW38",
+      "scenario": "GW38 resolves all finals (3-leg + 2-leg) and emits tournament-complete",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-16 at GW38 with every leg fixture scored",
+      "testData": "gw=38",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=38"
+      ],
+      "expectedResult": "16T-FINAL + 16T-3RD resolved via 3-leg aggregate; 16T-CFINAL, 16T-C3RD, 16T-WSFINAL, 16T-WS3RD resolved via 2-leg aggregate; response actions[] includes '16-team tournament complete!'",
+      "postconditions": "All TVT-16 ties complete",
+      "requirementId": "AC-PLAYOFF-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-042",
+      "feature": "Winners Endpoint Param",
+      "scenario": "Missing leagueSlug returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Any league exists",
+      "testData": "GET /api/playoffs/winners with no query string",
+      "testSteps": [
+        "1. GET /api/playoffs/winners"
+      ],
+      "expectedResult": "HTTP 400 { concluded: false, winners: [] }",
+      "postconditions": "No mutation",
+      "requirementId": "AC-PLAYOFF-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule"
+    },
+    {
+      "id": "TC-PLAYOFF-043",
+      "feature": "Winners Endpoint Lookup",
+      "scenario": "Unknown leagueSlug returns 404",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "No league with slug 'does-not-exist'",
+      "testData": "leagueSlug=does-not-exist",
+      "testSteps": [
+        "1. GET /api/playoffs/winners?leagueSlug=does-not-exist"
+      ],
+      "expectedResult": "HTTP 404 { concluded: false, winners: [] }",
+      "postconditions": "No mutation",
+      "requirementId": "AC-PLAYOFF-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-044",
+      "feature": "Hall of Champions Placeholders",
+      "scenario": "TVT-32 early-season returns 12 pending winner rows with placeholders",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT-32 league pre-playoffs (no ties resolved)",
+      "testData": "leagueSlug=tvt32-a",
+      "testSteps": [
+        "1. GET /api/playoffs/winners?leagueSlug=tvt32-a"
+      ],
+      "expectedResult": "Body { concluded:false, winners:[12 rows] } with placeholders 'Winner of Final', 'Loser of Final', 'Winner of C-38-A', 'Loser of C-37-A', etc.; every row pending=true",
+      "postconditions": "No mutation",
+      "requirementId": "AC-PLAYOFF-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-045",
+      "feature": "Hall of Champions TVT-8",
+      "scenario": "TVT-8 concluded shows 3 podium positions",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-8 league with 8T-FINAL complete (winner=Team X, loser=Team Y) and 8T-3RD complete (winner=Team Z)",
+      "testData": "leagueSlug=tvt8-a",
+      "testSteps": [
+        "1. GET /api/playoffs/winners?leagueSlug=tvt8-a"
+      ],
+      "expectedResult": "Body { concluded:true, winners:[{pos:1,teamName:'Team X',players:[…]},{pos:2,teamName:'Team Y'},{pos:3,teamName:'Team Z'}] }",
+      "postconditions": "Players list populated for each champion",
+      "requirementId": "AC-PLAYOFF-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-046",
+      "feature": "Hall of Champions Partial",
+      "scenario": "TVT-16 with 16T-FINAL done but CFINAL pending shows positions 1-2 filled, 3-6 placeholder",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT-16 league: 16T-FINAL complete; 16T-CFINAL still pending",
+      "testData": "leagueSlug=tvt16-a",
+      "testSteps": [
+        "1. GET /api/playoffs/winners?leagueSlug=tvt16-a"
+      ],
+      "expectedResult": "concluded:false; positions 1,2 carry real teamName + players; positions 3,4,5,6 carry pending:true with placeholders 'Winner of 16T-CFINAL' / 'Loser of 16T-CFINAL' / 'Winner of 16T-C3RD' / 'Loser of 16T-C3RD'",
+      "postconditions": "Mixed-state response",
+      "requirementId": "AC-PLAYOFF-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-047",
+      "feature": "Bracket Mode Tentative TVT-32",
+      "scenario": "Bracket returns tentative with projected RO16 + seedLabels",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT-32 league pre-generate; latestCompletedGw < playoffStartGw-1 (e.g. latest=20, playoffStartGw=31)",
+      "testData": "leagueSlug=tvt32-a",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket?leagueSlug=tvt32-a"
+      ],
+      "expectedResult": "Body { mode:'tentative', … }; RO16 sides show projected team names + seedLabel like '1st (Group A)' when standings can project; downstream QF/SF/Final sides carry placeholder labels 'Winner of RO16-A' etc.",
+      "postconditions": "No DB mutation",
+      "requirementId": "AC-PLAYOFF-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-048",
+      "feature": "Bracket Mode Projected TVT-32",
+      "scenario": "Bracket returns projected mode with locked standings when GW30 scored",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT-32 league with GW30 fully scored but no playoff_ties row exists",
+      "testData": "leagueSlug=tvt32-a",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket"
+      ],
+      "expectedResult": "Body { mode:'projected', … }; every RO16 side carries a definite teamId; downstream labels still placeholder",
+      "postconditions": "No mutation",
+      "requirementId": "AC-PLAYOFF-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-049",
+      "feature": "Bracket Mode Live TVT-32",
+      "scenario": "Live mode returns ro16Ordered + liveScores keyed by GW31..GW38",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 league with playoff_ties rows and GW31 scored",
+      "testData": "leagueSlug=tvt32-a",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket"
+      ],
+      "expectedResult": "Body { mode:'live', ro16Ordered:[A,H,D,E,B,G,C,F order], liveScores:{ '31':…, '32':…, ..., '38':… } }; not-yet-created downstream rounds appear with projected placeholders that resolve Winner/Loser labels from completed upstream ties",
+      "postconditions": "Cache populated",
+      "requirementId": "AC-PLAYOFF-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-050",
+      "feature": "Bracket Live Scores Finished",
+      "scenario": "Finished GW reads scores from results table with isAutoAssigned normalized to isTempCaptain",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 league; GW33 fully scored with stored results.homePlayerScores JSON containing legacy isAutoAssigned=true entries",
+      "testData": "leagueSlug=tvt32-a; gw=33",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket",
+        "2. Inspect liveScores['33'] player rows"
+      ],
+      "expectedResult": "Player rows include isTempCaptain=true where legacy isAutoAssigned was true; no isAutoAssigned key surfaced in the response",
+      "postconditions": "No mutation",
+      "requirementId": "AC-PLAYOFF-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-051",
+      "feature": "Bracket Live Scores Mid-GW",
+      "scenario": "Deadline-passed unscored GW pulls FPL live and seeds Redis cache",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 league at GW31 — deadline passed; no result rows yet; Redis cache empty",
+      "testData": "leagueSlug=tvt32-a",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket",
+        "2. Inspect Redis live cache key"
+      ],
+      "expectedResult": "liveScores['31'] populated from FPL fetch; captain resolved via announced > temp-cap; resulting fixtures array written to Redis live cache for subsequent reads",
+      "postconditions": "Redis live cache key populated",
+      "requirementId": "AC-PLAYOFF-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-052",
+      "feature": "Bracket Survival Live",
+      "scenario": "GW33 unranked survival entries computed live via FPL",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-32 GW33 deadline passed; 11 challenger_survival_entries seeded with rank=null",
+      "testData": "leagueSlug=tvt32-a",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket"
+      ],
+      "expectedResult": "Response sorts survival entries by computeLiveSurvivalScores result desc; playerScores JSON populated; anyRanked=false until admin runs advance",
+      "postconditions": "No DB mutation",
+      "requirementId": "AC-PLAYOFF-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-053",
+      "feature": "Restore Auth Guard",
+      "scenario": "Unauthenticated POST /restore-tvt rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "TVT league",
+      "testData": "No auth",
+      "testSteps": [
+        "1. POST /api/admin/<leagueId>/restore-tvt anonymously"
+      ],
+      "expectedResult": "HTTP 403 { error: 'Forbidden' }",
+      "postconditions": "No DB writes",
+      "requirementId": "BR-PLAYOFF-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule"
+    },
+    {
+      "id": "TC-PLAYOFF-054",
+      "feature": "Restore League Mismatch",
+      "scenario": "Multipart restore with meta.leagueId differing from target leagueId rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin authorized for League X; backup zip's meta.json carries leagueId=League Y",
+      "testData": "leagueId=X; file=backup-from-Y.zip",
+      "testSteps": [
+        "1. POST /restore-tvt multipart with backup-from-Y.zip"
+      ],
+      "expectedResult": "HTTP 400 with error 'League mismatch — this backup was taken from a different league'; no fixtures deleted or inserted",
+      "postconditions": "League X fixtures unchanged",
+      "requirementId": "AC-PLAYOFF-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule BR-PLAYOFF-047"
+    },
+    {
+      "id": "TC-PLAYOFF-055",
+      "feature": "Restore Missing Meta",
+      "scenario": "Multipart restore zip lacking meta.json rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin authorized; zip lacks meta.json",
+      "testData": "file=backup-no-meta.zip",
+      "testSteps": [
+        "1. POST /restore-tvt multipart"
+      ],
+      "expectedResult": "HTTP 400 { error: 'Backup zip is missing meta.json — please re-export from this league via Download Backup.' }",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-056",
+      "feature": "Restore Format Mismatch",
+      "scenario": "Multipart restore with meta.format='triple-crown' against a TVT league rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Target league is TVT; backup zip carries meta.format='triple-crown'",
+      "testData": "file=tc-backup.zip",
+      "testSteps": [
+        "1. POST /restore-tvt multipart"
+      ],
+      "expectedResult": "HTTP 400 { error: 'Format mismatch — this backup is for a triple-crown league but the target is TVT.' }",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-057",
+      "feature": "Restore BackupId Scoping",
+      "scenario": "JSON backupId from another league returns 404",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Snapshot exists for League Y; admin authorized for League X",
+      "testData": "leagueId=X; JSON body { backupId: 'snap-from-Y' }",
+      "testSteps": [
+        "1. POST /restore-tvt with JSON"
+      ],
+      "expectedResult": "HTTP 404 with error 'Snapshot not found for this league'",
+      "postconditions": "League X data unchanged",
+      "requirementId": "AC-PLAYOFF-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule BR-PLAYOFF-047 backupId scoping"
+    },
+    {
+      "id": "TC-PLAYOFF-058",
+      "feature": "Restore Format Guard",
+      "scenario": "Non-TVT league rejects /restore-tvt",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League X with format='triple-crown'",
+      "testData": "leagueId=X; any payload",
+      "testSteps": [
+        "1. POST /api/admin/X/restore-tvt"
+      ],
+      "expectedResult": "HTTP 400 { error: 'Restore is for TVT-format leagues only' }",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-050",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule BR-PLAYOFF-046"
+    },
+    {
+      "id": "TC-PLAYOFF-059",
+      "feature": "Restore Missing League",
+      "scenario": "Restore against non-existent leagueId returns 404",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "leagueId=does-not-exist",
+      "testData": "leagueId=does-not-exist",
+      "testSteps": [
+        "1. POST /restore-tvt"
+      ],
+      "expectedResult": "HTTP 404",
+      "postconditions": "No DB writes",
+      "requirementId": "BR-PLAYOFF-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Guard rule"
+    },
+    {
+      "id": "TC-PLAYOFF-060",
+      "feature": "Restore Row Skipping",
+      "scenario": "Restore inserts 48 of 50 rows, skipping 2 unknown-team + 1 out-of-range GW",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Valid zip with fixtures.xlsx (50 rows: 2 reference unknown team logins, 1 has gameweek=99, 47 valid)",
+      "testData": "fixturesCount=50; warnings expected=3",
+      "testSteps": [
+        "1. POST /restore-tvt multipart",
+        "2. Inspect response.warnings + DB"
+      ],
+      "expectedResult": "Response { fixturesInserted: 47, warnings: [3 'Row N: …' entries about unknown login and out-of-range gw], message: 'Restore complete. Use Import Captain/Chip Data blocks to restore those.' }; DB has 47 league fixtures matching the valid rows",
+      "postconditions": "Captain/chip warning surfaced if those sheets had rows",
+      "requirementId": "AC-PLAYOFF-051",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Per AC text 48 — but BR-PLAYOFF-048 says skip unknown+out-of-range so 47; pinning observed behaviour"
+    },
+    {
+      "id": "TC-PLAYOFF-061",
+      "feature": "Restore GW Boundary",
+      "scenario": "Restore row with gameweek=0 and gameweek=39 both skipped (range 1..38)",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Valid zip with 2 rows: gw=0 and gw=39",
+      "testData": "fixturesCount=2",
+      "testSteps": [
+        "1. POST /restore-tvt multipart"
+      ],
+      "expectedResult": "Both rows skipped with warnings citing the out-of-range gw values; fixturesInserted=0",
+      "postconditions": "DB unchanged",
+      "requirementId": "BR-PLAYOFF-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary check"
+    },
+    {
+      "id": "TC-PLAYOFF-062",
+      "feature": "Restore Orphan Ties",
+      "scenario": "restore-tvt wipes fixtures AND clears stale playoff_ties + challenger_survival_entries for the league",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-32 league at GW33 with 14 playoff_ties rows (RO16 complete, C-31 complete, QF leg1_done, plus 11 challenger_survival_entries) AND a valid backup zip",
+      "testData": "leagueId=TVT32-A; file=backup.zip",
+      "testSteps": [
+        "1. Snapshot playoff_ties + challenger_survival_entries rowcount + tieIds",
+        "2. POST /restore-tvt multipart with valid backup",
+        "3. Re-query playoff_ties WHERE league_id=TVT32-A and challenger_survival_entries WHERE gameweek_id IN (league's gameweekIds)",
+        "4. POST /advance-playoffs?gw=32 (re-attempt against restored fixture set)"
+      ],
+      "expectedResult": "Restore returns 200 with fixturesInserted>0; playoff_ties rowcount for the leagueId = 0 (all stale ties wiped); challenger_survival_entries rowcount for the league's gameweekIds = 0 (all stale survival rows wiped); the league is returned to a pre-playoff state matching the restored fixtures and advance-playoffs can proceed without manual DB intervention",
+      "postconditions": "playoff_ties and challenger_survival_entries are empty for the league; no orphan rows remain referencing wiped fixture IDs",
+      "requirementId": "AC-PLAYOFF-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PLAYOFF-003 (Critical)\n[QA-VERIFY] Updated post-DEF-PLAYOFF-003 fix on 2026-05-25."
+    },
+    {
+      "id": "TC-PLAYOFF-063",
+      "feature": "Generate Brackets TC-only Guard",
+      "scenario": "POST /generate-brackets against TVT league rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "TVT league exists",
+      "testData": "leagueId=TVT32-A; format='tvt'",
+      "testSteps": [
+        "1. POST /api/admin/<leagueId>/generate-brackets"
+      ],
+      "expectedResult": "HTTP 400 { error: 'Bracket generation only available for Triple Crown format' }",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-PLAYOFF-053",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Format guard BR-PLAYOFF-051"
+    },
+    {
+      "id": "TC-PLAYOFF-064",
+      "feature": "C-31 Seeding Divergence",
+      "scenario": "REGRESSION DEF-001 — tentative bracket and generated C-31 ties show different pairings/home sides",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "TVT-32 league pre-generate (tentative mode); standings populated for Group A and Group B (ranks 9-14 known)",
+      "testData": "leagueSlug=tvt32-a",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket?leagueSlug=tvt32-a (tentative)",
+        "2. Record the C-31-A..F home/away pairings shown in the response",
+        "3. As admin, POST /generate-playoffs",
+        "4. SELECT * FROM playoff_ties WHERE roundName='C-31' AND leagueId=…",
+        "5. Compare home/away assignment for each C-31-X tieId between the tentative response and DB row"
+      ],
+      "expectedResult": "Tentative bracket shows alternating-side seeding (C-31-A: A9 home v B14 away; C-31-B: B9 home v A14 away; C-31-C: A10 home v B13 away; C-31-D: B10 home v A13 away; C-31-E: A11 home v B12 away; C-31-F: B11 home v A12 away) per bracket route's local C31_SEEDING; DB rows from generate-playoffs show A-side always home per C31_SEEDING_32 in playoffs.ts (C-31-B: A10 home v B13 away, C-31-C: A11 v B12, …). The two diverge on at least 4 of 6 ties — pins current bug.",
+      "postconditions": "Defect persists — projection mismatches live",
+      "requirementId": "AC-PLAYOFF-054",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PLAYOFF-001"
+    },
+    {
+      "id": "TC-PLAYOFF-065",
+      "feature": "TVT-16 Tentative Topology",
+      "scenario": "REGRESSION DEF-004 — tentative bracket for TVT-16 renders 8-team single-elim, not 4-group",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "TVT-16 league pre-generate (latestCompletedGw < playoffStartGw-1)",
+      "testData": "leagueSlug=tvt16-a",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket?leagueSlug=tvt16-a",
+        "2. Record the response rounds/structure",
+        "3. As admin, POST /generate-playoffs",
+        "4. GET /api/playoffs/bracket again (now live)",
+        "5. Compare topology"
+      ],
+      "expectedResult": "Tentative response shows a single 8-team KO tree: QF rounds seeded 1v8, 2v7, 3v6, 4v5, then SF, then Final — no group stage. Live response after generate shows the actual 4-group stage (16T-CA, 16T-CB, 16T-XA, 16T-XB) → Championship SFs → 3-leg Championship Final → parallel Challenger/WS rounds. The two topologies disagree fundamentally — pins current bug.",
+      "postconditions": "Defect persists",
+      "requirementId": "AC-PLAYOFF-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-PLAYOFF-004"
+    },
+    {
+      "id": "TC-PLAYOFF-066",
+      "feature": "Resolve Idempotency",
+      "scenario": "Re-invoking resolve2LegTie on already-complete tie is a no-op",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "2-leg tie with status='complete', winnerId and loserId set",
+      "testData": "tieId=RO16-A-complete",
+      "testSteps": [
+        "1. Capture row pre-call",
+        "2. Call resolve2LegTie(tieId) again",
+        "3. Re-read row"
+      ],
+      "expectedResult": "Row unchanged; winnerId/loserId/aggregates identical to pre-call snapshot; no UPDATE issued",
+      "postconditions": "Idempotent re-run",
+      "requirementId": "AC-PLAYOFF-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Idempotency guard BR-PLAYOFF-022"
+    },
+    {
+      "id": "TC-PLAYOFF-067",
+      "feature": "Create Helper Idempotency",
+      "scenario": "Calling 2-leg create helper twice for same tieId is idempotent",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Single playoff_ties row already exists for tieId='SF-A'",
+      "testData": "tieId=SF-A; same params on second call",
+      "testSteps": [
+        "1. Invoke create2LegTie('SF-A', …)",
+        "2. Invoke create2LegTie('SF-A', …) again",
+        "3. SELECT count(*) FROM playoff_ties WHERE tieId='SF-A' AND leagueId=…"
+      ],
+      "expectedResult": "Count=1; second call is silently dropped by onConflictDoNothing; fixtures for tieId also remain at the expected leg count",
+      "postconditions": "No duplicate rows",
+      "requirementId": "AC-PLAYOFF-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Idempotency BR-PLAYOFF-054"
+    },
+    {
+      "id": "TC-PLAYOFF-068",
+      "feature": "Cache Invalidation",
+      "scenario": "Generate + advance both call invalidateLeaguePageCache before responding",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT-32 league with cached bracket payload",
+      "testData": "leagueId=TVT32-A",
+      "testSteps": [
+        "1. Prime cache via GET /bracket",
+        "2. POST /generate-playoffs (or /advance-playoffs)",
+        "3. GET /bracket again, observe Cache-Control / cache miss"
+      ],
+      "expectedResult": "Cache for the league invalidated; next bracket GET re-fetches fresh state including new ties",
+      "postconditions": "Cache key refreshed",
+      "requirementId": "BR-PLAYOFF-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-069",
+      "feature": "Temp Captain Rotation",
+      "scenario": "When two players tie on net score, pickTempCaptain rotates off the previous-GW captain",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Survival team with players P1 and P2 tied at net score 8; previous-GW captain recorded as P1",
+      "testData": "GW33 survival entry; tie at net=8; prevCaptain=P1",
+      "testSteps": [
+        "1. POST /advance-playoffs?gw=33",
+        "2. Inspect entry.playerScores for which player is flagged isTempCaptain=true and doubled"
+      ],
+      "expectedResult": "P2 chosen as temp captain (rotation), P2's net score doubled into total; entry.playerScores marks P2 with isTempCaptain=true",
+      "postconditions": "Rotation rule applied",
+      "requirementId": "BR-PLAYOFF-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-070",
+      "feature": "Tentative Standings Source",
+      "scenario": "Tentative standings exclude playoff fixtures and Playoffs group teams",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "TVT-32 league with mixed PL + (somehow) playoff fixtures present and the Playoffs group containing teams",
+      "testData": "leagueSlug=tvt32-a",
+      "testSteps": [
+        "1. GET /api/playoffs/bracket (tentative)",
+        "2. Cross-check projected seeding against a manually computed leaguePoints/pointsFor/cbpPoints over non-playoff PL fixtures"
+      ],
+      "expectedResult": "Projected ranks match standings computed only from non-playoff PL fixtures (isPlayoff=false AND (competitionType null OR 'pl')); no team belonging to the Playoffs group appears in the seeding pool",
+      "postconditions": "No mutation",
+      "requirementId": "BR-PLAYOFF-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-071",
+      "feature": "League Stage Boundary",
+      "scenario": "Standings used for seeding count only GW1..playoffStartGw-1",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT-32 league with playoffStartGw=31; chips applied to fixtures after GW30 (e.g. in GW31)",
+      "testData": "leagueId=TVT32-A",
+      "testSteps": [
+        "1. POST /generate-playoffs",
+        "2. Cross-check seedings — A1, A2, … must reflect GW1..GW30 results only; any GW31+ chip-driven adjustments are excluded"
+      ],
+      "expectedResult": "Seeding ignores GW31+ data; rankings match GW1..GW30 leaguePoints/pointsFor/cbpPoints",
+      "postconditions": "Generation succeeds with the boundary respected",
+      "requirementId": "BR-PLAYOFF-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Boundary guard BR-PLAYOFF-003"
+    },
+    {
+      "id": "TC-PLAYOFF-072",
+      "feature": "Standings Tie-break",
+      "scenario": "Seeding sorts leaguePoints desc → pointsFor desc → cbpPoints desc",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Group A has two teams tied on leaguePoints; one has higher pointsFor",
+      "testData": "Team T1 leaguePoints=20 pointsFor=900 cbp=4; Team T2 leaguePoints=20 pointsFor=950 cbp=2",
+      "testSteps": [
+        "1. POST /generate-playoffs",
+        "2. Inspect seeding"
+      ],
+      "expectedResult": "T2 ranks higher than T1 (pointsFor tiebreak)",
+      "postconditions": "Tie-break applied correctly",
+      "requirementId": "BR-PLAYOFF-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-PLAYOFF-073",
+      "feature": "Fixture ID Pattern TVT-32",
+      "scenario": "2-legged fixture IDs follow 'playoff-<tieId>-leg1/leg2'; single-leg follow 'playoff-<tieId>'",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT-32 generate-playoffs just succeeded",
+      "testData": "leagueId=TVT32-A",
+      "testSteps": [
+        "1. SELECT id, tieId FROM fixtures WHERE leagueId=… AND groupId='Playoffs'"
+      ],
+      "expectedResult": "RO16 fixtures: id='playoff-RO16-A-leg1' and 'playoff-RO16-A-leg2' (etc); C-31 fixtures: id='playoff-C-31-A'",
+      "postconditions": "IDs match BR-PLAYOFF-013 pattern",
+      "requirementId": "BR-PLAYOFF-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": [],
+  "defects": [
+    {
+      "id": "DEF-PLAYOFF-001",
+      "title": "C-31 seeding pattern diverges between generate-playoffs and the public bracket projection",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/lib/formats/tvt/playoffs.ts:27-34 defines C31_SEEDING_32 with the A-side always home (C-31-A=A9 v B14, C-31-B=A10 v B13, C-31-C=A11 v B12, C-31-D=A12 v B11, C-31-E=A13 v B10, C-31-F=A14 v B9). The public bracket route at src/app/api/playoffs/bracket/route.ts:22-26 declares its own C31_SEEDING with alternating home sides (C-31-A=A9 v B14, C-31-B=B9 v A14, C-31-C=A10 v B13, C-31-D=B10 v A13, C-31-E=A11 v B12, C-31-F=B11 v A12). The two arrays disagree on both pairings (e.g. C-31-B) and home/away assignment for 4 of the 6 ties.",
+      "expectedBehaviour": "Both modules should reference one canonical seeding table so the tentative/projected bracket matches the live ties once generated.",
+      "actualBehaviour": "Public visitors see one set of matchups in tentative mode and a different set once the admin clicks Generate Playoffs — undermining the projected bracket as a trustworthy preview.",
+      "sourceRefs": [
+        "src/lib/formats/tvt/playoffs.ts:27-34",
+        "src/app/api/playoffs/bracket/route.ts:22-26"
+      ],
+      "linkedBusinessRules": [
+        "BR-PLAYOFF-006"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-PLAYOFF-054"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-PLAYOFF-064"
+      ],
+      "notes": "Fix: pick one — most likely import C31_SEEDING_32 from src/lib/formats/tvt/playoffs.ts into the bracket route and delete the local copy. Cross-check which alternation matches the printed JPL rules document; if it's the alternating version, update generate-playoffs instead (this changes home-aggregate winners and is more disruptive).",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-PLAYOFF-002",
+      "title": "DELETE /generate-playoffs does not cascade to downstream playoff rounds",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The DELETE handler at src/app/api/admin/[leagueId]/generate-playoffs/route.ts:42-84 only targets ties whose roundName is in getInitialRoundNames(teamSize) — i.e. ['RO16','C-31'] for TVT-32, ['16T-CA','16T-CB','16T-XA','16T-XB'] for TVT-16, ['8T-SF'] for TVT-8. Any QF, SF, Final, 8T-FINAL, 8T-3RD, 16T-SF, 16T-FINAL, 16T-CFINAL, 16T-WSFINAL etc. rows previously created by advance-playoffs remain after the delete. A subsequent regenerate then creates fresh initial ties that can never reach the orphaned advanced rounds (because the advance machinery short-circuits when downstream ties already exist and is keyed on tieId).",
+      "expectedBehaviour": "DELETE should treat the whole playoff bracket as one unit — either remove every playoff_ties row for the league (with cascaded fixtures+results) or refuse the delete once any downstream tie exists.",
+      "actualBehaviour": "Orphan advanced-round ties persist; the regenerate succeeds but the bracket is in an inconsistent state where advance steps will fail or silently no-op via onConflictDoNothing.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:42-84",
+        "src/lib/formats/tvt/playoffs.ts:288-292"
+      ],
+      "linkedBusinessRules": [
+        "BR-PLAYOFF-009"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-PLAYOFF-007"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-PLAYOFF-009"
+      ],
+      "notes": "Two fixes: (a) replace the inArray(roundName, initialRounds) filter with a full delete of every playoff_ties row for the leagueId plus their fixtures/results — simplest; (b) detect downstream ties and return 400 ('cannot regenerate — advanced rounds exist; use restore instead'). (a) matches admin intent for the 'Delete & Regenerate' button.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-PLAYOFF-003",
+      "title": "restore-tvt leaves playoff_ties + challenger_survival_entries orphaned after fixture wipe",
+      "severity": "Critical",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/lib/backup/restore-tvt.ts:128-176 wipes every fixture for the league's gameweeks and re-inserts from the payload. The CASCADE on results.fixture_id correctly removes results, but playoff_ties rows (which reference fixture IDs via the deterministic 'playoff-<tieId>[-legN]' pattern in advance-playoffs/resolve helpers) and challenger_survival_entries rows are never touched. After restore: (a) advance-playoffs will see playoff_ties with status in {'leg1_done','complete'} but no underlying result rows, so resolve helpers return null and silently no-op; (b) the public bracket route reads tie.homeAggregate/awayAggregate that are now disconnected from any visible fixture.",
+      "expectedBehaviour": "restore-tvt should either (1) wipe playoff_ties + challenger_survival_entries for the league as part of the transactional restore (so the league is returned to a pre-playoff state matching the restored fixtures), or (2) reject the restore once any playoff_ties row exists with a clear error message asking admin to DELETE playoffs first.",
+      "actualBehaviour": "Restore succeeds, fixtures are rewritten, but playoff state is silently desynchronized — the league enters a state where the bracket UI shows stale winners and advance-playoffs cannot recover without manual DB intervention.",
+      "sourceRefs": [
+        "src/lib/backup/restore-tvt.ts:128-186",
+        "src/app/api/admin/[leagueId]/restore-tvt/route.ts:86-93",
+        "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:217-256"
+      ],
+      "linkedBusinessRules": [
+        "BR-PLAYOFF-049"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-PLAYOFF-052"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-PLAYOFF-062"
+      ],
+      "notes": "Lowest-risk fix: extend restoreFixtures to also DELETE FROM playoff_ties WHERE league_id=? plus DELETE FROM challenger_survival_entries WHERE gameweek_id IN (SELECT id FROM gameweeks WHERE league_id=?) inside the same flow. Captains/chips deferral is already surfaced as a warning; this should be the same treatment.\n[DEV] Self-verified: tsc passes for touched files (pre-existing tests/league-types/* errors are unrelated), manual diff review clean. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-PLAYOFF-062 against the fix. Expected behaviour now matches the original 'expectedBehaviour' field: post-restore, playoff_ties for the league and challenger_survival_entries scoped to the league's gameweeks are wiped alongside fixtures, so the league is returned to a pre-playoff state and advance-playoffs can proceed against the restored fixture set without manual DB intervention. TC-PLAYOFF-062's expectedResult text was written to pin the defective behaviour and now needs to be updated to assert the corrected behaviour (playoff_ties + challenger_survival_entries rowcount=0 post-restore).\n[BA] BR-PLAYOFF-049 + AC-PLAYOFF-052 describe the defective behaviour and must be rewritten to state that restore-tvt now clears playoff_ties (by leagueId) and challenger_survival_entries (by gameweekId IN league's gameweeks) before re-inserting fixtures. Remove the // CODE-CONFIRMED defect annotation from BR-PLAYOFF-049.\n[QA-VERIFIED]: 2026-05-25 — TC-PLAYOFF-062 inverted; restore-tvt confirmed to wipe stale playoff state.\n[BA-UPDATED]: 2026-05-25 — BR-PLAYOFF-049 + AC-PLAYOFF-052 updated to reflect fixed behaviour.",
+      "resolution": "Extended restoreFixtures in src/lib/backup/restore-tvt.ts:128-135 (wipe phase) to also delete challenger_survival_entries scoped by the league's gameweekIds and playoff_ties scoped by leagueId, before re-inserting fixtures. Added playoffTies + challengerSurvivalEntries to the existing import from @/lib/db (line 11). This returns the league to a pre-playoff state matching the restored fixtures, so advance-playoffs has no stale aggregate/winner rows to trip over and the public bracket route no longer surfaces phantom winners after a restore.",
+      "resolutionDate": "2026-05-24"
+    },
+    {
+      "id": "DEF-PLAYOFF-004",
+      "title": "TVT-16 tentative bracket renders an 8-team single-elimination tree instead of the 4-group playoff stage",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/playoffs/bracket/route.ts:740-791 (buildTentative16Team) builds a TVT-16 tentative bracket with a QF round seeded 1v8/2v7/3v6/4v5, then SF, then Final — i.e. the same topology as a TVT-8 expansion. But generate-playoffs for TVT-16 (src/app/api/admin/[leagueId]/generate-playoffs/route.ts:204-275) actually creates four 4-team playoff groups (Championship A/B, Challenger A/B) playing a 6-match round-robin across GW31-33, then Championship SFs at GW34+35, then a 3-LEGGED Championship Final at GW36+37+38, plus parallel Challenger QFs and WS Seeding. The tentative and live structures are fundamentally different.",
+      "expectedBehaviour": "Tentative bracket for TVT-16 should preview the group-stage layout (4 groups × 4 teams, with snake-seeded entries from the league standings) followed by the SF/3-leg Final/Challenger paths, matching what generate-playoffs will produce.",
+      "actualBehaviour": "Public visitors and admins viewing the tentative bracket for a TVT-16 league see a misleading single-bracket KO that has nothing to do with the actual format. As soon as generate-playoffs runs, the live bracket flips to an entirely different shape.",
+      "sourceRefs": [
+        "src/app/api/playoffs/bracket/route.ts:740-791",
+        "src/app/api/admin/[leagueId]/generate-playoffs/route.ts:204-275",
+        "src/app/api/playoffs/bracket/route.ts:1416-1470"
+      ],
+      "linkedBusinessRules": [
+        "BR-PLAYOFF-052"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-PLAYOFF-055"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-PLAYOFF-065"
+      ],
+      "notes": "Fix path: rewrite buildTentative16Team to mirror the live 16-team bracket shape in buildLiveBracket (the same buildGroupData approach using projected standings to seed groups). Reuse the snake-seeding logic from generate-playoffs (ranks 1,4,5,8 / 2,3,6,7 / 9,12,13,16 / 10,11,14,15).",
+      "resolution": null,
+      "resolutionDate": null
+    }
+  ]
+}
