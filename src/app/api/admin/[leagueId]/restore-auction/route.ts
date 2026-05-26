@@ -352,222 +352,224 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── Wipe current auction state (mirrors Reset Auction "initial") ──
+  // ── Wipe + restore inside a single transaction so any error rolls back atomically. ──
   try {
-    const allBids = await db
-      .select({ id: auctionBids.id })
-      .from(auctionBids)
-      .where(eq(auctionBids.leagueId, leagueId));
-    if (allBids.length > 0) {
-      await db.delete(auctionBidLogs).where(inArray(auctionBidLogs.bidId, allBids.map((b) => b.id)));
-    }
-    await db.delete(auctionBids).where(eq(auctionBids.leagueId, leagueId));
-    await db.delete(auctionSessions).where(eq(auctionSessions.leagueId, leagueId));
-    await db.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId));
-    await db.delete(auctionClubOwnership).where(eq(auctionClubOwnership.leagueId, leagueId));
-    await db.delete(teamPenalties).where(eq(teamPenalties.leagueId, leagueId));
-    await db.delete(auctionScores).where(eq(auctionScores.leagueId, leagueId));
-    await db.delete(tradeProposals).where(eq(tradeProposals.leagueId, leagueId));
-    // Event-history audit tables (migration 0012) — wipe so the restore is a clean overwrite.
-    await db.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId));
-    await db.delete(auctionWishlists).where(eq(auctionWishlists.leagueId, leagueId));
-    await db.delete(notifications).where(eq(notifications.leagueId, leagueId));
+    await db.transaction(async (tx) => {
+      const allBids = await tx
+        .select({ id: auctionBids.id })
+        .from(auctionBids)
+        .where(eq(auctionBids.leagueId, leagueId));
+      if (allBids.length > 0) {
+        await tx.delete(auctionBidLogs).where(inArray(auctionBidLogs.bidId, allBids.map((b) => b.id)));
+      }
+      await tx.delete(auctionBids).where(eq(auctionBids.leagueId, leagueId));
+      await tx.delete(auctionSessions).where(eq(auctionSessions.leagueId, leagueId));
+      await tx.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId));
+      await tx.delete(auctionClubOwnership).where(eq(auctionClubOwnership.leagueId, leagueId));
+      await tx.delete(teamPenalties).where(eq(teamPenalties.leagueId, leagueId));
+      await tx.delete(auctionScores).where(eq(auctionScores.leagueId, leagueId));
+      await tx.delete(tradeProposals).where(eq(tradeProposals.leagueId, leagueId));
+      // Event-history audit tables (migration 0012) — wipe so the restore is a clean overwrite.
+      await tx.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId));
+      await tx.delete(auctionWishlists).where(eq(auctionWishlists.leagueId, leagueId));
+      await tx.delete(notifications).where(eq(notifications.leagueId, leagueId));
 
-    // Reset per-team economy to defaults; the per-team state below will overwrite any team that
-    // exists in the backup.
-    await db
-      .update(teams)
-      .set({
-        totalSpent: 0,
-        totalRefunds: 0,
-        totalIncome: 0,
-        penaltySlots: 0,
-        purse: league.initialBudget,
-      })
-      .where(eq(teams.leagueId, leagueId));
-
-    // ── Insert ownership + clubs ──
-    if (payload.squads.length > 0) {
-      const now = new Date();
-      await db.insert(auctionOwnership).values(payload.squads.map((s) => ({
-        id: s["Ownership ID"] ?? generateId(),
-        leagueId,
-        teamId: s["Team ID"],
-        fplElementId: Number(s["FPL Element ID"]),
-        playerName: s["Player Name"],
-        elementType: s["Element Type"] != null ? Number(s["Element Type"]) : null,
-        purchasePrice: Number(s["Purchase Price"]),
-        acquiredGw: Number(s["Acquired GW"]),
-        releasedGw: s["Released GW"] != null ? Number(s["Released GW"]) : null,
-        status: s.Status ?? "active",
-        createdAt: now,
-        updatedAt: now,
-      })));
-    }
-
-    if (payload.clubs.length > 0) {
-      const now = new Date();
-      await db.insert(auctionClubOwnership).values(payload.clubs.map((c) => ({
-        id: c.ID ?? generateId(),
-        leagueId,
-        teamId: c["Team ID"],
-        plTeamId: Number(c["PL Team ID"]),
-        plTeamName: c["PL Team Name"],
-        plTeamShort: c["PL Team Short"],
-        tier: c.Tier,
-        purchasePrice: Number(c["Purchase Price"]),
-        acquiredAt: c["Acquired At"] ? new Date(c["Acquired At"]) : now,
-        createdAt: now,
-      })));
-    }
-
-    // ── Restore per-team economy ──
-    for (const t of payload.teamsState) {
-      await db
+      // Reset per-team economy to defaults; the per-team state below will overwrite any team that
+      // exists in the backup.
+      await tx
         .update(teams)
         .set({
-          purse: Number(t.Purse),
-          totalSpent: Number(t["Total Spent"]),
-          totalIncome: Number(t["Total Income"]),
-          totalRefunds: Number(t["Total Refunds"]),
-          penaltySlots: Number(t["Penalty Slots"]),
-          // Bonus Slots may be absent in older backups taken before the column existed — default 0.
-          bonusSlots: Number(t["Bonus Slots"] ?? 0),
-          updatedAt: new Date(),
+          totalSpent: 0,
+          totalRefunds: 0,
+          totalIncome: 0,
+          penaltySlots: 0,
+          purse: league.initialBudget,
         })
-        .where(and(eq(teams.id, t["Team ID"]), eq(teams.leagueId, leagueId)));
-    }
+        .where(eq(teams.leagueId, leagueId));
 
-    // ── Event-history restore (migration 0012). Strict FK-ordered. ──
-    // 1. Sessions first — FK targets for bids + penaltyRedemptions.
-    if (payload.sessions.length > 0) {
-      await db.insert(auctionSessions).values(payload.sessions.map((s) => ({
-        id: s["Session ID"],
-        leagueId,
-        type: s.Type,
-        cycleNumber: Number(s["Cycle Number"]),
-        status: s.Status,
-        snakeOrder: s["Snake Order"] ?? "[]",
-        currentNominatorIndex: Number(s["Current Nominator Index"] ?? 0),
-        nominationDeadline: s["Nomination Deadline"] ? new Date(s["Nomination Deadline"]) : null,
-        scheduledAt: s["Scheduled At"] ? new Date(s["Scheduled At"]) : null,
-        bidTimerSeconds: Number(s["Bid Timer Seconds"] ?? 20),
-        nominationTimeoutSeconds: Number(s["Nomination Timeout Seconds"] ?? 60),
-        createdAt: new Date(s["Created At"]),
-      })));
-    }
+      // ── Insert ownership + clubs ──
+      if (payload.squads.length > 0) {
+        const now = new Date();
+        await tx.insert(auctionOwnership).values(payload.squads.map((s) => ({
+          id: s["Ownership ID"] ?? generateId(),
+          leagueId,
+          teamId: s["Team ID"],
+          fplElementId: Number(s["FPL Element ID"]),
+          playerName: s["Player Name"],
+          elementType: s["Element Type"] != null ? Number(s["Element Type"]) : null,
+          purchasePrice: Number(s["Purchase Price"]),
+          acquiredGw: Number(s["Acquired GW"]),
+          releasedGw: s["Released GW"] != null ? Number(s["Released GW"]) : null,
+          status: s.Status ?? "active",
+          createdAt: now,
+          updatedAt: now,
+        })));
+      }
 
-    // 2. Bids — filter to bids whose sessionId is in the restored set; orphans are dropped.
-    const restoredSessionIds = new Set(payload.sessions.map((s) => s["Session ID"]));
-    const validBids = payload.bids.filter((b) => restoredSessionIds.has(b["Session ID"]));
-    if (validBids.length > 0) {
-      await db.insert(auctionBids).values(validBids.map((b) => ({
-        id: b["Bid ID"],
-        leagueId,
-        sessionId: b["Session ID"],
-        nominatorTeamId: b["Nominator Team ID"],
-        fplElementId: Number(b["FPL Element ID"]),
-        playerName: b["Player Name"],
-        currentHighBid: Number(b["Current High Bid"]),
-        currentHighBidderId: b["Current High Bidder ID"],
-        minBid: Number(b["Min Bid"]),
-        status: b.Status,
-        expiresAt: new Date(b["Expires At"]),
-        createdAt: new Date(b["Created At"]),
-        updatedAt: new Date(b["Updated At"]),
-      })));
-    }
+      if (payload.clubs.length > 0) {
+        const now = new Date();
+        await tx.insert(auctionClubOwnership).values(payload.clubs.map((c) => ({
+          id: c.ID ?? generateId(),
+          leagueId,
+          teamId: c["Team ID"],
+          plTeamId: Number(c["PL Team ID"]),
+          plTeamName: c["PL Team Name"],
+          plTeamShort: c["PL Team Short"],
+          tier: c.Tier,
+          purchasePrice: Number(c["Purchase Price"]),
+          acquiredAt: c["Acquired At"] ? new Date(c["Acquired At"]) : now,
+          createdAt: now,
+        })));
+      }
 
-    // 3. Bid logs — filter to logs whose bidId was restored.
-    const restoredBidIds = new Set(validBids.map((b) => b["Bid ID"]));
-    const validBidLogs = payload.bidLogs.filter((l) => restoredBidIds.has(l["Bid ID"]));
-    if (validBidLogs.length > 0) {
-      await db.insert(auctionBidLogs).values(validBidLogs.map((l) => ({
-        id: l["Bid Log ID"],
-        bidId: l["Bid ID"],
-        teamId: l["Team ID"],
-        amount: Number(l.Amount),
-        type: l.Type,
-        createdAt: new Date(l["Created At"]),
-      })));
-    }
+      // ── Restore per-team economy ──
+      for (const t of payload.teamsState) {
+        await tx
+          .update(teams)
+          .set({
+            purse: Number(t.Purse),
+            totalSpent: Number(t["Total Spent"]),
+            totalIncome: Number(t["Total Income"]),
+            totalRefunds: Number(t["Total Refunds"]),
+            penaltySlots: Number(t["Penalty Slots"]),
+            // Bonus Slots may be absent in older backups taken before the column existed — default 0.
+            bonusSlots: Number(t["Bonus Slots"] ?? 0),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(teams.id, t["Team ID"]), eq(teams.leagueId, leagueId)));
+      }
 
-    // 4. Penalty redemptions — sessionId is best-effort; set to null if the session wasn't restored
-    //    (the schema has onDelete: "set null" on this FK so this is the intended fallback).
-    if (payload.penaltyRedemptions.length > 0) {
-      await db.insert(teamPenalties).values(payload.penaltyRedemptions.map((p) => ({
-        id: p["Penalty ID"],
-        leagueId,
-        teamId: p["Team ID"],
-        sessionId: p["Session ID"] && restoredSessionIds.has(p["Session ID"]) ? p["Session ID"] : null,
-        incurredCycle: Number(p["Incurred Cycle"]),
-        redeemedAt: new Date(p["Redeemed At"]),
-        redemptionPrice: Number(p["Redemption Price"]),
-        createdAt: new Date(p["Created At"]),
-      })));
-    }
+      // ── Event-history restore (migration 0012). Strict FK-ordered. ──
+      // 1. Sessions first — FK targets for bids + penaltyRedemptions.
+      if (payload.sessions.length > 0) {
+        await tx.insert(auctionSessions).values(payload.sessions.map((s) => ({
+          id: s["Session ID"],
+          leagueId,
+          type: s.Type,
+          cycleNumber: Number(s["Cycle Number"]),
+          status: s.Status,
+          snakeOrder: s["Snake Order"] ?? "[]",
+          currentNominatorIndex: Number(s["Current Nominator Index"] ?? 0),
+          nominationDeadline: s["Nomination Deadline"] ? new Date(s["Nomination Deadline"]) : null,
+          scheduledAt: s["Scheduled At"] ? new Date(s["Scheduled At"]) : null,
+          bidTimerSeconds: Number(s["Bid Timer Seconds"] ?? 20),
+          nominationTimeoutSeconds: Number(s["Nomination Timeout Seconds"] ?? 60),
+          createdAt: new Date(s["Created At"]),
+        })));
+      }
 
-    // 5. Slot unlocks — no FK to sessions.
-    if (payload.slotUnlocks.length > 0) {
-      await db.insert(teamSlotUnlocks).values(payload.slotUnlocks.map((u) => ({
-        id: u["Unlock ID"],
-        leagueId,
-        teamId: u["Team ID"],
-        slotNumber: Number(u["Slot Number"]),
-        cost: Number(u.Cost),
-        unlockedAt: new Date(u["Unlocked At"]),
-      })));
-    }
+      // 2. Bids — filter to bids whose sessionId is in the restored set; orphans are dropped.
+      const restoredSessionIds = new Set(payload.sessions.map((s) => s["Session ID"]));
+      const validBids = payload.bids.filter((b) => restoredSessionIds.has(b["Session ID"]));
+      if (validBids.length > 0) {
+        await tx.insert(auctionBids).values(validBids.map((b) => ({
+          id: b["Bid ID"],
+          leagueId,
+          sessionId: b["Session ID"],
+          nominatorTeamId: b["Nominator Team ID"],
+          fplElementId: Number(b["FPL Element ID"]),
+          playerName: b["Player Name"],
+          currentHighBid: Number(b["Current High Bid"]),
+          currentHighBidderId: b["Current High Bidder ID"],
+          minBid: Number(b["Min Bid"]),
+          status: b.Status,
+          expiresAt: new Date(b["Expires At"]),
+          createdAt: new Date(b["Created At"]),
+          updatedAt: new Date(b["Updated At"]),
+        })));
+      }
 
-    // 6. Trades — JSON-array player ID references aren't FK-validated by SQLite; insert all.
-    if (payload.trades.length > 0) {
-      await db.insert(tradeProposals).values(payload.trades.map((t) => ({
-        id: t["Trade ID"],
-        leagueId,
-        proposerTeamId: t["Proposer Team ID"],
-        targetTeamId: t["Target Team ID"],
-        offeredPlayerIds: t["Offered Player IDs"] ?? "[]",
-        requestedPlayerIds: t["Requested Player IDs"] ?? "[]",
-        cashOffered: Number(t["Cash Offered"] ?? 0),
-        status: t.Status,
-        vetoDeadline: t["Veto Deadline"] ? new Date(t["Veto Deadline"]) : null,
-        vetoVotes: t["Veto Votes"] ?? "{}",
-        createdAt: new Date(t["Created At"]),
-        updatedAt: new Date(t["Updated At"]),
-      })));
-    }
+      // 3. Bid logs — filter to logs whose bidId was restored.
+      const restoredBidIds = new Set(validBids.map((b) => b["Bid ID"]));
+      const validBidLogs = payload.bidLogs.filter((l) => restoredBidIds.has(l["Bid ID"]));
+      if (validBidLogs.length > 0) {
+        await tx.insert(auctionBidLogs).values(validBidLogs.map((l) => ({
+          id: l["Bid Log ID"],
+          bidId: l["Bid ID"],
+          teamId: l["Team ID"],
+          amount: Number(l.Amount),
+          type: l.Type,
+          createdAt: new Date(l["Created At"]),
+        })));
+      }
 
-    // 7. Wishlists.
-    if (payload.wishlists.length > 0) {
-      await db.insert(auctionWishlists).values(payload.wishlists.map((w) => ({
-        id: w["Wishlist ID"],
-        leagueId,
-        teamId: w["Team ID"],
-        fplElementId: Number(w["FPL Element ID"]),
-        playerName: w["Player Name"],
-        priority: Number(w.Priority),
-        createdAt: new Date(w["Created At"]),
-      })));
-    }
+      // 4. Penalty redemptions — sessionId is best-effort; set to null if the session wasn't restored
+      //    (the schema has onDelete: "set null" on this FK so this is the intended fallback).
+      if (payload.penaltyRedemptions.length > 0) {
+        await tx.insert(teamPenalties).values(payload.penaltyRedemptions.map((p) => ({
+          id: p["Penalty ID"],
+          leagueId,
+          teamId: p["Team ID"],
+          sessionId: p["Session ID"] && restoredSessionIds.has(p["Session ID"]) ? p["Session ID"] : null,
+          incurredCycle: Number(p["Incurred Cycle"]),
+          redeemedAt: new Date(p["Redeemed At"]),
+          redemptionPrice: Number(p["Redemption Price"]),
+          createdAt: new Date(p["Created At"]),
+        })));
+      }
 
-    // 8. Notifications.
-    if (payload.notifications.length > 0) {
-      await db.insert(notifications).values(payload.notifications.map((n) => ({
-        id: n["Notification ID"],
-        teamId: n["Team ID"],
-        leagueId,
-        type: n.Type,
-        title: n.Title,
-        body: n.Body,
-        link: n.Link,
-        readAt: n["Read At"] ? new Date(n["Read At"]) : null,
-        createdAt: new Date(n["Created At"]),
-      })));
-    }
+      // 5. Slot unlocks — no FK to sessions.
+      if (payload.slotUnlocks.length > 0) {
+        await tx.insert(teamSlotUnlocks).values(payload.slotUnlocks.map((u) => ({
+          id: u["Unlock ID"],
+          leagueId,
+          teamId: u["Team ID"],
+          slotNumber: Number(u["Slot Number"]),
+          cost: Number(u.Cost),
+          unlockedAt: new Date(u["Unlocked At"]),
+        })));
+      }
+
+      // 6. Trades — JSON-array player ID references aren't FK-validated by SQLite; insert all.
+      if (payload.trades.length > 0) {
+        await tx.insert(tradeProposals).values(payload.trades.map((t) => ({
+          id: t["Trade ID"],
+          leagueId,
+          proposerTeamId: t["Proposer Team ID"],
+          targetTeamId: t["Target Team ID"],
+          offeredPlayerIds: t["Offered Player IDs"] ?? "[]",
+          requestedPlayerIds: t["Requested Player IDs"] ?? "[]",
+          cashOffered: Number(t["Cash Offered"] ?? 0),
+          status: t.Status,
+          vetoDeadline: t["Veto Deadline"] ? new Date(t["Veto Deadline"]) : null,
+          vetoVotes: t["Veto Votes"] ?? "{}",
+          createdAt: new Date(t["Created At"]),
+          updatedAt: new Date(t["Updated At"]),
+        })));
+      }
+
+      // 7. Wishlists.
+      if (payload.wishlists.length > 0) {
+        await tx.insert(auctionWishlists).values(payload.wishlists.map((w) => ({
+          id: w["Wishlist ID"],
+          leagueId,
+          teamId: w["Team ID"],
+          fplElementId: Number(w["FPL Element ID"]),
+          playerName: w["Player Name"],
+          priority: Number(w.Priority),
+          createdAt: new Date(w["Created At"]),
+        })));
+      }
+
+      // 8. Notifications.
+      if (payload.notifications.length > 0) {
+        await tx.insert(notifications).values(payload.notifications.map((n) => ({
+          id: n["Notification ID"],
+          teamId: n["Team ID"],
+          leagueId,
+          type: n.Type,
+          title: n.Title,
+          body: n.Body,
+          link: n.Link,
+          readAt: n["Read At"] ? new Date(n["Read At"]) : null,
+          createdAt: new Date(n["Created At"]),
+        })));
+      }
+    });
   } catch (err) {
     console.error("[restore-auction] restore failed:", err);
     return NextResponse.json(
-      { error: "Restore failed mid-write — league state may be partially modified", message: err instanceof Error ? err.message : "unknown" },
+      { error: "Restore failed — transaction rolled back, league state unchanged", message: err instanceof Error ? err.message : "unknown" },
       { status: 500 }
     );
   }

@@ -110,8 +110,7 @@ export const teams = sqliteTable("teams", {
   // JPL Auction: Bonus slots unlocked via purse purchase (0 = default 15-slot cap;
   // 1 = slot 16 unlocked for £10M; 2 = slot 17 unlocked for £20M; 3 = slot 18 unlocked for £30M).
   // Locked-slot unlocks are only allowed after the initial auction completes.
-  // Legacy data: older leagues that paid under the previous pricing (£10M for slot 15 / £25M for
-  // slot 16) keep their existing bonusSlots value; new unlocks above that use the new prices.
+  // Canonical pricing lives in src/lib/formats/auction/squad-rules.ts (£10M/£20M/£30M).
   bonusSlots: integer("bonus_slots").notNull().default(0),
   
   // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)
@@ -314,14 +313,21 @@ export const challengerSurvivalEntries = sqliteTable("challenger_survival_entrie
 });
 
 // League backups — JSON snapshots of teams/fixtures/captains/chips in importable shape.
-// One row per (leagueId, trigger) combo when trigger="gw1-lock"; many rows allowed for "manual".
+// Trigger values actually emitted by the platform:
+//   "manual"                              — admin clicks Backup button (route.ts)
+//   "gw<N>-auto"                          — cron pre-processing snapshot (process-all.ts:433-438)
+//   "auction-initial-c0"                  — initial player auction completion (snapshot.ts)
+//   "auction-club-c0"                     — club auction completion
+//   "auction-mini-c<N>"                   — mini-auction completion at cycle N
+// Many rows are allowed per (leagueId, trigger) for "manual" backups; cron + auction triggers
+// are idempotent per their (leagueId, trigger) pair.
 // JSON columns store ROW ARRAYS (not binary xlsx) so future formatting changes don't lock us in.
 // Auction-specific columns: teams-state (purse/totalSpent/etc.), squads (auction_ownership rows),
 // clubs (auction_club_ownership rows), gameweeks (so a fresh restore knows the GW shape).
 export const backups = sqliteTable("backups", {
   id: text("id").primaryKey(),
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
-  trigger: text("trigger").notNull(), // "gw1-lock" | "manual" | "auction-complete"
+  trigger: text("trigger").notNull(), // "manual" | "gw<N>-auto" | "auction-initial-c0" | "auction-club-c0" | "auction-mini-c<N>"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   teamsJson: text("teams_json"),       // null when format === "auction"
   fixturesJson: text("fixtures_json").notNull(),
@@ -515,19 +521,24 @@ export const teamPenalties = sqliteTable("team_penalties", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
-// Audit trail for bonus-slot unlocks (slots 15 + 16). Feeds the finance ledger so each unlock is
-// visible as a "Slot Unlock" outflow. Without this table the unlock cost (£10M / £25M) would only
-// live in the aggregate `teams.totalSpent` counter — invisible per-event in the UI.
+// Audit trail for bonus-slot unlocks (slots 16, 17, 18). Feeds the finance ledger so each unlock is
+// visible as a "Slot Unlock" outflow. Without this table the unlock cost (£10M / £20M / £30M from
+// squad-rules.ts) would only live in the aggregate `teams.totalSpent` counter — invisible per-event in the UI.
 export const teamSlotUnlocks = sqliteTable("team_slot_unlocks", {
   id: text("id").primaryKey(),
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-  slotNumber: integer("slot_number").notNull(), // 15 or 16
+  slotNumber: integer("slot_number").notNull(), // 16, 17, or 18
   cost: integer("cost").notNull(),
   unlockedAt: integer("unlocked_at", { mode: "timestamp" }).notNull(),
 });
 
-// Trade proposals — P2P marketplace with veto system
+// Trade proposals — P2P marketplace.
+// Note: the original peer-veto system has been removed (the veto endpoint now returns 410 and the
+// GET projection no longer surfaces vetoDeadline / vetoVotes). The vetoDeadline + vetoVotes columns
+// below are deprecated and retained only for backwards compatibility with existing rows; new code
+// MUST NOT write to or read from them. The "vetoed" status value is no longer emitted by the
+// platform (existing historical rows with that value remain visible via GET).
 export const tradeProposals = sqliteTable("trade_proposals", {
   id: text("id").primaryKey(),
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
@@ -536,7 +547,7 @@ export const tradeProposals = sqliteTable("trade_proposals", {
   offeredPlayerIds: text("offered_player_ids").notNull().default("[]"), // JSON array of auctionOwnership IDs
   requestedPlayerIds: text("requested_player_ids").notNull().default("[]"), // JSON array of auctionOwnership IDs
   cashOffered: integer("cash_offered").notNull().default(0), // Positive = proposer pays target, negative = target pays
-  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "rejected" | "vetoed" | "expired"
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "rejected" | "expired" (historical: "vetoed")
   vetoDeadline: integer("veto_deadline", { mode: "timestamp" }),
   vetoVotes: text("veto_votes").notNull().default("{}"), // JSON: {teamId: "veto" | "approve"}
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),

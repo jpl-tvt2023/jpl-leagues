@@ -161,6 +161,23 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "create") {
+    // Validate auction-session timer values. Both must be positive integers within
+    // a sane bid-bot-vs-human range. Without these guards a typo could store
+    // negative or zero values, producing instantly-expired bids and broken state.
+    const isPosInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v > 0;
+    if (bidTimerSeconds !== undefined && (!isPosInt(bidTimerSeconds) || bidTimerSeconds < 5 || bidTimerSeconds > 600)) {
+      return NextResponse.json(
+        { error: "bidTimerSeconds must be an integer between 5 and 600" },
+        { status: 400 }
+      );
+    }
+    if (nominationTimeoutSeconds !== undefined && (!isPosInt(nominationTimeoutSeconds) || nominationTimeoutSeconds < 5 || nominationTimeoutSeconds > 3600)) {
+      return NextResponse.json(
+        { error: "nominationTimeoutSeconds must be an integer between 5 and 3600" },
+        { status: 400 }
+      );
+    }
+
     // Club auction: the "queue" stored in snakeOrder is a randomised list of PL team IDs,
     // not fantasy team IDs. Only one club-auction session may exist per league.
     // Session-ordering guard: allowed creation order is club-auction → initial → mini-auction.

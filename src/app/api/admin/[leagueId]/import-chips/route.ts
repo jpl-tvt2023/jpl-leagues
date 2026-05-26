@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, gameweeks, gameweekChips, groups, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getChipSet } from "@/lib/formats/tvt/chip-validation";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -209,7 +209,11 @@ export async function POST(request: NextRequest) {
               await db.delete(gameweekChips).where(eq(gameweekChips.id, existingChip.id));
             }
 
-            // Insert chip — skip validation, admin import is authoritative
+            // Insert chip — skip validation, admin import is authoritative.
+            // hadNegativeHits is set for ANY wasted chip so the override-chips
+            // GET handler's wasted detection (which OR's isProcessed+!isValid OR
+            // hadNegativeHits) lights up consistently for W/D/C/SL/CB/UD — not
+            // just Win-Win.
             await db.insert(gameweekChips).values({
               id: generateId(),
               teamId: team.id,
@@ -220,7 +224,7 @@ export async function POST(request: NextRequest) {
               validationErrors: isWasted ? "Chip marked as wasted" : null,
               isProcessed: isWasted,
               pointsAwarded: 0,
-              hadNegativeHits: isWasted && chipType === "W",
+              hadNegativeHits: isWasted,
             });
 
             if (isWasted) {
@@ -358,9 +362,11 @@ export async function DELETE(request: NextRequest) {
     const gameweek = searchParams.get("gameweek");
 
     if (gameweek) {
-      // Delete chips for specific gameweek
+      // Delete chips for specific gameweek — scoped to this league
       const gwNum = parseInt(gameweek);
-      const gw = await db.select().from(gameweeks).where(eq(gameweeks.number, gwNum));
+      const gw = await db.select().from(gameweeks).where(
+        and(eq(gameweeks.number, gwNum), eq(gameweeks.leagueId, leagueId))
+      );
 
       if (gw[0]) {
         await db.delete(gameweekChips).where(eq(gameweekChips.gameweekId, gw[0].id));
@@ -371,17 +377,31 @@ export async function DELETE(request: NextRequest) {
         });
       }
     } else {
-      // Delete all chips
-      await db.delete(gameweekChips);
+      // Delete all chips for this league only
+      const leagueGameweeks = await db
+        .select({ id: gameweeks.id })
+        .from(gameweeks)
+        .where(eq(gameweeks.leagueId, leagueId));
+      const leagueGameweekIds = leagueGameweeks.map(g => g.id);
 
-      // Reset team chip usage flags for this league
+      if (leagueGameweekIds.length > 0) {
+        await db.delete(gameweekChips).where(inArray(gameweekChips.gameweekId, leagueGameweekIds));
+      }
+
+      // Reset team chip usage flags for this league (all 12 set-used columns)
       await db.update(teams).set({
         doublePointerSet1Used: false,
         challengeChipSet1Used: false,
         winWinSet1Used: false,
+        scoreLockSet1Used: false,
+        comebackSet1Used: false,
+        underdogSet1Used: false,
         doublePointerSet2Used: false,
         challengeChipSet2Used: false,
         winWinSet2Used: false,
+        scoreLockSet2Used: false,
+        comebackSet2Used: false,
+        underdogSet2Used: false,
       }).where(eq(teams.leagueId, leagueId));
 
       await invalidateLeaguePageCache(leagueId);

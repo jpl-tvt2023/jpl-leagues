@@ -35,6 +35,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Enforce the same minimum password length as bulk-upload-teams so the
+    // single-team-create and bulk-import paths cannot diverge in security stance.
+    if (String(password).length < 4) {
+      return NextResponse.json(
+        { error: "Password must be at least 4 characters" },
+        { status: 400 }
+      );
+    }
+
     // Validate teamLoginId format
     if (!/^[A-Za-z0-9_-]{3,30}$/.test(teamLoginId)) {
       return NextResponse.json(
@@ -92,7 +101,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create team with password
+    // Create team with password. Match bulk-upload-teams by setting
+    // isProfileComplete=true — the admin already supplied team name + both
+    // players, so the team-side setup wizard has nothing to add. Without this,
+    // single-team-create and bulk-upload land teams in different onboarding
+    // states despite the same input shape.
     const teamId = generateId();
     await db.insert(teams).values({
       id: teamId,
@@ -100,6 +113,7 @@ export async function POST(request: NextRequest) {
       name: teamName,
       password: hashedPassword,
       mustChangePassword: true,
+      isProfileComplete: true,
       groupId,
       leagueId,
     });
@@ -122,6 +136,22 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Create team error:", error);
+    // Inspect the underlying error chain for SQLite/libsql UNIQUE constraint failures
+    // — the pre-INSERT uniqueness check is racy, so two concurrent calls with the same
+    // teamLoginId can both pass and the second INSERT then trips this. Return a
+    // user-friendly 400 instead of an opaque 500.
+    const parts: string[] = [];
+    let cur: unknown = error;
+    while (cur && parts.length < 5) {
+      if (cur instanceof Error) { parts.push(cur.message); cur = (cur as { cause?: unknown }).cause; } else { parts.push(String(cur)); break; }
+    }
+    const msg = parts.join(" | ");
+    if (/UNIQUE constraint failed:\s*teams\.team_login_id/i.test(msg) || /teams_login_id_global_unique/i.test(msg)) {
+      return NextResponse.json(
+        { error: "Team ID already exists globally" },
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
       { error: "Failed to create team" },
       { status: 500 }

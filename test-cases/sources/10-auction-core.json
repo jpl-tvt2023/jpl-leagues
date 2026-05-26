@@ -1,0 +1,3570 @@
+{
+  "moduleId": "AUC",
+  "moduleName": "Auction Core",
+  "sheetName": "Auction Core",
+  "status": "qa-signed-off",
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
+  "requirements": {
+    "version": 3,
+    "businessContext": "Auction Core is the 'court' of the auction-format league — the live session machine, the per-player bidding round, the snake-order nomination loop, the auto-nominate wishlist that fires on missed nominations, and the read APIs that surface squad / teams / players / unsold pool / live status. It owns session lifecycle (pending → active → paused → completed) for the 'initial' and 'mini-auction' session types only; the club-auction lifecycle is module 13. It owns bid placement (anti-snipe, min-increment, squad-rule pre-checks) but defers purse / payout / synergy math to module 11, marketplace/trade locking to module 12, and slot-unlock / penalty-redeem economics to module 13. Auction standings ranking belongs to module 07. This module also covers the admin reset-auction endpoint that wipes the auction back to initial or a chosen mini-cycle.",
+    "userStories": [
+      {
+        "id": "US-AUC-001",
+        "asA": "admin",
+        "iWant": "to create an initial player-auction session for a league with a randomised snake order",
+        "soThat": "the league's first auction can begin from a fair, randomised nomination order",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:146-290",
+          "src/app/api/auction/session/route.ts:262-273"
+        ]
+      },
+      {
+        "id": "US-AUC-002",
+        "asA": "admin",
+        "iWant": "to create a mini-auction session whose snake order is reverse season standings",
+        "soThat": "bottom-ranked teams nominate first in mid-season refreshes",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:241-273",
+          "src/lib/formats/auction/mini-auction.ts:35-41"
+        ]
+      },
+      {
+        "id": "US-AUC-003",
+        "asA": "admin",
+        "iWant": "to start, pause, resume, and complete an existing auction session",
+        "soThat": "I can run a multi-day auction across breaks and finalise it on demand",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:292-455",
+          "src/app/api/auction/session/route.ts:321-326"
+        ]
+      },
+      {
+        "id": "US-AUC-004",
+        "asA": "admin",
+        "iWant": "pause/resume to preserve the remaining time on the nomination deadline and every open bid",
+        "soThat": "a 60s window paused with 10s left resumes with 10s left (not 0, not a fresh 60)",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:377-417"
+        ]
+      },
+      {
+        "id": "US-AUC-005",
+        "asA": "team",
+        "iWant": "to nominate a PL player on my turn with an optional starting bid",
+        "soThat": "I control which player goes up next and at what floor price",
+        "sourceRefs": [
+          "src/app/api/auction/nominate/route.ts:24-227"
+        ]
+      },
+      {
+        "id": "US-AUC-006",
+        "asA": "team",
+        "iWant": "to place a bid that beats the current high bid by at least the minimum increment",
+        "soThat": "I can compete for a nominated player up to my available purse",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:23-189"
+        ]
+      },
+      {
+        "id": "US-AUC-007",
+        "asA": "team",
+        "iWant": "the bid timer to extend (anti-snipe) when a bid lands inside the closing window",
+        "soThat": "I can't be sniped by a last-second bid I never had a chance to counter",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:13-15",
+          "src/app/api/auction/bid/route.ts:145-155"
+        ]
+      },
+      {
+        "id": "US-AUC-008",
+        "asA": "team",
+        "iWant": "to maintain a priority-ordered wishlist of players I want",
+        "soThat": "if my nomination timer expires the system auto-nominates the top unowned wishlist entry on my behalf",
+        "sourceRefs": [
+          "src/app/api/auction/wishlist/route.ts:1-222",
+          "src/lib/formats/auction/resolve-bid.ts:459-533"
+        ]
+      },
+      {
+        "id": "US-AUC-009",
+        "asA": "team",
+        "iWant": "to reorder my wishlist and remove entries",
+        "soThat": "I can refine auto-nomination priority as the auction progresses",
+        "sourceRefs": [
+          "src/app/api/auction/wishlist/route.ts:150-221"
+        ]
+      },
+      {
+        "id": "US-AUC-010",
+        "asA": "team",
+        "iWant": "a real-time SSE stream of session/bid/nomination events",
+        "soThat": "my UI updates within seconds without polling",
+        "sourceRefs": [
+          "src/app/api/auction/session/stream/route.ts:38-306"
+        ]
+      },
+      {
+        "id": "US-AUC-011",
+        "asA": "team",
+        "iWant": "to see my full squad with purchase price, points, FMV, position counts, and slot status",
+        "soThat": "I can plan my next nomination/bid against my squad constraints",
+        "sourceRefs": [
+          "src/app/api/auction/squad/route.ts:26-239"
+        ]
+      },
+      {
+        "id": "US-AUC-012",
+        "asA": "team",
+        "iWant": "to browse the player catalog filtered by position, PL club, ownership and search",
+        "soThat": "I can scout targets in or out of the live auction",
+        "sourceRefs": [
+          "src/app/api/auction/players/route.ts:17-198"
+        ]
+      },
+      {
+        "id": "US-AUC-013",
+        "asA": "team",
+        "iWant": "to see who went unsold in the most recent auction session",
+        "soThat": "I can add them to my wishlist before the next cycle",
+        "sourceRefs": [
+          "src/app/api/auction/unsold/route.ts:15-63"
+        ]
+      },
+      {
+        "id": "US-AUC-014",
+        "asA": "team",
+        "iWant": "to see a per-bid event history for the current session",
+        "soThat": "I can audit how each player's price was reached and who sold to whom",
+        "sourceRefs": [
+          "src/app/api/auction/bid-history/route.ts:10-70"
+        ]
+      },
+      {
+        "id": "US-AUC-015",
+        "asA": "public visitor",
+        "iWant": "a public 'is the auction live?' indicator for the league",
+        "soThat": "I can land directly on the auction view when a session is in progress without authenticating",
+        "sourceRefs": [
+          "src/app/api/auction/live-status/route.ts:11-47"
+        ]
+      },
+      {
+        "id": "US-AUC-016",
+        "asA": "admin",
+        "iWant": "to reset the auction either fully (back to initial) or back to before a specific mini-auction cycle",
+        "soThat": "I can re-run a corrupted auction without manually wiping every table",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/reset-auction/route.ts:27-182"
+        ]
+      },
+      {
+        "id": "US-AUC-017",
+        "asA": "admin",
+        "iWant": "starting a session in a simulated league to auto-allocate players via snake draft",
+        "soThat": "I can populate post-auction state for QA without running a live auction",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:339-371",
+          "src/lib/formats/auction/simulate.ts:39-193"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-AUC-001",
+        "rule": "POST /api/auction/session requires superadmin (isSuperAdmin) — returns 403 otherwise. Body must include leagueId and action; missing either returns 400.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:146-156"
+        ]
+      },
+      {
+        "id": "BR-AUC-002",
+        "rule": "Session APIs only accept leagues with format='auction'; any other format returns 400 'Not an auction league'.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:158-161",
+          "src/app/api/auction/session/route.ts:69-72",
+          "src/app/api/auction/squad/route.ts:45-48"
+        ]
+      },
+      {
+        "id": "BR-AUC-003",
+        "rule": "Allowed session creation order per league is club-auction → initial → mini-auction. Creating an 'initial' session when a prior initial already exists, or before clubAuctionEnabled leagues have completed their club auction, returns 409.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:166-249"
+        ]
+      },
+      {
+        "id": "BR-AUC-004",
+        "rule": "Creating a 'mini-auction' before a 'completed' initial-auction session exists in the league returns 409.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:241-249"
+        ]
+      },
+      {
+        "id": "BR-AUC-005",
+        "rule": "Session creation requires at least one non-ghost team in the league; an empty roster returns 400 'No teams in league'.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:251-259"
+        ]
+      },
+      {
+        "id": "BR-AUC-006",
+        "rule": "For type='initial', snakeOrder is generated by sorting non-ghost teams by Math.random() (fully randomised). For type='mini-auction', snakeOrder is generated by generateSnakeOrder() sorting teams by descending rank — worst rank first.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:261-273",
+          "src/lib/formats/auction/mini-auction.ts:35-41"
+        ]
+      },
+      {
+        "id": "BR-AUC-007",
+        "rule": "POST /api/auction/session action=create validates bidTimerSeconds is an integer in [5, 600] when supplied; out-of-range or non-integer values return HTTP 400. Undefined falls back to 20s default.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:163-172"
+        ]
+      },
+      {
+        "id": "BR-AUC-008",
+        "rule": "Session state machine. Allowed status transitions: start: pending|paused → active; pause: active → paused; resume: paused → active; complete: active|paused → completed. Any other (status, action) pair returns 400.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:321-333"
+        ]
+      },
+      {
+        "id": "BR-AUC-009",
+        "rule": "Action='schedule' is only allowed on a 'pending' session; updates scheduledAt only and does not transition status.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:310-319"
+        ]
+      },
+      {
+        "id": "BR-AUC-010",
+        "rule": "On pause, the server stores pausedAt=now on the session row.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:378-382",
+          "src/lib/db/schema.ts:463"
+        ]
+      },
+      {
+        "id": "BR-AUC-011",
+        "rule": "On resume, the server shifts the session's nominationDeadline AND every open bid's expiresAt forward by (now - pausedAt) ms, then clears pausedAt. Legacy paused rows without pausedAt are resumed without a shift.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:383-417"
+        ]
+      },
+      {
+        "id": "BR-AUC-012",
+        "rule": "On first-time start of a player auction (not resume), the system sets the nomination deadline for the current nominator via setNominationDeadline.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:441-447",
+          "src/lib/formats/auction/resolve-bid.ts:356-390"
+        ]
+      },
+      {
+        "id": "BR-AUC-013",
+        "rule": "On first-time start (not resume) of any auction session, the league's non-completed/non-cancelled trade proposals (status in 'pending','accepted') are bulk-cancelled via purgePendingTrades to lock the marketplace for the auction.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:450-453",
+          "src/lib/formats/auction/live-session.ts:22-45"
+        ]
+      },
+      {
+        "id": "BR-AUC-014",
+        "rule": "On first-time start of a 'mini-auction' (not resume), finalizePendingReleasesNow runs for the session's cycleNumber before the auction begins.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:432-436"
+        ]
+      },
+      {
+        "id": "BR-AUC-015",
+        "rule": "When status transitions to 'completed', writeAuctionCompleteSnapshot is fired-and-forgotten. Failures are logged but do not block completion.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:428-430"
+        ]
+      },
+      {
+        "id": "BR-AUC-016",
+        "rule": "If the league.isSimulated is true and an admin starts (action='start') a session for the first time, the route runs simulateAuction (or simulateClubAuction for club sessions) and short-circuits with status='completed' instead of the live nomination/bid flow.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:339-371"
+        ]
+      },
+      {
+        "id": "BR-AUC-017",
+        "rule": "simulateAuction caps per-team draft size at effectiveMaxSquadSize(team.penaltySlots, team.bonusSlots) — i.e., 15 base + bonusSlots - penaltySlots. Teams with bonusSlots > 0 from pre-auction unlocks now draft their full purchased squad in simulation, matching live auction behaviour.",
+        "sourceRefs": [
+          "src/lib/formats/auction/simulate.ts:108-115",
+          "src/lib/formats/auction/squad-rules.ts:21-25"
+        ]
+      },
+      {
+        "id": "BR-AUC-018",
+        "rule": "GET /api/auction/session requires a verified session cookie; returns 401 if unauthenticated. Requires leagueId query param (400 otherwise).",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:56-67"
+        ]
+      },
+      {
+        "id": "BR-AUC-019",
+        "rule": "GET /api/auction/session calls resolveExpiredBids as a safety net on the active/paused session: any auctionBids row with status='open' and expiresAt < now is resolved (sold or unsold) and, if sold, advanceNominator is called. This catches expirations that SSE missed.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:30-50",
+          "src/app/api/auction/session/route.ts:86-87"
+        ]
+      },
+      {
+        "id": "BR-AUC-020",
+        "rule": "POST /api/auction/nominate requires either a verified team session OR superadmin; returns 401 otherwise. Body must include sessionId + fplElementId + playerName (400 otherwise).",
+        "sourceRefs": [
+          "src/app/api/auction/nominate/route.ts:24-41"
+        ]
+      },
+      {
+        "id": "BR-AUC-021",
+        "rule": "Nominate returns 400 if the session is not status='active'. Club-auction sessions (type=CLUB_AUCTION_SESSION_TYPE) reject manual nominate calls with 400 — clubs are system-nominated.",
+        "sourceRefs": [
+          "src/app/api/auction/nominate/route.ts:44-61"
+        ]
+      },
+      {
+        "id": "BR-AUC-022",
+        "rule": "Non-admin nominate is rejected with 403 'Not your turn to nominate' unless the caller's team id equals snakeOrder[currentNominatorIndex]. The check is performed twice: once before the safety-net stale-bid resolution and once after (the safety net can advance the nominator).",
+        "sourceRefs": [
+          "src/app/api/auction/nominate/route.ts:65-72",
+          "src/app/api/auction/nominate/route.ts:107-114"
+        ]
+      },
+      {
+        "id": "BR-AUC-023",
+        "rule": "Nominate returns 400 if any other auctionBids row is still status='open' on the session (after the safety-net pass), and 409 if the player is already owned (via ownerOfPlayer).",
+        "sourceRefs": [
+          "src/app/api/auction/nominate/route.ts:117-135"
+        ]
+      },
+      {
+        "id": "BR-AUC-024",
+        "rule": "Default starting bid is 500_000 (DEFAULT_MIN_BID). A nominator may pass minBid to override, but only if their available purse covers it; insufficient purse returns 400.",
+        "sourceRefs": [
+          "src/app/api/auction/nominate/route.ts:16",
+          "src/app/api/auction/nominate/route.ts:137-174"
+        ]
+      },
+      {
+        "id": "BR-AUC-025",
+        "rule": "Non-admin nominate enforces squad cap + position-feasibility via countsFromOwnership/validateAddPlayer on the nominator. Admins skip these pre-checks.",
+        "sourceRefs": [
+          "src/app/api/auction/nominate/route.ts:141-186"
+        ]
+      },
+      {
+        "id": "BR-AUC-026",
+        "rule": "When a nomination succeeds the system inserts auctionBids (status='open', currentHighBidderId=nominator, expiresAt=now+bidTimer) AND auctionBidLogs (type='nomination', amount=startingBid), and clears nominationDeadline on the session.",
+        "sourceRefs": [
+          "src/app/api/auction/nominate/route.ts:188-227",
+          "src/lib/formats/auction/resolve-bid.ts:395-401"
+        ]
+      },
+      {
+        "id": "BR-AUC-027",
+        "rule": "POST /api/auction/bid requires a verified team session (session.type='team'); admin/non-team returns 401. Body must include sessionId and numeric bidAmount (400 otherwise).",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:23-36"
+        ]
+      },
+      {
+        "id": "BR-AUC-028",
+        "rule": "Bid is rejected with 400 when the session is not 'active', 403 when the bidder's team is not in the session's league, and 400 when there is no open bid item.",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:38-55",
+          "src/app/api/auction/bid/route.ts:71-73"
+        ]
+      },
+      {
+        "id": "BR-AUC-029",
+        "rule": "Bid is rejected with 400 'Auction timer has expired' if now > expiresAt + 2_000ms (2s grace window for in-flight requests).",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:77-80"
+        ]
+      },
+      {
+        "id": "BR-AUC-030",
+        "rule": "MIN_BID_INCREMENT is 100_000. Bids below currentHighBid + 100_000 are rejected with 400 stating the minimum.",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:15",
+          "src/app/api/auction/bid/route.ts:82-88"
+        ]
+      },
+      {
+        "id": "BR-AUC-031",
+        "rule": "Available purse is computed as calculatePurse(initialBudget, totalIncome, totalSpent, totalRefunds). Bid amounts exceeding available purse return 400 'Insufficient purse'.",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:90-100"
+        ]
+      },
+      {
+        "id": "BR-AUC-032",
+        "rule": "For player auctions, bid validation also enforces the bidder's squad cap + position feasibility (validateAddPlayer using penaltySlots, bonusSlots, element_type) against the player being bid on. Unknown FPL element returns 400.",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:119-143"
+        ]
+      },
+      {
+        "id": "BR-AUC-033",
+        "rule": "Anti-snipe: if remaining time on the open bid is ≤ ANTI_SNIPE_WINDOW_MS (5_000), expiresAt is pushed to min(currentExpiresAt + ANTI_SNIPE_EXTENSION_MS (10_000), now + bidTimerSeconds*1000). Bids landing outside the window do NOT extend the timer.",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:13-14",
+          "src/app/api/auction/bid/route.ts:145-155"
+        ]
+      },
+      {
+        "id": "BR-AUC-034",
+        "rule": "Successful bid updates auctionBids.currentHighBid/currentHighBidderId/expiresAt/updatedAt and appends an auctionBidLogs row with type='bid'. All under a single DB transaction.",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:57-58",
+          "src/app/api/auction/bid/route.ts:156-173"
+        ]
+      },
+      {
+        "id": "BR-AUC-035",
+        "rule": "GET /api/auction/session/stream is an SSE endpoint that polls auctionSessions + auctionBids every POLL_INTERVAL_MS (2000ms) and emits heartbeat every HEARTBEAT_INTERVAL_MS (15000ms). Required query: sessionId (400 otherwise).",
+        "sourceRefs": [
+          "src/app/api/auction/session/stream/route.ts:21-22",
+          "src/app/api/auction/session/stream/route.ts:38-44"
+        ]
+      },
+      {
+        "id": "BR-AUC-036",
+        "rule": "SSE event types emitted: session-status, auction-state, bid-placed (on highBidder/highBid change), sold, unsold, waiting (deduped per nominator+deadline snapshot), auto-nominated, penalised, skipped-full, session-complete, heartbeat, error.",
+        "sourceRefs": [
+          "src/app/api/auction/session/stream/route.ts:24-37",
+          "src/app/api/auction/session/stream/route.ts:94-271"
+        ]
+      },
+      {
+        "id": "BR-AUC-037",
+        "rule": "On SSE detect of expiresAt + 2s elapsed, resolveExpiredBid runs. For player auctions every expired bid is resolved as sold (nominator is the default floor bidder). On sold, advanceNominator runs BEFORE the 'sold' event is sent so clients see the new nominator on refresh.",
+        "sourceRefs": [
+          "src/app/api/auction/session/stream/route.ts:177-207",
+          "src/lib/formats/auction/resolve-bid.ts:193-207"
+        ]
+      },
+      {
+        "id": "BR-AUC-038",
+        "rule": "When a sold bid is finalized, auctionOwnership is inserted (status='active', acquiredGw=0, purchasePrice=winning bid), the winner's purse is debited and totalSpent credited atomically, an auctionBidLogs row with type='sold' is appended, and the player is deleted from EVERY team's auctionWishlists in the league.",
+        "sourceRefs": [
+          "src/lib/formats/auction/resolve-bid.ts:130-172"
+        ]
+      },
+      {
+        "id": "BR-AUC-039",
+        "rule": "Double-sell guard: if an active auctionOwnership row already exists for the same fplElementId at finalisation time, the bid is marked status='cancelled-duplicate' with a cancelled-duplicate log row, no ownership is inserted, no purse is deducted, and advanceNominator is NOT called by this path.",
+        "sourceRefs": [
+          "src/lib/formats/auction/resolve-bid.ts:90-117"
+        ]
+      },
+      {
+        "id": "BR-AUC-040",
+        "rule": "advanceNominator walks the snakeOrder forward, skipping any team whose squad is already full (counts.total >= effectiveMaxSquadSize). The first eligible team becomes the new nominator and its nominationDeadline is set to now+nominationTimeoutSeconds. If no team is eligible the session auto-completes (status='completed', nominationDeadline=null) and writeAuctionCompleteSnapshot fires.",
+        "sourceRefs": [
+          "src/lib/formats/auction/resolve-bid.ts:245-345"
+        ]
+      },
+      {
+        "id": "BR-AUC-041",
+        "rule": "Composition audit at all-teams-full auto-completion: if any team finishes with fewer than the MIN_QUOTA 1 GKP / 3 DEF / 3 MID / 1 FWD, an auditLogs row with type='AUCTION_COMPLETED_COMPOSITION_WARNING' is inserted. This never blocks completion.",
+        "sourceRefs": [
+          "src/lib/formats/auction/resolve-bid.ts:297-338"
+        ]
+      },
+      {
+        "id": "BR-AUC-042",
+        "rule": "Nomination timeout handling (SSE detects nominationDeadline passed): the SSE stream atomically claims the timeout by nulling nominationDeadline (single-winner race). The winner calls handleNominationTimeout which (a) skips squad-full nominators with 'skipped-full' (no penalty), (b) tries autoNominateFromWishlist (top-priority unowned, affordable, position-feasible) and on success returns 'auto-nominated', or (c) applies a penalty (teamPenalties row + teams.penaltySlots++) and advances, returning 'penalised'.",
+        "sourceRefs": [
+          "src/app/api/auction/session/stream/route.ts:215-245",
+          "src/lib/formats/auction/resolve-bid.ts:571-614",
+          "src/lib/formats/auction/resolve-bid.ts:459-533"
+        ]
+      },
+      {
+        "id": "BR-AUC-043",
+        "rule": "GET /api/auction/wishlist requires authentication and either teamId match (session.id === teamId) or superadmin; otherwise 403. teamId query param is required (400). Result is ordered by priority asc and silently deduplicates by fplElementId, deleting the lower-priority duplicates as a read-time side effect. // CODE-CONFIRMED: dedupe-on-GET performs DB DELETEs on a read — surprising side-effect, but harmless data hygiene.",
+        "sourceRefs": [
+          "src/app/api/auction/wishlist/route.ts:12-57"
+        ]
+      },
+      {
+        "id": "BR-AUC-044",
+        "rule": "POST /api/auction/wishlist accepts either single ({fplElementId, playerName}) or bulk ({players: [...]}) shape; missing both shapes returns 400. Duplicates against existing wishlist fplElementIds are silently skipped — response carries {inserted, skipped} counts. Priorities are appended starting at MAX(priority)+1.",
+        "sourceRefs": [
+          "src/app/api/auction/wishlist/route.ts:70-142"
+        ]
+      },
+      {
+        "id": "BR-AUC-045",
+        "rule": "PATCH /api/auction/wishlist updates each items[i].priority where id and teamId match. DELETE /api/auction/wishlist deletes one wishlist row by (id, teamId). Both require teamId match or superadmin.",
+        "sourceRefs": [
+          "src/app/api/auction/wishlist/route.ts:150-221"
+        ]
+      },
+      {
+        "id": "BR-AUC-046",
+        "rule": "GET /api/auction/squad requires authentication. The squad result EXCLUDES status='released' rows and surfaces active + deadwood. FMV is calculated per-player from purchasePrice + cumulative RAW points (synergy never compounds into FMV).",
+        "sourceRefs": [
+          "src/app/api/auction/squad/route.ts:26-122"
+        ]
+      },
+      {
+        "id": "BR-AUC-047",
+        "rule": "GET /api/auction/squad surfaces slotStatus = { active, effectiveMax, baseCap=15, bonusSlots, penaltySlots, open, lockedCount=MAX_BONUS_SLOTS-bonusSlots, nextUnlockCost, canUnlock, unlockBlockedReason, redeemableCost, canRedeem, initialAuctionCompleted }. canUnlock requires the initial auction to be 'completed' AND availablePurse ≥ nextUnlockCost.",
+        "sourceRefs": [
+          "src/app/api/auction/squad/route.ts:144-213"
+        ]
+      },
+      {
+        "id": "BR-AUC-048",
+        "rule": "GET /api/auction/teams returns each team with rank, totalPoints, purse, squadValue (sum of FMV), squadSize, penaltySlots, bonusSlots, effectiveMax (15 + bonus - penalty), topPerformer, isMine (vs requesting team) and ownedClub. Authentication is NOT required for this endpoint.",
+        "sourceRefs": [
+          "src/app/api/auction/teams/route.ts:16-125"
+        ]
+      },
+      {
+        "id": "BR-AUC-049",
+        "rule": "GET /api/auction/players requires authentication. Pagination: page≥1, pageSize 10–100 (default 50). gameweek must be 1–38 (default 38). Filters: position (1–4), plTeam (FPL team id), ownership ('all'|'free'|'mine'|<teamId>), search (case-insensitive substring on web_name).",
+        "sourceRefs": [
+          "src/app/api/auction/players/route.ts:17-198"
+        ]
+      },
+      {
+        "id": "BR-AUC-050",
+        "rule": "GET /api/auction/unsold returns auctionBids rows with status='unsold' from the league's most-recent auctionSessions row (by createdAt desc). If no session exists returns {unsold: []}. Requires authentication.",
+        "sourceRefs": [
+          "src/app/api/auction/unsold/route.ts:15-63"
+        ]
+      },
+      {
+        "id": "BR-AUC-051",
+        "rule": "GET /api/auction/bid-history is unauthenticated and returns ONLY status='sold' or 'unsold' bids for the session (open/cancelled filtered out), newest first, each augmented with its auctionBidLogs entries ordered by createdAt asc.",
+        "sourceRefs": [
+          "src/app/api/auction/bid-history/route.ts:10-70"
+        ]
+      },
+      {
+        "id": "BR-AUC-052",
+        "rule": "GET /api/auction/live-status is public (no auth). Accepts ?leagueSlug or ?leagueId (400 if neither). Returns {live, leagueId, sessionId, status} where live=true iff the league has an auctionSessions row with status in ('active','paused'). Non-auction leagues return live:false.",
+        "sourceRefs": [
+          "src/app/api/auction/live-status/route.ts:11-47"
+        ]
+      },
+      {
+        "id": "BR-AUC-053",
+        "rule": "POST /api/admin/[leagueId]/reset-auction requires getAuthorizedLeagueId (admin scope for that league) — 403 otherwise. Body must include resetTo (400 otherwise). resetTo must be 'initial' or 'mini-N' (any other value returns 400).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/reset-auction/route.ts:27-90"
+        ]
+      },
+      {
+        "id": "BR-AUC-054",
+        "rule": "resetTo='initial' deletes ALL auctionBidLogs, auctionBids, auctionSessions, auctionOwnership, auctionClubOwnership, teamPenalties, auctionScores and tradeProposals for the league. Then resets every team's totalSpent=0, totalRefunds=0, totalIncome=0, penaltySlots=0, bonusSlots=0, purse=initialBudget. Wishlists are deliberately PRESERVED across resets.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/reset-auction/route.ts:38-83",
+          "src/app/api/admin/[leagueId]/reset-auction/route.ts:56"
+        ]
+      },
+      {
+        "id": "BR-AUC-055",
+        "rule": "resetTo='mini-N' deletes only sessions with cycleNumber ≥ N (and their bidLogs/bids) plus the auctionOwnership rows whose fplElementIds were 'sold' in those deleted sessions. Each team's totalSpent is recomputed from surviving active ownerships and penaltySlots is reset to 0. Wishlists are PRESERVED.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/reset-auction/route.ts:86-181"
+        ]
+      },
+      {
+        "id": "BR-AUC-056",
+        "rule": "resetTo='initial' restores bonusSlots=0 on every team but does NOT delete the teamSlotUnlocks audit ledger rows for the league. // CODE-CONFIRMED: may be a defect — orphaned slot-unlock ledger rows survive a full reset, breaking the finance trail. Compare with the restore-auction route which DOES delete teamSlotUnlocks at line 372. Confirm with product owner.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/reset-auction/route.ts:38-83",
+          "src/app/api/admin/[leagueId]/restore-auction/route.ts:372"
+        ]
+      },
+      {
+        "id": "BR-AUC-057",
+        "rule": "autoNominateFromWishlist walks the wishlist in priority order and skips any entry that is (a) owned by some team (ownerOfPlayer), (b) unaffordable at DEFAULT_MIN_BID against availablePurse, (c) unknown to FPL, or (d) infeasible (validateAddPlayer). Returns true on first successful nomination, false when the wishlist is exhausted or squad already full.",
+        "sourceRefs": [
+          "src/lib/formats/auction/resolve-bid.ts:459-533"
+        ]
+      },
+      {
+        "id": "BR-AUC-058",
+        "rule": "applyNominationPenalty inserts a teamPenalties row tagged with the session's cycleNumber (used later by redeem pricing) and increments teams.penaltySlots by 1.",
+        "sourceRefs": [
+          "src/lib/formats/auction/resolve-bid.ts:540-564"
+        ]
+      },
+      {
+        "id": "BR-AUC-059",
+        "rule": "When isSimulated is true on a Complete-tier league with one or more teams holding bonusSlots > 0, simulateAuction produces ownership counts equal to (15 + bonusSlots - penaltySlots) per team. Previously this matched only when bonusSlots=0 due to the missing argument to effectiveMaxSquadSize.",
+        "sourceRefs": [
+          "src/lib/formats/auction/simulate.ts:108-115"
+        ]
+      },
+      {
+        "id": "BR-AUC-060",
+        "rule": "POST /api/auction/session action=create validates nominationTimeoutSeconds is an integer in [5, 3600] when supplied; out-of-range or non-integer values return HTTP 400. Undefined falls back to 60s default.",
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:173-178"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-AUC-001",
+        "given": "I am a non-admin team",
+        "when": "I POST to /api/auction/session with action=create",
+        "then": "I get 403 'Admin access required'",
+        "linksTo": "BR-AUC-001"
+      },
+      {
+        "id": "AC-AUC-002",
+        "given": "An admin POSTs to /api/auction/session against a league with format='tvt'",
+        "when": "the request is processed",
+        "then": "the response is 400 'Not an auction league'",
+        "linksTo": "BR-AUC-002"
+      },
+      {
+        "id": "AC-AUC-003",
+        "given": "An auction league with no prior auction sessions and clubAuctionEnabled=true",
+        "when": "admin creates type='initial' before any club-auction has completed",
+        "then": "the response is 409 referencing the club-auction → initial → mini-auction order",
+        "linksTo": "BR-AUC-003"
+      },
+      {
+        "id": "AC-AUC-004",
+        "given": "An auction league whose initial-auction session exists but is status='active'",
+        "when": "admin creates a type='mini-auction' session",
+        "then": "the response is 409 'Initial auction must be completed before creating a mini-auction'",
+        "linksTo": "BR-AUC-004"
+      },
+      {
+        "id": "AC-AUC-005",
+        "given": "An auction league with zero non-ghost teams",
+        "when": "admin POSTs action=create for type='initial'",
+        "then": "the response is 400 'No teams in league' and no auctionSessions row is inserted",
+        "linksTo": "BR-AUC-005"
+      },
+      {
+        "id": "AC-AUC-006",
+        "given": "An auction league with 8 non-ghost teams",
+        "when": "admin creates type='initial' twice in succession",
+        "then": "the two persisted snakeOrders are random and differ (not deterministic by team id), each contains exactly the 8 ids once",
+        "linksTo": "BR-AUC-006"
+      },
+      {
+        "id": "AC-AUC-007",
+        "given": "Teams with ranks [1,2,3,4]",
+        "when": "admin creates type='mini-auction'",
+        "then": "the persisted snakeOrder lists the rank=4 team first and the rank=1 team last",
+        "linksTo": "BR-AUC-006"
+      },
+      {
+        "id": "AC-AUC-008",
+        "given": "Admin creates a session with no timer overrides",
+        "when": "the session row is read back",
+        "then": "bidTimerSeconds=20 and nominationTimeoutSeconds=60",
+        "linksTo": "BR-AUC-007"
+      },
+      {
+        "id": "AC-AUC-009",
+        "given": "A session in status='completed'",
+        "when": "admin POSTs action=start",
+        "then": "the response is 400 'Cannot start a session in completed status'",
+        "linksTo": "BR-AUC-008"
+      },
+      {
+        "id": "AC-AUC-010",
+        "given": "A session in status='active'",
+        "when": "admin POSTs action=schedule",
+        "then": "the response is 400 'Can only schedule pending sessions'",
+        "linksTo": "BR-AUC-009"
+      },
+      {
+        "id": "AC-AUC-011",
+        "given": "An active session with nominationDeadline=now+45s and an open bid expiring in 12s",
+        "when": "admin pauses then 30s later resumes",
+        "then": "nominationDeadline shifts to now+45s+30s and the open bid expiresAt shifts forward by 30s; pausedAt is cleared to null",
+        "linksTo": "BR-AUC-011"
+      },
+      {
+        "id": "AC-AUC-012",
+        "given": "An active session with no nominationDeadline (post-nomination) and one open bid",
+        "when": "admin pauses then resumes 10s later",
+        "then": "the open bid's expiresAt advances by 10s; nominationDeadline remains null; pausedAt cleared",
+        "linksTo": "BR-AUC-011"
+      },
+      {
+        "id": "AC-AUC-013",
+        "given": "A pending player-auction session being started for the first time",
+        "when": "the start succeeds",
+        "then": "setNominationDeadline runs (current nominator gets a deadline) AND purgePendingTrades runs (league trade proposals in pending/accepted flip to cancelled)",
+        "linksTo": "BR-AUC-012"
+      },
+      {
+        "id": "AC-AUC-014",
+        "given": "A pending mini-auction session for cycleNumber=2 being started",
+        "when": "the start succeeds",
+        "then": "finalizePendingReleasesNow runs for gw=2 BEFORE the bid timer is set",
+        "linksTo": "BR-AUC-014"
+      },
+      {
+        "id": "AC-AUC-015",
+        "given": "A live (non-simulated) session is force-completed by admin",
+        "when": "the status flips to 'completed'",
+        "then": "writeAuctionCompleteSnapshot is invoked (idempotent — no duplicate snapshot if already taken)",
+        "linksTo": "BR-AUC-015"
+      },
+      {
+        "id": "AC-AUC-016",
+        "given": "A simulated league with a pending player-auction session",
+        "when": "admin POSTs action=start",
+        "then": "simulateAuction runs, the response carries simulated:true + playersAssigned count, and the session row ends status='completed'",
+        "linksTo": "BR-AUC-016"
+      },
+      {
+        "id": "AC-AUC-017",
+        "given": "A simulated 8-team league with initialBudget=£100M",
+        "when": "simulateAuction completes",
+        "then": "each team has up to MAX_SQUAD_SIZE (15) auctionOwnership rows, every fplElementId is unique across the league, and per-team totalSpent equals sum of purchasePrice",
+        "linksTo": "BR-AUC-017"
+      },
+      {
+        "id": "AC-AUC-018",
+        "given": "Unauthenticated user",
+        "when": "GET /api/auction/session?leagueId=...",
+        "then": "the response is 401 'Unauthorized'",
+        "linksTo": "BR-AUC-018"
+      },
+      {
+        "id": "AC-AUC-019",
+        "given": "An active session with one auctionBids row status='open' whose expiresAt was 60s ago and no SSE listener",
+        "when": "any user GETs /api/auction/session",
+        "then": "the bid is resolved (status='sold'), auctionOwnership inserted for the winner, and currentBid in the response reflects the next (or no) open bid",
+        "linksTo": "BR-AUC-019"
+      },
+      {
+        "id": "AC-AUC-020",
+        "given": "An unauthenticated request",
+        "when": "POST /api/auction/nominate",
+        "then": "the response is 401 'Authentication required'",
+        "linksTo": "BR-AUC-020"
+      },
+      {
+        "id": "AC-AUC-021",
+        "given": "An active club-auction session",
+        "when": "a team POSTs to /api/auction/nominate",
+        "then": "the response is 400 'Club auctions are system-nominated...'",
+        "linksTo": "BR-AUC-021"
+      },
+      {
+        "id": "AC-AUC-022",
+        "given": "A non-admin team that is NOT snakeOrder[currentNominatorIndex]",
+        "when": "they POST /api/auction/nominate with a valid body",
+        "then": "the response is 403 'Not your turn to nominate'",
+        "linksTo": "BR-AUC-022"
+      },
+      {
+        "id": "AC-AUC-023",
+        "given": "An active session with an open bid for player X still in progress",
+        "when": "the current nominator POSTs a nominate for player Y",
+        "then": "the response is 400 'Another item is still open for bidding'",
+        "linksTo": "BR-AUC-023"
+      },
+      {
+        "id": "AC-AUC-024",
+        "given": "A player already in auctionOwnership for team A in this league",
+        "when": "the current nominator POSTs a nominate for that fplElementId",
+        "then": "the response is 409 'Player is already owned by another team'",
+        "linksTo": "BR-AUC-023"
+      },
+      {
+        "id": "AC-AUC-025",
+        "given": "A non-admin nominator with availablePurse=£300K nominating a player with minBid=£500K",
+        "when": "the nominate request is processed",
+        "then": "the response is 400 'Insufficient purse ...'",
+        "linksTo": "BR-AUC-024"
+      },
+      {
+        "id": "AC-AUC-026",
+        "given": "A nominator with a full squad of 15",
+        "when": "they nominate a GKP",
+        "then": "the response is 400 'Squad is full (15 players)'",
+        "linksTo": "BR-AUC-025"
+      },
+      {
+        "id": "AC-AUC-027",
+        "given": "A successful nomination",
+        "when": "the response is returned",
+        "then": "an auctionBids row exists (status='open', currentHighBidderId=nominator, expiresAt≈now+bidTimerSeconds) AND an auctionBidLogs type='nomination' row exists AND the session's nominationDeadline is null",
+        "linksTo": "BR-AUC-026"
+      },
+      {
+        "id": "AC-AUC-028",
+        "given": "A non-team session (superadmin) POSTing /api/auction/bid",
+        "when": "the request is processed",
+        "then": "the response is 401 'Team authentication required'",
+        "linksTo": "BR-AUC-027"
+      },
+      {
+        "id": "AC-AUC-029",
+        "given": "A team in league A trying to bid on session in league B",
+        "when": "POST /api/auction/bid is processed",
+        "then": "the response is 403 'Team not in this league'",
+        "linksTo": "BR-AUC-028"
+      },
+      {
+        "id": "AC-AUC-030",
+        "given": "An open bid whose expiresAt was 3 seconds ago",
+        "when": "a team POSTs a bid",
+        "then": "the response is 400 'Auction timer has expired'",
+        "linksTo": "BR-AUC-029"
+      },
+      {
+        "id": "AC-AUC-031",
+        "given": "An open bid with currentHighBid=£1,000,000",
+        "when": "a team bids £1,050,000",
+        "then": "the response is 400 'Minimum bid is 1,100,000'",
+        "linksTo": "BR-AUC-030"
+      },
+      {
+        "id": "AC-AUC-032",
+        "given": "A team with available purse £600K",
+        "when": "they bid £700K",
+        "then": "the response is 400 'Insufficient purse'",
+        "linksTo": "BR-AUC-031"
+      },
+      {
+        "id": "AC-AUC-033",
+        "given": "A team with 14 active ownerships including 1 GK, 3 DEF, 2 MID, 4 FWD bidding on an additional FWD",
+        "when": "the bid validation runs",
+        "then": "the response is 400 with the squad-rule error from validateAddPlayer",
+        "linksTo": "BR-AUC-032"
+      },
+      {
+        "id": "AC-AUC-034",
+        "given": "An open bid with 15s remaining (bidTimerSeconds=20)",
+        "when": "a team places a valid bid",
+        "then": "expiresAt does NOT extend (bid landed outside the 5s window)",
+        "linksTo": "BR-AUC-033"
+      },
+      {
+        "id": "AC-AUC-035",
+        "given": "An open bid with 3s remaining",
+        "when": "a team places a valid bid",
+        "then": "expiresAt extends by ANTI_SNIPE_EXTENSION_MS (10s) but capped at now + bidTimerSeconds*1000",
+        "linksTo": "BR-AUC-033"
+      },
+      {
+        "id": "AC-AUC-036",
+        "given": "A successful bid",
+        "when": "the transaction commits",
+        "then": "auctionBids has updated currentHighBid/currentHighBidderId AND a new auctionBidLogs row with type='bid' exists",
+        "linksTo": "BR-AUC-034"
+      },
+      {
+        "id": "AC-AUC-037",
+        "given": "An SSE client connected with no sessionId",
+        "when": "the request is made",
+        "then": "the response is 400 'sessionId is required'",
+        "linksTo": "BR-AUC-035"
+      },
+      {
+        "id": "AC-AUC-038",
+        "given": "An SSE client on an active session",
+        "when": "another team places a bid that changes currentHighBidderId",
+        "then": "the stream emits an 'auction-state' event followed by a 'bid-placed' event with the new amount/bidder",
+        "linksTo": "BR-AUC-036"
+      },
+      {
+        "id": "AC-AUC-039",
+        "given": "An SSE client on a session whose open bid just expired",
+        "when": "the SSE poll runs",
+        "then": "the stream emits 'sold' with bidId, fplElementId, finalBid, winnerId AND the session's currentNominatorIndex has advanced BEFORE the event is emitted",
+        "linksTo": "BR-AUC-037"
+      },
+      {
+        "id": "AC-AUC-040",
+        "given": "A sold expiration on player X bought by team A for £2.5M",
+        "when": "resolveBidToSold commits",
+        "then": "auctionOwnership has the new row (status='active', purchasePrice=2_500_000, acquiredGw=0), teams.purse decreases by £2.5M, teams.totalSpent increases by £2.5M, auctionBidLogs gets a type='sold' row, and auctionWishlists has zero rows for fplElementId X across all teams in the league",
+        "linksTo": "BR-AUC-038"
+      },
+      {
+        "id": "AC-AUC-041",
+        "given": "Two open bids race-resolving for the same fplElementId",
+        "when": "the second resolveBidToSold finds an existing active ownership",
+        "then": "the second bid is marked status='cancelled-duplicate' with a cancelled-duplicate log row, no second ownership is inserted, no purse is deducted, and advanceNominator is NOT called by the duplicate path",
+        "linksTo": "BR-AUC-039"
+      },
+      {
+        "id": "AC-AUC-042",
+        "given": "An active session whose only squad-not-full team just sold their final-slot player",
+        "when": "advanceNominator runs and no other team has open slots",
+        "then": "the session row transitions to status='completed' and nominationDeadline is set to null",
+        "linksTo": "BR-AUC-040"
+      },
+      {
+        "id": "AC-AUC-043",
+        "given": "Auto-completion at all-teams-full where one team finished with 0 GKP",
+        "when": "advanceNominator completes the session",
+        "then": "an auditLogs row with type='AUCTION_COMPLETED_COMPOSITION_WARNING' lists that team and missing positions; completion is NOT blocked",
+        "linksTo": "BR-AUC-041"
+      },
+      {
+        "id": "AC-AUC-044",
+        "given": "A nominator whose nominationDeadline expires and whose wishlist is empty",
+        "when": "the SSE timeout claim succeeds",
+        "then": "handleNominationTimeout returns 'penalised', a teamPenalties row is inserted with incurredCycle=session.cycleNumber, teams.penaltySlots increments by 1, and advanceNominator moves on",
+        "linksTo": "BR-AUC-042"
+      },
+      {
+        "id": "AC-AUC-045",
+        "given": "A nominator whose nominationDeadline expires with a wishlist where the top entry is owned and the 2nd entry is unowned and affordable",
+        "when": "handleNominationTimeout runs",
+        "then": "the 2nd entry is auto-nominated (auctionBids row created, currentHighBidderId=nominator), no penalty row is inserted, and SSE emits 'auto-nominated'",
+        "linksTo": "BR-AUC-042"
+      },
+      {
+        "id": "AC-AUC-046",
+        "given": "A squad-full nominator whose deadline expires",
+        "when": "handleNominationTimeout runs",
+        "then": "no auto-nomination, no penalty, advanceNominator runs and SSE emits 'skipped-full'",
+        "linksTo": "BR-AUC-042"
+      },
+      {
+        "id": "AC-AUC-047",
+        "given": "Team A authenticated",
+        "when": "team A GETs /api/auction/wishlist?teamId=<teamB>",
+        "then": "the response is 403 'Not authorized'",
+        "linksTo": "BR-AUC-043"
+      },
+      {
+        "id": "AC-AUC-048",
+        "given": "A wishlist with two rows for the same fplElementId (priorities 3 and 7)",
+        "when": "team GETs /api/auction/wishlist",
+        "then": "the response contains the priority=3 row only, and the priority=7 row is deleted from DB",
+        "linksTo": "BR-AUC-043"
+      },
+      {
+        "id": "AC-AUC-049",
+        "given": "Team POSTs /api/auction/wishlist with a players array of 5 entries where 2 already exist in their wishlist",
+        "when": "the request commits",
+        "then": "response is {success:true, inserted:3, skipped:2} and the 3 new rows have priorities maxExisting+1..maxExisting+3",
+        "linksTo": "BR-AUC-044"
+      },
+      {
+        "id": "AC-AUC-050",
+        "given": "Team PATCHes /api/auction/wishlist with items=[{id:A,priority:2},{id:B,priority:1}]",
+        "when": "the request commits",
+        "then": "auctionWishlists row A now has priority=2 and row B has priority=1",
+        "linksTo": "BR-AUC-045"
+      },
+      {
+        "id": "AC-AUC-051",
+        "given": "Team DELETEs /api/auction/wishlist with id and a teamId that doesn't match the row owner",
+        "when": "the request runs",
+        "then": "no rows are deleted (the AND on teamId protects cross-team deletion)",
+        "linksTo": "BR-AUC-045"
+      },
+      {
+        "id": "AC-AUC-052",
+        "given": "A team's auction squad with one 'released' ownership and 14 'active' ownerships",
+        "when": "GET /api/auction/squad runs",
+        "then": "the squad array has 14 entries (released row excluded), activeCount=14",
+        "linksTo": "BR-AUC-046"
+      },
+      {
+        "id": "AC-AUC-053",
+        "given": "Team with bonusSlots=0, penaltySlots=0, initialAuctionCompleted=false",
+        "when": "GET /api/auction/squad runs",
+        "then": "slotStatus.canUnlock=false, slotStatus.unlockBlockedReason='initial auction in progress', slotStatus.nextUnlockCost=10_000_000",
+        "linksTo": "BR-AUC-047"
+      },
+      {
+        "id": "AC-AUC-054",
+        "given": "A team with bonusSlots=1, penaltySlots=1",
+        "when": "GET /api/auction/teams runs",
+        "then": "that team's effectiveMax=15 (15+1-1)",
+        "linksTo": "BR-AUC-048"
+      },
+      {
+        "id": "AC-AUC-055",
+        "given": "GET /api/auction/players?leagueId=X&pageSize=200",
+        "when": "the request is processed",
+        "then": "pageSize is clamped to 100",
+        "linksTo": "BR-AUC-049"
+      },
+      {
+        "id": "AC-AUC-056",
+        "given": "GET /api/auction/players?leagueId=X&gameweek=0 or gameweek=39",
+        "when": "the request is processed",
+        "then": "the response is 400 'gameweek must be 1-38'",
+        "linksTo": "BR-AUC-049"
+      },
+      {
+        "id": "AC-AUC-057",
+        "given": "A league whose only session is type='initial' status='completed' with 4 unsold bids and a mini-auction session created today with 2 unsold bids",
+        "when": "GET /api/auction/unsold runs",
+        "then": "the response surfaces only the 2 unsold bids from the most-recent session (createdAt desc)",
+        "linksTo": "BR-AUC-050"
+      },
+      {
+        "id": "AC-AUC-058",
+        "given": "A session with 3 sold bids, 2 unsold bids, 1 open bid, 1 cancelled-duplicate bid",
+        "when": "GET /api/auction/bid-history is called",
+        "then": "exactly 5 bids are returned (sold+unsold only) ordered newest-first with logs[] populated",
+        "linksTo": "BR-AUC-051"
+      },
+      {
+        "id": "AC-AUC-059",
+        "given": "An unauthenticated request",
+        "when": "GET /api/auction/live-status?leagueSlug=acme",
+        "then": "the response is 200 with {live, leagueId, sessionId, status}; live=true iff the league has an active or paused session",
+        "linksTo": "BR-AUC-052"
+      },
+      {
+        "id": "AC-AUC-060",
+        "given": "GET /api/auction/live-status with neither leagueSlug nor leagueId",
+        "when": "the request is processed",
+        "then": "the response is 400 'leagueSlug or leagueId is required'",
+        "linksTo": "BR-AUC-052"
+      },
+      {
+        "id": "AC-AUC-061",
+        "given": "A user without admin scope on a league",
+        "when": "they POST /api/admin/[leagueId]/reset-auction",
+        "then": "the response is 403 'Forbidden'",
+        "linksTo": "BR-AUC-053"
+      },
+      {
+        "id": "AC-AUC-062",
+        "given": "Admin POSTs resetTo='mini-X' or any non-{initial|mini-N} value",
+        "when": "the request is processed",
+        "then": "the response is 400 'resetTo must be \"initial\" or \"mini-N\"'",
+        "linksTo": "BR-AUC-053"
+      },
+      {
+        "id": "AC-AUC-063",
+        "given": "A league with sessions, ownerships, scores, trades, club ownerships, penalties and a populated wishlist",
+        "when": "admin POSTs resetTo='initial'",
+        "then": "all auction tables for the league are emptied EXCEPT auctionWishlists; every team's purse equals initialBudget and penaltySlots/bonusSlots=0",
+        "linksTo": "BR-AUC-054"
+      },
+      {
+        "id": "AC-AUC-064",
+        "given": "A league with cycleNumber 0 (initial), 1, 2 sessions and ownerships acquired across all three",
+        "when": "admin POSTs resetTo='mini-2'",
+        "then": "the cycle=2 session and the sold-in-cycle-2 ownerships are deleted; cycle=0 and cycle=1 sessions/ownerships remain; each team's totalSpent is recomputed from the surviving active ownerships; penaltySlots reset to 0",
+        "linksTo": "BR-AUC-055"
+      },
+      {
+        "id": "AC-AUC-065",
+        "given": "A league with two teamSlotUnlocks ledger rows (slots 15 and 16)",
+        "when": "admin POSTs resetTo='initial'",
+        "then": "the teamSlotUnlocks rows REMAIN in the DB (bonusSlots is reset on teams but the audit rows are orphaned) — see DEF-AUC-001",
+        "linksTo": "BR-AUC-056"
+      },
+      {
+        "id": "AC-AUC-066",
+        "given": "A team with priority-ordered wishlist [P1=already-owned, P2=affordable+feasible]",
+        "when": "their nominationDeadline expires",
+        "then": "autoNominateFromWishlist creates the nomination for P2 (P1 is skipped via ownerOfPlayer); P1 is NOT deleted from the wishlist",
+        "linksTo": "BR-AUC-057"
+      },
+      {
+        "id": "AC-AUC-067",
+        "given": "Session cycleNumber=2",
+        "when": "applyNominationPenalty fires for team A",
+        "then": "a teamPenalties row exists with teamId=A, sessionId=session, incurredCycle=2, redeemedAt=null AND teams.penaltySlots for A increases by 1",
+        "linksTo": "BR-AUC-058"
+      },
+      {
+        "id": "AC-AUC-068",
+        "given": "a simulated Complete-tier auction is run on a league where team T1 has bonusSlots=2 and other teams have bonusSlots=0",
+        "when": "simulateAuction completes",
+        "then": "T1 has 17 active rows in auction_ownership (or 17 - penaltySlots if T1 also incurred penalties); other teams have 15 active rows. The live-auction cap and the simulator cap are now identical.",
+        "linksTo": "BR-AUC-059"
+      },
+      {
+        "id": "AC-AUC-069",
+        "given": "an admin POSTs /api/auction/session with action='create' and bidTimerSeconds=-1 or nominationTimeoutSeconds=0",
+        "when": "validation runs before any session insert",
+        "then": "HTTP 400 with the explicit range error message; no auctionSessions row inserted. Valid in-range values create the session as before; undefined values fall back to defaults (20s bid / 60s nomination).",
+        "linksTo": "BR-AUC-060"
+      },
+      {
+        "id": "AC-AUC-070",
+        "given": "An SSE consumer connected with no open bid and a nominationDeadline 30s in the future",
+        "when": "the poll runs",
+        "then": "a single 'waiting' event is emitted with currentNominatorId and nominationDeadline; the same poll does not emit duplicate 'waiting' events while the snapshot is unchanged",
+        "linksTo": "BR-AUC-036"
+      },
+      {
+        "id": "AC-AUC-071",
+        "given": "Two SSE clients are connected when a nominationDeadline lapses",
+        "when": "both clients race",
+        "then": "only one client's atomic claim (UPDATE nominationDeadline=null WHERE nominationDeadline IS NOT NULL) succeeds and calls handleNominationTimeout — advanceNominator runs once",
+        "linksTo": "BR-AUC-042"
+      }
+    ]
+  },
+  "defects": [
+    {
+      "id": "DEF-AUC-001",
+      "title": "reset-auction 'initial' leaves orphan teamSlotUnlocks ledger rows",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "POST /api/admin/[leagueId]/reset-auction with resetTo='initial' (src/app/api/admin/[leagueId]/reset-auction/route.ts:38-83) wipes auctionBids, auctionSessions, auctionOwnership, auctionClubOwnership, teamPenalties, auctionScores and tradeProposals and resets teams.bonusSlots=0, but does NOT delete the teamSlotUnlocks audit/finance ledger rows for the league. The sibling restore-auction route DOES delete teamSlotUnlocks (src/app/api/admin/[leagueId]/restore-auction/route.ts:372), proving the table is part of auction state.",
+      "expectedBehaviour": "resetTo='initial' should DELETE FROM teamSlotUnlocks WHERE leagueId = ? so the finance ledger is fully wiped alongside teams.bonusSlots=0.",
+      "actualBehaviour": "After resetTo='initial' the teamSlotUnlocks rows for the league survive. The finance UI / module 11 ledger will still show 'Slot Unlock' £10M / £20M / £30M outflows that no longer correspond to any state.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/reset-auction/route.ts:38-83",
+        "src/app/api/admin/[leagueId]/restore-auction/route.ts:372"
+      ],
+      "linkedBusinessRules": [
+        "BR-AUC-054",
+        "BR-AUC-056"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-AUC-063",
+        "AC-AUC-065"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-AUC-108"
+      ],
+      "notes": "Fix is one extra line: await db.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId)); placed alongside the other deletes. Risk: low — the table is purely an audit log. Impact: re-runs of a league's initial auction produce duplicate/phantom finance entries which is misleading to admins/teams.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-AUC-002",
+      "title": "simulateAuction ignores team bonusSlots when capping squad size",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "simulateAuction computes per-team cap with `effectiveMaxSquadSize(penaltySlots)` and never passes bonusSlots (src/lib/formats/auction/simulate.ts:108-111). Because effectiveMaxSquadSize defaults bonusSlots to 0 (src/lib/formats/auction/squad-rules.ts:23), a simulated team that had bonusSlots>0 at session-start is silently capped at 15 minus penalty slots.",
+      "expectedBehaviour": "The simulator should pass team.bonusSlots so simulated squads can grow to 15 + bonusSlots - penaltySlots, matching the live auction's effective cap.",
+      "actualBehaviour": "Simulated leagues with pre-unlocked bonus slots never fill them. The post-auction state misrepresents what a live auction would have produced.",
+      "sourceRefs": [
+        "src/lib/formats/auction/simulate.ts:108-111",
+        "src/lib/formats/auction/squad-rules.ts:21-25"
+      ],
+      "linkedBusinessRules": [
+        "BR-AUC-017",
+        "BR-AUC-059"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-AUC-068"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-AUC-113"
+      ],
+      "notes": "Trivial fix: pass team.bonusSlots ?? 0 as the second arg. The MAX_SQUAD_SIZE round counter also needs to extend past 15 to fill unlocked slots — the loop hard-codes 15. Two-line change. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "simulateAuction now passes both penaltySlots AND bonusSlots to effectiveMaxSquadSize (src/lib/formats/auction/simulate.ts:109-115). A simulated team that pre-bought slot 16/17/18 now drafts up to its full purchased squad size; previously the bonusSlots column was silently ignored and the cap stayed at 15.",
+      "resolutionDate": "2026-05-26"
+    },
+    {
+      "id": "DEF-AUC-003",
+      "title": "Session create accepts negative/zero bidTimerSeconds and nominationTimeoutSeconds",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "POST /api/auction/session action=create stores admin-supplied bidTimerSeconds and nominationTimeoutSeconds verbatim with only a nullish-coalesce default (src/app/api/auction/session/route.ts:218-221, 283-287). There is no positive-integer / sane-range validation.",
+      "expectedBehaviour": "Both fields should be validated as positive integers within sensible bounds (e.g. 5–300 seconds) and rejected with 400 otherwise.",
+      "actualBehaviour": "An admin can save bidTimerSeconds=-5 or 0; every nomination/bid will then expire instantly when started, effectively bricking the auction.",
+      "sourceRefs": [
+        "src/app/api/auction/session/route.ts:218-221",
+        "src/app/api/auction/session/route.ts:283-287"
+      ],
+      "linkedBusinessRules": [
+        "BR-AUC-007",
+        "BR-AUC-060"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-AUC-069"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-AUC-114",
+        "TC-AUC-115"
+      ],
+      "notes": "Add an input guard: if either is provided, require Number.isInteger && >= 5 && <= 300 (or similar). Low risk — purely additive validation. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added positive-integer range validation for bidTimerSeconds (5-600) and nominationTimeoutSeconds (5-3600) in POST /api/auction/session action=create (src/app/api/auction/session/route.ts:163-178). Out-of-range or non-integer values return HTTP 400 with the explicit range message. Undefined values still fall back to the existing defaults (20s / 60s).",
+      "resolutionDate": "2026-05-26"
+    }
+  ],
+  "testCases": [
+    {
+      "id": "TC-AUC-001",
+      "feature": "Session Create - Auth",
+      "scenario": "Non-admin team posts to /api/auction/session and is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team session cookie (not superadmin); league has format='auction'",
+      "testData": "session.type='team', body={leagueId, action:'create', type:'initial'}",
+      "testSteps": [
+        "1. Sign in as a team manager",
+        "2. POST /api/auction/session with action=create",
+        "3. Inspect status + body"
+      ],
+      "expectedResult": "HTTP 403 with message 'Admin access required'; no auctionSessions row inserted",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-AUC-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-002",
+      "feature": "Session Create - Auth",
+      "scenario": "Superadmin successfully creates an initial session (positive baseline)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Superadmin session; league format='auction', clubAuctionEnabled=false, no prior sessions, ≥1 non-ghost team",
+      "testData": "body={leagueId, action:'create', type:'initial'}",
+      "testSteps": [
+        "1. Sign in as superadmin",
+        "2. POST /api/auction/session create",
+        "3. Read session row"
+      ],
+      "expectedResult": "HTTP 200; auctionSessions row inserted with status='pending', type='initial', snakeOrder populated",
+      "postconditions": "One pending initial session exists",
+      "requirementId": "AC-AUC-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-003",
+      "feature": "Session Create - Missing Body Fields",
+      "scenario": "Superadmin posts without leagueId returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Superadmin session",
+      "testData": "body={action:'create'} (no leagueId)",
+      "testSteps": [
+        "1. POST /api/auction/session without leagueId"
+      ],
+      "expectedResult": "HTTP 400 indicating missing required field",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-AUC-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-004",
+      "feature": "Session Create - Format Guard",
+      "scenario": "Superadmin creates session on a tvt-format league returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League with format='tvt'",
+      "testData": "body={leagueId:tvtLeague, action:'create', type:'initial'}",
+      "testSteps": [
+        "1. POST /api/auction/session create against tvt league"
+      ],
+      "expectedResult": "HTTP 400 'Not an auction league'",
+      "postconditions": "No auctionSessions row inserted",
+      "requirementId": "AC-AUC-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-005",
+      "feature": "Session Create - Ordering",
+      "scenario": "Creating initial before club auction completes returns 409",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Auction league with clubAuctionEnabled=true and no completed club-auction session",
+      "testData": "body={leagueId, action:'create', type:'initial'}",
+      "testSteps": [
+        "1. POST /api/auction/session create type=initial"
+      ],
+      "expectedResult": "HTTP 409 referencing the club-auction → initial → mini-auction order",
+      "postconditions": "No new session created",
+      "requirementId": "AC-AUC-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-006",
+      "feature": "Session Create - Ordering",
+      "scenario": "Creating a second initial when one already exists returns 409",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League already has an initial session row (any status)",
+      "testData": "body={leagueId, action:'create', type:'initial'}",
+      "testSteps": [
+        "1. POST create initial again"
+      ],
+      "expectedResult": "HTTP 409",
+      "postconditions": "Only one initial session exists",
+      "requirementId": "AC-AUC-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-007",
+      "feature": "Session Create - Ordering",
+      "scenario": "Creating mini-auction before initial is completed returns 409",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League has an initial session in status='active' (not completed)",
+      "testData": "body={leagueId, action:'create', type:'mini-auction', cycleNumber:1}",
+      "testSteps": [
+        "1. POST create mini-auction"
+      ],
+      "expectedResult": "HTTP 409 'Initial auction must be completed before creating a mini-auction'",
+      "postconditions": "No mini-auction row inserted",
+      "requirementId": "AC-AUC-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-008",
+      "feature": "Session Create - Ordering",
+      "scenario": "Creating mini-auction after initial completes succeeds",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Initial session status='completed'",
+      "testData": "body={leagueId, action:'create', type:'mini-auction', cycleNumber:1}",
+      "testSteps": [
+        "1. POST create mini-auction with cycleNumber=1"
+      ],
+      "expectedResult": "HTTP 200; mini-auction session inserted with snakeOrder by reverse standings",
+      "postconditions": "Mini-auction session in 'pending'",
+      "requirementId": "AC-AUC-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-009",
+      "feature": "Session Create - Teams Guard",
+      "scenario": "Creating initial in league with zero non-ghost teams returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League has only ghost team rows or empty",
+      "testData": "body={leagueId, action:'create', type:'initial'}",
+      "testSteps": [
+        "1. POST create initial"
+      ],
+      "expectedResult": "HTTP 400 'No teams in league'; no auctionSessions row inserted",
+      "postconditions": "DB unchanged",
+      "requirementId": "AC-AUC-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-010",
+      "feature": "Session Create - Snake Order",
+      "scenario": "Initial snake order is randomised and contains exactly the 8 team ids",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League with 8 non-ghost teams, no prior initial",
+      "testData": "Create initial twice in succession in separate test leagues",
+      "testSteps": [
+        "1. POST create initial league L1",
+        "2. POST create initial league L2 (matching teams)",
+        "3. Compare snakeOrder arrays"
+      ],
+      "expectedResult": "Both arrays length=8, contain each id exactly once, are not deterministically equal (random) — at least one rerun across attempts differs",
+      "postconditions": "Two pending initial sessions persisted",
+      "requirementId": "AC-AUC-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Statistical: with 8!=40320 perms a difference is highly probable on each rerun"
+    },
+    {
+      "id": "TC-AUC-011",
+      "feature": "Session Create - Snake Order",
+      "scenario": "Mini-auction snake order puts worst-ranked team first",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Standings with teams ranked 1..4; initial completed",
+      "testData": "ranks: T1=1, T2=2, T3=3, T4=4",
+      "testSteps": [
+        "1. POST create mini-auction",
+        "2. Read snakeOrder"
+      ],
+      "expectedResult": "snakeOrder = [T4, T3, T2, T1]; T4 first, T1 last",
+      "postconditions": "Mini-auction pending",
+      "requirementId": "AC-AUC-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-012",
+      "feature": "Session Create - Defaults",
+      "scenario": "Default timers persisted when no override supplied",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Superadmin session, league ready",
+      "testData": "body={leagueId, action:'create', type:'initial'} — no timer fields",
+      "testSteps": [
+        "1. POST create initial",
+        "2. SELECT bidTimerSeconds, nominationTimeoutSeconds"
+      ],
+      "expectedResult": "bidTimerSeconds=20, nominationTimeoutSeconds=60",
+      "postconditions": "Session pending",
+      "requirementId": "AC-AUC-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-013",
+      "feature": "Session State Machine",
+      "scenario": "Cannot start a completed session",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Session in status='completed'",
+      "testData": "body={leagueId, action:'start', sessionId}",
+      "testSteps": [
+        "1. POST /api/auction/session action=start on completed session"
+      ],
+      "expectedResult": "HTTP 400 'Cannot start a session in completed status'",
+      "postconditions": "Session remains completed",
+      "requirementId": "AC-AUC-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-014",
+      "feature": "Session State Machine",
+      "scenario": "Pending → start → active transitions correctly",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Pending player-auction session, non-simulated",
+      "testData": "body={leagueId, action:'start', sessionId}",
+      "testSteps": [
+        "1. POST action=start",
+        "2. SELECT status"
+      ],
+      "expectedResult": "status flips to 'active'",
+      "postconditions": "Active session with nominationDeadline set",
+      "requirementId": "AC-AUC-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-015",
+      "feature": "Session State Machine",
+      "scenario": "Pause active → paused succeeds",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Session active",
+      "testData": "body={action:'pause', sessionId}",
+      "testSteps": [
+        "1. POST action=pause"
+      ],
+      "expectedResult": "status='paused', pausedAt=now",
+      "postconditions": "Paused session row",
+      "requirementId": "AC-AUC-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-016",
+      "feature": "Session State Machine",
+      "scenario": "Resume from non-paused returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Session active (not paused)",
+      "testData": "body={action:'resume', sessionId}",
+      "testSteps": [
+        "1. POST action=resume"
+      ],
+      "expectedResult": "HTTP 400 invalid transition",
+      "postconditions": "Session unchanged",
+      "requirementId": "AC-AUC-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-017",
+      "feature": "Session Schedule",
+      "scenario": "Schedule only allowed on pending sessions",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Session status='active'",
+      "testData": "body={action:'schedule', sessionId, scheduledAt:future}",
+      "testSteps": [
+        "1. POST action=schedule on active session"
+      ],
+      "expectedResult": "HTTP 400 'Can only schedule pending sessions'",
+      "postconditions": "Session unchanged",
+      "requirementId": "AC-AUC-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-018",
+      "feature": "Session Schedule",
+      "scenario": "Schedule pending session updates scheduledAt only",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Session status='pending'",
+      "testData": "body={action:'schedule', sessionId, scheduledAt:'2026-06-01T12:00:00Z'}",
+      "testSteps": [
+        "1. POST action=schedule",
+        "2. SELECT status, scheduledAt"
+      ],
+      "expectedResult": "status remains 'pending'; scheduledAt updated",
+      "postconditions": "Pending session with scheduledAt set",
+      "requirementId": "AC-AUC-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-019",
+      "feature": "Pause/Resume Time Shift",
+      "scenario": "Resume shifts nominationDeadline and open bid expiresAt by paused duration",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Active session, nominationDeadline=now+45s, one open bid expiring in 12s",
+      "testData": "Pause then wait 30s then resume",
+      "testSteps": [
+        "1. POST action=pause (record pause time)",
+        "2. Wait 30s",
+        "3. POST action=resume",
+        "4. SELECT nominationDeadline, expiresAt, pausedAt"
+      ],
+      "expectedResult": "nominationDeadline shifted by ~30s; auctionBids.expiresAt shifted by ~30s; pausedAt=null",
+      "postconditions": "Active session with shifted deadlines",
+      "requirementId": "AC-AUC-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-020",
+      "feature": "Pause/Resume Time Shift",
+      "scenario": "Resume with null nominationDeadline only shifts open bid expiresAt",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Active session with nominationDeadline=null (post-nomination state), one open bid",
+      "testData": "Pause then wait 10s then resume",
+      "testSteps": [
+        "1. Pause",
+        "2. Wait 10s",
+        "3. Resume",
+        "4. Read row"
+      ],
+      "expectedResult": "nominationDeadline remains null; expiresAt advanced by ~10s; pausedAt=null",
+      "postconditions": "Active session resumed",
+      "requirementId": "AC-AUC-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-021",
+      "feature": "Pause/Resume Time Shift",
+      "scenario": "Legacy paused row without pausedAt resumes without time shift",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Session paused with pausedAt=NULL (legacy)",
+      "testData": "Resume call after delay",
+      "testSteps": [
+        "1. POST action=resume"
+      ],
+      "expectedResult": "Status=active; no shift applied to nominationDeadline or bids",
+      "postconditions": "Active session",
+      "requirementId": "AC-AUC-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-022",
+      "feature": "Session Start - Side Effects",
+      "scenario": "First-time start sets nomination deadline and purges pending trades",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Pending player-auction session; league has tradeProposals with status='pending' and 'accepted'",
+      "testData": "body={action:'start', sessionId}",
+      "testSteps": [
+        "1. POST action=start",
+        "2. SELECT nominationDeadline",
+        "3. SELECT tradeProposals status"
+      ],
+      "expectedResult": "Current nominator has nominationDeadline set; all pending+accepted tradeProposals now status='cancelled'",
+      "postconditions": "Auction active, marketplace locked",
+      "requirementId": "AC-AUC-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-023",
+      "feature": "Session Start - Side Effects",
+      "scenario": "Resume does NOT re-purge trades nor reset deadline (idempotent)",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Paused session that was previously started",
+      "testData": "Pending trade created during pause (manually)",
+      "testSteps": [
+        "1. POST action=resume"
+      ],
+      "expectedResult": "Pending trade is preserved (purge only runs on first-time start, not on resume)",
+      "postconditions": "Active session",
+      "requirementId": "AC-AUC-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-024",
+      "feature": "Mini-Auction Start - Pending Releases",
+      "scenario": "First-time start of mini-auction cycle=2 finalizes pending releases for gw=2",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Mini-auction session cycleNumber=2 pending; pending releases exist",
+      "testData": "body={action:'start', sessionId}",
+      "testSteps": [
+        "1. POST action=start",
+        "2. SELECT released ownerships pre/post start"
+      ],
+      "expectedResult": "finalizePendingReleasesNow ran for gw=2 before bid timer set",
+      "postconditions": "Session active",
+      "requirementId": "AC-AUC-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-025",
+      "feature": "Session Complete - Snapshot",
+      "scenario": "Force-completing live session triggers writeAuctionCompleteSnapshot",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Active live (non-simulated) session",
+      "testData": "body={action:'complete', sessionId}",
+      "testSteps": [
+        "1. POST action=complete",
+        "2. SELECT auctionCompleteSnapshots"
+      ],
+      "expectedResult": "Status='completed'; snapshot exists; no duplicate on second complete attempt",
+      "postconditions": "Session completed",
+      "requirementId": "AC-AUC-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-026",
+      "feature": "Simulated Auction",
+      "scenario": "Starting a simulated league session short-circuits with completed status",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League.isSimulated=true; pending player-auction session",
+      "testData": "body={action:'start', sessionId}",
+      "testSteps": [
+        "1. POST action=start",
+        "2. Inspect response"
+      ],
+      "expectedResult": "Response carries simulated:true and playersAssigned count; session.status='completed'",
+      "postconditions": "Simulated session completed",
+      "requirementId": "AC-AUC-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-027",
+      "feature": "Simulated Auction - Output",
+      "scenario": "Simulated 8-team league assigns at most 15 unique players per team and matches totalSpent",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Simulated league with 8 teams, initialBudget=£100M",
+      "testData": "Run simulator",
+      "testSteps": [
+        "1. Start simulated session",
+        "2. SELECT auctionOwnership grouped by teamId",
+        "3. Verify fplElementId uniqueness across league",
+        "4. Compare sum(purchasePrice) per team to teams.totalSpent"
+      ],
+      "expectedResult": "Each team has ≤15 ownership rows; every fplElementId appears once league-wide; totalSpent equals sum of purchasePrice per team",
+      "postconditions": "Simulated state populated",
+      "requirementId": "AC-AUC-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-028",
+      "feature": "Simulated Auction - Skip Round",
+      "scenario": "Team with purse below floor 500K skips that simulation round",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Simulated league where one team has been spent down to <500K",
+      "testData": "Crafted ownership state to leave team T with 300K",
+      "testSteps": [
+        "1. Start simulated session",
+        "2. Inspect T's ownership count"
+      ],
+      "expectedResult": "Team T does NOT receive a player in rounds it can't afford the floor",
+      "postconditions": "T may end below 15 ownerships",
+      "requirementId": "AC-AUC-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-029",
+      "feature": "GET Session - Auth",
+      "scenario": "Unauthenticated GET /api/auction/session returns 401",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie",
+      "testData": "GET /api/auction/session?leagueId=X",
+      "testSteps": [
+        "1. Hit endpoint without cookie"
+      ],
+      "expectedResult": "HTTP 401 'Unauthorized'",
+      "postconditions": "No state change",
+      "requirementId": "AC-AUC-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-030",
+      "feature": "GET Session - Missing Param",
+      "scenario": "Authenticated GET without leagueId returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid team session",
+      "testData": "GET /api/auction/session",
+      "testSteps": [
+        "1. GET without leagueId"
+      ],
+      "expectedResult": "HTTP 400",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-031",
+      "feature": "GET Session - Safety Net",
+      "scenario": "Stale open bid past expiry is resolved on GET",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Active session with auctionBids row status='open' whose expiresAt is 60s in the past; no SSE consumer",
+      "testData": "GET /api/auction/session?leagueId=X",
+      "testSteps": [
+        "1. Hit GET",
+        "2. SELECT auctionBids",
+        "3. SELECT auctionOwnership"
+      ],
+      "expectedResult": "Stale bid resolved to 'sold'; ownership inserted for winner; currentBid in response reflects new or none; nominator advanced if sold",
+      "postconditions": "DB cleaned",
+      "requirementId": "AC-AUC-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-032",
+      "feature": "Nominate - Auth",
+      "scenario": "Unauthenticated nominate returns 401",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie",
+      "testData": "POST /api/auction/nominate",
+      "testSteps": [
+        "1. POST without auth"
+      ],
+      "expectedResult": "HTTP 401 'Authentication required'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-033",
+      "feature": "Nominate - Body Validation",
+      "scenario": "Nominate missing fplElementId returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Auth as nominator team",
+      "testData": "body={sessionId, playerName:'X'}",
+      "testSteps": [
+        "1. POST nominate without fplElementId"
+      ],
+      "expectedResult": "HTTP 400 missing required field",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-034",
+      "feature": "Nominate - Session State",
+      "scenario": "Nominate on non-active session returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Session status='paused'",
+      "testData": "body={sessionId, fplElementId:1, playerName:'P'}",
+      "testSteps": [
+        "1. POST nominate"
+      ],
+      "expectedResult": "HTTP 400",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-035",
+      "feature": "Nominate - Club Auction Guard",
+      "scenario": "Manual nominate on club-auction session returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Active club-auction session (type=CLUB_AUCTION_SESSION_TYPE)",
+      "testData": "body={sessionId(club), fplElementId, playerName}",
+      "testSteps": [
+        "1. POST /api/auction/nominate"
+      ],
+      "expectedResult": "HTTP 400 'Club auctions are system-nominated...'",
+      "postconditions": "No nomination inserted",
+      "requirementId": "AC-AUC-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-036",
+      "feature": "Nominate - Turn Guard",
+      "scenario": "Non-nominator team gets 403 'Not your turn to nominate'",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Active session; team caller is NOT snakeOrder[currentNominatorIndex]",
+      "testData": "body={sessionId, fplElementId, playerName}",
+      "testSteps": [
+        "1. POST nominate as wrong team"
+      ],
+      "expectedResult": "HTTP 403 'Not your turn to nominate'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-037",
+      "feature": "Nominate - Open Bid Guard",
+      "scenario": "Nominate while another open bid exists returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Active session with one open bid still in progress",
+      "testData": "body={sessionId, fplElementId:2, playerName:'Y'} as current nominator",
+      "testSteps": [
+        "1. POST nominate"
+      ],
+      "expectedResult": "HTTP 400 'Another item is still open for bidding'",
+      "postconditions": "Only one open bid exists",
+      "requirementId": "AC-AUC-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-038",
+      "feature": "Nominate - Owned Guard",
+      "scenario": "Nominate already-owned player returns 409",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Player X owned by team A (active ownership)",
+      "testData": "body={sessionId, fplElementId:X, playerName:'X'}",
+      "testSteps": [
+        "1. POST nominate for X"
+      ],
+      "expectedResult": "HTTP 409 'Player is already owned by another team'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-039",
+      "feature": "Nominate - Purse Guard",
+      "scenario": "Insufficient purse for custom minBid returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Nominator availablePurse=£300K",
+      "testData": "body={sessionId, fplElementId:Z, playerName:'Z', minBid:500000}",
+      "testSteps": [
+        "1. POST nominate with minBid=500K"
+      ],
+      "expectedResult": "HTTP 400 'Insufficient purse'",
+      "postconditions": "No nomination created",
+      "requirementId": "AC-AUC-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-040",
+      "feature": "Nominate - Purse Boundary",
+      "scenario": "Custom minBid exactly equal to available purse is accepted",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Nominator availablePurse=£500K and squad capacity ok",
+      "testData": "minBid=500000",
+      "testSteps": [
+        "1. POST nominate with minBid=500K"
+      ],
+      "expectedResult": "HTTP 200; auctionBids row inserted with currentHighBid=500000",
+      "postconditions": "Nominator's purse reservation reflected",
+      "requirementId": "AC-AUC-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-041",
+      "feature": "Nominate - Squad Cap",
+      "scenario": "Squad-full nominator gets 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Nominator owns 15 active players",
+      "testData": "Nominate any GKP",
+      "testSteps": [
+        "1. POST nominate"
+      ],
+      "expectedResult": "HTTP 400 'Squad is full (15 players)'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-042",
+      "feature": "Nominate - Position Feasibility",
+      "scenario": "Nominate that breaks position-feasibility validation returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Nominator at max GKP (2) tries to nominate another GKP",
+      "testData": "body for 3rd GKP",
+      "testSteps": [
+        "1. POST nominate 3rd GKP"
+      ],
+      "expectedResult": "HTTP 400 with validateAddPlayer error",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-043",
+      "feature": "Nominate - Admin Override",
+      "scenario": "Admin nominate skips squad pre-checks",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Admin session; current nominator has 14 owns including 2 GKP",
+      "testData": "Admin nominates GKP for that team",
+      "testSteps": [
+        "1. POST nominate as superadmin"
+      ],
+      "expectedResult": "HTTP 200 — validateAddPlayer bypassed for admin",
+      "postconditions": "Nomination created",
+      "requirementId": "AC-AUC-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-044",
+      "feature": "Nominate - Success Side Effects",
+      "scenario": "Successful nominate inserts open bid + nomination log and clears nominationDeadline",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid nominator, valid player, session active, bidTimerSeconds=20",
+      "testData": "body={sessionId, fplElementId, playerName}",
+      "testSteps": [
+        "1. POST nominate",
+        "2. SELECT auctionBids",
+        "3. SELECT auctionBidLogs",
+        "4. SELECT auctionSessions.nominationDeadline"
+      ],
+      "expectedResult": "auctionBids row exists status='open', currentHighBidderId=nominator, expiresAt≈now+20s; auctionBidLogs type='nomination' row exists with amount=startingBid; session.nominationDeadline=null",
+      "postconditions": "Open bid in progress",
+      "requirementId": "AC-AUC-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-045",
+      "feature": "Bid - Auth",
+      "scenario": "Superadmin (non-team session) bidding returns 401",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Superadmin session (session.type!='team')",
+      "testData": "POST /api/auction/bid",
+      "testSteps": [
+        "1. POST bid as superadmin"
+      ],
+      "expectedResult": "HTTP 401 'Team authentication required'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-046",
+      "feature": "Bid - Body Validation",
+      "scenario": "Bid missing numeric bidAmount returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team session",
+      "testData": "body={sessionId} (no bidAmount)",
+      "testSteps": [
+        "1. POST bid"
+      ],
+      "expectedResult": "HTTP 400",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-047",
+      "feature": "Bid - League Membership",
+      "scenario": "Team from another league cannot bid (403)",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team in league A; auction session lives in league B",
+      "testData": "body={sessionId(B), bidAmount}",
+      "testSteps": [
+        "1. POST bid as team-from-A"
+      ],
+      "expectedResult": "HTTP 403 'Team not in this league'",
+      "postconditions": "No bid recorded",
+      "requirementId": "AC-AUC-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-048",
+      "feature": "Bid - Session State Guard",
+      "scenario": "Bid on non-active session returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Session status='paused'",
+      "testData": "body={sessionId, bidAmount}",
+      "testSteps": [
+        "1. POST bid"
+      ],
+      "expectedResult": "HTTP 400",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-049",
+      "feature": "Bid - No Open Item",
+      "scenario": "Bid when no open bid item exists returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Active session with no auctionBids status='open' row",
+      "testData": "body={sessionId, bidAmount:600000}",
+      "testSteps": [
+        "1. POST bid"
+      ],
+      "expectedResult": "HTTP 400 (no open item)",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-050",
+      "feature": "Bid - Timer Expiry",
+      "scenario": "Bid placed 3s past expiry returns 400 'Auction timer has expired'",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Open bid with expiresAt = now - 3000ms (past 2s grace)",
+      "testData": "body={sessionId, bidAmount}",
+      "testSteps": [
+        "1. POST bid"
+      ],
+      "expectedResult": "HTTP 400 'Auction timer has expired'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-051",
+      "feature": "Bid - Grace Window Boundary",
+      "scenario": "Bid landing 1.5s past expiry (within 2s grace) is accepted",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Open bid expiresAt = now - 1500ms",
+      "testData": "Valid bidAmount above min increment",
+      "testSteps": [
+        "1. POST bid"
+      ],
+      "expectedResult": "HTTP 200, bid accepted",
+      "postconditions": "Bid recorded",
+      "requirementId": "AC-AUC-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-052",
+      "feature": "Bid - Min Increment",
+      "scenario": "Bid below currentHighBid + 100K rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Open bid currentHighBid=£1,000,000",
+      "testData": "bidAmount=1050000",
+      "testSteps": [
+        "1. POST bid 1.05M"
+      ],
+      "expectedResult": "HTTP 400 'Minimum bid is 1,100,000'",
+      "postconditions": "Existing high bid unchanged",
+      "requirementId": "AC-AUC-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-053",
+      "feature": "Bid - Min Increment Boundary",
+      "scenario": "Bid equal to currentHighBid + 100K is accepted",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "currentHighBid=£1,000,000",
+      "testData": "bidAmount=1100000",
+      "testSteps": [
+        "1. POST bid 1.1M"
+      ],
+      "expectedResult": "HTTP 200; currentHighBid updated to 1,100,000",
+      "postconditions": "auctionBidLogs has type='bid'",
+      "requirementId": "AC-AUC-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-054",
+      "feature": "Bid - Purse Guard",
+      "scenario": "Bid above available purse rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team availablePurse=£600K",
+      "testData": "bidAmount=700000",
+      "testSteps": [
+        "1. POST bid 700K"
+      ],
+      "expectedResult": "HTTP 400 'Insufficient purse'",
+      "postconditions": "No bid update",
+      "requirementId": "AC-AUC-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-055",
+      "feature": "Bid - Purse Boundary",
+      "scenario": "Bid equal to available purse is accepted",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Team availablePurse=£700K",
+      "testData": "bidAmount=700000 (assume currentHighBid=600K)",
+      "testSteps": [
+        "1. POST bid 700K"
+      ],
+      "expectedResult": "HTTP 200 — bid recorded",
+      "postconditions": "currentHighBid=700K",
+      "requirementId": "AC-AUC-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-056",
+      "feature": "Bid - Squad Rule",
+      "scenario": "Bidder breaking position cap is rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team has 14 actives (1 GK, 3 DEF, 2 MID, 4 FWD inactive constraints permit only 4 FWD) bidding on 5th FWD",
+      "testData": "Bid on 5th FWD player",
+      "testSteps": [
+        "1. POST bid"
+      ],
+      "expectedResult": "HTTP 400 with squad-rule error from validateAddPlayer",
+      "postconditions": "No bid recorded",
+      "requirementId": "AC-AUC-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-057",
+      "feature": "Bid - Unknown FPL Element",
+      "scenario": "Bid on unknown fplElementId returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "auctionBids has currentItem referencing element id absent from FPL cache",
+      "testData": "n/a (state)",
+      "testSteps": [
+        "1. POST bid"
+      ],
+      "expectedResult": "HTTP 400 unknown FPL element",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-058",
+      "feature": "Anti-Snipe",
+      "scenario": "Bid landing outside 5s window does NOT extend timer",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Open bid with 15s remaining, bidTimerSeconds=20",
+      "testData": "Valid bid",
+      "testSteps": [
+        "1. POST bid",
+        "2. SELECT expiresAt"
+      ],
+      "expectedResult": "expiresAt unchanged",
+      "postconditions": "Bid recorded; timer same",
+      "requirementId": "AC-AUC-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-059",
+      "feature": "Anti-Snipe",
+      "scenario": "Bid with 3s remaining extends by 10s capped at bidTimerSeconds*1000",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Open bid with expiresAt ≈ now+3000ms, bidTimerSeconds=20",
+      "testData": "Valid bid",
+      "testSteps": [
+        "1. POST bid",
+        "2. SELECT expiresAt"
+      ],
+      "expectedResult": "New expiresAt = min(prevExpiresAt+10s, now+20s); ~13s of new headroom",
+      "postconditions": "Snipe protection enforced",
+      "requirementId": "AC-AUC-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-060",
+      "feature": "Anti-Snipe Boundary",
+      "scenario": "Bid at exactly 5s remaining triggers extension (boundary inclusive)",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Open bid expiresAt = now+5000ms",
+      "testData": "Valid bid",
+      "testSteps": [
+        "1. POST bid"
+      ],
+      "expectedResult": "expiresAt extended (5s is within window)",
+      "postconditions": "Timer extended",
+      "requirementId": "AC-AUC-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-061",
+      "feature": "Bid - DB Atomicity",
+      "scenario": "Successful bid commits both auctionBids update and auctionBidLogs insert",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid bid context",
+      "testData": "bidAmount > currentHighBid + 100K",
+      "testSteps": [
+        "1. POST bid",
+        "2. SELECT auctionBids (currentHighBid, currentHighBidderId)",
+        "3. SELECT auctionBidLogs latest"
+      ],
+      "expectedResult": "currentHighBid + bidder updated; new auctionBidLogs row type='bid' with same amount",
+      "postconditions": "Records consistent",
+      "requirementId": "AC-AUC-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-062",
+      "feature": "SSE Stream - Missing Param",
+      "scenario": "SSE without sessionId returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "n/a",
+      "testData": "GET /api/auction/session/stream",
+      "testSteps": [
+        "1. Open SSE connection without sessionId"
+      ],
+      "expectedResult": "HTTP 400 'sessionId is required'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-063",
+      "feature": "SSE Stream - Bid Placed",
+      "scenario": "auction-state and bid-placed events emitted when bidder changes",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "SSE client connected to active session; an open bid exists",
+      "testData": "Other team places valid bid changing high bidder",
+      "testSteps": [
+        "1. Connect SSE",
+        "2. Another team places bid",
+        "3. Capture next 5s of events"
+      ],
+      "expectedResult": "Stream emits 'auction-state' followed by 'bid-placed' with new amount/bidder",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-064",
+      "feature": "SSE Stream - Sold Event",
+      "scenario": "Open bid expiry emits 'sold' AFTER nominator has advanced",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "SSE on active session; open bid expiresAt past + 2s grace",
+      "testData": "Let bid expire",
+      "testSteps": [
+        "1. SSE connect",
+        "2. Wait for expiry",
+        "3. Capture event payload + SELECT currentNominatorIndex"
+      ],
+      "expectedResult": "Stream emits 'sold' with bidId, fplElementId, finalBid, winnerId; session.currentNominatorIndex already advanced before event timestamp",
+      "postconditions": "Ownership recorded",
+      "requirementId": "AC-AUC-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-065",
+      "feature": "Sold Economics",
+      "scenario": "Sold bid debits purse, credits totalSpent, inserts ownership, wipes wishlists league-wide",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team A bidding on player X at £2.5M; multiple teams have X on their wishlist",
+      "testData": "Auction completes with A as high bidder",
+      "testSteps": [
+        "1. Let bid resolve",
+        "2. SELECT auctionOwnership",
+        "3. SELECT teams.purse + totalSpent for A",
+        "4. SELECT auctionBidLogs type='sold'",
+        "5. SELECT auctionWishlists where fplElementId=X"
+      ],
+      "expectedResult": "ownership row exists (status='active', purchasePrice=2_500_000, acquiredGw=0); A's purse decreased by 2.5M; A's totalSpent increased by 2.5M; auctionBidLogs has type='sold' row; ZERO wishlist rows for X across all teams in league",
+      "postconditions": "Squad and economy consistent",
+      "requirementId": "AC-AUC-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-066",
+      "feature": "Double-Sell Guard",
+      "scenario": "Race-resolved duplicate bid is cancelled, no double ownership",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Two bids racing for same fplElementId; first resolves to sold",
+      "testData": "Simulate concurrent resolveBidToSold",
+      "testSteps": [
+        "1. Force concurrent resolution",
+        "2. SELECT auctionBids",
+        "3. SELECT auctionOwnership",
+        "4. SELECT teams.purse"
+      ],
+      "expectedResult": "Second bid status='cancelled-duplicate'; cancelled-duplicate log row exists; only ONE ownership for that fplElementId; no extra purse deduction; advanceNominator NOT triggered by duplicate path",
+      "postconditions": "DB consistent",
+      "requirementId": "AC-AUC-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-067",
+      "feature": "Advance Nominator - Auto Complete",
+      "scenario": "Session auto-completes when last sale fills the last open slot league-wide",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "All teams except T are full; T has 14 owns and just bought 15th",
+      "testData": "Resolve bid",
+      "testSteps": [
+        "1. Trigger resolution",
+        "2. SELECT auctionSessions"
+      ],
+      "expectedResult": "session.status='completed'; session.nominationDeadline=null",
+      "postconditions": "Auction over",
+      "requirementId": "AC-AUC-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-068",
+      "feature": "Advance Nominator - Composition Warning",
+      "scenario": "Auto-completion logs composition warning when team finished with 0 GKP",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Auction reaches all-teams-full; team T finishes with 0 GKP",
+      "testData": "Crafted final state",
+      "testSteps": [
+        "1. Trigger auto-completion",
+        "2. SELECT auditLogs where type='AUCTION_COMPLETED_COMPOSITION_WARNING'"
+      ],
+      "expectedResult": "auditLogs row inserted listing team T and missing positions; session.status='completed' (not blocked)",
+      "postconditions": "Audit trail recorded",
+      "requirementId": "AC-AUC-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-069",
+      "feature": "Nomination Timeout - Penalty",
+      "scenario": "Nominator with empty wishlist gets penalised on timeout",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Nominator has nominationDeadline elapsed; wishlist empty; squad not full",
+      "testData": "Let deadline expire",
+      "testSteps": [
+        "1. Wait deadline + SSE poll",
+        "2. SELECT teamPenalties",
+        "3. SELECT teams.penaltySlots",
+        "4. SELECT auctionSessions.currentNominatorIndex"
+      ],
+      "expectedResult": "teamPenalties row inserted with incurredCycle=session.cycleNumber, redeemedAt=null; penaltySlots incremented by 1; nominator advanced; SSE emits 'penalised'",
+      "postconditions": "Penalty recorded",
+      "requirementId": "AC-AUC-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-070",
+      "feature": "Nomination Timeout - Auto Nominate",
+      "scenario": "Top-priority owned, 2nd unowned+affordable: auto-nominate the 2nd",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Wishlist [P1=owned, P2=unowned+affordable]; deadline expires",
+      "testData": "Wait for SSE",
+      "testSteps": [
+        "1. Trigger timeout",
+        "2. SELECT auctionBids",
+        "3. SELECT teamPenalties",
+        "4. Listen SSE"
+      ],
+      "expectedResult": "auctionBids open row for P2 with currentHighBidderId=nominator; no teamPenalties row; SSE emits 'auto-nominated'",
+      "postconditions": "Auction continues",
+      "requirementId": "AC-AUC-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-071",
+      "feature": "Nomination Timeout - Squad Full Skip",
+      "scenario": "Squad-full nominator is skipped without penalty",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Squad-full nominator (15 owns) whose deadline expires",
+      "testData": "Wait for SSE timeout",
+      "testSteps": [
+        "1. Trigger timeout",
+        "2. SELECT teamPenalties for nominator",
+        "3. Listen SSE"
+      ],
+      "expectedResult": "No teamPenalties row inserted; advanceNominator runs; SSE emits 'skipped-full'",
+      "postconditions": "Auction continues",
+      "requirementId": "AC-AUC-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-072",
+      "feature": "Wishlist GET - Auth",
+      "scenario": "Team requesting another team's wishlist gets 403",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team A signed in; team B exists",
+      "testData": "GET /api/auction/wishlist?teamId=<B>",
+      "testSteps": [
+        "1. GET as A"
+      ],
+      "expectedResult": "HTTP 403 'Not authorized'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-073",
+      "feature": "Wishlist GET - Missing Param",
+      "scenario": "GET without teamId returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Authenticated",
+      "testData": "GET /api/auction/wishlist",
+      "testSteps": [
+        "1. GET no teamId"
+      ],
+      "expectedResult": "HTTP 400",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-074",
+      "feature": "Wishlist GET - Dedupe Side Effect",
+      "scenario": "Duplicate fplElementId rows are deduped (lower-priority row kept; higher-priority duplicates deleted as side effect)",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Wishlist has fplElementId=X at priority 3 AND priority 7 (by direct DB insert bypassing dedupe)",
+      "testData": "GET /api/auction/wishlist?teamId=<self>",
+      "testSteps": [
+        "1. GET",
+        "2. SELECT auctionWishlists where teamId=self AND fplElementId=X"
+      ],
+      "expectedResult": "Response shows X once at priority=3; DB has only priority=3 row (priority=7 row deleted)",
+      "postconditions": "Wishlist clean",
+      "requirementId": "AC-AUC-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Side-effect on read is intentional per BR-AUC-043"
+    },
+    {
+      "id": "TC-AUC-075",
+      "feature": "Wishlist POST - Bulk Insert",
+      "scenario": "Bulk insert of 5 with 2 duplicates returns counts and appends priorities",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Existing wishlist with maxPriority=4; 2 of the 5 new ids overlap existing",
+      "testData": "body={players:[5 entries]}",
+      "testSteps": [
+        "1. POST",
+        "2. Read response",
+        "3. SELECT priorities of new rows"
+      ],
+      "expectedResult": "Response {success:true, inserted:3, skipped:2}; 3 inserted rows have priorities 5,6,7",
+      "postconditions": "Wishlist contains existing+3 new",
+      "requirementId": "AC-AUC-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-076",
+      "feature": "Wishlist POST - Missing Shape",
+      "scenario": "POST with neither single nor bulk shape returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Authenticated",
+      "testData": "body={}",
+      "testSteps": [
+        "1. POST empty body"
+      ],
+      "expectedResult": "HTTP 400",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-077",
+      "feature": "Wishlist POST - Single Shape",
+      "scenario": "Single-shape POST inserts one wishlist row at next priority",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Existing wishlist with max priority=4",
+      "testData": "body={fplElementId:99, playerName:'New'}",
+      "testSteps": [
+        "1. POST",
+        "2. SELECT priority of new row"
+      ],
+      "expectedResult": "Row inserted with priority=5",
+      "postconditions": "Wishlist size +1",
+      "requirementId": "AC-AUC-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-078",
+      "feature": "Wishlist PATCH - Reorder",
+      "scenario": "PATCH updates priorities for owner team rows",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team owns wishlist rows A (priority 1) and B (priority 2)",
+      "testData": "body={items:[{id:A,priority:2},{id:B,priority:1}]}",
+      "testSteps": [
+        "1. PATCH",
+        "2. SELECT priorities"
+      ],
+      "expectedResult": "A.priority=2, B.priority=1",
+      "postconditions": "Order swapped",
+      "requirementId": "AC-AUC-050",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-079",
+      "feature": "Wishlist DELETE - Cross-Team Protection",
+      "scenario": "DELETE with foreign teamId+id leaves DB untouched",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Wishlist row exists with id=R owned by team A",
+      "testData": "DELETE /api/auction/wishlist?id=R&teamId=<B> (team B authenticated)",
+      "testSteps": [
+        "1. DELETE as B passing B's teamId but row owned by A"
+      ],
+      "expectedResult": "No row deleted (AND clause protects); endpoint may return 200/204 but DB unchanged",
+      "postconditions": "Row R still exists",
+      "requirementId": "AC-AUC-051",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-080",
+      "feature": "Wishlist DELETE - Own Row",
+      "scenario": "Owner DELETE succeeds",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team owns wishlist row R",
+      "testData": "DELETE /api/auction/wishlist?id=R",
+      "testSteps": [
+        "1. DELETE as owner",
+        "2. SELECT"
+      ],
+      "expectedResult": "Row deleted",
+      "postconditions": "Wishlist size -1",
+      "requirementId": "AC-AUC-051",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-081",
+      "feature": "Squad GET - Released Exclusion",
+      "scenario": "Released ownership is excluded; activeCount=14",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team has 14 active + 1 released ownership",
+      "testData": "GET /api/auction/squad",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect squad[] + activeCount"
+      ],
+      "expectedResult": "squad array has 14 entries; activeCount=14",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-082",
+      "feature": "Squad GET - Auth",
+      "scenario": "Unauthenticated squad GET returns 401",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "No cookie",
+      "testData": "GET /api/auction/squad",
+      "testSteps": [
+        "1. GET unauth"
+      ],
+      "expectedResult": "HTTP 401",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-083",
+      "feature": "Squad GET - FMV",
+      "scenario": "FMV equals purchasePrice + cumulative raw points (no synergy)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Player owned at 2_000_000 with cumulative raw points yielding +500K in player-points logic",
+      "testData": "GET squad",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect FMV"
+      ],
+      "expectedResult": "FMV = 2_500_000 (no synergy multiplier applied)",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-084",
+      "feature": "Squad GET - Slot Status",
+      "scenario": "Pre-initial-completion blocks unlock with appropriate reason",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Initial auction not completed; team has bonusSlots=0 penaltySlots=0",
+      "testData": "GET squad",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect slotStatus"
+      ],
+      "expectedResult": "canUnlock=false; unlockBlockedReason='initial auction in progress'; nextUnlockCost=10_000_000",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-053",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-085",
+      "feature": "Squad GET - Slot Status Affordability",
+      "scenario": "Post-completion canUnlock=false when purse below nextUnlockCost",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Initial completed; team availablePurse < nextUnlockCost",
+      "testData": "GET squad",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect slotStatus.canUnlock"
+      ],
+      "expectedResult": "canUnlock=false (purse insufficient)",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-053",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-086",
+      "feature": "Teams GET - effectiveMax",
+      "scenario": "bonusSlots=1 + penaltySlots=1 gives effectiveMax=15",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League with team having bonus=1 penalty=1",
+      "testData": "GET /api/auction/teams?leagueId=X",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect effectiveMax"
+      ],
+      "expectedResult": "team.effectiveMax = 15",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-054",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-087",
+      "feature": "Teams GET - Public",
+      "scenario": "Teams endpoint accessible without auth",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "No cookie",
+      "testData": "GET /api/auction/teams?leagueId=X",
+      "testSteps": [
+        "1. GET unauth"
+      ],
+      "expectedResult": "HTTP 200; payload includes rank, totalPoints, purse, squadValue, squadSize, effectiveMax, isMine=false, ownedClub for each team",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-054",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-088",
+      "feature": "Players GET - pageSize Clamp",
+      "scenario": "pageSize=200 is clamped to 100",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Authenticated",
+      "testData": "GET /api/auction/players?leagueId=X&pageSize=200",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect pagination.pageSize and items length"
+      ],
+      "expectedResult": "pageSize=100 in response; ≤100 items returned",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-089",
+      "feature": "Players GET - Gameweek Bounds",
+      "scenario": "gameweek=0 returns 400",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Authenticated",
+      "testData": "GET /api/auction/players?leagueId=X&gameweek=0",
+      "testSteps": [
+        "1. GET"
+      ],
+      "expectedResult": "HTTP 400 'gameweek must be 1-38'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-090",
+      "feature": "Players GET - Gameweek Bounds",
+      "scenario": "gameweek=39 returns 400",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Authenticated",
+      "testData": "GET /api/auction/players?leagueId=X&gameweek=39",
+      "testSteps": [
+        "1. GET"
+      ],
+      "expectedResult": "HTTP 400",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-091",
+      "feature": "Players GET - Gameweek Bounds",
+      "scenario": "gameweek=1 boundary accepted",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Authenticated",
+      "testData": "GET /api/auction/players?leagueId=X&gameweek=1",
+      "testSteps": [
+        "1. GET"
+      ],
+      "expectedResult": "HTTP 200; players list returned",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-092",
+      "feature": "Players GET - Auth",
+      "scenario": "Unauthenticated request returns 401",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "No cookie",
+      "testData": "GET /api/auction/players?leagueId=X",
+      "testSteps": [
+        "1. GET unauth"
+      ],
+      "expectedResult": "HTTP 401",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-093",
+      "feature": "Players GET - Ownership Filter",
+      "scenario": "ownership='mine' returns only requesting team's players",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team has ≥1 ownership",
+      "testData": "GET /api/auction/players?leagueId=X&ownership=mine",
+      "testSteps": [
+        "1. GET"
+      ],
+      "expectedResult": "All returned players are owned by the requesting team",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-094",
+      "feature": "Unsold GET - Most Recent Session",
+      "scenario": "Only most-recent session's unsold bids returned",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Two sessions exist (initial completed with 4 unsold + mini-auction created today with 2 unsold)",
+      "testData": "GET /api/auction/unsold?leagueId=X",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect length"
+      ],
+      "expectedResult": "unsold[] length=2 (most-recent by createdAt desc)",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-095",
+      "feature": "Unsold GET - No Sessions",
+      "scenario": "No session yields {unsold:[]}",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "League with zero auctionSessions",
+      "testData": "GET",
+      "testSteps": [
+        "1. GET"
+      ],
+      "expectedResult": "Response {unsold:[]}",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-096",
+      "feature": "Unsold GET - Auth",
+      "scenario": "Unauthenticated unsold returns 401",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "No cookie",
+      "testData": "GET /api/auction/unsold",
+      "testSteps": [
+        "1. GET unauth"
+      ],
+      "expectedResult": "HTTP 401",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-097",
+      "feature": "Bid History GET - Filtering + Order",
+      "scenario": "Returns sold + unsold only, newest first, with logs[]",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Session with 3 sold + 2 unsold + 1 open + 1 cancelled-duplicate",
+      "testData": "GET /api/auction/bid-history?sessionId=...",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect length, order, logs"
+      ],
+      "expectedResult": "5 bids returned (sold+unsold), order by createdAt desc, each row has logs[] ordered asc",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-058",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-098",
+      "feature": "Bid History GET - Public",
+      "scenario": "Unauthenticated bid history returns 200",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "No cookie",
+      "testData": "GET /api/auction/bid-history?sessionId=...",
+      "testSteps": [
+        "1. GET unauth"
+      ],
+      "expectedResult": "HTTP 200 — endpoint is public",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-058",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-099",
+      "feature": "Live Status - Public",
+      "scenario": "Unauthenticated live-status returns shape with live flag",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "League 'acme' has active session",
+      "testData": "GET /api/auction/live-status?leagueSlug=acme",
+      "testSteps": [
+        "1. GET unauth"
+      ],
+      "expectedResult": "HTTP 200; {live:true, leagueId, sessionId, status:'active'}",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-059",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-100",
+      "feature": "Live Status - Paused",
+      "scenario": "Paused session also returns live=true",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Session paused",
+      "testData": "GET /api/auction/live-status?leagueSlug=acme",
+      "testSteps": [
+        "1. GET"
+      ],
+      "expectedResult": "live=true, status='paused'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-059",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-101",
+      "feature": "Live Status - Non Auction",
+      "scenario": "TVT league returns live=false even with active sessions in unrelated tables",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "League format='tvt'",
+      "testData": "GET /api/auction/live-status?leagueId=tvt",
+      "testSteps": [
+        "1. GET"
+      ],
+      "expectedResult": "live=false",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-059",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-102",
+      "feature": "Live Status - Missing Param",
+      "scenario": "Neither slug nor id returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "n/a",
+      "testData": "GET /api/auction/live-status",
+      "testSteps": [
+        "1. GET no params"
+      ],
+      "expectedResult": "HTTP 400 'leagueSlug or leagueId is required'",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-060",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-103",
+      "feature": "Reset Auction - Auth",
+      "scenario": "Non-admin user gets 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "User has no admin scope on league",
+      "testData": "POST /api/admin/[leagueId]/reset-auction body={resetTo:'initial'}",
+      "testSteps": [
+        "1. POST as non-admin"
+      ],
+      "expectedResult": "HTTP 403 'Forbidden'",
+      "postconditions": "No state change",
+      "requirementId": "AC-AUC-061",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-104",
+      "feature": "Reset Auction - Body Validation",
+      "scenario": "Missing resetTo returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "League admin authenticated",
+      "testData": "body={}",
+      "testSteps": [
+        "1. POST without resetTo"
+      ],
+      "expectedResult": "HTTP 400",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-061",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-105",
+      "feature": "Reset Auction - Invalid resetTo",
+      "scenario": "resetTo='mini-X' or 'garbage' returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "League admin authenticated",
+      "testData": "body={resetTo:'mini-X'}",
+      "testSteps": [
+        "1. POST",
+        "2. Repeat with 'something_else'"
+      ],
+      "expectedResult": "HTTP 400 'resetTo must be \"initial\" or \"mini-N\"'",
+      "postconditions": "No state change",
+      "requirementId": "AC-AUC-062",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-106",
+      "feature": "Reset Auction - Full Reset",
+      "scenario": "resetTo='initial' empties auction tables (except wishlists) and resets purse/slots",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League with sessions, ownerships, scores, trades, club ownerships, penalties, wishlists",
+      "testData": "body={resetTo:'initial'}",
+      "testSteps": [
+        "1. POST",
+        "2. SELECT auctionBids/auctionSessions/auctionOwnership/auctionClubOwnership/teamPenalties/auctionScores/tradeProposals",
+        "3. SELECT auctionWishlists count",
+        "4. SELECT teams purse/penaltySlots/bonusSlots/totalSpent/totalIncome/totalRefunds"
+      ],
+      "expectedResult": "All listed tables empty for league; auctionWishlists rows preserved; every team purse=initialBudget; penaltySlots=0; bonusSlots=0; totalSpent=totalIncome=totalRefunds=0",
+      "postconditions": "Auction state wiped",
+      "requirementId": "AC-AUC-063",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-107",
+      "feature": "Reset Auction - Mini-N",
+      "scenario": "resetTo='mini-2' rolls back cycle 2+ only",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Sessions for cycles 0,1,2 with ownerships acquired in each",
+      "testData": "body={resetTo:'mini-2'}",
+      "testSteps": [
+        "1. POST",
+        "2. SELECT auctionSessions",
+        "3. SELECT auctionOwnership",
+        "4. SELECT teams.totalSpent and teams.penaltySlots",
+        "5. SELECT auctionWishlists count"
+      ],
+      "expectedResult": "Cycle=2 session and its bids/logs deleted; cycle-2 sold ownerships deleted; cycles 0,1 sessions+ownerships remain; teams.totalSpent recomputed from surviving active ownerships; penaltySlots=0; wishlists preserved",
+      "postconditions": "Partial rollback",
+      "requirementId": "AC-AUC-064",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-108",
+      "feature": "Reset Auction - Orphan Ledger (DEF-AUC-001)",
+      "scenario": "Regression: teamSlotUnlocks ledger rows survive resetTo='initial' (current behaviour)",
+      "type": "Regression",
+      "priority": "P2",
+      "preconditions": "League has teamSlotUnlocks rows for slots 15 and 16 (2 rows)",
+      "testData": "body={resetTo:'initial'}",
+      "testSteps": [
+        "1. SELECT teamSlotUnlocks count (=2)",
+        "2. POST resetTo=initial",
+        "3. SELECT teamSlotUnlocks count again",
+        "4. SELECT teams.bonusSlots"
+      ],
+      "expectedResult": "teamSlotUnlocks count still =2 after reset (orphaned ledger rows remain); teams.bonusSlots=0. This pins the current defective behaviour described in DEF-AUC-001 — after fix this test should be updated to expect 0 rows.",
+      "postconditions": "Orphan ledger persists",
+      "requirementId": "AC-AUC-065",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-AUC-001"
+    },
+    {
+      "id": "TC-AUC-109",
+      "feature": "Reset Auction - Wishlists Preserved (Mini)",
+      "scenario": "Mini reset preserves wishlists",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team has wishlist rows; mini-2 session exists",
+      "testData": "body={resetTo:'mini-2'}",
+      "testSteps": [
+        "1. SELECT wishlist count before",
+        "2. POST",
+        "3. SELECT after"
+      ],
+      "expectedResult": "Wishlist count unchanged",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-064",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-110",
+      "feature": "Auto-Nominate - Skips Owned",
+      "scenario": "Owned top-priority is skipped (NOT deleted)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Wishlist [P1=owned-by-other, P2=affordable/feasible]",
+      "testData": "Trigger nomination timeout",
+      "testSteps": [
+        "1. Timeout",
+        "2. SELECT auctionWishlists for that team"
+      ],
+      "expectedResult": "P2 was nominated; P1 row still exists in the wishlist (NOT auto-deleted by skip logic)",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-066",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-111",
+      "feature": "Auto-Nominate - Exhausted",
+      "scenario": "All wishlist entries unaffordable/owned → falls through to penalty",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Wishlist exists but every entry is owned by others or unaffordable",
+      "testData": "Trigger timeout",
+      "testSteps": [
+        "1. Trigger",
+        "2. SELECT teamPenalties"
+      ],
+      "expectedResult": "autoNominateFromWishlist returns false; penalty applied; SSE 'penalised'",
+      "postconditions": "Penalty incurred",
+      "requirementId": "AC-AUC-066",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-112",
+      "feature": "Penalty Application",
+      "scenario": "applyNominationPenalty inserts row tagged with cycleNumber and bumps penaltySlots",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Session cycleNumber=2; team A about to be penalised",
+      "testData": "Trigger penalty",
+      "testSteps": [
+        "1. Trigger penalty",
+        "2. SELECT teamPenalties for A",
+        "3. SELECT teams.penaltySlots"
+      ],
+      "expectedResult": "teamPenalties row with teamId=A, sessionId=session.id, incurredCycle=2, redeemedAt=null; teams.penaltySlots incremented by 1",
+      "postconditions": "Penalty accounted",
+      "requirementId": "AC-AUC-067",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-113",
+      "feature": "Simulator Bonus Slot Bug (DEF-AUC-002)",
+      "scenario": "simulateAuction respects bonusSlots so pre-purchased slot 16/17/18 teams fill their purchased squad cap",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Simulated league; one team pre-configured with bonusSlots=2",
+      "testData": "Start simulated session",
+      "testSteps": [
+        "1. Set bonusSlots=2 on team T",
+        "2. POST action=start",
+        "3. SELECT count(ownerships) for T"
+      ],
+      "expectedResult": "For a simulated league where one team has bonusSlots=2 (slots 16+17 unlocked), simulateAuction drafts up to 17 active ownership rows for that team. Other teams with bonusSlots=0 still cap at 15. Penalty slots still subtract as before.",
+      "postconditions": "Underfilled simulated squad",
+      "requirementId": "AC-AUC-068",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-AUC-002 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-AUC-114",
+      "feature": "Session Create - Timer Validation (DEF-AUC-003)",
+      "scenario": "session create rejects negative bidTimerSeconds with 400 (no row inserted)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Superadmin session; league ready",
+      "testData": "body={leagueId, action:'create', type:'initial', bidTimerSeconds:-5}",
+      "testSteps": [
+        "1. POST create with bidTimerSeconds=-5",
+        "2. SELECT auctionSessions.bidTimerSeconds"
+      ],
+      "expectedResult": "POST /api/auction/session { action: 'create', bidTimerSeconds: -1 } returns HTTP 400 'bidTimerSeconds must be an integer between 5 and 600'. No auctionSessions row inserted.",
+      "postconditions": "Broken session row exists",
+      "requirementId": "AC-AUC-069",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-AUC-003 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-AUC-115",
+      "feature": "Session Create - Timer Validation (DEF-AUC-003)",
+      "scenario": "session create rejects zero / out-of-range nominationTimeoutSeconds with 400",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Superadmin session",
+      "testData": "body={...action:'create', nominationTimeoutSeconds:0}",
+      "testSteps": [
+        "1. POST create with nominationTimeoutSeconds=0",
+        "2. SELECT row"
+      ],
+      "expectedResult": "POST /api/auction/session with nominationTimeoutSeconds=0 or 99999 returns HTTP 400 'nominationTimeoutSeconds must be an integer between 5 and 3600'. No auctionSessions row inserted. Undefined value still defaults to 60s.",
+      "postconditions": "Broken session row",
+      "requirementId": "AC-AUC-069",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-AUC-003 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-AUC-116",
+      "feature": "SSE Stream - Waiting Dedupe",
+      "scenario": "Single 'waiting' event when nothing changes",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Active session with no open bid; nominationDeadline=now+30s",
+      "testData": "Connect SSE",
+      "testSteps": [
+        "1. Connect",
+        "2. Wait one POLL_INTERVAL",
+        "3. Capture events"
+      ],
+      "expectedResult": "Exactly one 'waiting' event with currentNominatorId and nominationDeadline; subsequent polls do NOT re-emit while snapshot is unchanged",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-070",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-117",
+      "feature": "SSE Stream - Heartbeat",
+      "scenario": "Heartbeat event fires every 15s on idle connection",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "SSE connected to active session, no activity",
+      "testData": "Wait 16s",
+      "testSteps": [
+        "1. Connect",
+        "2. Idle 16s",
+        "3. Capture events"
+      ],
+      "expectedResult": "At least one 'heartbeat' event within window",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-070",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-118",
+      "feature": "SSE Stream - Timeout Race",
+      "scenario": "Two SSE consumers race to claim a nomination timeout; only one wins",
+      "type": "Edge",
+      "priority": "P1",
+      "preconditions": "Two SSE clients on active session; nominationDeadline is about to lapse",
+      "testData": "Synchronised connections to ensure both polls fire on the same boundary",
+      "testSteps": [
+        "1. Open two SSE connections",
+        "2. Let deadline expire",
+        "3. Inspect side-effects + SSE outputs"
+      ],
+      "expectedResult": "advanceNominator runs exactly ONCE; only one teamPenalties row inserted (if penalty path); only one client emits 'penalised'/'auto-nominated'/'skipped-full'",
+      "postconditions": "Single-winner race honoured",
+      "requirementId": "AC-AUC-071",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-AUC-119",
+      "feature": "Wishlist GET - Priority Order",
+      "scenario": "Wishlist returned ordered by priority asc",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team has 3 wishlist rows with priorities 3, 1, 2",
+      "testData": "GET /api/auction/wishlist?teamId=<self>",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect order"
+      ],
+      "expectedResult": "Response items ordered by priority asc (1, 2, 3)",
+      "postconditions": "n/a",
+      "requirementId": "AC-AUC-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": []
+}

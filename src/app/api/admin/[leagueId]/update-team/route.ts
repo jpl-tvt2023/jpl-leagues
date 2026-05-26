@@ -67,6 +67,16 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Block edits to Triple Crown ghost-team placeholders. Ghosts are managed
+    // automatically by cup-group generation; renaming or assigning a login ID
+    // to one would break the bye-week schedule. Mirrors the delete-team guard.
+    if (existingTeam[0].isGhost) {
+      return NextResponse.json(
+        { error: "Cannot edit a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation." },
+        { status: 400 }
+      );
+    }
+
     // Global uniqueness check on teamLoginId (unless it's the same team's current login ID)
     const conflictingLoginId = await db.select().from(teams).where(
       eq(teams.teamLoginId, teamLoginId)
@@ -116,8 +126,15 @@ export async function PUT(request: NextRequest) {
       updateData.groupId = groupId;
     }
 
-    // Only update password if provided
+    // Only update password if provided. Match bulk-upload-teams' 4-char minimum
+    // so the single-team-edit path cannot drop below the platform's import-side guarantee.
     if (password && password.trim() !== "") {
+      if (String(password).length < 4) {
+        return NextResponse.json(
+          { error: "Password must be at least 4 characters" },
+          { status: 400 }
+        );
+      }
       updateData.password = await bcrypt.hash(password, 10);
       updateData.mustChangePassword = true;
     }

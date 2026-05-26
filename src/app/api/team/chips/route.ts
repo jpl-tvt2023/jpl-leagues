@@ -71,11 +71,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Get league config (enabledChips + playoffStartGw)
-    const leagueRow = await db.select({ enabledChips: leagues.enabledChips, playoffStartGw: leagues.playoffStartGw })
+    // Get league config (format + enabledChips + playoffStartGw)
+    const leagueRow = await db.select({ format: leagues.format, enabledChips: leagues.enabledChips, playoffStartGw: leagues.playoffStartGw })
       .from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
     if (leagueRow.length === 0) {
       return NextResponse.json({ error: "League not found" }, { status: 404 });
+    }
+    // Auction format has no TVT-chip mechanics — guard so an auction team
+    // can't POST a chip row (the scoring engine wouldn't ever process it,
+    // but the row would still sit in gameweekChips).
+    if (leagueRow[0].format === "auction") {
+      return NextResponse.json(
+        { error: "TVT chips are not available in auction-format leagues" },
+        { status: 400 }
+      );
     }
     let enabledChips: string[] = ["D", "W", "C"];
     try { enabledChips = JSON.parse(leagueRow[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
@@ -288,9 +297,18 @@ export async function DELETE(request: NextRequest) {
 
     const gameweekNumber = parseInt(gameweek);
 
-    // Get gameweek
+    // Load team to scope gameweek lookup by leagueId
+    const team = await db.query.teams.findFirst({
+      where: eq(teams.id, teamId),
+    });
+
+    if (!team) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+
+    // Get gameweek (must be in this team's league)
     const gw = await db.query.gameweeks.findFirst({
-      where: eq(gameweeks.number, gameweekNumber),
+      where: and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, team.leagueId)),
     });
 
     if (!gw) {

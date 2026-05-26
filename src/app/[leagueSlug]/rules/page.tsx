@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { useLeague } from "@/lib/league-context";
 import { AuctionRules } from "../_components/rules/AuctionRules";
@@ -11,14 +10,9 @@ import type { LeagueConfig } from "../_components/rules/shared";
 
 export default function LeagueRulesPage() {
   const params = useParams();
-  const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
 
   const { league, viewer } = useLeague();
-
-  useEffect(() => {
-    if (!viewer.authenticated) router.push("/signin");
-  }, [viewer.authenticated, router]);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });

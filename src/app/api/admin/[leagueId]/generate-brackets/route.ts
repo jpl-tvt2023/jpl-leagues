@@ -16,7 +16,6 @@ import { eq, and, inArray } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
-import { extractBracketSeeds } from "@/lib/formats/triple-crown/standings";
 
 interface CupGroupStanding {
   teamId: string;
@@ -177,30 +176,40 @@ export async function POST(request: NextRequest) {
     let gw27Id = gw27?.id;
     let gw29Id = gw29?.id;
 
+    // Anchor synthetic GW deadlines to the league's earliest existing GW1 rather
+    // than today, so late-season bracket regeneration doesn't push GW27/GW29
+    // ~27 / ~29 weeks past the bracket-gen date.
+    const earliestGw = await db.query.gameweeks.findFirst({
+      where: eq(gameweeks.leagueId, leagueId),
+      orderBy: (g, { asc }) => [asc(g.number)],
+    });
+    const anchorDate = earliestGw ? new Date(earliestGw.deadline) : new Date();
+    const anchorNumber = earliestGw ? earliestGw.number : 1;
+    const deadlineForGw = (gwNum: number): Date => {
+      const d = new Date(anchorDate);
+      d.setDate(d.getDate() + 7 * (gwNum - anchorNumber));
+      d.setHours(11, 0, 0, 0);
+      return d;
+    };
+
     if (!gw27Id) {
       gw27Id = generateId();
-      const deadline = new Date();
-      deadline.setDate(deadline.getDate() + 7 * 27);
-      deadline.setHours(11, 0, 0, 0);
       await db.insert(gameweeks).values({
         id: gw27Id,
         number: 27,
         leagueId,
-        deadline,
+        deadline: deadlineForGw(27),
         isPlayoffs: true,
       });
     }
 
     if (!gw29Id) {
       gw29Id = generateId();
-      const deadline = new Date();
-      deadline.setDate(deadline.getDate() + 7 * 29);
-      deadline.setHours(11, 0, 0, 0);
       await db.insert(gameweeks).values({
         id: gw29Id,
         number: 29,
         leagueId,
-        deadline,
+        deadline: deadlineForGw(29),
         isPlayoffs: true,
       });
     }

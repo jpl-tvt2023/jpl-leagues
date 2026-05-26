@@ -159,19 +159,23 @@ export async function POST(request: NextRequest) {
     // Auction format: only needs team name (players acquired via auction)
     if (isAuction) {
       // Update team: teamLoginId, name, isProfileComplete = true
-      // Also initialize purse from league's initial budget
-      const leagueRow = await db.select().from(leagues).where(eq(leagues.id, leagueId)).limit(1);
-      const initialBudget = leagueRow[0]?.initialBudget ?? 100_000_000;
+      // Also initialize purse from league's initial budget on first-time setup only
+      const updateSet: Partial<typeof teams.$inferInsert> = {
+        teamLoginId: trimmedLoginId,
+        name: trimmedTeamName,
+        isProfileComplete: true,
+        updatedAt: new Date(),
+      };
+
+      if (!team.isProfileComplete) {
+        const leagueRow = await db.select().from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+        const initialBudget = leagueRow[0]?.initialBudget ?? 100_000_000;
+        updateSet.purse = initialBudget;
+      }
 
       await db
         .update(teams)
-        .set({
-          teamLoginId: trimmedLoginId,
-          name: trimmedTeamName,
-          isProfileComplete: true,
-          purse: initialBudget,
-          updatedAt: new Date(),
-        })
+        .set(updateSet)
         .where(eq(teams.id, session.id));
 
       await invalidateLeaguePageCache(leagueId);

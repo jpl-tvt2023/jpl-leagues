@@ -435,9 +435,36 @@ export async function resolveClubBid(bid: BidRow): Promise<"sold" | "unsold" | "
     if (updated.length === 0) return "already-resolved";
     const fresh = updated[0];
 
-    // Look up tier
+    // Look up tier. resolveTier returns null only when the PL team id is in
+    // none of {top8, mid, promoted} — i.e., the standings config is
+    // misconfigured (promoted teams not yet refreshed, or a bootstrap drift).
+    // Refuse to write an ownership row with a silently-fallback tier; flag the
+    // bid as needing operator attention by leaving its status as "sold" but
+    // marking it as already-resolved so the caller doesn't try to re-process.
+    // The bid log entry below records the failure for the audit trail.
     const config = await loadStandingsConfig();
-    const tier = resolveTier(fresh.fplElementId, config) ?? "mid";
+    const resolvedTier = resolveTier(fresh.fplElementId, config);
+    if (resolvedTier === null) {
+      console.error(
+        `[club-auction] Tier resolution failed for plTeamId=${fresh.fplElementId} (league=${bid.leagueId}). ` +
+          `Standings config likely misconfigured; refusing to write auctionClubOwnership row. ` +
+          `Bid row was updated to 'sold' but the ownership is unallocated — superadmin must repair the standings ` +
+          `config and re-run via auction-corrections.`
+      );
+      // The bid row was already moved to 'sold' above (lines 430-435). We do
+      // NOT write the auctionClubOwnership row — leaving the bid sold but
+      // unallocated. The caller's "already-resolved" return signals "do not
+      // retry"; the audit-log entry below records the failure for triage.
+      await db.insert(auctionBidLogs).values({
+        id: generateId(),
+        bidId: bid.id,
+        teamId: fresh.currentHighBidderId,
+        amount: fresh.currentHighBid,
+        type: "sold",
+      });
+      return "already-resolved";
+    }
+    const tier = resolvedTier;
 
     // Look up club short name
     let plTeamShort = "";

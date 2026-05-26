@@ -21,8 +21,15 @@ export async function GET(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const session = token ? await verifySession(token) : null;
 
-  if (!session || session.type !== "team") {
-    return NextResponse.json({ notifications: [], unreadCount: 0, totalCount: 0, page: 1, pageSize: 0, totalPages: 0 });
+  // Match PATCH's auth shape so the /notifications page's `status===401`
+  // redirect-to-signin branch fires symmetrically. Returning 200 with an empty
+  // payload here would mask the unauthenticated state and leave the page in a
+  // confusing logged-out-but-rendered limbo.
+  if (!session) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  if (session.type !== "team") {
+    return NextResponse.json({ error: "Team access required" }, { status: 403 });
   }
 
   const leagueId = request.nextUrl.searchParams.get("leagueId");

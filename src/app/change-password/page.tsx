@@ -23,8 +23,14 @@ export default function ChangePasswordPage() {
       return;
     }
 
-    if (formData.newPassword.length < 6) {
-      setMessage({ type: "error", text: "New password must be at least 6 characters" });
+    if (formData.newPassword.length < 8) {
+      setMessage({ type: "error", text: "New password must be at least 8 characters" });
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!/[\d!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(formData.newPassword)) {
+      setMessage({ type: "error", text: "New password must contain at least one number or special character" });
       setIsSubmitting(false);
       return;
     }

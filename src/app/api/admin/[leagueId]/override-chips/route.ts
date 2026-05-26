@@ -190,12 +190,14 @@ export async function POST(request: NextRequest) {
     if (chipStatus !== "available" && gameweek) {
       const gwNum = parseInt(gameweek);
 
-      // Find or create the gameweek record
-      const gwRecord = await db.select().from(gameweeks).where(eq(gameweeks.number, gwNum));
+      // Find or create the gameweek record (scoped to the authorized league)
+      const gwRecord = await db.select().from(gameweeks).where(and(eq(gameweeks.number, gwNum), eq(gameweeks.leagueId, leagueId)));
       let gameweekId: string;
 
       if (gwRecord.length === 0) {
-        // Create the gameweek record
+        // Create the gameweek record using the league's playoffStartGw for isPlayoffs
+        const leagueRecord = await db.select({ playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+        const playoffStartGw = leagueRecord[0]?.playoffStartGw ?? 31;
         gameweekId = generateId();
         const deadline = new Date();
         deadline.setDate(deadline.getDate() + (7 * gwNum));
@@ -205,7 +207,7 @@ export async function POST(request: NextRequest) {
           number: gwNum,
           leagueId,
           deadline,
-          isPlayoffs: gwNum > 30,
+          isPlayoffs: gwNum >= playoffStartGw,
         });
       } else {
         gameweekId = gwRecord[0].id;
@@ -279,10 +281,22 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Get league's playoffStartGw to correctly split Set1/Set2 chips
-    const leagueRow = await db.select({ playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+    // Get league's playoffStartGw + enabledChips to correctly split Set1/Set2 chips
+    // and gate which chip slots the UI sees per league.
+    const leagueRow = await db
+      .select({ playoffStartGw: leagues.playoffStartGw, enabledChips: leagues.enabledChips })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
     const playoffStartGw = leagueRow[0]?.playoffStartGw ?? 31;
     const setMidpoint = Math.ceil((playoffStartGw - 1) / 2);
+    let enabledChipCodes: string[] = ["D", "W", "C"];
+    try {
+      enabledChipCodes = JSON.parse(leagueRow[0]?.enabledChips ?? '["D","W","C"]');
+    } catch {
+      /* keep default on malformed JSON */
+    }
+    const isEnabled = (code: string) => enabledChipCodes.includes(code);
 
     // Get chip usage scoped to this league's gameweeks only
     const leagueGws = await db.select({ id: gameweeks.id }).from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
@@ -308,67 +322,52 @@ export async function GET(request: NextRequest) {
       chipGwLookup.get(chip.teamId)!.set(key, { gwNumber, wasted, points: chip.pointsAwarded || 0 });
     }
 
+    // Set-range labels derived from the league's actual playoffStartGw, not hardcoded.
+    const set1Label = `(GW1-${setMidpoint})`;
+    const set2Label = `(GW${setMidpoint + 1}-${playoffStartGw - 1})`;
+
+    // Build a chip slot from the league row's *Used column + the chipGwLookup entry.
+    const slot = (
+      teamRow: typeof allTeams[number],
+      column: keyof typeof teams.$inferSelect,
+      code: string,
+      set: 1 | 2,
+      displayName: string,
+    ) => ({
+      used: teamRow[column] as boolean,
+      name: displayName,
+      gameweek: (chipGwLookup.get(teamRow.id)?.get(`${code}${set}`)?.gwNumber) ?? null,
+      wasted: (chipGwLookup.get(teamRow.id)?.get(`${code}${set}`)?.wasted) ?? false,
+      points: (chipGwLookup.get(teamRow.id)?.get(`${code}${set}`)?.points) ?? 0,
+    });
+
     return NextResponse.json({
       teams: allTeams.map(t => {
-        const teamChips = chipGwLookup.get(t.id) || new Map();
+        const setChips = (set: 1 | 2, range: string) => {
+          const out: Record<string, ReturnType<typeof slot>> = {};
+          if (isEnabled("D")) out.doublePointer = slot(t, set === 1 ? "doublePointerSet1Used" : "doublePointerSet2Used", "D", set, `Double Pointer ${range}`);
+          if (isEnabled("C")) out.challengeChip = slot(t, set === 1 ? "challengeChipSet1Used" : "challengeChipSet2Used", "C", set, `Challenge Chip ${range}`);
+          if (isEnabled("W")) out.winWin = slot(t, set === 1 ? "winWinSet1Used" : "winWinSet2Used", "W", set, `Win-Win ${range}`);
+          if (isEnabled("SL")) out.scoreLock = slot(t, set === 1 ? "scoreLockSet1Used" : "scoreLockSet2Used", "SL", set, `Score Lock ${range}`);
+          if (isEnabled("CB")) out.comeback = slot(t, set === 1 ? "comebackSet1Used" : "comebackSet2Used", "CB", set, `Comeback ${range}`);
+          if (isEnabled("UD")) out.underdog = slot(t, set === 1 ? "underdogSet1Used" : "underdogSet2Used", "UD", set, `Underdog ${range}`);
+          return out;
+        };
         return {
           id: t.id,
           name: t.name,
           group: t.group?.name || "Unassigned",
           chips: {
-            set1: {
-              doublePointer: {
-                used: t.doublePointerSet1Used,
-                name: "Double Pointer (GW1-15)",
-                gameweek: teamChips.get("D1")?.gwNumber || null,
-                wasted: teamChips.get("D1")?.wasted || false,
-                points: teamChips.get("D1")?.points || 0,
-              },
-              challengeChip: {
-                used: t.challengeChipSet1Used,
-                name: "Challenge Chip (GW1-15)",
-                gameweek: teamChips.get("C1")?.gwNumber || null,
-                wasted: teamChips.get("C1")?.wasted || false,
-                points: teamChips.get("C1")?.points || 0,
-              },
-              winWin: {
-                used: t.winWinSet1Used,
-                name: "Win-Win (GW1-15)",
-                gameweek: teamChips.get("W1")?.gwNumber || null,
-                wasted: teamChips.get("W1")?.wasted || false,
-                points: teamChips.get("W1")?.points || 0,
-              },
-            },
-            set2: {
-              doublePointer: {
-                used: t.doublePointerSet2Used,
-                name: "Double Pointer (GW16-30)",
-                gameweek: teamChips.get("D2")?.gwNumber || null,
-                wasted: teamChips.get("D2")?.wasted || false,
-                points: teamChips.get("D2")?.points || 0,
-              },
-              challengeChip: {
-                used: t.challengeChipSet2Used,
-                name: "Challenge Chip (GW16-30)",
-                gameweek: teamChips.get("C2")?.gwNumber || null,
-                wasted: teamChips.get("C2")?.wasted || false,
-                points: teamChips.get("C2")?.points || 0,
-              },
-              winWin: {
-                used: t.winWinSet2Used,
-                name: "Win-Win (GW16-30)",
-                gameweek: teamChips.get("W2")?.gwNumber || null,
-                wasted: teamChips.get("W2")?.wasted || false,
-                points: teamChips.get("W2")?.points || 0,
-              },
-            },
+            set1: setChips(1, set1Label),
+            set2: setChips(2, set2Label),
           },
         };
       }),
-      chipTypes: VALID_CHIPS.map(c => ({
+      chipTypes: VALID_CHIPS.filter(c => isEnabled(chipToTypeCode[c])).map(c => ({
         value: c,
         label: chipDisplayNames[c],
       })),
+      enabledChips: enabledChipCodes,
     });
   } catch (error) {
     console.error("Failed to fetch chip data:", error);

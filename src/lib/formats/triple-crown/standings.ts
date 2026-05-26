@@ -12,7 +12,11 @@ export interface CupGroupStanding {
   losses: number;
   goalFor: number;
   goalAgainst: number;
-  cupGroupPoints: number; // W=2, D=1, L=0 (no bonus in cup group)
+  // W=2, D=1, L=0. Draws are possible in cup-group standings: human-vs-Ghost
+  // matches draw when the human's score equals the ceiling-of-4-humans average,
+  // and human-vs-human cup-day fixtures use the standard H2H rule (which can
+  // also draw 1+1). No bonus points in cup group.
+  cupGroupPoints: number;
 }
 
 export interface CupGroupStandings {
@@ -87,7 +91,7 @@ export function computeCupGroupStandings(
   // Convert map to array and sort
   const standings = Array.from(standingsMap.values());
 
-  // Sort by: cupGroupPoints DESC, GF DESC, GA ASC
+  // Sort by: cupGroupPoints DESC, then GD (goalFor - goalAgainst) DESC, then GF DESC.
   standings.sort((a, b) => {
     if (a.cupGroupPoints !== b.cupGroupPoints) {
       return b.cupGroupPoints - a.cupGroupPoints;
@@ -101,45 +105,3 @@ export function computeCupGroupStandings(
   return standings;
 }
 
-/**
- * Extract UCL and UEL bracket seeds from 4 cup group standings
- * UCL: Ranks 1-2 from each group (8 teams total)
- * UEL: Ranks 3-4 from each group (8 teams total)
- * Excludes Ghost teams
- *
- * @param groupA - Cup group A standings (sorted)
- * @param groupB - Cup group B standings (sorted)
- * @param groupC - Cup group C standings (sorted)
- * @param groupD - Cup group D standings (sorted)
- * @returns Object with {ucl: [], uel: []} team arrays
- */
-export function extractBracketSeeds(
-  groupA: CupGroupStanding[],
-  groupB: CupGroupStanding[],
-  groupC: CupGroupStanding[],
-  groupD: CupGroupStanding[]
-) {
-  // Filter out Ghost teams and get only human teams
-  const humanA = groupA.filter(t => !t.isGhost);
-  const humanB = groupB.filter(t => !t.isGhost);
-  const humanC = groupC.filter(t => !t.isGhost);
-  const humanD = groupD.filter(t => !t.isGhost);
-
-  // UCL: Ranks 1-2 from each group
-  const ucl = [
-    humanA[0], humanA[1],
-    humanB[0], humanB[1],
-    humanC[0], humanC[1],
-    humanD[0], humanD[1],
-  ];
-
-  // UEL: Ranks 3-4 from each group
-  const uel = [
-    humanA[2], humanA[3],
-    humanB[2], humanB[3],
-    humanC[2], humanC[3],
-    humanD[2], humanD[3],
-  ];
-
-  return { ucl, uel };
-}

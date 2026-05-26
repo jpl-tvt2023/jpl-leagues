@@ -1,0 +1,1926 @@
+{
+  "moduleId": "NOTIF",
+  "moduleName": "Notifications",
+  "sheetName": "Notifications",
+  "status": "qa-signed-off",
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
+  "requirements": {
+    "version": 2,
+    "businessContext": "Per-team in-app notification feed. Lifecycle events from other modules (trade proposals, admin trade actions, gameweek scoring, release refunds, slot economy, club purchases) write rows into the `notifications` table via the shared `createNotification` helper. Signed-in team users see an unread badge in the global `NotificationBell`, a 3-item dropdown preview, and a paginated full feed at `/notifications`. The module owns CRUD (list, mark-read) only; emission of rows belongs to the source module, and email/push delivery is out of scope.",
+    "userStories": [
+      {
+        "id": "US-NOTIF-001",
+        "asA": "team",
+        "iWant": "to see a list of my notifications, newest first, paginated",
+        "soThat": "I can scan recent league events without scrolling forever",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:20-84",
+          "src/app/notifications/page.tsx:29-56",
+          "src/app/notifications/page.tsx:174-227"
+        ]
+      },
+      {
+        "id": "US-NOTIF-002",
+        "asA": "team",
+        "iWant": "an unread count badge on the global notification bell",
+        "soThat": "I know at a glance whether something new has happened",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:49-66",
+          "src/components/NotificationBell.tsx:133-138",
+          "src/app/api/notifications/route.ts:50-54"
+        ]
+      },
+      {
+        "id": "US-NOTIF-003",
+        "asA": "team",
+        "iWant": "to mark a single notification read by opening it",
+        "soThat": "the badge count drops and the row is dimmed",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:76-96",
+          "src/app/notifications/page.tsx:78-97",
+          "src/app/api/notifications/route.ts:91-119"
+        ]
+      },
+      {
+        "id": "US-NOTIF-004",
+        "asA": "team",
+        "iWant": "a Mark all as read action",
+        "soThat": "I can clear a backlog in one click",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:98-114",
+          "src/app/notifications/page.tsx:63-76",
+          "src/app/api/notifications/route.ts:104-108"
+        ]
+      },
+      {
+        "id": "US-NOTIF-005",
+        "asA": "team",
+        "iWant": "to click a notification and be taken to the relevant page",
+        "soThat": "I can jump straight to the trade, gw result, or finance page that triggered it",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:116-120",
+          "src/app/notifications/page.tsx:78-97"
+        ]
+      },
+      {
+        "id": "US-NOTIF-006",
+        "asA": "team",
+        "iWant": "to be notified when another team proposes a trade to me",
+        "soThat": "I can review and accept or reject it within the 24h window",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:245-255"
+        ]
+      },
+      {
+        "id": "US-NOTIF-007",
+        "asA": "team",
+        "iWant": "to be notified when the other side accepts or rejects my trade proposal",
+        "soThat": "I know the next step (admin approval or it's dead)",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:325-345",
+          "src/app/api/auction/trade/route.ts:395-413"
+        ]
+      },
+      {
+        "id": "US-NOTIF-008",
+        "asA": "team",
+        "iWant": "to be notified when an admin approves, rejects, or cancels a trade I am party to",
+        "soThat": "both sides see the same outcome at the same time",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:9-26",
+          "src/app/api/auction/trade/admin/route.ts:127-133",
+          "src/app/api/auction/trade/admin/route.ts:151-157",
+          "src/app/api/auction/trade/admin/route.ts:172-178"
+        ]
+      },
+      {
+        "id": "US-NOTIF-009",
+        "asA": "team",
+        "iWant": "a per-team notification when a gameweek is scored",
+        "soThat": "I see my rank, points, and payout the moment scoring completes",
+        "sourceRefs": [
+          "src/lib/formats/auction/process-gameweek.ts:307-330"
+        ]
+      },
+      {
+        "id": "US-NOTIF-010",
+        "asA": "team",
+        "iWant": "a notification when release refunds are credited to my purse",
+        "soThat": "I can reconcile my purse changes with the players I released",
+        "sourceRefs": [
+          "src/lib/formats/auction/process-gameweek.ts:332-346"
+        ]
+      },
+      {
+        "id": "US-NOTIF-011",
+        "asA": "team",
+        "iWant": "a notification when I redeem a penalty slot or unlock a bonus slot",
+        "soThat": "I have an audit record of the £ deducted and the new squad cap",
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:200-213",
+          "src/app/api/auction/unlock-slot/route.ts:146-157"
+        ]
+      },
+      {
+        "id": "US-NOTIF-012",
+        "asA": "team",
+        "iWant": "a notification when I win a PL Club Auction",
+        "soThat": "I see what was paid and what my team will be renamed to",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:482-493"
+        ]
+      },
+      {
+        "id": "US-NOTIF-013",
+        "asA": "team",
+        "iWant": "an empty-state when I have no notifications",
+        "soThat": "the page does not look broken on a clean account",
+        "sourceRefs": [
+          "src/app/notifications/page.tsx:147-173",
+          "src/components/NotificationBell.tsx:153-179"
+        ]
+      },
+      {
+        "id": "US-NOTIF-014",
+        "asA": "team",
+        "iWant": "pagination controls when I have more than one page of notifications",
+        "soThat": "I can navigate older history",
+        "sourceRefs": [
+          "src/app/notifications/page.tsx:204-226",
+          "src/app/api/notifications/route.ts:56-66"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-NOTIF-001",
+        "rule": "`notifications` table columns: id (PK text), teamId (FK teams.id, cascade delete), leagueId (FK leagues.id, cascade delete), type (text), title (text), body (text), link (nullable text), readAt (nullable timestamp), createdAt (timestamp, defaults to now()).",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:546-559"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-002",
+        "rule": "Composite index `notifications_team_unread` on (teamId, readAt) backs the unread-count and team-feed queries.",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:557-558"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-003",
+        "rule": "`NotificationType` is a closed string union: trade_proposed, trade_accepted, trade_rejected, trade_approved, trade_admin_rejected, trade_cancelled, gw_processed, release_refund, slot_redeemed, slot_unlocked, club_purchased. `createNotification` is the only sanctioned write path (plus the admin restore-auction importer).",
+        "sourceRefs": [
+          "src/lib/notifications.ts:4-15",
+          "src/lib/notifications.ts:26-36",
+          "src/app/api/admin/[leagueId]/restore-auction/route.ts:553-562"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-004",
+        "rule": "GET /api/notifications requires a session cookie. Unauthenticated callers receive HTTP 401 'Not authenticated' (matching PATCH). Non-team sessions (admin/superadmin) receive HTTP 403 'Team access required'. Only team sessions reach the list-fetch path.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:20-32"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-005",
+        "rule": "GET filters rows to the calling team only (`notifications.teamId = session.id`). An optional `?leagueId=` further restricts to a single league.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:43-46"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-006",
+        "rule": "GET supports `page` (default 1) and `pageSize` (default 30, capped at 100, floor 1). Invalid/NaN inputs fall back to the defaults; `page` is clamped to `[1, totalPages]` when totalPages > 0.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:30-41",
+          "src/app/api/notifications/route.ts:56-58"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-007",
+        "rule": "Legacy `?limit=N` overrides `pageSize`, clamps to 1–100, and forces `page=1`. Provided for backward compatibility with older callers.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:14-19",
+          "src/app/api/notifications/route.ts:35-38"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-008",
+        "rule": "GET response always orders results by `createdAt DESC` (newest first).",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:60-66"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-009",
+        "rule": "GET response shape: `{ notifications: NotificationItem[], unreadCount, totalCount, page, pageSize, totalPages }`. `readAt` and `createdAt` are serialised as ISO strings (or null for `readAt`).",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:68-83"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-010",
+        "rule": "`unreadCount` reflects unread rows across ALL pages for the team (or league-scoped subset if `leagueId` is supplied), not just the current page.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:50-54"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-011",
+        "rule": "Both GET and PATCH on /api/notifications return uniform auth responses: 401 with body.error='Not authenticated' for no session, 403 with body.error='Team access required' for non-team sessions. This makes the /notifications page client's status===401 redirect-to-signin branch reachable for anonymous visitors.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:20-32",
+          "src/app/api/notifications/route.ts:91-97"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-012",
+        "rule": "PATCH body must contain either `{ all: true }` or a non-empty `ids: string[]`. Any other shape (missing both, `ids:[]`, `all:false`) returns `400 { error: \"Provide ids[] or all:true\" }`.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:99-116"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-013",
+        "rule": "PATCH `{ all: true }` sets `readAt = now()` for every UNREAD row owned by the calling team (already-read rows are not re-stamped).",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:104-108"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-014",
+        "rule": "PATCH `{ ids: [...] }` sets `readAt = now()` only on rows whose `teamId = session.id` AND `id ∈ ids`. IDs belonging to another team are silently ignored — no row leakage, no error.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:109-113"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-015",
+        "rule": "There is no DELETE endpoint for individual notifications. Bulk deletion only occurs as a side-effect of `POST /api/admin/[leagueId]/restore-auction`, which wipes all notifications for the league before re-importing from the backup payload.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/restore-auction/route.ts:374",
+          "src/app/api/admin/[leagueId]/restore-auction/route.ts:553-562"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-016",
+        "rule": "NotificationBell polls `/api/notifications` every 30 seconds while mounted and stores the latest snapshot (full default page + unreadCount) in component state.",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:49-66"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-017",
+        "rule": "Bell badge shows the numeric `unreadCount` for 1–9 and the literal string `9+` for any count ≥ 10. Badge is hidden when unread = 0.",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:133-137"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-018",
+        "rule": "Bell dropdown shows at most the first 3 items from the loaded list; a See all link navigates to `/notifications`.",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:182-211"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-019",
+        "rule": "Clicking a notification (in bell or feed) marks it read server-side first. The client only updates local state on a 2xx response, so a 5xx leaves the badge consistent with persisted state.",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:76-96",
+          "src/app/notifications/page.tsx:78-97"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-020",
+        "rule": "Clicking a notification with a non-null `link` navigates to that link AFTER attempting the mark-read. Already-read notifications skip the PATCH and navigate immediately.",
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:116-120",
+          "src/app/notifications/page.tsx:78-97"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-021",
+        "rule": "`/notifications` page uses pageSize=50 (UI constant). The bell uses the server default of 30. Both fall within the 100 cap.",
+        "sourceRefs": [
+          "src/app/notifications/page.tsx:17",
+          "src/app/notifications/page.tsx:34",
+          "src/components/NotificationBell.tsx:53"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-022",
+        "rule": "TRIGGER trade_proposed: POST /api/auction/trade fires one notification to the target team after the proposal row is inserted, body=\"{proposerDisplay} sent you a trade proposal\", link=`/{slug}/marketplace?tab=incoming`. `proposerDisplay` prefers the proposer's PL Club Auction club name if owned, else the team name, else literal \"A team\".",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:245-255"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-023",
+        "rule": "TRIGGER trade_rejected: PATCH /api/auction/trade with action=reject fires one notification to the proposer, body=\"{targetDisplay} rejected your trade proposal\", link=`/{slug}/marketplace?tab=outgoing` (link omitted if league row not found).",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:325-345"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-024",
+        "rule": "TRIGGER trade_accepted: PATCH /api/auction/trade with action=accept fires one notification to the proposer after re-validation passes, body=\"{targetDisplay} accepted your trade — awaiting admin approval\", link=`/{slug}/marketplace?tab=outgoing`.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:395-413"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-025",
+        "rule": "TRIGGER trade_approved: POST /api/auction/trade/admin action=approve fires one notification to BOTH proposer and target after `executeTrade` succeeds. Title=\"Trade approved\", body=\"Admin approved the trade — players & cash have been transferred\", link tab=history.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:9-26",
+          "src/app/api/auction/trade/admin/route.ts:117-133"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-026",
+        "rule": "TRIGGER trade_admin_rejected: POST /api/auction/trade/admin action=reject fires one notification to BOTH parties. Title=\"Trade rejected by admin\", body=\"Admin rejected the trade\", link tab=history. Only allowed when proposal.status ∈ {pending, accepted}.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:138-159"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-027",
+        "rule": "TRIGGER trade_cancelled: POST /api/auction/trade/admin action=cancel fires one notification to BOTH parties. Title=\"Trade cancelled\", body=\"Admin cancelled the trade\", link tab=history. Refused if proposal.status = completed.",
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:162-180"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-028",
+        "rule": "TRIGGER gw_processed: `processAuctionGameweek` fires one notification per ranked team after a successful scoring transaction. Body includes rank, points, and payout in £M. Link=`/{slug}/gw-results?gw={gwNumber}`. Skipped on the race-loss path (another caller already scored).",
+        "sourceRefs": [
+          "src/lib/formats/auction/process-gameweek.ts:295-330"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-029",
+        "rule": "TRIGGER release_refund: `processAuctionGameweek` fires one notification per team that received a refund this GW, body=\"£{X}M for {N} released player(s)\", link=`/{slug}/finance`. Singular vs plural is grammatical on count===1.",
+        "sourceRefs": [
+          "src/lib/formats/auction/process-gameweek.ts:332-346"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-030",
+        "rule": "TRIGGER slot_redeemed: POST /api/auction/redeem-slot fires one best-effort notification to the redeeming team, body=\"£{X}M deducted · {N} slot(s) remaining\", link=`/{slug}/auction`. Failure to notify is logged but never fails the redemption response.",
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:200-213"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-031",
+        "rule": "TRIGGER slot_unlocked: POST /api/auction/unlock-slot fires one best-effort notification to the unlocking team, title=\"Unlocked slot {N}\", body shows £ deducted and new squad cap. No link. Failure logged, not surfaced.",
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:146-157"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-032",
+        "rule": "TRIGGER club_purchased: `settleClubAuction` fires one best-effort notification to the winning bidder when a club is sold, title=\"You bought {playerName}\", body details purchase price, tier, and rename behaviour. Failures are logged but do not roll back the auction settlement.",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:482-493"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-033",
+        "rule": "All trigger sites (trade approval/rejection/cancellation aside) wrap `createNotification` in try/catch and only log on failure — notification failure must never roll back the underlying business action (scoring, slot purchase, club purchase).",
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:200-213",
+          "src/app/api/auction/unlock-slot/route.ts:146-157",
+          "src/lib/formats/auction/process-gameweek.ts:307-349",
+          "src/lib/formats/auction/club-auction.ts:482-493"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-034",
+        "rule": "`createNotification` assigns the row id via `generateId()` and persists `link = input.link ?? null`. `readAt` is left null on insert (unread by default). `createdAt` defaults to `new Date()` from the schema.",
+        "sourceRefs": [
+          "src/lib/notifications.ts:26-36",
+          "src/lib/db/schema.ts:555-556"
+        ]
+      },
+      {
+        "id": "BR-NOTIF-035",
+        "rule": "Deleting a team or league cascades to its notifications (`onDelete: \"cascade\"` on both FKs).",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:549-550"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-NOTIF-001",
+        "given": "I am signed in as a team with 0 notifications",
+        "when": "I open /notifications",
+        "then": "I see the empty-state illustration with copy \"You're all caught up\" and no pagination controls",
+        "linksTo": "US-NOTIF-013"
+      },
+      {
+        "id": "AC-NOTIF-002",
+        "given": "I am signed in as a team with 5 notifications, 3 unread",
+        "when": "GET /api/notifications is called with no params",
+        "then": "Response includes 5 items ordered newest first, unreadCount=3, totalCount=5, page=1, pageSize=30, totalPages=1",
+        "linksTo": "BR-NOTIF-008"
+      },
+      {
+        "id": "AC-NOTIF-003",
+        "given": "I am signed in with 65 notifications",
+        "when": "I request GET /api/notifications?page=2&pageSize=50",
+        "then": "Response returns items 51–65 (15 items), page=2, pageSize=50, totalPages=2",
+        "linksTo": "BR-NOTIF-006"
+      },
+      {
+        "id": "AC-NOTIF-004",
+        "given": "I am signed in",
+        "when": "I request GET /api/notifications?pageSize=500",
+        "then": "Server clamps pageSize to 100",
+        "linksTo": "BR-NOTIF-006"
+      },
+      {
+        "id": "AC-NOTIF-005",
+        "given": "An older client",
+        "when": "It requests GET /api/notifications?limit=10&page=5",
+        "then": "Server returns at most 10 rows, forces page=1, ignoring the page query param",
+        "linksTo": "BR-NOTIF-007"
+      },
+      {
+        "id": "AC-NOTIF-006",
+        "given": "I have notifications in League A and League B",
+        "when": "I request GET /api/notifications?leagueId=A",
+        "then": "Only League A rows are returned and unreadCount counts only League A unread rows",
+        "linksTo": "BR-NOTIF-005"
+      },
+      {
+        "id": "AC-NOTIF-007",
+        "given": "an anonymous visitor loads /notifications and the page fires GET /api/notifications",
+        "when": "the API runs",
+        "then": "HTTP 401 with body.error='Not authenticated'; the page client's status===401 branch redirects to /signin.",
+        "linksTo": "BR-NOTIF-004"
+      },
+      {
+        "id": "AC-NOTIF-008",
+        "given": "an admin (non-team) session calls GET /api/notifications",
+        "when": "the API runs",
+        "then": "HTTP 403 with body.error='Team access required'; no notification list returned.",
+        "linksTo": "BR-NOTIF-004"
+      },
+      {
+        "id": "AC-NOTIF-009",
+        "given": "I have 3 unread notifications",
+        "when": "I PATCH /api/notifications with body {\"all\": true}",
+        "then": "All 3 rows have readAt set, response is {success:true}, and a subsequent GET returns unreadCount=0",
+        "linksTo": "BR-NOTIF-013"
+      },
+      {
+        "id": "AC-NOTIF-010",
+        "given": "I have one unread notification with id=X",
+        "when": "I PATCH /api/notifications with body {\"ids\":[\"X\"]}",
+        "then": "Row X readAt is set, response is {success:true}",
+        "linksTo": "BR-NOTIF-014"
+      },
+      {
+        "id": "AC-NOTIF-011",
+        "given": "Team A's session, and id=Y belongs to Team B",
+        "when": "Team A PATCHes /api/notifications with body {\"ids\":[\"Y\"]}",
+        "then": "Response is {success:true} but Team B's row Y is NOT updated",
+        "linksTo": "BR-NOTIF-014"
+      },
+      {
+        "id": "AC-NOTIF-012",
+        "given": "I am signed in",
+        "when": "I PATCH /api/notifications with body {}",
+        "then": "Response is 400 with error \"Provide ids[] or all:true\"",
+        "linksTo": "BR-NOTIF-012"
+      },
+      {
+        "id": "AC-NOTIF-013",
+        "given": "I am signed in",
+        "when": "I PATCH /api/notifications with body {\"ids\":[]}",
+        "then": "Response is 400 with error \"Provide ids[] or all:true\"",
+        "linksTo": "BR-NOTIF-012"
+      },
+      {
+        "id": "AC-NOTIF-014",
+        "given": "I am NOT signed in as a team (no session or admin session)",
+        "when": "I PATCH /api/notifications with any body",
+        "then": "Response is 401 with error \"Team authentication required\"",
+        "linksTo": "BR-NOTIF-011"
+      },
+      {
+        "id": "AC-NOTIF-015",
+        "given": "I have a previously read notification",
+        "when": "I PATCH /api/notifications with {all:true}",
+        "then": "Its readAt timestamp is NOT updated (only unread rows are stamped)",
+        "linksTo": "BR-NOTIF-013"
+      },
+      {
+        "id": "AC-NOTIF-016",
+        "given": "No DELETE handler exists on /api/notifications or /api/notifications/[id]",
+        "when": "Any client issues DELETE /api/notifications/123",
+        "then": "Next.js returns 405 Method Not Allowed (or the framework default)",
+        "linksTo": "BR-NOTIF-015"
+      },
+      {
+        "id": "AC-NOTIF-017",
+        "given": "I am on any page with the NotificationBell mounted and I have 12 unread",
+        "when": "30 seconds pass",
+        "then": "Bell badge re-fetches and shows \"9+\"",
+        "linksTo": "BR-NOTIF-016"
+      },
+      {
+        "id": "AC-NOTIF-018",
+        "given": "I have 4 unread notifications",
+        "when": "The bell badge renders",
+        "then": "It displays the literal \"4\" (not 9+)",
+        "linksTo": "BR-NOTIF-017"
+      },
+      {
+        "id": "AC-NOTIF-019",
+        "given": "I have 0 unread",
+        "when": "The bell renders",
+        "then": "No red badge is shown on the bell icon",
+        "linksTo": "BR-NOTIF-017"
+      },
+      {
+        "id": "AC-NOTIF-020",
+        "given": "I open the bell dropdown with 7 notifications loaded",
+        "when": "The dropdown body renders",
+        "then": "Only the first 3 items are listed plus a \"See all notifications →\" link to /notifications",
+        "linksTo": "BR-NOTIF-018"
+      },
+      {
+        "id": "AC-NOTIF-021",
+        "given": "I open the bell and click an unread notification whose PATCH returns 500",
+        "when": "The error surfaces",
+        "then": "The local badge count and item readAt remain unchanged (no optimistic flip)",
+        "linksTo": "BR-NOTIF-019"
+      },
+      {
+        "id": "AC-NOTIF-022",
+        "given": "An unread notification has link=\"/myleague/marketplace?tab=incoming\"",
+        "when": "I click it in the bell",
+        "then": "PATCH is issued AND the router navigates to /myleague/marketplace?tab=incoming",
+        "linksTo": "BR-NOTIF-020"
+      },
+      {
+        "id": "AC-NOTIF-023",
+        "given": "An already-read notification with a link",
+        "when": "I click it",
+        "then": "No PATCH is issued and the browser navigates to the link",
+        "linksTo": "BR-NOTIF-020"
+      },
+      {
+        "id": "AC-NOTIF-024",
+        "given": "I have 120 notifications",
+        "when": "I open /notifications",
+        "then": "The page fetches with pageSize=50, totalPages=3, and pagination controls show \"Page 1 of 3 · showing 50 of 120\"",
+        "linksTo": "US-NOTIF-014"
+      },
+      {
+        "id": "AC-NOTIF-025",
+        "given": "Team A proposes a trade to Team B",
+        "when": "POST /api/auction/trade succeeds",
+        "then": "Exactly one notification row is created for Team B with type=trade_proposed, title=\"New trade proposal\", body=\"<A's display> sent you a trade proposal\", link=`/<slug>/marketplace?tab=incoming`",
+        "linksTo": "BR-NOTIF-022"
+      },
+      {
+        "id": "AC-NOTIF-026",
+        "given": "Team A owns a PL Club Auction club named \"Arsenal\"",
+        "when": "Team A proposes a trade",
+        "then": "The trade_proposed notification body uses \"Arsenal\" as the proposer display, not the team's manager-given name",
+        "linksTo": "BR-NOTIF-022"
+      },
+      {
+        "id": "AC-NOTIF-027",
+        "given": "Team B has a pending proposal from Team A",
+        "when": "Team B PATCHes the trade with action=reject",
+        "then": "One notification row is created for Team A only with type=trade_rejected and link tab=outgoing",
+        "linksTo": "BR-NOTIF-023"
+      },
+      {
+        "id": "AC-NOTIF-028",
+        "given": "Team B accepts the proposal",
+        "when": "Re-validation passes and proposal status becomes accepted",
+        "then": "One notification row is created for Team A with type=trade_accepted",
+        "linksTo": "BR-NOTIF-024"
+      },
+      {
+        "id": "AC-NOTIF-029",
+        "given": "Superadmin approves an accepted trade",
+        "when": "POST /api/auction/trade/admin action=approve succeeds and executeTrade returns",
+        "then": "TWO notification rows are created — one for the proposer, one for the target — both type=trade_approved with link tab=history",
+        "linksTo": "BR-NOTIF-025"
+      },
+      {
+        "id": "AC-NOTIF-030",
+        "given": "Superadmin rejects a pending or accepted trade",
+        "when": "POST /api/auction/trade/admin action=reject succeeds",
+        "then": "Two notification rows are created, both type=trade_admin_rejected",
+        "linksTo": "BR-NOTIF-026"
+      },
+      {
+        "id": "AC-NOTIF-031",
+        "given": "Superadmin cancels a non-completed trade",
+        "when": "POST /api/auction/trade/admin action=cancel succeeds",
+        "then": "Two notification rows are created, both type=trade_cancelled",
+        "linksTo": "BR-NOTIF-027"
+      },
+      {
+        "id": "AC-NOTIF-032",
+        "given": "Superadmin attempts to cancel a completed trade",
+        "when": "POST action=cancel runs",
+        "then": "Response is 400 and NO trade_cancelled rows are inserted",
+        "linksTo": "BR-NOTIF-027"
+      },
+      {
+        "id": "AC-NOTIF-033",
+        "given": "A league has 6 teams that submitted GW lineups",
+        "when": "processAuctionGameweek commits the scoring transaction",
+        "then": "Exactly 6 gw_processed notifications are created, one per team, each containing rank/points/payout and a /gw-results link",
+        "linksTo": "BR-NOTIF-028"
+      },
+      {
+        "id": "AC-NOTIF-034",
+        "given": "A scoring race-loss occurs (another caller already scored this GW)",
+        "when": "processAuctionGameweek returns the persisted state",
+        "then": "No duplicate notifications are emitted",
+        "linksTo": "BR-NOTIF-028"
+      },
+      {
+        "id": "AC-NOTIF-035",
+        "given": "Team A released 2 players in this gw cycle and gets a refund",
+        "when": "processAuctionGameweek runs",
+        "then": "One release_refund notification is created for Team A with body containing \"2 released players\" (plural) and a /finance link",
+        "linksTo": "BR-NOTIF-029"
+      },
+      {
+        "id": "AC-NOTIF-036",
+        "given": "Team A redeems a penalty slot",
+        "when": "POST /api/auction/redeem-slot returns 200",
+        "then": "One slot_redeemed notification is created for Team A with the £ cost and remaining-slot count",
+        "linksTo": "BR-NOTIF-030"
+      },
+      {
+        "id": "AC-NOTIF-037",
+        "given": "A transient DB error happens during the slot_redeemed notification insert",
+        "when": "createNotification throws",
+        "then": "The /api/auction/redeem-slot response is still 200/success — the error is logged via console.warn but never propagated",
+        "linksTo": "BR-NOTIF-033"
+      },
+      {
+        "id": "AC-NOTIF-038",
+        "given": "Team A unlocks bonus slot 15",
+        "when": "POST /api/auction/unlock-slot returns 200",
+        "then": "One slot_unlocked notification is created with title \"Unlocked slot 15\" and no link",
+        "linksTo": "BR-NOTIF-031"
+      },
+      {
+        "id": "AC-NOTIF-039",
+        "given": "Team A wins a PL club auction for \"Liverpool\" at £25M, tier=1",
+        "when": "settleClubAuction commits the sale",
+        "then": "One club_purchased notification is created for Team A with title \"You bought Liverpool\" and body mentioning £25.0M and tier 1",
+        "linksTo": "BR-NOTIF-032"
+      },
+      {
+        "id": "AC-NOTIF-040",
+        "given": "A league is deleted",
+        "when": "The cascade fires",
+        "then": "Every row in notifications with that leagueId is also deleted",
+        "linksTo": "BR-NOTIF-035"
+      },
+      {
+        "id": "AC-NOTIF-041",
+        "given": "createNotification is called with link omitted",
+        "when": "The row is persisted",
+        "then": "The notifications.link column stores NULL (not an empty string)",
+        "linksTo": "BR-NOTIF-034"
+      },
+      {
+        "id": "AC-NOTIF-042",
+        "given": "I PATCH with {\"ids\":[\"a\",\"b\"]}",
+        "when": "Both ids belong to my team and both are unread",
+        "then": "Both rows have readAt set to the same Date instance (`now`)",
+        "linksTo": "BR-NOTIF-014"
+      },
+      {
+        "id": "AC-NOTIF-043",
+        "given": "I am on /notifications page 2 of 3",
+        "when": "I click Previous",
+        "then": "The fetch re-runs with page=1 and the URL state (component state) is updated; Previous is disabled when page=1",
+        "linksTo": "US-NOTIF-014"
+      },
+      {
+        "id": "AC-NOTIF-044",
+        "given": "I am on the last page",
+        "when": "The page renders",
+        "then": "The Next button is disabled",
+        "linksTo": "US-NOTIF-014"
+      },
+      {
+        "id": "AC-NOTIF-045",
+        "given": "an anonymous visitor loads /notifications",
+        "when": "the page fires GET /api/notifications and reads response.status",
+        "then": "the page is now redirected to /signin via the previously-unreachable status===401 branch. The page never renders an empty list in limbo for an anonymous visitor.",
+        "linksTo": "BR-NOTIF-004"
+      }
+    ]
+  },
+  "defects": [
+    {
+      "id": "DEF-NOTIF-001",
+      "title": "GET /api/notifications returns 200 empty payload instead of 401 for unauthenticated callers",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/notifications/route.ts:20-26 short-circuits with a 200 JSON response (`notifications:[], unreadCount:0, ...`) whenever there is no session OR the session is not type='team'. The /notifications page client at src/app/notifications/page.tsx:34-41 explicitly checks `res.status === 401` to redirect to /signin — that branch is therefore unreachable.",
+      "expectedBehaviour": "GET should return 401 for unauthenticated callers (mirroring PATCH behaviour) so the client can route them to /signin. Admin/superadmin sessions can keep returning empty (legitimately no notifications) or also 401 — but the two endpoints should agree.",
+      "actualBehaviour": "An unauthenticated visitor at /notifications sees a permanent \"You're all caught up\" empty state and is never redirected to sign in. Inconsistent with PATCH which returns 401.",
+      "sourceRefs": [
+        "src/app/api/notifications/route.ts:20-26",
+        "src/app/api/notifications/route.ts:91-97",
+        "src/app/notifications/page.tsx:34-41"
+      ],
+      "linkedBusinessRules": [
+        "BR-NOTIF-004",
+        "BR-NOTIF-011"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-NOTIF-007",
+        "AC-NOTIF-008",
+        "AC-NOTIF-045"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-NOTIF-011",
+        "TC-NOTIF-012",
+        "TC-NOTIF-054",
+        "TC-NOTIF-055"
+      ],
+      "notes": "Two fixes possible: (a) tighten GET to return 401 when !session — matches PATCH and lets page.tsx redirect work; (b) keep current behaviour and remove the dead 401 branch from page.tsx (less safe — silently swallows logged-out state). Option (a) is preferred. Low-risk change; only affects callers without a team session. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "GET /api/notifications now returns HTTP 401 'Not authenticated' when there is no session, and HTTP 403 'Team access required' when the session is not type='team' (src/app/api/notifications/route.ts:20-32). Previously returned 200 with an empty payload, leaving the /notifications page client in a confusing logged-out-but-rendered state. The page's `status===401` redirect-to-signin branch is now reachable.",
+      "resolutionDate": "2026-05-26"
+    }
+  ],
+  "testCases": [
+    {
+      "id": "TC-NOTIF-001",
+      "feature": "Empty State",
+      "scenario": "Signed-in team with 0 notifications sees empty-state on /notifications",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team session active; notifications table has 0 rows for teamId",
+      "testData": "teamId=team-empty, no notification rows",
+      "testSteps": [
+        "1. Sign in as team-empty",
+        "2. Navigate to /notifications",
+        "3. Observe page body"
+      ],
+      "expectedResult": "Empty-state illustration is shown with copy 'You're all caught up'; no pagination controls are rendered",
+      "postconditions": "No DB writes",
+      "requirementId": "AC-NOTIF-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-002",
+      "feature": "GET list defaults",
+      "scenario": "GET /api/notifications returns newest-first list with counts for default params",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team session; 5 notifications for teamId (3 unread, 2 read), all single league",
+      "testData": "Cookie=team session; no query params",
+      "testSteps": [
+        "1. GET /api/notifications"
+      ],
+      "expectedResult": "200 with notifications.length=5 ordered by createdAt DESC, unreadCount=3, totalCount=5, page=1, pageSize=30, totalPages=1",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-003",
+      "feature": "Pagination",
+      "scenario": "Page 2 of 65 rows with pageSize=50 returns last 15",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team session; 65 notifications for teamId",
+      "testData": "?page=2&pageSize=50",
+      "testSteps": [
+        "1. Seed 65 rows with monotonic createdAt",
+        "2. GET /api/notifications?page=2&pageSize=50"
+      ],
+      "expectedResult": "200; notifications.length=15 (rows 51-65 in DESC order), page=2, pageSize=50, totalCount=65, totalPages=2",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-004",
+      "feature": "Pagination cap",
+      "scenario": "pageSize=500 is clamped to 100",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Team session; 150 notifications for teamId",
+      "testData": "?pageSize=500",
+      "testSteps": [
+        "1. GET /api/notifications?pageSize=500"
+      ],
+      "expectedResult": "200; pageSize=100, notifications.length=100, totalPages=2",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-005",
+      "feature": "Pagination boundary",
+      "scenario": "pageSize=0 falls back to default 30",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Team session; 40 notifications",
+      "testData": "?pageSize=0",
+      "testSteps": [
+        "1. GET /api/notifications?pageSize=0"
+      ],
+      "expectedResult": "200; pageSize=30 (default applied), notifications.length=30",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-006",
+      "feature": "Pagination NaN",
+      "scenario": "pageSize=abc (NaN) falls back to default 30",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Team session; 5 notifications",
+      "testData": "?pageSize=abc&page=xyz",
+      "testSteps": [
+        "1. GET /api/notifications?pageSize=abc&page=xyz"
+      ],
+      "expectedResult": "200; pageSize=30, page=1, notifications.length=5",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-007",
+      "feature": "Legacy limit",
+      "scenario": "?limit=10&page=5 forces page=1, pageSize=10",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team session; 40 notifications",
+      "testData": "?limit=10&page=5",
+      "testSteps": [
+        "1. GET /api/notifications?limit=10&page=5"
+      ],
+      "expectedResult": "200; notifications.length=10 (newest 10), page=1, pageSize=10",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-008",
+      "feature": "Legacy limit clamp",
+      "scenario": "?limit=500 clamps to 100",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Team session; 200 notifications",
+      "testData": "?limit=500",
+      "testSteps": [
+        "1. GET /api/notifications?limit=500"
+      ],
+      "expectedResult": "200; pageSize=100, page=1, notifications.length=100",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-009",
+      "feature": "League scoping",
+      "scenario": "?leagueId=A filters rows and counts to that league only",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team session; 4 notifications in League A (2 unread), 3 in League B (1 unread)",
+      "testData": "?leagueId=A",
+      "testSteps": [
+        "1. GET /api/notifications?leagueId=A"
+      ],
+      "expectedResult": "200; notifications.length=4, all leagueId===A, unreadCount=2, totalCount=4",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-010",
+      "feature": "Ownership scoping (cross-team leak)",
+      "scenario": "GET never returns another team's rows",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A session; Team A has 2 notifs, Team B has 10 notifs in same league",
+      "testData": "Cookie=Team A session",
+      "testSteps": [
+        "1. As Team A, GET /api/notifications"
+      ],
+      "expectedResult": "200; notifications.length=2; every row.teamId===Team A; totalCount=2; no Team B IDs present",
+      "postconditions": "No DB changes",
+      "requirementId": "BR-NOTIF-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-011",
+      "feature": "Unauthenticated GET (current behaviour)",
+      "scenario": "GET /api/notifications returns 401 for unauthenticated callers",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "No session cookie set; some rows exist in DB for other teams",
+      "testData": "No Cookie header",
+      "testSteps": [
+        "1. GET /api/notifications without any session cookie"
+      ],
+      "expectedResult": "GET /api/notifications with no session cookie returns HTTP 401 'Not authenticated'. The /notifications page client redirects to /signin on this status.",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-NOTIF-001 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-NOTIF-012",
+      "feature": "Admin session GET",
+      "scenario": "GET /api/notifications returns 403 for non-team session (admin/superadmin)",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Superadmin session active; other teams have rows",
+      "testData": "Cookie=superadmin session",
+      "testSteps": [
+        "1. GET /api/notifications as superadmin"
+      ],
+      "expectedResult": "GET /api/notifications with an admin or superadmin session cookie returns HTTP 403 'Team access required'. Only team sessions get the list payload.",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-NOTIF-001 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-NOTIF-013",
+      "feature": "Mark all read",
+      "scenario": "PATCH {all:true} stamps every unread row for caller",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team session; 3 unread + 1 read row for teamId",
+      "testData": "Body: {\"all\":true}",
+      "testSteps": [
+        "1. PATCH /api/notifications with {all:true}",
+        "2. GET /api/notifications"
+      ],
+      "expectedResult": "PATCH responds 200 {success:true}; subsequent GET shows unreadCount=0; all 4 rows have readAt set",
+      "postconditions": "All teamId rows readAt non-null",
+      "requirementId": "AC-NOTIF-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-014",
+      "feature": "Mark single read",
+      "scenario": "PATCH {ids:[X]} stamps only that row",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team session; one unread row id=X owned by team; 2 other unread rows",
+      "testData": "Body: {\"ids\":[\"X\"]}",
+      "testSteps": [
+        "1. PATCH /api/notifications with {ids:[\"X\"]}",
+        "2. GET /api/notifications"
+      ],
+      "expectedResult": "PATCH 200 {success:true}; row X.readAt set; other 2 rows remain unread; unreadCount=2",
+      "postconditions": "Only row X stamped",
+      "requirementId": "AC-NOTIF-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-015",
+      "feature": "Cross-team PATCH guard",
+      "scenario": "Team A PATCH with Team B's id silently ignores it",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A session; row Y owned by Team B (unread)",
+      "testData": "Body: {\"ids\":[\"Y\"]}",
+      "testSteps": [
+        "1. As Team A, PATCH /api/notifications with {ids:[\"Y\"]}",
+        "2. As Team B, GET /api/notifications"
+      ],
+      "expectedResult": "PATCH 200 {success:true}; Team B's row Y.readAt remains null (no leak, no error)",
+      "postconditions": "Row Y still unread",
+      "requirementId": "AC-NOTIF-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-016",
+      "feature": "PATCH validation - empty body",
+      "scenario": "PATCH with {} returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Team session",
+      "testData": "Body: {}",
+      "testSteps": [
+        "1. PATCH /api/notifications with {}"
+      ],
+      "expectedResult": "400 with body {error:\"Provide ids[] or all:true\"}",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-017",
+      "feature": "PATCH validation - empty ids",
+      "scenario": "PATCH with {ids:[]} returns 400",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Team session",
+      "testData": "Body: {\"ids\":[]}",
+      "testSteps": [
+        "1. PATCH /api/notifications with {ids:[]}"
+      ],
+      "expectedResult": "400 with body {error:\"Provide ids[] or all:true\"}",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-018",
+      "feature": "PATCH validation - all:false",
+      "scenario": "PATCH with {all:false} returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Team session",
+      "testData": "Body: {\"all\":false}",
+      "testSteps": [
+        "1. PATCH /api/notifications with {all:false}"
+      ],
+      "expectedResult": "400 with body {error:\"Provide ids[] or all:true\"}",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-019",
+      "feature": "PATCH auth - no session",
+      "scenario": "PATCH without session returns 401",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie",
+      "testData": "Body: {\"all\":true}",
+      "testSteps": [
+        "1. PATCH /api/notifications with {all:true} and no cookie"
+      ],
+      "expectedResult": "401 with body {error:\"Team authentication required\"}",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-020",
+      "feature": "PATCH auth - admin session",
+      "scenario": "PATCH with admin (non-team) session returns 401",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Superadmin session active (not team session)",
+      "testData": "Body: {\"all\":true}",
+      "testSteps": [
+        "1. PATCH /api/notifications with admin cookie"
+      ],
+      "expectedResult": "401 with body {error:\"Team authentication required\"}",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-021",
+      "feature": "Mark all read idempotency",
+      "scenario": "Already-read rows are NOT re-stamped by mark-all-read",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team session; row Z is read with readAt=T1 (yesterday); 2 unread rows",
+      "testData": "Body: {\"all\":true}",
+      "testSteps": [
+        "1. Capture row Z.readAt = T1",
+        "2. PATCH /api/notifications with {all:true}",
+        "3. Re-read row Z"
+      ],
+      "expectedResult": "Row Z.readAt still equals T1 (unchanged); the 2 unread rows now have new readAt timestamps",
+      "postconditions": "Z untouched",
+      "requirementId": "AC-NOTIF-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-022",
+      "feature": "No DELETE endpoint",
+      "scenario": "DELETE /api/notifications/123 returns 405",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Team session; any notification id exists",
+      "testData": "Method: DELETE; path: /api/notifications/123",
+      "testSteps": [
+        "1. DELETE /api/notifications/123"
+      ],
+      "expectedResult": "405 Method Not Allowed (framework default); row 123 NOT deleted",
+      "postconditions": "Row 123 still exists",
+      "requirementId": "AC-NOTIF-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-023",
+      "feature": "Bell polling 30s",
+      "scenario": "Bell re-fetches after 30s and updates badge to 9+",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team session; bell mounted; initially 0 unread",
+      "testData": "Insert 12 unread rows mid-mount",
+      "testSteps": [
+        "1. Load any page with NotificationBell — observe no badge",
+        "2. Server-insert 12 unread rows for teamId",
+        "3. Advance clock / wait 30s"
+      ],
+      "expectedResult": "Bell re-fetches GET /api/notifications, state updates, badge renders the literal string '9+'",
+      "postconditions": "Badge visible",
+      "requirementId": "AC-NOTIF-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-024",
+      "feature": "Bell badge 1-9",
+      "scenario": "Bell badge shows literal count for unread=4",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team session; 4 unread rows",
+      "testData": "unreadCount=4",
+      "testSteps": [
+        "1. Render bell"
+      ],
+      "expectedResult": "Badge text is exactly '4'",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-025",
+      "feature": "Bell badge boundary 9 vs 10",
+      "scenario": "unreadCount=9 shows '9'; unreadCount=10 shows '9+'",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Team session",
+      "testData": "Two snapshots: 9 unread, then 10 unread",
+      "testSteps": [
+        "1. Seed 9 unread; render bell — capture badge",
+        "2. Seed 10 unread; render bell — capture badge"
+      ],
+      "expectedResult": "First render shows '9'; second render shows '9+'",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-026",
+      "feature": "Bell badge hidden",
+      "scenario": "unreadCount=0 hides the red badge",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Team session; 0 unread rows",
+      "testData": "unreadCount=0",
+      "testSteps": [
+        "1. Render bell"
+      ],
+      "expectedResult": "No badge element is rendered on the bell icon",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-027",
+      "feature": "Bell dropdown 3-item cap",
+      "scenario": "Dropdown shows 3 items plus See all when 7 loaded",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team session; 7 notifications loaded into bell state",
+      "testData": "list.length=7",
+      "testSteps": [
+        "1. Click bell to open dropdown"
+      ],
+      "expectedResult": "Dropdown lists exactly the first 3 items (newest) and shows 'See all notifications →' link to /notifications",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-028",
+      "feature": "Mark-read failure - no optimistic flip",
+      "scenario": "PATCH returning 500 leaves local badge unchanged",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team session; 3 unread; click handler intercepts PATCH to return 500",
+      "testData": "Mocked PATCH -> 500",
+      "testSteps": [
+        "1. Open bell dropdown (unreadCount=3)",
+        "2. Click an unread item",
+        "3. PATCH fails 500"
+      ],
+      "expectedResult": "Local state still shows unreadCount=3; clicked item readAt remains null; no optimistic UI update",
+      "postconditions": "DB row unchanged",
+      "requirementId": "AC-NOTIF-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-029",
+      "feature": "Click unread - PATCH + navigate",
+      "scenario": "Clicking unread bell item triggers PATCH then navigates to link",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team session; unread item link=/myleague/marketplace?tab=incoming",
+      "testData": "Click target = unread item",
+      "testSteps": [
+        "1. Open bell",
+        "2. Click the item",
+        "3. Observe network + router"
+      ],
+      "expectedResult": "PATCH /api/notifications {ids:[id]} issued AND router pushes to /myleague/marketplace?tab=incoming",
+      "postconditions": "Row stamped readAt; user on target page",
+      "requirementId": "AC-NOTIF-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-030",
+      "feature": "Click already-read - navigate only",
+      "scenario": "Already-read item with link navigates without PATCH",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Team session; item already read; link=/foo",
+      "testData": "Click target = read item",
+      "testSteps": [
+        "1. Open bell",
+        "2. Click item",
+        "3. Observe network panel"
+      ],
+      "expectedResult": "NO PATCH issued; router navigates to /foo",
+      "postconditions": "No DB changes",
+      "requirementId": "AC-NOTIF-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-031",
+      "feature": "Page pagination header",
+      "scenario": "120 notifications -> pageSize=50, 3 pages, header text correct",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team session; 120 notifications",
+      "testData": "page=1 load",
+      "testSteps": [
+        "1. Navigate to /notifications"
+      ],
+      "expectedResult": "GET fires with pageSize=50; totalPages=3; pagination footer reads 'Page 1 of 3 · showing 50 of 120'",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-032",
+      "feature": "Trigger trade_proposed",
+      "scenario": "POST /api/auction/trade creates trade_proposed for target",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team A session; valid trade payload to Team B; A has no PL club owned (uses team name)",
+      "testData": "POST body = valid trade to Team B",
+      "testSteps": [
+        "1. As Team A, POST /api/auction/trade",
+        "2. Query notifications where teamId=Team B"
+      ],
+      "expectedResult": "Exactly 1 new row: type=trade_proposed, title='New trade proposal', body='<A team name> sent you a trade proposal', link=/<slug>/marketplace?tab=incoming, leagueId set, readAt null",
+      "postconditions": "Team B has 1 unread trade_proposed",
+      "requirementId": "AC-NOTIF-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-033",
+      "feature": "Trigger trade_proposed display name",
+      "scenario": "Proposer who owns PL club uses club name in body",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team A owns PL Club Auction club 'Arsenal'; valid trade to Team B",
+      "testData": "Team A.clubName='Arsenal'",
+      "testSteps": [
+        "1. As Team A, POST /api/auction/trade",
+        "2. Inspect Team B's new notification body"
+      ],
+      "expectedResult": "Body reads 'Arsenal sent you a trade proposal' (not manager team name)",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-034",
+      "feature": "Trigger trade_rejected",
+      "scenario": "Reject by target produces trade_rejected for proposer only",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Pending proposal A->B exists",
+      "testData": "PATCH /api/auction/trade {action:'reject', proposalId}",
+      "testSteps": [
+        "1. As Team B, PATCH with action=reject",
+        "2. Query notifications for Team A and Team B"
+      ],
+      "expectedResult": "Exactly 1 new row for Team A: type=trade_rejected, link tab=outgoing; Team B receives 0 new rows",
+      "postconditions": "Proposal status=rejected",
+      "requirementId": "AC-NOTIF-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-035",
+      "feature": "Trigger trade_accepted",
+      "scenario": "Accept by target produces trade_accepted for proposer",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Pending proposal A->B exists; re-validation will pass",
+      "testData": "PATCH /api/auction/trade {action:'accept', proposalId}",
+      "testSteps": [
+        "1. As Team B, PATCH action=accept",
+        "2. Query notifications for Team A"
+      ],
+      "expectedResult": "Exactly 1 new row for Team A: type=trade_accepted, body includes 'awaiting admin approval', link tab=outgoing",
+      "postconditions": "Proposal status=accepted",
+      "requirementId": "AC-NOTIF-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-036",
+      "feature": "Trigger trade_approved",
+      "scenario": "Admin approve fires notification to BOTH parties",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Accepted proposal A<->B; executeTrade will succeed",
+      "testData": "POST /api/auction/trade/admin {action:'approve'}",
+      "testSteps": [
+        "1. As superadmin, POST action=approve",
+        "2. Query notifications for both A and B"
+      ],
+      "expectedResult": "2 new rows total: one for Team A and one for Team B, both type=trade_approved, title='Trade approved', body includes 'players & cash have been transferred', link tab=history",
+      "postconditions": "Proposal status=completed",
+      "requirementId": "AC-NOTIF-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-037",
+      "feature": "Trigger trade_admin_rejected",
+      "scenario": "Admin reject fires notification to both parties",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Proposal in pending or accepted status",
+      "testData": "POST /api/auction/trade/admin {action:'reject'}",
+      "testSteps": [
+        "1. As superadmin, POST action=reject",
+        "2. Query notifications for both teams"
+      ],
+      "expectedResult": "2 new rows, both type=trade_admin_rejected, title='Trade rejected by admin', body='Admin rejected the trade', link tab=history",
+      "postconditions": "Proposal status=admin_rejected",
+      "requirementId": "AC-NOTIF-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-038",
+      "feature": "Trigger trade_cancelled",
+      "scenario": "Admin cancel of non-completed proposal fires both",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Proposal in pending status",
+      "testData": "POST /api/auction/trade/admin {action:'cancel'}",
+      "testSteps": [
+        "1. As superadmin, POST action=cancel",
+        "2. Query notifications"
+      ],
+      "expectedResult": "2 new rows, both type=trade_cancelled, title='Trade cancelled', body='Admin cancelled the trade', link tab=history",
+      "postconditions": "Proposal status=cancelled",
+      "requirementId": "AC-NOTIF-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-039",
+      "feature": "Admin cancel on completed - guard",
+      "scenario": "Cancel of completed proposal returns 400 and no notifications",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Proposal already completed (executeTrade ran)",
+      "testData": "POST /api/auction/trade/admin {action:'cancel'}",
+      "testSteps": [
+        "1. As superadmin, POST action=cancel on completed proposal",
+        "2. Query notifications since timestamp"
+      ],
+      "expectedResult": "400 response; zero new trade_cancelled rows inserted",
+      "postconditions": "Proposal status still completed",
+      "requirementId": "AC-NOTIF-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-040",
+      "feature": "Trigger gw_processed fan-out",
+      "scenario": "6-team league scoring creates 6 gw_processed rows",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Auction league with 6 teams all having submitted GW lineups",
+      "testData": "processAuctionGameweek invocation",
+      "testSteps": [
+        "1. Trigger gameweek processing (admin or worker)",
+        "2. Query notifications where type=gw_processed for gw"
+      ],
+      "expectedResult": "Exactly 6 rows, one per team; each body includes rank, points, payout in £M; each link=/<slug>/gw-results?gw=<gwNumber>",
+      "postconditions": "GW scored",
+      "requirementId": "AC-NOTIF-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-041",
+      "feature": "Trigger gw_processed race-loss",
+      "scenario": "Race-loss path emits no duplicates",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "GW already scored by another caller; second caller arrives",
+      "testData": "Two concurrent processAuctionGameweek calls",
+      "testSteps": [
+        "1. Run scoring once and let it complete",
+        "2. Run scoring again for same GW",
+        "3. Count gw_processed rows for that gw"
+      ],
+      "expectedResult": "Total gw_processed rows equals N teams (not 2*N); second invocation returns persisted state without re-emitting notifications",
+      "postconditions": "No duplicates",
+      "requirementId": "AC-NOTIF-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-042",
+      "feature": "Trigger release_refund plural",
+      "scenario": "2-player refund creates release_refund with plural copy",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team A released 2 players in this GW cycle; refund > 0",
+      "testData": "processAuctionGameweek run",
+      "testSteps": [
+        "1. Run GW processing",
+        "2. Find release_refund row for Team A"
+      ],
+      "expectedResult": "1 row type=release_refund; body matches '£XM for 2 released players' (plural); link=/<slug>/finance",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-043",
+      "feature": "Trigger release_refund singular",
+      "scenario": "1-player refund uses singular copy",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Team A released exactly 1 player this GW cycle",
+      "testData": "n=1 refund",
+      "testSteps": [
+        "1. Run GW processing",
+        "2. Inspect Team A's release_refund body"
+      ],
+      "expectedResult": "Body uses singular phrasing '1 released player' (no trailing 's')",
+      "postconditions": "n/a",
+      "requirementId": "BR-NOTIF-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-044",
+      "feature": "Trigger slot_redeemed",
+      "scenario": "Successful redeem creates slot_redeemed notification",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team A has penalty slot available; sufficient purse",
+      "testData": "POST /api/auction/redeem-slot",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot as Team A",
+        "2. Query Team A notifications"
+      ],
+      "expectedResult": "1 new row type=slot_redeemed; body includes '£XM deducted' and remaining slot count; link=/<slug>/auction; HTTP 200",
+      "postconditions": "Slot redeemed",
+      "requirementId": "AC-NOTIF-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-045",
+      "feature": "Best-effort notification on slot_redeemed",
+      "scenario": "createNotification failure does not roll back redeem",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team A valid redeem; createNotification mocked to throw",
+      "testData": "Inject DB error during notification insert",
+      "testSteps": [
+        "1. POST /api/auction/redeem-slot with notification path failing",
+        "2. Check response and DB state"
+      ],
+      "expectedResult": "HTTP 200 / success body; purse + slot side-effects persisted; warning logged; no rollback; no notification row",
+      "postconditions": "Redemption committed",
+      "requirementId": "AC-NOTIF-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-046",
+      "feature": "Trigger slot_unlocked",
+      "scenario": "Unlock-slot 15 produces titled notification with no link",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team A eligible to unlock slot 15",
+      "testData": "POST /api/auction/unlock-slot {slotNumber:15}",
+      "testSteps": [
+        "1. POST /api/auction/unlock-slot",
+        "2. Query Team A notifications"
+      ],
+      "expectedResult": "1 new row type=slot_unlocked; title='Unlocked slot 15'; body mentions £ deducted and new squad cap; link is null",
+      "postconditions": "Slot unlocked",
+      "requirementId": "AC-NOTIF-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-047",
+      "feature": "Trigger club_purchased",
+      "scenario": "Winning club auction emits club_purchased",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Club auction settling with Team A winning Liverpool at £25M, tier 1",
+      "testData": "settleClubAuction invocation",
+      "testSteps": [
+        "1. Run club auction settlement",
+        "2. Query Team A notifications"
+      ],
+      "expectedResult": "1 new row type=club_purchased; title='You bought Liverpool'; body mentions £25.0M and tier 1 and rename behaviour",
+      "postconditions": "Club sold",
+      "requirementId": "AC-NOTIF-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-048",
+      "feature": "Cascade delete on league",
+      "scenario": "Deleting a league cascades notifications",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "League X has 12 notifications across teams",
+      "testData": "DELETE league X (admin path or DB)",
+      "testSteps": [
+        "1. Count notifications.leagueId=X (=12)",
+        "2. Delete league X",
+        "3. Re-count"
+      ],
+      "expectedResult": "After delete, zero notifications with leagueId=X remain",
+      "postconditions": "League gone, notifications gone",
+      "requirementId": "AC-NOTIF-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-049",
+      "feature": "Cascade delete on team",
+      "scenario": "Deleting a team cascades its notifications",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team Q has 5 notifications",
+      "testData": "DELETE team Q",
+      "testSteps": [
+        "1. Count notifications.teamId=Q (=5)",
+        "2. Delete team Q",
+        "3. Re-count"
+      ],
+      "expectedResult": "Zero notifications.teamId=Q remain",
+      "postconditions": "Cascade verified",
+      "requirementId": "BR-NOTIF-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-050",
+      "feature": "Link null persistence",
+      "scenario": "createNotification with link omitted stores NULL",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Direct invocation of createNotification with no link field",
+      "testData": "{teamId, leagueId, type:'gw_processed', title:'t', body:'b'}",
+      "testSteps": [
+        "1. Call createNotification omitting link",
+        "2. Inspect inserted row"
+      ],
+      "expectedResult": "link column is NULL (not empty string)",
+      "postconditions": "Row persisted",
+      "requirementId": "AC-NOTIF-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-051",
+      "feature": "PATCH multi-id same timestamp",
+      "scenario": "PATCH {ids:[a,b]} stamps both with same `now` Date",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team session; rows a and b unread and owned by team",
+      "testData": "Body: {ids:[\"a\",\"b\"]}",
+      "testSteps": [
+        "1. PATCH /api/notifications with both ids",
+        "2. Read both rows' readAt"
+      ],
+      "expectedResult": "Both rows' readAt is non-null and equal (same Date instance from the single update statement)",
+      "postconditions": "Both read",
+      "requirementId": "AC-NOTIF-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-052",
+      "feature": "Pagination Previous control",
+      "scenario": "Clicking Previous on page 2 fetches page 1; Previous disabled on page 1",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team session; 120 notifications (3 pages)",
+      "testData": "Navigate to /notifications, advance to page 2",
+      "testSteps": [
+        "1. Open /notifications",
+        "2. Click Next twice / navigate to page 2",
+        "3. Click Previous",
+        "4. Inspect controls"
+      ],
+      "expectedResult": "Step 3 triggers GET with page=1; component state.page=1; Previous button now disabled",
+      "postconditions": "Page state synced",
+      "requirementId": "AC-NOTIF-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-053",
+      "feature": "Pagination Next disabled on last page",
+      "scenario": "On final page, Next is disabled",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Team session; 120 notifications; user on page 3 of 3",
+      "testData": "page=3, totalPages=3",
+      "testSteps": [
+        "1. Navigate to /notifications page 3"
+      ],
+      "expectedResult": "Next button rendered with disabled attribute / aria-disabled=true",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-054",
+      "feature": "Page 401 redirect branch (defect-pin)",
+      "scenario": "Anonymous /notifications page reaches the redirect branch via 401 from API",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Stub GET /api/notifications to return 401 (current code never does — DEF-NOTIF-001)",
+      "testData": "Mocked 401 response",
+      "testSteps": [
+        "1. Load /notifications with GET stubbed to 401",
+        "2. Observe router"
+      ],
+      "expectedResult": "An anonymous visitor loading /notifications fires GET /api/notifications which returns 401; the client's `status===401` branch redirects to /signin. The page no longer renders an empty notifications list in limbo.",
+      "postconditions": "Verifies dead code path for DEF-NOTIF-001 fix",
+      "requirementId": "AC-NOTIF-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-NOTIF-001 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-NOTIF-055",
+      "feature": "Unauthenticated visitor to /notifications (defect symptom)",
+      "scenario": "PATCH /api/notifications shape is symmetric with GET (401 for unauth)",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "No session cookie; navigate directly to /notifications",
+      "testData": "Browser without auth cookie",
+      "testSteps": [
+        "1. Open /notifications in clean session",
+        "2. Observe response and final URL"
+      ],
+      "expectedResult": "Both GET and PATCH return 401 'Not authenticated' for unauthenticated callers and 403 for non-team sessions, providing a uniform auth contract across the route.",
+      "postconditions": "n/a",
+      "requirementId": "AC-NOTIF-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-NOTIF-001 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-NOTIF-056",
+      "feature": "Restore-auction wipes notifications",
+      "scenario": "POST restore-auction deletes all notifications for the league before re-import",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "League L has 20 notifications; admin invokes restore-auction with backup payload",
+      "testData": "POST /api/admin/<leagueId>/restore-auction with payload",
+      "testSteps": [
+        "1. Count notifications.leagueId=L (=20)",
+        "2. POST restore-auction with valid backup",
+        "3. Re-count notifications.leagueId=L"
+      ],
+      "expectedResult": "Pre-existing 20 rows deleted; count after re-import matches backup payload contents (could be 0 or N from backup)",
+      "postconditions": "Notifications reset to backup state",
+      "requirementId": "BR-NOTIF-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Covers the only sanctioned bulk-delete path."
+    },
+    {
+      "id": "TC-NOTIF-057",
+      "feature": "Notification type union enforcement",
+      "scenario": "createNotification rejects unknown type at TypeScript / runtime boundary",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Invoke createNotification with type='unknown_event'",
+      "testData": "type: 'unknown_event'",
+      "testSteps": [
+        "1. Call createNotification with an unsanctioned type (e.g. via ts-expect-error in a test harness)"
+      ],
+      "expectedResult": "Compile-time error (NotificationType union); if forced at runtime, row still inserts (no runtime enum check) — flagged as a defensive coverage test",
+      "postconditions": "Verifies BR-NOTIF-003 union contract",
+      "requirementId": "BR-NOTIF-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-NOTIF-058",
+      "feature": "Composite index used",
+      "scenario": "Unread-count query uses notifications_team_unread index",
+      "type": "Smoke",
+      "priority": "P3",
+      "preconditions": "DB with seeded notifications and large row count",
+      "testData": "EXPLAIN GET unreadCount query",
+      "testSteps": [
+        "1. Run EXPLAIN on `SELECT COUNT(*) FROM notifications WHERE teamId=? AND readAt IS NULL`"
+      ],
+      "expectedResult": "Plan reports use of index notifications_team_unread on (teamId, readAt)",
+      "postconditions": "Performance smoke check",
+      "requirementId": "BR-NOTIF-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": []
+}

@@ -206,6 +206,16 @@ export type BackupMeta = {
   generatedAt: string;
   /** Bumped when the BackupRows payload shape changes in a breaking way. */
   backupVersion: 1;
+  /**
+   * For backups served via /api/admin/[leagueId]/backups/[backupId], the route
+   * infers what format the snapshot was originally taken at by inspecting which
+   * JSON columns are populated. When `inferredOriginalFormat !== format` the
+   * league was re-formatted after this snapshot was written — restore tooling
+   * should refuse rather than silently misinterpret the payload.
+   * Optional because in-flight snapshots and the /api/admin/[leagueId]/backup
+   * (live-zip) path don't need it.
+   */
+  inferredOriginalFormat?: string;
 };
 
 export type BackupRows = {

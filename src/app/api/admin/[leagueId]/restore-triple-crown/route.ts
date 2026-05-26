@@ -12,6 +12,7 @@ import {
   parseRestoreZip,
   loadRestoreSnapshot,
   restoreFixtures,
+  RestoreGuardError,
   type RestorePayload,
 } from "@/lib/backup/restore-tvt";
 
@@ -88,6 +89,9 @@ export async function POST(request: NextRequest) {
       message: `Restored ${result.inserted} PL fixture(s). Cup fixtures + UEFA knockouts are not in the backup payload yet — tracked follow-up. Captains restore deferred — use the Import Captain Data block if needed.`,
     });
   } catch (err) {
+    if (err instanceof RestoreGuardError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("[restore-triple-crown] apply failed:", err);
     return NextResponse.json(
       { error: "Restore failed", message: err instanceof Error ? err.message : "unknown" },

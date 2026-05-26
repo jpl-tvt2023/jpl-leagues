@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, leagues, auctionScores, gameweeks } from "@/lib/db";
+import { db, teams, leagues, auctionScores, gameweeks, leagueAdmins } from "@/lib/db";
 import { eq, and, asc } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculatePurse } from "@/lib/formats/auction/economy";
@@ -31,6 +31,30 @@ export async function GET(request: NextRequest) {
   const leagueRow = await db.select().from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
   if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
+  }
+
+  // Authorization: superadmin → any team; admin → only teams in leagues they administer;
+  // team → only their own team. Anything else → 403.
+  if (session.type === "team") {
+    if (session.id !== teamId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  } else if (session.type === "admin") {
+    const adminRow = await db
+      .select({ id: leagueAdmins.id })
+      .from(leagueAdmins)
+      .where(
+        and(
+          eq(leagueAdmins.userId, session.id),
+          eq(leagueAdmins.leagueId, team.leagueId)
+        )
+      )
+      .limit(1);
+    if (adminRow.length === 0) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  } else if (session.type !== "superadmin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Get GW-by-GW income history

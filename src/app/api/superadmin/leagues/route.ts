@@ -5,6 +5,7 @@ import { eq, count } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { getCurrentGameweekNumber } from "@/lib/gameweeks/current-gw";
+import { validateEnabledChipsArray } from "@/lib/formats/tvt/chip-validation";
 import bcrypt from "bcryptjs";
 
 export async function GET(request: NextRequest) {
@@ -101,16 +102,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate enabledChips: must be array of exactly 3 valid chip codes
-    const VALID_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"];
-    resolvedEnabledChips = enabledChips ?? ["D", "W", "C"];
-    if (
-      !Array.isArray(resolvedEnabledChips) ||
-      resolvedEnabledChips.length !== 3 ||
-      !resolvedEnabledChips.every((c) => VALID_CHIP_CODES.includes(c)) ||
-      new Set(resolvedEnabledChips).size !== 3
-    ) {
-      return NextResponse.json({ error: "TVT enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)" }, { status: 400 });
+    const candidateChips = enabledChips ?? ["D", "W", "C"];
+    const chipCheck = validateEnabledChipsArray(candidateChips);
+    if (!chipCheck.ok) {
+      return NextResponse.json({ error: chipCheck.error }, { status: 400 });
     }
+    resolvedEnabledChips = chipCheck.chips;
   } else if (format === "auction") {
     // JPL Auction: no groups, no playoffs, no chips
     resolvedTeamSize = teamSize ?? 10;
@@ -128,7 +125,6 @@ export async function POST(request: NextRequest) {
   }
 
   const id = generateId();
-  const resolvedBudget = format === "auction" ? (initialBudget ?? 100_000_000) : 100_000_000;
   // Default Complete tier; only meaningful for auction leagues. Anything other than the literal
   // "primary" string falls back to "complete".
   const resolvedAuctionTier: "primary" | "complete" =
@@ -144,7 +140,10 @@ export async function POST(request: NextRequest) {
         groupCount: resolvedGroupCount,
         playoffStartGw: resolvedPlayoffStartGw,
         enabledChips: JSON.stringify(resolvedEnabledChips),
-        initialBudget: resolvedBudget,
+        // initialBudget is auction-only. For non-auction formats let the schema
+        // default fire so the explicit write here can't confuse readers into
+        // thinking the column means something for TVT/Triple Crown.
+        ...(format === "auction" ? { initialBudget: initialBudget ?? 100_000_000 } : {}),
         isSimulated: format === "auction" ? (isSimulated ?? false) : false,
         // PL Club Auction toggle — only meaningful on auction leagues; force false elsewhere
         clubAuctionEnabled: format === "auction" ? Boolean(clubAuctionEnabled) : false,
@@ -199,7 +198,7 @@ export async function POST(request: NextRequest) {
           mustChangePassword: true,
           isProfileComplete: false,
           ...(groupId ? { groupId } : {}),
-          ...(format === "auction" ? { purse: resolvedBudget } : {}),
+          ...(format === "auction" ? { purse: initialBudget ?? 100_000_000 } : {}),
         });
         createdTeams++;
       }

@@ -1,0 +1,2740 @@
+{
+  "moduleId": "TEAM",
+  "moduleName": "Team Management",
+  "sheetName": "Team Mgmt",
+  "status": "qa-signed-off",
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
+  "requirements": {
+    "version": 6,
+    "businessContext": "Admin-side lifecycle management of team accounts inside a league. Covers single-team CRUD (create / edit / delete), CSV/XLSX bulk replace of the roster, group A/B assignment for TVT, and the implicit force-password-reset behaviour that fires whenever an admin (re)sets a team's password. Scoped to admin operations only; the team-side self-service wizard lives in module 04. Cross-league uniqueness of `teamLoginId` (DB unique index `teams_login_id_global_unique`) is the single most important invariant enforced across every write path here.",
+    "userStories": [
+      {
+        "id": "US-TEAM-001",
+        "asA": "admin",
+        "iWant": "to create a new team account in my league by supplying a login ID, team name, initial password, and the two players (FPL IDs)",
+        "soThat": "the team can sign in and begin participating in the league",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:13-130",
+          "src/app/admin/[leagueId]/page.tsx:1282-1326"
+        ]
+      },
+      {
+        "id": "US-TEAM-002",
+        "asA": "admin",
+        "iWant": "the team I just created to be forced to change its password on first login",
+        "soThat": "the admin-issued password is never the long-term credential and the team controls its own access",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:97-105",
+          "src/lib/db/schema.ts:83-141"
+        ]
+      },
+      {
+        "id": "US-TEAM-003",
+        "asA": "admin",
+        "iWant": "to edit a team's name, login ID, players, group and (optionally) password",
+        "soThat": "I can fix typos, rotate credentials, or reassign group placement without deleting and re-creating the team",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:13-154",
+          "src/app/admin/[leagueId]/page.tsx:1840-1866"
+        ]
+      },
+      {
+        "id": "US-TEAM-004",
+        "asA": "admin",
+        "iWant": "to delete a single team and have all of its dependent records (players, fixtures, results, captain picks, audit logs) removed together in one transaction",
+        "soThat": "I can drop a withdrawn or duplicate team without leaving orphan rows in the database",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/delete-team/route.ts:11-81"
+        ]
+      },
+      {
+        "id": "US-TEAM-005",
+        "asA": "admin",
+        "iWant": "to select multiple teams in the admin dashboard and delete them in one action",
+        "soThat": "I can clean up several teams at once without clicking through each row individually",
+        "sourceRefs": [
+          "src/app/admin/[leagueId]/page.tsx:1897-1932"
+        ]
+      },
+      {
+        "id": "US-TEAM-006",
+        "asA": "admin",
+        "iWant": "to upload an Excel file containing the full team roster and have the system replace the existing non-ghost teams in one shot",
+        "soThat": "I can recover from a corrupted roster or import a pre-built season setup quickly",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:1-198",
+          "src/app/admin/[leagueId]/page.tsx:1432-1484"
+        ]
+      },
+      {
+        "id": "US-TEAM-007",
+        "asA": "admin",
+        "iWant": "the bulk-upload endpoint to validate every row before touching the database",
+        "soThat": "a single bad row aborts the whole upload and I am never left with a half-imported roster",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:64-120"
+        ]
+      },
+      {
+        "id": "US-TEAM-008",
+        "asA": "admin of an auction league",
+        "iWant": "the bulk-team-upload endpoint to refuse my request",
+        "soThat": "I do not accidentally wipe the auction-onboarded roster which has its own dedicated setup flow",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:51-62"
+        ]
+      },
+      {
+        "id": "US-TEAM-009",
+        "asA": "admin of a TVT league",
+        "iWant": "to assign teams to group A or group B in bulk",
+        "soThat": "I can configure the two-group league structure before fixtures are generated",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/assign-groups/route.ts:12-93",
+          "src/app/admin/[leagueId]/page.tsx:842-865"
+        ]
+      },
+      {
+        "id": "US-TEAM-010",
+        "asA": "admin",
+        "iWant": "to set a team's password again, which automatically marks the team as needing to change it on next login",
+        "soThat": "I can recover a team's lost password without giving them long-term access using the temporary credential",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:119-123"
+        ]
+      },
+      {
+        "id": "US-TEAM-011",
+        "asA": "admin",
+        "iWant": "the admin dashboard to list every non-ghost team in my league with its players, group, profile-complete status and PL-club ownership rename applied",
+        "soThat": "I have a single source of truth for the active roster",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:136-173",
+          "src/lib/teams/rename-rows.ts:28-51"
+        ]
+      },
+      {
+        "id": "US-TEAM-012",
+        "asA": "admin",
+        "iWant": "to be prevented from re-using a login ID that another league already owns",
+        "soThat": "a single human can never have two team accounts collide at the login screen across the platform",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:46-55",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:70-79",
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:122-137",
+          "src/lib/db/schema.ts:140"
+        ]
+      },
+      {
+        "id": "US-TEAM-013",
+        "asA": "team owner whose PL club was bought at auction",
+        "iWant": "my team to display as the PL club's name everywhere the admin dashboard lists teams",
+        "soThat": "the league UI stays consistent with the club-auction rename rule",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:141-165",
+          "src/lib/teams/rename-rows.ts:28-71"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-TEAM-001",
+        "rule": "All team-management endpoints under /api/admin/[leagueId]/* require an authenticated admin or superadmin session AND the caller must have a leagueAdmins row for that leagueId (superadmin bypass excepted); failure returns HTTP 403 Forbidden.",
+        "sourceRefs": [
+          "src/middleware.ts:190-211",
+          "src/lib/league-auth.ts:13-56",
+          "src/app/api/admin/[leagueId]/create-team/route.ts:14-16"
+        ]
+      },
+      {
+        "id": "BR-TEAM-002",
+        "rule": "An admin (non-superadmin) cannot operate on a league whose `isActive` flag is false — getAuthorizedLeagueId returns null and the route responds 403.",
+        "sourceRefs": [
+          "src/lib/league-auth.ts:46-52"
+        ]
+      },
+      {
+        "id": "BR-TEAM-003",
+        "rule": "Create-team requires teamLoginId, teamName, password, player1Name, player1FplId, player2Name, player2FplId — group is optional. Missing any required field returns 400 with `\"All fields except group are required\"`.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:19-36"
+        ]
+      },
+      {
+        "id": "BR-TEAM-004",
+        "rule": "teamLoginId on create and update must match the regex /^[A-Za-z0-9_-]{3,30}$/ — 3 to 30 characters of letters, digits, underscore, or hyphen. Anything else returns 400.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:38-44",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:41-47",
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:25"
+        ]
+      },
+      {
+        "id": "BR-TEAM-005",
+        "rule": "teamLoginId is globally unique across all leagues (DB index `teams_login_id_global_unique`). Create-team rejects any login ID that already exists in any league with 400 `\"Team ID already exists globally\"`.",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:140",
+          "src/app/api/admin/[leagueId]/create-team/route.ts:46-55"
+        ]
+      },
+      {
+        "id": "BR-TEAM-006",
+        "rule": "Update-team rejects a new login ID that conflicts with any team other than the one being edited (compares conflict row id !== teamId) with 400 `\"Team ID already exists globally\"`.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:70-79"
+        ]
+      },
+      {
+        "id": "BR-TEAM-007",
+        "rule": "If a `group` value is supplied to create-team or update-team it must be exactly `\"A\"` or `\"B\"`, otherwise 400 `\"Group must be either A or B\"`. (Update-team skips this check entirely for leagues whose format is `auction`.)",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:57-63",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:49-59"
+        ]
+      },
+      {
+        "id": "BR-TEAM-008",
+        "rule": "Team name uniqueness within a league is enforced case-insensitively AND whitespace-insensitively: LOWER(REPLACE(name,' ','')) must not already exist for the same leagueId. Conflict returns 400 `\"Team name already exists in this league\"`.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:66-74",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:82-90",
+          "src/lib/db/schema.ts:139"
+        ]
+      },
+      {
+        "id": "BR-TEAM-009",
+        "rule": "On create-team, if group A or B is supplied but no `groups` row exists for that leagueId+name pairing the endpoint auto-creates one with `groupType=\"pl\"`. Same behaviour on update-team and assign-groups.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:80-93",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:93-106",
+          "src/app/api/admin/[leagueId]/assign-groups/route.ts:34-43"
+        ]
+      },
+      {
+        "id": "BR-TEAM-010",
+        "rule": "Passwords are stored as bcrypt hashes with cost factor 10 on every write path (create, update, bulk upload). Plaintext is never persisted.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:77",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:121",
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:170"
+        ]
+      },
+      {
+        "id": "BR-TEAM-011",
+        "rule": "Newly created teams (via either create-team or bulk-upload-teams) are persisted with `mustChangePassword=true` so first login forces a password change.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:97-105",
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:170-180",
+          "src/lib/db/schema.ts:89"
+        ]
+      },
+      {
+        "id": "BR-TEAM-012",
+        "rule": "Update-team treats `password` as optional; only when the supplied value is non-empty and not whitespace-only does it rewrite the hash and set `mustChangePassword=true`. This is the de-facto admin-force-password-reset flow.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:119-123"
+        ]
+      },
+      {
+        "id": "BR-TEAM-013",
+        "rule": "Update-team treats players as optional — each player block is updated only when teamId+name+fplId are all present; missing player blocks leave existing player rows untouched.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:127-140"
+        ]
+      },
+      {
+        "id": "BR-TEAM-014",
+        "rule": "Update-team is a no-op for groups when the league format is `auction` — the `groupId` column is not touched even if the request body carries a `group` value.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:49-59",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:114-117"
+        ]
+      },
+      {
+        "id": "BR-TEAM-015",
+        "rule": "Update-team passing `group=\"Unassigned\"` clears the team's groupId to null (for non-auction leagues).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:93-106"
+        ]
+      },
+      {
+        "id": "BR-TEAM-016",
+        "rule": "Update-team rejects updates to teams that don't exist in the authorized league with 404 `\"Team not found\"` (prevents cross-league hijacking).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:61-68"
+        ]
+      },
+      {
+        "id": "BR-TEAM-017",
+        "rule": "Delete-team is transactional: in one DB transaction it removes gameweekCaptains for the team's players, audit logs scoped to the teamId, results for the teamId, fixtures where the team is home or away, the players themselves, and finally the team row. Any failure rolls the entire delete back.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/delete-team/route.ts:42-67"
+        ]
+      },
+      {
+        "id": "BR-TEAM-018",
+        "rule": "Delete-team rejects deletion of teams that don't belong to the authorized league (404 `\"Team not found\"`).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/delete-team/route.ts:27-33"
+        ]
+      },
+      {
+        "id": "BR-TEAM-019",
+        "rule": "Delete-team and update-team both invalidate the league page cache (`invalidateLeaguePageCache(leagueId)`) on success so the public-facing standings/fixtures pages re-render with the new state.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/delete-team/route.ts:69",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:142"
+        ]
+      },
+      {
+        "id": "BR-TEAM-020",
+        "rule": "Bulk-upload-teams refuses any league whose format is `auction` with 400 `\"Bulk team upload is not available for auction leagues.\"` Auction has its own onboarding flow (covered by modules 10/13).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:51-62"
+        ]
+      },
+      {
+        "id": "BR-TEAM-021",
+        "rule": "Bulk-upload-teams accepts at most 200 rows per request (`rows.length > 200` returns 400 `\"Too many rows. Maximum 200 teams per upload.\"`).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:47-49"
+        ]
+      },
+      {
+        "id": "BR-TEAM-022",
+        "rule": "Bulk-upload-teams rejects an empty/non-array `teams` payload with 400 `\"No team rows provided\"`.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:44-46"
+        ]
+      },
+      {
+        "id": "BR-TEAM-023",
+        "rule": "Bulk-upload row validation: each row must have a non-empty teamLoginId, teamName, password, player1Name, player1FplId, player2Name, player2FplId. The `abbreviation` column is accepted but ignored (legacy).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:13-23",
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:69-92"
+        ]
+      },
+      {
+        "id": "BR-TEAM-024",
+        "rule": "create-team requires the password field non-empty AND of length >= 4. Shorter or missing passwords return HTTP 400. This minimum matches bulk-upload-teams (BR-TEAM-046) so single-team and bulk-import paths cannot diverge.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:38-44"
+        ]
+      },
+      {
+        "id": "BR-TEAM-025",
+        "rule": "Bulk-upload requires both players' FPL IDs to be all-digits (`/^\\d+$/`), trimmed before testing.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:99-104"
+        ]
+      },
+      {
+        "id": "BR-TEAM-026",
+        "rule": "Bulk-upload de-duplicates within the file itself: a teamLoginId that appears twice (case-insensitive) or a teamName that appears twice (whitespace+case-insensitive) is rejected per the second occurrence row.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:105-111"
+        ]
+      },
+      {
+        "id": "BR-TEAM-027",
+        "rule": "Bulk-upload validates the `group` column to be exactly `\"A\"`, `\"B\"`, or empty; anything else is a row-level error.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:113-115"
+        ]
+      },
+      {
+        "id": "BR-TEAM-028",
+        "rule": "Bulk-upload runs every row through validation first; if any row produces an error the endpoint returns 400 with the full `details` array and the database is not modified.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:118-120"
+        ]
+      },
+      {
+        "id": "BR-TEAM-029",
+        "rule": "Bulk-upload checks each candidate teamLoginId against rows in OTHER leagues; if any conflict is found it returns 400 `\"Some teamLoginIds are already used in other leagues\"` without touching the DB.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:122-137"
+        ]
+      },
+      {
+        "id": "BR-TEAM-030",
+        "rule": "Once validation passes, bulk-upload wipes ALL non-ghost teams from the target league (cascade-deletes players, fixtures, results, chip plays, captains via FK cascades) before inserting the new roster.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:139-146"
+        ]
+      },
+      {
+        "id": "BR-TEAM-031",
+        "rule": "Bulk-upload preserves ghost teams (`isGhost=true`) — they are never deleted by the wipe step. (Ghost teams exist only in Triple Crown for bye fixtures.)",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:139-146",
+          "src/lib/db/schema.ts:99-100"
+        ]
+      },
+      {
+        "id": "BR-TEAM-032",
+        "rule": "When an admin creates a team via create-team OR bulk-upload-teams (i.e., the admin supplies team name + both players themselves), the inserted team row has isProfileComplete=true. The team-side setup wizard is therefore skipped on first login. Both admin entry points produce identical onboarding state.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:106-115",
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:170-180"
+        ]
+      },
+      {
+        "id": "BR-TEAM-033",
+        "rule": "Assign-groups requires a non-empty `assignments` array, where every element has `group` exactly `\"A\"` or `\"B\"`. Invalid group on any element fails the whole request with 400.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/assign-groups/route.ts:20-32"
+        ]
+      },
+      {
+        "id": "BR-TEAM-034",
+        "rule": "Assign-groups always ensures both groups A and B exist for the league before processing the assignments, creating them with `groupType=\"pl\"` if missing — even if the caller only asked to assign to one of them.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/assign-groups/route.ts:34-43"
+        ]
+      },
+      {
+        "id": "BR-TEAM-035",
+        "rule": "Assign-groups skips any assignment whose teamId is not in the authorized league (records a per-team error string in the `errors[]` response field, continues with the rest, and returns 200 with `updated` count).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/assign-groups/route.ts:52-78"
+        ]
+      },
+      {
+        "id": "BR-TEAM-036",
+        "rule": "Assign-groups updates `teams.updatedAt` to the current Date on every group write so the dashboard cache reflects the change.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/assign-groups/route.ts:73-77"
+        ]
+      },
+      {
+        "id": "BR-TEAM-037",
+        "rule": "GET /api/admin/[leagueId]/create-team returns all non-ghost teams in the league with their players, group name (or `\"Unassigned\"` when groupId is null), `needsPasswordChange` flag, `isProfileComplete` flag, and PL-club ownership info.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:136-173"
+        ]
+      },
+      {
+        "id": "BR-TEAM-038",
+        "rule": "GET /api/admin/[leagueId]/create-team applies the PL Club Auction rename: a team that owns a PL club via `auctionClubOwnership` is returned with `name` = club's full PL name (e.g. \"Liverpool\") while `rawName` preserves the original team name.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:150-164",
+          "src/lib/teams/rename-rows.ts:28-51"
+        ]
+      },
+      {
+        "id": "BR-TEAM-039",
+        "rule": "GET /api/admin/[leagueId]/assign-groups returns every team in the league except ghost teams, each labelled with its group's name.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/assign-groups/route.ts:99-122"
+        ]
+      },
+      {
+        "id": "BR-TEAM-040",
+        "rule": "Admin dashboard bulk-delete flow fires N independent DELETE requests sequentially against /delete-team (one per selected team) and reports partial success/failure counts to the user. // CODE-CONFIRMED: may be a defect — confirm with product owner: there is no server-side transaction across the N deletes, so a mid-flight network failure leaves the roster in a partially-deleted state.",
+        "sourceRefs": [
+          "src/app/admin/[leagueId]/page.tsx:1897-1932"
+        ]
+      },
+      {
+        "id": "BR-TEAM-041",
+        "rule": "Bulk-upload-teams is flagged @deprecated in source — the admin UI no longer renders a Teams upload tab and the endpoint is retained for backwards compatibility with external scripts only.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:1-5"
+        ]
+      },
+      {
+        "id": "BR-TEAM-042",
+        "rule": "Delete-team refuses (HTTP 400) to delete a team whose `isGhost===true` with the exact error message `\"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\"`; non-ghost team deletions proceed normally through the existing transactional cascade. The guard runs immediately after the league-ownership 404 check and before any rows are touched, so the ghost team row and its bye fixtures remain intact.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/delete-team/route.ts:35-40",
+          "src/app/api/admin/[leagueId]/delete-team/route.ts:11-88",
+          "src/lib/db/schema.ts:99-100"
+        ]
+      },
+      {
+        "id": "BR-TEAM-043",
+        "rule": "update-team rejects (400) any edit where existingTeam[0].isGhost === true with the same error string used by delete-team. Ghost teams are managed automatically by cup-group generation and must not be edited by admins. Non-ghost team updates proceed normally through the existing rename / login-id / password / group flow.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:70-78"
+        ]
+      },
+      {
+        "id": "BR-TEAM-044",
+        "rule": "The team's owning league is established at create-team and never changes — neither update-team nor bulk-upload exposes a `leagueId` parameter to move a team between leagues.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:97-105",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:108-117"
+        ]
+      },
+      {
+        "id": "BR-TEAM-045",
+        "rule": "Update-team uses the HTTP PUT verb (not POST) — admin UI must call `fetch(..., { method: 'PUT' })`. All other team-management endpoints use POST (or DELETE for delete-team).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/update-team/route.ts:13",
+          "src/app/admin/[leagueId]/page.tsx:1845-1849"
+        ]
+      },
+      {
+        "id": "BR-TEAM-046",
+        "rule": "bulk-upload-teams requires every row's password to be a string of length >= 4. Rows below that minimum are rejected per-row and the whole upload aborts. Same minimum as create-team (BR-TEAM-024) and update-team (BR-TEAM-029).",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:96-98"
+        ]
+      },
+      {
+        "id": "BR-TEAM-047",
+        "rule": "Cup-typed groups (`groupType=\"cup\"`, used by Triple Crown) are not touched by any module-3 endpoint — assign-groups, create-team, update-team and bulk-upload only create/use groups with `groupType=\"pl\"`.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:89",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:102",
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:160",
+          "src/app/api/admin/[leagueId]/assign-groups/route.ts:41"
+        ]
+      },
+      {
+        "id": "BR-TEAM-048",
+        "rule": "create-team has a pre-INSERT uniqueness check on teamLoginId, plus a catch block that inspects the DB error cause chain for SQLite/libsql UNIQUE-constraint failures on the teams_login_id_global_unique index. On match it returns HTTP 400 'Team ID already exists globally'. This closes the TOCTOU race where two concurrent requests with the same teamLoginId both pass the pre-check.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:46-55",
+          "src/app/api/admin/[leagueId]/create-team/route.ts:137-156"
+        ]
+      },
+      {
+        "id": "BR-TEAM-049",
+        "rule": "Create-team's response payload includes the newly created team's id, teamLoginId, name and group (the literal `group` field the request body supplied, or null) — the raw bcrypt hash is never returned.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/create-team/route.ts:113-122"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-TEAM-001",
+        "given": "a request to any /api/admin/[leagueId]/* team-management endpoint with no session cookie",
+        "when": "the request reaches the middleware",
+        "then": "the server responds 401 `\"Not authenticated\"` and the route handler never runs",
+        "linksTo": "BR-TEAM-001"
+      },
+      {
+        "id": "AC-TEAM-002",
+        "given": "an authenticated team-type (non-admin) session",
+        "when": "the team session calls POST /api/admin/[leagueId]/create-team",
+        "then": "the middleware responds 403 `\"Admin access required\"`",
+        "linksTo": "BR-TEAM-001"
+      },
+      {
+        "id": "AC-TEAM-003",
+        "given": "an authenticated admin whose user has no leagueAdmins row for the requested leagueId",
+        "when": "the admin calls POST /api/admin/[leagueId]/create-team",
+        "then": "the route handler responds 403 `\"Forbidden\"`",
+        "linksTo": "BR-TEAM-001"
+      },
+      {
+        "id": "AC-TEAM-004",
+        "given": "an admin whose league has `isActive=false`",
+        "when": "the admin calls any module-3 endpoint",
+        "then": "getAuthorizedLeagueId returns null and the route handler responds 403 `\"Forbidden\"`",
+        "linksTo": "BR-TEAM-002"
+      },
+      {
+        "id": "AC-TEAM-005",
+        "given": "a superadmin session",
+        "when": "the superadmin calls any module-3 endpoint against an inactive league",
+        "then": "the request succeeds (the isActive guard applies only to admin-type sessions)",
+        "linksTo": "BR-TEAM-002"
+      },
+      {
+        "id": "AC-TEAM-006",
+        "given": "a POST /create-team body missing the player2FplId field",
+        "when": "the endpoint runs validation",
+        "then": "the response is 400 `\"All fields except group are required\"`",
+        "linksTo": "BR-TEAM-003"
+      },
+      {
+        "id": "AC-TEAM-007",
+        "given": "a POST /create-team with teamLoginId `\"ab\"` (2 characters)",
+        "when": "the regex check runs",
+        "then": "the response is 400 `\"Team ID must be 3–30 alphanumeric/underscore/hyphen characters\"`",
+        "linksTo": "BR-TEAM-004"
+      },
+      {
+        "id": "AC-TEAM-008",
+        "given": "a POST /create-team with teamLoginId `\"team.one\"` (contains a period)",
+        "when": "the regex check runs",
+        "then": "the response is 400 with the 3–30 character / character-set error",
+        "linksTo": "BR-TEAM-004"
+      },
+      {
+        "id": "AC-TEAM-009",
+        "given": "a POST /create-team with teamLoginId already used by a team in a different league",
+        "when": "the global-uniqueness lookup runs",
+        "then": "the response is 400 `\"Team ID already exists globally\"` and no team row is inserted",
+        "linksTo": "BR-TEAM-005"
+      },
+      {
+        "id": "AC-TEAM-010",
+        "given": "a PUT /update-team renaming a team to its OWN current login ID",
+        "when": "the global-uniqueness lookup finds the conflicting row id matches teamId",
+        "then": "the update is allowed and proceeds",
+        "linksTo": "BR-TEAM-006"
+      },
+      {
+        "id": "AC-TEAM-011",
+        "given": "a PUT /update-team setting teamLoginId to a value used by another team in another league",
+        "when": "the conflict row has a different id than teamId",
+        "then": "the response is 400 `\"Team ID already exists globally\"`",
+        "linksTo": "BR-TEAM-006"
+      },
+      {
+        "id": "AC-TEAM-012",
+        "given": "a POST /create-team with `group: \"C\"`",
+        "when": "the group check runs",
+        "then": "the response is 400 `\"Group must be either A or B\"`",
+        "linksTo": "BR-TEAM-007"
+      },
+      {
+        "id": "AC-TEAM-013",
+        "given": "a PUT /update-team on an auction-format league with `group: \"C\"`",
+        "when": "the group validation runs",
+        "then": "validation is skipped (auction branch) and the team is updated without modifying its groupId",
+        "linksTo": "BR-TEAM-014"
+      },
+      {
+        "id": "AC-TEAM-014",
+        "given": "an existing team `Liverpool FC` in league L and a POST /create-team with `teamName: \"liverpoolfc\"`",
+        "when": "the case+whitespace-insensitive name uniqueness check runs",
+        "then": "the response is 400 `\"Team name already exists in this league\"`",
+        "linksTo": "BR-TEAM-008"
+      },
+      {
+        "id": "AC-TEAM-015",
+        "given": "a POST /create-team for league L with `group: \"A\"` and no existing groups row named A in L",
+        "when": "create-team resolves the groupId",
+        "then": "a new groups row with `name=\"A\"`, `leagueId=L`, `groupType=\"pl\"` is inserted and its id is used on the team",
+        "linksTo": "BR-TEAM-009"
+      },
+      {
+        "id": "AC-TEAM-016",
+        "given": "a successful POST /create-team",
+        "when": "the team row is inserted",
+        "then": "the row has `mustChangePassword=true` and the response message reads `\"Team created successfully. Team must change password on first login.\"`",
+        "linksTo": "BR-TEAM-011"
+      },
+      {
+        "id": "AC-TEAM-017",
+        "given": "a PUT /update-team where `password` is the empty string `\"\"`",
+        "when": "the password branch evaluates",
+        "then": "the existing password hash is kept and `mustChangePassword` is NOT touched",
+        "linksTo": "BR-TEAM-012"
+      },
+      {
+        "id": "AC-TEAM-018",
+        "given": "a PUT /update-team where `password` is a non-empty string `\"newpass\"`",
+        "when": "the password branch evaluates",
+        "then": "the team's stored hash is replaced with bcrypt(newpass,10) AND `mustChangePassword` is set to `true` (admin force-reset)",
+        "linksTo": "BR-TEAM-012"
+      },
+      {
+        "id": "AC-TEAM-019",
+        "given": "a PUT /update-team body without player1* fields",
+        "when": "the player1 update block evaluates",
+        "then": "the existing players.player1 row is left untouched",
+        "linksTo": "BR-TEAM-013"
+      },
+      {
+        "id": "AC-TEAM-020",
+        "given": "a PUT /update-team for an auction-format league with `group: \"B\"`",
+        "when": "the update payload is built",
+        "then": "`groupId` is not included in the SET clause and the team's existing groupId is preserved",
+        "linksTo": "BR-TEAM-014"
+      },
+      {
+        "id": "AC-TEAM-021",
+        "given": "a PUT /update-team for a TVT league with `group: \"Unassigned\"`",
+        "when": "the group resolution runs",
+        "then": "groupId is set to null on the team row",
+        "linksTo": "BR-TEAM-015"
+      },
+      {
+        "id": "AC-TEAM-022",
+        "given": "a PUT /update-team with teamId belonging to a different league",
+        "when": "the ownership check runs",
+        "then": "the response is 404 `\"Team not found\"` and no rows are modified",
+        "linksTo": "BR-TEAM-016"
+      },
+      {
+        "id": "AC-TEAM-023",
+        "given": "a DELETE /delete-team for a team with players, completed results, scheduled fixtures, captain picks and audit logs",
+        "when": "the endpoint runs",
+        "then": "in one transaction it deletes gameweekCaptains, auditLogs (by teamId), results, fixtures (where home or away matches), players, then the team — all-or-nothing",
+        "linksTo": "BR-TEAM-017"
+      },
+      {
+        "id": "AC-TEAM-024",
+        "given": "a successful DELETE /delete-team",
+        "when": "the transaction commits",
+        "then": "`invalidateLeaguePageCache(leagueId)` is called and the response message is `Team \"<name>\" and all related data deleted successfully`",
+        "linksTo": "BR-TEAM-019"
+      },
+      {
+        "id": "AC-TEAM-025",
+        "given": "a DELETE /delete-team with a teamId from another league",
+        "when": "the ownership check runs",
+        "then": "the response is 404 `\"Team not found\"`",
+        "linksTo": "BR-TEAM-018"
+      },
+      {
+        "id": "AC-TEAM-026",
+        "given": "a POST /bulk-upload-teams against a league whose format is `auction`",
+        "when": "the league-format check runs",
+        "then": "the response is 400 `\"Bulk team upload is not available for auction leagues.\"` and no roster wipe occurs",
+        "linksTo": "BR-TEAM-020"
+      },
+      {
+        "id": "AC-TEAM-027",
+        "given": "a POST /bulk-upload-teams with 201 rows",
+        "when": "the row count check runs",
+        "then": "the response is 400 `\"Too many rows. Maximum 200 teams per upload.\"`",
+        "linksTo": "BR-TEAM-021"
+      },
+      {
+        "id": "AC-TEAM-028",
+        "given": "a POST /bulk-upload-teams with `teams: []`",
+        "when": "the empty-array check runs",
+        "then": "the response is 400 `\"No team rows provided\"`",
+        "linksTo": "BR-TEAM-022"
+      },
+      {
+        "id": "AC-TEAM-029",
+        "given": "a POST /bulk-upload-teams where row 3 omits `player2FplId`",
+        "when": "row validation runs",
+        "then": "the response is 400, `error: \"Validation failed\"`, and `details` contains `\"Row 3: missing Player2 FPL ID\"`",
+        "linksTo": "BR-TEAM-023"
+      },
+      {
+        "id": "AC-TEAM-030",
+        "given": "an admin submits create-team with password=\"abc\" (3 chars)",
+        "when": "the request is validated",
+        "then": "HTTP 400 with body containing \"Password must be at least 4 characters\"; no team row is created; same minimum applies to update-team and bulk-upload-teams.",
+        "linksTo": "BR-TEAM-024"
+      },
+      {
+        "id": "AC-TEAM-031",
+        "given": "a POST /bulk-upload-teams where row 5 has `player1FplId: \"abc123\"`",
+        "when": "the numeric check runs",
+        "then": "`details` contains `\"Row 5: Player1 FPL ID \\\"abc123\\\" must be numeric\"`",
+        "linksTo": "BR-TEAM-025"
+      },
+      {
+        "id": "AC-TEAM-032",
+        "given": "a POST /bulk-upload-teams where rows 4 and 9 both have teamLoginId `\"foo\"`",
+        "when": "the dedupe pass runs",
+        "then": "`details` contains `\"Row 9: duplicate Team ID \\\"foo\\\" appears earlier in the file\"`",
+        "linksTo": "BR-TEAM-026"
+      },
+      {
+        "id": "AC-TEAM-033",
+        "given": "a POST /bulk-upload-teams where row 6 has `group: \"C\"`",
+        "when": "the group validation runs",
+        "then": "`details` contains `\"Row 6: Group \\\"C\\\" must be \\\"A\\\", \\\"B\\\", or empty\"`",
+        "linksTo": "BR-TEAM-027"
+      },
+      {
+        "id": "AC-TEAM-034",
+        "given": "a POST /bulk-upload-teams with any row producing an error",
+        "when": "the endpoint completes validation",
+        "then": "the response is 400 with the aggregated `details` array and the existing teams in the league are NOT deleted",
+        "linksTo": "BR-TEAM-028"
+      },
+      {
+        "id": "AC-TEAM-035",
+        "given": "a POST /bulk-upload-teams where one of the row login IDs already exists in another league",
+        "when": "the cross-league uniqueness check runs",
+        "then": "the response is 400 `\"Some teamLoginIds are already used in other leagues\"` with the conflict detail, and the existing roster is preserved",
+        "linksTo": "BR-TEAM-029"
+      },
+      {
+        "id": "AC-TEAM-036",
+        "given": "a POST /bulk-upload-teams that passes validation, in a TVT league with 12 existing non-ghost teams and 3 ghost teams",
+        "when": "the wipe runs",
+        "then": "the 12 non-ghost teams are deleted (along with their cascade-dependent fixtures/results/etc.) but the 3 ghost teams remain",
+        "linksTo": "BR-TEAM-031"
+      },
+      {
+        "id": "AC-TEAM-037",
+        "given": "a successful POST /bulk-upload-teams with 8 new rows replacing 5 old teams",
+        "when": "the insert completes",
+        "then": "the response is `{ success: true, created: 8, replaced: 5, message: \"Replaced 5 team(s) with 8 new team(s).\" }`",
+        "linksTo": "BR-TEAM-030"
+      },
+      {
+        "id": "AC-TEAM-038",
+        "given": "an admin uses create-team OR bulk-upload-teams to add a team with name + both players",
+        "when": "the team is created",
+        "then": "the inserted team row has isProfileComplete=true on both paths; on first login the team's session redirect skips /setup; uniform onboarding state across both admin entry points.",
+        "linksTo": "BR-TEAM-032"
+      },
+      {
+        "id": "AC-TEAM-039",
+        "given": "a POST /assign-groups with `assignments: []`",
+        "when": "the empty-array check runs",
+        "then": "the response is 400 `\"assignments array is required\"`",
+        "linksTo": "BR-TEAM-033"
+      },
+      {
+        "id": "AC-TEAM-040",
+        "given": "a POST /assign-groups whose 3rd assignment has `group: \"C\"`",
+        "when": "the group validation runs",
+        "then": "the response is 400 `Invalid group \"C\" for team <teamId>. Must be A or B.`",
+        "linksTo": "BR-TEAM-033"
+      },
+      {
+        "id": "AC-TEAM-041",
+        "given": "a TVT league with no existing groups rows and a POST /assign-groups for a single team into group A",
+        "when": "the endpoint runs",
+        "then": "groups A AND B are both created (groupType=\"pl\") and only the requested team's groupId is updated",
+        "linksTo": "BR-TEAM-034"
+      },
+      {
+        "id": "AC-TEAM-042",
+        "given": "a POST /assign-groups where one of the supplied teamIds belongs to a different league",
+        "when": "the per-team ownership check runs",
+        "then": "that assignment is skipped, an entry is appended to `errors[]` (`\"Team <teamId> not found in this league\"`), and the response 200 reports the count of teams that DID get updated",
+        "linksTo": "BR-TEAM-035"
+      },
+      {
+        "id": "AC-TEAM-043",
+        "given": "a successful POST /assign-groups for 5 valid teams",
+        "when": "the updates complete",
+        "then": "every updated team's `updatedAt` is set to the current Date and the league page cache is invalidated",
+        "linksTo": "BR-TEAM-036"
+      },
+      {
+        "id": "AC-TEAM-044",
+        "given": "an admin in a TVT league with 4 non-ghost teams and 1 ghost team",
+        "when": "the admin calls GET /api/admin/[leagueId]/create-team",
+        "then": "the response `teams` array contains exactly 4 entries (the ghost team is excluded by the `isGhost=false` filter)",
+        "linksTo": "BR-TEAM-037"
+      },
+      {
+        "id": "AC-TEAM-045",
+        "given": "a team in the dashboard list whose groupId is null",
+        "when": "GET /create-team returns the list",
+        "then": "that team's `group` field is the string `\"Unassigned\"`",
+        "linksTo": "BR-TEAM-037"
+      },
+      {
+        "id": "AC-TEAM-046",
+        "given": "an Auction league where team T has bought Liverpool via the club auction",
+        "when": "the admin calls GET /api/admin/[leagueId]/create-team",
+        "then": "T's entry has `name: \"Liverpool\"`, `rawName: <T's original team name>`, and `ownedClub` populated with plTeamId/plTeamName/plTeamShort/tier",
+        "linksTo": "BR-TEAM-038"
+      },
+      {
+        "id": "AC-TEAM-047",
+        "given": "a TVT league with 10 teams, 4 in group A and 6 in group B",
+        "when": "the admin calls GET /api/admin/[leagueId]/assign-groups",
+        "then": "the response is 10 `{ id, name, group }` rows with the correct group letter, ghost teams excluded",
+        "linksTo": "BR-TEAM-039"
+      },
+      {
+        "id": "AC-TEAM-048",
+        "given": "an admin selects 5 teams in the dashboard and confirms bulk delete",
+        "when": "the UI handler runs",
+        "then": "5 sequential DELETE requests are sent to /delete-team and the UI reports per-team success/failure counts (no server-side cross-team transaction)",
+        "linksTo": "BR-TEAM-040"
+      },
+      {
+        "id": "AC-TEAM-049",
+        "given": "a TVT or Triple Crown league with the bulk-upload-teams endpoint still wired up but no UI tab exposing it",
+        "when": "an external script POSTs to /api/admin/[leagueId]/bulk-upload-teams",
+        "then": "the endpoint still functions per BR-TEAM-020..32 (kept for backwards compatibility)",
+        "linksTo": "BR-TEAM-041"
+      },
+      {
+        "id": "AC-TEAM-050",
+        "given": "a Triple Crown league with one ghost team `ghost-bye-1` (isGhost=true) and its associated bye fixtures",
+        "when": "the admin calls DELETE /api/admin/[leagueId]/delete-team with that ghost team's id",
+        "then": "the endpoint returns HTTP 400 with body `{ error: \"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`, no transaction runs, and the ghost team row plus its bye fixtures remain intact",
+        "linksTo": "BR-TEAM-042"
+      },
+      {
+        "id": "AC-TEAM-051",
+        "given": "an admin attempts to update a Triple Crown ghost team (isGhost=true)",
+        "when": "POST /api/admin/[leagueId]/update-team is called with that team's id",
+        "then": "HTTP 400 with body containing 'Cannot edit a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.' The ghost row is unchanged; bye fixtures preserved.",
+        "linksTo": "BR-TEAM-043"
+      },
+      {
+        "id": "AC-TEAM-052",
+        "given": "a successful POST /create-team",
+        "when": "the response is serialised",
+        "then": "the team's bcrypt hash is never present in the response body — only id, teamLoginId, name, and group",
+        "linksTo": "BR-TEAM-049"
+      },
+      {
+        "id": "AC-TEAM-053",
+        "given": "two admin clients submit POST /api/admin/[leagueId]/create-team concurrently with the same teamLoginId 'collide-1'",
+        "when": "both requests pass the pre-INSERT uniqueness check and race to INSERT",
+        "then": "exactly one team row is created; the loser receives HTTP 400 with body.error containing 'Team ID already exists globally'. No HTTP 500 is returned for this race.",
+        "linksTo": "BR-TEAM-048"
+      },
+      {
+        "id": "AC-TEAM-054",
+        "given": "an admin submits update-team for an existing team with password=\"abc\" (3 chars)",
+        "when": "the request is validated",
+        "then": "HTTP 400 with body containing \"Password must be at least 4 characters\"; team row is NOT updated.",
+        "linksTo": "BR-TEAM-046"
+      },
+      {
+        "id": "AC-TEAM-055",
+        "given": "a Triple Crown league with cup-typed groups (`groupType=\"cup\"`) carrying the names `\"UCL\"`, `\"UEL\"`, `\"Europa\"`",
+        "when": "an admin calls /assign-groups or /create-team with `group: \"A\"`",
+        "then": "only `pl`-typed group A is created/used; cup groups remain untouched",
+        "linksTo": "BR-TEAM-047"
+      },
+      {
+        "id": "AC-TEAM-056",
+        "given": "a team T in league L1 with teamLoginId `\"abc\"`",
+        "when": "an admin of league L2 attempts to call PUT /update-team with `teamId: <T's id>`",
+        "then": "getAuthorizedLeagueId returns L2 and the team-ownership check returns 404 `\"Team not found\"` — admin cannot edit foreign teams",
+        "linksTo": "BR-TEAM-016"
+      },
+      {
+        "id": "AC-TEAM-057",
+        "given": "an admin updates a team's name from `\"Reds\"` to `\"REDS\"`",
+        "when": "the case-insensitive same-name comparison runs against the team's OWN row",
+        "then": "the update is allowed because the conflict row id equals teamId",
+        "linksTo": "BR-TEAM-008"
+      },
+      {
+        "id": "AC-TEAM-058",
+        "given": "an admin successfully creates a team via /create-team",
+        "when": "the team logs in for the first time",
+        "then": "the auth flow detects `mustChangePassword=true` and forces a password change (this glues module 03 to module 01 / module 04 setup wizard)",
+        "linksTo": "US-TEAM-002"
+      }
+    ]
+  },
+  "defects": [
+    {
+      "id": "DEF-TEAM-001",
+      "title": "create-team and update-team accept passwords below 4 chars while bulk-upload-teams rejects them",
+      "severity": "Major",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/admin/[leagueId]/create-team/route.ts:31-44 validates only that `password` is truthy (non-empty), and src/app/api/admin/[leagueId]/update-team/route.ts:119-123 only checks `password.trim() !== ''`. Neither imposes a minimum length. By contrast src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:96-98 rejects any row with `String(r.password).length < 4`. The same logical operation (\"set this team's password\") has divergent guardrails across entry points.",
+      "expectedBehaviour": "A single shared password-length constraint (e.g. minimum 4 characters) enforced consistently across create-team, update-team and bulk-upload-teams — and ideally aligned with the team-side change-password endpoint in module 01/04.",
+      "actualBehaviour": "An admin using the single-team Create or Edit forms can set a team's password to a single character; an admin using bulk upload cannot. This makes single-team-created accounts trivially brute-forceable while bulk-imported accounts are not.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/create-team/route.ts:31-44",
+        "src/app/api/admin/[leagueId]/update-team/route.ts:119-123",
+        "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:96-98"
+      ],
+      "linkedBusinessRules": [
+        "BR-TEAM-024",
+        "BR-TEAM-046"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TEAM-030",
+        "AC-TEAM-054"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TEAM-073",
+        "TC-TEAM-074"
+      ],
+      "notes": "Fix options: (a) add a shared `validatePassword(pwd)` helper in src/lib/auth or src/lib/validation and call from all three endpoints; (b) bump bcrypt cost factor while you're there. Risk of fix: legacy admin scripts that POST short passwords to /create-team would start 400-ing — communicate the rule before shipping. [DEV] Self-verified: surgical edits added the same 4-char min check used by bulk-upload-teams. [QA] Re-run TC-TEAM-073 + TC-TEAM-074 — both now expect 400. [BA] BR-TEAM-024 + BR-TEAM-046 + AC-TEAM-030 + AC-TEAM-054 now describe a uniform 4-char min across all three entry points. [BA-UPDATED]: 2026-05-26 — BR-TEAM-024 + BR-TEAM-046 + AC-TEAM-030 + AC-TEAM-054 updated.",
+      "resolution": "Added 4-char minimum password validation to both create-team (src/app/api/admin/[leagueId]/create-team/route.ts:38-44) and update-team (src/app/api/admin/[leagueId]/update-team/route.ts:121-127). Both now reject with 400 \"Password must be at least 4 characters\" when password is shorter than 4 chars. Aligns the single-team admin paths with the bulk-upload-teams import path (route.ts:96-98) so the same logical operation has uniform guardrails across entry points.",
+      "resolutionDate": "2026-05-26"
+    },
+    {
+      "id": "DEF-TEAM-002",
+      "title": "create-team leaves isProfileComplete=false while bulk-upload-teams sets it to true",
+      "severity": "Major",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/admin/[leagueId]/create-team/route.ts:97-105 inserts the team without setting isProfileComplete, so the schema default (false at src/lib/db/schema.ts:134) takes effect. src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:170-180 inserts with `isProfileComplete: true`. The two admin entry points produce teams in different onboarding states despite providing the same data (team name + 2 players).",
+      "expectedBehaviour": "Both admin-side write paths should agree on whether an admin-supplied team is considered profile-complete. Either (a) both set `true` (since the admin already supplied a name and both players, the wizard adds no information) or (b) both leave it `false` (forcing the team through the wizard for confirmation).",
+      "actualBehaviour": "A team created via the single-team form lands on the team setup wizard on first login; the equivalent team created via bulk upload bypasses the wizard. League admins using mixed flows get inconsistent first-login UX across their roster.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/create-team/route.ts:97-105",
+        "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:170-180",
+        "src/lib/db/schema.ts:133-134"
+      ],
+      "linkedBusinessRules": [
+        "BR-TEAM-032"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TEAM-038"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TEAM-075",
+        "TC-TEAM-076"
+      ],
+      "notes": "Recommend setting `isProfileComplete: true` in create-team as well — the admin already supplied the wizard's payload. Coordinate with module 04 (team-self-service) so the wizard is hidden when the data was already provided. Risk: low — the wizard would still be reachable manually if a team wants to edit. [DEV] Self-verified: surgical insert-time field added. [QA] Re-run TC-TEAM-075 + TC-TEAM-076 — both should now expect isProfileComplete=true after create-team. [BA] BR-TEAM-032 + AC-TEAM-038 describe the divergent behaviour; rewrite to assert isProfileComplete=true on both paths. [BA-UPDATED]: 2026-05-26 — BR-TEAM-032 + AC-TEAM-038 updated.",
+      "resolution": "Set isProfileComplete=true in create-team insert (src/app/api/admin/[leagueId]/create-team/route.ts:106-115) so single-team admin create matches bulk-upload-teams behaviour. Both admin entry points now produce teams in the same onboarding state — admin-created teams skip the team-side setup wizard on first login because the admin already supplied the wizard payload (team name + both players).",
+      "resolutionDate": "2026-05-26"
+    },
+    {
+      "id": "DEF-TEAM-003",
+      "title": "delete-team has no guard against deleting ghost teams (Triple Crown bye placeholders)",
+      "severity": "Major",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/admin/[leagueId]/delete-team/route.ts:11-81 looks up the team by id+leagueId only and proceeds to delete it transactionally regardless of `isGhost`. Ghost teams exist only in Triple Crown to represent the bye opponent in odd-team rounds (src/lib/db/schema.ts:99-100). Deleting a ghost cascade-removes its bye fixtures from the schedule.",
+      "expectedBehaviour": "delete-team should refuse to operate on a row where `isGhost=true` and return a 400 with a message like `\"Cannot delete a ghost team. Use the Triple Crown regeneration flow.\"` so admins do not accidentally break the bye schedule.",
+      "actualBehaviour": "An admin who knows a ghost team's id (visible in some internal admin UIs) can delete it, leaving the TC fixture list with a broken/missing bye opponent until cup groups are regenerated.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/delete-team/route.ts:11-81",
+        "src/lib/db/schema.ts:99-100"
+      ],
+      "linkedBusinessRules": [
+        "BR-TEAM-042"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TEAM-050"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TEAM-077"
+      ],
+      "notes": "Fix is a one-line guard: after the existing 404 check, if `existingTeam[0].isGhost` return 400. Same guard should be added to update-team (see DEF-TEAM-004). Risk: low — ghost teams are not normally surfaced in the dashboard UI.\n[DEV] Self-verified: tsc passes for touched files (the only remaining tsc errors are pre-existing and live in tests/league-types/*.spec.ts, unrelated to delete-team), manual diff review clean. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-TEAM-077 against the fix. Expected behaviour now matches the original \"expectedBehaviour\" field: DELETE /api/admin/[leagueId]/delete-team with a ghost team's id returns HTTP 400 with body `{ error: \"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`, and no rows are removed (ghost team and its bye fixtures both preserved).\n[BA] BR-TEAM-042 and AC-TEAM-050 now describe the OLD (buggy) behaviour — update BR-TEAM-042 to state that delete-team rejects ghost-team deletions with 400 and the listed error message, and flip AC-TEAM-050's `then` clause from \"the endpoint deletes it (no isGhost guard)\" to \"the endpoint returns 400 with the ghost-team error and the ghost team plus its bye fixtures remain intact\".\n[QA-VERIFIED]: 2026-05-25 — TC-TEAM-077 inverted; ghost-team delete guard confirmed.\n[BA-UPDATED]: 2026-05-25 — BR-TEAM-042 + AC-TEAM-050 updated.",
+      "resolution": "Added a ghost-team guard in src/app/api/admin/[leagueId]/delete-team/route.ts immediately after the existing leagueId-ownership 404 check (new lines 35-40): when `existingTeam[0].isGhost === true` the endpoint short-circuits with HTTP 400 and the message `\"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\"`. This prevents admins from cascade-removing bye fixtures and breaking the Triple Crown cup schedule. DEF-TEAM-004 (same guard needed on update-team) is intentionally left for its own fix entry.",
+      "resolutionDate": "2026-05-25"
+    },
+    {
+      "id": "DEF-TEAM-004",
+      "title": "update-team has no guard against editing ghost teams",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/admin/[leagueId]/update-team/route.ts:13-154 does not inspect `existingTeam[0].isGhost` before allowing edits. An admin could rename a ghost team, give it a real teamLoginId, or set a password on it.",
+      "expectedBehaviour": "update-team should treat ghost teams as immutable from the admin UI (or restrict updates to a narrow set of fields) since ghosts are placeholders managed by the Triple Crown regeneration flow.",
+      "actualBehaviour": "An admin can mutate ghost team fields, potentially turning a placeholder row into a (broken) login account with a hashed password, or breaking the ghost detection used by other modules.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/update-team/route.ts:13-154",
+        "src/lib/db/schema.ts:99-100"
+      ],
+      "linkedBusinessRules": [
+        "BR-TEAM-043"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TEAM-051"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TEAM-078"
+      ],
+      "notes": "Tied to DEF-TEAM-003. Same fix pattern. Marked Minor because the dashboard does not surface ghosts in the edit list (filters them out in GET /create-team), so it requires a hand-crafted request to hit. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added isGhost guard to update-team (src/app/api/admin/[leagueId]/update-team/route.ts:70-78). After the leagueId-ownership 404 check, the handler now returns HTTP 400 with the same error message used by delete-team when existingTeam[0].isGhost === true. Mirrors the DEF-TEAM-003 fix.",
+      "resolutionDate": "2026-05-26"
+    },
+    {
+      "id": "DEF-TEAM-005",
+      "title": "Admin bulk-delete fires N independent DELETE requests with no cross-team transaction",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/admin/[leagueId]/page.tsx:1897-1932 iterates over `selectedTeamIds` and fires a sequential DELETE per team to /api/admin/[leagueId]/delete-team. Each individual DELETE is transactional internally, but there is no umbrella transaction across the batch and no server-side bulk endpoint. A mid-batch network failure leaves the league in a partially-deleted state (some teams gone, others still present), and the UI only reports aggregate success/failure counts.",
+      "expectedBehaviour": "Either (a) add a server-side POST /api/admin/[leagueId]/bulk-delete-teams that wraps all deletes in one transaction, or (b) at minimum, persist a checkpointing/retry log so a half-completed bulk delete can be resumed safely.",
+      "actualBehaviour": "If the admin's network drops after 3 of 8 deletes complete, those 3 teams (and their fixtures, results, captain picks) are gone and the remaining 5 are intact, with no rollback mechanism.",
+      "sourceRefs": [
+        "src/app/admin/[leagueId]/page.tsx:1897-1932"
+      ],
+      "linkedBusinessRules": [
+        "BR-TEAM-040"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TEAM-048"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TEAM-079"
+      ],
+      "notes": "Recommend a new bulk-delete-teams endpoint that takes `teamIds: string[]` and runs the same delete sequence inside a single db.transaction. Risk: cascade deletes across N teams can be heavy on SQLite — add an upper bound (e.g. 50) like bulk-upload's 200-row limit.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-TEAM-006",
+      "title": "create-team returns generic 500 on cross-league teamLoginId race condition instead of 400 with conflict detail",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "src/app/api/admin/[leagueId]/create-team/route.ts:46-129 does a pre-INSERT uniqueness check (lines 46-55), then INSERTs (line 97). Two concurrent requests with the same teamLoginId can both pass the pre-check; the second INSERT then violates the `teams_login_id_global_unique` index (src/lib/db/schema.ts:140), the catch block at lines 123-128 swallows the SQLite error and returns 500 `\"Failed to create team\"`. The admin UI displays a generic error to the user even though the underlying cause is a known and recoverable conflict.",
+      "expectedBehaviour": "The catch block should detect SQLite UNIQUE constraint violations (string match on the index name, as src/app/api/superadmin/leagues/route.ts:236-238 already does for the same index) and return 400 with the same `\"Team ID already exists globally\"` message users get from the pre-check.",
+      "actualBehaviour": "Concurrent admin clicks produce a generic 500 with no actionable diagnostic in the UI, and the admin retries blindly.",
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/create-team/route.ts:46-129",
+        "src/lib/db/schema.ts:140",
+        "src/app/api/superadmin/leagues/route.ts:236-238"
+      ],
+      "linkedBusinessRules": [
+        "BR-TEAM-048"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-TEAM-053"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-TEAM-080"
+      ],
+      "notes": "Fix: copy the regex pattern from superadmin/leagues/route.ts to the catch blocks of create-team, update-team and bulk-upload-teams. Risk: zero — purely improves error fidelity. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added a UNIQUE-constraint-failure handler to the create-team catch block (src/app/api/admin/[leagueId]/create-team/route.ts:137-156). Walks the error cause chain looking for 'UNIQUE constraint failed: teams.team_login_id' or the named index 'teams_login_id_global_unique'. When matched, returns HTTP 400 'Team ID already exists globally' instead of the generic 500. Closes the TOCTOU race where two concurrent requests with the same teamLoginId both pass the pre-INSERT uniqueness check.",
+      "resolutionDate": "2026-05-26"
+    }
+  ],
+  "testCases": [
+    {
+      "id": "TC-TEAM-001",
+      "feature": "Auth Guard - No Session",
+      "scenario": "Unauthenticated request to create-team is rejected by middleware",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie present",
+      "testData": "POST /api/admin/league-1/create-team with no cookies, body={teamLoginId:'tm1',teamName:'T1',password:'pw',player1Name:'A',player1FplId:'1',player2Name:'B',player2FplId:'2'}",
+      "testSteps": [
+        "1. Send POST without session cookie",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 401 with body `\"Not authenticated\"`; route handler is never invoked",
+      "postconditions": "No team row inserted",
+      "requirementId": "AC-TEAM-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-002",
+      "feature": "Auth Guard - Wrong Session Type",
+      "scenario": "Authenticated team-type session is denied admin endpoint",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Logged in as a team user (non-admin) with valid session",
+      "testData": "POST /api/admin/league-1/create-team with team session",
+      "testSteps": [
+        "1. Authenticate as team",
+        "2. POST /create-team",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 403 with body `\"Admin access required\"`",
+      "postconditions": "No mutation",
+      "requirementId": "AC-TEAM-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-003",
+      "feature": "Auth Guard - Cross-League Admin",
+      "scenario": "Admin without leagueAdmins row for the target league is denied",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "User is admin of league-2 but not league-1",
+      "testData": "POST /api/admin/league-1/create-team with admin session for league-2",
+      "testSteps": [
+        "1. Log in as admin of league-2",
+        "2. POST /create-team for league-1",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 403 `\"Forbidden\"`",
+      "postconditions": "No team row created in league-1",
+      "requirementId": "AC-TEAM-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-004",
+      "feature": "Auth Guard - Inactive League (Admin)",
+      "scenario": "Admin of a league with isActive=false is blocked",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "League-1 has isActive=false; user has leagueAdmins row for league-1",
+      "testData": "POST /api/admin/league-1/create-team with admin session",
+      "testSteps": [
+        "1. Mark league-1.isActive=false",
+        "2. POST /create-team as that league's admin",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 403 `\"Forbidden\"` (getAuthorizedLeagueId returns null)",
+      "postconditions": "No team row inserted",
+      "requirementId": "AC-TEAM-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-005",
+      "feature": "Auth Guard - Inactive League (Superadmin)",
+      "scenario": "Superadmin bypasses isActive guard",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League-1 has isActive=false; user is superadmin",
+      "testData": "POST /api/admin/league-1/create-team with full valid body as superadmin",
+      "testSteps": [
+        "1. Log in as superadmin",
+        "2. POST /create-team for inactive league-1",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 200, team created successfully (isActive guard skipped for superadmin)",
+      "postconditions": "Team row inserted in league-1",
+      "requirementId": "AC-TEAM-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-006",
+      "feature": "Create Team - Missing Required Field",
+      "scenario": "POST /create-team without player2FplId returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session on league-1",
+      "testData": "body={teamLoginId:'tm1',teamName:'T1',password:'pw1234',player1Name:'A',player1FplId:'1',player2Name:'B'} // player2FplId missing",
+      "testSteps": [
+        "1. POST /create-team with player2FplId omitted",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"All fields except group are required\"`",
+      "postconditions": "No team row inserted",
+      "requirementId": "AC-TEAM-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-007",
+      "feature": "Create Team - Required Fields Happy Path",
+      "scenario": "POST /create-team with all required fields succeeds",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Valid admin session on league-1, no existing teams with login 'tm1'",
+      "testData": "body={teamLoginId:'tm1',teamName:'Team One',password:'pw1234',player1Name:'A',player1FplId:'1',player2Name:'B',player2FplId:'2'}",
+      "testSteps": [
+        "1. POST /create-team",
+        "2. Inspect response and DB row"
+      ],
+      "expectedResult": "HTTP 200 with success message; team and 2 player rows inserted",
+      "postconditions": "1 team + 2 players added to league-1",
+      "requirementId": "AC-TEAM-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-008",
+      "feature": "Create Team - teamLoginId Boundary (2 chars)",
+      "scenario": "teamLoginId of 2 characters fails regex (below min)",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "teamLoginId='ab' (2 chars)",
+      "testSteps": [
+        "1. POST /create-team with teamLoginId='ab'",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 with `\"Team ID must be 3–30 alphanumeric/underscore/hyphen characters\"`",
+      "postconditions": "No team inserted",
+      "requirementId": "AC-TEAM-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-009",
+      "feature": "Create Team - teamLoginId Boundary (3 chars)",
+      "scenario": "teamLoginId of exactly 3 characters passes the regex",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "teamLoginId='abc' (3 chars, min)",
+      "testSteps": [
+        "1. POST /create-team with teamLoginId='abc'",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 - team created",
+      "postconditions": "Team row inserted",
+      "requirementId": "AC-TEAM-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-010",
+      "feature": "Create Team - teamLoginId Boundary (30 chars)",
+      "scenario": "teamLoginId of exactly 30 characters passes the regex",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "teamLoginId='a'.repeat(30) (30 chars, max)",
+      "testSteps": [
+        "1. POST /create-team with 30-char login",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 - team created",
+      "postconditions": "Team row inserted",
+      "requirementId": "AC-TEAM-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-011",
+      "feature": "Create Team - teamLoginId Boundary (31 chars)",
+      "scenario": "teamLoginId of 31 characters fails the regex",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "teamLoginId='a'.repeat(31)",
+      "testSteps": [
+        "1. POST /create-team with 31-char login",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 with regex error",
+      "postconditions": "No team inserted",
+      "requirementId": "AC-TEAM-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-012",
+      "feature": "Create Team - teamLoginId Illegal Char",
+      "scenario": "teamLoginId 'team.one' contains a period and is rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "teamLoginId='team.one'",
+      "testSteps": [
+        "1. POST /create-team with teamLoginId='team.one'",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 with regex error",
+      "postconditions": "No team inserted",
+      "requirementId": "AC-TEAM-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-013",
+      "feature": "Create Team - teamLoginId Legal Chars",
+      "scenario": "teamLoginId with letters, digits, underscore and hyphen passes",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "teamLoginId='Team_01-A'",
+      "testSteps": [
+        "1. POST /create-team with 'Team_01-A'",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 - team created",
+      "postconditions": "Team row inserted",
+      "requirementId": "AC-TEAM-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-014",
+      "feature": "Create Team - Cross-League Login ID Collision",
+      "scenario": "teamLoginId already exists in another league - rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team with teamLoginId='shared' exists in league-2",
+      "testData": "POST /api/admin/league-1/create-team with teamLoginId='shared'",
+      "testSteps": [
+        "1. Pre-create team 'shared' in league-2",
+        "2. POST /create-team for league-1 with same login",
+        "3. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"Team ID already exists globally\"`; no insert in league-1",
+      "postconditions": "league-1 unchanged",
+      "requirementId": "AC-TEAM-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-015",
+      "feature": "Update Team - Same Login ID Allowed",
+      "scenario": "Admin updates a team keeping the same teamLoginId",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team T in league-1 with teamLoginId='tm1' exists",
+      "testData": "PUT /update-team body={teamId:T.id, teamLoginId:'tm1', teamName:'T1 Renamed', ...}",
+      "testSteps": [
+        "1. PUT /update-team setting login to its own current value",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 - update succeeds (conflict row id matches teamId)",
+      "postconditions": "Team renamed",
+      "requirementId": "AC-TEAM-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-016",
+      "feature": "Update Team - Cross-Team Login ID Collision",
+      "scenario": "Admin updates teamLoginId to a value used by another team in another league",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A in league-1, Team B in league-2 with login 'taken'",
+      "testData": "PUT /update-team for Team A with teamLoginId='taken'",
+      "testSteps": [
+        "1. PUT /update-team for A with login 'taken'",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"Team ID already exists globally\"`",
+      "postconditions": "Team A unchanged",
+      "requirementId": "AC-TEAM-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-017",
+      "feature": "Create Team - Invalid Group 'C'",
+      "scenario": "group value other than A/B is rejected on create-team",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session, TVT league",
+      "testData": "body={...,group:'C'}",
+      "testSteps": [
+        "1. POST /create-team with group='C'",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"Group must be either A or B\"`",
+      "postconditions": "No team inserted",
+      "requirementId": "AC-TEAM-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-018",
+      "feature": "Update Team - Auction Skips Group Validation",
+      "scenario": "PUT /update-team on auction league with group='C' bypasses group validation",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Auction league L1, team T in L1",
+      "testData": "PUT /update-team body={teamId:T.id, group:'C', teamName:'NewName', teamLoginId:'tm1'}",
+      "testSteps": [
+        "1. PUT /update-team on auction league with group='C'",
+        "2. Inspect response and team row"
+      ],
+      "expectedResult": "HTTP 200; groupId on team unchanged (auction skips group validation and skips updating groupId)",
+      "postconditions": "Team renamed, groupId untouched",
+      "requirementId": "AC-TEAM-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-019",
+      "feature": "Create Team - Team Name Case+Whitespace Insensitive Conflict",
+      "scenario": "Existing 'Liverpool FC'; create with 'liverpoolfc' rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team named 'Liverpool FC' exists in league L",
+      "testData": "POST /create-team with teamName='liverpoolfc'",
+      "testSteps": [
+        "1. POST /create-team with new login but conflicting name",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"Team name already exists in this league\"`",
+      "postconditions": "No new team",
+      "requirementId": "AC-TEAM-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-020",
+      "feature": "Create Team - Unique Name Across League",
+      "scenario": "Two leagues can each have a team named 'Reds'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team 'Reds' exists in league-2; admin of league-1 creates 'Reds'",
+      "testData": "POST /api/admin/league-1/create-team with teamName='Reds'",
+      "testSteps": [
+        "1. Pre-create 'Reds' in league-2",
+        "2. POST /create-team for league-1 with same name",
+        "3. Inspect"
+      ],
+      "expectedResult": "HTTP 200 - team created in league-1 (uniqueness is per league)",
+      "postconditions": "Both leagues have a 'Reds' team",
+      "requirementId": "AC-TEAM-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-021",
+      "feature": "Create Team - Auto-Create Group A Row",
+      "scenario": "Creating a team with group='A' auto-creates the groups row when missing",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league L with NO existing groups rows",
+      "testData": "POST /create-team with group='A'",
+      "testSteps": [
+        "1. POST /create-team with group='A'",
+        "2. Query groups table for league L"
+      ],
+      "expectedResult": "HTTP 200; new groups row with name='A', leagueId=L, groupType='pl' inserted; team.groupId references it",
+      "postconditions": "Group A row exists, team linked",
+      "requirementId": "AC-TEAM-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-022",
+      "feature": "Create Team - mustChangePassword Set",
+      "scenario": "Newly created team has mustChangePassword=true",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid admin session",
+      "testData": "Full valid body",
+      "testSteps": [
+        "1. POST /create-team",
+        "2. Query teams.mustChangePassword for inserted team",
+        "3. Read response message"
+      ],
+      "expectedResult": "DB: mustChangePassword=true. Response message: `\"Team created successfully. Team must change password on first login.\"`",
+      "postconditions": "Team must change password on first login",
+      "requirementId": "AC-TEAM-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-023",
+      "feature": "Update Team - Empty Password Keeps Existing Hash",
+      "scenario": "PUT /update-team with password='' leaves password and mustChangePassword unchanged",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team T with known password hash H and mustChangePassword=false",
+      "testData": "PUT /update-team body={teamId:T.id, password:''}",
+      "testSteps": [
+        "1. PUT /update-team with empty password",
+        "2. Query teams row"
+      ],
+      "expectedResult": "Hash still equals H; mustChangePassword still false",
+      "postconditions": "Credentials unchanged",
+      "requirementId": "AC-TEAM-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-024",
+      "feature": "Update Team - Whitespace-Only Password Keeps Existing Hash",
+      "scenario": "PUT /update-team with password='   ' (whitespace) is treated as empty",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team T with known hash",
+      "testData": "PUT /update-team body={teamId:T.id, password:'   '}",
+      "testSteps": [
+        "1. PUT /update-team with whitespace password",
+        "2. Query teams row"
+      ],
+      "expectedResult": "Hash unchanged; mustChangePassword unchanged",
+      "postconditions": "Credentials unchanged",
+      "requirementId": "AC-TEAM-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-025",
+      "feature": "Update Team - Non-Empty Password Triggers Force Reset",
+      "scenario": "PUT /update-team with non-empty password rewrites hash and sets mustChangePassword=true",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team T with mustChangePassword=false and hash H_old",
+      "testData": "PUT /update-team body={teamId:T.id, password:'newpass'}",
+      "testSteps": [
+        "1. PUT /update-team",
+        "2. Verify hash H_new != H_old and bcrypt.compare('newpass', H_new)=true",
+        "3. Verify mustChangePassword=true"
+      ],
+      "expectedResult": "Hash replaced with bcrypt('newpass',10); mustChangePassword=true",
+      "postconditions": "Team forced to change password next login",
+      "requirementId": "AC-TEAM-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-026",
+      "feature": "Update Team - Players Optional",
+      "scenario": "PUT /update-team without player1 fields leaves player rows untouched",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team T with player1 (id=P1, name='A', fplId='1') and player2",
+      "testData": "PUT /update-team body={teamId:T.id, teamName:'NewName'} (no player blocks)",
+      "testSteps": [
+        "1. PUT /update-team without player fields",
+        "2. Query players rows"
+      ],
+      "expectedResult": "player1 row unchanged (still name='A', fplId='1'); player2 unchanged",
+      "postconditions": "Players preserved",
+      "requirementId": "AC-TEAM-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-027",
+      "feature": "Update Team - Auction Group Field Ignored",
+      "scenario": "PUT /update-team on auction with group='B' does not modify groupId",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Auction league A1, team T with groupId=null",
+      "testData": "PUT /update-team body={teamId:T.id, group:'B', teamName:'T1', teamLoginId:'tm1'}",
+      "testSteps": [
+        "1. PUT /update-team with group='B' on auction league",
+        "2. Query team row"
+      ],
+      "expectedResult": "HTTP 200; team.groupId remains null (SET clause does not include groupId for auction)",
+      "postconditions": "groupId unchanged",
+      "requirementId": "AC-TEAM-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-028",
+      "feature": "Update Team - Clear Group with 'Unassigned'",
+      "scenario": "PUT /update-team with group='Unassigned' clears groupId to null",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league, team T currently in group A (groupId=G_A)",
+      "testData": "PUT /update-team body={teamId:T.id, group:'Unassigned'}",
+      "testSteps": [
+        "1. PUT /update-team with group='Unassigned'",
+        "2. Query team row"
+      ],
+      "expectedResult": "HTTP 200; team.groupId=null",
+      "postconditions": "Team is unassigned",
+      "requirementId": "AC-TEAM-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-029",
+      "feature": "Update Team - Cross-League Hijack Prevention",
+      "scenario": "Admin of league-1 cannot update a team in league-2",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin A1 owns league-1; team T_foreign exists in league-2",
+      "testData": "PUT /api/admin/league-1/update-team body={teamId:T_foreign.id, teamName:'Hijacked'}",
+      "testSteps": [
+        "1. As league-1 admin, attempt to PUT a foreign team",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 404 `\"Team not found\"`; T_foreign untouched",
+      "postconditions": "league-2 team unchanged",
+      "requirementId": "AC-TEAM-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-030",
+      "feature": "Delete Team - Transactional Cascade",
+      "scenario": "Delete-team removes team + 2 players + fixtures + results + captains + auditLogs atomically",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team T with 2 players, 5 results, 4 fixtures (home/away mix), 3 captain picks, 2 audit-log entries",
+      "testData": "DELETE /delete-team body={teamId:T.id}",
+      "testSteps": [
+        "1. DELETE /delete-team",
+        "2. Query all dependent tables for T.id"
+      ],
+      "expectedResult": "HTTP 200; teams, players (both), results (5), fixtures (4), gameweekCaptains (3), auditLogs (2) all gone; row counts decreased accordingly",
+      "postconditions": "Database has no trace of team T",
+      "requirementId": "AC-TEAM-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-031",
+      "feature": "Delete Team - Transaction Rollback on Failure",
+      "scenario": "If any inner delete throws, the entire transaction rolls back",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team T exists; simulate a DB error inside the transaction (e.g. mock fixtures delete to throw)",
+      "testData": "DELETE /delete-team body={teamId:T.id} with injected fault on fixtures step",
+      "testSteps": [
+        "1. Force a DB exception mid-transaction",
+        "2. DELETE /delete-team",
+        "3. Inspect all related tables"
+      ],
+      "expectedResult": "HTTP 500 / error; team row, players, results, captains, audit logs ALL still present (rolled back)",
+      "postconditions": "Database state unchanged",
+      "requirementId": "AC-TEAM-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-032",
+      "feature": "Delete Team - Cache Invalidation and Response Message",
+      "scenario": "Successful delete invalidates league page cache and returns the formatted message",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team T named 'Reds' exists",
+      "testData": "DELETE /delete-team body={teamId:T.id}",
+      "testSteps": [
+        "1. DELETE /delete-team",
+        "2. Inspect response body and verify invalidateLeaguePageCache called (spy)"
+      ],
+      "expectedResult": "Response message: `Team \"Reds\" and all related data deleted successfully`; invalidateLeaguePageCache(leagueId) invoked",
+      "postconditions": "Cache flushed",
+      "requirementId": "AC-TEAM-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-033",
+      "feature": "Delete Team - Cross-League Hijack Prevention",
+      "scenario": "Admin of league-1 cannot delete a team in league-2",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team T_foreign in league-2; admin user owns league-1",
+      "testData": "DELETE /api/admin/league-1/delete-team body={teamId:T_foreign.id}",
+      "testSteps": [
+        "1. Send DELETE",
+        "2. Inspect response and DB"
+      ],
+      "expectedResult": "HTTP 404 `\"Team not found\"`; T_foreign untouched",
+      "postconditions": "league-2 team unchanged",
+      "requirementId": "AC-TEAM-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-034",
+      "feature": "Bulk Upload - Auction Format Blocked",
+      "scenario": "Bulk upload to auction league is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Auction league A1 with existing teams",
+      "testData": "POST /bulk-upload-teams with valid 5-row payload",
+      "testSteps": [
+        "1. POST /bulk-upload-teams against auction league",
+        "2. Inspect response and existing roster"
+      ],
+      "expectedResult": "HTTP 400 `\"Bulk team upload is not available for auction leagues.\"`; existing roster intact",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-035",
+      "feature": "Bulk Upload - 201 Rows Rejected (Boundary)",
+      "scenario": "Submitting 201 rows is over the max",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Valid admin session on TVT league",
+      "testData": "POST /bulk-upload-teams with rows.length=201",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"Too many rows. Maximum 200 teams per upload.\"`",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-036",
+      "feature": "Bulk Upload - 200 Rows Accepted (Boundary)",
+      "scenario": "Submitting exactly 200 valid rows succeeds",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Valid admin session on TVT-32 league",
+      "testData": "POST /bulk-upload-teams with 200 unique valid rows",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200; created=200",
+      "postconditions": "200 teams inserted",
+      "requirementId": "AC-TEAM-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-037",
+      "feature": "Bulk Upload - Empty Array",
+      "scenario": "teams=[] rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session, TVT league",
+      "testData": "POST /bulk-upload-teams with body={teams:[]}",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"No team rows provided\"`",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-038",
+      "feature": "Bulk Upload - Non-Array Payload",
+      "scenario": "teams=null rejected",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Valid admin session",
+      "testData": "POST /bulk-upload-teams with body={teams:null}",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"No team rows provided\"`",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-039",
+      "feature": "Bulk Upload - Missing Player2 FPL ID Row 3",
+      "scenario": "Row 3 missing player2FplId aborts the upload",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "5 rows; row 3 omits player2FplId",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response.details"
+      ],
+      "expectedResult": "HTTP 400; error='Validation failed'; details includes `\"Row 3: missing Player2 FPL ID\"`",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-040",
+      "feature": "Bulk Upload - Password 3 Chars Row 2",
+      "scenario": "Row 2 password='abc' (3 chars) rejected",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Valid admin session",
+      "testData": "row 2 has password='abc'",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect details"
+      ],
+      "expectedResult": "details includes `\"Row 2: Password must be at least 4 characters\"`; HTTP 400",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-041",
+      "feature": "Bulk Upload - Password 4 Chars Accepted (Boundary)",
+      "scenario": "Row password='abcd' (4 chars) passes",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "1 row with password='abcd', all other fields valid",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200; created=1",
+      "postconditions": "1 team inserted",
+      "requirementId": "AC-TEAM-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-042",
+      "feature": "Bulk Upload - Non-Numeric FPL ID Row 5",
+      "scenario": "Row 5 has player1FplId='abc123' - rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "5 rows; row 5 player1FplId='abc123'",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect details"
+      ],
+      "expectedResult": "details includes `\"Row 5: Player1 FPL ID \\\"abc123\\\" must be numeric\"`; HTTP 400",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-043",
+      "feature": "Bulk Upload - Duplicate teamLoginId In File",
+      "scenario": "Rows 4 and 9 share teamLoginId 'foo' - row 9 flagged",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "10 rows; rows 4 and 9 both have teamLoginId='foo'",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect details"
+      ],
+      "expectedResult": "details includes `\"Row 9: duplicate Team ID \\\"foo\\\" appears earlier in the file\"`; HTTP 400",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-044",
+      "feature": "Bulk Upload - Duplicate teamName Whitespace+Case Insensitive",
+      "scenario": "Two rows with names 'Liverpool FC' and 'liverpoolfc' - second flagged",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "row1 teamName='Liverpool FC'; row2 teamName='liverpoolfc'",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect details"
+      ],
+      "expectedResult": "details has duplicate-name error on row 2; HTTP 400",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-045",
+      "feature": "Bulk Upload - Invalid Group 'C' Row 6",
+      "scenario": "Row 6 has group='C' - rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session, TVT league",
+      "testData": "row 6 group='C'",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect details"
+      ],
+      "expectedResult": "details includes `\"Row 6: Group \\\"C\\\" must be \\\"A\\\", \\\"B\\\", or empty\"`",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-046",
+      "feature": "Bulk Upload - Empty Group Allowed",
+      "scenario": "Row with group='' (empty) is accepted",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Valid admin session",
+      "testData": "1 row with group=''",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200; team inserted with groupId=null",
+      "postconditions": "1 team inserted unassigned",
+      "requirementId": "AC-TEAM-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-047",
+      "feature": "Bulk Upload - Validation Error Preserves DB",
+      "scenario": "Any row error aborts the entire upload; existing roster untouched",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "TVT league with 5 existing non-ghost teams; bulk payload of 8 rows where row 4 is invalid",
+      "testData": "Mixed payload (7 valid + 1 invalid)",
+      "testSteps": [
+        "1. POST",
+        "2. Query teams table for the league"
+      ],
+      "expectedResult": "HTTP 400 with details; the 5 pre-existing teams still present (no wipe occurred)",
+      "postconditions": "Existing roster preserved",
+      "requirementId": "AC-TEAM-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-048",
+      "feature": "Bulk Upload - Cross-League Login Conflict",
+      "scenario": "One row's login already exists in another league - aborts upload",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team 'shared' exists in league-2; admin uploads to league-1 with row containing teamLoginId='shared'",
+      "testData": "5 rows; row 2 teamLoginId='shared'",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response and existing roster"
+      ],
+      "expectedResult": "HTTP 400 `\"Some teamLoginIds are already used in other leagues\"` with conflict details; league-1 unchanged",
+      "postconditions": "league-1 roster preserved; no insert in league-1",
+      "requirementId": "AC-TEAM-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-049",
+      "feature": "Bulk Upload - Preserves Ghost Teams (Triple Crown)",
+      "scenario": "TC league with 12 normal + 3 ghost teams; wipe keeps the 3 ghosts",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Triple Crown league with 12 isGhost=false and 3 isGhost=true teams",
+      "testData": "Valid payload of 8 new rows",
+      "testSteps": [
+        "1. POST /bulk-upload-teams",
+        "2. Query teams table"
+      ],
+      "expectedResult": "HTTP 200; 12 prior non-ghost teams deleted (cascade fixtures/results), 3 ghost teams still present, 8 new teams inserted",
+      "postconditions": "Roster = 8 new + 3 ghosts",
+      "requirementId": "AC-TEAM-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-050",
+      "feature": "Bulk Upload - Success Response Shape",
+      "scenario": "Upload replaces 5 old teams with 8 new",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league with 5 non-ghost teams",
+      "testData": "8 valid new rows",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response body"
+      ],
+      "expectedResult": "HTTP 200; body=`{ success:true, created:8, replaced:5, message:\"Replaced 5 team(s) with 8 new team(s).\" }`",
+      "postconditions": "8 teams inserted, 5 prior teams gone",
+      "requirementId": "AC-TEAM-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-051",
+      "feature": "Assign Groups - Empty Array",
+      "scenario": "POST /assign-groups with assignments=[]",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session, TVT league",
+      "testData": "body={assignments:[]}",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `\"assignments array is required\"`",
+      "postconditions": "No data modified",
+      "requirementId": "AC-TEAM-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-052",
+      "feature": "Assign Groups - Invalid Group Value",
+      "scenario": "3rd assignment has group='C'",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Valid admin session, TVT league with teams T1,T2,T3",
+      "testData": "assignments=[{teamId:T1,group:'A'},{teamId:T2,group:'B'},{teamId:T3,group:'C'}]",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 400 `Invalid group \"C\" for team <T3>. Must be A or B.`; entire request fails (no partial writes)",
+      "postconditions": "No team groupIds modified",
+      "requirementId": "AC-TEAM-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-053",
+      "feature": "Assign Groups - Both Groups Auto-Created",
+      "scenario": "Single A-assignment causes A AND B groups to be created",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league L with NO groups rows; team T",
+      "testData": "assignments=[{teamId:T.id, group:'A'}]",
+      "testSteps": [
+        "1. POST /assign-groups",
+        "2. Query groups table for L"
+      ],
+      "expectedResult": "groups table has 2 new rows: {name:'A',groupType:'pl'} and {name:'B',groupType:'pl'}; T.groupId references A",
+      "postconditions": "Both A and B groups exist; T in A",
+      "requirementId": "AC-TEAM-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-054",
+      "feature": "Assign Groups - Foreign Team Skipped With Error",
+      "scenario": "One assignment targets a team in another league - skipped, others succeed",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "league-1 teams T1,T2; team T_foreign in league-2",
+      "testData": "POST /api/admin/league-1/assign-groups with assignments=[{T1,'A'},{T_foreign,'A'},{T2,'B'}]",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response and DB"
+      ],
+      "expectedResult": "HTTP 200; updated=2; errors=[`\"Team <T_foreign> not found in this league\"`]; T1,T2 updated; T_foreign untouched",
+      "postconditions": "Two assignments applied; foreign team skipped",
+      "requirementId": "AC-TEAM-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-055",
+      "feature": "Assign Groups - updatedAt and Cache",
+      "scenario": "5-team assignment updates updatedAt on each and invalidates cache",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league with 5 teams (all with old updatedAt timestamps)",
+      "testData": "5 valid assignments",
+      "testSteps": [
+        "1. Record current Date",
+        "2. POST /assign-groups",
+        "3. Query teams.updatedAt for each"
+      ],
+      "expectedResult": "Each of the 5 teams has updatedAt >= step-1 Date; invalidateLeaguePageCache invoked",
+      "postconditions": "Standings page re-renders with new groups",
+      "requirementId": "AC-TEAM-043",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-056",
+      "feature": "List Teams - Ghost Excluded",
+      "scenario": "GET /create-team excludes ghost teams from the dashboard list",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league with 4 non-ghost teams + 1 ghost team",
+      "testData": "GET /api/admin/league-1/create-team",
+      "testSteps": [
+        "1. GET",
+        "2. Count teams in response"
+      ],
+      "expectedResult": "response.teams.length===4; ghost not present",
+      "postconditions": "n/a",
+      "requirementId": "AC-TEAM-044",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-057",
+      "feature": "List Teams - Null Group Label",
+      "scenario": "Team with groupId=null shows 'Unassigned' in list",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT league; team T has groupId=null",
+      "testData": "GET /create-team",
+      "testSteps": [
+        "1. GET",
+        "2. Find T in response",
+        "3. Inspect group field"
+      ],
+      "expectedResult": "T.group === 'Unassigned'",
+      "postconditions": "n/a",
+      "requirementId": "AC-TEAM-045",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-058",
+      "feature": "List Teams - PL Club Rename (Auction)",
+      "scenario": "Auction team owning Liverpool is listed as 'Liverpool'",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Auction league; team T (rawName='RedMachine') owns Liverpool via auctionClubOwnership",
+      "testData": "GET /api/admin/<auction-league>/create-team",
+      "testSteps": [
+        "1. GET",
+        "2. Find T in response"
+      ],
+      "expectedResult": "T.name='Liverpool'; T.rawName='RedMachine'; T.ownedClub={plTeamId,plTeamName:'Liverpool',plTeamShort:'LIV',tier:<tier>}",
+      "postconditions": "n/a",
+      "requirementId": "AC-TEAM-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-059",
+      "feature": "List Teams - No Auction Rename in TVT",
+      "scenario": "TVT-format team's name is not renamed even if it owns a PL club row",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "TVT league with team T; no auction ownership",
+      "testData": "GET /create-team",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect T's name vs rawName"
+      ],
+      "expectedResult": "T.name === T.rawName (rename logic only fires when ownedClub is set)",
+      "postconditions": "n/a",
+      "requirementId": "AC-TEAM-046",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-060",
+      "feature": "GET Assign Groups - Group Labels",
+      "scenario": "GET /assign-groups returns all non-ghost teams labelled with their group",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT league with 10 teams: 4 in A, 6 in B; 0 ghosts",
+      "testData": "GET /api/admin/<league>/assign-groups",
+      "testSteps": [
+        "1. GET",
+        "2. Inspect response shape"
+      ],
+      "expectedResult": "10 rows of {id,name,group} where 4 have group='A' and 6 have group='B'",
+      "postconditions": "n/a",
+      "requirementId": "AC-TEAM-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-061",
+      "feature": "GET Assign Groups - Ghost Excluded",
+      "scenario": "Ghost teams are filtered from /assign-groups list",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Triple Crown league with 8 non-ghost + 2 ghost teams",
+      "testData": "GET /assign-groups",
+      "testSteps": [
+        "1. GET",
+        "2. Verify response has 8 rows"
+      ],
+      "expectedResult": "response.length===8; no ghosts surfaced",
+      "postconditions": "n/a",
+      "requirementId": "AC-TEAM-047",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-062",
+      "feature": "Bulk Upload Endpoint Still Live (Deprecated)",
+      "scenario": "External script can still POST to /bulk-upload-teams even though no UI tab exposes it",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "TVT or Triple Crown league; valid payload",
+      "testData": "POST /api/admin/<league>/bulk-upload-teams with 3 valid rows",
+      "testSteps": [
+        "1. POST as admin",
+        "2. Inspect response"
+      ],
+      "expectedResult": "HTTP 200 with success; endpoint functions per BR-TEAM-020..32",
+      "postconditions": "3 teams inserted (existing wiped)",
+      "requirementId": "AC-TEAM-049",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-063",
+      "feature": "Create Team - Response Excludes Hash",
+      "scenario": "Response body does not contain bcrypt hash",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid admin session",
+      "testData": "Full valid POST /create-team",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response JSON"
+      ],
+      "expectedResult": "Response contains id, teamLoginId, name, group; NO password/hash/passwordHash key present",
+      "postconditions": "n/a",
+      "requirementId": "AC-TEAM-052",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-064",
+      "feature": "Cup-Type Groups Untouched",
+      "scenario": "TC league with cup groups - module-3 endpoints only touch pl-typed groups",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Triple Crown league with cup groups: UCL,UEL,Europa (groupType='cup')",
+      "testData": "POST /assign-groups assignments=[{T.id,'A'}]",
+      "testSteps": [
+        "1. POST",
+        "2. Query groups for league"
+      ],
+      "expectedResult": "New 'A' (groupType='pl') created; cup-typed UCL/UEL/Europa untouched; T.groupId references the new pl-A",
+      "postconditions": "Cup groups preserved",
+      "requirementId": "AC-TEAM-055",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-065",
+      "feature": "Update Team - Cross-League Hijack via L2 Admin",
+      "scenario": "Admin of L2 attempts to update T from L1; returns 404",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "T in L1 with login 'abc'; user is admin of L2",
+      "testData": "PUT /api/admin/L2/update-team body={teamId:T.id, teamName:'X'}",
+      "testSteps": [
+        "1. PUT",
+        "2. Inspect"
+      ],
+      "expectedResult": "HTTP 404 `\"Team not found\"`; T in L1 unchanged",
+      "postconditions": "T unchanged",
+      "requirementId": "AC-TEAM-056",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-066",
+      "feature": "Update Team - Rename Same Team Case-Only Change",
+      "scenario": "Rename 'Reds' to 'REDS' on the same team is allowed",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "Team T named 'Reds' in league L",
+      "testData": "PUT /update-team body={teamId:T.id, teamName:'REDS'}",
+      "testSteps": [
+        "1. PUT",
+        "2. Query T row"
+      ],
+      "expectedResult": "HTTP 200; T.name='REDS' (conflict row id matches teamId so case-insensitive check passes)",
+      "postconditions": "T renamed",
+      "requirementId": "AC-TEAM-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-067",
+      "feature": "Force Password Change on First Login",
+      "scenario": "Newly created team is forced to change password on first login",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Admin creates team T with temp password 'tmppass1'",
+      "testData": "Login as T with 'tmppass1'",
+      "testSteps": [
+        "1. POST /create-team",
+        "2. Login as T with provided creds",
+        "3. Observe redirect"
+      ],
+      "expectedResult": "Login succeeds but auth flow redirects to change-password screen (mustChangePassword=true detected)",
+      "postconditions": "After password change, mustChangePassword becomes false",
+      "requirementId": "AC-TEAM-058",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-068",
+      "feature": "Create Team - TVT-8 Format Smoke",
+      "scenario": "Admin creates 8 teams in a TVT-8 league via single-team create",
+      "type": "Smoke",
+      "priority": "P2",
+      "preconditions": "TVT-8 league, empty roster",
+      "testData": "8 sequential POST /create-team requests",
+      "testSteps": [
+        "1. POST 8 times with distinct logins",
+        "2. GET /create-team",
+        "3. Inspect count"
+      ],
+      "expectedResult": "All 8 succeed; GET returns 8 teams",
+      "postconditions": "Roster complete for TVT-8",
+      "requirementId": "AC-TEAM-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-069",
+      "feature": "Create Team - TVT-32 Boundary",
+      "scenario": "32-team TVT league bulk-created via single-team flow",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "TVT-32 league, empty roster",
+      "testData": "32 sequential POST /create-team",
+      "testSteps": [
+        "1. POST 32 times",
+        "2. GET list"
+      ],
+      "expectedResult": "All succeed; 32 teams visible",
+      "postconditions": "Roster complete",
+      "requirementId": "AC-TEAM-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-070",
+      "feature": "Bulk Upload - TVT-16 Group Assignment",
+      "scenario": "16 rows with 8 group='A' and 8 group='B'",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT-16 league, empty roster",
+      "testData": "16 valid rows with 8/8 group split",
+      "testSteps": [
+        "1. POST /bulk-upload-teams",
+        "2. GET /assign-groups"
+      ],
+      "expectedResult": "16 inserted; 8 in A and 8 in B; groups A,B auto-created if missing",
+      "postconditions": "Roster ready for TVT-16 fixtures",
+      "requirementId": "AC-TEAM-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-071",
+      "feature": "Update Team - PUT Verb Required",
+      "scenario": "POST to /update-team returns 405",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Valid admin session",
+      "testData": "POST /api/admin/L1/update-team",
+      "testSteps": [
+        "1. POST (not PUT)",
+        "2. Inspect status"
+      ],
+      "expectedResult": "HTTP 405 Method Not Allowed (only PUT is exported on this route)",
+      "postconditions": "No mutation",
+      "requirementId": "AC-TEAM-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-072",
+      "feature": "Bulk Delete - Sequential N Calls UI",
+      "scenario": "Admin selects 5 teams and clicks Bulk Delete in dashboard UI",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "5 teams selected in admin dashboard",
+      "testData": "selectedTeamIds=[t1,t2,t3,t4,t5]; click 'Delete Selected' and confirm",
+      "testSteps": [
+        "1. Open dashboard",
+        "2. Select 5 teams",
+        "3. Click delete + confirm",
+        "4. Observe network panel"
+      ],
+      "expectedResult": "5 sequential DELETE /delete-team requests fire (one per team); UI reports success/failure counts; no aggregated server endpoint",
+      "postconditions": "All 5 teams deleted",
+      "requirementId": "AC-TEAM-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-TEAM-073",
+      "feature": "Regression - DEF-TEAM-001 - create-team accepts 1-char password",
+      "scenario": "create-team rejects 1-char password with 400 (uniform min-length guard)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid admin session",
+      "testData": "POST /create-team body={teamLoginId:'pwn1',teamName:'P1',password:'a',player1Name:'A',player1FplId:'1',player2Name:'B',player2FplId:'2'}",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response and team row"
+      ],
+      "expectedResult": "HTTP 400 with body containing \"Password must be at least 4 characters\"; team row is NOT created/updated. Bulk-upload-teams already enforces the same 4-char minimum, so all three admin entry points now have uniform validation.",
+      "postconditions": "Team exists with 1-char password",
+      "requirementId": "AC-TEAM-054",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TEAM-001. When fix lands (shared validatePassword helper), expected result flips to HTTP 400. [QA-VERIFY] Updated post-DEF-TEAM-001 fix on 2026-05-26 — retagged Regression -> Positive; expectedResult asserts unified 4-char minimum."
+    },
+    {
+      "id": "TC-TEAM-074",
+      "feature": "Regression - DEF-TEAM-001 - update-team accepts 1-char password",
+      "scenario": "update-team rejects 1-char password with 400 (uniform min-length guard)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Existing team T",
+      "testData": "PUT /update-team body={teamId:T.id, password:'b'}",
+      "testSteps": [
+        "1. PUT",
+        "2. Inspect team row"
+      ],
+      "expectedResult": "HTTP 400 with body containing \"Password must be at least 4 characters\"; team row is NOT created/updated. Bulk-upload-teams already enforces the same 4-char minimum, so all three admin entry points now have uniform validation.",
+      "postconditions": "Team has 1-char password",
+      "requirementId": "AC-TEAM-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TEAM-001 (update-team side). Once fix lands, expect HTTP 400 for passwords below the shared minimum. [QA-VERIFY] Updated post-DEF-TEAM-001 fix on 2026-05-26 — retagged Regression -> Positive; expectedResult asserts unified 4-char minimum."
+    },
+    {
+      "id": "TC-TEAM-075",
+      "feature": "Regression - DEF-TEAM-002 - create-team isProfileComplete=false",
+      "scenario": "create-team sets isProfileComplete=true (matches bulk-upload-teams)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid admin session",
+      "testData": "Full valid POST /create-team",
+      "testSteps": [
+        "1. POST /create-team",
+        "2. Query teams.isProfileComplete for inserted row"
+      ],
+      "expectedResult": "After successful create-team (or bulk-upload), the inserted team row has isProfileComplete=true. On first login the team's redirect skips /setup wizard. Both admin entry points produce identical onboarding state.",
+      "postconditions": "Team must traverse setup wizard on first login",
+      "requirementId": "AC-TEAM-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TEAM-002 (create-team side). When fix unifies behaviour, this expectation should flip. [QA-VERIFY] Updated post-DEF-TEAM-002 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-TEAM-076",
+      "feature": "Regression - DEF-TEAM-002 - bulk-upload isProfileComplete=true",
+      "scenario": "bulk-upload-teams + create-team both produce teams with isProfileComplete=true (uniform onboarding)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Valid admin session on TVT league",
+      "testData": "POST /bulk-upload-teams with 1 valid row",
+      "testSteps": [
+        "1. POST",
+        "2. Query teams.isProfileComplete for inserted row"
+      ],
+      "expectedResult": "After successful create-team (or bulk-upload), the inserted team row has isProfileComplete=true. On first login the team's redirect skips /setup wizard. Both admin entry points produce identical onboarding state.",
+      "postconditions": "Team bypasses setup wizard",
+      "requirementId": "AC-TEAM-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TEAM-002 (bulk-upload side). Should still hold after fix if 'unify both to true' is chosen; updates needed if 'unify to false' is chosen. [QA-VERIFY] Updated post-DEF-TEAM-002 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-TEAM-077",
+      "feature": "Regression - DEF-TEAM-003 - delete-team kills ghost team",
+      "scenario": "Triple Crown ghost team delete is rejected by isGhost guard (locks in DEF-TEAM-003 fix)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Triple Crown league with ghost team G (isGhost=true) that has bye fixtures wired up",
+      "testData": "DELETE /delete-team body={teamId:G.id}",
+      "testSteps": [
+        "1. DELETE G",
+        "2. Query teams + fixtures"
+      ],
+      "expectedResult": "HTTP 400 with body `{ error: \"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`; ghost team G row remains intact; G's bye fixtures remain intact (no cascade delete).",
+      "postconditions": "TC schedule unchanged; ghost team and bye fixtures preserved",
+      "requirementId": "AC-TEAM-050",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TEAM-003. After fix, expected result becomes HTTP 400 with `\"Cannot delete a ghost team. Use the Triple Crown regeneration flow.\"`\n[QA-VERIFY] Updated post-DEF-TEAM-003 fix on 2026-05-25. Inverted from Regression (asserting buggy 200 + cascade delete) to Positive (asserting fixed 400 + intact ghost row and bye fixtures). Guard confirmed at src/app/api/admin/[leagueId]/delete-team/route.ts:35-40."
+    },
+    {
+      "id": "TC-TEAM-078",
+      "feature": "Regression - DEF-TEAM-004 - update-team mutates ghost team",
+      "scenario": "update-team rejects edits to ghost teams with 400",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TC league with ghost team G (isGhost=true)",
+      "testData": "PUT /update-team body={teamId:G.id, teamName:'NotAGhost', teamLoginId:'realLogin', password:'realpass'}",
+      "testSteps": [
+        "1. PUT",
+        "2. Query G"
+      ],
+      "expectedResult": "PATCH/POST on a ghost team (isGhost=true) returns HTTP 400 with body containing 'Cannot edit a ghost team'; the ghost row is unchanged. Non-ghost team edits proceed normally.",
+      "postconditions": "Ghost row mutated into a quasi-login account",
+      "requirementId": "AC-TEAM-051",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-TEAM-004 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-TEAM-079",
+      "feature": "Regression - DEF-TEAM-005 - bulk-delete is N independent calls",
+      "scenario": "Mid-batch network failure leaves roster partially deleted (pins lack of cross-team transaction)",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Admin selects 8 teams to bulk-delete; throttle network to fail on the 4th DELETE",
+      "testData": "selectedTeamIds=[t1..t8]; simulate network drop after t3 succeeds",
+      "testSteps": [
+        "1. Open dashboard, select 8 teams",
+        "2. Click 'Delete Selected'",
+        "3. Cut network after 3 succeed",
+        "4. Query teams table"
+      ],
+      "expectedResult": "3 teams gone (and their cascade dependants); 5 teams still present; UI shows partial-failure count; no rollback of t1..t3. Pins current behaviour.",
+      "postconditions": "Roster left in partially-deleted state",
+      "requirementId": "AC-TEAM-048",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "Pins DEF-TEAM-005. After fix (server-side bulk-delete-teams endpoint with single transaction), failure should roll back all 8."
+    },
+    {
+      "id": "TC-TEAM-080",
+      "feature": "Regression - DEF-TEAM-006 - TOCTOU returns generic 500",
+      "scenario": "create-team returns 400 (not 500) when concurrent inserts race on teamLoginId UNIQUE index",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Valid admin session; ability to fire two near-simultaneous requests",
+      "testData": "Concurrent POST /create-team requests both with teamLoginId='race1' (both pass pre-check)",
+      "testSteps": [
+        "1. Fire request A and B in parallel",
+        "2. Inspect response status of each"
+      ],
+      "expectedResult": "Concurrent POST /api/admin/[leagueId]/create-team calls with the same teamLoginId: one succeeds (201/200), the loser returns HTTP 400 with body containing 'Team ID already exists globally'. No 500 surfaces.",
+      "postconditions": "1 team created; 1 failed request",
+      "requirementId": "AC-TEAM-053",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-TEAM-006 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-TEAM-081",
+      "feature": "Auction Format - Bulk Upload Path Blocked",
+      "scenario": "Auction admin uploading via the deprecated endpoint hits the format guard",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Auction league with onboarded teams + auctionClubOwnership rows",
+      "testData": "POST /bulk-upload-teams with any payload",
+      "testSteps": [
+        "1. POST",
+        "2. Inspect response and auction ownership table"
+      ],
+      "expectedResult": "HTTP 400 `\"Bulk team upload is not available for auction leagues.\"`; auctionClubOwnership rows untouched",
+      "postconditions": "Auction roster + ownerships intact",
+      "requirementId": "AC-TEAM-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-23",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": []
+}

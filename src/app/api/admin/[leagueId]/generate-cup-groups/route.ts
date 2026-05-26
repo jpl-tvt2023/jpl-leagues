@@ -165,11 +165,21 @@ export async function POST(request: NextRequest) {
         });
 
         if (!gwRecord) {
-          // Create gameweek if it doesn't exist
-          const gwId = generateId();
-          const deadline = new Date();
-          deadline.setDate(deadline.getDate() + 7 * fixture.gameweekNumber);
+          // Create the gameweek with a deadline anchored to the league's
+          // earliest existing gameweek (treated as GW1), not to today. If
+          // the admin seeds cup groups mid-season, today+7*N would land all
+          // synthetic deadlines in the wrong week. Falling back to today only
+          // when no other gameweeks exist for this league.
+          const earliestGw = await db.query.gameweeks.findFirst({
+            where: eq(gameweeks.leagueId, leagueId),
+            orderBy: (gw, { asc }) => [asc(gw.number)],
+          });
+          const anchorDate = earliestGw ? new Date(earliestGw.deadline) : new Date();
+          const anchorNumber = earliestGw ? earliestGw.number : 1;
+          const deadline = new Date(anchorDate);
+          deadline.setDate(deadline.getDate() + 7 * (fixture.gameweekNumber - anchorNumber));
           deadline.setHours(11, 0, 0, 0);
+          const gwId = generateId();
 
           await db.insert(gameweeks).values({
             id: gwId,

@@ -4,6 +4,7 @@ import { auctionScores, gameweeks, leagues, teams, auditLogs } from "@/lib/db/sc
 import { eq, and, desc, asc } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
+import { getPayoutForRank } from "@/lib/formats/auction/economy";
 
 /**
  * GET /api/superadmin/score-adjustments?leagueId=...&gameweek=...
@@ -109,9 +110,25 @@ export async function PATCH(request: NextRequest) {
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
   if (!reason) return NextResponse.json({ error: "reason is required (audit trail)" }, { status: 400 });
 
-  const synergyBonus = typeof body.synergyBonus === "number" && Number.isInteger(body.synergyBonus) ? body.synergyBonus : null;
-  const clubResultBonus = typeof body.clubResultBonus === "number" && Number.isInteger(body.clubResultBonus) ? body.clubResultBonus : null;
+  // Bound the bonus values so a single typo can't wreck a GW total. The cap
+  // is comfortably higher than any legitimate adjustment (a full GW's worth of
+  // FPL points for one team is rarely above ~150) but still flags 1e9-style typos.
+  const MAX_BONUS = 500;
+  const MIN_BONUS = -500;
+  const isValidBonus = (v: unknown): v is number =>
+    typeof v === "number" && Number.isInteger(v) && v >= MIN_BONUS && v <= MAX_BONUS;
+  const synergyBonus: number | null = isValidBonus(body.synergyBonus) ? body.synergyBonus : null;
+  const clubResultBonus: number | null = isValidBonus(body.clubResultBonus) ? body.clubResultBonus : null;
   if (synergyBonus === null && clubResultBonus === null) {
+    if (
+      (body.synergyBonus !== undefined && !isValidBonus(body.synergyBonus)) ||
+      (body.clubResultBonus !== undefined && !isValidBonus(body.clubResultBonus))
+    ) {
+      return NextResponse.json(
+        { error: `synergyBonus and clubResultBonus must be integers in [${MIN_BONUS}, ${MAX_BONUS}]` },
+        { status: 400 }
+      );
+    }
     return NextResponse.json({ error: "Provide at least one of synergyBonus or clubResultBonus" }, { status: 400 });
   }
 
@@ -136,6 +153,50 @@ export async function PATCH(request: NextRequest) {
         totalPoints: newTotal,
       })
       .where(eq(auctionScores.id, id));
+
+    // Re-rank + recompute payouts for the whole GW so leaderboard and finance ledger stay in sync.
+    // A swap-changing adjustment (e.g. T2 overtakes T1) must move both rows' rank/payout columns,
+    // not just the patched row's totalPoints. Tiebreak by teamId asc for determinism — the full
+    // GW processor uses squad-value/purse tiebreakers which require FMV recompute (out of scope
+    // for an inline PATCH and explicitly flagged on the defect as too heavy).
+    const gwRows = await tx
+      .select()
+      .from(auctionScores)
+      .where(and(eq(auctionScores.leagueId, row.leagueId), eq(auctionScores.gameweekId, row.gameweekId)));
+
+    const ordered = [...gwRows].sort((a, b) => {
+      if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+      return a.teamId.localeCompare(b.teamId);
+    });
+
+    for (let i = 0; i < ordered.length; i++) {
+      const sr = ordered[i];
+      const newRank = i + 1;
+      const newPayout = getPayoutForRank(newRank);
+      if (sr.rank === newRank && sr.payout === newPayout) continue;
+
+      await tx
+        .update(auctionScores)
+        .set({ rank: newRank, payout: newPayout })
+        .where(eq(auctionScores.id, sr.id));
+
+      // Keep teams.purse and teams.totalIncome consistent with the new payout — buildAllTeamsSummary
+      // reads teams.purse directly, so a stale value here desyncs the admin finance overview.
+      const payoutDelta = newPayout - sr.payout;
+      if (payoutDelta !== 0) {
+        const teamRow = await tx.select().from(teams).where(eq(teams.id, sr.teamId)).limit(1);
+        if (teamRow.length > 0) {
+          await tx
+            .update(teams)
+            .set({
+              purse: teamRow[0].purse + payoutDelta,
+              totalIncome: teamRow[0].totalIncome + payoutDelta,
+              updatedAt: now,
+            })
+            .where(eq(teams.id, sr.teamId));
+        }
+      }
+    }
 
     const beforeAfter = [
       `synergy ${row.synergyBonus} → ${newSynergy}`,

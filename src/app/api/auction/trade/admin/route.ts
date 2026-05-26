@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tradeProposals, auctionOwnership, teams, leagues } from "@/lib/db";
+import { db, tradeProposals, auctionOwnership, teams, leagues, leagueAdmins } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
-import { isSuperAdmin } from "@/lib/auth";
 import { executeTrade } from "@/lib/formats/auction/trade";
 import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
 import { createNotification, type NotificationType } from "@/lib/notifications";
@@ -33,7 +32,11 @@ async function notifyBothParties(
  * Auth: superadmin only
  */
 export async function POST(request: NextRequest) {
-  if (!isSuperAdmin(request)) {
+  // Initial gate: must be admin or superadmin session (block teams + anonymous).
+  // The fine-grained league-admin scope check runs after we know the proposal's league.
+  const sessionType = request.headers.get("x-session-type");
+  const sessionId = request.headers.get("x-session-id");
+  if (sessionType !== "superadmin" && sessionType !== "admin") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -58,6 +61,25 @@ export async function POST(request: NextRequest) {
   }
 
   const proposal = proposalRow[0];
+
+  // League-admin scoping: superadmins may act on any proposal; an admin must
+  // have a leagueAdmins row for the proposal's leagueId. Matches the auth
+  // shape used by /api/admin/[leagueId]/auction-corrections so league admins
+  // have parity between low-level corrections (which read-modify the same
+  // ownership rows) and trade-admin actions.
+  if (sessionType === "admin") {
+    if (!sessionId) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+    const assigned = await db
+      .select({ id: leagueAdmins.id })
+      .from(leagueAdmins)
+      .where(and(eq(leagueAdmins.userId, sessionId), eq(leagueAdmins.leagueId, proposal.leagueId)))
+      .limit(1);
+    if (assigned.length === 0) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+  }
 
   if (action === "approve") {
     // Only accepted proposals can be approved (target already agreed)

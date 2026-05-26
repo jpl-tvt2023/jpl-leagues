@@ -9,6 +9,7 @@ import { eq, inArray } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
+import { validateEnabledChipsArray } from "@/lib/formats/tvt/chip-validation";
 
 export async function PATCH(
   request: NextRequest,
@@ -25,8 +26,31 @@ export async function PATCH(
   if (typeof body.name === "string") updates.name = body.name;
   if (typeof body.season === "string") updates.season = body.season;
   if (typeof body.isActive === "boolean") updates.isActive = body.isActive;
-  if (Array.isArray(body.enabledChips)) {
-    updates.enabledChips = JSON.stringify(body.enabledChips);
+
+  // enabledChips is only meaningful for TVT leagues and must match the same
+  // shape rule the POST handler enforces (3 unique entries from
+  // {W,D,C,SL,CB,UD}). Reject any attempt to set it on non-TVT leagues so the
+  // hardcoded [] used for Triple Crown / Auction cannot be silently overwritten.
+  if (body.enabledChips !== undefined) {
+    const leagueRow = await db
+      .select({ format: leagues.format })
+      .from(leagues)
+      .where(eq(leagues.id, id))
+      .limit(1);
+    if (leagueRow.length === 0) {
+      return NextResponse.json({ error: "League not found" }, { status: 404 });
+    }
+    if (leagueRow[0].format !== "tvt") {
+      return NextResponse.json(
+        { error: "enabledChips can only be updated on TVT leagues" },
+        { status: 400 }
+      );
+    }
+    const chipCheck = validateEnabledChipsArray(body.enabledChips);
+    if (!chipCheck.ok) {
+      return NextResponse.json({ error: chipCheck.error }, { status: 400 });
+    }
+    updates.enabledChips = JSON.stringify(chipCheck.chips);
   }
 
   if (Object.keys(updates).length === 0) {

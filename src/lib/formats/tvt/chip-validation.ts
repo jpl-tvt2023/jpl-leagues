@@ -30,6 +30,38 @@ export interface ChipValidationResult {
   warnings: string[];
 }
 
+/**
+ * The full set of chip codes a TVT league may enable at creation/edit time.
+ */
+export const VALID_TVT_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"] as const;
+
+/**
+ * Validate the shape of a TVT `enabledChips` array: must be an array of exactly
+ * 3 unique entries drawn from VALID_TVT_CHIP_CODES. Used by both POST and PATCH
+ * on /api/superadmin/leagues so the same rule is enforced at create and edit time.
+ *
+ * Returns `{ ok: true, chips }` on success; `{ ok: false, error }` otherwise.
+ */
+export function validateEnabledChipsArray(
+  value: unknown
+): { ok: true; chips: string[] } | { ok: false; error: string } {
+  const errorMsg =
+    "TVT enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)";
+  if (!Array.isArray(value)) {
+    return { ok: false, error: errorMsg };
+  }
+  if (value.length !== 3) {
+    return { ok: false, error: errorMsg };
+  }
+  if (!value.every((c): c is string => typeof c === "string" && (VALID_TVT_CHIP_CODES as readonly string[]).includes(c))) {
+    return { ok: false, error: errorMsg };
+  }
+  if (new Set(value).size !== 3) {
+    return { ok: false, error: errorMsg };
+  }
+  return { ok: true, chips: value as string[] };
+}
+
 export interface TeamRanking {
   teamId: string;
   groupId: string;

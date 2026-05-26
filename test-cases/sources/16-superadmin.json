@@ -1,0 +1,2449 @@
+{
+  "moduleId": "SUPER",
+  "moduleName": "Superadmin",
+  "sheetName": "Superadmin",
+  "status": "qa-signed-off",
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
+  "requirements": {
+    "version": 8,
+    "businessContext": "Module 16 covers the platform-wide superadmin surface: a single dashboard (/app/superadmin) and a set of /api/superadmin/* endpoints that only `session.type === \"superadmin\"` callers may invoke. It owns admin-user CRUD (create / edit / delete / password reset), league-admin assignments (mapping `admin`-role users onto specific leagues via the `league_admins` table), the singleton PL-Standings tier config used by the Club Auction (top8 / mid / promoted), and manual GW score-adjustment authentication + audit trail (the math itself lives in module 11). League CRUD lives in module 02, auth itself in module 01.",
+    "userStories": [
+      {
+        "id": "US-SUPER-001",
+        "asA": "superadmin",
+        "iWant": "to list every admin and superadmin user on the platform along with which leagues each one is assigned to",
+        "soThat": "I can audit who has admin privileges across leagues",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:9-49",
+          "src/app/superadmin/page.tsx:1626-1730"
+        ]
+      },
+      {
+        "id": "US-SUPER-002",
+        "asA": "superadmin",
+        "iWant": "to create a new admin user with a name, email, and initial password",
+        "soThat": "I can onboard league managers without giving them platform-wide access",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:55-93",
+          "src/app/superadmin/page.tsx:501-519",
+          "src/app/superadmin/page.tsx:1052-1098"
+        ]
+      },
+      {
+        "id": "US-SUPER-003",
+        "asA": "superadmin",
+        "iWant": "to edit an existing admin's name, email, or reset their password",
+        "soThat": "I can correct typos and recover locked accounts",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/[userId]/route.ts:12-54",
+          "src/app/superadmin/page.tsx:521-552",
+          "src/app/superadmin/page.tsx:961-1011"
+        ]
+      },
+      {
+        "id": "US-SUPER-004",
+        "asA": "superadmin",
+        "iWant": "to delete an admin user along with all their league assignments",
+        "soThat": "I can cleanly offboard an admin in one action",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/[userId]/route.ts:60-85",
+          "src/app/superadmin/page.tsx:554-567",
+          "src/app/superadmin/page.tsx:942-959"
+        ]
+      },
+      {
+        "id": "US-SUPER-005",
+        "asA": "superadmin",
+        "iWant": "to assign and revoke admin access to specific leagues from a single picker",
+        "soThat": "I can scope each admin to only the leagues they should manage",
+        "sourceRefs": [
+          "src/app/api/superadmin/league-assignments/route.ts:13-71",
+          "src/app/superadmin/page.tsx:569-595",
+          "src/app/superadmin/page.tsx:1013-1050"
+        ]
+      },
+      {
+        "id": "US-SUPER-006",
+        "asA": "superadmin",
+        "iWant": "to view and edit the PL Standings tier mapping (Top 8 / Mid / Promoted) for the current season",
+        "soThat": "the PL Club Auction can resolve tier-based bonuses correctly each season",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:62-95",
+          "src/app/api/superadmin/pl-standings/route.ts:97-162",
+          "src/app/superadmin/page.tsx:1962-2098"
+        ]
+      },
+      {
+        "id": "US-SUPER-007",
+        "asA": "superadmin",
+        "iWant": "the PL Standings UI to pre-populate from FPL bootstrap on first read and seed a singleton row if none exists",
+        "soThat": "I never see an empty tier picker for a fresh database",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:27-50",
+          "src/lib/data/pl-standings-seed.ts:1-37"
+        ]
+      },
+      {
+        "id": "US-SUPER-008",
+        "asA": "superadmin",
+        "iWant": "to manually override the synergyBonus or clubResultBonus on a processed GW auction-score row",
+        "soThat": "I can correct scoring mistakes after they have been finalized",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:95-165",
+          "src/app/superadmin/page.tsx:272-306",
+          "src/app/superadmin/page.tsx:2100-2236"
+        ]
+      },
+      {
+        "id": "US-SUPER-009",
+        "asA": "superadmin",
+        "iWant": "to pick a league and gameweek and see the editable auction-score breakdown for every team in that GW",
+        "soThat": "I have one screen to investigate and adjust scoring discrepancies",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:16-85",
+          "src/app/superadmin/page.tsx:2113-2146"
+        ]
+      },
+      {
+        "id": "US-SUPER-010",
+        "asA": "superadmin",
+        "iWant": "every score-adjustment to require a typed reason that is written to the audit log",
+        "soThat": "post-hoc score changes are traceable",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:107-153",
+          "src/app/superadmin/page.tsx:272-306"
+        ]
+      },
+      {
+        "id": "US-SUPER-011",
+        "asA": "superadmin",
+        "iWant": "newly created admins and admins whose password I reset to be forced to change their password on next login",
+        "soThat": "the initial password I share is never reused long-term",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:72-79",
+          "src/app/api/superadmin/admins/[userId]/route.ts:37-40",
+          "src/lib/db/schema.ts:16"
+        ]
+      },
+      {
+        "id": "US-SUPER-012",
+        "asA": "non-superadmin (admin or team)",
+        "iWant": "all /api/superadmin/* endpoints to refuse my request with HTTP 403",
+        "soThat": "platform-level data cannot be edited by league-scoped admins or teams",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:10-12",
+          "src/app/api/superadmin/admins/route.ts:56-58",
+          "src/app/api/superadmin/admins/[userId]/route.ts:16-18",
+          "src/app/api/superadmin/admins/[userId]/route.ts:64-66",
+          "src/app/api/superadmin/league-assignments/route.ts:14-16",
+          "src/app/api/superadmin/league-assignments/route.ts:55-57",
+          "src/app/api/superadmin/pl-standings/route.ts:67-70",
+          "src/app/api/superadmin/pl-standings/route.ts:103-105",
+          "src/app/api/superadmin/score-adjustments/route.ts:17-19",
+          "src/app/api/superadmin/score-adjustments/route.ts:96-98",
+          "src/lib/auth.ts:89-91"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-SUPER-001",
+        "rule": "Every /api/superadmin/* endpoint MUST call isSuperAdmin(request) before doing any work; isSuperAdmin returns true only when the middleware-attached header x-session-type equals 'superadmin'. Non-superadmin callers receive 403 with body { error: \"Superadmin access required\" }.",
+        "sourceRefs": [
+          "src/lib/auth.ts:89-91",
+          "src/app/api/superadmin/admins/route.ts:10-12",
+          "src/app/api/superadmin/admins/[userId]/route.ts:16-18",
+          "src/app/api/superadmin/league-assignments/route.ts:14-16",
+          "src/app/api/superadmin/pl-standings/route.ts:67-70",
+          "src/app/api/superadmin/score-adjustments/route.ts:17-19"
+        ]
+      },
+      {
+        "id": "BR-SUPER-002",
+        "rule": "GET /api/superadmin/admins returns every user whose role is 'admin' OR 'superadmin', sorted by createdAt ascending, with each row augmented by assignedLeagueIds[] derived from the league_admins table.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:14-48"
+        ]
+      },
+      {
+        "id": "BR-SUPER-003",
+        "rule": "POST /api/superadmin/admins validates: name is a non-empty string <=100 chars; email matches /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/ AND is <=254 chars; password is 8-256 chars AND contains at least one number or special character. Each failure returns HTTP 400 with an explicit message. Email is then lowercased before insert (BR-SUPER-006).",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:60-80"
+        ]
+      },
+      {
+        "id": "BR-SUPER-004",
+        "rule": "POST /api/superadmin/admins lowercases and trims the email before storing it; password is bcrypt-hashed at cost 12; id is generated via generateId(); role is hard-coded to 'admin' (a superadmin cannot be created via this route); mustChangePassword is forced to true on creation.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:67-79"
+        ]
+      },
+      {
+        "id": "BR-SUPER-005",
+        "rule": "POST /api/superadmin/admins returns 409 with { error: \"An admin with that email already exists\" } if the insert fails (caught generically, relies on the unique index on users.email). The success response echoes id, name, email, role:'admin', mustChangePassword:true, assignedLeagueIds:[].",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:71-92",
+          "src/lib/db/schema.ts:9-19"
+        ]
+      },
+      {
+        "id": "BR-SUPER-006",
+        "rule": "Both POST /api/superadmin/admins and PATCH /api/superadmin/admins/[userId] normalize an admin's email via .trim().toLowerCase() before persisting. This keeps the unique-email index, the case-insensitive signin lookup (via stored-lowercase compare), and the displayed email consistent.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/route.ts:67",
+          "src/app/api/superadmin/admins/[userId]/route.ts:48-51"
+        ]
+      },
+      {
+        "id": "BR-SUPER-007",
+        "rule": "PATCH /api/superadmin/admins/[userId]: when a password is supplied, mustChangePassword is forced back to true and the password is bcrypt-hashed at cost 12.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/[userId]/route.ts:37-40"
+        ]
+      },
+      {
+        "id": "BR-SUPER-008",
+        "rule": "PATCH /api/superadmin/admins/[userId] stamps updatedAt = new Date() whenever any field is updated, and returns 409 with { error: \"Email already in use by another admin\" } when the unique-email constraint fires.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/[userId]/route.ts:46-53"
+        ]
+      },
+      {
+        "id": "BR-SUPER-009",
+        "rule": "PATCH /api/superadmin/admins/[userId] looks up the target row before mutating; if no row exists with that userId, returns HTTP 404 'User not found'. Mirrors the existing DELETE handler's behaviour.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/[userId]/route.ts:26-29"
+        ]
+      },
+      {
+        "id": "BR-SUPER-010",
+        "rule": "PATCH /api/superadmin/admins/[userId] rejects with 403 { error: \"Cannot modify another superadmin's account\" } when the target user's role is 'superadmin' AND target.id !== request.headers.get('x-session-id') — i.e. only self-service edits of a superadmin row are permitted (a superadmin may always edit their own name/email/password). Admin-role targets are unaffected and continue to fall through to the standard update path.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/[userId]/route.ts:23-35",
+          "src/app/api/superadmin/admins/[userId]/route.ts:84-91"
+        ]
+      },
+      {
+        "id": "BR-SUPER-011",
+        "rule": "DELETE /api/superadmin/admins/[userId] first looks up the target user; if missing returns 404 with { error: \"User not found\" }; if role is 'superadmin' returns 403 with { error: \"Cannot delete a superadmin account\" }.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/[userId]/route.ts:70-77"
+        ]
+      },
+      {
+        "id": "BR-SUPER-012",
+        "rule": "DELETE /api/superadmin/admins/[userId] runs inside a transaction that first deletes every league_admins row for the user, then deletes the user row itself — the two deletes succeed or fail together.",
+        "sourceRefs": [
+          "src/app/api/superadmin/admins/[userId]/route.ts:79-84"
+        ]
+      },
+      {
+        "id": "BR-SUPER-013",
+        "rule": "POST /api/superadmin/league-assignments requires both userId and leagueId in the body (400 if either missing). The target user must exist (404) and must have role === 'admin' — assignments are explicitly rejected for superadmin or non-existent roles with 400 { error: \"League assignments only apply to admin users\" }. The target league must exist (404).",
+        "sourceRefs": [
+          "src/app/api/superadmin/league-assignments/route.ts:18-38"
+        ]
+      },
+      {
+        "id": "BR-SUPER-014",
+        "rule": "POST /api/superadmin/league-assignments creates a row in league_admins with a fresh generateId(); a uniqueIndex(leagueId,userId) makes re-assignment idempotent at the API surface by returning 409 with { error: \"This admin is already assigned to that league\" }.",
+        "sourceRefs": [
+          "src/app/api/superadmin/league-assignments/route.ts:40-46",
+          "src/lib/db/schema.ts:64-70"
+        ]
+      },
+      {
+        "id": "BR-SUPER-015",
+        "rule": "DELETE /api/superadmin/league-assignments looks up the leagueAdmins row first; returns HTTP 404 'Assignment not found' when no matching (userId, leagueId) row exists, otherwise deletes and returns HTTP 200 with {success:true}.",
+        "sourceRefs": [
+          "src/app/api/superadmin/league-assignments/route.ts:54-87"
+        ]
+      },
+      {
+        "id": "BR-SUPER-016",
+        "rule": "GET /api/superadmin/pl-standings is self-seeding: if no row with id PL_STANDINGS_SEED_ID ('current') exists, it inserts one using the hard-coded constants PL_STANDINGS_SEED_SEASON ('2025-26'), PL_STANDINGS_SEED_TOP8 (8 IDs), PL_STANDINGS_SEED_MID (9 IDs), PL_STANDINGS_SEED_PROMOTED (3 IDs).",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:27-50",
+          "src/lib/data/pl-standings-seed.ts:23-37"
+        ]
+      },
+      {
+        "id": "BR-SUPER-017",
+        "rule": "GET /api/superadmin/pl-standings returns { id, season, top8:number[], mid:number[], promoted:number[], updatedAt:ISOString|null, plTeams:[{id,name,short_name}] } — plTeams is the live FPL bootstrap team list sorted by name; if the bootstrap fetch throws, plTeams is returned as [] and the rest of the response still succeeds.",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:67-95"
+        ]
+      },
+      {
+        "id": "BR-SUPER-018",
+        "rule": "PUT /api/superadmin/pl-standings requires a non-empty trimmed string season (400 if missing). It returns 400 with { error: \"Invalid JSON body\" } if the request body is not parseable JSON.",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:107-117"
+        ]
+      },
+      {
+        "id": "BR-SUPER-019",
+        "rule": "PUT /api/superadmin/pl-standings enforces tier sizes exactly: top8 length === 8, mid length === 9, promoted length === 3. Each must be an array of integers. Any deviation returns 400 with a tier-specific error message.",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:119-130"
+        ]
+      },
+      {
+        "id": "BR-SUPER-020",
+        "rule": "PUT /api/superadmin/pl-standings rejects duplicate IDs across the three lists (400 { error: \"Team IDs must be unique across top8 / mid / promoted\" }) and rejects a combined length not equal to 20 (400 { error: \"Total of top8 + mid + promoted must be 20 team IDs\" }).",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:132-138"
+        ]
+      },
+      {
+        "id": "BR-SUPER-021",
+        "rule": "PUT /api/superadmin/pl-standings does NOT verify that the integers supplied actually correspond to live FPL bootstrap team IDs — arbitrary integers (e.g. [101..120]) that pass the count/uniqueness checks will be persisted, after which resolveTier() can still match them but the picker UI cannot render them. // CODE-CONFIRMED: may be a defect — confirm with product owner: tier resolution would silently bind the Club Auction to ghost IDs.",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:119-152",
+          "src/lib/data/pl-standings-seed.ts:39-51"
+        ]
+      },
+      {
+        "id": "BR-SUPER-022",
+        "rule": "PUT /api/superadmin/pl-standings calls readOrSeedConfig() before the UPDATE so a brand-new database can be PUT to directly; it stores top8/mid/promoted as JSON.stringify-ed strings and stamps updatedAt = now. Response echoes { success:true, season, top8, mid, promoted, updatedAt }.",
+        "sourceRefs": [
+          "src/app/api/superadmin/pl-standings/route.ts:140-161"
+        ]
+      },
+      {
+        "id": "BR-SUPER-023",
+        "rule": "GET /api/superadmin/score-adjustments without a leagueId returns bootstrap data: every league where format === 'auction' (ordered by createdAt desc) plus a gwsByLeague map listing the distinct gameweek numbers that have auction_scores rows for that league, sorted ascending.",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:21-45"
+        ]
+      },
+      {
+        "id": "BR-SUPER-024",
+        "rule": "GET /api/superadmin/score-adjustments?leagueId=...&gameweek=N requires gameweek to parse as an integer (400 if not); resolves (leagueId, gameweek number) to a gameweekId; 404 with { error: \"GW<n> not found in this league\" } if no match.",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:47-60"
+        ]
+      },
+      {
+        "id": "BR-SUPER-025",
+        "rule": "GET /api/superadmin/score-adjustments?leagueId=...&gameweek=N returns scores[] containing { id, teamId, teamName, totalPoints, rawPoints, synergyBonus, clubResultBonus, rank, payout } sorted by rank ascending (joined to teams for the display name).",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:62-85"
+        ]
+      },
+      {
+        "id": "BR-SUPER-026",
+        "rule": "PATCH /api/superadmin/score-adjustments requires id (string) and reason (non-empty after trim) in the body — missing either returns 400. At least one of synergyBonus or clubResultBonus must be an integer; supplying neither returns 400 { error: \"Provide at least one of synergyBonus or clubResultBonus\" }.",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:101-116"
+        ]
+      },
+      {
+        "id": "BR-SUPER-027",
+        "rule": "PATCH /api/superadmin/score-adjustments looks up the auction_scores row by id (404 if missing) and computes newTotal = rawPoints + (newSynergy) + (newClubResult), where each `new*` falls back to the existing column value if not supplied in the body. rawPoints is never editable through this route.",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:118-127"
+        ]
+      },
+      {
+        "id": "BR-SUPER-028",
+        "rule": "PATCH /api/superadmin/score-adjustments writes the new synergyBonus, clubResultBonus, totalPoints in a transaction together with an auditLogs row of type 'AUCTION_SCORE_ADJUSTMENT' whose description encodes the before→after values and the supplied reason, and whose pointsAffected equals deltaTotal (new - old totalPoints). The audit log is linked to teamId and gameweekId from the score row.",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:129-154"
+        ]
+      },
+      {
+        "id": "BR-SUPER-029",
+        "rule": "PATCH /api/superadmin/score-adjustments adjusts the targeted auctionScores row (totalPoints, synergyBonus, clubResultBonus) and, in the SAME transaction, re-ranks every auctionScores row in (leagueId, gameweekId) by totalPoints desc with teamId asc as a deterministic tiebreaker. Each row whose computed rank or payout changes is updated with the new rank and the new payout (resolved via getPayoutForRank in src/lib/formats/auction/economy.ts). For every team whose payout changed, teams.purse and teams.totalIncome are adjusted by the payout delta (positive when the rank improved, negative when it dropped), keeping the leaderboard, admin finance overview, and the GW payout ledger fully consistent.",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:130-184",
+          "src/lib/formats/auction/economy.ts (getPayoutForRank)"
+        ]
+      },
+      {
+        "id": "BR-SUPER-030",
+        "rule": "PATCH /api/superadmin/score-adjustments audit-log row records the reason and the team affected but does NOT record which superadmin made the change — x-session-id is set by middleware and available on the request, but the route never reads it. // CODE-CONFIRMED: may be a defect — confirm with product owner: in a multi-superadmin platform there is no way to attribute an adjustment to a specific actor.",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:96-154",
+          "src/middleware.ts:204-211"
+        ]
+      },
+      {
+        "id": "BR-SUPER-031",
+        "rule": "PATCH /api/superadmin/score-adjustments accepts integer synergyBonus and clubResultBonus values only within [-500, 500]. Values outside the range or non-integer values return HTTP 400. The bounds are higher than any legitimate adjustment (a full GW for one team rarely exceeds ~150 points) but block typos that would otherwise wreck the GW total.",
+        "sourceRefs": [
+          "src/app/api/superadmin/score-adjustments/route.ts:113-133"
+        ]
+      },
+      {
+        "id": "BR-SUPER-032",
+        "rule": "The superadmin dashboard /app/superadmin has five tabs — Leagues, Admins, Operations, PL Standings, Score Adjustments — initially 'leagues'. PL Standings and Score Adjustments lazily fetch their data on first activation (and not before).",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:30-30",
+          "src/app/superadmin/page.tsx:800-806",
+          "src/app/superadmin/page.tsx:328-337"
+        ]
+      },
+      {
+        "id": "BR-SUPER-033",
+        "rule": "Superadmin dashboard data-fetchers redirect the browser to /signin whenever an API call returns 401 or 403 — applies to fetchAdmins, fetchStandings, fetchAdjBootstrap, fetchLeagues.",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:170-172",
+          "src/app/superadmin/page.tsx:250-252",
+          "src/app/superadmin/page.tsx:308-316",
+          "src/app/superadmin/page.tsx:318-326"
+        ]
+      },
+      {
+        "id": "BR-SUPER-034",
+        "rule": "Admins tab UI: the role pill renders 'superadmin' in yellow and 'admin' in purple; superadmin rows display 'All leagues' in place of an assigned-league count; the Edit button is available for every row, but Leagues (assign) and Delete buttons are hidden for superadmin rows.",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:1667-1721"
+        ]
+      },
+      {
+        "id": "BR-SUPER-035",
+        "rule": "Assign-Leagues modal toggles each league via POST/DELETE /api/superadmin/league-assignments and updates client state immediately (changes persist on each click; no 'Save' button).",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:574-595",
+          "src/app/superadmin/page.tsx:1013-1050"
+        ]
+      },
+      {
+        "id": "BR-SUPER-036",
+        "rule": "Create-League wizard's final step iterates wizardSelectedAdminIds and POSTs to /api/superadmin/league-assignments for each chosen admin in parallel; on success it refreshes the admin list so assignment counts stay current. Skipping the assignment step is supported via handleWizardFinish(true).",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:348-396",
+          "src/app/superadmin/page.tsx:1526-1543"
+        ]
+      },
+      {
+        "id": "BR-SUPER-037",
+        "rule": "PL-Standings UI client-side guard: Save Standings shows an error toast and aborts the PUT if any tier count is wrong (top8 !== 8 OR mid !== 9 OR promoted !== 3); on success it updates the displayed updatedAt timestamp.",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:204-229"
+        ]
+      },
+      {
+        "id": "BR-SUPER-038",
+        "rule": "PL-Standings UI: moving a team into the 'promoted' tier auto-sorts that tier alphabetically by team name (positions 18/19/20 are always shown alphabetically); moving into top8/mid appends to the end of the list.",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:185-202",
+          "src/app/superadmin/page.tsx:2015-2051"
+        ]
+      },
+      {
+        "id": "BR-SUPER-039",
+        "rule": "Score-Adjustments UI: Save is disabled until both an edit exists AND a non-empty reason has been typed; the displayed Total column previews row.rawPoints + effectiveSynergy + effectiveClubResult live as the user types.",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:2164-2226"
+        ]
+      },
+      {
+        "id": "BR-SUPER-040",
+        "rule": "Create-Admin form requires name, email, and password (HTML `required`); the modal copy explicitly warns 'Admin will be asked to change this on first login.' Edit-Admin form treats name, email, and password as all optional but warns when a new password is entered that the admin will be forced to change it on next login.",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:1060-1098",
+          "src/app/superadmin/page.tsx:989-1001"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-SUPER-001",
+        "given": "a non-superadmin (admin or team) signed-in session",
+        "when": "they call any /api/superadmin/* endpoint (admins, league-assignments, pl-standings, score-adjustments)",
+        "then": "the response is 403 with body { error: \"Superadmin access required\" } and no DB writes occur",
+        "linksTo": "BR-SUPER-001"
+      },
+      {
+        "id": "AC-SUPER-002",
+        "given": "a superadmin session and three users in the database (one admin, one superadmin, one team)",
+        "when": "GET /api/superadmin/admins is called",
+        "then": "the response contains exactly two admins[] entries (the admin and the superadmin), ordered by createdAt asc, each with assignedLeagueIds[] populated from league_admins",
+        "linksTo": "BR-SUPER-002"
+      },
+      {
+        "id": "AC-SUPER-003",
+        "given": "a superadmin session",
+        "when": "POST /api/superadmin/admins is called with body missing the password field",
+        "then": "the response is 400 with { error: \"name, email, and password are required\" } and no row is inserted",
+        "linksTo": "BR-SUPER-003"
+      },
+      {
+        "id": "AC-SUPER-004",
+        "given": "a superadmin session and an existing admin with email 'jane@example.com'",
+        "when": "POST /api/superadmin/admins is called with name='Jane Two', email='JANE@example.com', password='whatever'",
+        "then": "the response is 409 with { error: \"An admin with that email already exists\" } because POST lowercases+trims before insert, hitting the unique email index",
+        "linksTo": "BR-SUPER-004"
+      },
+      {
+        "id": "AC-SUPER-005",
+        "given": "a superadmin session",
+        "when": "POST /api/superadmin/admins succeeds with name='Jane', email=' Jane@Example.com ', password='Init#Pass'",
+        "then": "the stored row has email='jane@example.com', role='admin', mustChangePassword=true, and a bcrypt hash for password; the response echoes assignedLeagueIds:[]",
+        "linksTo": "BR-SUPER-004"
+      },
+      {
+        "id": "AC-SUPER-006",
+        "given": "a superadmin session and an existing admin user 'u-123'",
+        "when": "PATCH /api/superadmin/admins/u-123 is called with body { name: '   ', email: '   ', password: '' }",
+        "then": "the response is 400 with { error: \"No valid fields to update\" } and no UPDATE runs (all values fail their truthy/trim guard)",
+        "linksTo": "BR-SUPER-006"
+      },
+      {
+        "id": "AC-SUPER-007",
+        "given": "a superadmin session and an existing admin user 'u-123'",
+        "when": "PATCH /api/superadmin/admins/u-123 is called with body { password: 'NewPass#1' }",
+        "then": "users.password becomes a bcrypt hash, users.mustChangePassword becomes true, users.updatedAt is refreshed",
+        "linksTo": "BR-SUPER-007"
+      },
+      {
+        "id": "AC-SUPER-008",
+        "given": "a superadmin session and two admins 'u-1' (email 'a@x.com') and 'u-2' (email 'b@x.com')",
+        "when": "PATCH /api/superadmin/admins/u-2 is called with body { email: 'a@x.com' }",
+        "then": "the response is 409 with { error: \"Email already in use by another admin\" } (unique index violation caught generically)",
+        "linksTo": "BR-SUPER-008"
+      },
+      {
+        "id": "AC-SUPER-009",
+        "given": "a superadmin sends PATCH /api/superadmin/admins/<unknown-uuid> with body={name:'X'}",
+        "when": "the handler runs",
+        "then": "HTTP 404 with body.error='User not found'; no users-table row is mutated; no audit log written.",
+        "linksTo": "BR-SUPER-009"
+      },
+      {
+        "id": "AC-SUPER-010",
+        "given": "a superadmin session for SA-A (x-session-id='sa-a') and a different target superadmin user 'sa-b'",
+        "when": "PATCH /api/superadmin/admins/sa-b is called with body { password: 'reset' }",
+        "then": "the response is 403 with { error: \"Cannot modify another superadmin's account\" }; SA-B's row is unchanged (password, email, mustChangePassword, updatedAt all preserved). If SA-B were to PATCH their own row (target.id === session id), the update would succeed as normal.",
+        "linksTo": "BR-SUPER-010"
+      },
+      {
+        "id": "AC-SUPER-011",
+        "given": "a superadmin session",
+        "when": "DELETE /api/superadmin/admins/does-not-exist is called",
+        "then": "the response is 404 with { error: \"User not found\" }",
+        "linksTo": "BR-SUPER-011"
+      },
+      {
+        "id": "AC-SUPER-012",
+        "given": "a superadmin session and target user 'sa-2' with role='superadmin'",
+        "when": "DELETE /api/superadmin/admins/sa-2 is called",
+        "then": "the response is 403 with { error: \"Cannot delete a superadmin account\" } and the user is preserved",
+        "linksTo": "BR-SUPER-011"
+      },
+      {
+        "id": "AC-SUPER-013",
+        "given": "an admin 'u-1' assigned to two leagues",
+        "when": "DELETE /api/superadmin/admins/u-1 is called by a superadmin",
+        "then": "the user row AND both league_admins rows for u-1 are deleted in a single transaction; the response is 200 { success: true }",
+        "linksTo": "BR-SUPER-012"
+      },
+      {
+        "id": "AC-SUPER-014",
+        "given": "a superadmin session",
+        "when": "POST /api/superadmin/league-assignments is called without userId (or without leagueId) in the body",
+        "then": "the response is 400 with { error: \"userId and leagueId are required\" }",
+        "linksTo": "BR-SUPER-013"
+      },
+      {
+        "id": "AC-SUPER-015",
+        "given": "a superadmin session and a target user with role='superadmin'",
+        "when": "POST /api/superadmin/league-assignments is called with that user's id",
+        "then": "the response is 400 with { error: \"League assignments only apply to admin users\" } (superadmins have implicit global access; no row inserted)",
+        "linksTo": "BR-SUPER-013"
+      },
+      {
+        "id": "AC-SUPER-016",
+        "given": "a superadmin session and admin 'u-1' already assigned to league 'lg-A'",
+        "when": "POST /api/superadmin/league-assignments is called again with the same pair",
+        "then": "the response is 409 with { error: \"This admin is already assigned to that league\" } (uniqueIndex on (leagueId,userId) fires)",
+        "linksTo": "BR-SUPER-014"
+      },
+      {
+        "id": "AC-SUPER-017",
+        "given": "a superadmin sends DELETE /api/superadmin/league-assignments with a (userId, leagueId) pair that doesn't exist in leagueAdmins",
+        "when": "the handler runs",
+        "then": "HTTP 404 with body.error='Assignment not found'; no rows mutated. A subsequent attempt against the same pair after a real assignment exists still deletes with HTTP 200 success.",
+        "linksTo": "BR-SUPER-015"
+      },
+      {
+        "id": "AC-SUPER-018",
+        "given": "a fresh database with no plStandingsConfig row",
+        "when": "a superadmin GETs /api/superadmin/pl-standings",
+        "then": "a row is inserted from PL_STANDINGS_SEED_* constants (id='current', season='2025-26', top8=8 IDs, mid=9 IDs, promoted=3 IDs) and returned to the client",
+        "linksTo": "BR-SUPER-016"
+      },
+      {
+        "id": "AC-SUPER-019",
+        "given": "the FPL bootstrap fetch throws a network error",
+        "when": "a superadmin GETs /api/superadmin/pl-standings",
+        "then": "the response is still 200 with the seeded/stored standings; plTeams is returned as []",
+        "linksTo": "BR-SUPER-017"
+      },
+      {
+        "id": "AC-SUPER-020",
+        "given": "a superadmin session",
+        "when": "PUT /api/superadmin/pl-standings is called with non-JSON body (or syntactically invalid JSON)",
+        "then": "the response is 400 with { error: \"Invalid JSON body\" }",
+        "linksTo": "BR-SUPER-018"
+      },
+      {
+        "id": "AC-SUPER-021",
+        "given": "a superadmin session",
+        "when": "PUT /api/superadmin/pl-standings is called with valid season but top8.length === 7",
+        "then": "the response is 400 with { error: \"top8 must be an array of exactly 8 integer team IDs\" } and no row is updated",
+        "linksTo": "BR-SUPER-019"
+      },
+      {
+        "id": "AC-SUPER-022",
+        "given": "a superadmin session",
+        "when": "PUT /api/superadmin/pl-standings is called with top8=[1..8], mid=[1,10,11,12,13,14,15,16,17], promoted=[18,19,20]",
+        "then": "the response is 400 with { error: \"Team IDs must be unique across top8 / mid / promoted\" } because id 1 appears in both top8 and mid",
+        "linksTo": "BR-SUPER-020"
+      },
+      {
+        "id": "AC-SUPER-023",
+        "given": "a superadmin session and arbitrary integers [101..108], [109..117], [118..120] passing every count/uniqueness rule",
+        "when": "PUT /api/superadmin/pl-standings is called with those lists",
+        "then": "the response is 200 success and the row is persisted with those integers even though none are real FPL bootstrap IDs — documenting current behaviour pending defect resolution",
+        "linksTo": "BR-SUPER-021"
+      },
+      {
+        "id": "AC-SUPER-024",
+        "given": "a fresh database with no plStandingsConfig row",
+        "when": "a superadmin PUTs /api/superadmin/pl-standings with a valid 8/9/3 payload",
+        "then": "readOrSeedConfig() seeds first, then the UPDATE applies the supplied values; the response echoes { success:true, season, top8, mid, promoted, updatedAt }",
+        "linksTo": "BR-SUPER-022"
+      },
+      {
+        "id": "AC-SUPER-025",
+        "given": "a superadmin session and two auction leagues (one with scored GW1/GW2, one with no scores yet) plus one TVT league",
+        "when": "GET /api/superadmin/score-adjustments is called without query params",
+        "then": "leagues[] contains only the two auction leagues (TVT excluded), ordered by createdAt desc; gwsByLeague maps each auction-league id to its sorted-ascending list of scored GW numbers",
+        "linksTo": "BR-SUPER-023"
+      },
+      {
+        "id": "AC-SUPER-026",
+        "given": "a superadmin session and an auction league with no gameweek number 99",
+        "when": "GET /api/superadmin/score-adjustments?leagueId=lg-1&gameweek=99 is called",
+        "then": "the response is 404 with { error: \"GW99 not found in this league\" }",
+        "linksTo": "BR-SUPER-024"
+      },
+      {
+        "id": "AC-SUPER-027",
+        "given": "a superadmin session and an auction league with three teams having scored GW3 rows",
+        "when": "GET /api/superadmin/score-adjustments?leagueId=lg-1&gameweek=3 is called",
+        "then": "scores[] has three entries with teamName joined from teams, sorted ascending by rank, including rawPoints/synergyBonus/clubResultBonus/totalPoints/payout",
+        "linksTo": "BR-SUPER-025"
+      },
+      {
+        "id": "AC-SUPER-028",
+        "given": "a superadmin session and an existing auction_scores row 'as-1'",
+        "when": "PATCH /api/superadmin/score-adjustments is called with body { id:'as-1', synergyBonus:5, clubResultBonus:2 } (no reason)",
+        "then": "the response is 400 with { error: \"reason is required (audit trail)\" } and no UPDATE runs",
+        "linksTo": "BR-SUPER-026"
+      },
+      {
+        "id": "AC-SUPER-029",
+        "given": "a superadmin session and auction_scores row 'as-1' with rawPoints=80, synergyBonus=4, clubResultBonus=2 (totalPoints=86)",
+        "when": "PATCH /api/superadmin/score-adjustments is called with body { id:'as-1', synergyBonus:6, reason:'fix synergy double-count' } (clubResultBonus omitted)",
+        "then": "synergyBonus=6, clubResultBonus stays 2, totalPoints recomputes to 88; the response body includes deltaTotal=2",
+        "linksTo": "BR-SUPER-027"
+      },
+      {
+        "id": "AC-SUPER-030",
+        "given": "the same setup as AC-SUPER-029",
+        "when": "the PATCH commits",
+        "then": "an auditLogs row of type 'AUCTION_SCORE_ADJUSTMENT' exists with description containing 'synergy 4 → 6; clubResult 2 → 2; total 86 → 88 — Reason: fix synergy double-count', pointsAffected=2, teamId and gameweekId matching the score row",
+        "linksTo": "BR-SUPER-028"
+      },
+      {
+        "id": "AC-SUPER-031",
+        "given": "two teams in GW3: T1 rank=1 totalPoints=100 payout=£400, T2 rank=2 totalPoints=95 payout=£200; both rows persisted in auctionScores",
+        "when": "superadmin PATCHes T2 with a clubResultBonus that brings T2.totalPoints to 110",
+        "then": "inside one transaction: T2.totalPoints=110 is persisted; T2.rank flips to 1 and T2.payout becomes £400; T1.rank flips to 2 and T1.payout becomes £200; T2.teams.purse and T2.teams.totalIncome increase by £200 (payout delta); T1.teams.purse and T1.teams.totalIncome decrease by £200; leaderboard + admin finance overview now reflect the corrected totals",
+        "linksTo": "BR-SUPER-029"
+      },
+      {
+        "id": "AC-SUPER-032",
+        "given": "a multi-superadmin platform with superadmins SA-A and SA-B both signed in",
+        "when": "SA-A and SA-B each PATCH a different score-adjustment with a typed reason",
+        "then": "both auditLogs rows contain the prefix '[Superadmin]' but neither row carries the actor's session id — documenting current behaviour pending defect resolution",
+        "linksTo": "BR-SUPER-030"
+      },
+      {
+        "id": "AC-SUPER-033",
+        "given": "a superadmin sends PATCH /api/superadmin/score-adjustments with synergyBonus=1000000000",
+        "when": "the handler validates",
+        "then": "HTTP 400 'synergyBonus and clubResultBonus must be integers in [-500, 500]'. The auctionScores row is unchanged. A subsequent PATCH with synergyBonus=10 succeeds and updates the row.",
+        "linksTo": "BR-SUPER-031"
+      },
+      {
+        "id": "AC-SUPER-034",
+        "given": "a superadmin session on /superadmin",
+        "when": "the user switches to the 'PL Standings' tab for the first time",
+        "then": "fetchStandings() runs exactly once (lazy load) — switching to 'Score Adjustments' similarly triggers fetchAdjBootstrap() exactly once",
+        "linksTo": "BR-SUPER-032"
+      },
+      {
+        "id": "AC-SUPER-035",
+        "given": "a superadmin session that has just been invalidated server-side",
+        "when": "any of fetchAdmins / fetchStandings / fetchAdjBootstrap / fetchLeagues returns 401 or 403",
+        "then": "the browser is redirected via window.location.href = '/signin'",
+        "linksTo": "BR-SUPER-033"
+      },
+      {
+        "id": "AC-SUPER-036",
+        "given": "the Admins tab populated with one superadmin row and two admin rows",
+        "when": "the page renders",
+        "then": "the superadmin row shows a yellow 'superadmin' pill, 'All leagues' in the Leagues column, and only the Edit button (no Leagues, no Delete); admin rows show a purple 'admin' pill, their assigned-league count, and Edit/Leagues/Delete buttons",
+        "linksTo": "BR-SUPER-034"
+      },
+      {
+        "id": "AC-SUPER-037",
+        "given": "the Assign-Leagues modal open for admin 'u-1'",
+        "when": "the superadmin clicks a league checkbox",
+        "then": "POST /api/superadmin/league-assignments fires immediately (or DELETE if already assigned) and the modal's visible list updates without waiting for a Save action",
+        "linksTo": "BR-SUPER-035"
+      },
+      {
+        "id": "AC-SUPER-038",
+        "given": "the Create-League wizard on the 'assign' step with two admin checkboxes ticked",
+        "when": "the superadmin clicks 'Create League'",
+        "then": "POST /api/superadmin/leagues runs first; on success two parallel POSTs to /api/superadmin/league-assignments are sent using the new leagueId; the admin list is then refreshed",
+        "linksTo": "BR-SUPER-036"
+      },
+      {
+        "id": "AC-SUPER-039",
+        "given": "the PL Standings tab with top8.length=8 but mid.length=8 (one short)",
+        "when": "the superadmin clicks 'Save Standings'",
+        "then": "a client-side error toast 'Tier counts must be: 8 / 9 / 3 (got 8 / 8 / 3)' is shown and no PUT is sent",
+        "linksTo": "BR-SUPER-037"
+      },
+      {
+        "id": "AC-SUPER-040",
+        "given": "the PL Standings tab with the promoted tier currently empty",
+        "when": "the superadmin clicks '→ Promoted' on Sunderland, Leeds, and Burnley in that order from the Unassigned pool",
+        "then": "the promoted tier displays Burnley → Leeds → Sunderland (alphabetical) regardless of click order; top8/mid append-in-click-order",
+        "linksTo": "BR-SUPER-038"
+      },
+      {
+        "id": "AC-SUPER-041",
+        "given": "the Score Adjustments tab with a row whose synergyBonus has been edited but the reason field is still empty",
+        "when": "the UI re-renders",
+        "then": "the Save button for that row is disabled; the Total cell shows the live preview of rawPoints + effSynergy + effClubResult in yellow with the old totalPoints labelled below it",
+        "linksTo": "BR-SUPER-039"
+      },
+      {
+        "id": "AC-SUPER-042",
+        "given": "the Create-Admin modal",
+        "when": "the superadmin submits with all three fields filled",
+        "then": "POST /api/superadmin/admins runs, the new admin appears in the table with the 'Must change' password pill, and the success toast reads `Admin \"<name>\" created. They must change their password on first login.`",
+        "linksTo": "BR-SUPER-040"
+      }
+    ]
+  },
+  "testCases": [
+    {
+      "id": "TC-SUPER-001",
+      "feature": "Superadmin Auth Guard",
+      "scenario": "Admin-role session is rejected by /api/superadmin/admins with 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "User signed in with role='admin' (session.type='admin'); middleware attaches x-session-type='admin'",
+      "testData": "GET /api/superadmin/admins, Cookie=<admin session>",
+      "testSteps": [
+        "1. Sign in as admin u-admin-1.",
+        "2. Issue GET /api/superadmin/admins.",
+        "3. Capture response status and body.",
+        "4. Query users table to confirm no DB writes occurred."
+      ],
+      "expectedResult": "HTTP 403 with body { error: \"Superadmin access required\" }; no DB mutation.",
+      "postconditions": "users table unchanged.",
+      "requirementId": "AC-SUPER-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-002",
+      "feature": "Superadmin Auth Guard",
+      "scenario": "Team-role session is rejected by /api/superadmin/league-assignments with 403",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "User signed in with role='team' (session.type='team')",
+      "testData": "POST /api/superadmin/league-assignments { userId:'u-1', leagueId:'lg-1' }",
+      "testSteps": [
+        "1. Sign in as a team manager.",
+        "2. Issue POST /api/superadmin/league-assignments with valid pair.",
+        "3. Capture response.",
+        "4. Query league_admins to confirm no insert."
+      ],
+      "expectedResult": "HTTP 403 with body { error: \"Superadmin access required\" }; no league_admins row inserted.",
+      "postconditions": "league_admins unchanged.",
+      "requirementId": "AC-SUPER-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-003",
+      "feature": "Superadmin Auth Guard",
+      "scenario": "Unauthenticated request to /api/superadmin/pl-standings is rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie present.",
+      "testData": "GET /api/superadmin/pl-standings (no cookie)",
+      "testSteps": [
+        "1. Clear cookies.",
+        "2. Issue GET /api/superadmin/pl-standings.",
+        "3. Capture status and body."
+      ],
+      "expectedResult": "HTTP 403 with body { error: \"Superadmin access required\" } (middleware-attached x-session-type missing or not 'superadmin').",
+      "postconditions": "No plStandingsConfig seeding occurs.",
+      "requirementId": "AC-SUPER-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-004",
+      "feature": "List Admins",
+      "scenario": "GET /admins returns admins+superadmins sorted by createdAt asc with assignedLeagueIds[]",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Users seeded: superadmin SA-1 (createdAt=T0), admin u-1 (createdAt=T1, assigned to lg-A, lg-B), team t-1 (createdAt=T2); league_admins rows for u-1.",
+      "testData": "GET /api/superadmin/admins as superadmin",
+      "testSteps": [
+        "1. Sign in as SA-1.",
+        "2. Issue GET /api/superadmin/admins.",
+        "3. Inspect admins[] length, ordering, and assignedLeagueIds values."
+      ],
+      "expectedResult": "200 with admins[].length === 2; order [SA-1, u-1] by createdAt asc; SA-1.assignedLeagueIds=[]; u-1.assignedLeagueIds contains ['lg-A','lg-B']; team t-1 is NOT included.",
+      "postconditions": "No mutations.",
+      "requirementId": "AC-SUPER-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-005",
+      "feature": "List Admins",
+      "scenario": "GET /admins returns empty admins[] when only team users exist",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Only team-role users exist (besides the calling superadmin themselves).",
+      "testData": "GET /api/superadmin/admins",
+      "testSteps": [
+        "1. Sign in as the only superadmin.",
+        "2. GET /api/superadmin/admins.",
+        "3. Inspect admins[] payload."
+      ],
+      "expectedResult": "200 with admins[] containing exactly the calling superadmin row; no admin-role users listed.",
+      "postconditions": "No mutations.",
+      "requirementId": "AC-SUPER-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-006",
+      "feature": "Create Admin",
+      "scenario": "POST /admins with missing password returns 400 and inserts nothing",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Superadmin session.",
+      "testData": "POST /api/superadmin/admins { name:'Jane', email:'jane@example.com' }",
+      "testSteps": [
+        "1. Sign in as superadmin.",
+        "2. POST /api/superadmin/admins with body missing password.",
+        "3. Capture response.",
+        "4. SELECT * FROM users WHERE email='jane@example.com'."
+      ],
+      "expectedResult": "HTTP 400 with body { error: \"name, email, and password are required\" }; SELECT returns 0 rows.",
+      "postconditions": "users unchanged.",
+      "requirementId": "AC-SUPER-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-007",
+      "feature": "Create Admin",
+      "scenario": "POST /admins with empty-string name is rejected",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "POST { name:'', email:'x@y.com', password:'Pass#123' }",
+      "testSteps": [
+        "1. Sign in as superadmin.",
+        "2. POST with empty name.",
+        "3. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"name, email, and password are required\" }; no insert.",
+      "postconditions": "users unchanged.",
+      "requirementId": "AC-SUPER-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-008",
+      "feature": "Create Admin",
+      "scenario": "POST /admins with case-variant existing email returns 409 (lowercase collision)",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Existing admin row email='jane@example.com'.",
+      "testData": "POST { name:'Jane Two', email:'JANE@example.com', password:'whatever' }",
+      "testSteps": [
+        "1. Seed jane@example.com.",
+        "2. POST with mixed-case duplicate.",
+        "3. Capture response."
+      ],
+      "expectedResult": "HTTP 409 with { error: \"An admin with that email already exists\" }; only one row remains.",
+      "postconditions": "users has single jane@example.com row.",
+      "requirementId": "AC-SUPER-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-009",
+      "feature": "Create Admin",
+      "scenario": "POST /admins success normalizes email, hashes password, forces mustChangePassword",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Superadmin session; no user with that email.",
+      "testData": "POST { name:'Jane', email:' Jane@Example.com ', password:'Init#Pass' }",
+      "testSteps": [
+        "1. Sign in as superadmin.",
+        "2. POST the body.",
+        "3. SELECT users.* WHERE email='jane@example.com'.",
+        "4. bcrypt.compare('Init#Pass', users.password) -> true.",
+        "5. Inspect response JSON."
+      ],
+      "expectedResult": "201/200 success; users row has email='jane@example.com' (lowercased+trimmed), role='admin', mustChangePassword=true, bcrypt-hashed password; response echoes assignedLeagueIds:[].",
+      "postconditions": "New users row exists with normalized email.",
+      "requirementId": "AC-SUPER-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-010",
+      "feature": "Create Admin",
+      "scenario": "POST /admins hard-codes role='admin' even when role:'superadmin' is supplied",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Superadmin session.",
+      "testData": "POST { name:'X', email:'x@y.com', password:'P@ss1234', role:'superadmin' }",
+      "testSteps": [
+        "1. POST with rogue role override.",
+        "2. SELECT users.role WHERE email='x@y.com'."
+      ],
+      "expectedResult": "Insert succeeds with role='admin' (route ignores caller-supplied role).",
+      "postconditions": "Cannot create a superadmin via this endpoint.",
+      "requirementId": "AC-SUPER-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-011",
+      "feature": "Create Admin Validation",
+      "scenario": "POST /admins rejects malformed email with 400",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "POST { name:'Weak', email:'weak@x.com', password:'a' }",
+      "testSteps": [
+        "1. POST with 1-char password.",
+        "2. Inspect response and stored row."
+      ],
+      "expectedResult": "POST /api/superadmin/admins with email='a' returns HTTP 400 'email must be a valid email address (max 254 chars)'. No users row inserted. Valid emails like 'admin@example.com' still create the user.",
+      "postconditions": "Row exists; documents defect until fix.",
+      "requirementId": "BR-SUPER-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-009 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-SUPER-012",
+      "feature": "Create Admin Validation",
+      "scenario": "POST /admins rejects 1-char or letters-only password with 400",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "POST { name:'Bad', email:'notanemail', password:'Pass#1234' }",
+      "testSteps": [
+        "1. POST with malformed email.",
+        "2. Inspect response and stored row."
+      ],
+      "expectedResult": "POST /api/superadmin/admins with password='a' returns HTTP 400 'password must be 8-256 characters'. POST with password='abcdefgh' (8 letters, no digit/special) returns HTTP 400 'password must contain at least one number or special character'. POST with password='abcdefg1' succeeds.",
+      "postconditions": "Row exists with malformed email.",
+      "requirementId": "BR-SUPER-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-009 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-SUPER-013",
+      "feature": "Edit Admin",
+      "scenario": "PATCH /admins/[userId] with all-whitespace/empty fields returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Existing admin u-123.",
+      "testData": "PATCH /api/superadmin/admins/u-123 { name:'   ', email:'   ', password:'' }",
+      "testSteps": [
+        "1. PATCH with whitespace-only/empty values.",
+        "2. Capture response.",
+        "3. Verify users row unchanged."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"No valid fields to update\" }; updatedAt unchanged.",
+      "postconditions": "users row unchanged.",
+      "requirementId": "AC-SUPER-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-014",
+      "feature": "Edit Admin",
+      "scenario": "PATCH /admins/[userId] with new password hashes it and forces mustChangePassword=true",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Admin u-123 has mustChangePassword=false after prior login.",
+      "testData": "PATCH /api/superadmin/admins/u-123 { password:'NewPass#1' }",
+      "testSteps": [
+        "1. PATCH with new password.",
+        "2. SELECT users.password, mustChangePassword, updatedAt WHERE id='u-123'.",
+        "3. bcrypt.compare('NewPass#1', stored).",
+        "4. Confirm updatedAt advanced."
+      ],
+      "expectedResult": "password is bcrypt hash; mustChangePassword=true; updatedAt refreshed to now.",
+      "postconditions": "u-123 must change password on next login.",
+      "requirementId": "AC-SUPER-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-015",
+      "feature": "Edit Admin",
+      "scenario": "PATCH /admins/[userId] colliding email returns 409",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Two admins u-1 ('a@x.com'), u-2 ('b@x.com').",
+      "testData": "PATCH /api/superadmin/admins/u-2 { email:'a@x.com' }",
+      "testSteps": [
+        "1. PATCH u-2 with u-1's email.",
+        "2. Capture response.",
+        "3. Verify u-2.email still 'b@x.com'."
+      ],
+      "expectedResult": "HTTP 409 with { error: \"Email already in use by another admin\" }; u-2 unchanged.",
+      "postconditions": "Both admins retain original emails.",
+      "requirementId": "AC-SUPER-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-016",
+      "feature": "Edit Admin",
+      "scenario": "PATCH /admins returns 404 (not 200) for unknown userId",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "No user with id='does-not-exist'.",
+      "testData": "PATCH /api/superadmin/admins/does-not-exist { name:'x' }",
+      "testSteps": [
+        "1. PATCH unknown userId.",
+        "2. Capture response.",
+        "3. Confirm zero rows affected."
+      ],
+      "expectedResult": "PATCH /api/superadmin/admins/<random-uuid> returns HTTP 404 'User not found'. No rows affected in the users table.",
+      "postconditions": "No rows touched.",
+      "requirementId": "AC-SUPER-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-002 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-SUPER-017",
+      "feature": "Edit Admin (Cross-Superadmin Mutation)",
+      "scenario": "PATCH /admins/[userId] rejects SA-A trying to reset SA-B's password with 403",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Two superadmins SA-A (caller, x-session-id=sa-1) and SA-B (target sa-2). sa-2.password is a bcrypt hash of a known value; sa-2.mustChangePassword=false.",
+      "testData": "PATCH /api/superadmin/admins/sa-2 { password:'reset' } as SA-A",
+      "testSteps": [
+        "1. Sign in as SA-A (session id sa-1).",
+        "2. PATCH sa-2 with password override.",
+        "3. Capture response status and body.",
+        "4. SELECT users WHERE id='sa-2' and confirm password hash + mustChangePassword are unchanged."
+      ],
+      "expectedResult": "HTTP 403 with body { error: \"Cannot modify another superadmin's account\" }; sa-2.password unchanged; sa-2.mustChangePassword still false; sa-2.updatedAt unchanged.",
+      "postconditions": "SA-B's credentials untouched.",
+      "requirementId": "AC-SUPER-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Originally pinned DEF-SUPER-003 (now Fixed). [QA-VERIFY] Updated post-DEF-SUPER-003 fix on 2026-05-25 — retagged Regression -> Positive; expectedResult now asserts the new cross-superadmin guard (403 + no DB mutation)."
+    },
+    {
+      "id": "TC-SUPER-018",
+      "feature": "Edit Admin (Cross-Superadmin Mutation)",
+      "scenario": "PATCH /admins/[userId] rejects SA-A trying to change SA-B's email with 403",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Two superadmins SA-A (x-session-id=sa-1) and SA-B (sa-2, email='b@x.com').",
+      "testData": "PATCH /api/superadmin/admins/sa-2 { email:'hijack@x.com' } as SA-A",
+      "testSteps": [
+        "1. Sign in as SA-A.",
+        "2. PATCH sa-2 email.",
+        "3. Capture response status and body.",
+        "4. SELECT users.email WHERE id='sa-2' and confirm unchanged."
+      ],
+      "expectedResult": "HTTP 403 with body { error: \"Cannot modify another superadmin's account\" }; sa-2.email still 'b@x.com'; no DB mutation.",
+      "postconditions": "SA-B's email untouched.",
+      "requirementId": "BR-SUPER-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Originally pinned DEF-SUPER-003 (now Fixed). [QA-VERIFY] Updated post-DEF-SUPER-003 fix on 2026-05-25 — retagged Regression -> Positive; expectedResult now asserts cross-superadmin guard (403 + no DB mutation)."
+    },
+    {
+      "id": "TC-SUPER-019",
+      "feature": "Edit Admin Email Normalization",
+      "scenario": "PATCH /admins normalizes email to lowercase before persist (matches POST)",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Admin u-1 email='jane@example.com'.",
+      "testData": "PATCH /api/superadmin/admins/u-1 { email:'  Jane@Example.COM  ' }",
+      "testSteps": [
+        "1. PATCH with mixed-case padded email.",
+        "2. SELECT users.email WHERE id='u-1'."
+      ],
+      "expectedResult": "PATCH with email=\"Alice@Example.Com\" persists row.email=\"alice@example.com\". Subsequent signin with the same email (any casing) resolves to this row. Unique-email index sees a stable lowercase form.",
+      "postconditions": "Stored email differs in case from POST flow.",
+      "requirementId": "BR-SUPER-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SUPER-001. After fix expect 'jane@example.com'. [QA-VERIFY] Updated post-DEF-SUPER-001 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-SUPER-020",
+      "feature": "Delete Admin",
+      "scenario": "DELETE /admins/[userId] for unknown userId returns 404",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Superadmin session.",
+      "testData": "DELETE /api/superadmin/admins/does-not-exist",
+      "testSteps": [
+        "1. DELETE unknown id.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 404 with { error: \"User not found\" }.",
+      "postconditions": "users unchanged.",
+      "requirementId": "AC-SUPER-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-021",
+      "feature": "Delete Admin",
+      "scenario": "DELETE /admins/[userId] refuses to delete a superadmin target",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Target sa-2 role='superadmin'.",
+      "testData": "DELETE /api/superadmin/admins/sa-2",
+      "testSteps": [
+        "1. DELETE sa-2.",
+        "2. Capture response.",
+        "3. SELECT users WHERE id='sa-2'."
+      ],
+      "expectedResult": "HTTP 403 with { error: \"Cannot delete a superadmin account\" }; sa-2 row preserved.",
+      "postconditions": "SA-2 retained.",
+      "requirementId": "AC-SUPER-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-022",
+      "feature": "Delete Admin",
+      "scenario": "DELETE /admins/[userId] removes user AND league_admins rows transactionally",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Admin u-1 with league_admins rows for lg-A and lg-B.",
+      "testData": "DELETE /api/superadmin/admins/u-1",
+      "testSteps": [
+        "1. DELETE u-1.",
+        "2. SELECT COUNT(*) FROM users WHERE id='u-1' (expect 0).",
+        "3. SELECT COUNT(*) FROM league_admins WHERE userId='u-1' (expect 0)."
+      ],
+      "expectedResult": "200 { success: true }; both deletes committed atomically.",
+      "postconditions": "No orphan league_admins rows.",
+      "requirementId": "AC-SUPER-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-023",
+      "feature": "League Assignments",
+      "scenario": "POST /league-assignments missing userId returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Superadmin session.",
+      "testData": "POST /api/superadmin/league-assignments { leagueId:'lg-1' }",
+      "testSteps": [
+        "1. POST without userId.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"userId and leagueId are required\" }.",
+      "postconditions": "league_admins unchanged.",
+      "requirementId": "AC-SUPER-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-024",
+      "feature": "League Assignments",
+      "scenario": "POST /league-assignments missing leagueId returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "POST { userId:'u-1' }",
+      "testSteps": [
+        "1. POST without leagueId.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"userId and leagueId are required\" }.",
+      "postconditions": "league_admins unchanged.",
+      "requirementId": "AC-SUPER-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-025",
+      "feature": "League Assignments",
+      "scenario": "POST /league-assignments rejects assigning to a superadmin user",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Target user sa-2 role='superadmin'.",
+      "testData": "POST { userId:'sa-2', leagueId:'lg-1' }",
+      "testSteps": [
+        "1. POST with superadmin userId.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"League assignments only apply to admin users\" }; no league_admins row inserted.",
+      "postconditions": "league_admins unchanged.",
+      "requirementId": "AC-SUPER-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-026",
+      "feature": "League Assignments",
+      "scenario": "POST /league-assignments unknown userId returns 404",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "POST { userId:'ghost', leagueId:'lg-1' }",
+      "testSteps": [
+        "1. POST with non-existent userId.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 404 with user-not-found error.",
+      "postconditions": "league_admins unchanged.",
+      "requirementId": "BR-SUPER-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-027",
+      "feature": "League Assignments",
+      "scenario": "POST /league-assignments duplicate pair returns 409 (uniqueIndex)",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "league_admins already has (u-1, lg-A) pair.",
+      "testData": "POST { userId:'u-1', leagueId:'lg-A' } (second time)",
+      "testSteps": [
+        "1. Confirm existing pair.",
+        "2. POST same pair again.",
+        "3. Capture response.",
+        "4. SELECT COUNT(*) WHERE leagueId='lg-A' AND userId='u-1'."
+      ],
+      "expectedResult": "HTTP 409 with { error: \"This admin is already assigned to that league\" }; COUNT stays 1.",
+      "postconditions": "Single row preserved.",
+      "requirementId": "AC-SUPER-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-028",
+      "feature": "League Assignments",
+      "scenario": "POST /league-assignments first-time success creates league_admins row with fresh id",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "No existing (u-1, lg-A) row; admin u-1 and league lg-A exist.",
+      "testData": "POST { userId:'u-1', leagueId:'lg-A' }",
+      "testSteps": [
+        "1. POST the pair.",
+        "2. Capture response.",
+        "3. SELECT league_admins WHERE userId='u-1' AND leagueId='lg-A'."
+      ],
+      "expectedResult": "200/201 success; one league_admins row exists with non-null id.",
+      "postconditions": "Assignment persisted.",
+      "requirementId": "BR-SUPER-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-029",
+      "feature": "League Assignments",
+      "scenario": "DELETE league-assignment returns 404 (not 200) when assignment doesn't exist",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "No league_admins row for (u-1, lg-X).",
+      "testData": "DELETE /api/superadmin/league-assignments { userId:'u-1', leagueId:'lg-X' }",
+      "testSteps": [
+        "1. DELETE non-existent pair.",
+        "2. Capture response."
+      ],
+      "expectedResult": "DELETE /api/superadmin/league-assignments with a (userId, leagueId) pair that has no leagueAdmins row returns HTTP 404 'Assignment not found'. No rows affected. Valid existing assignments still delete with HTTP 200 success.",
+      "postconditions": "No mutations.",
+      "requirementId": "AC-SUPER-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-004 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-SUPER-030",
+      "feature": "League Assignments",
+      "scenario": "DELETE /league-assignments existing pair removes the row",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "league_admins has (u-1, lg-A).",
+      "testData": "DELETE { userId:'u-1', leagueId:'lg-A' }",
+      "testSteps": [
+        "1. DELETE the pair.",
+        "2. SELECT COUNT(*) WHERE userId='u-1' AND leagueId='lg-A'."
+      ],
+      "expectedResult": "200 { success:true }; COUNT=0.",
+      "postconditions": "Row removed.",
+      "requirementId": "BR-SUPER-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-031",
+      "feature": "PL Standings Seeding",
+      "scenario": "GET /pl-standings on fresh DB self-seeds the singleton row",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "plStandingsConfig table empty.",
+      "testData": "GET /api/superadmin/pl-standings",
+      "testSteps": [
+        "1. Truncate plStandingsConfig.",
+        "2. GET /api/superadmin/pl-standings.",
+        "3. Inspect response and DB.",
+        "4. SELECT * FROM plStandingsConfig WHERE id='current'."
+      ],
+      "expectedResult": "Row inserted with id='current', season='2025-26', top8.length=8, mid.length=9, promoted.length=3; response includes same values.",
+      "postconditions": "Singleton row persisted.",
+      "requirementId": "AC-SUPER-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-032",
+      "feature": "PL Standings",
+      "scenario": "GET /pl-standings still returns standings when FPL bootstrap fetch throws",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "plStandingsConfig seeded; FPL bootstrap endpoint mocked to throw network error.",
+      "testData": "GET /api/superadmin/pl-standings",
+      "testSteps": [
+        "1. Stub bootstrap fetch to reject.",
+        "2. GET /api/superadmin/pl-standings.",
+        "3. Inspect response.plTeams."
+      ],
+      "expectedResult": "200 OK; standings present; plTeams=[].",
+      "postconditions": "No data corruption.",
+      "requirementId": "AC-SUPER-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-033",
+      "feature": "PL Standings",
+      "scenario": "PUT /pl-standings with invalid JSON returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "PUT body='{not-json'",
+      "testSteps": [
+        "1. PUT non-JSON string.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"Invalid JSON body\" }.",
+      "postconditions": "plStandingsConfig unchanged.",
+      "requirementId": "AC-SUPER-020",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-034",
+      "feature": "PL Standings",
+      "scenario": "PUT /pl-standings with top8.length=7 returns 400",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Superadmin session.",
+      "testData": "PUT { season:'2025-26', top8:[1,2,3,4,5,6,7], mid:[8..16], promoted:[17,18,19] }",
+      "testSteps": [
+        "1. PUT with 7-item top8.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"top8 must be an array of exactly 8 integer team IDs\" }.",
+      "postconditions": "plStandingsConfig unchanged.",
+      "requirementId": "AC-SUPER-021",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-035",
+      "feature": "PL Standings",
+      "scenario": "PUT /pl-standings with mid.length=10 returns 400 (boundary mid)",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "PUT season+ top8=8 IDs, mid=10 IDs, promoted=2 IDs (still sums to 20 if balanced or not)",
+      "testSteps": [
+        "1. PUT mid.length=10.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with mid tier-specific error message.",
+      "postconditions": "No change.",
+      "requirementId": "BR-SUPER-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-036",
+      "feature": "PL Standings",
+      "scenario": "PUT /pl-standings with duplicate id across top8 and mid returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Superadmin session.",
+      "testData": "top8=[1..8], mid=[1,10,11,12,13,14,15,16,17], promoted=[18,19,20]",
+      "testSteps": [
+        "1. PUT payload with duplicate id 1.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"Team IDs must be unique across top8 / mid / promoted\" }.",
+      "postconditions": "No change.",
+      "requirementId": "AC-SUPER-022",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-037",
+      "feature": "PL Standings",
+      "scenario": "PUT /pl-standings with non-integer entry returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "top8=[1,2,3,4,5,6,7,'foo'], ...",
+      "testSteps": [
+        "1. PUT with string in array.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with tier-specific 'must be array of integers' message.",
+      "postconditions": "No change.",
+      "requirementId": "BR-SUPER-019",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-038",
+      "feature": "PL Standings Validation",
+      "scenario": "PUT /pl-standings persists non-bootstrap integer IDs [101..120] — pins DEF-SUPER-005",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Superadmin session; live FPL bootstrap does NOT contain ids 101..120.",
+      "testData": "top8=[101..108], mid=[109..117], promoted=[118,119,120]",
+      "testSteps": [
+        "1. PUT the ghost IDs.",
+        "2. Capture response.",
+        "3. SELECT plStandingsConfig WHERE id='current'."
+      ],
+      "expectedResult": "Current behaviour: 200 success; row persisted with ghost IDs (Club Auction picker will hide affected teams). Pins lack of bootstrap-membership validation.",
+      "postconditions": "plStandingsConfig now references non-existent IDs.",
+      "requirementId": "AC-SUPER-023",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SUPER-005. After fix expect 400 enumerating bad IDs."
+    },
+    {
+      "id": "TC-SUPER-039",
+      "feature": "PL Standings",
+      "scenario": "PUT /pl-standings on fresh DB seeds first then applies update",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "plStandingsConfig empty.",
+      "testData": "PUT { season:'2025-26', top8=[1..8], mid=[9..17], promoted=[18,19,20] }",
+      "testSteps": [
+        "1. Truncate plStandingsConfig.",
+        "2. PUT valid payload.",
+        "3. SELECT plStandingsConfig WHERE id='current'."
+      ],
+      "expectedResult": "200 { success:true, season, top8, mid, promoted, updatedAt }; single row exists with the PUT values.",
+      "postconditions": "Singleton seeded+updated.",
+      "requirementId": "AC-SUPER-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-040",
+      "feature": "PL Standings",
+      "scenario": "PUT /pl-standings missing/empty season returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "PUT { season:'  ', top8=..., mid=..., promoted=... }",
+      "testSteps": [
+        "1. PUT with whitespace season.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with season-required error.",
+      "postconditions": "No change.",
+      "requirementId": "BR-SUPER-018",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-041",
+      "feature": "Score Adjustments Bootstrap",
+      "scenario": "GET /score-adjustments (no params) returns only auction leagues with gwsByLeague map",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Two auction leagues lg-A (scored GW1, GW2), lg-B (no scores), one TVT league lg-C.",
+      "testData": "GET /api/superadmin/score-adjustments",
+      "testSteps": [
+        "1. Sign in as superadmin.",
+        "2. GET with no params.",
+        "3. Inspect leagues[] and gwsByLeague."
+      ],
+      "expectedResult": "leagues[] contains only lg-A and lg-B (TVT excluded), ordered by createdAt desc; gwsByLeague['lg-A']=[1,2], gwsByLeague['lg-B']=[].",
+      "postconditions": "No mutations.",
+      "requirementId": "AC-SUPER-025",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-042",
+      "feature": "Score Adjustments Bootstrap",
+      "scenario": "GET /score-adjustments?gameweek=abc returns 400 (non-integer)",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session; auction league lg-1 exists.",
+      "testData": "GET /api/superadmin/score-adjustments?leagueId=lg-1&gameweek=abc",
+      "testSteps": [
+        "1. GET with non-integer gameweek.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 indicating gameweek must be integer.",
+      "postconditions": "No mutations.",
+      "requirementId": "BR-SUPER-024",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-043",
+      "feature": "Score Adjustments Bootstrap",
+      "scenario": "GET /score-adjustments?leagueId=lg-1&gameweek=99 returns 404 when GW not in league",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "lg-1 has no GW99 row.",
+      "testData": "GET ?leagueId=lg-1&gameweek=99",
+      "testSteps": [
+        "1. GET unknown gameweek.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 404 with { error: \"GW99 not found in this league\" }.",
+      "postconditions": "No mutations.",
+      "requirementId": "AC-SUPER-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-044",
+      "feature": "Score Adjustments View",
+      "scenario": "GET /score-adjustments?leagueId=lg-1&gameweek=3 returns scores[] sorted by rank asc",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "lg-1 GW3 has 3 auction_scores rows for teams T1 (rank 1), T2 (rank 2), T3 (rank 3).",
+      "testData": "GET ?leagueId=lg-1&gameweek=3",
+      "testSteps": [
+        "1. GET the GW3 breakdown.",
+        "2. Inspect scores[] length and order.",
+        "3. Verify teamName joined and rawPoints/synergyBonus/clubResultBonus/totalPoints/payout present."
+      ],
+      "expectedResult": "scores[].length=3 ordered [T1,T2,T3] by rank asc; each row has all the expected columns plus teamName.",
+      "postconditions": "No mutations.",
+      "requirementId": "AC-SUPER-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-045",
+      "feature": "Score Adjustments",
+      "scenario": "PATCH /score-adjustments missing reason returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "auction_scores row as-1 exists.",
+      "testData": "PATCH { id:'as-1', synergyBonus:5, clubResultBonus:2 } (no reason)",
+      "testSteps": [
+        "1. PATCH without reason.",
+        "2. Capture response.",
+        "3. Verify as-1 unchanged."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"reason is required (audit trail)\" }; row untouched.",
+      "postconditions": "as-1 unchanged; no audit log row.",
+      "requirementId": "AC-SUPER-028",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-046",
+      "feature": "Score Adjustments",
+      "scenario": "PATCH /score-adjustments missing id returns 400",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session.",
+      "testData": "PATCH { synergyBonus:5, reason:'oops' } (no id)",
+      "testSteps": [
+        "1. PATCH without id.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 indicating id required.",
+      "postconditions": "No writes.",
+      "requirementId": "BR-SUPER-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-047",
+      "feature": "Score Adjustments",
+      "scenario": "PATCH /score-adjustments with neither bonus provided returns 400",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "as-1 exists.",
+      "testData": "PATCH { id:'as-1', reason:'reformat' }",
+      "testSteps": [
+        "1. PATCH without synergy/clubResult.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 with { error: \"Provide at least one of synergyBonus or clubResultBonus\" }.",
+      "postconditions": "No writes.",
+      "requirementId": "BR-SUPER-026",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-048",
+      "feature": "Score Adjustments",
+      "scenario": "PATCH /score-adjustments unknown id returns 404",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Superadmin session; no auction_scores row 'ghost'.",
+      "testData": "PATCH { id:'ghost', synergyBonus:1, reason:'x' }",
+      "testSteps": [
+        "1. PATCH unknown id.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 404.",
+      "postconditions": "No writes.",
+      "requirementId": "BR-SUPER-027",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-049",
+      "feature": "Score Adjustments",
+      "scenario": "PATCH /score-adjustments updates only synergyBonus; clubResultBonus falls back to existing",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "auction_scores as-1: rawPoints=80, synergyBonus=4, clubResultBonus=2, totalPoints=86.",
+      "testData": "PATCH { id:'as-1', synergyBonus:6, reason:'fix synergy double-count' }",
+      "testSteps": [
+        "1. PATCH the row.",
+        "2. SELECT as-1 columns.",
+        "3. Inspect response body."
+      ],
+      "expectedResult": "synergyBonus=6, clubResultBonus=2 unchanged, totalPoints=88; response includes deltaTotal=2.",
+      "postconditions": "Row mutated; audit row created (verified in TC-SUPER-050).",
+      "requirementId": "AC-SUPER-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-050",
+      "feature": "Score Adjustments Audit",
+      "scenario": "PATCH /score-adjustments writes auditLogs row with description, pointsAffected, teamId, gameweekId",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Same as TC-SUPER-049 (as-1 raw=80, syn=4, club=2, total=86).",
+      "testData": "PATCH { id:'as-1', synergyBonus:6, reason:'fix synergy double-count' }",
+      "testSteps": [
+        "1. PATCH the row.",
+        "2. SELECT auditLogs WHERE type='AUCTION_SCORE_ADJUSTMENT' ORDER BY createdAt DESC LIMIT 1.",
+        "3. Inspect description, pointsAffected, teamId, gameweekId."
+      ],
+      "expectedResult": "auditLogs row exists; description contains 'synergy 4 → 6; clubResult 2 → 2; total 86 → 88 — Reason: fix synergy double-count'; pointsAffected=2; teamId matches as-1.teamId; gameweekId matches as-1.gameweekId.",
+      "postconditions": "Audit trail in place.",
+      "requirementId": "AC-SUPER-030",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-051",
+      "feature": "Score Adjustments Integrity",
+      "scenario": "PATCH /score-adjustments re-ranks ALL teams + recomputes payouts + adjusts teams.purse/totalIncome by delta",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "GW3 in lg-1: T1 rank=1 total=100 payout=£400; T2 rank=2 total=95 payout=£200.",
+      "testData": "PATCH { id:<T2.as id>, clubResultBonus:<enough to lift T2.total to 110>, reason:'audit adjust' }",
+      "testSteps": [
+        "1. PATCH T2 to make newTotal=110.",
+        "2. SELECT auction_scores WHERE id IN (T1,T2).",
+        "3. Compare rank and payout values."
+      ],
+      "expectedResult": "After the adjustment that makes T2.totalPoints > T1.totalPoints: T2 now rank=1 and payout=£400; T1 now rank=2 and payout=£200; teams.purse + teams.totalIncome on both teams are adjusted by the payout delta (T2 +£200, T1 -£200); changes happen atomically inside the PATCH transaction. Leaderboard and finance ledger stay coherent.",
+      "postconditions": "Economy desynced until GW reprocess.",
+      "requirementId": "AC-SUPER-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SUPER-006. CRITICAL — payout is real money. [QA-VERIFY] Updated post-DEF-SUPER-006 fix on 2026-05-25 — inverted from Regression to Positive; expectedResult now asserts rank/payout/purse/totalIncome all updated."
+    },
+    {
+      "id": "TC-SUPER-052",
+      "feature": "Score Adjustments Audit",
+      "scenario": "PATCH /score-adjustments audit row does not carry actor id — pins DEF-SUPER-007",
+      "type": "Regression",
+      "priority": "P1",
+      "preconditions": "Two superadmins SA-A (sid='sid-A') and SA-B (sid='sid-B') both signed in; auction_scores rows as-1 and as-2.",
+      "testData": "SA-A PATCH as-1 reason='A1'; SA-B PATCH as-2 reason='B1'",
+      "testSteps": [
+        "1. SA-A patches as-1.",
+        "2. SA-B patches as-2.",
+        "3. SELECT both audit rows; inspect for any field carrying session id."
+      ],
+      "expectedResult": "Current behaviour: both auditLogs rows are indistinguishable by actor; no actorId column populated, description does not embed session id. Pins missing attribution.",
+      "postconditions": "Cannot attribute adjustment to a specific superadmin.",
+      "requirementId": "AC-SUPER-032",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SUPER-007."
+    },
+    {
+      "id": "TC-SUPER-053",
+      "feature": "Score Adjustments Validation",
+      "scenario": "score-adjustment PATCH rejects unbounded integer bonuses with 400",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "as-1 exists.",
+      "testData": "PATCH { id:'as-1', synergyBonus:-50000, reason:'fat finger' }",
+      "testSteps": [
+        "1. PATCH with absurd negative bonus.",
+        "2. Capture response.",
+        "3. SELECT as-1.synergyBonus."
+      ],
+      "expectedResult": "PATCH /api/superadmin/score-adjustments with synergyBonus=1000000000 (or clubResultBonus=-9999) returns HTTP 400 'synergyBonus and clubResultBonus must be integers in [-500, 500]'. The auctionScores row is unchanged. Values within [-500, 500] still update normally.",
+      "postconditions": "Row mutated.",
+      "requirementId": "AC-SUPER-033",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-008 fix on 2026-05-26 — retagged Regression -> Positive."
+    },
+    {
+      "id": "TC-SUPER-054",
+      "feature": "Score Adjustments Validation",
+      "scenario": "PATCH /score-adjustments rejects non-integer synergyBonus (e.g. 5.5)",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "as-1 exists.",
+      "testData": "PATCH { id:'as-1', synergyBonus:5.5, reason:'oops' }",
+      "testSteps": [
+        "1. PATCH with float.",
+        "2. Capture response."
+      ],
+      "expectedResult": "HTTP 400 (Number.isInteger fails for 5.5).",
+      "postconditions": "No write.",
+      "requirementId": "BR-SUPER-031",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-055",
+      "feature": "Dashboard Tabs",
+      "scenario": "PL Standings tab lazy-loads fetchStandings exactly once on first activation",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Signed in on /app/superadmin, initial tab='leagues'.",
+      "testData": "Click 'PL Standings' tab once, then 'Score Adjustments', then back to 'PL Standings'.",
+      "testSteps": [
+        "1. Open devtools network panel.",
+        "2. Switch to PL Standings.",
+        "3. Observe GET /api/superadmin/pl-standings count.",
+        "4. Switch to Score Adjustments — observe GET /api/superadmin/score-adjustments count.",
+        "5. Switch back to PL Standings — confirm no extra fetch."
+      ],
+      "expectedResult": "fetchStandings fires exactly once; fetchAdjBootstrap fires exactly once; re-visits do not re-fetch.",
+      "postconditions": "Network panel shows single calls per fetch.",
+      "requirementId": "AC-SUPER-034",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-056",
+      "feature": "Dashboard Auth Redirect",
+      "scenario": "Dashboard redirects to /signin when fetchAdmins returns 403",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Signed-in superadmin whose session is invalidated server-side mid-page.",
+      "testData": "Open /app/superadmin; invalidate session; reload Admins tab.",
+      "testSteps": [
+        "1. Sign in and visit /app/superadmin (Admins tab).",
+        "2. Delete the session row server-side.",
+        "3. Trigger a refresh of admins (e.g. re-open tab).",
+        "4. Observe window.location."
+      ],
+      "expectedResult": "Browser navigates to /signin via window.location.href='/signin'.",
+      "postconditions": "User on signin page.",
+      "requirementId": "AC-SUPER-035",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-057",
+      "feature": "Admins Tab UI",
+      "scenario": "Superadmin row renders yellow pill, 'All leagues', Edit only; admin rows show count + Edit/Leagues/Delete",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "One superadmin SA-1 and two admins u-1 (2 leagues), u-2 (0 leagues).",
+      "testData": "/app/superadmin Admins tab",
+      "testSteps": [
+        "1. Render Admins tab.",
+        "2. Inspect SA-1 row (pill color, leagues cell, action buttons).",
+        "3. Inspect u-1 and u-2 rows."
+      ],
+      "expectedResult": "SA-1: yellow 'superadmin' pill, 'All leagues' text, only Edit button visible. u-1/u-2: purple 'admin' pill, assigned-league count (2 and 0), Edit + Leagues + Delete buttons.",
+      "postconditions": "No state change.",
+      "requirementId": "AC-SUPER-036",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-058",
+      "feature": "Assign-Leagues Modal",
+      "scenario": "Clicking a league checkbox fires POST/DELETE immediately and updates modal state",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Assign-Leagues modal open for admin u-1; lg-A unchecked.",
+      "testData": "Click lg-A checkbox.",
+      "testSteps": [
+        "1. Open modal for u-1.",
+        "2. Click lg-A checkbox.",
+        "3. Observe network: POST /api/superadmin/league-assignments fires.",
+        "4. Observe modal list updates without Save click.",
+        "5. Click lg-A again; observe DELETE fires."
+      ],
+      "expectedResult": "Each click triggers a single POST or DELETE; modal state reflects the toggle immediately; no Save button needed.",
+      "postconditions": "league_admins reflects the last toggle.",
+      "requirementId": "AC-SUPER-037",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-059",
+      "feature": "Create-League Wizard",
+      "scenario": "Wizard 'Create League' POSTs league then parallel-POSTs league-assignments for selected admins",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Wizard on 'assign' step with two admin checkboxes ticked.",
+      "testData": "Click 'Create League'.",
+      "testSteps": [
+        "1. Tick two admin checkboxes.",
+        "2. Click 'Create League'.",
+        "3. Observe network: POST /api/superadmin/leagues first; then two parallel POSTs to /api/superadmin/league-assignments with the new leagueId.",
+        "4. Observe Admins list refreshes."
+      ],
+      "expectedResult": "Order: league POST first, then two parallel assignment POSTs; on success the admins fetch re-runs.",
+      "postconditions": "New league + 2 assignments persisted.",
+      "requirementId": "AC-SUPER-038",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-060",
+      "feature": "PL Standings UI Guard",
+      "scenario": "Save Standings aborts and shows toast when tier counts are wrong (mid short)",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "PL Standings tab; top8.length=8, mid.length=8, promoted.length=3.",
+      "testData": "Click 'Save Standings'.",
+      "testSteps": [
+        "1. Drag a team out of mid so length=8.",
+        "2. Click Save Standings.",
+        "3. Observe toast text and network."
+      ],
+      "expectedResult": "Toast 'Tier counts must be: 8 / 9 / 3 (got 8 / 8 / 3)' shown; no PUT request fired.",
+      "postconditions": "Server config unchanged.",
+      "requirementId": "AC-SUPER-039",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-061",
+      "feature": "PL Standings UI",
+      "scenario": "Promoted tier auto-sorts alphabetically; top8/mid append in click order",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "Promoted tier empty; Sunderland, Leeds, Burnley sit in Unassigned.",
+      "testData": "Click '→ Promoted' on Sunderland, Leeds, Burnley in that order.",
+      "testSteps": [
+        "1. Click '→ Promoted' on Sunderland.",
+        "2. Click '→ Promoted' on Leeds.",
+        "3. Click '→ Promoted' on Burnley.",
+        "4. Inspect promoted list order in DOM."
+      ],
+      "expectedResult": "Promoted reads Burnley → Leeds → Sunderland (alphabetical) regardless of click order; equivalent click sequence into top8/mid would append in click order.",
+      "postconditions": "UI re-rendered alphabetically; backend not yet hit until Save.",
+      "requirementId": "AC-SUPER-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-062",
+      "feature": "Score Adjustments UI",
+      "scenario": "Save disabled until both edit AND reason present; Total cell shows live yellow preview",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Score Adjustments tab with a row loaded (rawPoints=80, syn=4, club=2, total=86).",
+      "testData": "Edit synergy to 6; leave reason blank; then type reason.",
+      "testSteps": [
+        "1. Edit synergyBonus to 6 — observe Save still disabled.",
+        "2. Inspect Total cell: shows '88' in yellow with original '86' label below.",
+        "3. Type reason 'fix' — observe Save becomes enabled."
+      ],
+      "expectedResult": "Save disabled while reason empty; live Total preview = rawPoints + effSynergy + effClubResult shown in yellow with old total labelled; Save enables only when both edit and reason exist.",
+      "postconditions": "No backend hit until Save clicked.",
+      "requirementId": "AC-SUPER-041",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-063",
+      "feature": "Create-Admin Modal",
+      "scenario": "Submitting the modal creates admin and shows 'Must change' pill + correct toast",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Create-Admin modal open with all three fields filled (name='Bob', email='bob@x.com', password='Init#Pass').",
+      "testData": "Click submit.",
+      "testSteps": [
+        "1. Submit modal.",
+        "2. Observe POST /api/superadmin/admins fires.",
+        "3. Inspect Admins table for new Bob row and 'Must change' pill.",
+        "4. Inspect success toast text."
+      ],
+      "expectedResult": "Row appears with 'Must change' password pill; toast reads 'Admin \"Bob\" created. They must change their password on first login.'",
+      "postconditions": "Admin onboarded.",
+      "requirementId": "AC-SUPER-042",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-064",
+      "feature": "Create-Admin Modal",
+      "scenario": "HTML required validation prevents submit when password field is empty",
+      "type": "Negative",
+      "priority": "P3",
+      "preconditions": "Create-Admin modal open.",
+      "testData": "Fill name+email; leave password empty; click submit.",
+      "testSteps": [
+        "1. Click submit with empty password.",
+        "2. Observe browser-native required validation.",
+        "3. Confirm no POST fired."
+      ],
+      "expectedResult": "Form does not submit; HTML required tooltip on password input.",
+      "postconditions": "No backend mutation.",
+      "requirementId": "BR-SUPER-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-065",
+      "feature": "Edit-Admin Modal",
+      "scenario": "Entering a new password in Edit modal shows force-change warning",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Edit-Admin modal open for u-1.",
+      "testData": "Type new password 'NewPass#1'.",
+      "testSteps": [
+        "1. Type into password field.",
+        "2. Inspect modal copy for warning text."
+      ],
+      "expectedResult": "Warning text appears explaining the admin will be forced to change password on next login.",
+      "postconditions": "No backend hit until save.",
+      "requirementId": "BR-SUPER-040",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-066",
+      "feature": "Force Password Change",
+      "scenario": "Admin created via POST /admins must change password on next login",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Fresh admin created via POST /api/superadmin/admins.",
+      "testData": "Sign in as the new admin.",
+      "testSteps": [
+        "1. POST new admin.",
+        "2. Sign in as that admin with the initial password.",
+        "3. Observe redirect / forced-change screen."
+      ],
+      "expectedResult": "Signin succeeds but auth flow forces password change because users.mustChangePassword=true.",
+      "postconditions": "Admin must set new password before continuing.",
+      "requirementId": "US-SUPER-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-067",
+      "feature": "Force Password Change",
+      "scenario": "Admin whose password was reset via PATCH must change again on next login",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Existing admin u-1 with mustChangePassword=false after prior change.",
+      "testData": "PATCH /api/superadmin/admins/u-1 { password:'TmpReset#1' }; then sign in as u-1.",
+      "testSteps": [
+        "1. PATCH u-1 with new password.",
+        "2. Sign in as u-1 with 'TmpReset#1'.",
+        "3. Observe forced-change flow."
+      ],
+      "expectedResult": "u-1 forced into password-change screen because PATCH set mustChangePassword=true.",
+      "postconditions": "u-1 cannot operate until reset.",
+      "requirementId": "BR-SUPER-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-SUPER-068",
+      "feature": "Score Adjustments Recompute Verification",
+      "scenario": "After DEF-SUPER-006 fix verification: PATCH recomputes rank+payout when totals swap",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Same as TC-SUPER-051 (T1 rank1 total100 £400; T2 rank2 total95 £200).",
+      "testData": "PATCH T2 to total=110.",
+      "testSteps": [
+        "1. Apply PATCH so T2.totalPoints=110.",
+        "2. SELECT auction_scores for GW3 ordered by totalPoints desc.",
+        "3. Compare rank and payout."
+      ],
+      "expectedResult": "Post-fix: T2 has rank=1 and inherits the £400 payout, T1 has rank=2 and payout £200 — ranks and payouts consistent with totals. (Pre-fix this test FAILS, matching TC-SUPER-051.)",
+      "postconditions": "Economy in sync.",
+      "requirementId": "BR-SUPER-029",
+      "author": "qa-tester",
+      "createdDate": "2026-05-24",
+      "status": "Not Executed",
+      "notes": "Pins DEF-SUPER-006 (post-fix expected outcome). Use alongside TC-SUPER-051 as the before/after pair. [QA-VERIFY] Confirmed post-DEF-SUPER-006 fix on 2026-05-25 — expectedResult matches actual fixed behaviour."
+    },
+    {
+      "id": "TC-SUPER-069",
+      "feature": "Edit Admin (Self-Service Superadmin)",
+      "scenario": "Superadmin PATCHing their OWN row still succeeds (self-service password/email change)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Superadmin SA-A is signed in (x-session-id='sa-1', users.id='sa-1', role='superadmin'). sa-1.mustChangePassword=false.",
+      "testData": "PATCH /api/superadmin/admins/sa-1 { password:'NewSelfPass#1' } as SA-A",
+      "testSteps": [
+        "1. Sign in as SA-A (session id sa-1).",
+        "2. PATCH /api/superadmin/admins/sa-1 with the new password.",
+        "3. Capture response.",
+        "4. SELECT users WHERE id='sa-1' and run bcrypt.compare('NewSelfPass#1', stored).",
+        "5. Confirm mustChangePassword=true and updatedAt advanced."
+      ],
+      "expectedResult": "HTTP 200 { success: true }; sa-1.password is a fresh bcrypt hash of 'NewSelfPass#1'; sa-1.mustChangePassword=true; sa-1.updatedAt refreshed. The cross-superadmin guard does NOT fire because target.id === callerId (self-edit).",
+      "postconditions": "SA-A can sign in with the new password (will be forced to change it).",
+      "requirementId": "AC-SUPER-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-25",
+      "status": "Not Executed",
+      "notes": "Locks in the self-service exception of the DEF-SUPER-003 fix — guard only blocks cross-superadmin edits, never self-edits."
+    }
+  ],
+  "gapFlags": [],
+  "defects": [
+    {
+      "id": "DEF-SUPER-001",
+      "title": "PATCH /superadmin/admins/[userId] does not normalize email to lowercase (POST does)",
+      "severity": "Major",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "POST /api/superadmin/admins lowercases+trims the email before insert (src/app/api/superadmin/admins/route.ts:67), but PATCH only trims (src/app/api/superadmin/admins/[userId]/route.ts:34-36). After an edit, the stored email can have mixed case, which mismatches signin behaviour and the unique-email index.",
+      "expectedBehaviour": "PATCH should apply the same .trim().toLowerCase() normalization to the email before persisting.",
+      "actualBehaviour": "Stored email keeps user-supplied casing on edit; subsequent POST creates with the lowercase form may incorrectly succeed (or signin may fail depending on lookup case sensitivity).",
+      "sourceRefs": [
+        "src/app/api/superadmin/admins/[userId]/route.ts:34-36",
+        "src/app/api/superadmin/admins/route.ts:67"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-006"
+      ],
+      "linkedAcceptanceCriteria": [],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-019"
+      ],
+      "notes": "Fix: replace `updates.email = body.email.trim()` with `updates.email = body.email.trim().toLowerCase()`. Low-risk one-line change. Consider also adding a basic email-format regex to both POST and PATCH (DEF-SUPER-006). [DEV] Self-verified: surgical .toLowerCase() addition. [QA] Re-run TC-SUPER-019 — expect PATCH email persisted as lowercase regardless of caller casing. [BA] BR-SUPER-006 should be rewritten to assert both POST and PATCH normalize to lowercase. [BA-UPDATED]: 2026-05-26 — BR-SUPER-006 updated.",
+      "resolution": "PATCH /api/superadmin/admins/[userId] now applies the same .trim().toLowerCase() normalization to the email field that POST has always done (src/app/api/superadmin/admins/[userId]/route.ts:48-51). Email casing on edit now matches the unique-index + signin's lowercase-stored convention.",
+      "resolutionDate": "2026-05-26"
+    },
+    {
+      "id": "DEF-SUPER-002",
+      "title": "PATCH /superadmin/admins/[userId] returns 200 for unknown userId (no existence check)",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "PATCH issues db.update(users).set(...).where(eq(users.id, userId)) without first verifying the row exists; an unknown id silently affects 0 rows and the route still returns { success: true }. DELETE on the same route correctly 404s.",
+      "expectedBehaviour": "PATCH should look up the target user (mirroring DELETE) and return 404 { error: \"User not found\" } when missing.",
+      "actualBehaviour": "200 { success: true } is returned for unknown userIds, hiding client/state desync from the operator.",
+      "sourceRefs": [
+        "src/app/api/superadmin/admins/[userId]/route.ts:12-54",
+        "src/app/api/superadmin/admins/[userId]/route.ts:70-77"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-009"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SUPER-009"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-016"
+      ],
+      "notes": "Fix: add `const target = await db.query.users.findFirst({ where: eq(users.id, userId) }); if (!target) return 404` at the top of PATCH, same pattern as DELETE. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added a not-found guard at src/app/api/superadmin/admins/[userId]/route.ts:27-29: when db.query.users.findFirst returns null (unknown userId), the handler returns HTTP 404 'User not found' before reaching the UPDATE statement. Previously the UPDATE silently affected 0 rows and the route still returned 200 success.",
+      "resolutionDate": "2026-05-26"
+    },
+    {
+      "id": "DEF-SUPER-003",
+      "title": "PATCH /superadmin/admins/[userId] can mutate another superadmin's credentials without a guard",
+      "severity": "Major",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "DELETE explicitly rejects target.role === 'superadmin', but PATCH performs no such check. Any superadmin can therefore change another superadmin's email or reset their password (and force mustChangePassword=true), locking the other superadmin out.",
+      "expectedBehaviour": "PATCH should either (a) reject when target.role === 'superadmin' for callers other than the target themselves, or (b) require an extra confirmation factor (password re-entry, similar to delete-league flow).",
+      "actualBehaviour": "Superadmin A can reset Superadmin B's password and email with a single PATCH call, no warning.",
+      "sourceRefs": [
+        "src/app/api/superadmin/admins/[userId]/route.ts:12-54",
+        "src/app/api/superadmin/admins/[userId]/route.ts:75-77"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-010"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SUPER-010"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-017",
+        "TC-SUPER-018"
+      ],
+      "notes": "Likely a privilege-escalation concern between platform owners. Lowest-risk fix: forbid editing role==='superadmin' unless the session id equals the target user id (self-service password change). [DEV] Self-verified: tsc passes for touched files (pre-existing unrelated errors in tests/league-types/*.spec.ts only), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-SUPER-017 and TC-SUPER-018 against the fix; expected behaviour now: SA-A PATCHing SA-B receives HTTP 403 with { error: \"Cannot modify another superadmin's account\" } and no DB mutation; SA-B PATCHing themselves still succeeds (self-service password/email change). Also verify AC-SUPER-010 expected text is now realised. [BA] BR-SUPER-010 and AC-SUPER-010 currently document the unguarded behaviour as 'pending defect resolution' — please update BR-SUPER-010 text to state 'PATCH rejects with 403 when target.role === \"superadmin\" and target.id !== session.id (i.e. only self-service edits of a superadmin row are permitted; admin rows are unaffected)', and update AC-SUPER-010 expected outcome to 403 with { error: \"Cannot modify another superadmin's account\" }. [QA-VERIFIED]: 2026-05-25 — TC-SUPER-017 + TC-SUPER-018 inverted; cross-superadmin guard confirmed. [BA-UPDATED]: 2026-05-25 — BR-SUPER-010 + AC-SUPER-010 updated to reflect fixed behaviour.",
+      "resolution": "Added a cross-superadmin guard at the top of the PATCH handler in src/app/api/superadmin/admins/[userId]/route.ts (lines 20-32 of the new file). After the isSuperAdmin auth check, the route now loads the target user via db.query.users.findFirst and, when target.role === 'superadmin' AND target.id !== request.headers.get('x-session-id'), returns 403 { error: \"Cannot modify another superadmin's account\" }. Non-superadmin (admin) targets and a superadmin editing their own row fall through to the existing update logic untouched. DELETE already had an equivalent guard (rejects every superadmin target outright, lines 75-77) so no change needed there.",
+      "resolutionDate": "2026-05-25"
+    },
+    {
+      "id": "DEF-SUPER-004",
+      "title": "DELETE /superadmin/league-assignments returns 200 even when no assignment row existed",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "DELETE issues a plain delete-where and returns { success:true } without inspecting the rows-affected count. A stale UI clicking 'remove' on an already-removed assignment gets a green response.",
+      "expectedBehaviour": "Either return 404 when no row matched, or include a `removed: boolean` flag in the response so the UI can detect no-ops.",
+      "actualBehaviour": "Silent success for already-deleted assignments.",
+      "sourceRefs": [
+        "src/app/api/superadmin/league-assignments/route.ts:54-71"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-015"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SUPER-017"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-029"
+      ],
+      "notes": "Low-impact; consider deferring until QA notices stale-UI desync in practice. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added an existence check to DELETE /api/superadmin/league-assignments (src/app/api/superadmin/league-assignments/route.ts:66-76): the route now SELECTs the matching leagueAdmins row first and returns HTTP 404 'Assignment not found' if it doesn't exist. Previously a stale UI clicking 'remove' on an already-removed assignment got HTTP 200 success even though no row was deleted.",
+      "resolutionDate": "2026-05-26"
+    },
+    {
+      "id": "DEF-SUPER-005",
+      "title": "PUT /superadmin/pl-standings persists arbitrary integers (no FPL-bootstrap membership check)",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "Validation enforces lengths (8/9/3 = 20) and uniqueness, but does NOT cross-check the supplied integers against the live FPL bootstrap team-id set. A typo or copy-paste of stale IDs persists silently; resolveTier() will return null for affected real PL teams and the Club Auction picker will hide those teams.",
+      "expectedBehaviour": "Fetch the FPL bootstrap inside the PUT (or accept a server-validated list) and reject any ID that is not in the current team set, with a 400 enumerating the bad IDs.",
+      "actualBehaviour": "[101..120] is accepted and stored; PL Club Auction tier resolution silently breaks until the row is corrected.",
+      "sourceRefs": [
+        "src/app/api/superadmin/pl-standings/route.ts:119-152",
+        "src/lib/data/pl-standings-seed.ts:39-51"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-021"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SUPER-023"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-038"
+      ],
+      "notes": "Fix is constrained by the same bootstrap fetch the GET uses — if FPL is briefly unreachable on PUT, fail closed with 503 rather than persisting unverified IDs.",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-SUPER-006",
+      "title": "Score-adjustment PATCH does not re-rank or recompute payouts",
+      "severity": "Critical",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "PATCH /api/superadmin/score-adjustments updates synergyBonus/clubResultBonus/totalPoints inside a transaction but never touches auction_scores.rank or auction_scores.payout. A swap-changing adjustment (e.g. T2 overtakes T1) leaves stored ranks and payouts inconsistent with the new totals until the GW is reprocessed end-to-end.",
+      "expectedBehaviour": "After persisting the new total, recompute rank order within (leagueId, gameweekId) and update each affected row's payout via the same payout rules used by module 11's scoring path. The change should either run that recompute inline or atomically queue a full GW reprocess.",
+      "actualBehaviour": "totalPoints is correct but rank and payout stay frozen — payout-math owner (module 11) becomes out of sync with what superadmin sees.",
+      "sourceRefs": [
+        "src/app/api/superadmin/score-adjustments/route.ts:129-154"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-029"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SUPER-031"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-051",
+        "TC-SUPER-068"
+      ],
+      "notes": "Critical because payout is real money/economy. Cross-references module 11 (Auction Economy) — the safe fix is to call the same reprocess helper module 11 uses after scoring. Defer test cases to QA once the architectural call (inline recompute vs queued reprocess) is made. [DEV] Self-verified: tsc passes for touched file, manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-SUPER-051 (now expected to FAIL — pre-fix pin) and TC-SUPER-068 (now expected to PASS — post-fix pin). [BA] BR-SUPER-029 / AC-SUPER-031 should be updated to spell out that the inline recompute uses `totalPoints desc → teamId asc` as the deterministic tiebreaker (the heavier squadValue+purse tiebreakers used in module 11's full GW processor are out of scope for a PATCH); confirm this is the intended behaviour. [QA-VERIFIED]: 2026-05-25 — TC-SUPER-051 inverted, TC-SUPER-068 confirmed; rank/payout recompute + purse/totalIncome adjustment confirmed. [BA-UPDATED]: 2026-05-25 — BR-SUPER-029 + AC-SUPER-031 updated to reflect fixed behaviour.",
+      "resolution": "In src/app/api/superadmin/score-adjustments/route.ts:130-186, after updating the patched auctionScores row inside the existing transaction, reload all auction_scores rows for (leagueId, gameweekId), sort them by totalPoints desc with teamId asc as the deterministic tiebreaker, and write the resulting rank + getPayoutForRank(rank) (imported from src/lib/formats/auction/economy.ts) back to every row whose rank/payout changed. Also adjust each affected team's teams.purse and teams.totalIncome by the payout delta so the admin finance summary (buildAllTeamsSummary reads teams.purse directly) stays consistent with the leaderboard. Entire recompute is in the same db.transaction as the score update and the auditLogs insert, so a failure rolls everything back.",
+      "resolutionDate": "2026-05-25"
+    },
+    {
+      "id": "DEF-SUPER-007",
+      "title": "Score-adjustment audit log does not record the acting superadmin",
+      "severity": "Major",
+      "status": "Open",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "The middleware forwards x-session-id to every route, but PATCH /api/superadmin/score-adjustments never reads it; the auditLogs row only carries the static prefix '[Superadmin]' in description. On a platform with multiple superadmins there is no attributable trail.",
+      "expectedBehaviour": "Read request.headers.get('x-session-id') in the route and write it into the auditLogs row (e.g. via an actorId column or appended into description with the acting superadmin's id/name).",
+      "actualBehaviour": "All score-adjustment audit rows are indistinguishable between superadmins.",
+      "sourceRefs": [
+        "src/app/api/superadmin/score-adjustments/route.ts:96-154",
+        "src/middleware.ts:204-211"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-030"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SUPER-032"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-052"
+      ],
+      "notes": "Requires either schema change (actorId column on auditLogs) or a description-only prefix. Cross-module dependency: similar gap may exist on /superadmin/admins routes (consider follow-up).",
+      "resolution": null,
+      "resolutionDate": null
+    },
+    {
+      "id": "DEF-SUPER-008",
+      "title": "Score-adjustment PATCH accepts unbounded integer bonuses",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "synergyBonus and clubResultBonus pass any value that Number.isInteger() accepts — large positives (1e9), large negatives, etc. A single typo can wreck a GW's totals.",
+      "expectedBehaviour": "Apply a sanity range, e.g. abs(value) ≤ 100 (or the maximum observed in module-11 scoring). Return 400 with the offending field name when out of range.",
+      "actualBehaviour": "Persists arbitrary integers without warning.",
+      "sourceRefs": [
+        "src/app/api/superadmin/score-adjustments/route.ts:112-113"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-031"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SUPER-033"
+      ],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-053"
+      ],
+      "notes": "Low-impact UX guard; pair with DEF-SUPER-006 fix. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added a bounded-integer check to the synergyBonus + clubResultBonus inputs on PATCH /api/superadmin/score-adjustments (src/app/api/superadmin/score-adjustments/route.ts:113-133). Both values must be integers within [-500, 500]; values outside that range, plus non-integer values, return HTTP 400 with the explicit range message. The 500-point cap is high enough to permit any legitimate adjustment but flags typos like 1e9.",
+      "resolutionDate": "2026-05-26"
+    },
+    {
+      "id": "DEF-SUPER-009",
+      "title": "POST /superadmin/admins has no input validation beyond presence checks",
+      "severity": "Minor",
+      "status": "Fixed",
+      "discoveredBy": "business-analyst",
+      "discoveredDate": "2026-05-23",
+      "description": "Name, email, password are only checked for truthy presence. There is no email-format regex, no password length/strength rule, and no length cap on any field — allowing 1-char passwords, malformed 'a' emails, or 1MB names.",
+      "expectedBehaviour": "Reject malformed emails (basic regex), enforce a minimum password length (≥8) consistent with module 01's signin/change-password rules, and cap name length (e.g. ≤120).",
+      "actualBehaviour": "All three are stored as-supplied.",
+      "sourceRefs": [
+        "src/app/api/superadmin/admins/route.ts:60-79"
+      ],
+      "linkedBusinessRules": [
+        "BR-SUPER-003"
+      ],
+      "linkedAcceptanceCriteria": [],
+      "linkedGapFlags": [],
+      "pinningTestCases": [
+        "TC-SUPER-011",
+        "TC-SUPER-012"
+      ],
+      "notes": "Cross-check with module 01 (auth) for canonical password rules. Likely shared helper. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added input-shape validation to POST /api/superadmin/admins (src/app/api/superadmin/admins/route.ts:62-79): name must be 1-100 chars (typeof string), email must match a basic email regex and be <=254 chars, password must be 8-256 chars AND contain at least one digit or special character. Each failure returns HTTP 400 with an explicit message. Aligns the admin-create path with the team-side password rules and prevents 1-char passwords / malformed 'a' emails / 1MB names.",
+      "resolutionDate": "2026-05-26"
+    }
+  ]
+}
