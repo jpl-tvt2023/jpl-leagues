@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 2,
+    "version": 8,
     "businessContext": "Module 16 covers the platform-wide superadmin surface: a single dashboard (/app/superadmin) and a set of /api/superadmin/* endpoints that only `session.type === \"superadmin\"` callers may invoke. It owns admin-user CRUD (create / edit / delete / password reset), league-admin assignments (mapping `admin`-role users onto specific leagues via the `league_admins` table), the singleton PL-Standings tier config used by the Club Auction (top8 / mid / promoted), and manual GW score-adjustment authentication + audit trail (the math itself lives in module 11). League CRUD lives in module 02, auth itself in module 01.",
     "userStories": [
       {
@@ -170,9 +170,9 @@
       },
       {
         "id": "BR-SUPER-003",
-        "rule": "POST /api/superadmin/admins requires non-empty name, email, and password in the body; missing any field returns 400 with { error: \"name, email, and password are required\" }. // CODE-CONFIRMED: may be a defect — confirm with product owner: no email-format validation, no password-strength validation, no length caps, and no trimming of name.",
+        "rule": "POST /api/superadmin/admins validates: name is a non-empty string <=100 chars; email matches /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/ AND is <=254 chars; password is 8-256 chars AND contains at least one number or special character. Each failure returns HTTP 400 with an explicit message. Email is then lowercased before insert (BR-SUPER-006).",
         "sourceRefs": [
-          "src/app/api/superadmin/admins/route.ts:60-65"
+          "src/app/api/superadmin/admins/route.ts:60-80"
         ]
       },
       {
@@ -192,10 +192,10 @@
       },
       {
         "id": "BR-SUPER-006",
-        "rule": "PATCH /api/superadmin/admins/[userId] accepts optional name (trimmed, must be non-empty after trim to apply), email (trimmed only — NOT lowercased), and password (any truthy string). At least one valid field must be present or the route returns 400 with { error: \"No valid fields to update\" }. // CODE-CONFIRMED: may be a defect — confirm with product owner: PATCH trims but does not lowercase email, while POST does. The same human-entered address can produce a mismatched stored email vs the signin lookup, which is also case-sensitive depending on the auth flow.",
+        "rule": "Both POST /api/superadmin/admins and PATCH /api/superadmin/admins/[userId] normalize an admin's email via .trim().toLowerCase() before persisting. This keeps the unique-email index, the case-insensitive signin lookup (via stored-lowercase compare), and the displayed email consistent.",
         "sourceRefs": [
-          "src/app/api/superadmin/admins/[userId]/route.ts:21-47",
-          "src/app/api/superadmin/admins/route.ts:67"
+          "src/app/api/superadmin/admins/route.ts:67",
+          "src/app/api/superadmin/admins/[userId]/route.ts:48-51"
         ]
       },
       {
@@ -214,17 +214,17 @@
       },
       {
         "id": "BR-SUPER-009",
-        "rule": "PATCH /api/superadmin/admins/[userId] does not verify the target user exists before issuing the UPDATE; an unknown userId returns 200 success with no rows changed. // CODE-CONFIRMED: may be a defect — confirm with product owner: the route should 404 for unknown userId for consistency with DELETE.",
+        "rule": "PATCH /api/superadmin/admins/[userId] looks up the target row before mutating; if no row exists with that userId, returns HTTP 404 'User not found'. Mirrors the existing DELETE handler's behaviour.",
         "sourceRefs": [
-          "src/app/api/superadmin/admins/[userId]/route.ts:12-54"
+          "src/app/api/superadmin/admins/[userId]/route.ts:26-29"
         ]
       },
       {
         "id": "BR-SUPER-010",
-        "rule": "PATCH /api/superadmin/admins/[userId] does NOT block editing a user whose role is 'superadmin' — name, email, and password of a superadmin account can be changed by any other superadmin without an additional confirmation. // CODE-CONFIRMED: may be a defect — confirm with product owner: DELETE explicitly rejects a superadmin target, but PATCH does not.",
+        "rule": "PATCH /api/superadmin/admins/[userId] rejects with 403 { error: \"Cannot modify another superadmin's account\" } when the target user's role is 'superadmin' AND target.id !== request.headers.get('x-session-id') — i.e. only self-service edits of a superadmin row are permitted (a superadmin may always edit their own name/email/password). Admin-role targets are unaffected and continue to fall through to the standard update path.",
         "sourceRefs": [
-          "src/app/api/superadmin/admins/[userId]/route.ts:12-54",
-          "src/app/api/superadmin/admins/[userId]/route.ts:75-77"
+          "src/app/api/superadmin/admins/[userId]/route.ts:23-35",
+          "src/app/api/superadmin/admins/[userId]/route.ts:84-91"
         ]
       },
       {
@@ -258,9 +258,9 @@
       },
       {
         "id": "BR-SUPER-015",
-        "rule": "DELETE /api/superadmin/league-assignments removes the league_admins row matching (userId, leagueId); the route always returns 200 { success: true } even if no row was deleted. // CODE-CONFIRMED: may be a defect — confirm with product owner: silent success on a no-op delete hides client/state desync.",
+        "rule": "DELETE /api/superadmin/league-assignments looks up the leagueAdmins row first; returns HTTP 404 'Assignment not found' when no matching (userId, leagueId) row exists, otherwise deletes and returns HTTP 200 with {success:true}.",
         "sourceRefs": [
-          "src/app/api/superadmin/league-assignments/route.ts:54-71"
+          "src/app/api/superadmin/league-assignments/route.ts:54-87"
         ]
       },
       {
@@ -374,9 +374,9 @@
       },
       {
         "id": "BR-SUPER-031",
-        "rule": "PATCH /api/superadmin/score-adjustments does NOT bound synergyBonus or clubResultBonus — any integer (including negative or several-thousand-magnitude values) is accepted and persisted as long as it passes Number.isInteger. // CODE-CONFIRMED: may be a defect — confirm with product owner: no sanity range guard against a fat-finger entry.",
+        "rule": "PATCH /api/superadmin/score-adjustments accepts integer synergyBonus and clubResultBonus values only within [-500, 500]. Values outside the range or non-integer values return HTTP 400. The bounds are higher than any legitimate adjustment (a full GW for one team rarely exceeds ~150 points) but block typos that would otherwise wreck the GW total.",
         "sourceRefs": [
-          "src/app/api/superadmin/score-adjustments/route.ts:112-113"
+          "src/app/api/superadmin/score-adjustments/route.ts:113-133"
         ]
       },
       {
@@ -511,16 +511,16 @@
       },
       {
         "id": "AC-SUPER-009",
-        "given": "a superadmin session",
-        "when": "PATCH /api/superadmin/admins/does-not-exist is called with body { name: 'x' }",
-        "then": "the response is 200 { success: true } even though no row was updated — documenting current behaviour pending defect resolution",
+        "given": "a superadmin sends PATCH /api/superadmin/admins/<unknown-uuid> with body={name:'X'}",
+        "when": "the handler runs",
+        "then": "HTTP 404 with body.error='User not found'; no users-table row is mutated; no audit log written.",
         "linksTo": "BR-SUPER-009"
       },
       {
         "id": "AC-SUPER-010",
-        "given": "a superadmin session and a target superadmin user 'sa-2'",
-        "when": "PATCH /api/superadmin/admins/sa-2 is called with body { password: 'reset' }",
-        "then": "the password is updated and mustChangePassword forced to true — there is no guard preventing one superadmin from rotating another's password — documenting current behaviour pending defect resolution",
+        "given": "a superadmin session for SA-A (x-session-id='sa-a') and a different target superadmin user 'sa-b'",
+        "when": "PATCH /api/superadmin/admins/sa-b is called with body { password: 'reset' }",
+        "then": "the response is 403 with { error: \"Cannot modify another superadmin's account\" }; SA-B's row is unchanged (password, email, mustChangePassword, updatedAt all preserved). If SA-B were to PATCH their own row (target.id === session id), the update would succeed as normal.",
         "linksTo": "BR-SUPER-010"
       },
       {
@@ -567,9 +567,9 @@
       },
       {
         "id": "AC-SUPER-017",
-        "given": "a superadmin session and no existing league_admins row for (u-1, lg-X)",
-        "when": "DELETE /api/superadmin/league-assignments is called with that pair",
-        "then": "the response is 200 { success: true } even though no row existed — documenting current behaviour pending defect resolution",
+        "given": "a superadmin sends DELETE /api/superadmin/league-assignments with a (userId, leagueId) pair that doesn't exist in leagueAdmins",
+        "when": "the handler runs",
+        "then": "HTTP 404 with body.error='Assignment not found'; no rows mutated. A subsequent attempt against the same pair after a real assignment exists still deletes with HTTP 200 success.",
         "linksTo": "BR-SUPER-015"
       },
       {
@@ -679,9 +679,9 @@
       },
       {
         "id": "AC-SUPER-033",
-        "given": "a superadmin session and a fat-finger entry of synergyBonus = -50000",
-        "when": "PATCH /api/superadmin/score-adjustments is called with that value and a non-empty reason",
-        "then": "the route accepts the integer and persists the new totalPoints with no warning — documenting current behaviour pending defect resolution",
+        "given": "a superadmin sends PATCH /api/superadmin/score-adjustments with synergyBonus=1000000000",
+        "when": "the handler validates",
+        "then": "HTTP 400 'synergyBonus and clubResultBonus must be integers in [-500, 500]'. The auctionScores row is unchanged. A subsequent PATCH with synergyBonus=10 succeeds and updates the row.",
         "linksTo": "BR-SUPER-031"
       },
       {
@@ -967,8 +967,8 @@
     {
       "id": "TC-SUPER-011",
       "feature": "Create Admin Validation",
-      "scenario": "POST /admins accepts a 1-char password (no strength enforcement) — pins DEF-SUPER-009",
-      "type": "Regression",
+      "scenario": "POST /admins rejects malformed email with 400",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Superadmin session.",
       "testData": "POST { name:'Weak', email:'weak@x.com', password:'a' }",
@@ -976,19 +976,19 @@
         "1. POST with 1-char password.",
         "2. Inspect response and stored row."
       ],
-      "expectedResult": "Current behaviour: 200/201 success, row inserted with bcrypt-hashed 1-char password. Pins lack of password-strength validation.",
+      "expectedResult": "POST /api/superadmin/admins with email='a' returns HTTP 400 'email must be a valid email address (max 254 chars)'. No users row inserted. Valid emails like 'admin@example.com' still create the user.",
       "postconditions": "Row exists; documents defect until fix.",
       "requirementId": "BR-SUPER-003",
       "author": "qa-tester",
       "createdDate": "2026-05-24",
       "status": "Not Executed",
-      "notes": "Pins DEF-SUPER-009. After fix this should flip to 400."
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-009 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-SUPER-012",
       "feature": "Create Admin Validation",
-      "scenario": "POST /admins accepts malformed email like 'notanemail' — pins DEF-SUPER-009",
-      "type": "Regression",
+      "scenario": "POST /admins rejects 1-char or letters-only password with 400",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Superadmin session.",
       "testData": "POST { name:'Bad', email:'notanemail', password:'Pass#1234' }",
@@ -996,13 +996,13 @@
         "1. POST with malformed email.",
         "2. Inspect response and stored row."
       ],
-      "expectedResult": "Current behaviour: 200/201 success, row inserted with email='notanemail'. Pins lack of email-format validation.",
+      "expectedResult": "POST /api/superadmin/admins with password='a' returns HTTP 400 'password must be 8-256 characters'. POST with password='abcdefgh' (8 letters, no digit/special) returns HTTP 400 'password must contain at least one number or special character'. POST with password='abcdefg1' succeeds.",
       "postconditions": "Row exists with malformed email.",
       "requirementId": "BR-SUPER-003",
       "author": "qa-tester",
       "createdDate": "2026-05-24",
       "status": "Not Executed",
-      "notes": "Pins DEF-SUPER-009."
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-009 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-SUPER-013",
@@ -1071,8 +1071,8 @@
     {
       "id": "TC-SUPER-016",
       "feature": "Edit Admin",
-      "scenario": "PATCH /admins/[userId] for unknown userId returns 200 — pins DEF-SUPER-002",
-      "type": "Regression",
+      "scenario": "PATCH /admins returns 404 (not 200) for unknown userId",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "No user with id='does-not-exist'.",
       "testData": "PATCH /api/superadmin/admins/does-not-exist { name:'x' }",
@@ -1081,61 +1081,63 @@
         "2. Capture response.",
         "3. Confirm zero rows affected."
       ],
-      "expectedResult": "Current behaviour: 200 { success: true } despite no row updated. Pins missing existence check.",
+      "expectedResult": "PATCH /api/superadmin/admins/<random-uuid> returns HTTP 404 'User not found'. No rows affected in the users table.",
       "postconditions": "No rows touched.",
       "requirementId": "AC-SUPER-009",
       "author": "qa-tester",
       "createdDate": "2026-05-24",
       "status": "Not Executed",
-      "notes": "Pins DEF-SUPER-002. After fix expect 404."
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-002 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-SUPER-017",
       "feature": "Edit Admin (Cross-Superadmin Mutation)",
-      "scenario": "PATCH /admins/[userId] allows SA-A to reset SA-B's password — pins DEF-SUPER-003",
-      "type": "Regression",
+      "scenario": "PATCH /admins/[userId] rejects SA-A trying to reset SA-B's password with 403",
+      "type": "Positive",
       "priority": "P1",
-      "preconditions": "Two superadmins SA-A (caller) and SA-B (target sa-2).",
+      "preconditions": "Two superadmins SA-A (caller, x-session-id=sa-1) and SA-B (target sa-2). sa-2.password is a bcrypt hash of a known value; sa-2.mustChangePassword=false.",
       "testData": "PATCH /api/superadmin/admins/sa-2 { password:'reset' } as SA-A",
       "testSteps": [
-        "1. Sign in as SA-A.",
+        "1. Sign in as SA-A (session id sa-1).",
         "2. PATCH sa-2 with password override.",
-        "3. SELECT users WHERE id='sa-2'.",
-        "4. bcrypt.compare('reset', stored)."
+        "3. Capture response status and body.",
+        "4. SELECT users WHERE id='sa-2' and confirm password hash + mustChangePassword are unchanged."
       ],
-      "expectedResult": "Current behaviour: 200 success; sa-2.password is rehashed; sa-2.mustChangePassword=true — no guard rejecting cross-superadmin mutation. Pins privilege gap.",
-      "postconditions": "SA-B locked out until they reset.",
+      "expectedResult": "HTTP 403 with body { error: \"Cannot modify another superadmin's account\" }; sa-2.password unchanged; sa-2.mustChangePassword still false; sa-2.updatedAt unchanged.",
+      "postconditions": "SA-B's credentials untouched.",
       "requirementId": "AC-SUPER-010",
       "author": "qa-tester",
       "createdDate": "2026-05-24",
       "status": "Not Executed",
-      "notes": "Pins DEF-SUPER-003."
+      "notes": "Originally pinned DEF-SUPER-003 (now Fixed). [QA-VERIFY] Updated post-DEF-SUPER-003 fix on 2026-05-25 — retagged Regression -> Positive; expectedResult now asserts the new cross-superadmin guard (403 + no DB mutation)."
     },
     {
       "id": "TC-SUPER-018",
       "feature": "Edit Admin (Cross-Superadmin Mutation)",
-      "scenario": "PATCH /admins/[userId] allows SA-A to change SA-B's email — pins DEF-SUPER-003",
-      "type": "Regression",
+      "scenario": "PATCH /admins/[userId] rejects SA-A trying to change SA-B's email with 403",
+      "type": "Positive",
       "priority": "P1",
-      "preconditions": "Two superadmins SA-A and SA-B (sa-2, email='b@x.com').",
+      "preconditions": "Two superadmins SA-A (x-session-id=sa-1) and SA-B (sa-2, email='b@x.com').",
       "testData": "PATCH /api/superadmin/admins/sa-2 { email:'hijack@x.com' } as SA-A",
       "testSteps": [
-        "1. PATCH sa-2 email.",
-        "2. SELECT users.email WHERE id='sa-2'."
+        "1. Sign in as SA-A.",
+        "2. PATCH sa-2 email.",
+        "3. Capture response status and body.",
+        "4. SELECT users.email WHERE id='sa-2' and confirm unchanged."
       ],
-      "expectedResult": "Current behaviour: 200 success; sa-2.email='hijack@x.com'. Pins cross-superadmin email mutation.",
-      "postconditions": "SA-B's email overwritten.",
+      "expectedResult": "HTTP 403 with body { error: \"Cannot modify another superadmin's account\" }; sa-2.email still 'b@x.com'; no DB mutation.",
+      "postconditions": "SA-B's email untouched.",
       "requirementId": "BR-SUPER-010",
       "author": "qa-tester",
       "createdDate": "2026-05-24",
       "status": "Not Executed",
-      "notes": "Pins DEF-SUPER-003."
+      "notes": "Originally pinned DEF-SUPER-003 (now Fixed). [QA-VERIFY] Updated post-DEF-SUPER-003 fix on 2026-05-25 — retagged Regression -> Positive; expectedResult now asserts cross-superadmin guard (403 + no DB mutation)."
     },
     {
       "id": "TC-SUPER-019",
       "feature": "Edit Admin Email Normalization",
-      "scenario": "PATCH /admins/[userId] does NOT lowercase email — pins DEF-SUPER-001",
-      "type": "Regression",
+      "scenario": "PATCH /admins normalizes email to lowercase before persist (matches POST)",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "Admin u-1 email='jane@example.com'.",
       "testData": "PATCH /api/superadmin/admins/u-1 { email:'  Jane@Example.COM  ' }",
@@ -1143,13 +1145,13 @@
         "1. PATCH with mixed-case padded email.",
         "2. SELECT users.email WHERE id='u-1'."
       ],
-      "expectedResult": "Current behaviour: 200 success; users.email='Jane@Example.COM' (trimmed only, NOT lowercased) — diverges from POST normalization. Pins inconsistency.",
+      "expectedResult": "PATCH with email=\"Alice@Example.Com\" persists row.email=\"alice@example.com\". Subsequent signin with the same email (any casing) resolves to this row. Unique-email index sees a stable lowercase form.",
       "postconditions": "Stored email differs in case from POST flow.",
       "requirementId": "BR-SUPER-006",
       "author": "qa-tester",
       "createdDate": "2026-05-24",
       "status": "Not Executed",
-      "notes": "Pins DEF-SUPER-001. After fix expect 'jane@example.com'."
+      "notes": "Pins DEF-SUPER-001. After fix expect 'jane@example.com'. [QA-VERIFY] Updated post-DEF-SUPER-001 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-SUPER-020",
@@ -1339,8 +1341,8 @@
     {
       "id": "TC-SUPER-029",
       "feature": "League Assignments",
-      "scenario": "DELETE /league-assignments for non-existent pair returns 200 — pins DEF-SUPER-004",
-      "type": "Regression",
+      "scenario": "DELETE league-assignment returns 404 (not 200) when assignment doesn't exist",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "No league_admins row for (u-1, lg-X).",
       "testData": "DELETE /api/superadmin/league-assignments { userId:'u-1', leagueId:'lg-X' }",
@@ -1348,13 +1350,13 @@
         "1. DELETE non-existent pair.",
         "2. Capture response."
       ],
-      "expectedResult": "Current behaviour: 200 { success:true } despite no row deleted. Pins silent no-op.",
+      "expectedResult": "DELETE /api/superadmin/league-assignments with a (userId, leagueId) pair that has no leagueAdmins row returns HTTP 404 'Assignment not found'. No rows affected. Valid existing assignments still delete with HTTP 200 success.",
       "postconditions": "No mutations.",
       "requirementId": "AC-SUPER-017",
       "author": "qa-tester",
       "createdDate": "2026-05-24",
       "status": "Not Executed",
-      "notes": "Pins DEF-SUPER-004."
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-004 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-SUPER-030",
@@ -1831,8 +1833,8 @@
     {
       "id": "TC-SUPER-053",
       "feature": "Score Adjustments Validation",
-      "scenario": "PATCH /score-adjustments accepts synergyBonus=-50000 — pins DEF-SUPER-008",
-      "type": "Regression",
+      "scenario": "score-adjustment PATCH rejects unbounded integer bonuses with 400",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "as-1 exists.",
       "testData": "PATCH { id:'as-1', synergyBonus:-50000, reason:'fat finger' }",
@@ -1841,13 +1843,13 @@
         "2. Capture response.",
         "3. SELECT as-1.synergyBonus."
       ],
-      "expectedResult": "Current behaviour: 200 success; synergyBonus persisted as -50000 with no warning. Pins lack of range guard.",
+      "expectedResult": "PATCH /api/superadmin/score-adjustments with synergyBonus=1000000000 (or clubResultBonus=-9999) returns HTTP 400 'synergyBonus and clubResultBonus must be integers in [-500, 500]'. The auctionScores row is unchanged. Values within [-500, 500] still update normally.",
       "postconditions": "Row mutated.",
       "requirementId": "AC-SUPER-033",
       "author": "qa-tester",
       "createdDate": "2026-05-24",
       "status": "Not Executed",
-      "notes": "Pins DEF-SUPER-008."
+      "notes": "[QA-VERIFY] Updated post-DEF-SUPER-008 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-SUPER-054",
@@ -2169,6 +2171,29 @@
       "createdDate": "2026-05-24",
       "status": "Not Executed",
       "notes": "Pins DEF-SUPER-006 (post-fix expected outcome). Use alongside TC-SUPER-051 as the before/after pair. [QA-VERIFY] Confirmed post-DEF-SUPER-006 fix on 2026-05-25 — expectedResult matches actual fixed behaviour."
+    },
+    {
+      "id": "TC-SUPER-069",
+      "feature": "Edit Admin (Self-Service Superadmin)",
+      "scenario": "Superadmin PATCHing their OWN row still succeeds (self-service password/email change)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Superadmin SA-A is signed in (x-session-id='sa-1', users.id='sa-1', role='superadmin'). sa-1.mustChangePassword=false.",
+      "testData": "PATCH /api/superadmin/admins/sa-1 { password:'NewSelfPass#1' } as SA-A",
+      "testSteps": [
+        "1. Sign in as SA-A (session id sa-1).",
+        "2. PATCH /api/superadmin/admins/sa-1 with the new password.",
+        "3. Capture response.",
+        "4. SELECT users WHERE id='sa-1' and run bcrypt.compare('NewSelfPass#1', stored).",
+        "5. Confirm mustChangePassword=true and updatedAt advanced."
+      ],
+      "expectedResult": "HTTP 200 { success: true }; sa-1.password is a fresh bcrypt hash of 'NewSelfPass#1'; sa-1.mustChangePassword=true; sa-1.updatedAt refreshed. The cross-superadmin guard does NOT fire because target.id === callerId (self-edit).",
+      "postconditions": "SA-A can sign in with the new password (will be forced to change it).",
+      "requirementId": "AC-SUPER-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-25",
+      "status": "Not Executed",
+      "notes": "Locks in the self-service exception of the DEF-SUPER-003 fix — guard only blocks cross-superadmin edits, never self-edits."
     }
   ],
   "gapFlags": [],
@@ -2177,7 +2202,7 @@
       "id": "DEF-SUPER-001",
       "title": "PATCH /superadmin/admins/[userId] does not normalize email to lowercase (POST does)",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "POST /api/superadmin/admins lowercases+trims the email before insert (src/app/api/superadmin/admins/route.ts:67), but PATCH only trims (src/app/api/superadmin/admins/[userId]/route.ts:34-36). After an edit, the stored email can have mixed case, which mismatches signin behaviour and the unique-email index.",
@@ -2195,15 +2220,15 @@
       "pinningTestCases": [
         "TC-SUPER-019"
       ],
-      "notes": "Fix: replace `updates.email = body.email.trim()` with `updates.email = body.email.trim().toLowerCase()`. Low-risk one-line change. Consider also adding a basic email-format regex to both POST and PATCH (DEF-SUPER-006).",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Fix: replace `updates.email = body.email.trim()` with `updates.email = body.email.trim().toLowerCase()`. Low-risk one-line change. Consider also adding a basic email-format regex to both POST and PATCH (DEF-SUPER-006). [DEV] Self-verified: surgical .toLowerCase() addition. [QA] Re-run TC-SUPER-019 — expect PATCH email persisted as lowercase regardless of caller casing. [BA] BR-SUPER-006 should be rewritten to assert both POST and PATCH normalize to lowercase. [BA-UPDATED]: 2026-05-26 — BR-SUPER-006 updated.",
+      "resolution": "PATCH /api/superadmin/admins/[userId] now applies the same .trim().toLowerCase() normalization to the email field that POST has always done (src/app/api/superadmin/admins/[userId]/route.ts:48-51). Email casing on edit now matches the unique-index + signin's lowercase-stored convention.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-SUPER-002",
       "title": "PATCH /superadmin/admins/[userId] returns 200 for unknown userId (no existence check)",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "PATCH issues db.update(users).set(...).where(eq(users.id, userId)) without first verifying the row exists; an unknown id silently affects 0 rows and the route still returns { success: true }. DELETE on the same route correctly 404s.",
@@ -2223,15 +2248,15 @@
       "pinningTestCases": [
         "TC-SUPER-016"
       ],
-      "notes": "Fix: add `const target = await db.query.users.findFirst({ where: eq(users.id, userId) }); if (!target) return 404` at the top of PATCH, same pattern as DELETE.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Fix: add `const target = await db.query.users.findFirst({ where: eq(users.id, userId) }); if (!target) return 404` at the top of PATCH, same pattern as DELETE. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added a not-found guard at src/app/api/superadmin/admins/[userId]/route.ts:27-29: when db.query.users.findFirst returns null (unknown userId), the handler returns HTTP 404 'User not found' before reaching the UPDATE statement. Previously the UPDATE silently affected 0 rows and the route still returned 200 success.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-SUPER-003",
       "title": "PATCH /superadmin/admins/[userId] can mutate another superadmin's credentials without a guard",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "DELETE explicitly rejects target.role === 'superadmin', but PATCH performs no such check. Any superadmin can therefore change another superadmin's email or reset their password (and force mustChangePassword=true), locking the other superadmin out.",
@@ -2252,15 +2277,15 @@
         "TC-SUPER-017",
         "TC-SUPER-018"
       ],
-      "notes": "Likely a privilege-escalation concern between platform owners. Lowest-risk fix: forbid editing role==='superadmin' unless the session id equals the target user id (self-service password change).",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Likely a privilege-escalation concern between platform owners. Lowest-risk fix: forbid editing role==='superadmin' unless the session id equals the target user id (self-service password change). [DEV] Self-verified: tsc passes for touched files (pre-existing unrelated errors in tests/league-types/*.spec.ts only), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-SUPER-017 and TC-SUPER-018 against the fix; expected behaviour now: SA-A PATCHing SA-B receives HTTP 403 with { error: \"Cannot modify another superadmin's account\" } and no DB mutation; SA-B PATCHing themselves still succeeds (self-service password/email change). Also verify AC-SUPER-010 expected text is now realised. [BA] BR-SUPER-010 and AC-SUPER-010 currently document the unguarded behaviour as 'pending defect resolution' — please update BR-SUPER-010 text to state 'PATCH rejects with 403 when target.role === \"superadmin\" and target.id !== session.id (i.e. only self-service edits of a superadmin row are permitted; admin rows are unaffected)', and update AC-SUPER-010 expected outcome to 403 with { error: \"Cannot modify another superadmin's account\" }. [QA-VERIFIED]: 2026-05-25 — TC-SUPER-017 + TC-SUPER-018 inverted; cross-superadmin guard confirmed. [BA-UPDATED]: 2026-05-25 — BR-SUPER-010 + AC-SUPER-010 updated to reflect fixed behaviour.",
+      "resolution": "Added a cross-superadmin guard at the top of the PATCH handler in src/app/api/superadmin/admins/[userId]/route.ts (lines 20-32 of the new file). After the isSuperAdmin auth check, the route now loads the target user via db.query.users.findFirst and, when target.role === 'superadmin' AND target.id !== request.headers.get('x-session-id'), returns 403 { error: \"Cannot modify another superadmin's account\" }. Non-superadmin (admin) targets and a superadmin editing their own row fall through to the existing update logic untouched. DELETE already had an equivalent guard (rejects every superadmin target outright, lines 75-77) so no change needed there.",
+      "resolutionDate": "2026-05-25"
     },
     {
       "id": "DEF-SUPER-004",
       "title": "DELETE /superadmin/league-assignments returns 200 even when no assignment row existed",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "DELETE issues a plain delete-where and returns { success:true } without inspecting the rows-affected count. A stale UI clicking 'remove' on an already-removed assignment gets a green response.",
@@ -2279,9 +2304,9 @@
       "pinningTestCases": [
         "TC-SUPER-029"
       ],
-      "notes": "Low-impact; consider deferring until QA notices stale-UI desync in practice.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Low-impact; consider deferring until QA notices stale-UI desync in practice. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added an existence check to DELETE /api/superadmin/league-assignments (src/app/api/superadmin/league-assignments/route.ts:66-76): the route now SELECTs the matching leagueAdmins row first and returns HTTP 404 'Assignment not found' if it doesn't exist. Previously a stale UI clicking 'remove' on an already-removed assignment got HTTP 200 success even though no row was deleted.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-SUPER-005",
@@ -2371,7 +2396,7 @@
       "id": "DEF-SUPER-008",
       "title": "Score-adjustment PATCH accepts unbounded integer bonuses",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "synergyBonus and clubResultBonus pass any value that Number.isInteger() accepts — large positives (1e9), large negatives, etc. A single typo can wreck a GW's totals.",
@@ -2390,15 +2415,15 @@
       "pinningTestCases": [
         "TC-SUPER-053"
       ],
-      "notes": "Low-impact UX guard; pair with DEF-SUPER-006 fix.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Low-impact UX guard; pair with DEF-SUPER-006 fix. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added a bounded-integer check to the synergyBonus + clubResultBonus inputs on PATCH /api/superadmin/score-adjustments (src/app/api/superadmin/score-adjustments/route.ts:113-133). Both values must be integers within [-500, 500]; values outside that range, plus non-integer values, return HTTP 400 with the explicit range message. The 500-point cap is high enough to permit any legitimate adjustment but flags typos like 1e9.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-SUPER-009",
       "title": "POST /superadmin/admins has no input validation beyond presence checks",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "Name, email, password are only checked for truthy presence. There is no email-format regex, no password length/strength rule, and no length cap on any field — allowing 1-char passwords, malformed 'a' emails, or 1MB names.",
@@ -2416,9 +2441,9 @@
         "TC-SUPER-011",
         "TC-SUPER-012"
       ],
-      "notes": "Cross-check with module 01 (auth) for canonical password rules. Likely shared helper.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Cross-check with module 01 (auth) for canonical password rules. Likely shared helper. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added input-shape validation to POST /api/superadmin/admins (src/app/api/superadmin/admins/route.ts:62-79): name must be 1-100 chars (typeof string), email must match a basic email regex and be <=254 chars, password must be 8-256 chars AND contain at least one digit or special character. Each failure returns HTTP 400 with an explicit message. Aligns the admin-create path with the team-side password rules and prevents 1-char passwords / malformed 'a' emails / 1MB names.",
+      "resolutionDate": "2026-05-26"
     }
   ]
 }

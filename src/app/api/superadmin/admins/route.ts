@@ -64,6 +64,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "name, email, and password are required" }, { status: 400 });
   }
 
+  // Input-shape validation. Without these guards the route accepts 1-char
+  // passwords, malformed emails like 'a', and arbitrarily long fields.
+  if (typeof name !== "string" || name.trim().length < 1 || name.length > 100) {
+    return NextResponse.json({ error: "name must be 1-100 characters" }, { status: 400 });
+  }
+  if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || email.length > 254) {
+    return NextResponse.json({ error: "email must be a valid email address (max 254 chars)" }, { status: 400 });
+  }
+  if (typeof password !== "string" || password.length < 8 || password.length > 256) {
+    return NextResponse.json({ error: "password must be 8-256 characters" }, { status: 400 });
+  }
+  if (!/[\d!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    return NextResponse.json(
+      { error: "password must contain at least one number or special character" },
+      { status: 400 }
+    );
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
   const hashedPassword = await bcrypt.hash(password, 12);
   const id = generateId();

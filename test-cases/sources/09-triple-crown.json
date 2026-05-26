@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 1,
+    "version": 6,
     "businessContext": "Triple Crown is the season-long tournament layered on top of a 20-team PL. After GW5, the 20 PL teams are snake-seeded into 4 cup groups (A/B/C/D) of 5 human teams + 1 Ghost team each. Cup matchdays run on even GWs (6, 8, 10, 12, 14, 16, 18, 20, 22, 24) with scores reused from the player's PL FPL team. Cup standings (W/D/L, GF/GA, cupGroupPoints) are tracked separately from PL leaguePoints. After the group stage closes, ranks 1-2 from each cup group qualify for UCL knockouts and ranks 3-4 qualify for UEL knockouts (8 teams each, 2-legged QF/SF/Final played in GW27/29/33/35/37/38). The /europa route is reserved but currently aliases UEL — no separate Europa Conference exists today.",
     "userStories": [
       {
@@ -212,9 +212,9 @@
       },
       {
         "id": "BR-TC-013",
-        "rule": "If a target cup GW row does not exist in gameweeks for the league, generate-cup-groups creates one with isPlayoffs=false and a deadline of (today + 7*gwNumber days) at 11:00. // CODE-CONFIRMED: may be a defect — deadlines anchored to seeding-day-not-season-start can be wrong when seeding mid-season.",
+        "rule": "When generate-cup-groups creates a missing gameweek row, the synthetic deadline is computed as (earliestExistingGw.deadline + 7 * (gwNum - earliestExistingGw.number)). This anchors deadlines to the league's actual season-start (typically GW1's real deadline) instead of the seeding-day. If no other GWs exist for the league, the route falls back to today's date as the anchor.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/generate-cup-groups/route.ts:167-191"
+          "src/app/api/admin/[leagueId]/generate-cup-groups/route.ts:167-185"
         ]
       },
       {
@@ -291,17 +291,18 @@
       },
       {
         "id": "BR-TC-024",
-        "rule": "Cup-group points: human-vs-Ghost match awards 2 for win / 0 for loss (no draw possible); human-vs-human cup-group fixtures award 2/1/0 (W/D/L). Note: scoring.ts docstring claims `No draws possible` but human-vs-human cup-group code emits draws. // CODE-CONFIRMED: may be a defect — confirm with product owner.",
+        "rule": "Cup-stage scoring (Human-vs-Ghost and Human-vs-Human): cupGroupPoints uses W=2 / D=1 / L=0. Draws ARE possible — for H-vs-Ghost when humanScore === ceil(avg of 4 humans) and for H-vs-Human cup-day fixtures (standard H2H tied-score outcome). The UI uefa-standings already renders a D column for both branches.",
         "sourceRefs": [
-          "src/lib/formats/triple-crown/scoring.ts:14-47",
+          "src/lib/formats/triple-crown/scoring.ts:6-19",
+          "src/lib/formats/triple-crown/standings.ts:11-15",
           "src/lib/formats/triple-crown/process-gameweek.ts:398-414"
         ]
       },
       {
         "id": "BR-TC-025",
-        "rule": "Cup standings sort: cupGroupPoints DESC → goalDifference DESC → goalFor DESC. (Sort comment says `GA ASC` but code uses GD then GF.) // CODE-CONFIRMED: doc/code mismatch.",
+        "rule": "Cup standings are sorted by cupGroupPoints DESC, then GD (goalFor - goalAgainst) DESC, then GF DESC. The inline comment above the sort matches the code (previously the comment said GA ASC was the tiebreaker, which was never true).",
         "sourceRefs": [
-          "src/lib/formats/triple-crown/standings.ts:91-99"
+          "src/lib/formats/triple-crown/standings.ts:87-99"
         ]
       },
       {
@@ -414,9 +415,9 @@
       },
       {
         "id": "BR-TC-041",
-        "rule": "If GW27 / GW29 rows do not exist, generate-brackets creates them with isPlayoffs=true and deadline = (today + 7*gwNumber days) at 11:00.",
+        "rule": "When generate-brackets creates missing GW27 or GW29 rows, the synthetic deadlines use the same season-anchor logic as generate-cup-groups (BR-TC-013): (earliestGw.deadline + 7 * (gwNum - earliestGw.number)), falling back to today only when no GWs exist for the league.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:170-206"
+          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:179-211"
         ]
       },
       {
@@ -512,9 +513,10 @@
       },
       {
         "id": "BR-TC-055",
-        "rule": "restore-triple-crown only restores PL fixtures today — cup fixtures and UEFA knockouts are NOT in the backup payload (success message explicitly notes `tracked follow-up`). // CODE-CONFIRMED: may be a defect — confirm with product owner.",
+        "rule": "restore-triple-crown reuses restoreFixtures from src/lib/backup/restore-tvt.ts which, when the target league format is triple-crown, performs a TC-aware wipe phase: (a) reassigns every non-ghost team out of any cup group back to the PL group A (or null if no PL group exists), (b) zeros teams.cupGroupPoints on those humans, (c) hard-deletes every team with isGhost=true for the league, (d) hard-deletes every Cup-A/B/C/D group row. playoff_ties and challenger_survival_entries are already wiped by the earlier shared delete step. The resulting league is in a clean pre-cup-groups state that allows admins to re-run /generate-cup-groups + /generate-brackets without orphan FK errors. KNOWN LIMITATION: full round-trip restoration of cup-stage rows (cup-group fixtures, UCL/UEL knockout fixtures, ghost-team identity, cup groups) requires a separate backup-writer enhancement to serialize those rows into the backup payload — that follow-up is tracked in DEF-TC-003 notes and the success message at route.ts:89 still reads tracked follow-up.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:82-89"
+          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:82-89",
+          "src/lib/backup/restore-tvt.ts:128-197"
         ]
       },
       {
@@ -564,10 +566,9 @@
       },
       {
         "id": "BR-TC-062",
-        "rule": "extractBracketSeeds in standings.ts is defined but is NOT used by generate-brackets/route.ts (which builds standings inline). // CODE-CONFIRMED: dead code — confirm with product owner.",
+        "rule": "generate-brackets/route.ts extracts UCL/UEL bracket seeds inline (ranks 1-2 to UCL, ranks 3-4 to UEL, ghost teams filtered). The extractBracketSeeds helper was removed as dead code on 2026-05-26 — no other consumers existed.",
         "sourceRefs": [
-          "src/lib/formats/triple-crown/standings.ts:116-145",
-          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:88-150"
+          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:128-167"
         ]
       }
     ],
@@ -700,9 +701,9 @@
       },
       {
         "id": "AC-TC-019",
-        "given": "Two humans in the same cup group play each other in GW8 with identical effective scores",
-        "when": "Process GW8",
-        "then": "Both teams receive 1 cupGroupPoint each (draw); homeMatchPoints=1, awayMatchPoints=1",
+        "given": "a cup-day fixture between two real (non-ghost) teams T1 and T2 in the same cup group ties on score",
+        "when": "process-gameweek processes the GW",
+        "then": "T1.cupGroupPoints and T2.cupGroupPoints each increase by 1 (draw); T1.draws and T2.draws each increase by 1; no draws are silently dropped. Same equality treatment for H-vs-Ghost matches where humanScore equals the ceiling-of-averages ghost score.",
         "linksTo": "BR-TC-024"
       },
       {
@@ -882,9 +883,9 @@
       },
       {
         "id": "AC-TC-045",
-        "given": "Valid TC backup zip with 380 PL fixtures",
-        "when": "POST /api/admin/[leagueId]/restore-triple-crown",
-        "then": "Response is 200 `{ success: true, fixturesInserted: 380, message: \"Restored 380 PL fixture(s). Cup fixtures + UEFA knockouts are not in the backup payload yet — tracked follow-up…\" }`",
+        "given": "a valid TC backup zip with 380 PL fixtures for league L, which previously had cup groups, ghost teams, and cup-stage fixtures",
+        "when": "POST /api/admin/[leagueId]/restore-triple-crown is called against L",
+        "then": "response is 200 with fixturesInserted=380; post-restore DB state for L: 0 rows in groups where groupType is cup, 0 rows in teams where isGhost is true, all surviving (human) teams reassigned to the PL group with cupGroupPoints=0, 0 rows in playoff_ties for L, 0 cup-group fixtures, 0 ucl/uel-knockout fixtures, only the 380 restored PL fixtures present. League is in a pre-cup-groups state and admin can re-run /generate-cup-groups without BR-TC-004 Cup groups already exist. The success message continues to note that full re-insertion of cup-stage rows from the backup payload is a tracked backup-writer follow-up.",
         "linksTo": "BR-TC-055"
       },
       {
@@ -1018,7 +1019,7 @@
       "id": "DEF-TC-003",
       "title": "Triple Crown restore omits cup fixtures and UCL/UEL knockouts",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "POST /api/admin/[leagueId]/restore-triple-crown calls the TVT restore helper which only handles PL fixtures. Cup-group fixtures (60 rows) and UEFA knockout fixtures/ties (16 fixtures + 8 ties at QF; more once SFs/Finals are created) are NOT in the backup payload — the success message explicitly states `tracked follow-up`.",
@@ -1038,15 +1039,15 @@
       "pinningTestCases": [
         "TC-TC-045"
       ],
-      "notes": "Extend restore payload schema to include cup-group fixtures (competitionType=cup-group), Ghost teams (isGhost=true), and ucl/uel knockout fixtures + ties. Then teach restoreFixtures to insert all three classes. Coordinate with module 14 (Backups).",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Extend restore payload schema to include cup-group fixtures (competitionType=cup-group), Ghost teams (isGhost=true), and ucl/uel knockout fixtures + ties. Then teach restoreFixtures to insert all three classes. Coordinate with module 14 (Backups).\n[DEV] Self-verified: tsc passes for touched files (pre-existing tests/league-types/* errors unrelated, identical to DEF-PLAYOFF-003 baseline). Manual diff review clean. Awaiting QA re-run of pinningTestCases.\n[DEV] Applied the analog of DEF-PLAYOFF-003: extended the shared restore wipe phase (src/lib/backup/restore-tvt.ts:130-179) so that when league.format === 'triple-crown', the wipe also (a) re-assigns humans currently sitting in cup groups back to the PL group, (b) zeros cupGroupPoints on humans, (c) deletes Ghost teams (isGhost=true), (d) deletes the Cup-A/B/C/D group rows. cup-group + ucl/uel-knockout fixtures and playoffTies are already wiped by the existing fixture/playoffTies deletes (gameweekId / leagueId scoped). Result: post-restore the league is in a pre-cup-groups state matching the restored PL fixtures, so admin can re-run /generate-cup-groups and /generate-brackets without hitting BR-TC-004 'Cup groups already exist' or orphan FK errors.\n[DEV-QUESTION] Full round-trip per the original expectedBehaviour (re-inserting cup-group fixtures, Ghost teams, knockout fixtures, and playoffTies from the backup) requires a backup payload schema bump (new sheets: cupGroups, ghostTeams, cupFixtures with competitionType+groupId, knockoutFixtures with leg/tieId/roundName, playoffTies). That is a module 14 (Backups) change crossing payload version. Raise a separate defect / BR (BR-BACKUP-???) before extending the writer? This fix matches the precedent set by DEF-PLAYOFF-003 (wipe stale TC state so the league cleanly accepts re-seeding); it does not yet meet the 'no re-seed needed' ideal in expectedBehaviour.\n[QA] Re-run TC-TC-045 against the fix. Expected behaviour now: after restore-triple-crown on a TC league with seeded cup groups + Ghost teams + (optionally) generated brackets, the response remains `{ success: true, fixturesInserted: N, ... }` AND the post-restore DB state has: 0 rows in groups where groupType='cup' for the league, 0 rows in teams where isGhost=true for the league, all surviving (human) teams' groupId reassigned to the PL group (or null if none), all surviving teams' cupGroupPoints=0, 0 rows in playoff_ties for the leagueId, 0 cup-group/knockout fixtures, only restored PL fixtures present. TC-TC-045's expectedResult text was written to pin the defective behaviour and should be updated to assert the corrected post-restore state.\n[BA] BR-TC-055 + AC-TC-045 currently describe the defective behaviour ('Cup fixtures + UEFA knockouts are not in the backup payload yet — tracked follow-up') and the success message string in restore-triple-crown/route.ts:89. The functional gap (no round-trip of cup fixtures/knockouts) is still real — this fix only stops the league from getting wedged. Consider: (a) update BR-TC-055 to reflect the new wipe semantics and the residual gap, (b) remove the // CODE-CONFIRMED annotation if you decide the wedge-prevention is the v1 fix, (c) raise a new BR / defect coordinated with module 14 for the full round-trip if product wants it. Note also the success-message string at route.ts:89 still reads 'tracked follow-up' — leave as-is or rewrite to 'Cup-stage state cleared — re-run Seed Cup Groups + Generate Brackets after restore.'\n[QA-VERIFIED]: 2026-05-25 — TC-TC-045 inverted; cup-stage wipe confirmed. Backup-writer round-trip gap noted by senior-dev still tracked. [BA-UPDATED]: 2026-05-26 — BR-TC-055 + AC-TC-045 updated. Backup-writer round-trip follow-up remains tracked.",
+      "resolution": "Extended restoreFixtures in src/lib/backup/restore-tvt.ts to clear TC-specific cup-stage state during the existing wipe phase when league.format === 'triple-crown' (lines 130-179): re-assigns humans out of cup groups back to the PL group, zeros their cupGroupPoints, deletes Ghost teams, and deletes the Cup-A/B/C/D group rows. cup-group + knockout fixtures and playoffTies were already covered by the prior gameweekId/leagueId-scoped deletes. Added `groups` to the @/lib/db import (line 11) and `format: leagues.format` to the league SELECT (line 130). Result: post-restore a TC league is in a pre-cup-groups state matching the restored PL fixtures, unblocking /generate-cup-groups + /generate-brackets. Full payload round-trip (re-inserting cup-stage rows from the backup) remains a backup-writer follow-up gated on the [DEV-QUESTION] in notes.",
+      "resolutionDate": "2026-05-25"
     },
     {
       "id": "DEF-TC-004",
       "title": "Cup-group scoring docstring claims `no draws possible` but human-vs-human cup fixtures emit draws",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "scoring.ts:14-15 and the file-level header (scoring.ts:1-9) state `Win condition: humanScore > ghostScore (no draws possible)` and the cup-group standings interface comment says `W=2, D=1, L=0 (no bonus in cup group)` for cup points. However the process-gameweek Pass 2 human-vs-human branch (lines 398-414) explicitly awards 1 point each on tie.",
@@ -1068,15 +1069,15 @@
         "TC-TC-019",
         "TC-TC-057"
       ],
-      "notes": "Prefer option (a) — keeping H-vs-H draws preserves the cup-stage standings sort tiebreaker and matches the UI which already shows a `D` column (uefa-standings:212).",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Prefer option (a) — keeping H-vs-H draws preserves the cup-stage standings sort tiebreaker and matches the UI which already shows a `D` column (uefa-standings:212). [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Updated docstring in src/lib/formats/triple-crown/scoring.ts:6-19 to accurately describe Human-vs-Ghost outcomes (Win/Loss/Draw — equality is rare but possible since both scores are integers) AND that Human-vs-Human cup fixtures follow standard H2H with draws (1+1) possible. Updated the cupGroupPoints comment in src/lib/formats/triple-crown/standings.ts:11-15 to acknowledge that draws are possible (not 'no draws possible' as previously stated).",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-TC-005",
       "title": "extractBracketSeeds helper is dead code",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/lib/formats/triple-crown/standings.ts exports extractBracketSeeds (lines 116-145) returning `{ ucl, uel }` from the 4 cup-group standings. The only caller that needs it — generate-brackets/route.ts — instead reimplements the same logic inline (lines 88-167).",
@@ -1094,15 +1095,15 @@
       "pinningTestCases": [
         "TC-TC-058"
       ],
-      "notes": "Refactor generate-brackets to compute cup standings via computeCupGroupStandings and pull seeds via extractBracketSeeds. Lower priority — no functional bug today, only a maintainability hazard.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Refactor generate-brackets to compute cup standings via computeCupGroupStandings and pull seeds via extractBracketSeeds. Lower priority — no functional bug today, only a maintainability hazard. [DEV] Self-verified: cleanup-only fix; no behaviour change. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Removed the unused extractBracketSeeds helper from src/lib/formats/triple-crown/standings.ts (along with its JSDoc) and the dangling import from src/app/api/admin/[leagueId]/generate-brackets/route.ts. generate-brackets does its own seed extraction inline; the helper had no other callers.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-TC-006",
       "title": "Cup standings sort comment claims `GA ASC` but code actually sorts by GD then GF",
       "severity": "Cosmetic",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "standings.ts:90 comment says `Sort by: cupGroupPoints DESC, GF DESC, GA ASC` but the actual sort body (lines 91-99) is points DESC → goalDifference DESC → goalFor DESC. There is no goalAgainst tiebreak.",
@@ -1119,15 +1120,15 @@
       "pinningTestCases": [
         "TC-TC-059"
       ],
-      "notes": "One-line comment fix.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "One-line comment fix. [DEV] Self-verified: cleanup-only fix; no behaviour change. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Updated the sort comment in src/lib/formats/triple-crown/standings.ts:90 to match the actual code (sort by cupGroupPoints DESC, then GD DESC, then GF DESC). The previous comment claimed GA ASC was a tiebreaker, which the code never did. No behaviour change.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-TC-007",
       "title": "Cup-stage gameweek deadlines are anchored to seeding-day, not the season start",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "When generate-cup-groups creates a missing gameweek (line 169-180), it computes `deadline = today + 7*gwNumber days`. The same pattern occurs in generate-brackets for GW27/29 (lines 182-205). If seeding is run after the season has already begun, the deadline lands in the wrong week.",
@@ -1147,9 +1148,9 @@
         "TC-TC-060",
         "TC-TC-061"
       ],
-      "notes": "In practice cup groups are seeded right after GW5, so the drift is small (~5 weeks early). But for late-season backups → restore → reseed, the deadlines will be wildly off. Fix by reading leagues.firstDeadline (if it exists) or the GW5 deadline + 7-day stride.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "In practice cup groups are seeded right after GW5, so the drift is small (~5 weeks early). But for late-season backups → restore → reseed, the deadlines will be wildly off. Fix by reading leagues.firstDeadline (if it exists) or the GW5 deadline + 7-day stride. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "When generate-cup-groups (src/app/api/admin/[leagueId]/generate-cup-groups/route.ts:167-185) or generate-brackets (src/app/api/admin/[leagueId]/generate-brackets/route.ts:179-211) creates a missing gameweek, the synthetic deadline is now anchored to the league's earliest existing gameweek (treated as the season-anchor) rather than today. Late-season seeding/restore-reseed no longer pushes synthetic deadlines weeks past the bracket-gen date.",
+      "resolutionDate": "2026-05-26"
     }
   ],
   "testCases": [
@@ -1524,7 +1525,7 @@
     {
       "id": "TC-TC-019",
       "feature": "Human-vs-Human Draw",
-      "scenario": "Two humans with identical effective scores draw with 1pt each",
+      "scenario": "Cup-stage scoring docstring documents draws in both H-vs-Ghost and H-vs-H paths",
       "type": "Positive",
       "priority": "P2",
       "preconditions": "Two humans in same cup group play each other in GW8 with identical effective scores",
@@ -1534,13 +1535,13 @@
         "2. Process GW8",
         "3. Inspect result row + both teams' cupGroupPoints"
       ],
-      "expectedResult": "Result.homeMatchPoints=1, awayMatchPoints=1; both teams.cupGroupPoints incremented by 1",
+      "expectedResult": "scoring.ts comment block explicitly enumerates Win / Loss / Draw outcomes for both Human-vs-Ghost (integer equality is a draw, 1 cup point each) and Human-vs-Human cup-day fixtures (standard H2H rules; can draw 1+1). standings.ts CupGroupStanding interface comment matches — cupGroupPoints uses W=2/D=1/L=0 and draws are documented.",
       "postconditions": "Standings show draws=1 each",
       "requirementId": "AC-TC-019",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "BR-TC-024 (pins draw behavior — see DEF-TC-004)"
+      "notes": "[QA-VERIFY] Updated post-DEF-TC-004 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TC-020",
@@ -2051,24 +2052,28 @@
     },
     {
       "id": "TC-TC-045",
-      "feature": "Restore TC - PL Fixtures Only",
-      "scenario": "Valid backup restores only PL fixtures",
-      "type": "Regression",
+      "feature": "Restore TC - PL Fixtures + Cup-Stage Wipe",
+      "scenario": "Valid backup restores PL fixtures and wipes stale cup-stage state",
+      "type": "Positive",
       "priority": "P1",
-      "preconditions": "Valid TC backup zip containing 380 PL fixtures (no cup-group fixtures, no UEFA knockouts) and matching meta",
+      "preconditions": "TC league with seeded cup groups (Cup-A/B/C/D), Ghost teams, humans assigned to cup groups with non-zero cupGroupPoints, existing playoffTies + challenger_survival_entries rows, and (optionally) generated brackets. Valid TC backup zip containing 380 PL fixtures and matching meta.",
       "testData": "POST multipart valid backup",
       "testSteps": [
         "1. POST endpoint",
         "2. Inspect response and DB",
-        "3. Query fixtures by competitionType for cup-group and ucl/uel-knockout"
+        "3. Query groups WHERE leagueId=L AND groupType='cup'",
+        "4. Query teams WHERE leagueId=L AND isGhost=true",
+        "5. Query teams WHERE leagueId=L: groupId + cupGroupPoints",
+        "6. Query playoff_ties WHERE leagueId=L",
+        "7. Query fixtures by competitionType for cup-group and ucl/uel-knockout"
       ],
-      "expectedResult": "200 with `{ success: true, fixturesInserted: 380, message: \"Restored 380 PL fixture(s). Cup fixtures + UEFA knockouts are not in the backup payload yet — tracked follow-up…\" }`; 0 cup-group fixtures + 0 knockout fixtures restored",
-      "postconditions": "Admin must rerun /generate-cup-groups + /generate-brackets to restore cup state",
+      "expectedResult": "200 with `{ success: true, fixturesInserted: 380, ... }`. Post-restore DB state for league L: 0 rows in groups where groupType='cup'; 0 rows in teams where isGhost=true; all surviving (human) teams reassigned to the PL group (or groupId=null if no PL group exists) with cupGroupPoints=0; 0 rows in playoff_ties; 0 cup-group fixtures and 0 ucl/uel-knockout fixtures present; only the 380 restored PL fixtures exist.",
+      "postconditions": "League is in a pre-cup-groups state matching the restored PL fixtures. Admin can re-run /generate-cup-groups + /generate-brackets without hitting BR-TC-004 'Cup groups already exist' or orphan FK errors. Full re-insertion of cup-stage rows from the backup payload remains a backup-writer follow-up (DEF-TC-003 [DEV-QUESTION]).",
       "requirementId": "AC-TC-045",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TC-003 current behaviour; BR-TC-055"
+      "notes": "Pins DEF-TC-003 current behaviour; BR-TC-055\n[QA-VERIFY] Updated post-DEF-TC-003 fix on 2026-05-25. Retagged Regression -> Positive. Asserts new wipe semantics in src/lib/backup/restore-tvt.ts:128-197 (cup groups deleted, Ghost teams deleted, humans reassigned to PL group with cupGroupPoints=0, playoffTies + challenger_survival_entries wiped via earlier delete). Backup-writer round-trip (re-insertion of cup-stage rows from payload) is a separate follow-up gap flagged by senior-dev — not asserted by this test."
     },
     {
       "id": "TC-TC-046",
@@ -2299,8 +2304,8 @@
     {
       "id": "TC-TC-057",
       "feature": "Scoring Docstring vs H-vs-H Draws",
-      "scenario": "Cup-group H-vs-H tie emits draw (1+1) despite scoring.ts docstring saying no draws",
-      "type": "Regression",
+      "scenario": "Human-vs-Human cup-day fixture emits a draw row (1+1) when scores tie",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Cup group A has two humans H1 and H2 scheduled in GW8; both score 65",
       "testData": "Process GW8",
@@ -2309,19 +2314,19 @@
         "2. Process GW8",
         "3. Inspect result row + cupGroupPoints + scoring.ts file header text"
       ],
-      "expectedResult": "Result rows: homeMatchPoints=1, awayMatchPoints=1; both teams' cupGroupPoints += 1. Pins current behaviour: implementation contradicts scoring.ts:14-15 docstring `No draws possible` (which only applies to vs-Ghost matches)",
+      "expectedResult": "When two real teams in the same cup group face each other on a cup matchday and their scores tie, process-gameweek records a draw — each team gets +1 to cupGroupPoints AND +1 to draws in their CupGroupStanding row. This is the documented behaviour; the previous scoring.ts comment claiming 'no draws possible' has been corrected.",
       "postconditions": "Defect filed against doc/code mismatch",
       "requirementId": "AC-TC-019",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TC-004 current behaviour; BR-TC-024"
+      "notes": "[QA-VERIFY] Updated post-DEF-TC-004 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TC-058",
       "feature": "Dead Code - extractBracketSeeds",
-      "scenario": "generate-brackets reimplements seed extraction inline; extractBracketSeeds helper is unused",
-      "type": "Regression",
+      "scenario": "extractBracketSeeds helper no longer exists; no dead-import lint surface",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Source tree as of 2026-05-23",
       "testData": "Static-search: grep for `extractBracketSeeds(` in src/",
@@ -2329,19 +2334,19 @@
         "1. Run grep over src/",
         "2. Inspect callsites"
       ],
-      "expectedResult": "extractBracketSeeds is defined in src/lib/formats/triple-crown/standings.ts but has zero call sites in production code; generate-brackets/route.ts computes seeds inline. Pins the dead-code state",
+      "expectedResult": "grep for extractBracketSeeds across src/ returns zero matches. generate-brackets/route.ts compiles cleanly with no unused-import warning. Bracket generation continues to work via the inline UCL/UEL ranks-1-2 / 3-4 extraction.",
       "postconditions": "Refactor task pending",
       "requirementId": "US-TC-006",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TC-005 current behaviour; BR-TC-062"
+      "notes": "[QA-VERIFY] Updated post-DEF-TC-005 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TC-059",
       "feature": "Cup Standings Sort Tiebreaker",
-      "scenario": "Sort uses GD then GF; docstring claims GA-ASC tiebreaker",
-      "type": "Regression",
+      "scenario": "Cup standings sort comment matches code (GD then GF, not GA ASC)",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "In Cup-A: team-P (Pts=6, GF=20, GA=10, GD=10), team-Q (Pts=6, GF=15, GA=5, GD=10). Per code, GD tied → GF higher wins → P > Q. Per comment (`GA ASC`), Q should win because GA=5 < GA=10",
       "testData": "Read cup-standings response for Cup-A after GW24",
@@ -2351,19 +2356,19 @@
         "3. GET /api/triple-crown/cup-standings?leagueId=league-tc-1",
         "4. Compare team-P vs team-Q rank"
       ],
-      "expectedResult": "team-P ranks above team-Q (GF=20 > 15). Pins current behaviour: code sorts cupGroupPoints DESC → GD DESC → GF DESC, NOT the comment's GA-ASC. Comment should be updated to match",
+      "expectedResult": "The inline comment above the standings.sort() block now correctly says 'cupGroupPoints DESC, then GD (goalFor - goalAgainst) DESC, then GF DESC'. The sort itself was always correct (GD primary tiebreaker, GF secondary).",
       "postconditions": "Doc fix pending",
       "requirementId": "US-TC-004",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TC-006 current behaviour; BR-TC-025"
+      "notes": "[QA-VERIFY] Updated post-DEF-TC-006 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TC-060",
       "feature": "GW Deadline Anchoring - Cup",
-      "scenario": "Missing cup GW row gets deadline = today+7*gw days (drifts from season-start)",
-      "type": "Regression",
+      "scenario": "Cup-group synthetic GW deadlines anchored to season-start, not seeding-day",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Triple-crown league with NO pre-existing rows in gameweeks for GW6..GW24; admin seeds on 2026-04-01 (mid-season)",
       "testData": "POST /api/admin/league-tc-late/generate-cup-groups on 2026-04-01",
@@ -2373,19 +2378,19 @@
         "3. SELECT gameweeks WHERE leagueId=league-tc-late ORDER BY gwNumber",
         "4. Compare deadline to season-start anchor"
       ],
-      "expectedResult": "GW6 deadline = 2026-04-01 + (7*6 days) = 2026-05-13 11:00; deadline is anchored to seeding-day NOT season-start. Pins current defective behaviour: deadlines drift by `today - season-start` days",
+      "expectedResult": "Re-seeding cup groups mid-season (GW10): the missing cup GWs (GW6/GW8/...) get deadlines = (earliestExistingGw.deadline + 7 * (gwNum - earliestExistingGw.number)). Anchored to season-start; not 'today + 7*gwNum days'. If no other GWs exist for the league, fall back to today.",
       "postconditions": "Fix planned per DEF-TC-007",
       "requirementId": "US-TC-001",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TC-007 (cup half); BR-TC-013"
+      "notes": "[QA-VERIFY] Updated post-DEF-TC-007 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TC-061",
       "feature": "GW Deadline Anchoring - Brackets",
-      "scenario": "Missing GW27/GW29 rows get deadlines anchored to bracket-gen-day not season-start",
-      "type": "Regression",
+      "scenario": "Bracket-gen synthetic GW27/GW29 deadlines anchored to season-start",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "GW27 and GW29 do not exist in gameweeks; bracket generation runs on 2026-05-01",
       "testData": "POST /api/admin/league-tc-late/generate-brackets on 2026-05-01",
@@ -2395,13 +2400,13 @@
         "3. SELECT gameweeks WHERE gwNumber IN (27,29)",
         "4. Inspect deadlines"
       ],
-      "expectedResult": "GW27 deadline = 2026-05-01 + 7*27 days = 2026-10-30 11:00 (mathematically) — drifts from season-start anchor. Pins current behaviour (same defect as cup half)",
+      "expectedResult": "Re-running generate-brackets late in the season: missing GW27 and GW29 deadlines are set via (earliestGw.deadline + 7 * (gwNum - earliestGw.number)) — placing them at the correct season-week, not bracket-gen-day + ~27/29 weeks.",
       "postconditions": "—",
       "requirementId": "US-TC-006",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TC-007 (bracket half); BR-TC-041"
+      "notes": "[QA-VERIFY] Updated post-DEF-TC-007 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TC-062",

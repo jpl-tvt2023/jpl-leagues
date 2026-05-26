@@ -45,12 +45,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Determine captain cap based on league format (TC: 19, others: 15)
-    const leagueRow = await db.select({ format: leagues.format })
+    // Determine captain cap based on league format (TC: 19, others: 15).
+    // captainCheckLimit is the upper GW boundary of the League Stage — anything
+    // beyond it is playoffs and exempts the per-player chip count. Derive it
+    // from the league's actual playoffStartGw so TVT-8 (playoffStartGw=36 →
+    // league stage GW1-35) doesn't get its final 5 league-stage GWs silently
+    // treated as playoffs by a hardcoded 30.
+    const leagueRow = await db.select({ format: leagues.format, playoffStartGw: leagues.playoffStartGw })
       .from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
     const leagueFormat = leagueRow[0]?.format ?? "tvt";
+    // Auction format has no captaincy/chip mechanics — guard at the route boundary
+    // so a team that knows the endpoint URL can't create captaincy rows for an
+    // auction league (where players don't even exist in the players table).
+    if (leagueFormat === "auction") {
+      return NextResponse.json(
+        { error: "Captain announcements are not available in auction-format leagues" },
+        { status: 400 }
+      );
+    }
+    const playoffStartGw = leagueRow[0]?.playoffStartGw ?? 31;
     const CAPTAIN_CAP = leagueFormat === "triple-crown" ? 19 : 15;
-    const captainCheckLimit = leagueFormat === "triple-crown" ? 38 : 30;
+    const captainCheckLimit = leagueFormat === "triple-crown" ? 38 : (playoffStartGw - 1);
 
     // Check if captain announcements are enabled for this league
     const captainSetting = await db.select().from(settings)

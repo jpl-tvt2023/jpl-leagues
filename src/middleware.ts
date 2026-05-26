@@ -54,6 +54,13 @@ const PUBLIC_ROUTES = [
   "/api/playoffs/winners",
   "/api/leagues",
   "/api/triple-crown/cup-standings",
+  // FPL passthrough endpoints — the underlying FPL bootstrap is already
+  // publicly cached by the Premier League, and no league-private data is
+  // exposed. Whitelisting matches their "passthrough" framing and prevents
+  // accidental auth-required breakage when a future public page consumes
+  // them (e.g. the players catalog).
+  "/api/fpl/bootstrap",
+  "/api/fpl/players-left",
 ];
 
 function isPublicRoute(pathname: string, method: string): boolean {

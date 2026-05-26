@@ -10,8 +10,16 @@
  * @param humanScores - Array of exactly 4 human team scores in the cup group for the GW
  * @returns Ghost's score (integer)
  *
- * Win condition: humanScore > ghostScore (no draws possible)
- * Loss condition: humanScore <= ghostScore (no draw)
+ * Human-vs-Ghost scoring:
+ *   Win  — humanScore > ghostScore  (2 cup points)
+ *   Loss — humanScore < ghostScore  (0 cup points)
+ *   Draw — humanScore === ghostScore (1 cup point) — rare but possible since
+ *          both scores are integers; process-gameweek treats equality as a draw.
+ *
+ * Human-vs-Human cup fixtures (when two real teams in the same cup group face
+ * each other on a cup matchday) follow the standard H2H rule and CAN emit
+ * draws (1+1 split). The UI uefa-standings page already renders a D column
+ * for both branches.
  */
 export function calculateGhostScore(humanScores: number[]): number {
   if (humanScores.length !== 4) {

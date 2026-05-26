@@ -47,8 +47,10 @@ interface TeamStanding {
   pointsAgainst: number;
   pointsDiff: number;
   leaguePoints: number;
+  // Single source of truth: the stored ledger from teams.bonusPoints.
+  // A previously-included recomputed `calculatedBonus` was dropped to prevent
+  // consumer drift when the GW processor missed an update (DEF-STAND-005).
   bonusPoints: number;
-  calculatedBonus: number;
   chipPoints: number;
   cbpPoints: number;
   cbpTooltip: CbpTooltip;
@@ -599,8 +601,11 @@ export async function GET(request: NextRequest) {
         pointsAgainst,
         pointsDiff: pointsFor - pointsAgainst,
         leaguePoints,
+        // Single source of truth: only the stored teams.bonusPoints column is
+        // surfaced. Exposing both `bonusPoints` and a recomputed `calculatedBonus`
+        // invited consumer drift when the GW processor missed an update — the
+        // recomputed value would silently disagree with the stored ledger.
         bonusPoints: team.bonusPoints,
-        calculatedBonus: bonusPtsTotal,
         chipPoints: chipPts,
         cbpPoints: cbpPts,
         cbpTooltip,
@@ -656,6 +661,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Format-aware legend. The previous hard-coded 8/14/16 keys were wrong for
+    // 8-team leagues (no rank 9..14 exists; cutoff is top-4 for playoffs).
+    // Match the actual qualification rules in getQualificationZone below.
+    const legend = leagueTeamSize === 8
+      ? {
+          top4: "TVT Title Play-offs",
+          rank5to8: "Eliminated",
+        }
+      : {
+          top8: "TVT Title Play-offs",
+          rank9to14: "Challenger Series",
+          rank15to16: "Eliminated",
+        };
+
     const responseData = {
       groupA: groupMap["A"] ?? [],
       groupB: groupMap["B"] ?? [],
@@ -664,11 +683,7 @@ export async function GET(request: NextRequest) {
       leagueStageEnd,
       teamSize: leagueTeamSize,
       groupsRevealed,
-      legend: {
-        top8: "TVT Title Play-offs",
-        rank9to14: "Challenger Series",
-        rank15to16: "Eliminated",
-      },
+      legend,
     };
 
     // Fire-and-forget cache write — must not block or break the response

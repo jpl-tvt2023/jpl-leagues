@@ -93,9 +93,10 @@ export async function GET(request: NextRequest) {
       requestedPlayerIds: JSON.parse(p.requestedPlayerIds),
       cashOffered: p.cashOffered,
       status: p.status,
-      vetoDeadline: p.vetoDeadline?.toISOString() ?? null,
-      vetoVotes: JSON.parse(p.vetoVotes),
       createdAt: p.createdAt,
+      // vetoDeadline + vetoVotes intentionally omitted — the veto system was
+      // removed; columns persist in the DB for backwards compatibility but
+      // are no longer surfaced to API consumers (see DEF-TRADE-005).
     })),
   });
 }
@@ -131,9 +132,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
   }
 
-  // Tier gate: Primary tier excludes trades entirely. UI hides the page; this enforces it server-side.
-  if (leagueRow[0].auctionTier === "primary") {
-    return NextResponse.json({ error: "Trades are not available in Primary tier" }, { status: 403 });
+  // Tier gate: trades are Complete-tier ONLY. Allow-listing the explicit "complete"
+  // value (rather than denying "primary") means any new tier added later, plus null/
+  // unset/typo'd values, defaults to denied. UI hides the page; this enforces server-side.
+  if (leagueRow[0].auctionTier !== "complete") {
+    return NextResponse.json({ error: "Trades are only available in Complete tier" }, { status: 403 });
   }
 
   if (await isAuctionLive(leagueId)) {
@@ -303,11 +306,11 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Proposal is no longer pending" }, { status: 400 });
   }
 
-  // Tier gate: Primary tier excludes trades. Pending proposals from before a tier change still
-  // can't be accepted/rejected — they remain pending until they expire.
+  // Tier gate: trades are Complete-tier ONLY. Pending proposals from before a tier change still
+  // can't be accepted/rejected on a non-Complete league — they remain pending until they expire.
   const leagueTierRow = await db.select({ auctionTier: leagues.auctionTier }).from(leagues).where(eq(leagues.id, proposal.leagueId)).limit(1);
-  if (leagueTierRow[0]?.auctionTier === "primary") {
-    return NextResponse.json({ error: "Trades are not available in Primary tier" }, { status: 403 });
+  if (leagueTierRow[0]?.auctionTier !== "complete") {
+    return NextResponse.json({ error: "Trades are only available in Complete tier" }, { status: 403 });
   }
 
   if (await isAuctionLive(proposal.leagueId)) {

@@ -3,9 +3,12 @@
   "moduleName": "Standings & Results",
   "sheetName": "Standings",
   "status": "qa-signed-off",
-  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
   "requirements": {
-    "version": 1,
+    "version": 3,
     "businessContext": "Module 07 exposes the public standings READ endpoint (`GET /api/standings`) and the standings-shaping logic that aggregates already-persisted GW results into ranked tables. It covers three computation paths — TVT league-stage standings, Triple Crown PL standings (38 GWs, no bonus margin, leaguePoints stored authoritatively by the GW processor), and JPL Auction standings (pure cumulative-points race with payout history and squad-value tie-breakers). It also serves the rank-change indicator, the CBP tooltip (chips / bonus points / hit penalty), the qualification-zone legend used by the standings UI, and the Redis-backed page cache that fronts the response. The WRITE side (computing match points, bonus, payouts during GW processing) lives in module 05; UI rendering is module 17; playoffs are module 08; cup-group standings detail is deferred to module 09.",
     "userStories": [
       {
@@ -13,296 +16,432 @@
         "asA": "public visitor",
         "iWant": "to fetch the live standings for any league by slug without logging in",
         "soThat": "I can follow the competition from outside the team-portal",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:62-108"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:62-108"
+        ]
       },
       {
         "id": "US-STAND-002",
         "asA": "team",
         "iWant": "TVT league-stage standings to sort by league points first, then points scored, then chips+bonus points",
         "soThat": "my position reflects the documented ranking rules",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:616-620"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:616-620"
+        ]
       },
       {
         "id": "US-STAND-003",
         "asA": "team",
         "iWant": "to see a rank-change indicator (arrow up/down/same) versus my previous GW position",
         "soThat": "I can tell at a glance whether I climbed or dropped after the latest GW",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:365-466", "jpl-leagues/src/app/api/standings/route.ts:629-656"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:365-466",
+          "jpl-leagues/src/app/api/standings/route.ts:629-656"
+        ]
       },
       {
         "id": "US-STAND-004",
         "asA": "team",
         "iWant": "a CBP tooltip showing my used chips, per-GW bonus points and hit-penalty deductions",
         "soThat": "I can verify how my chipPoints + bonusPoints total was assembled",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:546-588"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:546-588"
+        ]
       },
       {
         "id": "US-STAND-005",
         "asA": "team in a Triple Crown league",
         "iWant": "PL standings to use the stored `leaguePoints` (already including hit penalty) rather than re-deriving from W/D",
         "soThat": "the table matches the authoritative GW-processor values across all 38 GWs",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:539-543", "jpl-leagues/src/lib/formats/triple-crown/process-gameweek.ts:333-346"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:539-543",
+          "jpl-leagues/src/lib/formats/triple-crown/process-gameweek.ts:333-346"
+        ]
       },
       {
         "id": "US-STAND-006",
         "asA": "team in a Triple Crown league",
         "iWant": "Ghost teams (cup-group phantoms) excluded from the PL standings table",
         "soThat": "I only see real opponents in the public ladder",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:329-331"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:329-331"
+        ]
       },
       {
         "id": "US-STAND-007",
         "asA": "team in a JPL Auction league",
         "iWant": "standings ranked by cumulative total points with squad value (ascending) and purse (descending) as tie-breakers",
         "soThat": "lean, well-managed squads outrank bloated ones on equal points",
-        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:82-92"]
+        "sourceRefs": [
+          "jpl-leagues/src/lib/formats/auction/standings.ts:82-92"
+        ]
       },
       {
         "id": "US-STAND-008",
         "asA": "team in a JPL Auction league",
         "iWant": "per-GW history showing raw points, synergy bonus, club-result bonus, rank and payout",
         "soThat": "I can audit how my purse changed week by week",
-        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:42-63", "jpl-leagues/src/app/api/standings/route.ts:153-178"]
+        "sourceRefs": [
+          "jpl-leagues/src/lib/formats/auction/standings.ts:42-63",
+          "jpl-leagues/src/app/api/standings/route.ts:153-178"
+        ]
       },
       {
         "id": "US-STAND-009",
         "asA": "team in a JPL Auction league with a PL Club Auction club",
         "iWant": "the standings to show my owned club's live in-progress fixture result before admin scores the GW",
         "soThat": "I can track my club bonus while matches are still being played",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:180-203", "jpl-leagues/src/app/api/standings/route.ts:205-216"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:180-203",
+          "jpl-leagues/src/app/api/standings/route.ts:205-216"
+        ]
       },
       {
         "id": "US-STAND-010",
         "asA": "team in a multi-group TVT league",
         "iWant": "to filter standings by group via the `group` query parameter",
         "soThat": "I can view a single group at a time when groups have been revealed",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:64-65", "jpl-leagues/src/app/api/standings/route.ts:332-335"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:64-65",
+          "jpl-leagues/src/app/api/standings/route.ts:332-335"
+        ]
       },
       {
         "id": "US-STAND-011",
         "asA": "team",
         "iWant": "standings to indicate my qualification zone (playoffs / challenger / eliminated)",
         "soThat": "I know whether I'm in the title race, the consolation bracket, or already out",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:633-636", "jpl-leagues/src/app/api/standings/route.ts:697-705"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:633-636",
+          "jpl-leagues/src/app/api/standings/route.ts:697-705"
+        ]
       },
       {
         "id": "US-STAND-012",
         "asA": "admin",
         "iWant": "standings to be served from Redis cache when available and silently fall back to DB computation on cache miss",
         "soThat": "the public page remains fast and survives Redis outages",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:102-108", "jpl-leagues/src/app/api/standings/route.ts:673-679", "jpl-leagues/src/lib/fpl-cache.ts:363-378"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:102-108",
+          "jpl-leagues/src/app/api/standings/route.ts:673-679",
+          "jpl-leagues/src/lib/fpl-cache.ts:363-378"
+        ]
       }
     ],
     "businessRules": [
       {
         "id": "BR-STAND-001",
         "rule": "`leagueSlug` query parameter is REQUIRED — endpoint returns 400 `{ error: 'leagueSlug parameter is required' }` when missing.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:69-74"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:69-74"
+        ]
       },
       {
         "id": "BR-STAND-002",
         "rule": "An unknown `leagueSlug` returns 404 `{ error: 'League not found' }`; the route does not infer or default to any league.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:79-84"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:79-84"
+        ]
       },
       {
         "id": "BR-STAND-003",
         "rule": "League stage end is `38` for Triple Crown leagues and `playoffStartGw - 1` for all other formats; fixtures with `gameweek.number > leagueStageEnd` are excluded from W/D/L, points-for, bonus, and chip aggregation.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:87-93", "jpl-leagues/src/app/api/standings/route.ts:478-481", "jpl-leagues/src/app/api/standings/route.ts:499-502"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:87-93",
+          "jpl-leagues/src/app/api/standings/route.ts:478-481",
+          "jpl-leagues/src/app/api/standings/route.ts:499-502"
+        ]
       },
       {
         "id": "BR-STAND-004",
         "rule": "Only fixtures with `competitionType === 'pl'` or NULL `competitionType` count toward PL standings; cup-group, UCL-knockout and UEL-knockout fixtures are skipped.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:480-481", "jpl-leagues/src/app/api/standings/route.ts:501-502", "jpl-leagues/src/app/api/standings/route.ts:272-274"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:480-481",
+          "jpl-leagues/src/app/api/standings/route.ts:501-502",
+          "jpl-leagues/src/app/api/standings/route.ts:272-274"
+        ]
       },
       {
         "id": "BR-STAND-005",
         "rule": "Ghost teams (`isGhost === true`) are excluded from PL standings via `allTeams.filter(t => !t.isGhost)`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:329-331"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:329-331"
+        ]
       },
       {
         "id": "BR-STAND-006",
         "rule": "TVT `leaguePoints` are computed as `(wins * 2) + (draws * 1) + cbpPoints - hitPenaltyTotal` where `cbpPoints = chipPoints + bonusPoints`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:539-543", "jpl-leagues/src/app/api/standings/route.ts:521-523"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:539-543",
+          "jpl-leagues/src/app/api/standings/route.ts:521-523"
+        ]
       },
       {
         "id": "BR-STAND-007",
         "rule": "Triple Crown `leaguePoints` is read directly from `teams.leaguePoints` (stored authoritatively by `processTripleCrownGameweek`); the standings route does NOT recompute it.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:541-543", "jpl-leagues/src/lib/formats/triple-crown/process-gameweek.ts:333-346"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:541-543",
+          "jpl-leagues/src/lib/formats/triple-crown/process-gameweek.ts:333-346"
+        ]
       },
       {
         "id": "BR-STAND-008",
         "rule": "W/D/L are derived from RAW FPL scores (`result.homeScore` vs `result.awayScore`), NOT from chip-adjusted match points.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:486-489", "jpl-leagues/src/app/api/standings/route.ts:507-510"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:486-489",
+          "jpl-leagues/src/app/api/standings/route.ts:507-510"
+        ]
       },
       {
         "id": "BR-STAND-009",
         "rule": "Bonus points are awarded as 1 point per qualifying fixture, doubled to 2 when `homeUsedDoublePointer`/`awayUsedDoublePointer` is set on the result row.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:491-495", "jpl-leagues/src/app/api/standings/route.ts:512-516"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:491-495",
+          "jpl-leagues/src/app/api/standings/route.ts:512-516"
+        ]
       },
       {
         "id": "BR-STAND-010",
         "rule": "Hit penalty: each GW in which ANY player on the team took strictly more than 12 raw FPL transfer hits contributes −1 to `leaguePoints` (one deduction per qualifying GW, not per player).",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:524-537"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:524-537"
+        ]
       },
       {
         "id": "BR-STAND-011",
         "rule": "Hit-penalty data for processed GWs is loaded from Redis (`getAllCachedScores`) first; on cache miss the route fetches per-player GW scores from FPL in parallel within each GW (GW loop sequential to bound concurrency).",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:278-316"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:278-316"
+        ]
       },
       {
         "id": "BR-STAND-012",
         "rule": "If the FPL hit-penalty fetch throws (FPL outage / rate-limit), the route logs the error and returns standings WITHOUT hit deductions rather than 500-ing — partial correctness is preferred over total failure.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:269-320"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:269-320"
+        ]
       },
       {
         "id": "BR-STAND-013",
         "rule": "Triple Crown leagues SKIP the FPL hit-penalty fetch entirely because hit penalties are already baked into the stored `leaguePoints`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:263-264"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:263-264"
+        ]
       },
       {
         "id": "BR-STAND-014",
         "rule": "PL standings final sort order: `leaguePoints DESC`, then `pointsFor DESC`, then `cbpPoints DESC`. // CODE-CONFIRMED: may be a defect — the TVT scoring spec in `tvt/scoring.ts:215-246` documents a 4-tier tiebreaker (Overall Points → Max Wins → Head-to-Head → Bonus Points) which the route does not implement.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:616-620", "jpl-leagues/src/lib/formats/tvt/scoring.ts:215-246"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:616-620",
+          "jpl-leagues/src/lib/formats/tvt/scoring.ts:215-246"
+        ]
       },
       {
         "id": "BR-STAND-015",
-        "rule": "Each team's response carries BOTH `bonusPoints` (read from stored `teams.bonusPoints`) and `calculatedBonus` (re-derived from the current fixture set). // CODE-CONFIRMED: may be a defect — the two values can diverge if `teams.bonusPoints` was never updated by GW processing or has been edited; standings should use the calculated value consistently.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:600-605"]
+        "rule": "GET /api/standings response.teams[i].bonusPoints reflects the stored teams.bonusPoints column. The previously-exposed calculatedBonus field has been removed (was a per-request fixture sweep that could disagree with the stored ledger after manual edits or missed processor updates). Single source of truth.",
+        "sourceRefs": [
+          "src/app/api/standings/route.ts:38-56",
+          "src/app/api/standings/route.ts:600-605"
+        ]
       },
       {
         "id": "BR-STAND-016",
         "rule": "Standings response groups teams by `group.name` (excluding any group whose name starts with `cup-`, case-insensitive); groupless leagues collapse all teams into `groupA` with an empty `groupB`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:624-657", "jpl-leagues/src/app/api/standings/route.ts:659-672"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:624-657",
+          "jpl-leagues/src/app/api/standings/route.ts:659-672"
+        ]
       },
       {
         "id": "BR-STAND-017",
         "rule": "Within each group, ranks are 1-based by sort order and assigned to both `rank` and `groupRank` fields on each team row.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:629-640", "jpl-leagues/src/app/api/standings/route.ts:645-656"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:629-640",
+          "jpl-leagues/src/app/api/standings/route.ts:645-656"
+        ]
       },
       {
         "id": "BR-STAND-018",
         "rule": "Qualification zone: teamSize=8 → ranks 1–4 `playoffs`, 5–8 `eliminated` (no challenger); teamSize=16 or 32 → ranks 1–8 `playoffs`, 9–14 `challenger`, 15+ `eliminated`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:697-705"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:697-705"
+        ]
       },
       {
         "id": "BR-STAND-019",
-        "rule": "Response includes a static `legend` block hard-coded to `{ top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }`. // CODE-CONFIRMED: may be a defect — the legend keys do not match the 8-team variant (no top-8 cutoff exists) and the legend is identical regardless of teamSize.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:667-671"]
+        "rule": "GET /api/standings response.legend is teamSize-aware. For 8-team leagues: { top4: 'TVT Title Play-offs', rank5to8: 'Eliminated' } (matching getQualificationZone: top-4 playoffs, ranks 5-8 eliminated, no challenger). For 16- or 32-team leagues: { top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' } as before.",
+        "sourceRefs": [
+          "src/app/api/standings/route.ts:664-686",
+          "src/app/api/standings/route.ts:697-705"
+        ]
       },
       {
         "id": "BR-STAND-020",
         "rule": "Previous-GW rank snapshot uses the SAME sort keys as the current pass (`leaguePoints` → `pointsFor` → `cbpPoints`) computed against all league-stage fixtures up to but not including `maxPlayedGw`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:396-466"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:396-466"
+        ]
       },
       {
         "id": "BR-STAND-021",
         "rule": "`previousRank` and `rankDelta` are only populated when `maxPlayedGw > 1`; otherwise both fields are `null` on every team row.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:451-466", "jpl-leagues/src/app/api/standings/route.ts:631-639"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:451-466",
+          "jpl-leagues/src/app/api/standings/route.ts:631-639"
+        ]
       },
       {
         "id": "BR-STAND-022",
         "rule": "`rankDelta = previousRank − currentRank` (positive = climbed, negative = dropped, zero = unchanged); is `null` when previous rank is unknown.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:637-639", "jpl-leagues/src/app/api/standings/route.ts:653-655"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:637-639",
+          "jpl-leagues/src/app/api/standings/route.ts:653-655"
+        ]
       },
       {
         "id": "BR-STAND-023",
         "rule": "Rank-change indicator is display-only and never influences playoff seeding, zone assignment, or group order; TVT playoff bracket generation uses its own helper in `tvt/playoffs.ts`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:365-370"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:365-370"
+        ]
       },
       {
         "id": "BR-STAND-024",
         "rule": "CBP tooltip enumerates exactly 6 chip entries (2 sets × 3 enabled chip codes) with set boundaries `[1, ceil(leagueStageEnd/2)]` and `[ceil(leagueStageEnd/2)+1, leagueStageEnd]`; the 3 chip codes come from `leagues.enabledChips` (default `[\"D\",\"W\",\"C\"]`).",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:546-579", "jpl-leagues/src/app/api/standings/route.ts:87-91"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:546-579",
+          "jpl-leagues/src/app/api/standings/route.ts:87-91"
+        ]
       },
       {
         "id": "BR-STAND-025",
         "rule": "Each CBP tooltip chip entry has `status` ∈ {`available` (no chip row), `used` (`isProcessed=true`), `pending` (row exists but not processed)} and carries `points` (0 when available), `gameweek` (when used/pending) and `opponent` (only for Challenge Chip).",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:561-577"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:561-577"
+        ]
       },
       {
         "id": "BR-STAND-026",
         "rule": "`chipPoints` accumulates only chips with `isProcessed=true`; a `C` (Challenge) chip is always summed (including 0-point rows) while any other chip type is summed only when `pointsAwarded > 0`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:352-358"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:352-358"
+        ]
       },
       {
         "id": "BR-STAND-027",
         "rule": "Chips with `gameweek.number > leagueStageEnd` (i.e. playoff GWs) are excluded from `chipPoints` and from previous-GW chip totals.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:348-351", "jpl-leagues/src/app/api/standings/route.ts:383-393"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:348-351",
+          "jpl-leagues/src/app/api/standings/route.ts:383-393"
+        ]
       },
       {
         "id": "BR-STAND-028",
         "rule": "JPL Auction standings: ranking is `totalPoints DESC` → `squadValue ASC` (lower wins) → `purse DESC` (higher wins); ranks are 1-based, no groups.",
-        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:82-92"]
+        "sourceRefs": [
+          "jpl-leagues/src/lib/formats/auction/standings.ts:82-92"
+        ]
       },
       {
         "id": "BR-STAND-029",
         "rule": "Auction `squadValue` is the sum of FMV of every actively-owned player, where FMV uses RAW points only (`rawPoints`, falling back to legacy `points`) — synergy bonus never compounds into FMV/squad value.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:138-151", "jpl-leagues/src/lib/formats/auction/economy.ts:62-69"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:138-151",
+          "jpl-leagues/src/lib/formats/auction/economy.ts:62-69"
+        ]
       },
       {
         "id": "BR-STAND-030",
         "rule": "Auction `totalPoints` for a team = `Σ rawPoints + Σ synergyBonus + Σ clubResultBonus` across all GWs the team has been scored.",
-        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:48-51"]
+        "sourceRefs": [
+          "jpl-leagues/src/lib/formats/auction/standings.ts:48-51"
+        ]
       },
       {
         "id": "BR-STAND-031",
         "rule": "Auction `previousRank`/`rankDelta` are computed using cumulative points through `maxGw - 1`, with the same secondary keys; teams with no GW history at `previousGw` get `previousRank=null` and `rankDelta=null`.",
-        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/standings.ts:96-127"]
+        "sourceRefs": [
+          "jpl-leagues/src/lib/formats/auction/standings.ts:96-127"
+        ]
       },
       {
         "id": "BR-STAND-032",
         "rule": "GW payout schedule: rank 1=£2.5M, 2=£2.1M, 3=£1.8M, 4=£1.6M, 5=£1.4M, 6=£1.2M, 7=£1.1M, 8=£1.0M, 9=£0.9M, 10=£0.8M; rank 11+ receives the £500K floor.",
-        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/economy.ts:8-29"]
+        "sourceRefs": [
+          "jpl-leagues/src/lib/formats/auction/economy.ts:8-29"
+        ]
       },
       {
         "id": "BR-STAND-033",
         "rule": "FMV appreciation tiers: 0–100 raw points → £20K/pt, 100–200 → £40K/pt, 200+ → £60K/pt; negative raw points are clamped to 0 before tier accumulation.",
-        "sourceRefs": ["jpl-leagues/src/lib/formats/auction/economy.ts:62-69"]
+        "sourceRefs": [
+          "jpl-leagues/src/lib/formats/auction/economy.ts:62-69"
+        ]
       },
       {
         "id": "BR-STAND-034",
         "rule": "PL Club Auction display: if a team owns a PL club, the response replaces `teamName` with the owned club's `plTeamName` from `auctionClubOwnership`.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:170-178"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:170-178"
+        ]
       },
       {
         "id": "BR-STAND-035",
         "rule": "Auction `currentGwNumber` = max(highest scored GW, FPL `is_current`/`is_next` event id); on FPL fetch failure it stays at the highest scored GW.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:182-191"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:182-191"
+        ]
       },
       {
         "id": "BR-STAND-036",
         "rule": "Auction live-club-result branch (`currentGwNumber > maxScoredGw && currentGwNumber > 0`) computes the in-progress `liveClubResultByTeam` for every owned club; the response is NOT written to the Redis cache during the live branch to prevent stale scorelines.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:196-216"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:196-216"
+        ]
       },
       {
         "id": "BR-STAND-037",
         "rule": "Legacy `clubResultSummary` rows (null in DB) are backfilled on-the-fly via `backfillClubSummaries` so the standings tooltip shows a real fixture string instead of em-dash.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:158-178"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:158-178"
+        ]
       },
       {
         "id": "BR-STAND-038",
         "rule": "Standings response is fronted by a Redis cache keyed `standings:v2:{leagueId}` with TTL = `PAGE_CACHE_TTL`; cache hits short-circuit ALL DB computation and the cached value is returned verbatim. // CODE-CONFIRMED: may be a defect — the cache key does NOT include `group` or `leagueSlug`, so a cached response built with no `group` filter will be returned even when the caller passes `?group=B` (and vice-versa).",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:102-108", "jpl-leagues/src/lib/fpl-cache.ts:363-378"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:102-108",
+          "jpl-leagues/src/lib/fpl-cache.ts:363-378"
+        ]
       },
       {
         "id": "BR-STAND-039",
         "rule": "Cache writes are fire-and-forget (`.catch(() => {})`) and never block or fail the response.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:215", "jpl-leagues/src/app/api/standings/route.ts:673-677"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:215",
+          "jpl-leagues/src/app/api/standings/route.ts:673-677"
+        ]
       },
       {
         "id": "BR-STAND-040",
         "rule": "Top-level try/catch swallows ANY computation error and returns an empty standings payload `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }` with HTTP 200. // CODE-CONFIRMED: may be a defect — masking server errors as 200/empty makes failures invisible to clients and to monitoring; defaults of 30/32 also leak even for 8-team leagues.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:680-690"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:680-690"
+        ]
       },
       {
         "id": "BR-STAND-041",
         "rule": "`groupsRevealed` flag is sourced from `settings` row with `key='groupsRevealed'`, value compared as the literal string `'true'`; absence ⇒ false.",
-        "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:95-100"]
+        "sourceRefs": [
+          "jpl-leagues/src/app/api/standings/route.ts:95-100"
+        ]
       },
       {
         "id": "BR-STAND-042",
         "rule": "Cup-group standings tie-break (computed by `computeCupGroupStandings`): `cupGroupPoints DESC`, then goal-difference (GF − GA) DESC, then `goalFor` DESC. (Detailed cup-group rules deferred to module 09.)",
-        "sourceRefs": ["jpl-leagues/src/lib/formats/triple-crown/standings.ts:91-99"]
+        "sourceRefs": [
+          "jpl-leagues/src/lib/formats/triple-crown/standings.ts:91-99"
+        ]
       }
     ],
     "acceptanceCriteria": [
@@ -413,9 +552,9 @@
       },
       {
         "id": "AC-STAND-016",
-        "given": "`teams.bonusPoints` was never updated by the GW processor and remains 0 while `calculatedBonus` from the fixture sweep is 4",
-        "when": "the response is returned",
-        "then": "the response shows `bonusPoints: 0` and `calculatedBonus: 4` — the two fields can disagree",
+        "given": "a consumer (web UI or admin tool) fetches /api/standings",
+        "when": "the response payload is inspected",
+        "then": "teams[i].bonusPoints is the stored ledger value; teams[i].calculatedBonus is absent. There is no longer any way for the UI to display two different bonus totals for the same team.",
         "linksTo": "BR-STAND-015"
       },
       {
@@ -448,9 +587,9 @@
       },
       {
         "id": "AC-STAND-021",
-        "given": "any league size",
-        "when": "the standings response is returned",
-        "then": "the `legend` block always reads `{ top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }` even for 8-team leagues where ranks 9–14 don't exist — flag DEF-STAND-002",
+        "given": "a UI consumer fetches /api/standings against an 8-team league vs a 16-team league",
+        "when": "they inspect response.legend on each",
+        "then": "the 8-team response.legend has keys {top4, rank5to8}; the 16-team response.legend has keys {top8, rank9to14, rank15to16}. The legend keys match the actual qualification rules (no phantom rank-9-to-14 in an 8-team league).",
         "linksTo": "BR-STAND-019"
       },
       {
@@ -634,11 +773,22 @@
       "description": "The `/api/standings` route sorts teams by `leaguePoints DESC → pointsFor DESC → cbpPoints DESC` (src/app/api/standings/route.ts:616-620). However the TVT scoring spec at src/lib/formats/tvt/scoring.ts:215-246 defines the league-stage tiebreaker as 1) Overall Points, 2) Max Wins, 3) Head-to-Head, 4) Bonus Points. Neither `wins`, `headToHeadRecord`, nor `bonusPoints` are used by the standings sort. Two teams tied on league points and points-for will be ordered by chips+bonus, which can flip the documented ranking.",
       "expectedBehaviour": "The sort should match `compareTiebreaker` in tvt/scoring.ts — after leaguePoints, break ties by max wins, then head-to-head record, then bonus points.",
       "actualBehaviour": "Sort uses `pointsFor` then `cbpPoints` and ignores wins, H2H, and (stored) bonus points entirely. The previous-GW snapshot sort at route.ts:459-463 has the same divergence.",
-      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:616-620", "jpl-leagues/src/app/api/standings/route.ts:459-463", "jpl-leagues/src/lib/formats/tvt/scoring.ts:215-246"],
-      "linkedBusinessRules": ["BR-STAND-014"],
-      "linkedAcceptanceCriteria": ["AC-STAND-014", "AC-STAND-015"],
+      "sourceRefs": [
+        "jpl-leagues/src/app/api/standings/route.ts:616-620",
+        "jpl-leagues/src/app/api/standings/route.ts:459-463",
+        "jpl-leagues/src/lib/formats/tvt/scoring.ts:215-246"
+      ],
+      "linkedBusinessRules": [
+        "BR-STAND-014"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-STAND-014",
+        "AC-STAND-015"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-STAND-023"],
+      "pinningTestCases": [
+        "TC-STAND-023"
+      ],
       "notes": "Options: (a) replace the standings sort with `compareTiebreaker` from tvt/scoring.ts (requires materialising W and H2H records here); (b) update the spec to match the simpler sort if product owner approves. Risk: any cup-tied podium decided by current sort may be product-incorrect. Cross-check with playoffs.ts which uses its own `getGroupStandings`.",
       "resolution": null,
       "resolutionDate": null
@@ -647,20 +797,29 @@
       "id": "DEF-STAND-002",
       "title": "Standings legend block is hard-coded and inaccurate for 8-team leagues",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "The standings response always emits `legend: { top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }` (src/app/api/standings/route.ts:667-671). For a `teamSize=8` league, ranks 9–14 and 15–16 do not exist and the actual cutoff for playoffs is top-4 (per `getQualificationZone` at line 697-705), so the legend is misleading.",
       "expectedBehaviour": "Legend should be derived from `teamSize` and `getQualificationZone` (e.g. `{ top4: 'Playoffs', rank5to8: 'Eliminated' }` for 8-team leagues) or omitted in favour of UI-side computation.",
       "actualBehaviour": "All leagues — including 8-team and Triple Crown — receive the 32-team legend, so UI components that key off these strings render incorrect bands.",
-      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:667-671", "jpl-leagues/src/app/api/standings/route.ts:697-705"],
-      "linkedBusinessRules": ["BR-STAND-019"],
-      "linkedAcceptanceCriteria": ["AC-STAND-021"],
+      "sourceRefs": [
+        "jpl-leagues/src/app/api/standings/route.ts:667-671",
+        "jpl-leagues/src/app/api/standings/route.ts:697-705"
+      ],
+      "linkedBusinessRules": [
+        "BR-STAND-019"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-STAND-021"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-STAND-029"],
-      "notes": "Low risk for the 16/32-team flagship leagues; cosmetic but actively wrong for 8-team variants. Fix is local to this route — branch on `leagueTeamSize`.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-STAND-029"
+      ],
+      "notes": "Low risk for the 16/32-team flagship leagues; cosmetic but actively wrong for 8-team variants. Fix is local to this route — branch on `leagueTeamSize`. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Made the standings response legend format-aware (src/app/api/standings/route.ts:664-686). For teamSize=8 leagues the legend now uses {top4, rank5to8} matching getQualificationZone's 8-team rule. For 16/32-team leagues the legend keeps the existing {top8, rank9to14, rank15to16} shape. Consumers can branch on the keys present in `legend`.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-STAND-003",
@@ -672,11 +831,21 @@
       "description": "`getCachedStandings`/`setCachedStandings` use the key `standings:v2:{leagueId}` (src/lib/fpl-cache.ts:365-378). The standings route applies the `group` query param AFTER the cache lookup (src/app/api/standings/route.ts:102-108 vs 332-335), so a payload cached from an unfiltered request is returned verbatim to a caller asking for `?group=B`, and vice-versa. The cache also does not key on `leagueSlug` vs `leagueId` aliasing.",
       "expectedBehaviour": "Either skip the cache when a `group` filter is present, or include the group token in the cache key (`standings:v2:{leagueId}:group=B`).",
       "actualBehaviour": "First requester wins the cache slot; subsequent requesters with different `group` filters receive the wrong slice until TTL expiry.",
-      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:102-108", "jpl-leagues/src/app/api/standings/route.ts:332-335", "jpl-leagues/src/lib/fpl-cache.ts:363-378"],
-      "linkedBusinessRules": ["BR-STAND-038"],
-      "linkedAcceptanceCriteria": ["AC-STAND-039"],
+      "sourceRefs": [
+        "jpl-leagues/src/app/api/standings/route.ts:102-108",
+        "jpl-leagues/src/app/api/standings/route.ts:332-335",
+        "jpl-leagues/src/lib/fpl-cache.ts:363-378"
+      ],
+      "linkedBusinessRules": [
+        "BR-STAND-038"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-STAND-039"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-STAND-052"],
+      "pinningTestCases": [
+        "TC-STAND-052"
+      ],
       "notes": "Trivial fix; bump cache version (STANDINGS_CACHE_VERSION) when shipping. Impact today is minimal because the UI generally doesn't pass `group`, but any deep-link that does will be broken.",
       "resolution": null,
       "resolutionDate": null
@@ -691,11 +860,19 @@
       "description": "Any exception thrown during standings computation is swallowed and the response is HTTP 200 with `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }` (src/app/api/standings/route.ts:680-690). This hides DB failures, drizzle relational errors, transient FPL/cache issues, and prevents Sentry/UI from differentiating a real outage from a brand-new league with no fixtures. The defaulted `leagueStageEnd: 30` / `teamSize: 32` also leak even for 8-team leagues.",
       "expectedBehaviour": "Return a 500-class status (or distinguish 'empty league' from 'computation failed') and surface error telemetry. The narrow case of 'no fixtures yet' should be detected explicitly, not modelled as a catch-all.",
       "actualBehaviour": "All errors collapse to a single 200/empty shape with magic defaults that misrepresent league configuration.",
-      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:680-690"],
-      "linkedBusinessRules": ["BR-STAND-040"],
-      "linkedAcceptanceCriteria": ["AC-STAND-040"],
+      "sourceRefs": [
+        "jpl-leagues/src/app/api/standings/route.ts:680-690"
+      ],
+      "linkedBusinessRules": [
+        "BR-STAND-040"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-STAND-040"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-STAND-053"],
+      "pinningTestCases": [
+        "TC-STAND-053"
+      ],
       "notes": "Risk: silent regressions during deploys; on-call sees no alerts. Suggested fix: tighten the catch to known empty-state cases or return `{ status: 500, error }` for unknown failures.",
       "resolution": null,
       "resolutionDate": null
@@ -704,20 +881,29 @@
       "id": "DEF-STAND-005",
       "title": "Response carries both stored `bonusPoints` and recomputed `calculatedBonus`, which can drift",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "The standings team row exposes `bonusPoints: team.bonusPoints` (the stored value from `teams.bonusPoints`) AND `calculatedBonus: bonusPtsTotal` (the value derived from the current fixture+result sweep). When `teams.bonusPoints` was never updated by the GW processor, was edited manually, or was reset during a partial season-reset, these two fields can disagree — yet `leaguePoints` is computed from the calculated value while the UI may read either field.",
       "expectedBehaviour": "Pick ONE source of truth (almost certainly the recomputed `bonusPtsTotal`) and either remove the other field or make them provably equal.",
       "actualBehaviour": "Both fields are returned, downstream consumers can disagree about a team's bonus total, and the leaguePoints math silently uses the calculated value regardless of the stored one.",
-      "sourceRefs": ["jpl-leagues/src/app/api/standings/route.ts:600-605", "jpl-leagues/src/app/api/standings/route.ts:521-523"],
-      "linkedBusinessRules": ["BR-STAND-015"],
-      "linkedAcceptanceCriteria": ["AC-STAND-016"],
+      "sourceRefs": [
+        "jpl-leagues/src/app/api/standings/route.ts:600-605",
+        "jpl-leagues/src/app/api/standings/route.ts:521-523"
+      ],
+      "linkedBusinessRules": [
+        "BR-STAND-015"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-STAND-016"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-STAND-024"],
-      "notes": "Audit: confirm whether `teams.bonusPoints` is still maintained anywhere (search GW-processing in module 05). If unused, drop the column or stop returning the field.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-STAND-024"
+      ],
+      "notes": "Audit: confirm whether `teams.bonusPoints` is still maintained anywhere (search GW-processing in module 05). If unused, drop the column or stop returning the field. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Removed `calculatedBonus` from the /api/standings response (src/app/api/standings/route.ts:600-605) AND from the TeamStanding interface (src/app/api/standings/route.ts:38-56). bonusPoints (the stored teams.bonusPoints column) is now the single source of truth. The recomputed value was a drift hazard whenever the GW processor missed an update.",
+      "resolutionDate": "2026-05-26"
     }
   ],
   "testCases": [
@@ -1189,8 +1375,8 @@
     {
       "id": "TC-STAND-024",
       "feature": "Bonus points field drift (regression)",
-      "scenario": "DEF-STAND-005 pin: bonusPoints stored=0 vs calculatedBonus=4 returned simultaneously",
-      "type": "Regression",
+      "scenario": "standings response exposes only stored bonusPoints (no recomputed calculatedBonus)",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "Team Echo has teams.bonusPoints=0 (never updated by processor) but fixture sweep yields calculatedBonus=4",
       "testData": "leagueSlug=tvt-2026, team=echo",
@@ -1198,13 +1384,13 @@
         "1. GET /api/standings?leagueSlug=tvt-2026",
         "2. Inspect team Echo's `bonusPoints` and `calculatedBonus` fields"
       ],
-      "expectedResult": "Response contains both `bonusPoints: 0` AND `calculatedBonus: 4`; leaguePoints uses calculated value. Defect pinned.",
+      "expectedResult": "GET /api/standings response.teams[i] contains bonusPoints (matching teams.bonusPoints column) but does NOT contain calculatedBonus. Consumers can rely on a single ledger value without ambiguity.",
       "postconditions": "",
       "requirementId": "AC-STAND-016",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-STAND-005"
+      "notes": "[QA-VERIFY] Updated post-DEF-STAND-005 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-STAND-025",
@@ -1289,8 +1475,8 @@
     {
       "id": "TC-STAND-029",
       "feature": "Legend (regression)",
-      "scenario": "DEF-STAND-002 pin: legend is identical for 8-team league as for 32-team",
-      "type": "Regression",
+      "scenario": "standings legend uses teamSize-correct keys (top4/rank5to8 for 8-team; top8/rank9to14/rank15to16 for 16+32)",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "TVT league with teamSize=8",
       "testData": "leagueSlug=tvt-8team",
@@ -1298,13 +1484,13 @@
         "1. GET /api/standings?leagueSlug=tvt-8team",
         "2. Inspect `legend` block"
       ],
-      "expectedResult": "`legend` exactly equals `{ top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }` even though ranks 9-16 do not exist for an 8-team league. Defect pinned.",
+      "expectedResult": "GET /api/standings against a teamSize=8 league returns response.legend = { top4: 'TVT Title Play-offs', rank5to8: 'Eliminated' }. Against a teamSize=16 or 32 league returns the existing { top8, rank9to14, rank15to16 } legend. UI consumers can branch on the keys.",
       "postconditions": "",
       "requirementId": "AC-STAND-021",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-STAND-002"
+      "notes": "[QA-VERIFY] Updated post-DEF-STAND-002 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-STAND-030",

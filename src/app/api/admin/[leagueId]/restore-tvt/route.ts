@@ -15,6 +15,7 @@ import {
   parseRestoreZip,
   loadRestoreSnapshot,
   restoreFixtures,
+  RestoreGuardError,
   type RestorePayload,
 } from "@/lib/backup/restore-tvt";
 
@@ -92,6 +93,9 @@ export async function POST(request: NextRequest) {
       message: `Restored ${result.inserted} fixture(s). Captains + chips restore is a tracked follow-up — use the Import Captain/Chip Data blocks if those need to be applied.`,
     });
   } catch (err) {
+    if (err instanceof RestoreGuardError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("[restore-tvt] apply failed:", err);
     return NextResponse.json(
       { error: "Restore failed", message: err instanceof Error ? err.message : "unknown" },

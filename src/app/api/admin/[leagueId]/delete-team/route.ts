@@ -32,6 +32,13 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    if (existingTeam[0].isGhost === true) {
+      return NextResponse.json(
+        { error: "Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation." },
+        { status: 400 }
+      );
+    }
+
     const teamName = existingTeam[0].name;
 
     // Get all players for this team

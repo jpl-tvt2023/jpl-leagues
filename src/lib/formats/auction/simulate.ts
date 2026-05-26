@@ -107,7 +107,12 @@ export async function simulateAuction(
       if (!team) continue;
 
       const penaltySlots = team.penaltySlots ?? 0;
-      const maxSlots = effectiveMaxSquadSize(penaltySlots);
+      const bonusSlots = team.bonusSlots ?? 0;
+      // Include bonusSlots so a simulated team that pre-bought slot 16/17/18
+      // gets to draft its full purchased squad — matching the live auction's
+      // effective cap. Defaulting bonusSlots to 0 (as the original call did)
+      // capped simulated drafts at 15 regardless of the column's value.
+      const maxSlots = effectiveMaxSquadSize(penaltySlots, bonusSlots);
       if (round >= maxSlots) continue;
 
       const purse = remainingPurse.get(teamId) ?? 0;

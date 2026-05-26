@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { fixtures, playoffTies, gameweeks, results, groups, teams, leagues } from "@/lib/db/schema";
+import { fixtures, playoffTies, gameweeks, results, groups, teams, leagues, challengerSurvivalEntries } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -37,42 +37,46 @@ export async function GET(request: NextRequest) {
 
 /**
  * DELETE /api/admin/[leagueId]/generate-playoffs
- * Delete initial playoff ties, fixtures, and results for this league so they can be regenerated.
+ * Delete ALL playoff ties (initial + advanced rounds), fixtures, results, and challenger survival
+ * entries for this league so the bracket can be regenerated from a clean slate.
  */
 export async function DELETE(request: NextRequest) {
   const leagueId = await getAuthorizedLeagueId(request);
   if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const leagueRow = await db.select({ teamSize: leagues.teamSize })
-    .from(leagues).where(eq(leagues.id, leagueId)).limit(1);
-  const teamSize = leagueRow[0]?.teamSize ?? 32;
-
-  const initialRounds = getInitialRoundNames(teamSize);
-
-  const tiesToDelete = await db.select({ tieId: playoffTies.tieId })
+  const allTies = await db.select({ tieId: playoffTies.tieId })
     .from(playoffTies)
-    .where(and(
-      eq(playoffTies.leagueId, leagueId),
-      inArray(playoffTies.roundName, initialRounds)
-    ));
-  const tieIdList = tiesToDelete.map(t => t.tieId);
+    .where(eq(playoffTies.leagueId, leagueId));
+  const tieIdList = allTies.map(t => t.tieId);
 
-  if (tieIdList.length === 0) {
+  const leagueGameweeks = await db.select({ id: gameweeks.id })
+    .from(gameweeks)
+    .where(eq(gameweeks.leagueId, leagueId));
+  const leagueGwIds = leagueGameweeks.map(g => g.id);
+
+  const playoffFixturesRows = leagueGwIds.length > 0
+    ? await db.select({ id: fixtures.id })
+        .from(fixtures)
+        .where(and(inArray(fixtures.gameweekId, leagueGwIds), eq(fixtures.isPlayoff, true)))
+    : [];
+  const fixtureIds = playoffFixturesRows.map(f => f.id);
+
+  if (tieIdList.length === 0 && fixtureIds.length === 0) {
     await invalidateLeaguePageCache(leagueId);
     return NextResponse.json({ success: true, message: "No initial ties to delete", deletedFixtures: 0 });
   }
-
-  const fixturesToDelete = await db.select({ id: fixtures.id })
-    .from(fixtures)
-    .where(inArray(fixtures.tieId, tieIdList));
-  const fixtureIds = fixturesToDelete.map(f => f.id);
 
   await db.transaction(async (tx) => {
     if (fixtureIds.length > 0) {
       await tx.delete(results).where(inArray(results.fixtureId, fixtureIds));
       await tx.delete(fixtures).where(inArray(fixtures.id, fixtureIds));
     }
-    await tx.delete(playoffTies).where(inArray(playoffTies.tieId, tieIdList));
+    if (leagueGwIds.length > 0) {
+      await tx.delete(challengerSurvivalEntries).where(inArray(challengerSurvivalEntries.gameweekId, leagueGwIds));
+    }
+    if (tieIdList.length > 0) {
+      await tx.delete(playoffTies).where(eq(playoffTies.leagueId, leagueId));
+    }
   });
 
   await invalidateLeaguePageCache(leagueId);

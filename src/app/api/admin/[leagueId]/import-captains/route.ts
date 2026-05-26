@@ -50,12 +50,18 @@ export async function POST(request: NextRequest) {
 
     // Fetch league config
     const leagueRecord = await db
-      .select({ playoffStartGw: leagues.playoffStartGw })
+      .select({ format: leagues.format, playoffStartGw: leagues.playoffStartGw })
       .from(leagues)
       .where(eq(leagues.id, leagueId))
       .limit(1);
     if (!leagueRecord.length) return NextResponse.json({ error: "League not found" }, { status: 404 });
-    const { playoffStartGw } = leagueRecord[0];
+    const { format: leagueFormat, playoffStartGw } = leagueRecord[0];
+    // Match the team-side POST /api/team/captain cap (BR-CHIP-004):
+    // TC=19 chips/player, others=15. captainCheckLimit is the upper League-Stage
+    // GW boundary; chips used at GW > captainCheckLimit are playoff captaincies and
+    // do NOT count toward the cap.
+    const CAPTAIN_CAP = leagueFormat === "triple-crown" ? 19 : 15;
+    const captainCheckLimit = leagueFormat === "triple-crown" ? 38 : (playoffStartGw - 1);
 
     // Get all teams with players for this league
     const allTeams = await db.query.teams.findMany({
@@ -169,7 +175,20 @@ export async function POST(request: NextRequest) {
             }
             // else: same player, no change needed
           } else {
-            // New entry
+            // New entry — apply the per-player CAPTAIN_CAP overflow check, but only
+            // for league-stage GWs (playoff captaincies are unlimited). Mirror the
+            // team-side POST /api/team/captain rule so an admin bulk-import can't
+            // silently put a player past the cap that the user-facing route enforces.
+            if (gw <= captainCheckLimit) {
+              const currentUsed = player.captaincyChipsUsed ?? 0;
+              const pendingIncrement = chipsIncrement.get(player.id) ?? 0;
+              if (currentUsed + pendingIncrement >= CAPTAIN_CAP) {
+                results.errors.push(
+                  `Row ${rowNum}: ${playerName} has already used all ${CAPTAIN_CAP} League-Stage captaincy chips — GW${gw} entry skipped`
+                );
+                continue;
+              }
+            }
             const newId = generateId();
             toInsert.push({
               id: newId,
@@ -183,7 +202,7 @@ export async function POST(request: NextRequest) {
             });
             // Register in map so duplicate rows in same upload don't double-insert
             existingCaptainsMap.set(`${gameweek.id}|${player.id}`, { id: newId, gameweekId: gameweek.id, playerId: player.id });
-            // Track chips increment
+            // Track chips increment (only counts toward cap for league-stage GWs above)
             chipsIncrement.set(player.id, (chipsIncrement.get(player.id) ?? 0) + 1);
           }
         }

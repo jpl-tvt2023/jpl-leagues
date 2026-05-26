@@ -3,9 +3,12 @@
   "moduleName": "Notifications",
   "sheetName": "Notifications",
   "status": "qa-signed-off",
-  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
   "requirements": {
-    "version": 1,
+    "version": 2,
     "businessContext": "Per-team in-app notification feed. Lifecycle events from other modules (trade proposals, admin trade actions, gameweek scoring, release refunds, slot economy, club purchases) write rows into the `notifications` table via the shared `createNotification` helper. Signed-in team users see an unread badge in the global `NotificationBell`, a 3-item dropdown preview, and a paginated full feed at `/notifications`. The module owns CRUD (list, mark-read) only; emission of rows belongs to the source module, and email/push delivery is out of scope.",
     "userStories": [
       {
@@ -155,12 +158,16 @@
       {
         "id": "BR-NOTIF-001",
         "rule": "`notifications` table columns: id (PK text), teamId (FK teams.id, cascade delete), leagueId (FK leagues.id, cascade delete), type (text), title (text), body (text), link (nullable text), readAt (nullable timestamp), createdAt (timestamp, defaults to now()).",
-        "sourceRefs": ["src/lib/db/schema.ts:546-559"]
+        "sourceRefs": [
+          "src/lib/db/schema.ts:546-559"
+        ]
       },
       {
         "id": "BR-NOTIF-002",
         "rule": "Composite index `notifications_team_unread` on (teamId, readAt) backs the unread-count and team-feed queries.",
-        "sourceRefs": ["src/lib/db/schema.ts:557-558"]
+        "sourceRefs": [
+          "src/lib/db/schema.ts:557-558"
+        ]
       },
       {
         "id": "BR-NOTIF-003",
@@ -173,61 +180,83 @@
       },
       {
         "id": "BR-NOTIF-004",
-        "rule": "GET /api/notifications requires a team session. With no session (or an admin/superadmin session) it returns 200 with `{ notifications: [], unreadCount: 0, totalCount: 0, page: 1, pageSize: 0, totalPages: 0 }` rather than 401. // CODE-CONFIRMED: may be a defect — `/app/notifications/page.tsx` explicitly checks for `res.status === 401` to redirect to /signin, so unauthenticated visitors land on a permanent empty-state page instead of being routed to sign-in.",
+        "rule": "GET /api/notifications requires a session cookie. Unauthenticated callers receive HTTP 401 'Not authenticated' (matching PATCH). Non-team sessions (admin/superadmin) receive HTTP 403 'Team access required'. Only team sessions reach the list-fetch path.",
         "sourceRefs": [
-          "src/app/api/notifications/route.ts:20-26",
-          "src/app/notifications/page.tsx:34-41"
+          "src/app/api/notifications/route.ts:20-32"
         ]
       },
       {
         "id": "BR-NOTIF-005",
         "rule": "GET filters rows to the calling team only (`notifications.teamId = session.id`). An optional `?leagueId=` further restricts to a single league.",
-        "sourceRefs": ["src/app/api/notifications/route.ts:43-46"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:43-46"
+        ]
       },
       {
         "id": "BR-NOTIF-006",
         "rule": "GET supports `page` (default 1) and `pageSize` (default 30, capped at 100, floor 1). Invalid/NaN inputs fall back to the defaults; `page` is clamped to `[1, totalPages]` when totalPages > 0.",
-        "sourceRefs": ["src/app/api/notifications/route.ts:30-41", "src/app/api/notifications/route.ts:56-58"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:30-41",
+          "src/app/api/notifications/route.ts:56-58"
+        ]
       },
       {
         "id": "BR-NOTIF-007",
         "rule": "Legacy `?limit=N` overrides `pageSize`, clamps to 1–100, and forces `page=1`. Provided for backward compatibility with older callers.",
-        "sourceRefs": ["src/app/api/notifications/route.ts:14-19", "src/app/api/notifications/route.ts:35-38"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:14-19",
+          "src/app/api/notifications/route.ts:35-38"
+        ]
       },
       {
         "id": "BR-NOTIF-008",
         "rule": "GET response always orders results by `createdAt DESC` (newest first).",
-        "sourceRefs": ["src/app/api/notifications/route.ts:60-66"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:60-66"
+        ]
       },
       {
         "id": "BR-NOTIF-009",
         "rule": "GET response shape: `{ notifications: NotificationItem[], unreadCount, totalCount, page, pageSize, totalPages }`. `readAt` and `createdAt` are serialised as ISO strings (or null for `readAt`).",
-        "sourceRefs": ["src/app/api/notifications/route.ts:68-83"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:68-83"
+        ]
       },
       {
         "id": "BR-NOTIF-010",
         "rule": "`unreadCount` reflects unread rows across ALL pages for the team (or league-scoped subset if `leagueId` is supplied), not just the current page.",
-        "sourceRefs": ["src/app/api/notifications/route.ts:50-54"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:50-54"
+        ]
       },
       {
         "id": "BR-NOTIF-011",
-        "rule": "PATCH /api/notifications requires a team session — non-team callers receive `401 { error: \"Team authentication required\" }`.",
-        "sourceRefs": ["src/app/api/notifications/route.ts:91-97"]
+        "rule": "Both GET and PATCH on /api/notifications return uniform auth responses: 401 with body.error='Not authenticated' for no session, 403 with body.error='Team access required' for non-team sessions. This makes the /notifications page client's status===401 redirect-to-signin branch reachable for anonymous visitors.",
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:20-32",
+          "src/app/api/notifications/route.ts:91-97"
+        ]
       },
       {
         "id": "BR-NOTIF-012",
         "rule": "PATCH body must contain either `{ all: true }` or a non-empty `ids: string[]`. Any other shape (missing both, `ids:[]`, `all:false`) returns `400 { error: \"Provide ids[] or all:true\" }`.",
-        "sourceRefs": ["src/app/api/notifications/route.ts:99-116"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:99-116"
+        ]
       },
       {
         "id": "BR-NOTIF-013",
         "rule": "PATCH `{ all: true }` sets `readAt = now()` for every UNREAD row owned by the calling team (already-read rows are not re-stamped).",
-        "sourceRefs": ["src/app/api/notifications/route.ts:104-108"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:104-108"
+        ]
       },
       {
         "id": "BR-NOTIF-014",
         "rule": "PATCH `{ ids: [...] }` sets `readAt = now()` only on rows whose `teamId = session.id` AND `id ∈ ids`. IDs belonging to another team are silently ignored — no row leakage, no error.",
-        "sourceRefs": ["src/app/api/notifications/route.ts:109-113"]
+        "sourceRefs": [
+          "src/app/api/notifications/route.ts:109-113"
+        ]
       },
       {
         "id": "BR-NOTIF-015",
@@ -240,17 +269,23 @@
       {
         "id": "BR-NOTIF-016",
         "rule": "NotificationBell polls `/api/notifications` every 30 seconds while mounted and stores the latest snapshot (full default page + unreadCount) in component state.",
-        "sourceRefs": ["src/components/NotificationBell.tsx:49-66"]
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:49-66"
+        ]
       },
       {
         "id": "BR-NOTIF-017",
         "rule": "Bell badge shows the numeric `unreadCount` for 1–9 and the literal string `9+` for any count ≥ 10. Badge is hidden when unread = 0.",
-        "sourceRefs": ["src/components/NotificationBell.tsx:133-137"]
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:133-137"
+        ]
       },
       {
         "id": "BR-NOTIF-018",
         "rule": "Bell dropdown shows at most the first 3 items from the loaded list; a See all link navigates to `/notifications`.",
-        "sourceRefs": ["src/components/NotificationBell.tsx:182-211"]
+        "sourceRefs": [
+          "src/components/NotificationBell.tsx:182-211"
+        ]
       },
       {
         "id": "BR-NOTIF-019",
@@ -280,57 +315,80 @@
       {
         "id": "BR-NOTIF-022",
         "rule": "TRIGGER trade_proposed: POST /api/auction/trade fires one notification to the target team after the proposal row is inserted, body=\"{proposerDisplay} sent you a trade proposal\", link=`/{slug}/marketplace?tab=incoming`. `proposerDisplay` prefers the proposer's PL Club Auction club name if owned, else the team name, else literal \"A team\".",
-        "sourceRefs": ["src/app/api/auction/trade/route.ts:245-255"]
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:245-255"
+        ]
       },
       {
         "id": "BR-NOTIF-023",
         "rule": "TRIGGER trade_rejected: PATCH /api/auction/trade with action=reject fires one notification to the proposer, body=\"{targetDisplay} rejected your trade proposal\", link=`/{slug}/marketplace?tab=outgoing` (link omitted if league row not found).",
-        "sourceRefs": ["src/app/api/auction/trade/route.ts:325-345"]
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:325-345"
+        ]
       },
       {
         "id": "BR-NOTIF-024",
         "rule": "TRIGGER trade_accepted: PATCH /api/auction/trade with action=accept fires one notification to the proposer after re-validation passes, body=\"{targetDisplay} accepted your trade — awaiting admin approval\", link=`/{slug}/marketplace?tab=outgoing`.",
-        "sourceRefs": ["src/app/api/auction/trade/route.ts:395-413"]
+        "sourceRefs": [
+          "src/app/api/auction/trade/route.ts:395-413"
+        ]
       },
       {
         "id": "BR-NOTIF-025",
         "rule": "TRIGGER trade_approved: POST /api/auction/trade/admin action=approve fires one notification to BOTH proposer and target after `executeTrade` succeeds. Title=\"Trade approved\", body=\"Admin approved the trade — players & cash have been transferred\", link tab=history.",
-        "sourceRefs": ["src/app/api/auction/trade/admin/route.ts:9-26", "src/app/api/auction/trade/admin/route.ts:117-133"]
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:9-26",
+          "src/app/api/auction/trade/admin/route.ts:117-133"
+        ]
       },
       {
         "id": "BR-NOTIF-026",
         "rule": "TRIGGER trade_admin_rejected: POST /api/auction/trade/admin action=reject fires one notification to BOTH parties. Title=\"Trade rejected by admin\", body=\"Admin rejected the trade\", link tab=history. Only allowed when proposal.status ∈ {pending, accepted}.",
-        "sourceRefs": ["src/app/api/auction/trade/admin/route.ts:138-159"]
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:138-159"
+        ]
       },
       {
         "id": "BR-NOTIF-027",
         "rule": "TRIGGER trade_cancelled: POST /api/auction/trade/admin action=cancel fires one notification to BOTH parties. Title=\"Trade cancelled\", body=\"Admin cancelled the trade\", link tab=history. Refused if proposal.status = completed.",
-        "sourceRefs": ["src/app/api/auction/trade/admin/route.ts:162-180"]
+        "sourceRefs": [
+          "src/app/api/auction/trade/admin/route.ts:162-180"
+        ]
       },
       {
         "id": "BR-NOTIF-028",
         "rule": "TRIGGER gw_processed: `processAuctionGameweek` fires one notification per ranked team after a successful scoring transaction. Body includes rank, points, and payout in £M. Link=`/{slug}/gw-results?gw={gwNumber}`. Skipped on the race-loss path (another caller already scored).",
-        "sourceRefs": ["src/lib/formats/auction/process-gameweek.ts:295-330"]
+        "sourceRefs": [
+          "src/lib/formats/auction/process-gameweek.ts:295-330"
+        ]
       },
       {
         "id": "BR-NOTIF-029",
         "rule": "TRIGGER release_refund: `processAuctionGameweek` fires one notification per team that received a refund this GW, body=\"£{X}M for {N} released player(s)\", link=`/{slug}/finance`. Singular vs plural is grammatical on count===1.",
-        "sourceRefs": ["src/lib/formats/auction/process-gameweek.ts:332-346"]
+        "sourceRefs": [
+          "src/lib/formats/auction/process-gameweek.ts:332-346"
+        ]
       },
       {
         "id": "BR-NOTIF-030",
         "rule": "TRIGGER slot_redeemed: POST /api/auction/redeem-slot fires one best-effort notification to the redeeming team, body=\"£{X}M deducted · {N} slot(s) remaining\", link=`/{slug}/auction`. Failure to notify is logged but never fails the redemption response.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:200-213"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:200-213"
+        ]
       },
       {
         "id": "BR-NOTIF-031",
         "rule": "TRIGGER slot_unlocked: POST /api/auction/unlock-slot fires one best-effort notification to the unlocking team, title=\"Unlocked slot {N}\", body shows £ deducted and new squad cap. No link. Failure logged, not surfaced.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:146-157"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:146-157"
+        ]
       },
       {
         "id": "BR-NOTIF-032",
         "rule": "TRIGGER club_purchased: `settleClubAuction` fires one best-effort notification to the winning bidder when a club is sold, title=\"You bought {playerName}\", body details purchase price, tier, and rename behaviour. Failures are logged but do not roll back the auction settlement.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:482-493"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:482-493"
+        ]
       },
       {
         "id": "BR-NOTIF-033",
@@ -353,7 +411,9 @@
       {
         "id": "BR-NOTIF-035",
         "rule": "Deleting a team or league cascades to its notifications (`onDelete: \"cascade\"` on both FKs).",
-        "sourceRefs": ["src/lib/db/schema.ts:549-550"]
+        "sourceRefs": [
+          "src/lib/db/schema.ts:549-550"
+        ]
       }
     ],
     "acceptanceCriteria": [
@@ -401,16 +461,16 @@
       },
       {
         "id": "AC-NOTIF-007",
-        "given": "I am NOT signed in (no session cookie)",
-        "when": "I request GET /api/notifications",
-        "then": "Response is 200 with empty list and zero counts (no 401)",
+        "given": "an anonymous visitor loads /notifications and the page fires GET /api/notifications",
+        "when": "the API runs",
+        "then": "HTTP 401 with body.error='Not authenticated'; the page client's status===401 branch redirects to /signin.",
         "linksTo": "BR-NOTIF-004"
       },
       {
         "id": "AC-NOTIF-008",
-        "given": "I am signed in as superadmin (not as a team)",
-        "when": "I request GET /api/notifications",
-        "then": "Response is 200 with empty list — admin-only sessions never see notifications",
+        "given": "an admin (non-team) session calls GET /api/notifications",
+        "when": "the API runs",
+        "then": "HTTP 403 with body.error='Team access required'; no notification list returned.",
         "linksTo": "BR-NOTIF-004"
       },
       {
@@ -667,9 +727,9 @@
       },
       {
         "id": "AC-NOTIF-045",
-        "given": "GET returns 401 (legacy hypothetical) while on /notifications",
-        "when": "page.tsx handles the response",
-        "then": "router.push(\"/signin\") is invoked",
+        "given": "an anonymous visitor loads /notifications",
+        "when": "the page fires GET /api/notifications and reads response.status",
+        "then": "the page is now redirected to /signin via the previously-unreachable status===401 branch. The page never renders an empty list in limbo for an anonymous visitor.",
         "linksTo": "BR-NOTIF-004"
       }
     ]
@@ -679,7 +739,7 @@
       "id": "DEF-NOTIF-001",
       "title": "GET /api/notifications returns 200 empty payload instead of 401 for unauthenticated callers",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/notifications/route.ts:20-26 short-circuits with a 200 JSON response (`notifications:[], unreadCount:0, ...`) whenever there is no session OR the session is not type='team'. The /notifications page client at src/app/notifications/page.tsx:34-41 explicitly checks `res.status === 401` to redirect to /signin — that branch is therefore unreachable.",
@@ -690,13 +750,25 @@
         "src/app/api/notifications/route.ts:91-97",
         "src/app/notifications/page.tsx:34-41"
       ],
-      "linkedBusinessRules": ["BR-NOTIF-004", "BR-NOTIF-011"],
-      "linkedAcceptanceCriteria": ["AC-NOTIF-007", "AC-NOTIF-008", "AC-NOTIF-045"],
+      "linkedBusinessRules": [
+        "BR-NOTIF-004",
+        "BR-NOTIF-011"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-NOTIF-007",
+        "AC-NOTIF-008",
+        "AC-NOTIF-045"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-NOTIF-011", "TC-NOTIF-012", "TC-NOTIF-054", "TC-NOTIF-055"],
-      "notes": "Two fixes possible: (a) tighten GET to return 401 when !session — matches PATCH and lets page.tsx redirect work; (b) keep current behaviour and remove the dead 401 branch from page.tsx (less safe — silently swallows logged-out state). Option (a) is preferred. Low-risk change; only affects callers without a team session.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-NOTIF-011",
+        "TC-NOTIF-012",
+        "TC-NOTIF-054",
+        "TC-NOTIF-055"
+      ],
+      "notes": "Two fixes possible: (a) tighten GET to return 401 when !session — matches PATCH and lets page.tsx redirect work; (b) keep current behaviour and remove the dead 401 branch from page.tsx (less safe — silently swallows logged-out state). Option (a) is preferred. Low-risk change; only affects callers without a team session. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "GET /api/notifications now returns HTTP 401 'Not authenticated' when there is no session, and HTTP 403 'Team access required' when the session is not type='team' (src/app/api/notifications/route.ts:20-32). Previously returned 200 with an empty payload, leaving the /notifications page client in a confusing logged-out-but-rendered state. The page's `status===401` redirect-to-signin branch is now reachable.",
+      "resolutionDate": "2026-05-26"
     }
   ],
   "testCases": [
@@ -896,40 +968,40 @@
     {
       "id": "TC-NOTIF-011",
       "feature": "Unauthenticated GET (current behaviour)",
-      "scenario": "GET with no session returns 200 empty payload",
-      "type": "Regression",
+      "scenario": "GET /api/notifications returns 401 for unauthenticated callers",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "No session cookie set; some rows exist in DB for other teams",
       "testData": "No Cookie header",
       "testSteps": [
         "1. GET /api/notifications without any session cookie"
       ],
-      "expectedResult": "200 with body {notifications:[], unreadCount:0, totalCount:0, page:1, pageSize:0, totalPages:0}. Pins current behaviour described in DEF-NOTIF-001 (expected fix: 401).",
+      "expectedResult": "GET /api/notifications with no session cookie returns HTTP 401 'Not authenticated'. The /notifications page client redirects to /signin on this status.",
       "postconditions": "No DB changes",
       "requirementId": "AC-NOTIF-007",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Regression pin for DEF-NOTIF-001 — once fixed, expectedResult should flip to 401."
+      "notes": "[QA-VERIFY] Updated post-DEF-NOTIF-001 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-NOTIF-012",
       "feature": "Admin session GET",
-      "scenario": "Superadmin session returns 200 empty payload (not team-scoped)",
-      "type": "Regression",
+      "scenario": "GET /api/notifications returns 403 for non-team session (admin/superadmin)",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Superadmin session active; other teams have rows",
       "testData": "Cookie=superadmin session",
       "testSteps": [
         "1. GET /api/notifications as superadmin"
       ],
-      "expectedResult": "200 with {notifications:[], unreadCount:0, totalCount:0, page:1, pageSize:0, totalPages:0}",
+      "expectedResult": "GET /api/notifications with an admin or superadmin session cookie returns HTTP 403 'Team access required'. Only team sessions get the list payload.",
       "postconditions": "No DB changes",
       "requirementId": "AC-NOTIF-008",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Also pins DEF-NOTIF-001 — admin/superadmin GETs share the short-circuit branch."
+      "notes": "[QA-VERIFY] Updated post-DEF-NOTIF-001 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-NOTIF-013",
@@ -1753,8 +1825,8 @@
     {
       "id": "TC-NOTIF-054",
       "feature": "Page 401 redirect branch (defect-pin)",
-      "scenario": "Hypothetical 401 from GET on /notifications routes user to /signin",
-      "type": "Regression",
+      "scenario": "Anonymous /notifications page reaches the redirect branch via 401 from API",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Stub GET /api/notifications to return 401 (current code never does — DEF-NOTIF-001)",
       "testData": "Mocked 401 response",
@@ -1762,19 +1834,19 @@
         "1. Load /notifications with GET stubbed to 401",
         "2. Observe router"
       ],
-      "expectedResult": "router.push('/signin') is invoked; user lands on /signin",
+      "expectedResult": "An anonymous visitor loading /notifications fires GET /api/notifications which returns 401; the client's `status===401` branch redirects to /signin. The page no longer renders an empty notifications list in limbo.",
       "postconditions": "Verifies dead code path for DEF-NOTIF-001 fix",
       "requirementId": "AC-NOTIF-045",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Regression pin for DEF-NOTIF-001 — exercises the currently-unreachable 401 redirect branch."
+      "notes": "[QA-VERIFY] Updated post-DEF-NOTIF-001 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-NOTIF-055",
       "feature": "Unauthenticated visitor to /notifications (defect symptom)",
-      "scenario": "Logged-out visitor lands on empty-state instead of /signin",
-      "type": "Regression",
+      "scenario": "PATCH /api/notifications shape is symmetric with GET (401 for unauth)",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "No session cookie; navigate directly to /notifications",
       "testData": "Browser without auth cookie",
@@ -1782,13 +1854,13 @@
         "1. Open /notifications in clean session",
         "2. Observe response and final URL"
       ],
-      "expectedResult": "GET returns 200 empty; page renders 'You're all caught up'; URL remains /notifications (NOT /signin). Documents DEF-NOTIF-001 symptom; once fixed, expected becomes redirect to /signin.",
+      "expectedResult": "Both GET and PATCH return 401 'Not authenticated' for unauthenticated callers and 403 for non-team sessions, providing a uniform auth contract across the route.",
       "postconditions": "n/a",
       "requirementId": "AC-NOTIF-007",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "End-to-end pin for DEF-NOTIF-001."
+      "notes": "[QA-VERIFY] Updated post-DEF-NOTIF-001 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-NOTIF-056",

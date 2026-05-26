@@ -41,9 +41,21 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   if (!league) return NextResponse.json({ error: "League not found" }, { status: 404 });
 
   // Re-hydrate the stored JSON into the BackupRows shape that `buildBackupZip` expects.
-  // Synthesise the meta from the current league row + the snapshot's createdAt — older snapshots
-  // don't carry their own meta, but the (leagueId, format) identity is unchanged for restore-time
-  // validation purposes.
+  // Synthesise the meta from the current league row + the snapshot's createdAt. Older snapshots
+  // don't carry their own meta in the backups table, so we infer the snapshot's ORIGINAL format
+  // from which JSON columns are populated:
+  //   auctionSquadsJson != null  →  inferred "auction"
+  //   chipsJson != null          →  inferred "tvt"
+  //   otherwise                  →  inferred "triple-crown" (or other non-tvt, non-auction format)
+  // If the inferred format differs from the current league.format the league was re-formatted after
+  // this backup was taken — `inferredOriginalFormat` exposes the drift so restore tooling can
+  // refuse with a meaningful error instead of silently misinterpreting the payload.
+  const inferredOriginalFormat: string =
+    row.auctionSquadsJson != null ? "auction"
+    : row.chipsJson != null ? "tvt"
+    : league.format === "auction" || league.format === "tvt"
+      ? "triple-crown"
+      : league.format;
   const rows: BackupRows = {
     meta: {
       leagueId,
@@ -53,6 +65,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       season: league.season,
       generatedAt: new Date(row.createdAt).toISOString(),
       backupVersion: 1,
+      // Drift signal — see comment above. Equal to format on a non-drifted league.
+      inferredOriginalFormat,
     },
     format: league.format,
     teams: row.teamsJson ? JSON.parse(row.teamsJson) : null,
@@ -86,4 +100,31 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       "Cache-Control": "no-store",
     },
   });
+}
+
+/**
+ * DELETE /api/admin/[leagueId]/backups/[backupId]
+ *
+ * Remove a single backup snapshot row. The (id, leagueId) pair is enforced in the
+ * WHERE clause so an admin cannot delete a row belonging to another league.
+ * `backups` is a leaf table (no FK references in), so the delete cascades to nothing.
+ */
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  const leagueId = await getAuthorizedLeagueId(request);
+  if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const { backupId } = await params;
+
+  const [row] = await db
+    .select({ id: backups.id })
+    .from(backups)
+    .where(and(eq(backups.id, backupId), eq(backups.leagueId, leagueId)))
+    .limit(1);
+  if (!row) return NextResponse.json({ error: "Backup not found" }, { status: 404 });
+
+  await db
+    .delete(backups)
+    .where(and(eq(backups.id, backupId), eq(backups.leagueId, leagueId)));
+
+  return NextResponse.json({ success: true });
 }

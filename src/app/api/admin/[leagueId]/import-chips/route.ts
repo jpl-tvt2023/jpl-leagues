@@ -209,7 +209,11 @@ export async function POST(request: NextRequest) {
               await db.delete(gameweekChips).where(eq(gameweekChips.id, existingChip.id));
             }
 
-            // Insert chip — skip validation, admin import is authoritative
+            // Insert chip — skip validation, admin import is authoritative.
+            // hadNegativeHits is set for ANY wasted chip so the override-chips
+            // GET handler's wasted detection (which OR's isProcessed+!isValid OR
+            // hadNegativeHits) lights up consistently for W/D/C/SL/CB/UD — not
+            // just Win-Win.
             await db.insert(gameweekChips).values({
               id: generateId(),
               teamId: team.id,
@@ -220,7 +224,7 @@ export async function POST(request: NextRequest) {
               validationErrors: isWasted ? "Chip marked as wasted" : null,
               isProcessed: isWasted,
               pointsAwarded: 0,
-              hadNegativeHits: isWasted && chipType === "W",
+              hadNegativeHits: isWasted,
             });
 
             if (isWasted) {

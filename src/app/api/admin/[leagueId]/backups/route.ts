@@ -31,6 +31,19 @@ export async function GET(request: NextRequest) {
       hasAuctionSquads: backups.auctionSquadsJson,
       hasAuctionClubs: backups.auctionClubsJson,
       hasGameweeks: backups.gameweeksJson,
+      // Migration-0012 event-history columns. Including them in the
+      // `includes` map so the UI can distinguish snapshots taken before vs
+      // after the auction event-history migration. fixturesJson is .notNull()
+      // so its truthiness flag is always true — we keep it for API stability
+      // but it can no longer flip false.
+      hasTrades: backups.tradesJson,
+      hasPenaltyRedemptions: backups.penaltyRedemptionsJson,
+      hasSlotUnlocks: backups.slotUnlocksJson,
+      hasWishlists: backups.wishlistsJson,
+      hasNotifications: backups.notificationsJson,
+      hasAuctionSessions: backups.auctionSessionsJson,
+      hasAuctionBids: backups.auctionBidsJson,
+      hasAuctionBidLogs: backups.auctionBidLogsJson,
     })
     .from(backups)
     .where(eq(backups.leagueId, leagueId))
@@ -42,6 +55,7 @@ export async function GET(request: NextRequest) {
       trigger: r.trigger,
       createdAt: r.createdAt,
       // Boolean flags so the UI can show which files are inside without sending blobs.
+      // fixtures is always true (NOT NULL column) — kept for API stability.
       includes: {
         teams: !!r.hasTeams,
         fixtures: !!r.hasFixtures,
@@ -51,6 +65,15 @@ export async function GET(request: NextRequest) {
         auctionSquads: !!r.hasAuctionSquads,
         auctionClubs: !!r.hasAuctionClubs,
         gameweeks: !!r.hasGameweeks,
+        // Migration-0012 auction event-history columns:
+        auctionTrades: !!r.hasTrades,
+        auctionPenaltyRedemptions: !!r.hasPenaltyRedemptions,
+        auctionSlotUnlocks: !!r.hasSlotUnlocks,
+        auctionWishlists: !!r.hasWishlists,
+        auctionNotifications: !!r.hasNotifications,
+        auctionSessions: !!r.hasAuctionSessions,
+        auctionBids: !!r.hasAuctionBids,
+        auctionBidLogs: !!r.hasAuctionBidLogs,
       },
     })),
   });

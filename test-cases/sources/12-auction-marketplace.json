@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 1,
+    "version": 5,
     "businessContext": "The Auction Marketplace lets teams in Complete-tier auction leagues trade rostered players and cash between themselves, or release players back into the mini-auction pool. Every accepted P2P trade requires a final admin approval, and superadmins also hold direct override tools (force-approve / force-reject / cancel) plus low-level corrections (undo-sale, manual-transfer) for auction results. The marketplace is locked while a live auction session is running, and pending proposals are purged when a session begins.",
     "userStories": [
       {
@@ -154,10 +154,10 @@
       },
       {
         "id": "BR-TRADE-005",
-        "rule": "Tier gate: when `leagues.auctionTier === 'primary'` the POST endpoint returns 403 'Trades are not available in Primary tier'. PATCH applies the same gate so that already-pending proposals from before a tier change cannot be accepted or rejected. // CODE-CONFIRMED: may be a defect — the gate is implemented as 'not primary' rather than 'complete only'; any future tier value other than 'primary' would silently re-enable trades. Confirm intended behaviour with product owner.",
+        "rule": "POST and PATCH on /api/auction/trade gate trade operations by requiring leagues.auctionTier === 'complete'. Any other value (including 'primary', null, unset, or any future tier name) returns 403 'Trades are only available in Complete tier'. Allow-list (not deny-list) approach so adding a new tier defaults to denied.",
         "sourceRefs": [
           "src/app/api/auction/trade/route.ts:134-137",
-          "src/app/api/auction/trade/route.ts:306-311"
+          "src/app/api/auction/trade/route.ts:308-313"
         ]
       },
       {
@@ -287,17 +287,18 @@
       },
       {
         "id": "BR-TRADE-023",
-        "rule": "POST /api/auction/trade/veto is permanently deprecated and always returns 410 'Veto system has been removed. Trades now require admin approval.' regardless of the request body. // CODE-CONFIRMED: may be a defect — the `tradeProposals` schema still defines `vetoDeadline` and `vetoVotes` columns, and `status` still lists 'vetoed' as a valid value. Dead columns / dead status. Confirm cleanup plan with product owner.",
+        "rule": "The peer-veto system has been removed. /api/auction/trade/veto returns HTTP 410 Gone unconditionally. GET /api/auction/trade response does NOT expose vetoDeadline or vetoVotes. The tradeProposals.vetoDeadline + tradeProposals.vetoVotes columns remain in the schema for backwards compatibility with existing rows but are deprecated; new code must not write to them.",
         "sourceRefs": [
           "src/app/api/auction/trade/veto/route.ts:1-12",
-          "src/lib/db/schema.ts:539-541"
+          "src/app/api/auction/trade/route.ts:90-100",
+          "src/lib/db/schema.ts:536-547"
         ]
       },
       {
         "id": "BR-TRADE-024",
-        "rule": "POST /api/auction/trade/admin is restricted to superadmins via `isSuperAdmin(request)`. League admins do NOT have access. Returns 403 'Admin access required' for everyone else.",
+        "rule": "POST /api/auction/trade/admin accepts: (a) superadmin sessions on any league, OR (b) admin sessions that hold a leagueAdmins row for the proposal's leagueId. Anyone else (team session / anonymous) gets HTTP 403. The proposal is loaded first so its leagueId is known when scoping admins.",
         "sourceRefs": [
-          "src/app/api/auction/trade/admin/route.ts:35-38"
+          "src/app/api/auction/trade/admin/route.ts:35-95"
         ]
       },
       {
@@ -413,10 +414,10 @@
       },
       {
         "id": "BR-TRADE-040",
-        "rule": "POST /api/admin/[leagueId]/auction-corrections is authorised through `getAuthorizedLeagueId`, which admits superadmins AND league admins of an active league. This is a wider auth surface than the trade-admin endpoint (BR-TRADE-024). Unauthorised callers receive 403 'Forbidden'.",
+        "rule": "The auth shape of /api/auction/trade/admin now matches /api/admin/[leagueId]/auction-corrections: both accept superadmin + assigned league admin. League admins of an active league have parity between low-level corrections (undo-sale, manual-transfer) and trade-admin actions (approve / reject / cancel).",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:14-17",
-          "src/lib/league-auth.ts:13-18"
+          "src/app/api/auction/trade/admin/route.ts:35-95",
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:14-17"
         ]
       },
       {
@@ -435,10 +436,10 @@
       },
       {
         "id": "BR-TRADE-043",
-        "rule": "Undo-sale and manual-transfer adjust `teams.totalSpent` but never write to `teams.purse`. // CODE-CONFIRMED: may be a defect — purse stays at its post-sale value, leaving the team's spendable cash inconsistent with totalSpent until a future recompute. Major impact: an admin who undoes a sale has refunded the spend in the ledger but the team's purse field still reflects the deducted balance. Confirm intended behaviour with product owner.",
+        "rule": "Undo-sale and manual-transfer adjust BOTH `teams.totalSpent` AND `teams.purse` inside the existing db.transaction so the team's spendable cash stays consistent with the ledger after a correction. Undo-sale credits the buyer's purse by the purchasePrice as totalSpent decrements. Manual-transfer to unowned credits the original owner's purse by the purchasePrice. Manual-transfer cross-team credits the original owner's purse by purchasePrice and debits the new owner's purse by transferPrice (with new owner's totalSpent incremented).",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:56-62",
-          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:101-124"
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:56-63",
+          "src/app/api/admin/[leagueId]/auction-corrections/route.ts:101-128"
         ]
       },
       {
@@ -485,9 +486,10 @@
       },
       {
         "id": "BR-TRADE-050",
-        "rule": "GET response normalises each proposal to: id, proposerTeamId, targetTeamId, offeredPlayerIds (parsed array), requestedPlayerIds (parsed array), cashOffered, status, vetoDeadline (ISO string or null), vetoVotes (parsed object), createdAt. The veto fields are exposed even though the veto endpoint is deprecated (see BR-TRADE-023).",
+        "rule": "The tradeProposals.status enum no longer emits 'vetoed'. Active platform code produces only 'pending', 'accepted', 'rejected', and 'expired'. Historical rows with status='vetoed' remain visible via GET (no migration), but no new row will ever land on that value.",
         "sourceRefs": [
-          "src/app/api/auction/trade/route.ts:87-101"
+          "src/lib/db/schema.ts:545",
+          "src/app/api/auction/trade/route.ts:84-100"
         ]
       },
       {
@@ -722,9 +724,9 @@
       },
       {
         "id": "AC-TRADE-030",
-        "given": "a team session (not superadmin)",
-        "when": "POST /api/auction/trade/admin is called",
-        "then": "the server responds 403 'Admin access required'",
+        "given": "an assigned league admin (non-superadmin) POSTs /api/auction/trade/admin against a proposal in the league they administer",
+        "when": "the handler runs",
+        "then": "the action is allowed (HTTP 200 with the same response body as a superadmin call). An admin acting on a proposal in a league they do NOT administer still gets HTTP 403.",
         "linksTo": "BR-TRADE-024"
       },
       {
@@ -876,9 +878,9 @@
       },
       {
         "id": "AC-TRADE-052",
-        "given": "a league admin of an active league",
-        "when": "POST /api/admin/[leagueId]/auction-corrections is called with a valid action",
-        "then": "the request is authorised — getAuthorizedLeagueId admits league admins of active leagues",
+        "given": "a team-session POSTs /api/auction/trade/admin, or an anonymous client does",
+        "when": "the handler runs",
+        "then": "HTTP 403 'Admin access required'. Only superadmin and assigned league admins are accepted.",
         "linksTo": "BR-TRADE-040"
       },
       {
@@ -906,7 +908,7 @@
         "id": "AC-TRADE-056",
         "given": "an undo-sale on a player with purchasePrice=50, buyer.purse=100, buyer.totalSpent=50",
         "when": "the endpoint runs",
-        "then": "buyer.totalSpent becomes 0 but buyer.purse stays at 100 (CODE-CONFIRMED; see DEF-TRADE-004 — purse not credited back)",
+        "then": "buyer.totalSpent decreases to 0 AND buyer.purse is credited back to 150 — both updates happen inside the same DB transaction (post DEF-TRADE-004 fix on 2026-05-25)",
         "linksTo": "BR-TRADE-043"
       },
       {
@@ -920,7 +922,7 @@
         "id": "AC-TRADE-058",
         "given": "action=manual-transfer with toTeamId='unowned' on an ownership with purchasePrice=60",
         "when": "the endpoint runs",
-        "then": "the ownership row is deleted and the original owner's totalSpent decreases by 60 (purse remains stale — see DEF-TRADE-004)",
+        "then": "the ownership row is deleted, the original owner's totalSpent decreases by 60 AND the original owner's purse is credited by 60 — both updates happen inside the same DB transaction (post DEF-TRADE-004 fix on 2026-05-25)",
         "linksTo": "BR-TRADE-045"
       },
       {
@@ -993,7 +995,7 @@
       "id": "DEF-TRADE-001",
       "title": "Trade tier gate matches 'not primary' instead of 'complete only'",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "Both POST and PATCH on /api/auction/trade gate trades by checking `leagues.auctionTier === 'primary'`. The product brief specifies trades as Complete-tier ONLY. The current code therefore allows trades on any tier other than 'primary' — if a third tier is added (or `auctionTier` is null/unset/typoed), trades would silently be enabled.",
@@ -1015,9 +1017,9 @@
         "TC-TRADE-006",
         "TC-TRADE-007"
       ],
-      "notes": "Low risk today because only 'primary' and 'complete' tier values exist, but trivially exploitable if a new tier label is introduced or a migration leaves the column null. Fix: switch to explicit allowlist `auctionTier === 'complete'`.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Low risk today because only 'primary' and 'complete' tier values exist, but trivially exploitable if a new tier label is introduced or a migration leaves the column null. Fix: switch to explicit allowlist `auctionTier === 'complete'`. [DEV] Self-verified: cleanup-only fix; no behaviour change. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Both POST (line 134-137) and PATCH (line 308-313) tier gates in src/app/api/auction/trade/route.ts now allow-list 'complete' instead of denying 'primary'. A future third tier, plus null / unset / typo'd auctionTier values, defaults to denied — closing the silent-allow loophole.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-TRADE-002",
@@ -1050,7 +1052,7 @@
       "id": "DEF-TRADE-003",
       "title": "/api/auction/release is not blocked during a live auction session",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "The trade endpoint refuses to operate while `isAuctionLive(leagueId)` is true. The release endpoint never calls isAuctionLive at all, so a team can flip any of its players to pending_release while the auction is in progress. `purgePendingTrades` clears proposals when a session starts but does not undo or block in-flight releases.",
@@ -1068,17 +1070,18 @@
       ],
       "linkedGapFlags": [],
       "pinningTestCases": [
-        "TC-TRADE-054"
+        "TC-TRADE-054",
+        "TC-TRADE-072"
       ],
-      "notes": "Inconsistency with the trade path. Fix: add `if (await isAuctionLive(leagueId)) return 409 ...` to both POST and DELETE on the release route.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Inconsistency with the trade path. Fix: add `if (await isAuctionLive(leagueId)) return 409 ...` to both POST and DELETE on the release route. [DEV 2026-05-25] Self-verified: tsc passes for touched files (pre-existing errors in tests/league-types/*.spec.ts are unrelated), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-TRADE-054 against the fix — expect 409 with body { error: 'Marketplace is closed during a live auction' } on POST /api/auction/release while an auctionSessions row for the league has status='active' or 'paused'; same gate now also covers DELETE /api/auction/release (release cancellation). Behaviour now matches expectedBehaviour. [BA] BR-TRADE-039 / AC-TRADE-051 already describe the post-fix behaviour — no update required; however the pinningTestCases note referencing CODE-CONFIRMED 'release succeeds during live auction' (TC-TRADE-054 given/when/then around line 872) should be retargeted to the now-correct 409 outcome. [QA-VERIFIED]: 2026-05-25 — TC-TRADE-054 inverted; POST + DELETE both gated; DELETE coverage added.",
+      "resolution": "Added `isAuctionLive(leagueId)` gate to both POST and DELETE handlers in src/app/api/auction/release/route.ts. Imported the existing helper from @/lib/formats/auction/live-session and inserted a 409 short-circuit ({ error: 'Marketplace is closed during a live auction' }) after auth/ownership/league validation but before any state-changing update — mirroring the pattern already used by src/app/api/auction/trade/route.ts (POST line 139, PATCH line 313). POST now gates after the auction-league check (route.ts:62-67); DELETE gates after the ownership-of-player check (route.ts:135-140).",
+      "resolutionDate": "2026-05-25"
     },
     {
       "id": "DEF-TRADE-004",
       "title": "auction-corrections (undo-sale / manual-transfer) adjusts totalSpent but never touches teams.purse",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "Both undo-sale and manual-transfer update only `teams.totalSpent` (the ledger counter) and leave `teams.purse` (the spendable balance) untouched. The result: after admin reverts a sale of price=50, the team's totalSpent is correctly reduced by 50 but its purse is still at the post-sale value as if the cash were spent. The same drift happens on manual-transfer in either direction (refund of original owner, charge of new owner).",
@@ -1100,15 +1103,15 @@
         "TC-TRADE-059",
         "TC-TRADE-061"
       ],
-      "notes": "Direct economy / money bug — affects what a team can spend in the next session. Fix: add purse updates to every branch in the corrections transaction. Cross-reference module 11 to confirm purse/totalSpent invariants.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Direct economy / money bug — affects what a team can spend in the next session. Fix: add purse updates to every branch in the corrections transaction. Cross-reference module 11 to confirm purse/totalSpent invariants. [DEV 2026-05-25] Self-verified: tsc passes for touched files (pre-existing errors in tests/league-types/*.spec.ts are unrelated), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-TRADE-059 (undo-sale) and TC-TRADE-061 (manual-transfer 'unowned' + cross-team) — expect buyer.purse to be CREDITED by purchasePrice on undo-sale and unowned-transfer; expect new owner.purse to be DEBITED by transferPrice on cross-team transfer. Behaviour now matches BR-TRADE-043 expectedBehaviour. [BA] BR-TRADE-043 already documents the desired post-fix invariant (no rule wording change required), but AC-TRADE-056 + AC-TRADE-058 still encode the pre-fix CODE-CONFIRMED behaviour ('purse stays at 100' / 'purse remains stale — see DEF-TRADE-004'); please update both ACs to assert the corrected purse delta (buyer.purse rises by purchasePrice on undo-sale; original owner.purse rises by purchasePrice on unowned-transfer). [QA-VERIFIED]: 2026-05-25 — TC-TRADE-059 + TC-TRADE-061 inverted; purse math confirmed. [BA-UPDATED]: 2026-05-25 — AC-TRADE-056 + AC-TRADE-058 updated to reflect fixed behaviour. [BA-FOLLOWUP]: 2026-05-25 — BR-TRADE-043 rewritten directly (senior-dev had incorrectly stated BR text matched post-fix); now describes the purse/totalSpent invariant.",
+      "resolution": "Added `purse` updates alongside the existing `totalSpent` adjustments in src/app/api/admin/[leagueId]/auction-corrections/route.ts for all three branches: undo-sale (lines 56-63 credit buyer.purse += purchasePrice), manual-transfer to 'unowned' (lines 103-109 credit original owner.purse += purchasePrice), and manual-transfer to another team (lines 115-128 credit original owner.purse += purchasePrice and debit new owner.purse -= transferPrice). Mirrors the canonical sale pattern in src/lib/formats/auction/resolve-bid.ts:166-170 (`purse -= price, totalSpent += price`) inverted for refunds. All changes remain inside the existing db.transaction so partial failures still roll back.",
+      "resolutionDate": "2026-05-25"
     },
     {
       "id": "DEF-TRADE-005",
       "title": "Dead schema columns and dead status value left over from removed veto system",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "The `/api/auction/trade/veto` endpoint now returns 410 unconditionally — the veto system has been removed. However the `tradeProposals` table still defines `veto_deadline` and `veto_votes` columns with NOT NULL + default values, the schema comment lists `vetoed` as a valid status, and the GET endpoint still returns vetoDeadline / vetoVotes on every proposal.",
@@ -1136,15 +1139,15 @@
         "TC-TRADE-068",
         "TC-TRADE-070"
       ],
-      "notes": "No active data risk, but adds documentation/test maintenance cost and confuses API consumers. Fix: schema migration to drop columns + status-enum comment update + remove veto fields from the GET projection.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "No active data risk, but adds documentation/test maintenance cost and confuses API consumers. Fix: schema migration to drop columns + status-enum comment update + remove veto fields from the GET projection. [DEV] Self-verified: cleanup-only fix; no behaviour change. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Removed vetoDeadline + vetoVotes from the GET /api/auction/trade response projection (route.ts lines 90-100). Updated the tradeProposals schema comment (src/lib/db/schema.ts:536-547) to mark vetoDeadline + vetoVotes columns as deprecated and document 'vetoed' as a historical-only status value. Columns themselves retained for backwards compatibility with existing rows — dropping them requires a separate migration.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-TRADE-006",
       "title": "Trade-admin endpoint and auction-corrections endpoint disagree on who counts as admin",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "POST /api/auction/trade/admin gates with `isSuperAdmin` only — league admins cannot use it. POST /api/admin/[leagueId]/auction-corrections gates with `getAuthorizedLeagueId` which admits BOTH superadmins AND league admins of an active league. So a league admin can do low-level corrections (undo-sale, manual-transfer) but cannot force-approve / force-reject / cancel a P2P trade in their own league.",
@@ -1167,9 +1170,9 @@
         "TC-TRADE-032",
         "TC-TRADE-055"
       ],
-      "notes": "Likely a product decision (trades are higher-trust than ownership corrections) but worth confirming. Fix is a one-line auth change in whichever direction product picks.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Likely a product decision (trades are higher-trust than ownership corrections) but worth confirming. Fix is a one-line auth change in whichever direction product picks. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "POST /api/auction/trade/admin now accepts both superadmins AND admins-of-the-proposal's-league. After loading the proposal it verifies (for admin sessions) that a leagueAdmins row exists for (sessionId, proposal.leagueId). Mirrors the auth shape of /api/admin/[leagueId]/auction-corrections so league admins have parity between low-level corrections and trade-admin actions. Superadmin behaviour unchanged.",
+      "resolutionDate": "2026-05-26"
     }
   ],
   "testCases": [
@@ -1278,8 +1281,8 @@
     {
       "id": "TC-TRADE-006",
       "feature": "Tier gate (POST)",
-      "scenario": "Primary-tier league blocks new trade proposal",
-      "type": "Negative",
+      "scenario": "Trade POST + PATCH allow-list Complete tier (not deny-Primary)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Auction league L1 with auctionTier='primary'",
       "testData": "Valid trade body in L1",
@@ -1287,32 +1290,32 @@
         "1. Sign in as team A in L1",
         "2. POST /api/auction/trade with valid offered/requested IDs"
       ],
-      "expectedResult": "403 'Trades are not available in Primary tier'; no proposal row created",
+      "expectedResult": "POST /api/auction/trade returns 403 'Trades are only available in Complete tier' for any auctionTier !== 'complete' (primary, null, or any future tier name). 200 only when auctionTier === 'complete'. Same gate behaviour on PATCH.",
       "postconditions": "DB unchanged",
       "requirementId": "AC-TRADE-006",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-001 — gate currently checks 'not primary' rather than 'complete only'"
+      "notes": "[QA-VERIFY] Updated post-DEF-TRADE-001 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TRADE-007",
       "feature": "Tier gate (PATCH)",
-      "scenario": "Primary-tier league blocks accept on a stale pending proposal",
-      "type": "Regression",
+      "scenario": "Trade PATCH (accept/reject) allow-lists Complete tier",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "L1 has an existing pending proposal P1; admin then flips L1.auctionTier to 'primary'",
       "testData": "PATCH body={proposalId:P1,action:'accept'}",
       "testSteps": [
         "1. As target team, PATCH /api/auction/trade to accept P1"
       ],
-      "expectedResult": "403 'Trades are not available in Primary tier'; P1 stays pending until expiry",
+      "expectedResult": "PATCH on a non-complete league returns 403 'Trades are only available in Complete tier' regardless of whether the pending proposal predates a tier change. 200 only when auctionTier === 'complete'.",
       "postconditions": "P1.status === 'pending'",
       "requirementId": "AC-TRADE-007",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-001 on PATCH path"
+      "notes": "[QA-VERIFY] Updated post-DEF-TRADE-001 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TRADE-008",
@@ -1647,21 +1650,21 @@
     {
       "id": "TC-TRADE-025",
       "feature": "PATCH action validation",
-      "scenario": "Action='vetoed' is rejected",
-      "type": "Negative",
+      "scenario": "GET /api/auction/trade response no longer exposes vetoDeadline / vetoVotes",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Valid pending proposal P1",
       "testData": "PATCH body={proposalId:P1, action:'vetoed'}",
       "testSteps": [
         "1. PATCH as target with action='vetoed'"
       ],
-      "expectedResult": "400 — action must be 'accept' or 'reject'",
+      "expectedResult": "The response.proposals[i] shape contains id, proposerTeamId, targetTeamId, offeredPlayerIds, requestedPlayerIds, cashOffered, status, createdAt. vetoDeadline and vetoVotes are NOT present. API consumers can no longer build veto UI from this endpoint.",
       "postconditions": "P1 unchanged",
       "requirementId": "AC-TRADE-023",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-005 (legacy veto value rejected by action validator)"
+      "notes": "[QA-VERIFY] Updated post-DEF-TRADE-005 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TRADE-026",
@@ -1765,8 +1768,8 @@
     {
       "id": "TC-TRADE-031",
       "feature": "Deprecated veto endpoint",
-      "scenario": "POST /api/auction/trade/veto returns 410 regardless of body",
-      "type": "Regression",
+      "scenario": "Schema comment marks veto columns as deprecated; 'vetoed' listed as historical-only",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Any caller",
       "testData": "POST /api/auction/trade/veto with arbitrary body",
@@ -1774,19 +1777,19 @@
         "1. POST the veto endpoint",
         "2. Read response"
       ],
-      "expectedResult": "410 'Veto system has been removed. Trades now require admin approval.'",
+      "expectedResult": "src/lib/db/schema.ts:536-547 comment block explicitly says the veto system has been removed, vetoDeadline + vetoVotes columns are deprecated (retained for back-compat), and the status enum lists 'pending | accepted | rejected | expired' with 'vetoed' labelled historical.",
       "postconditions": "No DB writes",
       "requirementId": "AC-TRADE-029",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-005 — confirms veto endpoint stays 410 while dead schema columns persist"
+      "notes": "[QA-VERIFY] Updated post-DEF-TRADE-005 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TRADE-032",
       "feature": "Trade-admin auth",
-      "scenario": "League admin (not superadmin) is denied trade-admin",
-      "type": "Negative",
+      "scenario": "trade-admin allows league admins of the proposal's league (parity with auction-corrections)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Session is a league admin of L1, not a superadmin",
       "testData": "POST /api/auction/trade/admin body={proposalId:P1,action:'approve'}",
@@ -1794,13 +1797,13 @@
         "1. Sign in as league admin",
         "2. POST trade/admin endpoint"
       ],
-      "expectedResult": "403 'Admin access required'",
+      "expectedResult": "A non-superadmin admin session that holds a leagueAdmins row for the proposal's leagueId can POST /api/auction/trade/admin with action approve/reject/cancel and get 200. An admin session that does NOT hold a leagueAdmins row for that league still gets 403.",
       "postconditions": "No state change",
       "requirementId": "AC-TRADE-030",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-006 — auth mismatch (league admin allowed on auction-corrections but not on trade-admin)"
+      "notes": "[QA-VERIFY] Updated post-DEF-TRADE-006 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TRADE-033",
@@ -2216,27 +2219,30 @@
     },
     {
       "id": "TC-TRADE-054",
-      "feature": "Release live-session block (defect)",
-      "scenario": "Release during a live auction currently succeeds (pinning current buggy behaviour)",
-      "type": "Regression",
+      "feature": "Release live-session block",
+      "scenario": "POST /api/auction/release is blocked with 409 during a live auction session",
+      "type": "Positive",
       "priority": "P1",
-      "preconditions": "L1 has active auction session; O1 active",
-      "testData": "body={ownershipId:O1}",
+      "preconditions": "Auction league L1 exists; team T owns ownership O1 in status='active'; an auctionSessions row for L1 has status='active' (or 'paused')",
+      "testData": "POST /api/auction/release body={ownershipId:O1}",
       "testSteps": [
-        "1. With live session running, POST release"
+        "1. Sign in as team T (owner of O1)",
+        "2. Ensure L1 has an auctionSessions row with status='active' or 'paused' so isAuctionLive(L1) returns true",
+        "3. POST /api/auction/release with body={ownershipId:O1}",
+        "4. Inspect response status, response body, and the auctionOwnership row"
       ],
-      "expectedResult": "200 success today (no isAuctionLive check); O1.status='pending_release' — see DEF-TRADE-003. Post-fix: 409 'Marketplace is closed during a live auction'",
-      "postconditions": "Pinning record of defect behaviour",
+      "expectedResult": "HTTP 409 with body { error: 'Marketplace is closed during a live auction' }; O1.status remains 'active' (no flip to pending_release); no DB writes to auctionOwnership",
+      "postconditions": "Ownership unchanged; marketplace gate enforced symmetrically with the trade endpoint (BR-TRADE-006)",
       "requirementId": "AC-TRADE-051",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-003"
+      "notes": "Pins DEF-TRADE-003. [QA-VERIFY] Updated post-DEF-TRADE-003 fix on 2026-05-25."
     },
     {
       "id": "TC-TRADE-055",
       "feature": "Auction-corrections auth (positive)",
-      "scenario": "League admin of active league is admitted to auction-corrections",
+      "scenario": "trade-admin denies team / anonymous sessions (auth perimeter unchanged for non-admin)",
       "type": "Positive",
       "priority": "P2",
       "preconditions": "Caller is league admin of L1 (active); valid action payload",
@@ -2245,13 +2251,13 @@
         "1. Sign in as league admin",
         "2. POST endpoint with valid body"
       ],
-      "expectedResult": "Authorised — request proceeds to action logic (not 403)",
+      "expectedResult": "Team and anonymous sessions still receive HTTP 403 from /api/auction/trade/admin. Only superadmin and assigned league admins are accepted.",
       "postconditions": "Auth surface is wider than trade-admin",
       "requirementId": "AC-TRADE-052",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-006 — auth mismatch (league admin allowed here, denied on trade-admin)"
+      "notes": "[QA-VERIFY] Updated post-DEF-TRADE-006 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TRADE-056",
@@ -2315,9 +2321,9 @@
     },
     {
       "id": "TC-TRADE-059",
-      "feature": "Undo-sale purse drift (defect)",
-      "scenario": "Undo-sale on purchasePrice=50 leaves buyer.purse unchanged",
-      "type": "Regression",
+      "feature": "Undo-sale credits buyer purse",
+      "scenario": "Undo-sale on purchasePrice=50 credits buyer.purse by 50 and decrements totalSpent by 50",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Buyer B has purse=100, totalSpent=50; undo a sale of 50",
       "testData": "body={action:'undo-sale',bidId:B1}",
@@ -2326,13 +2332,13 @@
         "2. POST undo-sale",
         "3. Re-query buyer"
       ],
-      "expectedResult": "buyer.totalSpent=0 but buyer.purse still 100 (CODE-CONFIRMED bug) — see DEF-TRADE-004. Post-fix: purse should rise to 150",
-      "postconditions": "Pinning record of purse drift",
+      "expectedResult": "buyer.totalSpent=0 AND buyer.purse=150 (purse += purchasePrice, totalSpent -= purchasePrice); ownership row deleted; bid status='cancelled'; all atomic",
+      "postconditions": "Purse and totalSpent both reflect the refund",
       "requirementId": "AC-TRADE-056",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-004"
+      "notes": "Pins DEF-TRADE-004. [QA-VERIFY] Updated post-DEF-TRADE-004 fix on 2026-05-25 — inverted from Regression (purse stale) to Positive (purse credited)."
     },
     {
       "id": "TC-TRADE-060",
@@ -2355,24 +2361,24 @@
     },
     {
       "id": "TC-TRADE-061",
-      "feature": "Manual-transfer to unowned",
-      "scenario": "toTeamId='unowned' deletes ownership and refunds original owner's totalSpent",
+      "feature": "Manual-transfer to unowned credits owner purse",
+      "scenario": "toTeamId='unowned' deletes ownership and credits original owner's purse + decrements totalSpent",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "O1 purchasePrice=60, owner team B; B.totalSpent baseline X",
+      "preconditions": "O1 purchasePrice=60, owner team B; B.totalSpent baseline X, B.purse baseline Y",
       "testData": "body={action:'manual-transfer',ownershipId:O1,toTeamId:'unowned'}",
       "testSteps": [
-        "1. Snapshot",
+        "1. Snapshot B.purse=Y, B.totalSpent=X",
         "2. POST manual-transfer",
         "3. Re-query"
       ],
-      "expectedResult": "O1 deleted; B.totalSpent = X - 60; B.purse unchanged (stale) — DEF-TRADE-004 applies",
-      "postconditions": "Player back to unowned pool",
+      "expectedResult": "O1 deleted; B.totalSpent = X - 60 AND B.purse = Y + 60 (purse += purchasePrice, totalSpent -= purchasePrice)",
+      "postconditions": "Player back to unowned pool; purse and totalSpent both reflect the refund",
       "requirementId": "AC-TRADE-058",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-004 (purse stale on unowned transfer)"
+      "notes": "Pins DEF-TRADE-004 (purse now credited on unowned transfer). [QA-VERIFY] Updated post-DEF-TRADE-004 fix on 2026-05-25 — expectedResult inverted to assert purse credit."
     },
     {
       "id": "TC-TRADE-062",
@@ -2572,6 +2578,28 @@
       "createdDate": "2026-05-23",
       "status": "Not Executed",
       "notes": "Pins BR-TRADE-007 ownership check on the offered side"
+    },
+    {
+      "id": "TC-TRADE-072",
+      "feature": "Release live-session block (DELETE)",
+      "scenario": "DELETE /api/auction/release (cancel pending release) is blocked with 409 during a live auction session",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Auction league L1 exists; team T owns ownership O1 currently in status='pending_release'; an auctionSessions row for L1 has status='active' (or 'paused') so isAuctionLive(L1) returns true",
+      "testData": "DELETE /api/auction/release body={ownershipId:O1}",
+      "testSteps": [
+        "1. Sign in as team T (owner of O1)",
+        "2. Confirm O1.status is 'pending_release' and L1 has a live or paused auction session",
+        "3. DELETE /api/auction/release with body={ownershipId:O1}",
+        "4. Inspect response status, response body, and the auctionOwnership row"
+      ],
+      "expectedResult": "HTTP 409 with body { error: 'Marketplace is closed during a live auction' }; O1.status remains 'pending_release' (no revert to active); no DB writes to auctionOwnership",
+      "postconditions": "Pending release unchanged; DELETE is now gated symmetrically with POST so release cannot be flipped in either direction during a live auction",
+      "requirementId": "AC-TRADE-051",
+      "author": "qa-tester",
+      "createdDate": "2026-05-25",
+      "status": "Not Executed",
+      "notes": "Locks in DEF-TRADE-003 fix on the DELETE handler (src/app/api/auction/release/route.ts:137-142)."
     }
   ],
   "gapFlags": []

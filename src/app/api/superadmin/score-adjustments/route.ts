@@ -110,9 +110,25 @@ export async function PATCH(request: NextRequest) {
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
   if (!reason) return NextResponse.json({ error: "reason is required (audit trail)" }, { status: 400 });
 
-  const synergyBonus = typeof body.synergyBonus === "number" && Number.isInteger(body.synergyBonus) ? body.synergyBonus : null;
-  const clubResultBonus = typeof body.clubResultBonus === "number" && Number.isInteger(body.clubResultBonus) ? body.clubResultBonus : null;
+  // Bound the bonus values so a single typo can't wreck a GW total. The cap
+  // is comfortably higher than any legitimate adjustment (a full GW's worth of
+  // FPL points for one team is rarely above ~150) but still flags 1e9-style typos.
+  const MAX_BONUS = 500;
+  const MIN_BONUS = -500;
+  const isValidBonus = (v: unknown): v is number =>
+    typeof v === "number" && Number.isInteger(v) && v >= MIN_BONUS && v <= MAX_BONUS;
+  const synergyBonus: number | null = isValidBonus(body.synergyBonus) ? body.synergyBonus : null;
+  const clubResultBonus: number | null = isValidBonus(body.clubResultBonus) ? body.clubResultBonus : null;
   if (synergyBonus === null && clubResultBonus === null) {
+    if (
+      (body.synergyBonus !== undefined && !isValidBonus(body.synergyBonus)) ||
+      (body.clubResultBonus !== undefined && !isValidBonus(body.clubResultBonus))
+    ) {
+      return NextResponse.json(
+        { error: `synergyBonus and clubResultBonus must be integers in [${MIN_BONUS}, ${MAX_BONUS}]` },
+        { status: 400 }
+      );
+    }
     return NextResponse.json({ error: "Provide at least one of synergyBonus or clubResultBonus" }, { status: 400 });
   }
 

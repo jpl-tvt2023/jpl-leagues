@@ -3,9 +3,12 @@
   "moduleName": "Auction Slots & Club Auction",
   "sheetName": "Slots & Club",
   "status": "qa-signed-off",
-  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
   "requirements": {
-    "version": 1,
+    "version": 3,
     "businessContext": "This module owns three squad-shape mechanics that sit outside the player-bidding flow: (1) bonus-slot purchases that raise the 15-player squad cap up to a hard ceiling of 18 (slots 16/17/18 cost £10M/£20M/£30M respectively, Complete tier only, only after the initial player auction has completed); (2) penalty-slot redemption, which buys back a squad slot lost via a missed nomination, with redemption priced by whether the penalty was incurred in the current auction cycle (£2.5M) or a previous one (£5M); and (3) the optional PL Club Auction — a separate auction session (type='club-auction') that runs BEFORE the initial player auction when the league has clubAuctionEnabled=true, allocates one PL club per fantasy team (and one fantasy team per PL club) at a £500K floor over a two-round randomised queue, and snapshots the club's tier (top8/mid/promoted) for downstream synergy and result-bonus scoring (scoring math itself is owned by module 11).",
     "userStories": [
       {
@@ -138,32 +141,44 @@
       {
         "id": "BR-SLOTS-001",
         "rule": "POST /api/auction/unlock-slot requires either a valid team session cookie or a superadmin cookie; otherwise responds 401 'Authentication required'.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:25-31"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:25-31"
+        ]
       },
       {
         "id": "BR-SLOTS-002",
         "rule": "POST /api/auction/unlock-slot requires a string teamId in the body; missing/non-string returns 400 'teamId is required'.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:33-37"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:33-37"
+        ]
       },
       {
         "id": "BR-SLOTS-003",
         "rule": "A team session may only unlock slots for its own team; mismatched session.id vs body teamId returns 403 'Can only unlock slots for your own team'. Superadmin is exempt.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:40-42"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:40-42"
+        ]
       },
       {
         "id": "BR-SLOTS-004",
         "rule": "Unknown teamId returns 404 'Team not found'.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:44-47"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:44-47"
+        ]
       },
       {
         "id": "BR-SLOTS-005",
         "rule": "Unlock is rejected with 400 'Not an auction league' when the team's league.format is not 'auction'.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:50-57"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:50-57"
+        ]
       },
       {
         "id": "BR-SLOTS-006",
         "rule": "Slot expansion is blocked at the API for Primary-tier leagues (`auctionTier='primary'`) with 403 'Slot expansion is not available in Primary tier'; only Complete-tier leagues may unlock bonus slots.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:60-64"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:60-64"
+        ]
       },
       {
         "id": "BR-SLOTS-007",
@@ -185,12 +200,16 @@
       {
         "id": "BR-SLOTS-009",
         "rule": "Unlock requires that an 'initial' auction session exists for the league; otherwise responds 409 'Cannot unlock bonus slots before the initial auction has been created'.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:75-87"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:75-87"
+        ]
       },
       {
         "id": "BR-SLOTS-010",
         "rule": "Unlock requires the initial auction session status to be 'completed'; if status is pending/active/paused it returns 409 'Cannot unlock bonus slots while the initial auction is in progress — must wait until it completes'.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:88-93"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:88-93"
+        ]
       },
       {
         "id": "BR-SLOTS-011",
@@ -211,92 +230,129 @@
       {
         "id": "BR-SLOTS-013",
         "rule": "Successful unlock response body is { success:true, bonusSlots:<new>, newCap:<15+bonusSlots>, spent:<cost>, nextUnlockCost:<next-or-null> }.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:159-165"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:159-165"
+        ]
       },
       {
         "id": "BR-SLOTS-014",
         "rule": "After unlock, a best-effort 'slot_unlocked' notification is created with title 'Unlocked slot <N>' and a body stating the deduction and new cap. Notification failures are logged but never fail the unlock response.",
-        "sourceRefs": ["src/app/api/auction/unlock-slot/route.ts:146-157"]
+        "sourceRefs": [
+          "src/app/api/auction/unlock-slot/route.ts:146-157"
+        ]
       },
       {
         "id": "BR-SLOTS-015",
         "rule": "GET /api/auction/redeem-slot?teamId=<id> requires an authenticated session (any type) and a teamId query param; otherwise 401 Unauthorized or 400 'teamId is required'.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:49-60"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:49-60"
+        ]
       },
       {
         "id": "BR-SLOTS-016",
         "rule": "Penalty redemption pricing: £2.5M (SAME_CYCLE_COST) when penalty.incurredCycle === currentCycle, otherwise £5M (LATER_CYCLE_COST). priceForPenalty implements this rule.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:10-12", "src/app/api/auction/redeem-slot/route.ts:40-42"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:10-12",
+          "src/app/api/auction/redeem-slot/route.ts:40-42"
+        ]
       },
       {
         "id": "BR-SLOTS-017",
         "rule": "currentCycle is the cycleNumber of any active/paused session for the league, falling back to the maximum cycleNumber across the league's sessions, falling back to 0 when no sessions exist.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:18-38"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:18-38"
+        ]
       },
       {
         "id": "BR-SLOTS-018",
         "rule": "GET /api/auction/redeem-slot returns { currentCycle, penalties: [{ id, incurredCycle, sessionId, cost, createdAt }], legacyUnledgeredSlots, legacyCost: £5M } — penalties are unredeemed rows ordered by createdAt ASC, plus a legacyUnledgeredSlots count for pre-migration penalties without ledger rows.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:70-89"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:70-89"
+        ]
       },
       {
         "id": "BR-SLOTS-019",
         "rule": "POST /api/auction/redeem-slot requires a team session whose id matches body.teamId; superadmin sessions and other-team sessions are rejected with 401 'Team authentication required' or 403 'Not authorized'. // CODE-CONFIRMED: may be a defect — POST excludes superadmin while POST /unlock-slot allows it, creating an asymmetric admin-support contract.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:100-116"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:100-116"
+        ]
       },
       {
         "id": "BR-SLOTS-020",
         "rule": "Redemption requires teams.penaltySlots > 0; otherwise 400 'No penalty slots to redeem'.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:124-126"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:124-126"
+        ]
       },
       {
         "id": "BR-SLOTS-021",
         "rule": "If body.penaltyId is provided it must match an unredeemed penalty for the team; otherwise 404 'Penalty not found or already redeemed'. If omitted, the cheapest unredeemed penalty is chosen (sorted by cost ASC, then incurredCycle ASC).",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:142-162"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:142-162"
+        ]
       },
       {
         "id": "BR-SLOTS-022",
         "rule": "Legacy fallback: if teams.penaltySlots>0 but no ledger rows exist, redemption charges £5M (LATER_CYCLE_COST) with no row to mark redeemed.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:164-166"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:164-166"
+        ]
       },
       {
         "id": "BR-SLOTS-023",
         "rule": "Redemption purse check uses calculatePurse(initialBudget,totalIncome,totalSpent,totalRefunds); insufficient purse returns 400 'Insufficient purse. Redemption costs £X.XXM'.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:167-179"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:167-179"
+        ]
       },
       {
         "id": "BR-SLOTS-024",
         "rule": "On successful redemption, in a single DB transaction: (a) set teamPenalties.redeemedAt=now and redemptionPrice=cost on the chosen row (if any), (b) decrement teams.penaltySlots by 1, (c) increment teams.totalSpent by cost. // CODE-CONFIRMED: may be a defect — teams.purse column is NOT decremented here even though it IS decremented in unlock-slot, creating asymmetry and potential drift of the purse column from the canonical formula.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:181-196"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:181-196"
+        ]
       },
       {
         "id": "BR-SLOTS-025",
         "rule": "Redemption response body is { success:true, cost, incurredCycle, currentCycle, remainingPenaltySlots }, and a best-effort 'slot_redeemed' notification is created with a deep link to /<slug>/auction. Notification failures are logged but never fail the response.",
-        "sourceRefs": ["src/app/api/auction/redeem-slot/route.ts:198-221"]
+        "sourceRefs": [
+          "src/app/api/auction/redeem-slot/route.ts:198-221"
+        ]
       },
       {
         "id": "BR-SLOTS-026",
         "rule": "GET /api/auction/league-owned?leagueId=<id> requires an authenticated session (any type) and a leagueId query param; the target league.format must be 'auction'.",
-        "sourceRefs": ["src/app/api/auction/league-owned/route.ts:15-34"]
+        "sourceRefs": [
+          "src/app/api/auction/league-owned/route.ts:15-34"
+        ]
       },
       {
         "id": "BR-SLOTS-027",
         "rule": "GET /api/auction/league-owned returns { ownedElementIds:[fplElementId], ownerByElementId:{ id→teamId }, teamSummaries:{ teamId → { purse, penaltySlots, bonusSlots, players:[{fplElementId, playerName, purchasePrice}] } } }. Only auctionOwnership rows with status='active' are included; purse is calculated via calculatePurse.",
-        "sourceRefs": ["src/app/api/auction/league-owned/route.ts:38-98"]
+        "sourceRefs": [
+          "src/app/api/auction/league-owned/route.ts:38-98"
+        ]
       },
       {
         "id": "BR-SLOTS-028",
         "rule": "A club-auction session is only allowed when leagues.clubAuctionEnabled=true; creation otherwise returns 400 'Club auction is not enabled for this league'.",
-        "sourceRefs": ["src/app/api/auction/session/route.ts:182-185"]
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:182-185"
+        ]
       },
       {
         "id": "BR-SLOTS-029",
         "rule": "Only one club-auction session may exist per league; a second creation returns 409 'A club auction session already exists for this league'.",
-        "sourceRefs": ["src/app/api/auction/session/route.ts:186-189"]
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:186-189"
+        ]
       },
       {
         "id": "BR-SLOTS-030",
         "rule": "Session-ordering: club-auction → initial → mini-auction. A club-auction cannot be created after an initial session exists (409); an initial session cannot be created until any enabled club auction has status='completed' (409); a mini-auction requires a completed initial session.",
-        "sourceRefs": ["src/app/api/auction/session/route.ts:166-249"]
+        "sourceRefs": [
+          "src/app/api/auction/session/route.ts:166-249"
+        ]
       },
       {
         "id": "BR-SLOTS-031",
@@ -316,66 +372,88 @@
       },
       {
         "id": "BR-SLOTS-033",
-        "rule": "resolveTier(plTeamId, config) returns 'top8' / 'mid' / 'promoted' depending on which list the FPL team ID is in, or null if absent. Standings config is auto-seeded on first read from PL_STANDINGS_SEED_TOP8/MID/PROMOTED.",
+        "rule": "resolveClubBid calls resolveTier(plTeamId, plStandingsConfig). When resolveTier returns null (PL team id is in none of top8/mid/promoted — i.e., standings config is misconfigured or outdated), the route refuses to write an auctionClubOwnership row. The bid is left marked 'sold' with an audit-log entry, and a console.error is emitted with the failure context. Operator must repair the standings config and re-allocate via auction-corrections.",
         "sourceRefs": [
-          "src/lib/data/pl-standings-seed.ts:39-51",
-          "src/lib/formats/auction/club-auction.ts:148-176"
+          "src/lib/formats/auction/club-auction.ts:438-466"
         ]
       },
       {
         "id": "BR-SLOTS-034",
         "rule": "autoNominateNextClub is a no-op (returns null) unless the session is type='club-auction' AND status='active' AND has no open bid for the session.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:273-289"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:273-289"
+        ]
       },
       {
         "id": "BR-SLOTS-035",
         "rule": "Eligibility for the club auction: a team may bid only if it is non-ghost AND has no auctionClubOwnership row in the league (getClubLessTeamIds). When zero club-less teams remain the session is marked 'completed' immediately.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:224-235", "src/lib/formats/auction/club-auction.ts:300-305"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:224-235",
+          "src/lib/formats/auction/club-auction.ts:300-305"
+        ]
       },
       {
         "id": "BR-SLOTS-036",
         "rule": "Queue exhaustion: when cursor exceeds queue.length on cycleNumber=1, the unsold-clubs list (PL IDs without an auctionClubOwnership row) is re-shuffled and stored as a new snakeOrder with currentNominatorIndex=0 and cycleNumber=2. When exhausted on cycle 2 (or no unsold clubs remain), the session status flips to 'completed' and writeAuctionCompleteSnapshot is invoked.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:319-345"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:319-345"
+        ]
       },
       {
         "id": "BR-SLOTS-037",
         "rule": "Each club nomination creates an auctionBids row with currentHighBid=minBid=£500K (CLUB_FLOOR_BID), fplElementId set to the PL team id, playerName set to the PL team name, status='open', and expiresAt=now+bidTimerSeconds. nominatorTeamId/currentHighBidderId are a sentinel (the first non-ghost team in the league), and a 'nomination' auctionBidLog row is inserted.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:362-389"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:362-389"
+        ]
       },
       {
         "id": "BR-SLOTS-038",
         "rule": "Club-bid resolution is idempotent and inspects auctionBidLogs.type='bid' rows: ≥1 real bid → 'sold' to currentHighBidderId, 0 real bids → 'unsold'. Status is flipped from 'open' atomically; an already-resolved bid returns 'already-resolved'.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:421-515"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:421-515"
+        ]
       },
       {
         "id": "BR-SLOTS-039",
-        "rule": "On SOLD: insert an auctionClubOwnership row {teamId=currentHighBidderId, plTeamId=fplElementId, plTeamName=getPlTeamFullName(...), plTeamShort, tier=resolveTier(...) defaulting to 'mid' if null, purchasePrice=currentHighBid, acquiredAt=now}, append a 'sold' auctionBidLog, and deduct purse via SQL (teams.purse -= price, teams.totalSpent += price).",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:438-481"]
+        "rule": "resolveClubBid does NOT silently fall back to tier='mid' when resolveTier returns null. The previous fallback masked misconfigured standings (e.g., promoted teams not refreshed after season rollover) and resulted in clubs being assigned the wrong tier bonus. Now the fallback is loud — operator intervention required.",
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:438-466"
+        ]
       },
       {
         "id": "BR-SLOTS-040",
         "rule": "One-club-per-team and one-owner-per-club are enforced by uniqueIndex constraints (leagueId+teamId, leagueId+plTeamId) on auctionClubOwnership; the resolver's club-less filter prevents double-insertion under normal flow.",
-        "sourceRefs": ["src/lib/db/schema.ts:422-436"]
+        "sourceRefs": [
+          "src/lib/db/schema.ts:422-436"
+        ]
       },
       {
         "id": "BR-SLOTS-041",
         "rule": "On SOLD a best-effort 'club_purchased' notification is created with title 'You bought <plTeamName>' and a body stating price (in M to 1dp) and tier. Failures are logged, never throwing.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:483-493"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:483-493"
+        ]
       },
       {
         "id": "BR-SLOTS-042",
         "rule": "On UNSOLD: update bid status='unsold' (atomic claim) and append an 'unsold' auctionBidLog with amount=0 and teamId=nominator (sentinel). No ownership row, no purse change.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:498-514"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:498-514"
+        ]
       },
       {
         "id": "BR-SLOTS-043",
         "rule": "advanceClubQueue advances currentNominatorIndex by 1 then calls autoNominateNextClub, which either nominates the next club or marks the session 'completed' (and writes a backup snapshot) when no more nominations are possible.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:521-536"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:521-536"
+        ]
       },
       {
         "id": "BR-SLOTS-044",
         "rule": "simulateClubAuction is the auto-allocator for isSimulated leagues: it shuffles non-ghost teams and the 20 PL clubs (with tier), pairs index-by-index up to min(teams.length, clubs.length), inserts auctionClubOwnership rows at the £500K floor, decrements purse / increments totalSpent per allocated team, then marks the session 'completed' and writes a snapshot. Pairings whose club.tier is null are skipped with a warning.",
-        "sourceRefs": ["src/lib/formats/auction/club-auction.ts:588-671"]
+        "sourceRefs": [
+          "src/lib/formats/auction/club-auction.ts:588-671"
+        ]
       },
       {
         "id": "BR-SLOTS-045",
@@ -388,15 +466,16 @@
       {
         "id": "BR-SLOTS-046",
         "rule": "auctionClubOwnership snapshots plTeamName, plTeamShort and tier at purchase time so display and scoring survive future FPL bootstrap drift or standings-config edits.",
-        "sourceRefs": ["src/lib/db/schema.ts:419-436"]
+        "sourceRefs": [
+          "src/lib/db/schema.ts:419-436"
+        ]
       },
       {
         "id": "BR-SLOTS-047",
-        "rule": "teamSlotUnlocks stores slotNumber=16/17/18 — derived as MAX_SQUAD_SIZE + previous bonusSlots + 1 — even though the schema column comment still says '15 or 16'. // CODE-CONFIRMED: may be a defect — schema comment and route doc comment are stale (mention £25M and slots 15/16) but code is authoritative.",
+        "rule": "Schema comments for teamSlotUnlocks.slotNumber and teams.bonusSlots correctly describe the current code: slot numbers 16/17/18, prices 10M/20M/30M, canonical pricing in src/lib/formats/auction/squad-rules.ts. No legacy 25M reference remains.",
         "sourceRefs": [
-          "src/app/api/auction/unlock-slot/route.ts:114",
-          "src/lib/db/schema.ts:521-528",
-          "src/lib/db/schema.ts:110-115"
+          "src/lib/db/schema.ts:108-115",
+          "src/lib/db/schema.ts:518-528"
         ]
       }
     ],
@@ -655,9 +734,9 @@
       },
       {
         "id": "AC-SLOTS-037",
-        "given": "an open club bid whose timer has expired with at least one auctionBidLogs.type='bid' row",
+        "given": "a club bid resolves 'sold' but the plStandingsConfig does not contain the bid's plTeamId in any tier list",
         "when": "resolveClubBid runs",
-        "then": "auctionBids.status flips to 'sold', an auctionClubOwnership row is inserted with tier=resolveTier(plTeamId) (defaulting to 'mid' if null), an auctionBidLogs 'sold' row is appended, teams.purse decreases and teams.totalSpent increases by currentHighBid, and a 'club_purchased' notification is created",
+        "then": "the auctionBids row is updated to 'sold'; an auctionBidLogs row is written for the audit trail; console.error is emitted with the leagueId and plTeamId context; NO auctionClubOwnership row is inserted; resolveClubBid returns 'already-resolved'. The team's purse is NOT debited (the bid update happened earlier — but the ownership write that triggers downstream purse handling does not). Operator triage required.",
         "linksTo": "BR-SLOTS-039"
       },
       {
@@ -1066,8 +1145,8 @@
     {
       "id": "TC-SLOTS-018",
       "feature": "Unlock Audit (Schema)",
-      "scenario": "teamSlotUnlocks row encodes slot 16/17/18 (not legacy 15/16)",
-      "type": "Regression",
+      "scenario": "teamSlotUnlocks.slotNumber comment matches current code (16/17/18 with 10M/20M/30M)",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "Three sequential unlocks for one team",
       "testData": "purse seeded high enough for all three unlocks",
@@ -1077,13 +1156,13 @@
         "3. Unlock third slot",
         "4. Query teamSlotUnlocks for the team ORDER BY unlockedAt"
       ],
-      "expectedResult": "Rows have slotNumber values [16,17,18] and costs [10_000_000,20_000_000,30_000_000] — current code, not stale '15 or 16' / '£25M' schema comments",
+      "expectedResult": "src/lib/db/schema.ts:525 comment reads '16, 17, or 18'; the comment block above bonusSlots references squad-rules.ts pricing (10M/20M/30M) and no longer mentions the legacy 25M slot-15 path. Runtime behaviour unchanged.",
       "postconditions": "All three rows persisted",
       "requirementId": "BR-SLOTS-047",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-SLOTS-003 (stale schema comments) — verifies runtime authoritative values"
+      "notes": "[QA-VERIFY] Updated post-DEF-SLOTS-003 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-SLOTS-019",
@@ -1934,8 +2013,8 @@
     {
       "id": "TC-SLOTS-061",
       "feature": "Tier Fallback (Resolution)",
-      "scenario": "resolveClubBid silently writes tier='mid' when resolveTier returns null",
-      "type": "Regression",
+      "scenario": "resolveClubBid refuses to write ownership with a null tier (no silent 'mid' fallback)",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "Open club bid for a plTeamId that has been removed from all standings lists (resolveTier returns null); ≥1 'bid' log row",
       "testData": "bidId; misconfigured plStandingsConfig",
@@ -1944,13 +2023,13 @@
         "2. Call resolveClubBid(bidId)",
         "3. Query auctionClubOwnership.tier and server logs"
       ],
-      "expectedResult": "auctionClubOwnership row inserted with tier='mid' (silent fallback); no warning emitted to logs and no admin notification — pins current divergent behaviour vs simulateClubAuction which skips+warns",
+      "expectedResult": "If plStandingsConfig is missing the bid's plTeamId from all of top8/mid/promoted, resolveClubBid completes the sold-bid transition AND writes an audit log entry, but does NOT insert an auctionClubOwnership row. console.error is emitted with the failure context. The bid sits 'sold but unallocated' until superadmin updates the standings config and re-allocates.",
       "postconditions": "Owner gets 'mid' scoring for the season unless fixed",
       "requirementId": "BR-SLOTS-039",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-SLOTS-004 — fix should make this test fail (refuse-or-warn behaviour)"
+      "notes": "[QA-VERIFY] Updated post-DEF-SLOTS-004 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-SLOTS-062",
@@ -2010,10 +2089,16 @@
         "src/app/api/auction/redeem-slot/route.ts:99-116",
         "src/app/api/auction/unlock-slot/route.ts:24-42"
       ],
-      "linkedBusinessRules": ["BR-SLOTS-019"],
-      "linkedAcceptanceCriteria": ["AC-SLOTS-015"],
+      "linkedBusinessRules": [
+        "BR-SLOTS-019"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SLOTS-015"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-SLOTS-026"],
+      "pinningTestCases": [
+        "TC-SLOTS-026"
+      ],
       "notes": "Fix options: (a) add an `isSuperAdmin(request)` bypass to redeem-slot mirroring unlock-slot; or (b) document that admin support is intentionally write-restricted for penalty redemption. Option (a) is the lower-risk default. Risk/impact: blocks admin-side recovery when a team locks itself out mid-cycle.",
       "resolution": null,
       "resolutionDate": null
@@ -2033,10 +2118,20 @@
         "src/app/api/auction/unlock-slot/route.ts:117-139",
         "src/lib/formats/auction/economy.ts:34-41"
       ],
-      "linkedBusinessRules": ["BR-SLOTS-012", "BR-SLOTS-024"],
-      "linkedAcceptanceCriteria": ["AC-SLOTS-009", "AC-SLOTS-018", "AC-SLOTS-021"],
+      "linkedBusinessRules": [
+        "BR-SLOTS-012",
+        "BR-SLOTS-024"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SLOTS-009",
+        "AC-SLOTS-018",
+        "AC-SLOTS-021"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-SLOTS-019", "TC-SLOTS-035"],
+      "pinningTestCases": [
+        "TC-SLOTS-019",
+        "TC-SLOTS-035"
+      ],
       "notes": "Fix options: (a) add `purse: sql\\`${teams.purse} - ${cost}\\`` to the redeem-slot UPDATE so behaviour matches unlock-slot; or (b) drop the column-level decrement from unlock-slot and have every consumer call calculatePurse on read. Option (a) preserves existing UI assumptions; option (b) eliminates an entire class of drift bug but is broader. Risk/impact: money/economy integrity — players see wrong purse values; trade/unlock guards downstream may use the wrong source.",
       "resolution": null,
       "resolutionDate": null
@@ -2045,7 +2140,7 @@
       "id": "DEF-SLOTS-003",
       "title": "Schema column comment on teamSlotUnlocks.slotNumber is stale ('15 or 16') and bonusSlots comment mentions £25M legacy price",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/lib/db/schema.ts:525 documents teamSlotUnlocks.slotNumber as '15 or 16'; route code writes 16/17/18 (src/app/api/auction/unlock-slot/route.ts:114). src/lib/db/schema.ts:113-114 mentions a legacy £25M price; current code uses £10M/£20M/£30M (src/lib/formats/auction/squad-rules.ts:11). The doc comment block above POST /unlock-slot (src/app/api/auction/unlock-slot/route.ts:18-22) is also out of date — refers to 'slot 15, then 16'.",
@@ -2056,19 +2151,23 @@
         "src/lib/db/schema.ts:108-115",
         "src/app/api/auction/unlock-slot/route.ts:14-23"
       ],
-      "linkedBusinessRules": ["BR-SLOTS-047"],
+      "linkedBusinessRules": [
+        "BR-SLOTS-047"
+      ],
       "linkedAcceptanceCriteria": [],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-SLOTS-018"],
-      "notes": "Documentation-only — no runtime impact. Update three comment blocks to match current pricing/slot indices.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-SLOTS-018"
+      ],
+      "notes": "Documentation-only — no runtime impact. Update three comment blocks to match current pricing/slot indices. [DEV] Self-verified: cleanup-only fix; no behaviour change. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Updated stale schema comments in src/lib/db/schema.ts: teamSlotUnlocks.slotNumber comment now reads '16, 17, or 18' (was '15 or 16'); the teams.bonusSlots block-comment now references squad-rules.ts as the canonical pricing source and drops the legacy 25M / slot-15 references. No behaviour change.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-SLOTS-004",
       "title": "resolveTier null fallback hard-coded to 'mid' in club-bid resolution masks misconfigured standings",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "When resolveClubBid creates an auctionClubOwnership row on SOLD, it calls resolveTier(fresh.fplElementId, config) and falls back to 'mid' if the PL team id is in none of the standings lists (src/lib/formats/auction/club-auction.ts:439-440). resolveTier itself is documented to return null only if the team isn't in any tier list ('shouldn't happen for the 20 PL clubs' — src/lib/data/pl-standings-seed.ts:42-44). The silent fallback means a misconfigured plStandingsConfig (e.g. a 19-club list after a manual edit, or a season-rollover seed mismatch) results in the owning team getting 'mid' scoring quietly instead of an error or admin alert.",
@@ -2079,13 +2178,20 @@
         "src/lib/formats/auction/club-auction.ts:625-644",
         "src/lib/data/pl-standings-seed.ts:39-51"
       ],
-      "linkedBusinessRules": ["BR-SLOTS-033", "BR-SLOTS-039"],
-      "linkedAcceptanceCriteria": ["AC-SLOTS-037"],
+      "linkedBusinessRules": [
+        "BR-SLOTS-033",
+        "BR-SLOTS-039"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-SLOTS-037"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-SLOTS-061"],
-      "notes": "Fix options: (a) match simulateClubAuction — refuse to write an ownership row with a null tier and emit a warning; (b) emit a notification to superadmin when fallback triggers; (c) accept current behaviour but log at warn level. Risk/impact: incorrect club-result bonus scoring for the affected team for the rest of the season; hard to detect after the fact because the row still looks valid.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-SLOTS-061"
+      ],
+      "notes": "Fix options: (a) match simulateClubAuction — refuse to write an ownership row with a null tier and emit a warning; (b) emit a notification to superadmin when fallback triggers; (c) accept current behaviour but log at warn level. Risk/impact: incorrect club-result bonus scoring for the affected team for the rest of the season; hard to detect after the fact because the row still looks valid. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "resolveClubBid no longer falls back to 'mid' when resolveTier returns null (src/lib/formats/auction/club-auction.ts:438-466). On null tier the route logs an error to the console, writes a sold audit-log entry for the bid, and returns 'already-resolved' WITHOUT inserting an auctionClubOwnership row. The standings config is misconfigured if this happens — superadmin must repair it and re-allocate via auction-corrections. Silent 'mid' fallback that masked the misconfiguration is gone.",
+      "resolutionDate": "2026-05-26"
     }
   ]
 }

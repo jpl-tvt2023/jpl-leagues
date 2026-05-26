@@ -8,7 +8,7 @@
 
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
-import { db, teams, gameweeks, fixtures, leagues, playoffTies, challengerSurvivalEntries } from "@/lib/db";
+import { db, teams, gameweeks, fixtures, leagues, playoffTies, challengerSurvivalEntries, groups } from "@/lib/db";
 import { eq, inArray, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { backups } from "@/lib/db/schema";
@@ -35,6 +35,17 @@ export interface RestorePayload {
   // Captain + Chip arrays preserved as raw rows so a future PR can use them. Not applied today.
   rawCaptains: Record<string, unknown>[];
   rawChips: Record<string, unknown>[];
+}
+
+/**
+ * Thrown when restoreFixtures refuses to run because of a guardrail (e.g. empty fixtures payload).
+ * Routes should map this to a 400 response — the league state is unchanged.
+ */
+export class RestoreGuardError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RestoreGuardError";
+  }
 }
 
 function parseSheetFromBuffer<T>(buf: ArrayBuffer): T[] {
@@ -103,9 +114,18 @@ export async function loadRestoreSnapshot(backupId: string, leagueId: string): P
 export async function restoreFixtures(leagueId: string, payload: RestorePayload): Promise<{ inserted: number; warnings: string[] }> {
   const warnings: string[] = [];
 
+  // Guardrail: refuse to wipe the league's fixtures if the payload has nothing to insert.
+  // The wipe cascades to results via `ON DELETE CASCADE`, so a silent no-op restore would be
+  // destructive without warning. Force the admin to explicitly re-upload a valid backup.
+  if (!payload.fixtures || payload.fixtures.length === 0) {
+    throw new RestoreGuardError(
+      "Refusing to restore: backup payload contains 0 fixtures — wipe aborted to prevent silent data loss. Re-upload a backup with a non-empty fixtures sheet."
+    );
+  }
+
   // League config
   const [league] = await db
-    .select({ playoffStartGw: leagues.playoffStartGw })
+    .select({ playoffStartGw: leagues.playoffStartGw, format: leagues.format })
     .from(leagues)
     .where(eq(leagues.id, leagueId))
     .limit(1);
@@ -132,6 +152,49 @@ export async function restoreFixtures(leagueId: string, payload: RestorePayload)
     await db.delete(challengerSurvivalEntries).where(inArray(challengerSurvivalEntries.gameweekId, leagueGwIds));
   }
   await db.delete(playoffTies).where(eq(playoffTies.leagueId, leagueId));
+
+  // Triple-crown only: cup-stage state (cup groups + Ghost teams + humans' cup assignments + cup
+  // points) outlives a PL-fixture restore and blocks re-running /generate-cup-groups (BR-TC-004
+  // returns 400 "Cup groups already exist"). Reset to a pre-cup-groups state so the admin can
+  // re-seed without manual cleanup. The backup payload doesn't yet round-trip cup-group fixtures,
+  // knockout fixtures, or Ghost teams — that round-trip is a backup-writer follow-up (see
+  // DEF-TC-003 [DEV-QUESTION] re: backup schema bump).
+  if (league.format === "triple-crown") {
+    const cupGroups = await db
+      .select({ id: groups.id })
+      .from(groups)
+      .where(and(eq(groups.leagueId, leagueId), eq(groups.groupType, "cup")));
+    const cupGroupIds = cupGroups.map((g) => g.id);
+
+    const [plGroup] = await db
+      .select({ id: groups.id })
+      .from(groups)
+      .where(and(eq(groups.leagueId, leagueId), eq(groups.groupType, "pl")))
+      .limit(1);
+    const plGroupId = plGroup?.id ?? null;
+
+    if (cupGroupIds.length > 0) {
+      await db
+        .update(teams)
+        .set({ groupId: plGroupId })
+        .where(and(eq(teams.leagueId, leagueId), inArray(teams.groupId, cupGroupIds)));
+    }
+
+    // Reset cup points on remaining humans (groupId reset above keeps humans).
+    await db
+      .update(teams)
+      .set({ cupGroupPoints: 0 })
+      .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)));
+
+    // Ghost teams only exist for triple-crown and only as cup-group fillers; remove them.
+    await db
+      .delete(teams)
+      .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, true)));
+
+    if (cupGroupIds.length > 0) {
+      await db.delete(groups).where(inArray(groups.id, cupGroupIds));
+    }
+  }
 
   // Re-insert. Skip rows that can't be resolved (logged as warnings).
   let inserted = 0;

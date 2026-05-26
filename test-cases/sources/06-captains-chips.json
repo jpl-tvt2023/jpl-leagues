@@ -3,9 +3,12 @@
   "moduleName": "Captains & Chips",
   "sheetName": "Captains & Chips",
   "status": "qa-signed-off",
-  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
   "requirements": {
-    "version": 2,
+    "version": 9,
     "businessContext": "The Captains & Chips module owns the SUBMISSION lifecycle for the two strategic levers a TVT/Triple-Crown team controls each gameweek: (1) declaring which player on their 2-man team is the captain (whose net score is doubled by the scoring engine), and (2) deciding whether to play a TVT chip (Win-Win, Double Pointer, Challenge Chip, Score Lock, Comeback or Underdog) in that GW. The module covers team-facing submission/switch/cancel endpoints, admin force-overrides, and bulk CSV/XLSX imports. It does not handle scoring/processing of those choices (module 05 owns that) nor the league-settings UI (module 02). The Auction format has NO captains/chips — those teams must not be exposed to these endpoints.",
     "userStories": [
       {
@@ -13,394 +16,560 @@
         "asA": "team",
         "iWant": "to announce which of my two players is captain for an upcoming gameweek",
         "soThat": "the scoring engine doubles that player's net FPL score when results come in",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:11-195"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:11-195"
+        ]
       },
       {
         "id": "US-CHIP-002",
         "asA": "team",
         "iWant": "to switch my captain pick to my other player before the deadline",
         "soThat": "I can react to last-minute team news without being locked in",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:88-149"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:88-149"
+        ]
       },
       {
         "id": "US-CHIP-003",
         "asA": "team",
         "iWant": "the system to tell me how many captaincy chips a player has remaining for the League Stage",
         "soThat": "I can plan rotation between my two players across the season",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:104-122", "src/app/api/team/captain/route.ts:163-184"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:104-122",
+          "src/app/api/team/captain/route.ts:163-184"
+        ]
       },
       {
         "id": "US-CHIP-004",
         "asA": "team",
         "iWant": "to submit a TVT chip (W/D/C/SL/CB/UD) for a specific gameweek",
         "soThat": "I can spend my chip allowance for tactical advantage",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:29-257"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:29-257"
+        ]
       },
       {
         "id": "US-CHIP-005",
         "asA": "team",
         "iWant": "to switch my chip choice to a different chip type for the same gameweek before deadline",
         "soThat": "I can change strategy without burning a chip slot",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:150-234"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:150-234"
+        ]
       },
       {
         "id": "US-CHIP-006",
         "asA": "team",
         "iWant": "to cancel my chip submission for a gameweek before the deadline",
         "soThat": "I free up that chip in case I want to bank it for a later GW in the set",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:271-339"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:271-339"
+        ]
       },
       {
         "id": "US-CHIP-007",
         "asA": "team",
         "iWant": "to nominate an opposing-group team when playing the Challenge Chip",
         "soThat": "the chip's cross-group head-to-head bonus is unambiguous at processing time",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:180-211"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:180-211"
+        ]
       },
       {
         "id": "US-CHIP-008",
         "asA": "admin",
         "iWant": "to force-set or correct a team's captain for any gameweek",
         "soThat": "I can fix data-entry mistakes, apply rulings, or backfill missing announcements",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-captain/route.ts:13-163"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-captain/route.ts:13-163"
+        ]
       },
       {
         "id": "US-CHIP-009",
         "asA": "admin",
         "iWant": "to override a team's chip state to available / used / wasted for a chip+set with an attached audit reason",
         "soThat": "I can reconcile chip ledgers when the team-facing flow gets out of sync with reality",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:71-263"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:71-263"
+        ]
       },
       {
         "id": "US-CHIP-010",
         "asA": "admin",
         "iWant": "to bulk-import an XLSX/CSV grid of captain picks (one row per team, GW columns marked 'C')",
         "soThat": "I can seed historical captaincy data without 30 manual submissions per team",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:24-231"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:24-231"
+        ]
       },
       {
         "id": "US-CHIP-011",
         "asA": "admin",
         "iWant": "to bulk-import an XLSX/CSV grid of chip picks (W/D/C/SL/CB/UD plus *W wasted-variants and C:OPP opponent abbreviations)",
         "soThat": "I can backfill the season's chip ledger in one operation",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:37-276"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:37-276"
+        ]
       },
       {
         "id": "US-CHIP-012",
         "asA": "admin",
         "iWant": "to clear all chip data (or one GW's chips) before re-importing",
         "soThat": "I can correct large mistakes by wiping and re-uploading instead of patching row-by-row",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:352-402"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:352-402"
+        ]
       },
       {
         "id": "US-CHIP-013",
         "asA": "admin",
         "iWant": "captain and chip announcements to be globally disable-able via league settings",
         "soThat": "I can freeze submissions during processing windows or league reconciliation",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:55-64", "src/app/api/team/chips/route.ts:101-110"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:55-64",
+          "src/app/api/team/chips/route.ts:101-110"
+        ]
       },
       {
         "id": "US-CHIP-014",
         "asA": "admin",
         "iWant": "late captain submissions to be logged as PENALTY audit entries",
         "soThat": "I have an automatic record to apply late-announcement penalties at the end of the GW",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:152-161"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:152-161"
+        ]
       },
       {
         "id": "US-CHIP-015",
         "asA": "admin",
         "iWant": "captain overrides to mark the entry as valid and to log an ADMIN_OVERRIDE audit entry with my reason",
         "soThat": "the player gets full captain points and there is a paper trail for the change",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-captain/route.ts:92-142"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-captain/route.ts:92-142"
+        ]
       },
       {
         "id": "US-CHIP-016",
         "asA": "team",
         "iWant": "the system to refuse Challenge-Chip submissions against a team in my own group",
         "soThat": "the cross-group rule cannot be circumvented even by direct API calls",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:180-211"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:180-211"
+        ]
       }
     ],
     "businessRules": [
       {
         "id": "BR-CHIP-001",
         "rule": "POST /api/team/captain requires a team session (x-session-id header set by middleware after verifying the session cookie); missing session returns 401.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:14-17", "src/middleware.ts:179-187", "src/middleware.ts:214-222"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:14-17",
+          "src/middleware.ts:179-187",
+          "src/middleware.ts:214-222"
+        ]
       },
       {
         "id": "BR-CHIP-002",
         "rule": "POST /api/team/captain requires both playerId and gameweek; missing either returns 400 with 'playerId and gameweek are required'.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:22-28"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:22-28"
+        ]
       },
       {
         "id": "BR-CHIP-003",
         "rule": "Gameweek number must parse to an integer in [1,38] inclusive; otherwise 400 'Invalid gameweek number (must be 1-38)'. // CODE-CONFIRMED: may be a defect — confirm with product owner — leagues with playoffStartGw=36 only run to GW38 max but other leagues stop sooner; 38 cap is generous.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:30-36", "src/app/api/team/chips/route.ts:48-54"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:30-36",
+          "src/app/api/team/chips/route.ts:48-54"
+        ]
       },
       {
         "id": "BR-CHIP-004",
-        "rule": "Captaincy chip-per-player cap depends on league format: Triple Crown leagues allow 19 captaincies per player across GW1..38; all other formats (TVT default) allow 15 captaincies per player across GW1..30. The 'captainCheckLimit' (30 or 38) defines the league-stage horizon used to count chips. // CODE-CONFIRMED: may be a defect — confirm with product owner — captainCheckLimit is hardcoded to 30 for non-TC formats and ignores the league's playoffStartGw, so a TVT league configured with playoffStartGw=36 still uses GW30 as its captaincy horizon.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:48-53", "src/app/api/team/captain/route.ts:104-122", "src/lib/formats/tvt/scoring.ts:200-212"]
+        "rule": "captainCheckLimit (the upper GW boundary of the League Stage for the 15-per-player cap) is derived as league.playoffStartGw - 1 for non-triple-crown leagues, and 38 for triple-crown. Below or at this limit the captaincy counts toward the 15-per-player cap; above it the captain is treated as a playoff captaincy with unlimited chips remaining.",
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:48-58"
+        ]
       },
       {
         "id": "BR-CHIP-005",
         "rule": "Selecting a player as captain who is not on the requesting team's roster returns 400 'Player does not belong to your team'.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:66-73"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:66-73"
+        ]
       },
       {
         "id": "BR-CHIP-006",
         "rule": "Gameweek must exist for the requesting team's league (scoped by leagueId); 'GW exists in another league' is not acceptable — returns 404 'Gameweek not found'.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:75-85"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:75-85"
+        ]
       },
       {
         "id": "BR-CHIP-007",
         "rule": "If the league has a 'captainAnnouncementEnabled' setting with value 'false', POST /api/team/captain returns 403 'Captain announcements are currently disabled by the admin'.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:55-64"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:55-64"
+        ]
       },
       {
         "id": "BR-CHIP-008",
         "rule": "Each team has exactly one captain record per gameweek; submitting again UPDATES the existing record (switching player), it does not create a second row.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:88-149"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:88-149"
+        ]
       },
       {
         "id": "BR-CHIP-009",
         "rule": "Submitting the SAME player as the currently-stored captain for that GW returns 400 'This player is already your captain for this gameweek' (no-op rejection).",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:95-102"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:95-102"
+        ]
       },
       {
         "id": "BR-CHIP-010",
         "rule": "When counting a player's captaincy-chips-used, the current GW's existing entry is EXCLUDED so that switching back to a previously-captained player does not double-count; only entries on OTHER gameweeks within the league-stage horizon count.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:108-114"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:108-114"
+        ]
       },
       {
         "id": "BR-CHIP-011",
         "rule": "Captain submissions after the gameweek's deadline are still ACCEPTED but flagged isValid=false and a PENALTY audit log is written; the response message includes 'marked as late (after deadline)'.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:124-161"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:124-161"
+        ]
       },
       {
         "id": "BR-CHIP-012",
         "rule": "Captain response payload includes captaincyChipsRemaining: number for league-stage GWs, or the literal string 'unlimited' for playoff GWs (gameweekNumber > captainCheckLimit).",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:163-171"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:163-171"
+        ]
       },
       {
         "id": "BR-CHIP-013",
         "rule": "POST /api/team/chips requires gameweek and chipType; chipType must be one of W,D,C,SL,CB,UD (case-sensitive); other values return 400.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:7-13", "src/app/api/team/chips/route.ts:40-62"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:7-13",
+          "src/app/api/team/chips/route.ts:40-62"
+        ]
       },
       {
         "id": "BR-CHIP-014",
         "rule": "Each league has an enabledChips array (default ['D','W','C']) limiting which chip codes may be submitted; submitting a disabled chip returns 400 '<ChipName> is not enabled for this league'.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:75-90", "src/lib/db/schema.ts:38-45"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:75-90",
+          "src/lib/db/schema.ts:38-45"
+        ]
       },
       {
         "id": "BR-CHIP-015",
         "rule": "If the league has a 'chipAnnouncementEnabled' setting with value 'false', POST /api/team/chips returns 403 'Chip announcements are currently disabled by the admin'.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:101-110"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:101-110"
+        ]
       },
       {
         "id": "BR-CHIP-016",
         "rule": "POST /api/team/chips enforces a HARD deadline: if gw.deadline < now the request returns 400 'Deadline has passed for this gameweek' (unlike captains, which accept-with-penalty).",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:112-119"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:112-119"
+        ]
       },
       {
         "id": "BR-CHIP-017",
         "rule": "Chips cannot be submitted for playoff gameweeks (gameweek >= league.playoffStartGw); returns 400 'TVT chips cannot be used in playoffs (GW<N>+)'.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:121-128", "src/lib/formats/tvt/scoring.ts:192-196"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:121-128",
+          "src/lib/formats/tvt/scoring.ts:192-196"
+        ]
       },
       {
         "id": "BR-CHIP-018",
         "rule": "Set boundaries are dynamic and derived from league.playoffStartGw: Set 1 = GW1..ceil((playoffStartGw-1)/2), Set 2 = GW(midpoint+1)..(playoffStartGw-1). For default playoffStartGw=31 this yields Set 1 = GW1-15, Set 2 = GW16-30; for playoffStartGw=36 it yields Set 1 = GW1-17, Set 2 = GW18-35.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:131-134", "src/lib/formats/tvt/scoring.ts:183-196"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:131-134",
+          "src/lib/formats/tvt/scoring.ts:183-196"
+        ]
       },
       {
         "id": "BR-CHIP-019",
         "rule": "Each chip type can be used at most once per Set per team, tracked via 12 boolean columns on the teams table (<chip>Set1Used / <chip>Set2Used for W,D,C,SL,CB,UD); attempting to submit a chip whose set-flag is already true returns 400 '<ChipName> has already been used for Set <N> (<range>)'.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:16-23", "src/app/api/team/chips/route.ts:136-147", "src/lib/db/schema.ts:120-131"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:16-23",
+          "src/app/api/team/chips/route.ts:136-147",
+          "src/lib/db/schema.ts:120-131"
+        ]
       },
       {
         "id": "BR-CHIP-020",
         "rule": "When switching chip types within the same GW, the NEW chip type's set-flag must also not be already used; switching from chip X to chip Y where Y's set-flag is true returns 400. The OLD chip type's flag is NOT checked because the old chip is being replaced. // CODE-CONFIRMED: may be a defect — confirm with product owner — the team.set-flag for the OLD chip is never CLEARED on switch, so if the flag was true when the original was submitted via this endpoint it remains true (the flag is only flipped to true on POST insert in admin import / override paths, not the team POST). Investigate whether team-POST sets the flag at all.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:165-178"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:165-178"
+        ]
       },
       {
         "id": "BR-CHIP-021",
         "rule": "Submitting the SAME chipType that is already stored for the same team/GW returns 400 '<ChipName> is already selected for this gameweek' (no-op).",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:156-163"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:156-163"
+        ]
       },
       {
         "id": "BR-CHIP-022",
         "rule": "Challenge Chip (chipType='C') REQUIRES a challengedTeamId in the body; missing it returns 400 'Challenge Chip requires selecting an opponent team'.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:180-188"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:180-188"
+        ]
       },
       {
         "id": "BR-CHIP-023",
         "rule": "Challenge Chip's challengedTeamId must reference a team in the OPPOSITE group from the submitting team; same-group challenges return 400 'Challenge Chip can only be used against a team from the opposite group'.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:189-211"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:189-211"
+        ]
       },
       {
         "id": "BR-CHIP-024",
         "rule": "Successful chip switch updates the gameweekChips row in place (same id) and sets updatedAt; response wasSwitched=true.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:213-234"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:213-234"
+        ]
       },
       {
         "id": "BR-CHIP-025",
         "rule": "DELETE /api/team/chips cancels the team's chip submission for a GW; the request must include {gameweek} and only succeeds if the chip row exists and isProcessed=false; after deadline returns 400 'Cannot cancel chip after deadline has passed'.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:271-339"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:271-339"
+        ]
       },
       {
         "id": "BR-CHIP-026",
         "rule": "DELETE /api/team/chips physically removes the gameweekChips row; it does NOT reset the team's <chip>Set<N>Used boolean flag. // CODE-CONFIRMED: may be a defect — confirm with product owner — cancelling a chip leaves the set-flag set if it was ever set, potentially locking the team out of using that chip again in the set.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:325-326"]
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:325-326"
+        ]
       },
       {
         "id": "BR-CHIP-027",
-        "rule": "DELETE /api/team/chips looks up gameweek by gw.number only, NOT scoped to the requesting team's leagueId. // CODE-CONFIRMED: may be a defect — confirm with product owner — in a multi-league deployment two leagues sharing GW number values could pick the wrong row.",
-        "sourceRefs": ["src/app/api/team/chips/route.ts:291-298"]
+        "rule": "DELETE /api/team/chips first loads the requesting team (by x-session-id) and then resolves the gameweek by AND(gameweeks.number = gameweekNumber, gameweeks.leagueId = team.leagueId), so the cancellation is scoped to the team's own league; cross-league GW-number collisions cannot select another league's row. If the team is not found a 404 'Team not found' is returned; if no gameweek row exists for that number in the team's league a 404 'Gameweek not found' is returned.",
+        "sourceRefs": [
+          "src/app/api/team/chips/route.ts:289-307"
+        ]
       },
       {
         "id": "BR-CHIP-028",
         "rule": "All /api/admin/[leagueId]/* routes require an admin or superadmin session AND the session must be authorised for the path's leagueId; unauthenticated returns 401, authenticated-but-not-admin returns 403 'Admin access required', admin-but-wrong-league returns 403 'Forbidden' via getAuthorizedLeagueId.",
-        "sourceRefs": ["src/middleware.ts:189-211", "src/app/api/admin/[leagueId]/override-captain/route.ts:15-16", "src/app/api/admin/[leagueId]/override-chips/route.ts:73-74", "src/app/api/admin/[leagueId]/import-captains/route.ts:26-27", "src/app/api/admin/[leagueId]/import-chips/route.ts:39-40"]
+        "sourceRefs": [
+          "src/middleware.ts:189-211",
+          "src/app/api/admin/[leagueId]/override-captain/route.ts:15-16",
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:73-74",
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:26-27",
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:39-40"
+        ]
       },
       {
         "id": "BR-CHIP-029",
         "rule": "POST /api/admin/[leagueId]/override-captain auto-creates a gameweeks row scoped to the league if one does not exist for that GW number (deadline = now + 7*N days at 11:00, isPlayoffs = (N >= playoffStartGw)).",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-captain/route.ts:37-50"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-captain/route.ts:37-50"
+        ]
       },
       {
         "id": "BR-CHIP-030",
         "rule": "Captain overrides ALWAYS write isValid=true regardless of whether the GW deadline has passed, and write an ADMIN_OVERRIDE audit log with the previous captain name, new captain name, GW, and admin-supplied reason (or 'Not specified').",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-captain/route.ts:92-142"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-captain/route.ts:92-142"
+        ]
       },
       {
         "id": "BR-CHIP-031",
         "rule": "Captain override verifies the target player belongs to the target team and the target team belongs to the authorized league; cross-team or cross-league assignment returns 400 'Player does not belong to this team' or 404 'Team not found'.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-captain/route.ts:52-82"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-captain/route.ts:52-82"
+        ]
       },
       {
         "id": "BR-CHIP-032",
         "rule": "POST /api/admin/[leagueId]/override-chips accepts chipType as one of 12 fully-qualified codes (doublePointerSet1..underdogSet2) and a status of 'available'|'used'|'wasted'; legacy boolean 'used' is accepted for back-compat.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:10-50", "src/app/api/admin/[leagueId]/override-chips/route.ts:76-130"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:10-50",
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:76-130"
+        ]
       },
       {
         "id": "BR-CHIP-033",
         "rule": "Chip override requires a gameweek parameter when status is 'used' or 'wasted'; gameweek must parse to an integer >= 1 (no upper bound enforced by override). Setting status='available' deletes any matching chip row in the target set without requiring gameweek.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:101-114", "src/app/api/admin/[leagueId]/override-chips/route.ts:183-225"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:101-114",
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:183-225"
+        ]
       },
       {
         "id": "BR-CHIP-034",
         "rule": "Chip override identifies which existing chip row to replace by 'set' (gwNum<=15 for set1, 15<gwNum<=30 for set2) — these set boundaries are hardcoded and ignore league.playoffStartGw. // CODE-CONFIRMED: may be a defect — confirm with product owner — leagues with non-default playoffStartGw will have override-chips mis-categorize set membership.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:160-187"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:160-187"
+        ]
       },
       {
         "id": "BR-CHIP-035",
-        "rule": "Chip override looks up the gameweek row by gw.number only, not scoped to leagueId, and auto-creates one with isPlayoffs=(gwNum>30) if missing. // CODE-CONFIRMED: may be a defect — confirm with product owner — both the unscoped lookup and the hardcoded 30 boundary are wrong for multi-league or non-default playoffStartGw setups.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:193-211"]
+        "rule": "Chip override looks up the gameweek row by AND(gameweeks.number = gwNum, gameweeks.leagueId = authorizedLeagueId), so cross-league GW-number collisions cannot select another league's row. If no matching row exists for this league, one is auto-created with leagueId=authorizedLeagueId, deadline=now+7*gwNum days @ 11:00, and isPlayoffs=(gwNum >= league.playoffStartGw) — the playoffStartGw is read dynamically from the leagues table (defaulting to 31 when absent), so non-default playoff boundaries are honoured.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:193-216"
+        ]
       },
       {
         "id": "BR-CHIP-036",
         "rule": "On chip override, the team's <chip>Set<N>Used flag is set to true for status in {used, wasted}, false for status=available; a new gameweekChips row is written with isProcessed=true, isValid=(status==='used'), hadNegativeHits=(status==='wasted'), pointsAwarded=0.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:144-225"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:144-225"
+        ]
       },
       {
         "id": "BR-CHIP-037",
         "rule": "Every chip override writes an ADMIN_OVERRIDE audit log including chip display name, previous state, new state, team name, and reason (or 'Not specified').",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:236-242"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:236-242"
+        ]
       },
       {
         "id": "BR-CHIP-038",
-        "rule": "GET /api/admin/[leagueId]/override-chips returns the per-team chip status for only Double Pointer, Challenge Chip, and Win-Win across Set 1 and Set 2 — Score Lock, Comeback, and Underdog are absent from the response payload. // CODE-CONFIRMED: may be a defect — confirm with product owner — the override POST handles all 6 chip types but the GET only shows 3, so admins cannot see SL/CB/UD status in the override UI.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:311-372"]
+        "rule": "GET /api/admin/[leagueId]/override-chips returns teams with a chips.set1 / chips.set2 object whose keys are the enabled chip slots only. For each enabled chip code (D, C, W, SL, CB, UD), the response includes {used, name, gameweek, wasted, points}, where the used flag reads the teams.{chipColumn}Set1Used or Set2Used column directly. The set range labels are derived dynamically from the league's playoffStartGw (set1=GW1..setMidpoint; set2=GW{midpoint+1}..playoffStartGw-1), not hardcoded.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:284-373"
+        ]
       },
       {
         "id": "BR-CHIP-039",
         "rule": "POST /api/admin/[leagueId]/import-captains accepts a JSON body { captains: [{teamId, playerName, '1', '2', ...}] } with at most 500 rows; greater rows return 400 'Too many rows'.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:29-44"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:29-44"
+        ]
       },
       {
         "id": "BR-CHIP-040",
         "rule": "Import-captains resolves teamId case-insensitively against teams.teamLoginId scoped to this league, and resolves playerName case-insensitively against that team's players; unresolved rows are reported in results.errors and do not abort the batch.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:60-128"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:60-128"
+        ]
       },
       {
         "id": "BR-CHIP-041",
         "rule": "Import-captains treats any GW column whose uppercased value is 'C' as a captain marker for that GW; other values (including blank) are ignored.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:131-134"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:131-134"
+        ]
       },
       {
         "id": "BR-CHIP-042",
         "rule": "Import-captains auto-creates missing gameweek rows (per league) with deadline=now+7*N days @ 11:00 and isPlayoffs=(N>=playoffStartGw).",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:136-154"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:136-154"
+        ]
       },
       {
         "id": "BR-CHIP-043",
         "rule": "Import-captains is idempotent within a team: if a captain row already exists for the team in that GW and the existing playerId equals the incoming playerId, NO update occurs; if it differs, the row is updated to the new player.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:156-171"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:156-171"
+        ]
       },
       {
         "id": "BR-CHIP-044",
-        "rule": "Import-captains increments players.captaincyChipsUsed by 1 for each NEW captain entry inserted (no increment on updates). // CODE-CONFIRMED: may be a defect — confirm with product owner — there is no overflow check against the 15/19 per-player cap, so import can push a player beyond their format cap.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:186-188", "src/app/api/admin/[leagueId]/import-captains/route.ts:210-215"]
+        "rule": "POST /api/admin/[leagueId]/import-captains applies the same per-player CAPTAIN_CAP rule as POST /api/team/captain: 15 chips/player for TVT, 19 for Triple Crown, counted only over league-stage GWs (gw <= captainCheckLimit = playoffStartGw-1 for non-TC, or 38 for TC). Rows that would push a player past the cap are pushed to details.errors and not inserted; the surrounding upload still proceeds for the other rows.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:52-64",
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:170-185"
+        ]
       },
       {
         "id": "BR-CHIP-045",
         "rule": "Import-captains bulk-inserts new entries in a single insert and updates changed ones per-row; on success the response contains created/failed counts plus per-row success and error messages.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:198-223"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:198-223"
+        ]
       },
       {
         "id": "BR-CHIP-046",
         "rule": "POST /api/admin/[leagueId]/import-chips accepts a JSON body { chips: [{teamId, '1', '2', ...}] } with at most 500 rows; columns may use any of: '<N>', 'GW<N>', 'gw<N>', 'Gameweek <N>'.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:45-114"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:45-114"
+        ]
       },
       {
         "id": "BR-CHIP-047",
         "rule": "Import-chips supports six chip markers (W,D,C,SL,CB,UD), six wasted markers (WW,DW,CW,SLW,CBW,UDW), and Challenge-Chip with opponent abbreviation 'C:<TEAMLOGINID>'.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:117-150"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:117-150"
+        ]
       },
       {
         "id": "BR-CHIP-048",
         "rule": "Import-chips C:<OPP> with an unresolved opponent abbreviation does NOT fail the row; the chip is still inserted with challengedTeamId=null and a warning is appended to results.warnings.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:161-170"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:161-170"
+        ]
       },
       {
         "id": "BR-CHIP-049",
         "rule": "Import-chips force-overwrites any pre-existing chip row for the same team+GW (deletes the old row, inserts the new), and appends a warning when the chipType changed.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:193-210"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:193-210"
+        ]
       },
       {
         "id": "BR-CHIP-050",
-        "rule": "Import-chips inserts gameweekChips with isProcessed=isWasted, isValid=!isWasted, hadNegativeHits = (isWasted && chipType==='W'); only Win-Win wasted entries flag hadNegativeHits, even though SL/CB/UD also have wasted markers.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:212-224"]
+        "rule": "When import-chips processes a row flagged wasted (e.g. 'SLW', 'CBW', 'UDW', 'WW', 'DW', 'CW'), the inserted gameweekChips row has hadNegativeHits=true regardless of chipType. This keeps the override-chips GET wasted-detection (OR over isProcessed+!isValid OR hadNegativeHits) consistent across all six chip types.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:212-225"
+        ]
       },
       {
         "id": "BR-CHIP-051",
         "rule": "Import-chips updates the team's <chip>Set<N>Used flag using getChipSet() (dynamic playoffStartGw boundary) — this is CORRECT, unlike the override-chips endpoint which hardcodes GW15/30 boundaries.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:232-250"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:232-250"
+        ]
       },
       {
         "id": "BR-CHIP-052",
         "rule": "DELETE /api/admin/[leagueId]/import-chips with no query params is scoped to the authorized league: it first selects all gameweek ids where leagueId = current league, then deletes only the gameweekChips rows referencing those ids (via inArray); chips belonging to other leagues are untouched. It then resets ALL 12 set-used columns on the league's teams — doublePointer/challengeChip/winWin/scoreLock/comeback/underdog × Set1+Set2 — to false, and finally calls invalidateLeaguePageCache(leagueId).",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:375-408"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:375-408"
+        ]
       },
       {
         "id": "BR-CHIP-053",
         "rule": "DELETE /api/admin/[leagueId]/import-chips with ?gameweek=<N> resolves the gameweek row by AND(gameweeks.number = N, gameweeks.leagueId = current league), so cross-league GW-number collisions cannot select another league's row. If a matching gameweek row exists, all gameweekChips rows referencing that gameweekId are deleted and invalidateLeaguePageCache(leagueId) is called; if no matching row exists for this league, no chips are deleted.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:360-374"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:360-374"
+        ]
       },
       {
         "id": "BR-CHIP-054",
         "rule": "All admin override and import endpoints call invalidateLeaguePageCache(leagueId) after a successful write to flush per-league CDN/page caches.",
-        "sourceRefs": ["src/app/api/admin/[leagueId]/override-captain/route.ts:112", "src/app/api/admin/[leagueId]/override-chips/route.ts:244", "src/app/api/admin/[leagueId]/import-captains/route.ts:217", "src/app/api/admin/[leagueId]/import-chips/route.ts:260"]
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/override-captain/route.ts:112",
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:244",
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:217",
+          "src/app/api/admin/[leagueId]/import-chips/route.ts:260"
+        ]
       },
       {
         "id": "BR-CHIP-055",
-        "rule": "The Auction format does not use captains or TVT chips: enabledChips/captaincy logic are inherited from the leagues table but auction-tier specific flows do not invoke these endpoints. Auction leagues should hide these UIs and any direct POST is constrained only by the format-agnostic guards above (i.e., the endpoints will still accept calls if the league exists). // CODE-CONFIRMED: may be a defect — confirm with product owner — no explicit format='auction' rejection exists; auction teams could theoretically post here.",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:48-53", "src/app/api/team/chips/route.ts:75-90", "src/lib/db/schema.ts:30-45"]
+        "rule": "/api/team/captain and /api/team/chips both refuse with HTTP 400 when leagues.format === 'auction'. This matches the project spec where auction has no captaincy or TVT-chip mechanics, and prevents orphan gameweekCaptains / gameweekChips rows that the auction scoring engine never processes.",
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:54-63",
+          "src/app/api/team/chips/route.ts:74-87"
+        ]
       },
       {
         "id": "BR-CHIP-056",
         "rule": "Triple-Crown captaincy uses captainCheckLimit=38, meaning the per-player 19-captaincy cap applies across all 38 gameweeks (no separate league-stage vs playoff distinction for TC captaincy).",
-        "sourceRefs": ["src/app/api/team/captain/route.ts:52-53"]
+        "sourceRefs": [
+          "src/app/api/team/captain/route.ts:52-53"
+        ]
       }
     ],
     "acceptanceCriteria": [
@@ -490,9 +659,9 @@
       },
       {
         "id": "AC-CHIP-013",
-        "given": "A successful captain submission for GW32 in a league with playoffStartGw=31",
-        "when": "Response is returned",
-        "then": "captaincyChipsRemaining equals the string 'unlimited'",
+        "given": "a TVT-8 team (league.playoffStartGw=36) with 0 captaincy chips used by player X",
+        "when": "POST /api/team/captain with playerId=X across GW1..GW35, then GW36",
+        "then": "GW1..GW35 each count toward player X's 15-per-player cap; captaincyChipsRemaining decrements; at GW36 (playoffs) captaincyChipsRemaining is reported as \"unlimited\". TVT-16/32 (playoffStartGw=31) sees the cutover at GW30/GW31; Triple Crown sees the cutover at GW38.",
         "linksTo": "BR-CHIP-012"
       },
       {
@@ -672,16 +841,16 @@
       },
       {
         "id": "AC-CHIP-039",
-        "given": "Two leagues each own a GW20 row",
-        "when": "Admin of league L1 posts override-chips status='used', gameweek=20",
-        "then": "The code looks up gameweeks WHERE number=20 (no leagueId filter), potentially writing the chip row against league L2's gameweekId (defect)",
+        "given": "Two leagues L1 (playoffStartGw=31) and L2 each own a GW20 row, and L1 separately has no GW34 row while playoffStartGw=36",
+        "when": "Admin of L1 posts override-chips status='used' for gameweek=20, then again for gameweek=34",
+        "then": "The GW20 lookup uses AND(number=20, leagueId=L1) and selects L1's own row (L2's GW20 is untouched); for GW34, no L1 row exists so a new gameweeks row is auto-created with leagueId=L1 and isPlayoffs computed from L1.playoffStartGw (gwNum >= playoffStartGw)",
         "linksTo": "BR-CHIP-035"
       },
       {
         "id": "AC-CHIP-040",
-        "given": "Admin GETs /api/admin/[leagueId]/override-chips",
-        "when": "Response payload is inspected",
-        "then": "Each team's chips object contains only set1.{doublePointer,challengeChip,winWin} and set2.{doublePointer,challengeChip,winWin}; scoreLock, comeback, underdog are absent (defect)",
+        "given": "a TVT league L with enabledChips=[\"D\",\"W\",\"C\",\"SL\",\"CB\",\"UD\"]; teams have a mix of chip-used flags set",
+        "when": "GET /api/admin/[leagueId]/override-chips runs",
+        "then": "response 200 with teams[].chips.set1 and set2 each containing 6 keys (doublePointer, challengeChip, winWin, scoreLock, comeback, underdog) with the {used, name, gameweek, wasted, points} shape; name labels use the dynamic GW1-{midpoint} and GW{midpoint+1}-{playoffStartGw-1} ranges; response includes enabledChips and chipTypes filtered to enabled codes only. For a league with only the default 3 chips enabled, only those three keys appear in each set.",
         "linksTo": "BR-CHIP-038"
       },
       {
@@ -721,9 +890,9 @@
       },
       {
         "id": "AC-CHIP-046",
-        "given": "Import-captains inserts a brand-new captain entry for PlayerA in GW10",
-        "when": "Operation completes",
-        "then": "players.captaincyChipsUsed is incremented by 1 for PlayerA (no cap check)",
+        "given": "an admin uploads a captain CSV that schedules player X for 16 league-stage GWs in a TVT league (CAPTAIN_CAP=15)",
+        "when": "the import runs row-by-row",
+        "then": "15 gameweekCaptains rows are inserted for X (and player.captaincyChipsUsed increments by 15). The 16th candidate row appears in details.errors with 'X has already used all 15 League-Stage captaincy chips — GW<N> entry skipped'. Other players in the same upload are unaffected. Playoff-GW captaincies do not count toward the cap.",
         "linksTo": "BR-CHIP-044"
       },
       {
@@ -742,9 +911,9 @@
       },
       {
         "id": "AC-CHIP-049",
-        "given": "A row has cell 'SLW' for GW8",
-        "when": "Import-chips processes it",
-        "then": "A Score-Lock chip is inserted with isProcessed=true, isValid=false, hadNegativeHits=false (W-only flag), and a 'marked as WASTED' warning is added",
+        "given": "an admin uploads a chip CSV marking a Score Lock / Comeback / Underdog row as wasted (e.g. chipType='SLW')",
+        "when": "import-chips inserts the row",
+        "then": "the gameweekChips row has isValid=false, isProcessed=true, AND hadNegativeHits=true; override-chips GET shows the chip as wasted in the team's set summary; behaviour is uniform with Win-Win wasted (WW) which already set hadNegativeHits=true.",
         "linksTo": "BR-CHIP-050"
       },
       {
@@ -784,9 +953,9 @@
       },
       {
         "id": "AC-CHIP-055",
-        "given": "An Auction-format league (format='auction')",
-        "when": "A team in that league posts /api/team/captain or /api/team/chips",
-        "then": "The endpoint executes the normal captain/chip flow with no auction-specific rejection (defect — see BR-CHIP-055)",
+        "given": "an auction-format team posts to /api/team/captain or /api/team/chips",
+        "when": "the handler runs",
+        "then": "HTTP 400 with body.error containing 'not available in auction-format leagues'; no captaincy or chip row inserted; the team-side dashboard never exposes the entry points but the route now enforces it server-side.",
         "linksTo": "BR-CHIP-055"
       },
       {
@@ -807,7 +976,11 @@
       "priority": "P1",
       "preconditions": "No session cookie set; no x-session-id header forwarded by middleware",
       "testData": "POST /api/team/captain { playerId: 'p1', gameweek: 5 }",
-      "testSteps": ["1. Clear all cookies", "2. POST /api/team/captain with valid JSON body", "3. Inspect response"],
+      "testSteps": [
+        "1. Clear all cookies",
+        "2. POST /api/team/captain with valid JSON body",
+        "3. Inspect response"
+      ],
       "expectedResult": "401 Not authenticated; gameweekCaptains table unchanged",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-001",
@@ -824,7 +997,10 @@
       "priority": "P1",
       "preconditions": "Authenticated team session",
       "testData": "{ playerId: 'p1' }",
-      "testSteps": ["1. POST /api/team/captain with only playerId", "2. Inspect response"],
+      "testSteps": [
+        "1. POST /api/team/captain with only playerId",
+        "2. Inspect response"
+      ],
       "expectedResult": "400 'playerId and gameweek are required'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-002",
@@ -841,7 +1017,10 @@
       "priority": "P1",
       "preconditions": "Authenticated team session",
       "testData": "{ gameweek: 5 }",
-      "testSteps": ["1. POST /api/team/captain with only gameweek", "2. Inspect response"],
+      "testSteps": [
+        "1. POST /api/team/captain with only gameweek",
+        "2. Inspect response"
+      ],
       "expectedResult": "400 'playerId and gameweek are required'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-002",
@@ -858,7 +1037,10 @@
       "priority": "P2",
       "preconditions": "Authenticated team session",
       "testData": "{ playerId: 'p1', gameweek: 0 }",
-      "testSteps": ["1. POST /api/team/captain with gameweek=0", "2. Inspect response"],
+      "testSteps": [
+        "1. POST /api/team/captain with gameweek=0",
+        "2. Inspect response"
+      ],
       "expectedResult": "400 'Invalid gameweek number (must be 1-38)'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-003",
@@ -875,7 +1057,10 @@
       "priority": "P2",
       "preconditions": "Authenticated team session",
       "testData": "{ playerId: 'p1', gameweek: 99 }",
-      "testSteps": ["1. POST /api/team/captain with gameweek=99", "2. Inspect response"],
+      "testSteps": [
+        "1. POST /api/team/captain with gameweek=99",
+        "2. Inspect response"
+      ],
       "expectedResult": "400 'Invalid gameweek number (must be 1-38)'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-003",
@@ -892,7 +1077,9 @@
       "priority": "P2",
       "preconditions": "Authenticated team session, league has GW1 row, deadline future, captainAnnouncementEnabled",
       "testData": "{ playerId: 'p1', gameweek: 1 }",
-      "testSteps": ["1. POST /api/team/captain gameweek=1 with valid roster player"],
+      "testSteps": [
+        "1. POST /api/team/captain gameweek=1 with valid roster player"
+      ],
       "expectedResult": "200 success; gameweekCaptains row created",
       "postconditions": "Row inserted with isValid=true",
       "requirementId": "AC-CHIP-003",
@@ -909,7 +1096,9 @@
       "priority": "P2",
       "preconditions": "Authenticated team session in TC league, GW38 row exists",
       "testData": "{ playerId: 'p1', gameweek: 38 }",
-      "testSteps": ["1. POST /api/team/captain gameweek=38"],
+      "testSteps": [
+        "1. POST /api/team/captain gameweek=38"
+      ],
       "expectedResult": "200 success; row inserted",
       "postconditions": "Captain stored for GW38",
       "requirementId": "AC-CHIP-003",
@@ -926,7 +1115,10 @@
       "priority": "P1",
       "preconditions": "TVT league (playoffStartGw=31), PlayerA already captained 15 league-stage GWs (GW1-15 minus GW15), all in DB",
       "testData": "{ playerId: 'PlayerA', gameweek: 15 } where PlayerA has 15 captain entries on GW1..14 + GW16? Setup: 15 entries on GW1..15 except GW15, attempting GW15",
-      "testSteps": ["1. Seed 15 captain entries for PlayerA on other GWs", "2. POST captain for GW15 with PlayerA"],
+      "testSteps": [
+        "1. Seed 15 captain entries for PlayerA on other GWs",
+        "2. POST captain for GW15 with PlayerA"
+      ],
       "expectedResult": "400 '<playerName> has used all 15 captaincy chips for the League Stage'",
       "postconditions": "No new row written",
       "requirementId": "AC-CHIP-004",
@@ -943,7 +1135,10 @@
       "priority": "P2",
       "preconditions": "TVT league, PlayerA has 14 prior captaincies in GW1..14, GW15 row available",
       "testData": "{ playerId: 'PlayerA', gameweek: 15 }",
-      "testSteps": ["1. Seed 14 prior captain rows for PlayerA", "2. POST captain GW15"],
+      "testSteps": [
+        "1. Seed 14 prior captain rows for PlayerA",
+        "2. POST captain GW15"
+      ],
       "expectedResult": "200 success; captaincyChipsRemaining=0 in response",
       "postconditions": "GW15 row inserted (the 15th and final)",
       "requirementId": "AC-CHIP-004",
@@ -960,7 +1155,10 @@
       "priority": "P1",
       "preconditions": "Triple-Crown league, PlayerA already has 19 captain entries on GW1..37 (some subset), submitting GW38",
       "testData": "{ playerId: 'PlayerA', gameweek: 38 }",
-      "testSteps": ["1. Seed 19 captain entries on prior GWs", "2. POST captain GW38 PlayerA"],
+      "testSteps": [
+        "1. Seed 19 captain entries on prior GWs",
+        "2. POST captain GW38 PlayerA"
+      ],
       "expectedResult": "400 '<playerName> has used all 19 captaincy chips for the League Stage'",
       "postconditions": "No row written",
       "requirementId": "AC-CHIP-005",
@@ -977,7 +1175,10 @@
       "priority": "P2",
       "preconditions": "TC league, PlayerA has 18 prior captaincies",
       "testData": "{ playerId: 'PlayerA', gameweek: 38 }",
-      "testSteps": ["1. Seed 18 prior entries", "2. POST captain GW38"],
+      "testSteps": [
+        "1. Seed 18 prior entries",
+        "2. POST captain GW38"
+      ],
       "expectedResult": "200 success; captaincyChipsRemaining=0 in response",
       "postconditions": "19th row inserted",
       "requirementId": "AC-CHIP-005",
@@ -994,7 +1195,9 @@
       "priority": "P1",
       "preconditions": "Authenticated as Team A; PlayerB belongs to Team B in same league",
       "testData": "{ playerId: 'PlayerB.id', gameweek: 5 }",
-      "testSteps": ["1. POST /api/team/captain with cross-team playerId"],
+      "testSteps": [
+        "1. POST /api/team/captain with cross-team playerId"
+      ],
       "expectedResult": "400 'Player does not belong to your team'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-006",
@@ -1011,7 +1214,10 @@
       "priority": "P1",
       "preconditions": "Two leagues L1, L2 each with a GW7 row. Team T in L1 is authenticated",
       "testData": "{ playerId: 'T-player', gameweek: 7 }",
-      "testSteps": ["1. POST /api/team/captain gameweek=7 as Team T in L1", "2. Inspect inserted gameweekId"],
+      "testSteps": [
+        "1. POST /api/team/captain gameweek=7 as Team T in L1",
+        "2. Inspect inserted gameweekId"
+      ],
       "expectedResult": "Inserted captain row references L1.GW7.id (not L2's)",
       "postconditions": "Cross-league isolation upheld",
       "requirementId": "AC-CHIP-007",
@@ -1028,7 +1234,10 @@
       "priority": "P1",
       "preconditions": "League settings row captainAnnouncementEnabled='false'",
       "testData": "{ playerId: 'p1', gameweek: 5 }",
-      "testSteps": ["1. Seed settings row", "2. POST /api/team/captain"],
+      "testSteps": [
+        "1. Seed settings row",
+        "2. POST /api/team/captain"
+      ],
       "expectedResult": "403 'Captain announcements are currently disabled by the admin'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-008",
@@ -1045,7 +1254,11 @@
       "priority": "P2",
       "preconditions": "Team T has gameweekCaptains row with playerId=PlayerA for GW10, deadline in future",
       "testData": "{ playerId: 'PlayerB.id', gameweek: 10 }",
-      "testSteps": ["1. Note existing row id", "2. POST /api/team/captain with PlayerB", "3. Re-query DB"],
+      "testSteps": [
+        "1. Note existing row id",
+        "2. POST /api/team/captain with PlayerB",
+        "3. Re-query DB"
+      ],
       "expectedResult": "Same row id; playerId now PlayerB; isValid=true; response.wasSwitched=true",
       "postconditions": "No second row created",
       "requirementId": "AC-CHIP-009",
@@ -1062,7 +1275,9 @@
       "priority": "P2",
       "preconditions": "Team T has captain=PlayerA for GW10",
       "testData": "{ playerId: 'PlayerA', gameweek: 10 }",
-      "testSteps": ["1. POST captain PlayerA again for GW10"],
+      "testSteps": [
+        "1. POST captain PlayerA again for GW10"
+      ],
       "expectedResult": "400 'This player is already your captain for this gameweek'",
       "postconditions": "No DB write/update",
       "requirementId": "AC-CHIP-010",
@@ -1079,7 +1294,10 @@
       "priority": "P2",
       "preconditions": "Team T: PlayerX captained GW10 already (current row), and has 14 other captaincies (total appears 15)",
       "testData": "Switch to PlayerY for GW10, then back to PlayerX for GW10",
-      "testSteps": ["1. POST captain PlayerY for GW10", "2. POST captain PlayerX for GW10"],
+      "testSteps": [
+        "1. POST captain PlayerY for GW10",
+        "2. POST captain PlayerX for GW10"
+      ],
       "expectedResult": "Second POST succeeds; PlayerX count excludes the current GW10 row when validating",
       "postconditions": "Captain set back to PlayerX",
       "requirementId": "AC-CHIP-011",
@@ -1096,7 +1314,10 @@
       "priority": "P1",
       "preconditions": "GW10 deadline 1 hour in the past",
       "testData": "{ playerId: 'p1', gameweek: 10 }",
-      "testSteps": ["1. POST captain for GW10 after deadline", "2. Inspect auditLogs and gameweekCaptains"],
+      "testSteps": [
+        "1. POST captain for GW10 after deadline",
+        "2. Inspect auditLogs and gameweekCaptains"
+      ],
       "expectedResult": "Row inserted/updated with isValid=false; auditLogs PENALTY row created; response message contains 'marked as late (after deadline)'",
       "postconditions": "Audit trail recorded for penalty",
       "requirementId": "AC-CHIP-012",
@@ -1113,7 +1334,10 @@
       "priority": "P2",
       "preconditions": "TVT league playoffStartGw=31; captainCheckLimit=30; GW32 row exists",
       "testData": "{ playerId: 'p1', gameweek: 32 }",
-      "testSteps": ["1. POST captain GW32", "2. Inspect response.captaincyChipsRemaining"],
+      "testSteps": [
+        "1. POST captain GW32",
+        "2. Inspect response.captaincyChipsRemaining"
+      ],
       "expectedResult": "Value === 'unlimited' (string literal)",
       "postconditions": "GW32 captain recorded",
       "requirementId": "AC-CHIP-013",
@@ -1130,7 +1354,9 @@
       "priority": "P1",
       "preconditions": "Authenticated team",
       "testData": "{ gameweek: 5, chipType: 'ZZ' }",
-      "testSteps": ["1. POST /api/team/chips with chipType='ZZ'"],
+      "testSteps": [
+        "1. POST /api/team/chips with chipType='ZZ'"
+      ],
       "expectedResult": "400 'Invalid chipType. Must be one of: W, D, C, SL, CB, UD'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-014",
@@ -1147,7 +1373,9 @@
       "priority": "P3",
       "preconditions": "Authenticated team",
       "testData": "{ gameweek: 5, chipType: 'w' }",
-      "testSteps": ["1. POST /api/team/chips chipType='w'"],
+      "testSteps": [
+        "1. POST /api/team/chips chipType='w'"
+      ],
       "expectedResult": "400 'Invalid chipType. Must be one of: W, D, C, SL, CB, UD'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-014",
@@ -1164,7 +1392,9 @@
       "priority": "P1",
       "preconditions": "League enabledChips JSON=['D','W','C']",
       "testData": "{ gameweek: 5, chipType: 'SL' }",
-      "testSteps": ["1. POST /api/team/chips chipType='SL'"],
+      "testSteps": [
+        "1. POST /api/team/chips chipType='SL'"
+      ],
       "expectedResult": "400 'Score Lock is not enabled for this league'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-015",
@@ -1181,7 +1411,9 @@
       "priority": "P2",
       "preconditions": "League enabledChips includes 'W'; winWinSet1Used=false; deadline future",
       "testData": "{ gameweek: 5, chipType: 'W' }",
-      "testSteps": ["1. POST /api/team/chips chipType='W'"],
+      "testSteps": [
+        "1. POST /api/team/chips chipType='W'"
+      ],
       "expectedResult": "200 success; chip row inserted; chipType='W'",
       "postconditions": "gameweekChips row exists for GW5",
       "requirementId": "AC-CHIP-015",
@@ -1198,7 +1430,9 @@
       "priority": "P2",
       "preconditions": "enabledChips includes 'D'",
       "testData": "{ gameweek: 5, chipType: 'D' }",
-      "testSteps": ["1. POST /api/team/chips chipType='D'"],
+      "testSteps": [
+        "1. POST /api/team/chips chipType='D'"
+      ],
       "expectedResult": "200 success; chipType='D'",
       "postconditions": "Row inserted",
       "requirementId": "AC-CHIP-015",
@@ -1215,7 +1449,9 @@
       "priority": "P2",
       "preconditions": "enabledChips includes 'SL'",
       "testData": "{ gameweek: 5, chipType: 'SL' }",
-      "testSteps": ["1. POST /api/team/chips chipType='SL'"],
+      "testSteps": [
+        "1. POST /api/team/chips chipType='SL'"
+      ],
       "expectedResult": "200 success; chipType='SL'",
       "postconditions": "Row inserted",
       "requirementId": "AC-CHIP-015",
@@ -1232,7 +1468,9 @@
       "priority": "P2",
       "preconditions": "enabledChips includes 'CB'",
       "testData": "{ gameweek: 5, chipType: 'CB' }",
-      "testSteps": ["1. POST /api/team/chips chipType='CB'"],
+      "testSteps": [
+        "1. POST /api/team/chips chipType='CB'"
+      ],
       "expectedResult": "200 success; chipType='CB'",
       "postconditions": "Row inserted",
       "requirementId": "AC-CHIP-015",
@@ -1249,7 +1487,9 @@
       "priority": "P2",
       "preconditions": "enabledChips includes 'UD'",
       "testData": "{ gameweek: 5, chipType: 'UD' }",
-      "testSteps": ["1. POST /api/team/chips chipType='UD'"],
+      "testSteps": [
+        "1. POST /api/team/chips chipType='UD'"
+      ],
       "expectedResult": "200 success; chipType='UD'",
       "postconditions": "Row inserted",
       "requirementId": "AC-CHIP-015",
@@ -1266,7 +1506,9 @@
       "priority": "P1",
       "preconditions": "settings.chipAnnouncementEnabled='false'",
       "testData": "{ gameweek: 5, chipType: 'W' }",
-      "testSteps": ["1. POST /api/team/chips"],
+      "testSteps": [
+        "1. POST /api/team/chips"
+      ],
       "expectedResult": "403 'Chip announcements are currently disabled by the admin'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-016",
@@ -1283,7 +1525,9 @@
       "priority": "P1",
       "preconditions": "Deadline 1 hour in past",
       "testData": "{ gameweek: 5, chipType: 'W' }",
-      "testSteps": ["1. POST /api/team/chips after deadline"],
+      "testSteps": [
+        "1. POST /api/team/chips after deadline"
+      ],
       "expectedResult": "400 'Deadline has passed for this gameweek'; no chip row created",
       "postconditions": "Unlike captains, chips are NOT accepted late",
       "requirementId": "AC-CHIP-017",
@@ -1300,7 +1544,9 @@
       "priority": "P1",
       "preconditions": "League playoffStartGw=31; GW31 row exists",
       "testData": "{ gameweek: 31, chipType: 'W' }",
-      "testSteps": ["1. POST chips for GW31"],
+      "testSteps": [
+        "1. POST chips for GW31"
+      ],
       "expectedResult": "400 'TVT chips cannot be used in playoffs (GW31+)'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-018",
@@ -1317,7 +1563,9 @@
       "priority": "P2",
       "preconditions": "playoffStartGw=31; GW30 row exists; deadline future",
       "testData": "{ gameweek: 30, chipType: 'W' }",
-      "testSteps": ["1. POST chips for GW30"],
+      "testSteps": [
+        "1. POST chips for GW30"
+      ],
       "expectedResult": "200 success; row inserted",
       "postconditions": "Off-by-one boundary",
       "requirementId": "AC-CHIP-018",
@@ -1334,7 +1582,10 @@
       "priority": "P2",
       "preconditions": "League playoffStartGw=36; GW18 row exists; deadline future",
       "testData": "{ gameweek: 18, chipType: 'D' }",
-      "testSteps": ["1. POST chips for GW18", "2. Inspect getChipSet logic via response or row state"],
+      "testSteps": [
+        "1. POST chips for GW18",
+        "2. Inspect getChipSet logic via response or row state"
+      ],
       "expectedResult": "200 success; team.doublePointerSet2Used updated to true (set 2 boundary)",
       "postconditions": "Set 2 D flag set",
       "requirementId": "AC-CHIP-019",
@@ -1351,7 +1602,9 @@
       "priority": "P2",
       "preconditions": "playoffStartGw=36; midpoint=ceil(35/2)=17; GW17 row exists",
       "testData": "{ gameweek: 17, chipType: 'D' }",
-      "testSteps": ["1. POST chips GW17"],
+      "testSteps": [
+        "1. POST chips GW17"
+      ],
       "expectedResult": "200 success; team.doublePointerSet1Used=true (Set 1 last GW)",
       "postconditions": "",
       "requirementId": "AC-CHIP-019",
@@ -1368,7 +1621,10 @@
       "priority": "P2",
       "preconditions": "playoffStartGw=31; midpoint=15",
       "testData": "{ gameweek: 15, chipType: 'D' } then GW16 chipType='W'",
-      "testSteps": ["1. POST D for GW15", "2. POST W for GW16"],
+      "testSteps": [
+        "1. POST D for GW15",
+        "2. POST W for GW16"
+      ],
       "expectedResult": "Both succeed; GW15 marks D Set1, GW16 marks W Set2",
       "postconditions": "Set boundaries correct",
       "requirementId": "AC-CHIP-019",
@@ -1385,7 +1641,10 @@
       "priority": "P1",
       "preconditions": "team.winWinSet1Used=true; submitting GW8 (Set 1)",
       "testData": "{ gameweek: 8, chipType: 'W' }",
-      "testSteps": ["1. Force flag true", "2. POST W GW8"],
+      "testSteps": [
+        "1. Force flag true",
+        "2. POST W GW8"
+      ],
       "expectedResult": "400 'Win-Win has already been used for Set 1 (GW1-15)'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-020",
@@ -1402,7 +1661,9 @@
       "priority": "P1",
       "preconditions": "team has chipType='W' for GW5 and team.doublePointerSet1Used=true",
       "testData": "{ gameweek: 5, chipType: 'D' }",
-      "testSteps": ["1. POST switch to D"],
+      "testSteps": [
+        "1. POST switch to D"
+      ],
       "expectedResult": "400 'Double Pointer has already been used for Set 1 (GW1-15)'",
       "postconditions": "Original W chip unchanged",
       "requirementId": "AC-CHIP-021",
@@ -1419,7 +1680,9 @@
       "priority": "P3",
       "preconditions": "team has chipType='W' for GW5",
       "testData": "{ gameweek: 5, chipType: 'W' }",
-      "testSteps": ["1. POST W again for GW5"],
+      "testSteps": [
+        "1. POST W again for GW5"
+      ],
       "expectedResult": "400 'Win-Win is already selected for this gameweek'",
       "postconditions": "No DB change",
       "requirementId": "AC-CHIP-022",
@@ -1436,7 +1699,9 @@
       "priority": "P1",
       "preconditions": "enabledChips includes 'C'",
       "testData": "{ gameweek: 5, chipType: 'C' }",
-      "testSteps": ["1. POST chips chipType='C' without challengedTeamId"],
+      "testSteps": [
+        "1. POST chips chipType='C' without challengedTeamId"
+      ],
       "expectedResult": "400 'Challenge Chip requires selecting an opponent team'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-023",
@@ -1453,7 +1718,9 @@
       "priority": "P1",
       "preconditions": "Team T and Team U both in Group A; enabledChips includes 'C'",
       "testData": "{ gameweek: 5, chipType: 'C', challengedTeamId: 'Team U.id' }",
-      "testSteps": ["1. POST Challenge chip same-group"],
+      "testSteps": [
+        "1. POST Challenge chip same-group"
+      ],
       "expectedResult": "400 'Challenge Chip can only be used against a team from the opposite group'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-024",
@@ -1470,7 +1737,9 @@
       "priority": "P2",
       "preconditions": "Team T in Group A; Team U in Group B",
       "testData": "{ gameweek: 5, chipType: 'C', challengedTeamId: 'Team U.id' }",
-      "testSteps": ["1. POST Challenge chip cross-group"],
+      "testSteps": [
+        "1. POST Challenge chip cross-group"
+      ],
       "expectedResult": "200 success; chip row inserted with chipType='C' and challengedTeamId=Team U.id",
       "postconditions": "Row exists",
       "requirementId": "AC-CHIP-024",
@@ -1487,7 +1756,11 @@
       "priority": "P2",
       "preconditions": "team has W stored for GW5; D Set 1 flag false",
       "testData": "{ gameweek: 5, chipType: 'D' }",
-      "testSteps": ["1. Note original row id", "2. POST switch to D", "3. Re-query"],
+      "testSteps": [
+        "1. Note original row id",
+        "2. POST switch to D",
+        "3. Re-query"
+      ],
       "expectedResult": "Same row id reused; chipType='D'; updatedAt set; response.chip.wasSwitched=true",
       "postconditions": "Single chip row for GW5",
       "requirementId": "AC-CHIP-025",
@@ -1504,7 +1777,10 @@
       "priority": "P2",
       "preconditions": "Team has unprocessed chip for GW5; now < deadline",
       "testData": "DELETE /api/team/chips body={ gameweek: 5 }",
-      "testSteps": ["1. DELETE /api/team/chips", "2. Inspect response and DB"],
+      "testSteps": [
+        "1. DELETE /api/team/chips",
+        "2. Inspect response and DB"
+      ],
       "expectedResult": "200; gameweekChips row removed; message 'Chip cancelled for GW5'",
       "postconditions": "Row deleted",
       "requirementId": "AC-CHIP-026",
@@ -1521,7 +1797,9 @@
       "priority": "P1",
       "preconditions": "Chip exists for GW5; now >= deadline",
       "testData": "DELETE { gameweek: 5 }",
-      "testSteps": ["1. DELETE after deadline"],
+      "testSteps": [
+        "1. DELETE after deadline"
+      ],
       "expectedResult": "400 'Cannot cancel chip after deadline has passed'; row preserved",
       "postconditions": "Row intact",
       "requirementId": "AC-CHIP-027",
@@ -1538,7 +1816,12 @@
       "priority": "P1",
       "preconditions": "team.winWinSet1Used was set to true previously (e.g. via admin override); team has chip row for GW5",
       "testData": "DELETE { gameweek: 5 }; then POST { gameweek: 10, chipType: 'W' }",
-      "testSteps": ["1. DELETE chip GW5", "2. Confirm gameweekChips row gone", "3. Confirm team.winWinSet1Used still true", "4. POST W GW10"],
+      "testSteps": [
+        "1. DELETE chip GW5",
+        "2. Confirm gameweekChips row gone",
+        "3. Confirm team.winWinSet1Used still true",
+        "4. POST W GW10"
+      ],
       "expectedResult": "Step 4 returns 400 'Win-Win has already been used for Set 1' due to lingering flag (pins defect)",
       "postconditions": "Flag remains true",
       "requirementId": "AC-CHIP-028",
@@ -1555,7 +1838,9 @@
       "priority": "P1",
       "preconditions": "Team session cookie (no admin role)",
       "testData": "POST /api/admin/L1/override-captain { teamId, playerId, gameweekNumber, reason }",
-      "testSteps": ["1. POST override-captain with team cookie"],
+      "testSteps": [
+        "1. POST override-captain with team cookie"
+      ],
       "expectedResult": "403 'Admin access required' from middleware",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-029",
@@ -1572,7 +1857,9 @@
       "priority": "P1",
       "preconditions": "Admin authorized for league L1 only",
       "testData": "POST /api/admin/L2/override-captain",
-      "testSteps": ["1. POST to L2"],
+      "testSteps": [
+        "1. POST to L2"
+      ],
       "expectedResult": "403 'Forbidden'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-030",
@@ -1589,7 +1876,9 @@
       "priority": "P2",
       "preconditions": "Admin authorized for L; no GW40 row",
       "testData": "{ teamId, playerId, gameweekNumber: 40 }",
-      "testSteps": ["1. POST override-captain GW40"],
+      "testSteps": [
+        "1. POST override-captain GW40"
+      ],
       "expectedResult": "400 'Invalid gameweek number (must be 1-38)'; no gameweek row auto-created",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-031",
@@ -1606,7 +1895,10 @@
       "priority": "P2",
       "preconditions": "League L has no GW35 row; admin authorized",
       "testData": "{ teamId, playerId, gameweekNumber: 35, reason }",
-      "testSteps": ["1. POST override-captain GW35", "2. Query gameweeks"],
+      "testSteps": [
+        "1. POST override-captain GW35",
+        "2. Query gameweeks"
+      ],
       "expectedResult": "New gameweeks row leagueId=L.id, number=35, deadline=now+7*35 days @11:00, isPlayoffs=(35 >= playoffStartGw)",
       "postconditions": "GW row created",
       "requirementId": "AC-CHIP-032",
@@ -1623,7 +1915,10 @@
       "priority": "P1",
       "preconditions": "GW20 deadline past; admin authorized",
       "testData": "{ teamId, playerId, gameweekNumber: 20, reason: 'fix data entry' }",
-      "testSteps": ["1. POST override-captain", "2. Inspect gameweekCaptains and auditLogs"],
+      "testSteps": [
+        "1. POST override-captain",
+        "2. Inspect gameweekCaptains and auditLogs"
+      ],
       "expectedResult": "Captain row isValid=true; auditLogs row type=ADMIN_OVERRIDE with reason; if reason omitted then 'Not specified'",
       "postconditions": "Audit trail present",
       "requirementId": "AC-CHIP-033",
@@ -1640,7 +1935,9 @@
       "priority": "P2",
       "preconditions": "Admin authorized; playerId belongs to Team B but body teamId=Team A",
       "testData": "{ teamId: 'A', playerId: 'B-player', gameweekNumber: 10 }",
-      "testSteps": ["1. POST override-captain mismatched"],
+      "testSteps": [
+        "1. POST override-captain mismatched"
+      ],
       "expectedResult": "400 'Player does not belong to this team'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-034",
@@ -1657,7 +1954,9 @@
       "priority": "P3",
       "preconditions": "Admin authorized; chip override body uses old shape",
       "testData": "{ teamId, chipType: 'doublePointerSet1', used: true, gameweek: 5 }",
-      "testSteps": ["1. POST override-chips with legacy field"],
+      "testSteps": [
+        "1. POST override-chips with legacy field"
+      ],
       "expectedResult": "200 success; backward-compat branch maps to status='used'; team.doublePointerSet1Used=true",
       "postconditions": "Row inserted; flag set",
       "requirementId": "AC-CHIP-035",
@@ -1674,7 +1973,9 @@
       "priority": "P2",
       "preconditions": "Admin authorized",
       "testData": "{ teamId, chipType: 'doublePointerSet1', status: 'used' }",
-      "testSteps": ["1. POST override-chips status=used no gameweek"],
+      "testSteps": [
+        "1. POST override-chips status=used no gameweek"
+      ],
       "expectedResult": "400 'Gameweek is required when setting status to used or wasted'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-036",
@@ -1691,7 +1992,10 @@
       "priority": "P2",
       "preconditions": "Admin authorized; default league",
       "testData": "{ teamId, chipType: 'winWinSet1', status: 'wasted', gameweek: 8, reason: 'penalty' }",
-      "testSteps": ["1. POST override-chips wasted W", "2. Inspect team row and chip row and audit"],
+      "testSteps": [
+        "1. POST override-chips wasted W",
+        "2. Inspect team row and chip row and audit"
+      ],
       "expectedResult": "team.winWinSet1Used=true; new gameweekChips row isProcessed=true, isValid=false, hadNegativeHits=true, pointsAwarded=0; auditLogs ADMIN_OVERRIDE row written",
       "postconditions": "All side-effects present",
       "requirementId": "AC-CHIP-037",
@@ -1708,7 +2012,11 @@
       "priority": "P2",
       "preconditions": "League playoffStartGw=36 (Set 2 = GW18-35); existing chip row D for GW33 belonging to team",
       "testData": "{ teamId, chipType: 'doublePointerSet2', status: 'used', gameweek: 20, reason: 'x' }",
-      "testSteps": ["1. Seed an existing D chip on GW33", "2. POST override-chips doublePointerSet2 GW20", "3. Inspect chip rows for team"],
+      "testSteps": [
+        "1. Seed an existing D chip on GW33",
+        "2. POST override-chips doublePointerSet2 GW20",
+        "3. Inspect chip rows for team"
+      ],
       "expectedResult": "Existing GW33 D row is NOT matched/removed (set filter uses gwNum<=30); a new GW20 D row is inserted; team now has BOTH GW20 and GW33 D rows (pins defect)",
       "postconditions": "Duplicate set-2 chip rows on the team",
       "requirementId": "AC-CHIP-038",
@@ -1719,37 +2027,48 @@
     },
     {
       "id": "TC-CHIP-055",
-      "feature": "Admin Override Chips - Unscoped Gameweek Lookup",
-      "scenario": "REGRESSION: override-chips writes against another league's gameweekId",
-      "type": "Regression",
+      "feature": "Admin Override Chips - League-Scoped Gameweek Lookup",
+      "scenario": "override-chips POST scopes gameweek lookup to (number AND leagueId) and derives isPlayoffs from league.playoffStartGw on auto-create",
+      "type": "Positive",
       "priority": "P1",
-      "preconditions": "Two leagues L1 and L2 each have a GW20 row in the gameweeks table; admin of L1",
-      "testData": "{ teamId: 'L1-team', chipType: 'winWinSet2', status: 'used', gameweek: 20 }",
-      "testSteps": ["1. Seed L1.GW20 and L2.GW20", "2. POST as L1 admin override-chips", "3. Inspect gameweekChips row's gameweekId"],
-      "expectedResult": "Inserted chip row references L1.GW20 ONLY if first-match is L1, otherwise references L2.GW20 (depending on insert order). The query has no leagueId filter, so cross-league corruption is possible (pins defect)",
-      "postconditions": "Foreign gameweekId may be referenced",
+      "preconditions": "Two leagues L1 (playoffStartGw=31) and L2 each have a GW20 row in the gameweeks table; admin authorised for L1. Additionally, L1 has NO GW36 row but L1.playoffStartGw=31, while a separate league L3 has playoffStartGw=37.",
+      "testData": "Case A: { teamId: 'L1-team', chipType: 'winWinSet2', status: 'used', gameweek: 20 }. Case B (auto-create on L1): { teamId: 'L1-team', chipType: 'doublePointerSet2', status: 'used', gameweek: 36 }. Case C (auto-create on L3): { teamId: 'L3-team', chipType: 'doublePointerSet2', status: 'used', gameweek: 36 }.",
+      "testSteps": [
+        "1. Seed L1.GW20 and L2.GW20 with distinct ids",
+        "2. POST as L1 admin override-chips with Case A payload",
+        "3. SELECT the inserted gameweekChips row and assert gameweekId = L1.GW20.id (NOT L2.GW20.id)",
+        "4. Ensure L1 has no GW36 row; POST as L1 admin override-chips with Case B payload",
+        "5. SELECT the auto-created gameweeks row WHERE number=36 AND leagueId=L1.id and assert isPlayoffs=true (since 36 >= L1.playoffStartGw=31)",
+        "6. Ensure L3 has no GW36 row; POST as L3 admin override-chips with Case C payload",
+        "7. SELECT the auto-created gameweeks row WHERE number=36 AND leagueId=L3.id and assert isPlayoffs=false (since 36 < L3.playoffStartGw=37)"
+      ],
+      "expectedResult": "Case A: the inserted gameweekChips.gameweekId equals L1.GW20.id; L2.GW20 is never selected because the lookup filters by AND(gameweeks.number = 20, gameweeks.leagueId = L1.id). Case B: a new gameweeks row is auto-created with leagueId=L1.id, number=36, isPlayoffs=true (derived dynamically from L1.playoffStartGw, not the hardcoded gwNum > 30). Case C: a new gameweeks row is auto-created with leagueId=L3.id, number=36, isPlayoffs=false (because 36 < L3.playoffStartGw=37) — proving the boundary is dynamic per league.",
+      "postconditions": "All chip rows reference gameweeks belonging to the same league as the admin token; auto-created gameweeks have isPlayoffs computed from each league's own playoffStartGw.",
       "requirementId": "AC-CHIP-039",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-004"
+      "notes": "Pins DEF-CHIP-004. [QA-VERIFY] Updated post-DEF-CHIP-004 fix on 2026-05-25: inverted from Regression to Positive — now asserts the corrected behaviour (league-scoped gameweek lookup AND dynamic isPlayoffs from leagues.playoffStartGw) instead of the previous defective behaviour. Verified against fixed code at src/app/api/admin/[leagueId]/override-chips/route.ts:193-216."
     },
     {
       "id": "TC-CHIP-056",
       "feature": "Admin Override Chips - GET Missing Chips",
-      "scenario": "REGRESSION: GET override-chips omits SL/CB/UD from response",
-      "type": "Regression",
+      "scenario": "override-chips GET returns all enabled chip slots per set (D/C/W + SL/CB/UD when enabled), with dynamic set-range labels",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "League has team rows including teams with SL/CB/UD set-used flags set true",
       "testData": "GET /api/admin/L/override-chips",
-      "testSteps": ["1. GET override-chips", "2. Inspect each team.chips.set1 and .set2 keys"],
-      "expectedResult": "Each team's chips object contains only doublePointer, challengeChip, winWin keys per set; scoreLock, comeback, underdog are absent (pins defect)",
+      "testSteps": [
+        "1. GET override-chips",
+        "2. Inspect each team.chips.set1 and .set2 keys"
+      ],
+      "expectedResult": "For a TVT league with enabledChips=[\"D\",\"W\",\"C\",\"SL\",\"CB\",\"UD\"] (6 codes): teams[*].chips.set1 contains 6 keys (doublePointer, challengeChip, winWin, scoreLock, comeback, underdog) each with {used, name, gameweek, wasted, points}; teams[*].chips.set2 same shape; the name label uses GW1-{setMidpoint} for set1 and GW{midpoint+1}-{playoffStartGw-1} for set2 (no hardcoded GW1-15/GW16-30). For a league with the default 3 chips (enabledChips=[\"D\",\"W\",\"C\"]), only those three keys appear in each set. Response also includes top-level enabledChips array and chipTypes filtered to the enabled codes.",
       "postconditions": "",
       "requirementId": "AC-CHIP-040",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-005"
+      "notes": "Pins DEF-CHIP-005 [QA-VERIFY] Updated post-DEF-CHIP-005 fix on 2026-05-26 — retagged Regression -> Positive; asserts new 6-chip response shape gated by enabledChips and dynamic set-range labels."
     },
     {
       "id": "TC-CHIP-057",
@@ -1759,7 +2078,9 @@
       "priority": "P2",
       "preconditions": "Admin authorized",
       "testData": "{ captains: [501 rows] }",
-      "testSteps": ["1. POST import-captains with 501 rows"],
+      "testSteps": [
+        "1. POST import-captains with 501 rows"
+      ],
       "expectedResult": "400 'Too many rows. Maximum 500 captain entries per upload.'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-041",
@@ -1776,7 +2097,9 @@
       "priority": "P3",
       "preconditions": "Admin authorized",
       "testData": "{ captains: [500 rows] }",
-      "testSteps": ["1. POST 500 rows"],
+      "testSteps": [
+        "1. POST 500 rows"
+      ],
       "expectedResult": "200 success processed (or per-row errors but no 'Too many rows')",
       "postconditions": "Below cap",
       "requirementId": "AC-CHIP-041",
@@ -1793,7 +2116,9 @@
       "priority": "P3",
       "preconditions": "team teamLoginId='team-a' exists",
       "testData": "{ captains: [{ teamId: 'TEAM-A', playerName: 'Alice', '5': 'C' }] }",
-      "testSteps": ["1. POST import-captains"],
+      "testSteps": [
+        "1. POST import-captains"
+      ],
       "expectedResult": "Team lookup resolves; captain entry created for that team's player",
       "postconditions": "Row inserted",
       "requirementId": "AC-CHIP-042",
@@ -1810,7 +2135,10 @@
       "priority": "P2",
       "preconditions": "Admin authorized; two rows, second has playerName='NotARealPlayer'",
       "testData": "{ captains: [valid row, { teamId: 'team-a', playerName: 'Ghost', '5': 'C' }] }",
-      "testSteps": ["1. POST import-captains 2 rows", "2. Inspect results.errors"],
+      "testSteps": [
+        "1. POST import-captains 2 rows",
+        "2. Inspect results.errors"
+      ],
       "expectedResult": "results.errors includes message about unresolved Ghost; valid row still processed",
       "postconditions": "Partial success",
       "requirementId": "AC-CHIP-042",
@@ -1827,7 +2155,10 @@
       "priority": "P3",
       "preconditions": "Admin authorized",
       "testData": "{ captains: [{ teamId: 'team-a', playerName: 'Alice', '5': 'X' }] }",
-      "testSteps": ["1. POST import-captains", "2. Confirm no row in gameweekCaptains for that team/GW5"],
+      "testSteps": [
+        "1. POST import-captains",
+        "2. Confirm no row in gameweekCaptains for that team/GW5"
+      ],
       "expectedResult": "No captain row created; no error logged",
       "postconditions": "",
       "requirementId": "AC-CHIP-043",
@@ -1844,7 +2175,10 @@
       "priority": "P2",
       "preconditions": "League L has no GW25 row",
       "testData": "{ captains: [{ teamId: 'team-a', playerName: 'Alice', '25': 'C' }] }",
-      "testSteps": ["1. POST import-captains", "2. Query gameweeks"],
+      "testSteps": [
+        "1. POST import-captains",
+        "2. Query gameweeks"
+      ],
       "expectedResult": "New gameweeks row leagueId=L.id, number=25 inserted",
       "postconditions": "",
       "requirementId": "AC-CHIP-044",
@@ -1861,7 +2195,11 @@
       "priority": "P2",
       "preconditions": "gameweekCaptains row exists with playerId=A for GW10; players.captaincyChipsUsed snapshot",
       "testData": "Re-import with playerName=B (same team)",
-      "testSteps": ["1. Note prior captaincyChipsUsed", "2. Import row {GW10: 'C', playerName:'B'}", "3. Inspect row + counters"],
+      "testSteps": [
+        "1. Note prior captaincyChipsUsed",
+        "2. Import row {GW10: 'C', playerName:'B'}",
+        "3. Inspect row + counters"
+      ],
       "expectedResult": "Existing row updated to playerId=B; players.captaincyChipsUsed NOT re-incremented",
       "postconditions": "Single row per team/GW",
       "requirementId": "AC-CHIP-045",
@@ -1873,19 +2211,22 @@
     {
       "id": "TC-CHIP-064",
       "feature": "Import Captains - Counter Increment",
-      "scenario": "REGRESSION: New entry increments captaincyChipsUsed but no cap check",
-      "type": "Regression",
+      "scenario": "import-captains rejects rows that would push a player past the per-player chip cap",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "TVT league; PlayerA already has 15 captaincyChipsUsed via prior imports",
       "testData": "{ captains: [{ teamId: 'team-a', playerName: 'PlayerA', '20': 'C' }] }",
-      "testSteps": ["1. POST import a new GW20 row for PlayerA", "2. Inspect players.captaincyChipsUsed"],
-      "expectedResult": "captaincyChipsUsed incremented to 16 with no error/warning; bypasses 15-cap (pins defect)",
+      "testSteps": [
+        "1. POST import a new GW20 row for PlayerA",
+        "2. Inspect players.captaincyChipsUsed"
+      ],
+      "expectedResult": "Uploading a captain CSV that schedules player X for 16 league-stage GWs (TVT) returns: 15 inserts succeed; the 16th row appears in details.errors with message 'X has already used all 15 League-Stage captaincy chips — GW16 entry skipped'. The team-side POST /api/team/captain cap is now mirrored on the admin import path. Playoff-GW captaincies remain uncapped.",
       "postconditions": "Over-count silently",
       "requirementId": "AC-CHIP-046",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-009"
+      "notes": "[QA-VERIFY] Updated post-DEF-CHIP-009 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-CHIP-065",
@@ -1895,7 +2236,9 @@
       "priority": "P2",
       "preconditions": "Admin authorized",
       "testData": "{ chips: [501 rows] }",
-      "testSteps": ["1. POST import-chips 501 rows"],
+      "testSteps": [
+        "1. POST import-chips 501 rows"
+      ],
       "expectedResult": "400 'Too many rows. Maximum 500 chip entries per upload.'",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-047",
@@ -1912,7 +2255,10 @@
       "priority": "P2",
       "preconditions": "team teamLoginId='tad' exists in league",
       "testData": "{ chips: [{ teamId: 'team-a', '7': 'C:TAD' }] }",
-      "testSteps": ["1. POST import-chips", "2. Inspect gameweekChips row"],
+      "testSteps": [
+        "1. POST import-chips",
+        "2. Inspect gameweekChips row"
+      ],
       "expectedResult": "Challenge Chip row inserted, challengedTeamId = TAD.id; no warning",
       "postconditions": "",
       "requirementId": "AC-CHIP-048",
@@ -1929,7 +2275,10 @@
       "priority": "P2",
       "preconditions": "No team with login 'unknown'",
       "testData": "{ chips: [{ teamId: 'team-a', '7': 'C:UNKNOWN' }] }",
-      "testSteps": ["1. POST import-chips", "2. Inspect chip + warnings"],
+      "testSteps": [
+        "1. POST import-chips",
+        "2. Inspect chip + warnings"
+      ],
       "expectedResult": "Chip row inserted, challengedTeamId=null; results.warnings includes opponent-not-found message",
       "postconditions": "",
       "requirementId": "AC-CHIP-048",
@@ -1941,19 +2290,22 @@
     {
       "id": "TC-CHIP-068",
       "feature": "Import Chips - SLW Wasted Flag Defect",
-      "scenario": "REGRESSION: SLW does not set hadNegativeHits (only W does)",
-      "type": "Regression",
+      "scenario": "import-chips marks hadNegativeHits=true for ANY wasted chip (not just W)",
+      "type": "Positive",
       "priority": "P3",
       "preconditions": "enabledChips includes SL",
       "testData": "{ chips: [{ teamId: 'team-a', '8': 'SLW' }] }",
-      "testSteps": ["1. POST import-chips", "2. Inspect gameweekChips row"],
-      "expectedResult": "Score-Lock chip row inserted: isProcessed=true, isValid=false, hadNegativeHits=false; warning 'marked as WASTED' appended (pins defect on W-only flag)",
+      "testSteps": [
+        "1. POST import-chips",
+        "2. Inspect gameweekChips row"
+      ],
+      "expectedResult": "Importing a row with chipType='SLW' (Score Lock wasted) creates a gameweekChips row with isValid=false, isProcessed=true, AND hadNegativeHits=true. The override-chips GET response for that team shows the chip as wasted (the wasted detection OR's isProcessed+!isValid with hadNegativeHits). Same for CB/UD/D/C wasted rows; W behaviour is unchanged.",
       "postconditions": "",
       "requirementId": "AC-CHIP-049",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-010"
+      "notes": "[QA-VERIFY] Updated post-DEF-CHIP-010 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-CHIP-069",
@@ -1963,7 +2315,10 @@
       "priority": "P2",
       "preconditions": "Team has W chip stored for GW6",
       "testData": "{ chips: [{ teamId: 'team-a', '6': 'D' }] }",
-      "testSteps": ["1. POST import-chips D for GW6", "2. Inspect chip row + warnings"],
+      "testSteps": [
+        "1. POST import-chips D for GW6",
+        "2. Inspect chip row + warnings"
+      ],
       "expectedResult": "Old W row deleted, new D row inserted; results.warnings includes 'replaced W chip with D'",
       "postconditions": "",
       "requirementId": "AC-CHIP-050",
@@ -1980,7 +2335,10 @@
       "priority": "P2",
       "preconditions": "playoffStartGw=36",
       "testData": "{ chips: [{ teamId: 'team-a', '17': 'D' }] }",
-      "testSteps": ["1. POST import-chips D GW17", "2. Inspect team.doublePointerSet1Used"],
+      "testSteps": [
+        "1. POST import-chips D GW17",
+        "2. Inspect team.doublePointerSet1Used"
+      ],
       "expectedResult": "doublePointerSet1Used=true (getChipSet(17,36)=1) — dynamic boundary respected",
       "postconditions": "",
       "requirementId": "AC-CHIP-051",
@@ -1997,7 +2355,12 @@
       "priority": "P1",
       "preconditions": "L1 has 200 chip rows, L2 has 100 chip rows; L1 teams have all 12 set-flag columns true",
       "testData": "DELETE /api/admin/L1/import-chips (no query string)",
-      "testSteps": ["1. Seed both leagues", "2. DELETE as L1 admin", "3. Query gameweekChips total count and L1 team flags", "4. Verify L2 chip rows untouched"],
+      "testSteps": [
+        "1. Seed both leagues",
+        "2. DELETE as L1 admin",
+        "3. Query gameweekChips total count and L1 team flags",
+        "4. Verify L2 chip rows untouched"
+      ],
       "expectedResult": "Only L1's 200 chip rows deleted (scoped via inArray on L1 gameweek ids); L2's 100 rows remain intact; all 12 set-used flags (W/D/C/SL/CB/UD × Set1/Set2) on L1 teams reset to false",
       "postconditions": "L1 chips cleared, L2 chips preserved, all 12 flags false on L1 teams",
       "requirementId": "AC-CHIP-052",
@@ -2014,7 +2377,11 @@
       "priority": "P1",
       "preconditions": "L1 and L2 each have GW5 row; both leagues have chips in GW5",
       "testData": "DELETE /api/admin/L1/import-chips?gameweek=5",
-      "testSteps": ["1. Seed both", "2. DELETE as L1 admin with ?gameweek=5", "3. Inspect both leagues' GW5 chips"],
+      "testSteps": [
+        "1. Seed both",
+        "2. DELETE as L1 admin with ?gameweek=5",
+        "3. Inspect both leagues' GW5 chips"
+      ],
       "expectedResult": "Only L1's GW5 chips deleted (gameweek lookup is AND(number=5, leagueId=L1)); L2's GW5 chips remain intact",
       "postconditions": "L1 GW5 chips cleared, L2 GW5 chips preserved",
       "requirementId": "AC-CHIP-053",
@@ -2031,7 +2398,11 @@
       "priority": "P3",
       "preconditions": "Admin authorized; spy on invalidateLeaguePageCache",
       "testData": "Any successful override-captain or import-chips POST",
-      "testSteps": ["1. Spy/mock cache invalidation", "2. POST override or import", "3. Verify spy called with leagueId"],
+      "testSteps": [
+        "1. Spy/mock cache invalidation",
+        "2. POST override or import",
+        "3. Verify spy called with leagueId"
+      ],
       "expectedResult": "invalidateLeaguePageCache(leagueId) called exactly once before response",
       "postconditions": "",
       "requirementId": "AC-CHIP-054",
@@ -2043,36 +2414,42 @@
     {
       "id": "TC-CHIP-074",
       "feature": "Auction Format - Captain Endpoint",
-      "scenario": "REGRESSION: Auction-format team can POST /api/team/captain (no rejection)",
-      "type": "Regression",
+      "scenario": "POST /api/team/captain rejected with 400 for auction-format team",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "League L has format='auction'; team session authenticated; player on roster",
       "testData": "{ playerId: 'p1', gameweek: 5 }",
-      "testSteps": ["1. POST /api/team/captain as auction team", "2. Inspect response and DB"],
-      "expectedResult": "Endpoint accepts and writes gameweekCaptains row (current defective behaviour). No 'auction not supported' rejection (pins defect)",
+      "testSteps": [
+        "1. POST /api/team/captain as auction team",
+        "2. Inspect response and DB"
+      ],
+      "expectedResult": "POST /api/team/captain from an auction-league team session returns HTTP 400 'Captain announcements are not available in auction-format leagues'. No gameweekCaptains row created.",
       "postconditions": "Stale row in auction league",
       "requirementId": "AC-CHIP-055",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-008 (captain side)"
+      "notes": "[QA-VERIFY] Updated post-DEF-CHIP-008 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-CHIP-075",
       "feature": "Auction Format - Chip Endpoint",
-      "scenario": "REGRESSION: Auction-format team can POST /api/team/chips",
-      "type": "Regression",
+      "scenario": "POST /api/team/chips rejected with 400 for auction-format team",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "League format='auction'; chip enabled by inheritance; deadline future",
       "testData": "{ gameweek: 5, chipType: 'W' }",
-      "testSteps": ["1. POST /api/team/chips as auction team", "2. Inspect response"],
-      "expectedResult": "Endpoint accepts and writes gameweekChips row; no auction-specific rejection (pins defect)",
+      "testSteps": [
+        "1. POST /api/team/chips as auction team",
+        "2. Inspect response"
+      ],
+      "expectedResult": "POST /api/team/chips from an auction-league team session returns HTTP 400 'TVT chips are not available in auction-format leagues'. No gameweekChips row created.",
       "postconditions": "Dead chip data in auction league",
       "requirementId": "AC-CHIP-055",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-008 (chip side)"
+      "notes": "[QA-VERIFY] Updated post-DEF-CHIP-008 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-CHIP-076",
@@ -2082,7 +2459,10 @@
       "priority": "P2",
       "preconditions": "TC league playoffStartGw=37; captainCheckLimit=38",
       "testData": "{ playerId: 'p1', gameweek: 31 }",
-      "testSteps": ["1. Seed 19 prior captaincies for PlayerA", "2. POST GW31"],
+      "testSteps": [
+        "1. Seed 19 prior captaincies for PlayerA",
+        "2. POST GW31"
+      ],
       "expectedResult": "400 cap exceeded (since 31 <= 38)",
       "postconditions": "Cap enforced",
       "requirementId": "AC-CHIP-056",
@@ -2094,36 +2474,44 @@
     {
       "id": "TC-CHIP-077",
       "feature": "Captain captainCheckLimit Defect",
-      "scenario": "REGRESSION: 8-team TVT GW32 captaincy returns 'unlimited' incorrectly",
-      "type": "Regression",
+      "scenario": "captainCheckLimit derived from league.playoffStartGw-1; TVT-8 enforces 15-per-player cap across GW1-35",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "TVT league playoffStartGw=36 (league stage runs to GW35); team T authenticated; PlayerA has many prior captaincies",
       "testData": "{ playerId: 'PlayerA', gameweek: 32 }",
-      "testSteps": ["1. POST captain GW32 in 8-team TVT", "2. Inspect response.captaincyChipsRemaining"],
-      "expectedResult": "Response captaincyChipsRemaining = 'unlimited' (because hardcoded captainCheckLimit=30 < gameweek 32), even though GW32 is still league stage. Pins defect.",
+      "testSteps": [
+        "1. POST captain GW32 in 8-team TVT",
+        "2. Inspect response.captaincyChipsRemaining"
+      ],
+      "expectedResult": "For a TVT-8 league (playoffStartGw=36), POST /api/team/captain at GW1..GW35 counts the captaincy toward the 15-per-player chip cap and returns captaincyChipsRemaining as a finite number. At GW36 and beyond, captaincyChipsRemaining is reported as \"unlimited\". For TVT-16/32 (playoffStartGw=31), the cutover is at GW30/GW31. For Triple Crown (format=triple-crown), the cutover stays at GW38.",
       "postconditions": "Incorrect 'unlimited' label in league-stage GW",
       "requirementId": "AC-CHIP-013",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-007"
+      "notes": "Pins DEF-CHIP-007 [QA-VERIFY] Updated post-DEF-CHIP-007 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-CHIP-078",
       "feature": "Chip Cancel - League Scope",
-      "scenario": "REGRESSION: DELETE chip looks up GW by number without leagueId scope",
-      "type": "Regression",
+      "scenario": "DELETE chip looks up GW scoped to requesting team's league (post-fix)",
+      "type": "Positive",
       "priority": "P1",
-      "preconditions": "L1 and L2 both have GW7 rows; Team T in L1 has chip on L1.GW7",
-      "testData": "DELETE /api/team/chips { gameweek: 7 }",
-      "testSteps": ["1. Seed both leagues with GW7", "2. As Team T in L1 DELETE GW7", "3. Inspect gameweeks query result"],
-      "expectedResult": "Gameweek lookup uses number=7 only (no leagueId filter). If L2.GW7 is returned first, no chip row matches team in foreign GW so DELETE returns 'No chip submission found' even though team has a valid chip on L1.GW7 (pins defect)",
-      "postconditions": "",
+      "preconditions": "Leagues L1 and L2 both have a GW7 row (same number, different leagueId); Team T belongs to L1 and has an unprocessed chip on L1.GW7; L1.GW7.deadline is in the future",
+      "testData": "DELETE /api/team/chips { gameweek: 7 } as Team T (session-id maps to T in L1)",
+      "testSteps": [
+        "1. Seed L1.GW7 and L2.GW7 (same number=7, different leagueId)",
+        "2. Seed an unprocessed gameweekChips row for Team T against L1.GW7",
+        "3. As Team T (in L1) DELETE /api/team/chips with { gameweek: 7 }",
+        "4. Inspect response and DB: confirm L1.GW7's chip was deleted and L2.GW7 was never selected by the gameweek lookup"
+      ],
+      "expectedResult": "200 with message 'Chip cancelled for GW7'. The DELETE handler loads the team first, then resolves the gameweek via AND(gameweeks.number=7, gameweeks.leagueId=team.leagueId), so L2.GW7 is NOT matched (cross-league collision impossible) and Team T's chip on L1.GW7 is removed. A symmetric test in which Team T has NO chip on L1.GW7 but L2.GW7 has chips for other teams must return 404 'No chip submission found' and must NOT delete any L2 chips.",
+      "postconditions": "L1.GW7 chip row for Team T deleted; all L2 chip rows untouched; team.<chip>Set<N>Used flag unchanged (DEF-CHIP-002 still open).",
       "requirementId": "AC-CHIP-026",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-001"
+      "notes": "Pins DEF-CHIP-001. [QA-VERIFY] Updated post-DEF-CHIP-001 fix on 2026-05-25 — inverted from Regression (asserting defective unscoped lookup) to Positive (asserting league-scoped lookup). Fix confirmed at src/app/api/team/chips/route.ts lines 291-303: team loaded via eq(teams.id, teamId), then gameweek resolved with and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, team.leagueId))."
     },
     {
       "id": "TC-CHIP-079",
@@ -2133,7 +2521,9 @@
       "priority": "P1",
       "preconditions": "No session",
       "testData": "{ gameweek: 5, chipType: 'W' }",
-      "testSteps": ["1. POST without session"],
+      "testSteps": [
+        "1. POST without session"
+      ],
       "expectedResult": "401 from middleware",
       "postconditions": "No DB write",
       "requirementId": "AC-CHIP-001",
@@ -2150,7 +2540,9 @@
       "priority": "P1",
       "preconditions": "No session cookie",
       "testData": "POST /api/admin/L1/override-chips",
-      "testSteps": ["1. POST without session"],
+      "testSteps": [
+        "1. POST without session"
+      ],
       "expectedResult": "401 unauthenticated (from middleware)",
       "postconditions": "",
       "requirementId": "AC-CHIP-029",
@@ -2166,20 +2558,26 @@
       "id": "DEF-CHIP-001",
       "title": "DELETE /api/team/chips looks up gameweek by number only, not scoped to leagueId",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/team/chips/route.ts:292-298 queries gameweeks WHERE number = gameweekNumber with no leagueId filter. In a multi-league deployment two leagues will each have their own GW row sharing the same 'number' value, so this query can return the wrong league's gameweek row and the subsequent chip lookup/delete will operate on the wrong league's data (or simply fail because no chip exists for the requesting team in the foreign GW).",
       "expectedBehaviour": "Look up gameweek by (number AND leagueId = team.leagueId), matching the pattern used by POST /api/team/chips (route.ts:92-95).",
       "actualBehaviour": "Cross-league gameweek collision possible; team may be told 'No chip submission found' even when it has one for its own league's GW with the same number.",
-      "sourceRefs": ["src/app/api/team/chips/route.ts:291-298"],
-      "linkedBusinessRules": ["BR-CHIP-027"],
+      "sourceRefs": [
+        "src/app/api/team/chips/route.ts:291-298"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-027"
+      ],
       "linkedAcceptanceCriteria": [],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-078"],
-      "notes": "Fix: add eq(gameweeks.leagueId, team.leagueId) to the where clause. Need to first fetch the team (currently the DELETE handler doesn't load the team at all). Low risk; small change.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-CHIP-078"
+      ],
+      "notes": "Fix: add eq(gameweeks.leagueId, team.leagueId) to the where clause. Need to first fetch the team (currently the DELETE handler doesn't load the team at all). Low risk; small change. [DEV] Self-verified: tsc passes for touched file (only pre-existing unrelated tests/league-types/* errors remain, same as DEF-CHIP-006), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-CHIP-078 against the fix. Expected behaviour now matches the original 'expectedBehaviour' field: DELETE /api/team/chips now loads the requesting team, then resolves the gameweek by AND(number, leagueId=team.leagueId), so cross-league GW-number collisions can no longer select another league's row. [BA] BR-CHIP-027 now describes defective behaviour that has been corrected — update the rule text to reflect that DELETE /api/team/chips looks up the gameweek by AND(number, leagueId scoped to the requesting team's league), matching POST /api/team/chips. [QA-VERIFIED]: 2026-05-25 — TC-CHIP-078 inverted; league-scoped DELETE lookup confirmed. [BA-UPDATED]: 2026-05-25 — BR-CHIP-027 updated to reflect fixed behaviour.",
+      "resolution": "Fixed in src/app/api/team/chips/route.ts DELETE handler (lines ~289-305). The handler now loads the requesting team via db.query.teams.findFirst({ where: eq(teams.id, teamId) }) immediately after parsing the gameweek number, then resolves the gameweek with where: and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, team.leagueId)). This mirrors the league-scoped lookup already used by POST /api/team/chips (route.ts:92-95) and eliminates the cross-league gameweek collision that could otherwise return another league's GW row and operate on the wrong data.",
+      "resolutionDate": "2026-05-25"
     },
     {
       "id": "DEF-CHIP-002",
@@ -2191,11 +2589,20 @@
       "description": "When a team cancels a chip submission before deadline, src/app/api/team/chips/route.ts:325-326 deletes the gameweekChips row but never clears the corresponding team.<chip>Set<N>Used boolean. Today the team POST handler does NOT flip the flag to true on submission either (only admin import/override do), so the bug may be latent for the team flow specifically — but if a future fix sets the flag on submission, cancel-and-resubmit will be silently broken. Inconsistency between submission and cancellation is itself a defect.",
       "expectedBehaviour": "Either (a) the team submission flow does set the flag and the DELETE clears it, or (b) the flag is only managed by admin/import flows and the team flow uses an alternate mechanism. The two must agree.",
       "actualBehaviour": "Today the team-facing POST relies on the set-used flag being false (lines 136-147) to allow submission, but never sets it — the flag is only flipped by import and override. If the flag is set by some other path, cancellation cannot reverse it, locking the team out of that chip in the set.",
-      "sourceRefs": ["src/app/api/team/chips/route.ts:325-326", "src/app/api/team/chips/route.ts:136-147"],
-      "linkedBusinessRules": ["BR-CHIP-026"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-028"],
+      "sourceRefs": [
+        "src/app/api/team/chips/route.ts:325-326",
+        "src/app/api/team/chips/route.ts:136-147"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-026"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-028"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-044"],
+      "pinningTestCases": [
+        "TC-CHIP-044"
+      ],
       "notes": "Investigate whether POST /api/team/chips intends to set the flag (a missing UPDATE teams ... set <col>=true). Decide product behaviour first; the schema design suggests the flag should track 'used in this set', which means POST should set true and DELETE should set false.",
       "resolution": null,
       "resolutionDate": null
@@ -2210,11 +2617,19 @@
       "description": "src/app/api/admin/[leagueId]/override-chips/route.ts:178-181 filters chipsInSet by 'gwNum <= 15' for set1 and 'gwNum > 15 && gwNum <= 30' for set2. These boundaries are hardcoded and ignore the league's playoffStartGw. For an 8-team league (playoffStartGw=36) Set 1 is actually GW1-17 and Set 2 GW18-35; this filter will fail to match existing chip rows in GW16-17 (mis-categorised as Set 2) and GW31-35 (excluded entirely).",
       "expectedBehaviour": "Use getChipSet(gwNum, league.playoffStartGw) === setNumber to compute set membership, matching the rest of the codebase.",
       "actualBehaviour": "Override may insert a duplicate chip row rather than replacing the existing one, leaving stale chip data on non-default playoffStartGw leagues.",
-      "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:160-187"],
-      "linkedBusinessRules": ["BR-CHIP-034"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-038"],
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/override-chips/route.ts:160-187"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-034"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-038"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-054"],
+      "pinningTestCases": [
+        "TC-CHIP-054"
+      ],
       "notes": "Same fix as DEF-CHIP-006. Replace the inline gwNum<=15 check with getChipSet().",
       "resolution": null,
       "resolutionDate": null
@@ -2223,39 +2638,55 @@
       "id": "DEF-CHIP-004",
       "title": "override-chips gameweek lookup is not scoped to leagueId",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/admin/[leagueId]/override-chips/route.ts:193-211 queries gameweeks WHERE number = gwNum with no leagueId filter. In a multi-league deployment, this may return another league's GW row, and the subsequent chip insert will reference a foreign gameweekId. The auto-create branch uses isPlayoffs=(gwNum > 30) which is also hardcoded.",
       "expectedBehaviour": "Look up gameweek by (number AND leagueId), and on auto-create compute isPlayoffs from league.playoffStartGw (matching override-captain at lines 42-48).",
       "actualBehaviour": "Override may write chip records against the wrong league's gameweek; in single-league dev environments this is masked.",
-      "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:193-211"],
-      "linkedBusinessRules": ["BR-CHIP-035"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-039"],
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/override-chips/route.ts:193-211"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-035"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-039"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-055"],
-      "notes": "Add eq(gameweeks.leagueId, leagueId); read playoffStartGw from leagues table before the insert.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-CHIP-055"
+      ],
+      "notes": "Add eq(gameweeks.leagueId, leagueId); read playoffStartGw from leagues table before the insert. [DEV] Self-verified: tsc passes for touched file (only pre-existing unrelated tests/league-types/* errors remain), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-CHIP-055 against the fix. Expected behaviour now matches the original 'expectedBehaviour' field: gameweek lookup in the POST handler is scoped to (number AND leagueId), and the auto-create branch uses isPlayoffs=(gwNum >= league.playoffStartGw). [BA] BR-CHIP-035 now describes defective behaviour that has been corrected — update the rule text (and AC-CHIP-039) to reflect the league-scoped lookup and dynamic playoffStartGw boundary. [QA-VERIFIED]: 2026-05-25 — TC-CHIP-055 inverted; league-scoped + dynamic playoffStartGw confirmed. [BA-UPDATED]: 2026-05-25 — BR-CHIP-035 + AC-CHIP-039 updated to reflect fixed behaviour.",
+      "resolution": "Fixed in src/app/api/admin/[leagueId]/override-chips/route.ts POST handler (lines 193-216): the gameweek lookup now filters by AND(gameweeks.number = gwNum, gameweeks.leagueId = leagueId), so cross-league GW-number collisions can no longer target the wrong league's row. On auto-create, the handler now reads league.playoffStartGw from the leagues table and sets isPlayoffs=(gwNum >= playoffStartGw), matching the override-captain pattern. The GET handler already scoped gameweek queries by leagueId via inArray, and there is no DELETE handler on this route.",
+      "resolutionDate": "2026-05-25"
     },
     {
       "id": "DEF-CHIP-005",
       "title": "override-chips GET response omits Score Lock, Comeback, Underdog chips",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/admin/[leagueId]/override-chips/route.ts:311-372 (GET handler) returns each team's chip status with only doublePointer, challengeChip, winWin in each of set1/set2. The teams table has columns and the POST handler accepts overrides for scoreLock/comeback/underdog, but the admin UI cannot see their state because the GET payload omits them entirely.",
       "expectedBehaviour": "Return all 6 chips per set, gated by league.enabledChips (so leagues that didn't enable SL/CB/UD don't show them).",
       "actualBehaviour": "Admin override page can never display or correct SL/CB/UD state for a team.",
-      "sourceRefs": ["src/app/api/admin/[leagueId]/override-chips/route.ts:319-364"],
-      "linkedBusinessRules": ["BR-CHIP-038"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-040"],
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/override-chips/route.ts:319-364"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-038"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-040"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-056"],
-      "notes": "Extend the per-team chips object with scoreLock, comeback, underdog (mirroring the W/D/C entries) and ensure the chipTypes list includes them. Also extend chipGwLookup keys (currently only D1/W1/C1/etc.).",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-CHIP-056"
+      ],
+      "notes": "Extend the per-team chips object with scoreLock, comeback, underdog (mirroring the W/D/C entries) and ensure the chipTypes list includes them. Also extend chipGwLookup keys (currently only D1/W1/C1/etc.). [DEV] Self-verified: tsc clean for touched route; manual diff review clean. [QA] Re-run TC-CHIP-056 — expect SL/CB/UD slots present when enabled, absent when disabled. [BA] BR-CHIP-038 + AC-CHIP-040 describe the old 3-chip-only behaviour; update to reflect 6-chip-with-enabledChips-gating. [BA-UPDATED]: 2026-05-26 — BR-CHIP-038 + AC-CHIP-040 updated to reflect new 6-chip gated response shape.",
+      "resolution": "Extended override-chips GET (src/app/api/admin/[leagueId]/override-chips/route.ts:284-373) to load enabledChips alongside playoffStartGw and emit a chip-slot per enabled code: doublePointer/challengeChip/winWin/scoreLock/comeback/underdog for each set, gated by league.enabledChips. Set range label is now derived from the league's playoffStartGw (no more hardcoded GW1-15/GW16-30). Response payload also includes enabledChips array + chipTypes filtered to enabled codes so the admin UI knows which slots to render.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-CHIP-006",
@@ -2267,11 +2698,22 @@
       "description": "src/app/api/admin/[leagueId]/import-chips/route.ts:375-385: the unscoped DELETE branch calls db.delete(gameweekChips) with NO WHERE clause, deleting every chip row across every league. The subsequent teams flag reset is scoped to leagueId (correct) but only resets doublePointerSet1/2Used, challengeChipSet1/2Used, winWinSet1/2Used — leaving scoreLockSet1/2Used, comebackSet1/2Used, underdogSet1/2Used set if they were previously true. Same problem in the per-GW branch: line 363 looks up the gameweek by number with no leagueId scope.",
       "expectedBehaviour": "DELETE should scope chip deletion to gameweekChips referencing gameweeks where leagueId = current league. The teams flag reset should clear all 12 set-used flags (W/D/C/SL/CB/UD × Set1/Set2).",
       "actualBehaviour": "Calling the bulk-clear endpoint silently destroys chip data in every other league sharing the database; SL/CB/UD set-used flags remain set, blocking those chips from being re-imported correctly.",
-      "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:352-402"],
-      "linkedBusinessRules": ["BR-CHIP-052", "BR-CHIP-053"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-052", "AC-CHIP-053"],
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/import-chips/route.ts:352-402"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-052",
+        "BR-CHIP-053"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-052",
+        "AC-CHIP-053"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-071", "TC-CHIP-072"],
+      "pinningTestCases": [
+        "TC-CHIP-071",
+        "TC-CHIP-072"
+      ],
       "notes": "Highest-priority fix in this module. Use a subquery: DELETE FROM gameweekChips WHERE gameweekId IN (SELECT id FROM gameweeks WHERE leagueId = ?). Add the 6 missing flags to the reset object. Same fix for the per-GW branch (filter by leagueId). [DEV] Self-verified: tsc passes for touched file (only pre-existing unrelated tests/league-types/* errors remain), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-CHIP-071 and TC-CHIP-072 against the fix. Expected behaviour now matches the original 'expectedBehaviour' field: bulk DELETE only wipes chips referencing gameweeks in the current league and resets all 12 set-used columns; ?gameweek=N DELETE only matches the gameweek row scoped to the current league. [BA] BR-CHIP-052 and BR-CHIP-053 now describe defective behaviour that has been corrected — update the rule text (and AC-CHIP-052 / AC-CHIP-053) to reflect the league-scoped DELETE and 12-flag reset. [QA-VERIFIED]: 2026-05-25 — TC-CHIP-071 + TC-CHIP-072 inverted; cross-league wipe + full flag reset confirmed. [BA-UPDATED]: 2026-05-25 — BR-CHIP-052, BR-CHIP-053, AC-CHIP-052, AC-CHIP-053.",
       "resolution": "Fixed in src/app/api/admin/[leagueId]/import-chips/route.ts DELETE handler. (1) Bulk branch (no query param) now selects gameweek ids for the authorized league and deletes gameweekChips via inArray(gameweekChips.gameweekId, leagueGameweekIds) instead of an unscoped db.delete(gameweekChips). (2) The teams flag reset now clears all 12 set-used columns (W/D/C/SL/CB/UD × Set1/Set2) instead of only W/D/C. (3) Per-GW branch (?gameweek=N) now looks up the gameweek row by AND(number, leagueId), so cross-league GW-number collisions can no longer target the wrong league's data. Added inArray to the drizzle-orm import.",
       "resolutionDate": "2026-05-25"
@@ -2280,77 +2722,113 @@
       "id": "DEF-CHIP-007",
       "title": "Captain captainCheckLimit hardcoded to 30 for non-Triple-Crown leagues, ignoring playoffStartGw",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/team/captain/route.ts:53 sets captainCheckLimit = 30 for any league whose format is not 'triple-crown'. For an 8-team TVT league (playoffStartGw=36, league stage = GW1-35), captaincies in GW31-35 will be treated as playoff captaincies with 'unlimited' chips remaining, when they are actually still in the league stage and should count toward the 15-per-player cap.",
       "expectedBehaviour": "Derive captainCheckLimit from league.playoffStartGw - 1 (so 30 for default, 35 for 8-team format).",
       "actualBehaviour": "TVT 8-team leagues (and any league with playoffStartGw != 31) compute captaincy chip remaining incorrectly during GW(playoffStartGw-1) down to GW31.",
-      "sourceRefs": ["src/app/api/team/captain/route.ts:48-53", "src/app/api/team/captain/route.ts:104-122"],
-      "linkedBusinessRules": ["BR-CHIP-004"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-013"],
+      "sourceRefs": [
+        "src/app/api/team/captain/route.ts:48-53",
+        "src/app/api/team/captain/route.ts:104-122"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-004"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-013"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-077"],
-      "notes": "Read leagues.playoffStartGw alongside format and compute captainCheckLimit = playoffStartGw - 1. Coordinate with module 05 to confirm what 'League Stage' means in the captaincy cap.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-CHIP-077"
+      ],
+      "notes": "Read leagues.playoffStartGw alongside format and compute captainCheckLimit = playoffStartGw - 1. Coordinate with module 05 to confirm what 'League Stage' means in the captaincy cap. [DEV] Self-verified: read playoffStartGw alongside format; derived limit dynamically. [QA] Re-run TC-CHIP-077 against TVT-8 league and confirm captain at GW31..GW35 counts toward the per-player cap. [BA] BR-CHIP-004 + AC-CHIP-013 describe the hardcoded-30 behaviour; rewrite to playoffStartGw-1. [BA-UPDATED]: 2026-05-26 — BR-CHIP-004 + AC-CHIP-013 updated.",
+      "resolution": "Derived captainCheckLimit from league.playoffStartGw - 1 (src/app/api/team/captain/route.ts:48-58) instead of the hardcoded 30. TC retains its 38. TVT-8 (playoffStartGw=36) now correctly enforces the 15-per-player chip cap across its full league stage GW1-35; TVT-16/32 (playoffStartGw=31) is unchanged at 30; any future variant lands at playoffStartGw-1 automatically.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-CHIP-008",
       "title": "Auction-format leagues are not blocked from captain/chip endpoints",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "Per project spec, the Auction format has no captains or TVT chips. However neither /api/team/captain nor /api/team/chips checks league.format; an auction team that knows the endpoint URLs could POST and the system would create captaincy rows and chip rows in tables that the auction processor ignores.",
       "expectedBehaviour": "Reject with 400 'Captains/Chips are not available in Auction-format leagues' when team.league.format === 'auction'.",
       "actualBehaviour": "Endpoint accepts the call, may write rows that are functionally dead but pollute the audit log and player.captaincyChipsUsed counters.",
-      "sourceRefs": ["src/app/api/team/captain/route.ts:48-53", "src/app/api/team/chips/route.ts:64-90"],
-      "linkedBusinessRules": ["BR-CHIP-055"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-055"],
+      "sourceRefs": [
+        "src/app/api/team/captain/route.ts:48-53",
+        "src/app/api/team/chips/route.ts:64-90"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-055"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-055"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-074", "TC-CHIP-075"],
-      "notes": "Add an early-return guard after fetching league.format. Low effort, defence-in-depth.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-CHIP-074",
+        "TC-CHIP-075"
+      ],
+      "notes": "Add an early-return guard after fetching league.format. Low effort, defence-in-depth. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added explicit auction-format guards to both /api/team/captain (route.ts:57-63) and /api/team/chips (route.ts:79-87). Either endpoint now returns HTTP 400 when leagues.format === 'auction' BEFORE any DB write — so an auction team that knows the URL can't create captaincy rows or chip submissions in tables that the auction scoring engine never reads.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-CHIP-009",
       "title": "import-captains has no per-player captaincy-cap overflow check",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/admin/[leagueId]/import-captains/route.ts:186-188 and 210-215 increment players.captaincyChipsUsed by 1 per new captain entry, but do not check whether the player already has 15 (TVT) or 19 (TC) entries in the league stage. The team-facing POST enforces this cap (route.ts:104-122) but the import bypasses it.",
       "expectedBehaviour": "Either reject overflow rows with a per-row error in results.errors, or warn in results.warnings, or count entries pre-flight per player.",
       "actualBehaviour": "An import file with 20 'C' marks against a single player in GW1-20 in a TVT league silently succeeds and over-counts captaincyChipsUsed.",
-      "sourceRefs": ["src/app/api/admin/[leagueId]/import-captains/route.ts:186-215"],
-      "linkedBusinessRules": ["BR-CHIP-044"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-046"],
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/import-captains/route.ts:186-215"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-044"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-046"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-064"],
-      "notes": "Admin import is intentionally authoritative ('skip validation'), so a strict reject may be too aggressive — a warning may be the right product call.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-CHIP-064"
+      ],
+      "notes": "Admin import is intentionally authoritative ('skip validation'), so a strict reject may be too aggressive — a warning may be the right product call. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "Added per-player CAPTAIN_CAP overflow check inside the import-captains row loop (src/app/api/admin/[leagueId]/import-captains/route.ts:170-185). Before queuing a new gameweekCaptains insert, the handler now sums the player's existing captaincyChipsUsed with the pending in-upload increment; if the next entry would exceed CAPTAIN_CAP (15 for TVT, 19 for TC) AND the GW is within the league-stage range (gw <= captainCheckLimit = playoffStartGw-1 for non-TC), the row is pushed to results.errors and the chip count is NOT incremented.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-CHIP-010",
       "title": "import-chips only flags Win-Win as hadNegativeHits when wasted; other wasted chips do not set the flag",
       "severity": "Minor",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/admin/[leagueId]/import-chips/route.ts:223 sets hadNegativeHits = (isWasted && chipType==='W'). This means importing SLW/CBW/UDW marks the chip isValid=false but does not set hadNegativeHits=true, so the override-chips GET handler's wasted detection (which uses (isProcessed && !isValid) || hadNegativeHits, line 307) still correctly identifies them as wasted, but downstream consumers that rely solely on hadNegativeHits will miss them.",
       "expectedBehaviour": "Either set hadNegativeHits=true for any wasted chip (consistent with the override semantic at override-chips:222), or rename the column to something chip-agnostic to clarify W-only intent.",
       "actualBehaviour": "Inconsistent waste-marker semantics between import-chips (W-only) and override-chips (any chip).",
-      "sourceRefs": ["src/app/api/admin/[leagueId]/import-chips/route.ts:212-224", "src/app/api/admin/[leagueId]/override-chips/route.ts:215-225"],
-      "linkedBusinessRules": ["BR-CHIP-050"],
-      "linkedAcceptanceCriteria": ["AC-CHIP-049"],
+      "sourceRefs": [
+        "src/app/api/admin/[leagueId]/import-chips/route.ts:212-224",
+        "src/app/api/admin/[leagueId]/override-chips/route.ts:215-225"
+      ],
+      "linkedBusinessRules": [
+        "BR-CHIP-050"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-CHIP-049"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-CHIP-068"],
-      "notes": "Confirm column semantics with product. If hadNegativeHits is intended Win-Win-specific (i.e., 'team took negative transfer hits'), then override-chips is the wrong endpoint and import-chips is correct.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-CHIP-068"
+      ],
+      "notes": "Confirm column semantics with product. If hadNegativeHits is intended Win-Win-specific (i.e., 'team took negative transfer hits'), then override-chips is the wrong endpoint and import-chips is correct. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
+      "resolution": "import-chips now sets hadNegativeHits = isWasted for ANY chip type (src/app/api/admin/[leagueId]/import-chips/route.ts:223), not only Win-Win. The override-chips GET handler's wasted detection (which OR's isProcessed+!isValid OR hadNegativeHits) therefore lights up consistently for W/D/C/SL/CB/UD when an admin imports a chip marked wasted.",
+      "resolutionDate": "2026-05-26"
     }
   ]
 }

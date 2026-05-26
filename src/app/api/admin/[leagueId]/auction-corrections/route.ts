@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
         await tx
           .update(teams)
           .set({
+            purse: sql`${teams.purse} + ${ow.purchasePrice}`,
             totalSpent: sql`${teams.totalSpent} - ${ow.purchasePrice}`,
           })
           .where(eq(teams.id, ow.teamId));
@@ -102,7 +103,10 @@ export async function POST(request: NextRequest) {
         await tx.delete(auctionOwnership).where(eq(auctionOwnership.id, ownershipId));
         await tx
           .update(teams)
-          .set({ totalSpent: sql`${teams.totalSpent} - ${ownership.purchasePrice}` })
+          .set({
+            purse: sql`${teams.purse} + ${ownership.purchasePrice}`,
+            totalSpent: sql`${teams.totalSpent} - ${ownership.purchasePrice}`,
+          })
           .where(eq(teams.id, ownership.teamId));
 
         return { success: true, message: `${ownership.playerName} removed — ${ownership.teamId} refunded` };
@@ -114,13 +118,19 @@ export async function POST(request: NextRequest) {
       // Refund original owner
       await tx
         .update(teams)
-        .set({ totalSpent: sql`${teams.totalSpent} - ${ownership.purchasePrice}` })
+        .set({
+          purse: sql`${teams.purse} + ${ownership.purchasePrice}`,
+          totalSpent: sql`${teams.totalSpent} - ${ownership.purchasePrice}`,
+        })
         .where(eq(teams.id, ownership.teamId));
 
       // Charge new owner
       await tx
         .update(teams)
-        .set({ totalSpent: sql`${teams.totalSpent} + ${transferPrice}` })
+        .set({
+          purse: sql`${teams.purse} - ${transferPrice}`,
+          totalSpent: sql`${teams.totalSpent} + ${transferPrice}`,
+        })
         .where(eq(teams.id, toTeamId));
 
       // Update ownership

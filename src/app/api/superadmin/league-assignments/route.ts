@@ -63,6 +63,18 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "userId and leagueId are required" }, { status: 400 });
   }
 
+  // Look up the assignment first so we can return 404 if it doesn't exist —
+  // otherwise a stale UI clicking 'remove' on an already-removed assignment
+  // gets a green response and the operator never realises the row was gone.
+  const existing = await db
+    .select({ id: leagueAdmins.id })
+    .from(leagueAdmins)
+    .where(and(eq(leagueAdmins.userId, userId), eq(leagueAdmins.leagueId, leagueId)))
+    .limit(1);
+  if (existing.length === 0) {
+    return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
+  }
+
   await db
     .delete(leagueAdmins)
     .where(and(eq(leagueAdmins.userId, userId), eq(leagueAdmins.leagueId, leagueId)));

@@ -20,6 +20,23 @@ export async function PATCH(
   const { userId } = await params;
   const body = await request.json();
 
+  // Guard: a superadmin may only mutate their OWN superadmin row; mutating
+  // another superadmin's credentials is forbidden (prevents lockout / role-escalation
+  // between platform owners). Non-superadmin (admin) rows fall through.
+  const target = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+  if (target.role === "superadmin") {
+    const callerId = request.headers.get("x-session-id");
+    if (target.id !== callerId) {
+      return NextResponse.json(
+        { error: "Cannot modify another superadmin's account" },
+        { status: 403 }
+      );
+    }
+  }
+
   const updates: {
     name?: string;
     email?: string;
@@ -32,7 +49,9 @@ export async function PATCH(
     updates.name = body.name.trim();
   }
   if (typeof body.email === "string" && body.email.trim()) {
-    updates.email = body.email.trim();
+    // Match POST handler's normalization so signin (which compares case-insensitively
+    // via stored-lowercase) and the unique-email index see a consistent value.
+    updates.email = body.email.trim().toLowerCase();
   }
   if (typeof body.password === "string" && body.password) {
     updates.password = await bcrypt.hash(body.password, 12);

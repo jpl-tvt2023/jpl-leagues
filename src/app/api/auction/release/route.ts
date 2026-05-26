@@ -3,6 +3,7 @@ import { db, teams, leagues, auctionOwnership } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { calculateRefund } from "@/lib/formats/auction/economy";
+import { isAuctionLive } from "@/lib/formats/auction/live-session";
 
 /**
  * POST /api/auction/release
@@ -57,6 +58,13 @@ export async function POST(request: NextRequest) {
   const leagueRow = await db.select().from(leagues).where(eq(leagues.id, ownership.leagueId)).limit(1);
   if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
+  }
+
+  if (await isAuctionLive(ownership.leagueId)) {
+    return NextResponse.json(
+      { error: "Marketplace is closed during a live auction" },
+      { status: 409 }
+    );
   }
 
   // Calculate projected refund (50% of purchase price) — for display only, not credited yet
@@ -124,6 +132,13 @@ export async function DELETE(request: NextRequest) {
   // Verify the requesting team owns this player (unless admin)
   if (!isAdmin && session?.id !== ownership.teamId) {
     return NextResponse.json({ error: "You don't own this player" }, { status: 403 });
+  }
+
+  if (await isAuctionLive(ownership.leagueId)) {
+    return NextResponse.json(
+      { error: "Marketplace is closed during a live auction" },
+      { status: 409 }
+    );
   }
 
   // Revert to active

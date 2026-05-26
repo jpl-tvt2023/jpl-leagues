@@ -253,16 +253,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Find the gameweek — filter by leagueId if provided (prevents wrong-league match in multi-league setups)
+    // leagueId is REQUIRED for POST — without it the format dispatch and gameweek lookup
+    // would pick a nondeterministic league and could score the wrong league's GW.
     let leagueId = searchParams.get("leagueId");
+    if (!leagueId) {
+      return NextResponse.json(
+        { error: "leagueId query parameter is required" },
+        { status: 400 }
+      );
+    }
     // Resolve slug → UUID if needed
-    if (leagueId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leagueId)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leagueId)) {
       const row = await db.select({ id: leagues.id }).from(leagues).where(eq(leagues.slug, leagueId)).limit(1);
       leagueId = row[0]?.id ?? null;
     }
-    const gwWhere = leagueId
-      ? and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, leagueId))
-      : eq(gameweeks.number, gameweekNumber);
+    if (!leagueId) {
+      return NextResponse.json(
+        { error: "League not found" },
+        { status: 404 }
+      );
+    }
+    const gwWhere = and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, leagueId));
 
     const gwList = await db.query.gameweeks.findMany({
       where: gwWhere,
@@ -298,17 +309,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Fetch league format and delegate to format-specific processor
     const leagueRow = await db.select({ format: leagues.format })
       .from(leagues)
-      .where(eq(leagues.id, leagueId || ""))
+      .where(eq(leagues.id, leagueId))
       .limit(1);
 
     if (leagueRow[0]?.format === "triple-crown") {
       const result = await processTripleCrownGameweek(
         gameweek.id,
         gameweekNumber,
-        leagueId || "",
+        leagueId,
         forceReprocess
       );
-      await invalidateLeaguePageCache(leagueId || "");
+      await invalidateLeaguePageCache(leagueId);
       // Normalize response to match ScoringResult shape expected by admin frontend
       return NextResponse.json({
         success: result.success,
@@ -325,10 +336,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const result = await processAuctionGameweek(
         gameweek.id,
         gameweekNumber,
-        leagueId || "",
+        leagueId,
         forceReprocess
       );
-      await invalidateLeaguePageCache(leagueId || "");
+      await invalidateLeaguePageCache(leagueId);
       return NextResponse.json({
         success: result.success,
         gameweek: gameweekNumber,
