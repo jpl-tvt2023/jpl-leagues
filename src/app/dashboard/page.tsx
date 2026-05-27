@@ -93,6 +93,7 @@ interface DashboardData {
     };
   };
   captaincyStatus: {
+    cap: number;
     player1: { id: string; name: string; chipsUsed: number; chipsRemaining: number };
     player2: { id: string; name: string; chipsUsed: number; chipsRemaining: number };
     recentCaptains: { gameweek: number; playerName: string; score: number }[];
@@ -1349,11 +1350,11 @@ export default function DashboardPage() {
                       <div className="mt-3 text-sm text-gray-400">
                         <div className="flex justify-between">
                           <span>{data.captaincyStatus.player1.name}</span>
-                          <span>{data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining}/19 left`}</span>
+                          <span>{data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining}/${data.captaincyStatus.cap} left`}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>{data.captaincyStatus.player2.name}</span>
-                          <span>{data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining}/19 left`}</span>
+                          <span>{data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining}/${data.captaincyStatus.cap} left`}</span>
                         </div>
                       </div>
                     </div>
@@ -1512,11 +1513,11 @@ export default function DashboardPage() {
                   <div className="mt-3 text-sm text-gray-400">
                     <div className="flex justify-between">
                       <span>{data.captaincyStatus.player1.name}</span>
-                      <span>{data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining}/${leagueFormat === "triple-crown" ? 19 : 15} chips left`}</span>
+                      <span>{data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining}/${data.captaincyStatus.cap} chips left`}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>{data.captaincyStatus.player2.name}</span>
-                      <span>{data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining}/${leagueFormat === "triple-crown" ? 19 : 15} chips left`}</span>
+                      <span>{data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining}/${data.captaincyStatus.cap} chips left`}</span>
                     </div>
                   </div>
                 </div>

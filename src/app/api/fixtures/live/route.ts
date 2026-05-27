@@ -289,7 +289,9 @@ async function calculateLiveTeamScore(
   // post-deadline by autoAssignDefaultCaptain (isValid === false).
   let isTemp = captainWasAutoAssigned;
   if (!resolvedCaptainId) {
-    resolvedCaptainId = pickTempCaptain(rawScores, prevCaptainPlayerId);
+    // Live preview only — no capContext, so wouldExceedCap is irrelevant here.
+    const picked = pickTempCaptain(rawScores, prevCaptainPlayerId);
+    resolvedCaptainId = picked?.playerId ?? null;
     isTemp = !!resolvedCaptainId;
   }
 

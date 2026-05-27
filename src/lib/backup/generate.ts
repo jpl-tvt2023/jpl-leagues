@@ -112,10 +112,10 @@ export type TradeRow = {
   "Offered Player IDs": string;    // JSON-stringified array of auctionOwnership IDs
   "Requested Player IDs": string;
   "Cash Offered": number;
-  "Veto Deadline": string | null;
-  "Veto Votes": string;            // JSON-stringified { teamId: "veto" | "approve" }
   "Created At": string;
   "Updated At": string;
+  // Note: legacy backups may also include "Veto Deadline" and "Veto Votes"
+  // keys — these are silently ignored by the restorer (DEF-TRADE-005).
 };
 
 export type PenaltyRedemptionRow = {
@@ -517,8 +517,6 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
       "Offered Player IDs": t.offeredPlayerIds,
       "Requested Player IDs": t.requestedPlayerIds,
       "Cash Offered": t.cashOffered,
-      "Veto Deadline": t.vetoDeadline ? t.vetoDeadline.toISOString() : null,
-      "Veto Votes": t.vetoVotes,
       "Created At": t.createdAt.toISOString(),
       "Updated At": t.updatedAt.toISOString(),
     }));

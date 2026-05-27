@@ -180,8 +180,6 @@ interface AuctionTradeProposal {
   requestedPlayerIds: string[];
   cashOffered: number;
   status: string;
-  vetoDeadline: string | null;
-  vetoVotes: Record<string, string>;
   createdAt: string;
 }
 
@@ -4352,12 +4350,6 @@ export default function AdminDashboard() {
                             {trade.offeredPlayerIds.length} player(s) offered | {trade.requestedPlayerIds.length} requested
                             {trade.cashOffered !== 0 && ` | Cash: ${formatCurrency(Math.abs(trade.cashOffered))} ${trade.cashOffered > 0 ? "(proposer pays)" : "(target pays)"}`}
                           </div>
-                          {trade.vetoDeadline && (
-                            <div className="text-xs text-gray-500 mt-0.5">
-                              Veto deadline: {new Date(trade.vetoDeadline).toLocaleString()}
-                              {" | "}Votes: {Object.values(trade.vetoVotes).filter(v => v === "veto").length} veto / {Object.values(trade.vetoVotes).filter(v => v === "approve").length} approve
-                            </div>
-                          )}
                         </div>
                       </div>
                     );

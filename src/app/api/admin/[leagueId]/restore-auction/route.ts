@@ -88,10 +88,11 @@ interface TradeRow {
   "Offered Player IDs": string;
   "Requested Player IDs": string;
   "Cash Offered": number;
-  "Veto Deadline": string | null;
-  "Veto Votes": string;
   "Created At": string;
   "Updated At": string;
+  // Note: legacy backups may also include "Veto Deadline" / "Veto Votes" keys
+  // — they are ignored here since the underlying columns were dropped in
+  // migration 0014_drop_veto_columns.sql (DEF-TRADE-005).
 }
 interface PenaltyRedemptionRow {
   "Penalty ID": string;
@@ -531,8 +532,6 @@ export async function POST(request: NextRequest) {
           requestedPlayerIds: t["Requested Player IDs"] ?? "[]",
           cashOffered: Number(t["Cash Offered"] ?? 0),
           status: t.Status,
-          vetoDeadline: t["Veto Deadline"] ? new Date(t["Veto Deadline"]) : null,
-          vetoVotes: t["Veto Votes"] ?? "{}",
           createdAt: new Date(t["Created At"]),
           updatedAt: new Date(t["Updated At"]),
         })));

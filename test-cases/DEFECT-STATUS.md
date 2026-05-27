@@ -1,3 +1,32 @@
+# Defect Backlog Status — 2026-05-28
+
+## Client revision pass — 2026-05-28
+
+Client review of the closed-defect log surfaced new feedback on 6 entries. Net effect: 4 required code + migrations + test-case rewrites; 1 was documentation-only (DEF-AUC-003); 1 was an audit-trail confirmation (DEF-TRADE-003). Counter is unchanged at 80/0 (Total / Still Open).
+
+| Defect | Module | Scope of revision |
+|---|---|---|
+| DEF-CHIP-007 | Captains & Chips | Cap formula now `ceil(nonPlayoffGws / 2)` via new helper `src/lib/captains.ts`. TVT default → 15 (unchanged), TVT-8 → 18 (was wrongly 15), TC → 19 (unchanged). 3 callsites swapped; dashboard pre-existing drift also corrected. |
+| DEF-CHIP-009 | Captains & Chips | Captain CSV import + auto-fallback now bypass the cap (with audit reason). New `gameweek_captains.bypassReason` column via migration `0015_add_captain_bypass_reason.sql`. `captaincyChipsUsed` now increments past cap to reflect reality. |
+| DEF-TRADE-002 | Auction Marketplace | Tier gate removed from `/api/auction/release` (POST+DELETE). Release now works in any tier; the live-auction guard is the sole restriction. |
+| DEF-TRADE-003 | Auction Marketplace | No code change. Client confirmed; guard is now tier-agnostic after DEF-TRADE-002 revision. |
+| DEF-TRADE-005 | Auction Marketplace | `veto_deadline` + `veto_votes` columns physically dropped via migration `0014_drop_veto_columns.sql` (recreate-table pattern). 7 incidental references in schema/backup/restore/marketplace/admin pages purged. |
+| DEF-AUC-003 | Auction Core | No code change. Client question answered: anti-snipe (5s window → +10s extension, capped at `bidTimerSeconds`) + 2s post-expiry grace already implemented. New BR-AUC-061 + AC-AUC-072..075 lock in the behaviour. |
+
+### New artifacts from this revision
+
+- **Migrations:** `drizzle/0014_drop_veto_columns.sql`, `drizzle/0015_add_captain_bypass_reason.sql`.
+- **New code:** `src/lib/captains.ts` (shared `computeCaptainCap` / `computeCaptainCheckLimit` helpers).
+- **New test cases:** TC-CHIP-081..084 (cap-formula + bypass scenarios), TC-TRADE-073 (Primary blocked during live auction), TC-AUC-120..123 (anti-snipe positive + boundary).
+- **TC inversions:** TC-CHIP-077, TC-CHIP-064 (CSV bypass), TC-TRADE-053 (Primary release success), TC-TRADE-025/068/070 (strengthened to assert schema absence via PRAGMA), TC-TRADE-054/072 (re-affirmed; guard is now sole restriction).
+- **Stale AC fix:** AC-CHIP-046 rewritten — previously described the old reject behaviour; now describes bypass-with-reason.
+
+### Outstanding follow-up
+
+`src/app/dashboard/page.tsx` still has hardcoded `19 : 15` in the captaincy-chips-left display (the API doesn't currently surface `captainCap`). The actual cap enforcement is correct; only the display denominator drifts for TVT-8. Tracked separately — see the dashboard API contract follow-up.
+
+---
+
 # Defect Backlog Status — 2026-05-27
 
 All 80 catalogued defects have been dispositioned. The defect-tracking sheet in [`jpl-leagues-test-cases.xlsx`](jpl-leagues-test-cases.xlsx) shows zero open rows.

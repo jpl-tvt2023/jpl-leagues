@@ -4,12 +4,13 @@ import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { calculateTVTTeamScore, determineMatchResult } from "@/lib/formats/tvt/scoring";
 import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { leagues, challengerSurvivalEntries } from "@/lib/db/schema";
 import { processTripleCrownGameweek } from "@/lib/formats/triple-crown/process-gameweek";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
+import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
 
 interface RouteParams {
   params: Promise<{ gw: string }>;
@@ -194,33 +195,77 @@ async function autoAssignDefaultCaptain(
     }
   }
 
+  // DEF-CHIP-009: pull league format + playoffStartGw so we can compute the
+  // per-player cap. When the chosen lowest scorer has already used their cap
+  // and this GW counts toward it, we still pick them (client decision: never
+  // clamp on auto-fallback) but record a bypassReason on the persisted row.
+  let leagueFormat = "tvt";
+  let playoffStartGw: number | null = 31;
+  if (leagueId) {
+    const row = await db.select({ format: leagues.format, playoffStartGw: leagues.playoffStartGw })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    if (row[0]) {
+      leagueFormat = row[0].format;
+      playoffStartGw = row[0].playoffStartGw;
+    }
+  }
+  const captainCap = computeCaptainCap(leagueFormat, playoffStartGw);
+  const captainCheckLimit = computeCaptainCheckLimit(leagueFormat, playoffStartGw);
+  const gwCountsTowardCap = gameweekNumber <= captainCheckLimit;
+
   const candidates = team.players.map(p => {
     const s = scores.find(s => s.playerId === p.id);
-    return { id: p.id, name: p.name, netScore: s?.netScore ?? 0 };
+    return {
+      id: p.id,
+      name: p.name,
+      netScore: s?.netScore ?? 0,
+      captaincyChipsUsed: p.captaincyChipsUsed ?? 0,
+    };
   });
-  const defaultPlayerId = pickTempCaptain(candidates, prevCaptainPlayerId);
-  if (!defaultPlayerId) return undefined;
+  const picked = pickTempCaptain(candidates, prevCaptainPlayerId, {
+    cap: captainCap,
+    gwCountsTowardCap,
+  });
+  if (!picked) return undefined;
+
+  const bypassReason = picked.wouldExceedCap
+    ? `Auto-fallback: team ${team.name} failed to announce in GW${gameweekNumber}; lowest scorer ${picked.playerName} selected despite cap of ${captainCap} reached`
+    : null;
 
   // Create a gameweekCaptains record marked as auto-assigned (isValid: false)
   const captainId = generateId();
   await db.insert(gameweekCaptains).values({
     id: captainId,
     gameweekId: gameweekId,
-    playerId: defaultPlayerId,
+    playerId: picked.playerId,
     announcedAt: new Date(),
     isValid: false, // Auto-assigned, not manually announced
+    bypassReason,
   });
+
+  // DEF-CHIP-009: when the GW counts toward the per-player cap, increment the
+  // counter so it reflects reality (including past-cap counts via bypass). Playoff
+  // GWs (gwCountsTowardCap=false) are unlimited and never touch the counter.
+  if (gwCountsTowardCap) {
+    await db
+      .update(players)
+      .set({ captaincyChipsUsed: sql`${players.captaincyChipsUsed} + 1` })
+      .where(eq(players.id, picked.playerId));
+  }
 
   // Return the record in the expected shape
   return {
     id: captainId,
     gameweekId: gameweekId,
-    playerId: defaultPlayerId,
+    playerId: picked.playerId,
     fplScore: 0,
     transferHits: 0,
     doubledScore: 0,
     announcedAt: new Date(),
     isValid: false,
+    bypassReason,
     createdAt: new Date(),
     updatedAt: new Date(),
   } as GameweekCaptain;

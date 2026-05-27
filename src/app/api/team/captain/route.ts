@@ -3,6 +3,7 @@ import { db, gameweeks, players, gameweekCaptains, auditLogs, teams, settings, l
 import { canBeCaptain } from "@/lib/formats/tvt/scoring";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
+import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
 
 /**
  * POST /api/team/captain
@@ -64,8 +65,8 @@ export async function POST(request: NextRequest) {
       );
     }
     const playoffStartGw = leagueRow[0]?.playoffStartGw ?? 31;
-    const CAPTAIN_CAP = leagueFormat === "triple-crown" ? 19 : 15;
-    const captainCheckLimit = leagueFormat === "triple-crown" ? 38 : (playoffStartGw - 1);
+    const CAPTAIN_CAP = computeCaptainCap(leagueFormat, playoffStartGw);
+    const captainCheckLimit = computeCaptainCheckLimit(leagueFormat, playoffStartGw);
 
     // Check if captain announcements are enabled for this league
     const captainSetting = await db.select().from(settings)

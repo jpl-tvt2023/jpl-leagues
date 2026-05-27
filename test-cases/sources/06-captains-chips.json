@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 11,
+    "version": 12,
     "businessContext": "The Captains & Chips module owns the SUBMISSION lifecycle for the two strategic levers a TVT/Triple-Crown team controls each gameweek: (1) declaring which player on their 2-man team is the captain (whose net score is doubled by the scoring engine), and (2) deciding whether to play a TVT chip (Win-Win, Double Pointer, Challenge Chip, Score Lock, Comeback or Underdog) in that GW. The module covers team-facing submission/switch/cancel endpoints, admin force-overrides, and bulk CSV/XLSX imports. It does not handle scoring/processing of those choices (module 05 owns that) nor the league-settings UI (module 02). The Auction format has NO captains/chips — those teams must not be exposed to these endpoints.",
     "userStories": [
       {
@@ -185,9 +185,12 @@
       },
       {
         "id": "BR-CHIP-004",
-        "rule": "captainCheckLimit (the upper GW boundary of the League Stage for the 15-per-player cap) is derived as league.playoffStartGw - 1 for non-triple-crown leagues, and 38 for triple-crown. Below or at this limit the captaincy counts toward the 15-per-player cap; above it the captain is treated as a playoff captaincy with unlimited chips remaining.",
+        "rule": "Per-player captaincy cap is `Math.ceil(nonPlayoffGws / 2)`, where `nonPlayoffGws = leagueFormat === 'triple-crown' ? 38 : (playoffStartGw - 1)`. captainCheckLimit (upper GW boundary of league stage) is the same nonPlayoffGws value. Below or at this limit the captaincy counts toward the cap; above it the captain is treated as a playoff captaincy with unlimited chips remaining. The cap is computed via `computeCaptainCap()` and the limit via `computeCaptainCheckLimit()` in `src/lib/captains.ts`; both consumed by `src/app/api/team/captain/route.ts`, `import-captains/route.ts`, and `team/dashboard/route.ts`.",
         "sourceRefs": [
-          "src/app/api/team/captain/route.ts:48-58"
+          "src/lib/captains.ts:1-9",
+          "src/app/api/team/captain/route.ts:67-69",
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:65-66",
+          "src/app/api/team/dashboard/route.ts:452-462"
         ]
       },
       {
@@ -477,10 +480,10 @@
       },
       {
         "id": "BR-CHIP-044",
-        "rule": "POST /api/admin/[leagueId]/import-captains applies the same per-player CAPTAIN_CAP rule as POST /api/team/captain: 15 chips/player for TVT, 19 for Triple Crown, counted only over league-stage GWs (gw <= captainCheckLimit = playoffStartGw-1 for non-TC, or 38 for TC). Rows that would push a player past the cap are pushed to details.errors and not inserted; the surrounding upload still proceeds for the other rows.",
+        "rule": "import-captains does NOT block on the per-player cap. It always inserts the captaincy row, increments `players.captaincyChipsUsed` unconditionally (for league-stage GWs), and when the GW counts toward the cap AND the new total would exceed `computeCaptainCap()`, sets `gameweekCaptains.bypassReason` to a string of the form 'Admin CSV import override: GW{gw} captaincy for {playerName} inserted despite per-player cap of {cap} reached'. A warning is also pushed to `results.warnings` for the admin to see. The cap remains enforced only on team-driven /api/team/captain announcements.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/import-captains/route.ts:52-64",
-          "src/app/api/admin/[leagueId]/import-captains/route.ts:170-185"
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:61-66",
+          "src/app/api/admin/[leagueId]/import-captains/route.ts:180-225"
         ]
       },
       {
@@ -570,6 +573,15 @@
         "sourceRefs": [
           "src/app/api/team/captain/route.ts:52-53"
         ]
+      },
+      {
+        "id": "BR-CHIP-057",
+        "rule": "When a team fails to announce a captain by the GW deadline, `autoAssignDefaultCaptain` (TVT) / `persistAutoCaptain` (TC) selects the lowest-scoring player irrespective of remaining cap. The captaincy row is written with `isValid=false`; when the picked player would exceed `computeCaptainCap()` for the GW, `bypassReason` is set to 'Auto-fallback: team {teamName} failed to announce in GW{gw}; lowest scorer {playerName} selected despite cap of {cap} reached'. `players.captaincyChipsUsed` is incremented when the GW counts toward the cap (so the counter reflects reality, including past-cap counts via bypass).",
+        "sourceRefs": [
+          "src/lib/scoring/temp-captain.ts:1-90",
+          "src/app/api/gameweeks/[gw]/route.ts:170-256",
+          "src/lib/formats/triple-crown/process-gameweek.ts:185-208"
+        ]
       }
     ],
     "acceptanceCriteria": [
@@ -596,14 +608,14 @@
       },
       {
         "id": "AC-CHIP-004",
-        "given": "A team in a TVT-format league announces its captain in GW15",
+        "given": "A TVT team in a league with `playoffStartGw=31` (so per-player cap = `ceil((31-1)/2) = 15`) announces captain in GW15",
         "when": "The chosen player already has 15 league-stage captain entries (excluding GW15)",
         "then": "Response is 400 '<playerName> has used all 15 captaincy chips for the League Stage'",
         "linksTo": "BR-CHIP-004"
       },
       {
         "id": "AC-CHIP-005",
-        "given": "A team in a Triple Crown league announces its captain in GW38",
+        "given": "A Triple Crown team (cap = `ceil(38/2) = 19`) announces captain in GW38",
         "when": "The chosen player already has 19 captain entries across GW1..38 (excluding GW38)",
         "then": "Response is 400 '<playerName> has used all 19 captaincy chips for the League Stage'",
         "linksTo": "BR-CHIP-004"
@@ -890,9 +902,9 @@
       },
       {
         "id": "AC-CHIP-046",
-        "given": "an admin uploads a captain CSV that schedules player X for 16 league-stage GWs in a TVT league (CAPTAIN_CAP=15)",
+        "given": "an admin uploads a captain CSV that schedules player X for 16 league-stage GWs in a TVT league with playoffStartGw=31 (cap = ceil(30/2) = 15)",
         "when": "the import runs row-by-row",
-        "then": "15 gameweekCaptains rows are inserted for X (and player.captaincyChipsUsed increments by 15). The 16th candidate row appears in details.errors with 'X has already used all 15 League-Stage captaincy chips — GW<N> entry skipped'. Other players in the same upload are unaffected. Playoff-GW captaincies do not count toward the cap.",
+        "then": "All 16 gameweekCaptains rows are inserted for X. Rows 1-15 have bypassReason=null; the 16th row has bypassReason set to the BR-CHIP-044 template containing GW number, player name, and cap value (15). players.captaincyChipsUsed for X is incremented to 16. A matching warning is pushed to results.warnings. results.errors is NOT populated for this row. Other players in the same upload are unaffected. Playoff-GW captaincies do not count toward the cap.",
         "linksTo": "BR-CHIP-044"
       },
       {
@@ -964,6 +976,34 @@
         "when": "Team posts captain for GW31",
         "then": "Since gameweekNumber (31) <= captainCheckLimit (38), the 19-per-player cap check IS applied",
         "linksTo": "BR-CHIP-056"
+      },
+      {
+        "id": "AC-CHIP-057",
+        "given": "A TVT team in a league with `playoffStartGw=36` (per-player cap = `ceil(35/2) = 18`) announces captain in GW20",
+        "when": "The chosen player already has 18 league-stage captain entries (excluding GW20)",
+        "then": "Response is 400 '<playerName> has used all 18 captaincy chips for the League Stage'",
+        "linksTo": "BR-CHIP-004"
+      },
+      {
+        "id": "AC-CHIP-058",
+        "given": "A TVT admin uploads a captains CSV containing a row for player P (currently `captaincyChipsUsed = cap`) at a league-stage GW",
+        "when": "import-captains processes the row",
+        "then": "`gameweek_captains` row is inserted with `bypassReason` populated (contains GW number, player name, and the cap value); `players.captaincyChipsUsed` is now `cap + 1`; HTTP response is 200; `results.warnings` contains a matching entry; `results.errors` does NOT contain this row",
+        "linksTo": "BR-CHIP-044"
+      },
+      {
+        "id": "AC-CHIP-059",
+        "given": "A TVT team T does not announce a captain by the GW{n} deadline; T's lowest scorer P already has `captaincyChipsUsed = cap`",
+        "when": "Gameweek processing runs and the auto-fallback selects P",
+        "then": "`gameweek_captains` row is inserted for P with `isValid=false` and `bypassReason` matching the auto-fallback template (contains team name, GW number, player name, and cap value); `players.captaincyChipsUsed` for P is now `cap + 1`",
+        "linksTo": "BR-CHIP-057"
+      },
+      {
+        "id": "AC-CHIP-060",
+        "given": "Team T does not announce a captain; T's lowest scorer P has `captaincyChipsUsed < cap`",
+        "when": "Gameweek processing runs and the auto-fallback selects P",
+        "then": "`gameweek_captains` row is inserted for P with `isValid=false` and `bypassReason = null`; `players.captaincyChipsUsed` for P increments by 1; the resulting counter is still <= cap",
+        "linksTo": "BR-CHIP-057"
       }
     ]
   },
@@ -2210,23 +2250,24 @@
     },
     {
       "id": "TC-CHIP-064",
-      "feature": "Import Captains - Counter Increment",
-      "scenario": "import-captains rejects rows that would push a player past the per-player chip cap",
+      "feature": "Import Captains - Cap Bypass with Reason",
+      "scenario": "import-captains accepts a captaincy for a player at cap and writes bypassReason",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "TVT league; PlayerA already has 15 captaincyChipsUsed via prior imports",
-      "testData": "{ captains: [{ teamId: 'team-a', playerName: 'PlayerA', '20': 'C' }] }",
+      "preconditions": "TVT league L with playoffStartGw=31 (cap = computeCaptainCap('tvt', 31) = 15); team-a's PlayerX has players.captaincyChipsUsed=15 (already at cap); GW10 is within the league stage (10 <= captainCheckLimit=30); admin authorised",
+      "testData": "{ captains: [{ teamId: 'team-a', playerName: 'PlayerX', '10': 'C' }] }",
       "testSteps": [
-        "1. POST import a new GW20 row for PlayerA",
-        "2. Inspect players.captaincyChipsUsed"
+        "1. Seed PlayerX with captaincyChipsUsed=15",
+        "2. POST /api/admin/L/import-captains with the row above",
+        "3. Inspect HTTP status, response.results.warnings, gameweek_captains row for PlayerX in GW10, and players.captaincyChipsUsed for PlayerX"
       ],
-      "expectedResult": "Uploading a captain CSV that schedules player X for 16 league-stage GWs (TVT) returns: 15 inserts succeed; the 16th row appears in details.errors with message 'X has already used all 15 League-Stage captaincy chips — GW16 entry skipped'. The team-side POST /api/team/captain cap is now mirrored on the admin import path. Playoff-GW captaincies remain uncapped.",
-      "postconditions": "Over-count silently",
-      "requirementId": "AC-CHIP-046",
+      "expectedResult": "HTTP 200. A new gameweek_captains row is inserted referencing L's GW10 for team-a with playerId=PlayerX. That row's bypassReason is non-null and equals 'Admin CSV import override: GW10 captaincy for PlayerX inserted despite per-player cap of 15 reached'. response.results.warnings contains a matching entry referencing PlayerX/GW10/cap=15. players.captaincyChipsUsed for PlayerX is now 16. The row is NOT pushed to results.errors and the import does not abort.",
+      "postconditions": "gameweek_captains row written with bypassReason populated; counter incremented past cap by 1",
+      "requirementId": "AC-CHIP-058",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "[QA-VERIFY] Updated post-DEF-CHIP-009 fix on 2026-05-26 — retagged Regression -> Positive."
+      "notes": "Updated 2026-05-28 — inverted from regression(400) to positive(bypass with reason)."
     },
     {
       "id": "TC-CHIP-065",
@@ -2473,23 +2514,27 @@
     },
     {
       "id": "TC-CHIP-077",
-      "feature": "Captain captainCheckLimit Defect",
-      "scenario": "captainCheckLimit derived from league.playoffStartGw-1; TVT-8 enforces 15-per-player cap across GW1-35",
+      "feature": "Captain Cap Formula - Dynamic",
+      "scenario": "Per-player captain cap is computed as ceil(nonPlayoffGws/2); TVT-8 (playoffStartGw=36) yields cap=18 across GW1-35, TVT-16/32 (playoffStartGw=31) yields cap=15 across GW1-30, Triple Crown yields cap=19 across GW1-38",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "TVT league playoffStartGw=36 (league stage runs to GW35); team T authenticated; PlayerA has many prior captaincies",
-      "testData": "{ playerId: 'PlayerA', gameweek: 32 }",
+      "preconditions": "Three leagues seeded: (a) TVT-8 league L8 with playoffStartGw=36; (b) TVT-16 league L16 with playoffStartGw=31; (c) Triple-Crown league LTC. Each has a team with PlayerA on roster; captaincyChipsUsed counters start at 0.",
+      "testData": "Inspect computeCaptainCap(format, playoffStartGw) for each league: L8 -> 18; L16 -> 15; LTC -> 19. Also POST /api/team/captain for PlayerA in each league across boundary GWs (L8 GW35 vs GW36; L16 GW30 vs GW31; LTC GW38) and inspect response.captaincyChipsRemaining.",
       "testSteps": [
-        "1. POST captain GW32 in 8-team TVT",
-        "2. Inspect response.captaincyChipsRemaining"
+        "1. Read computeCaptainCap('tvt', 36) -> 18 (nonPlayoffGws=35, ceil(35/2)=18)",
+        "2. Read computeCaptainCap('tvt', 31) -> 15 (nonPlayoffGws=30, ceil(30/2)=15)",
+        "3. Read computeCaptainCap('triple-crown', anything) -> 19 (nonPlayoffGws=38, ceil(38/2)=19)",
+        "4. In L8: POST captain PlayerA at GW35 (within league stage) and inspect captaincyChipsRemaining is a finite number; then POST at GW36 and inspect captaincyChipsRemaining === 'unlimited'",
+        "5. In L16: POST captain PlayerA at GW30 (finite remaining) and GW31 ('unlimited')",
+        "6. In LTC: POST captain PlayerA at GW38 (finite remaining, since gameweekNumber <= captainCheckLimit=38)"
       ],
-      "expectedResult": "For a TVT-8 league (playoffStartGw=36), POST /api/team/captain at GW1..GW35 counts the captaincy toward the 15-per-player chip cap and returns captaincyChipsRemaining as a finite number. At GW36 and beyond, captaincyChipsRemaining is reported as \"unlimited\". For TVT-16/32 (playoffStartGw=31), the cutover is at GW30/GW31. For Triple Crown (format=triple-crown), the cutover stays at GW38.",
-      "postconditions": "Incorrect 'unlimited' label in league-stage GW",
+      "expectedResult": "computeCaptainCap returns 18 for TVT-8, 15 for TVT-16/32, and 19 for Triple Crown — i.e. Math.ceil(nonPlayoffGws/2) where nonPlayoffGws = format==='triple-crown' ? 38 : (playoffStartGw-1). The /api/team/captain endpoint reports captaincyChipsRemaining as a finite number for GW <= captainCheckLimit and as the string 'unlimited' above it, and the boundary tracks playoffStartGw dynamically (no hardcoded 15 or 30).",
+      "postconditions": "Cap derived from formula across all three formats; no hardcoded boundary",
       "requirementId": "AC-CHIP-013",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-007 [QA-VERIFY] Updated post-DEF-CHIP-007 fix on 2026-05-26 — retagged Regression -> Positive."
+      "notes": "Updated 2026-05-28 — now asserts ceil(nonPlayoffGws/2) formula; supersedes the hardcoded-15 expectation."
     },
     {
       "id": "TC-CHIP-078",
@@ -2550,6 +2595,97 @@
       "createdDate": "2026-05-23",
       "status": "Not Executed",
       "notes": "Guard"
+    },
+    {
+      "id": "TC-CHIP-081",
+      "feature": "Captain Cap - TVT-8 Boundary",
+      "scenario": "TVT-8 league: 19th captaincy for a player at cap=18 is rejected on team-driven announce",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT-8 league L with playoffStartGw=36 (cap = computeCaptainCap('tvt', 36) = 18); team T authenticated; PlayerY on T's roster; PlayerY has captaincyChipsUsed=18 (all 18 entries in GW1..18 league-stage GWs other than GW20); L has a GW20 row with deadline in future; GW20 <= captainCheckLimit=35 so it counts toward the cap",
+      "testData": "POST /api/team/captain { playerId: PlayerY.id, gameweekId: L.GW20.id } (equivalently { playerId, gameweek: 20 })",
+      "testSteps": [
+        "1. Seed 18 prior gameweekCaptains rows for PlayerY across GW1..18 (or any league-stage GWs other than GW20)",
+        "2. As Team T, POST /api/team/captain with PlayerY for GW20",
+        "3. Inspect HTTP status and response body; confirm no new gameweekCaptains row created"
+      ],
+      "expectedResult": "HTTP 400 with error message containing 'has used all 18 captaincy chips' (the per-player cap for TVT-8 is 18, derived from ceil(35/2)). No gameweekCaptains row is created for GW20. The team-facing route still enforces the cap — only CSV import and auto-fallback paths can bypass.",
+      "postconditions": "PlayerY remains at captaincyChipsUsed=18; no GW20 captain row exists for Team T",
+      "requirementId": "AC-CHIP-057",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "TVT-8 boundary; complements AC-CHIP-004 (TVT-16/32 cap=15) and AC-CHIP-005 (TC cap=19)."
+    },
+    {
+      "id": "TC-CHIP-082",
+      "feature": "Import Captains - Bypass Reason Field Contents",
+      "scenario": "CSV import: bypass annotation contains GW, player name, cap value",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT default league L with playoffStartGw=31 (cap = 15); team-a's PlayerZ (name: 'Zephyr Player') has players.captaincyChipsUsed=15; GW12 is within the league stage; admin authorised",
+      "testData": "{ captains: [{ teamId: 'team-a', playerName: 'Zephyr Player', '12': 'C' }] }",
+      "testSteps": [
+        "1. Seed PlayerZ with captaincyChipsUsed=15",
+        "2. POST /api/admin/L/import-captains with the row above",
+        "3. SELECT the inserted gameweek_captains row for team-a in L.GW12 and read its bypassReason column",
+        "4. Substring-check the bypassReason value"
+      ],
+      "expectedResult": "The inserted gameweek_captains row's bypassReason is non-null. Its string value contains all three substrings: 'GW12', 'Zephyr Player' (the player's name), and '15' (the cap value). This is the AC-CHIP-058 field-level contract; the exact wrapper text is the BR-CHIP-044 template 'Admin CSV import override: GW{gw} captaincy for {playerName} inserted despite per-player cap of {cap} reached'.",
+      "postconditions": "bypassReason populated and human-readable",
+      "requirementId": "AC-CHIP-058",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Pairs with TC-CHIP-064 by asserting the field-level substrings, not just non-null."
+    },
+    {
+      "id": "TC-CHIP-083",
+      "feature": "Auto-Fallback - Bypass Over Cap",
+      "scenario": "Auto-fallback bypass: team T doesn't announce; lowest scorer P is at cap; row written with bypassReason and counter increments",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT default league L with playoffStartGw=31 (cap = 15); team T (name: 'Team T') has not posted a captain for GW20; T's two players have scored such that P is the lowest scorer; P (name 'Phoenix Player') has captaincyChipsUsed=15 (already at cap); L.GW20 deadline is in the past so processing runs; GW20 is within the league stage and counts toward the cap",
+      "testData": "Do not POST /api/team/captain for Team T in GW20. Then trigger gameweek processing via POST /api/gameweeks/20 (which invokes autoAssignDefaultCaptain / pickTempCaptain).",
+      "testSteps": [
+        "1. Set up Team T with two players, P being the lower scorer for GW20",
+        "2. Seed P with captaincyChipsUsed=15",
+        "3. Do NOT POST a captain for Team T in GW20",
+        "4. POST /api/gameweeks/20 to run the processor",
+        "5. SELECT the gameweek_captains row WHERE teamId=T.id AND gameweekId=L.GW20.id",
+        "6. SELECT players.captaincyChipsUsed for P"
+      ],
+      "expectedResult": "The gameweek_captains row exists for Team T's GW20 with playerId = P.id, isValid = false (because it's an auto-fallback), and bypassReason non-null. The bypassReason value contains all four substrings: 'Team T' (team name), 'GW20' (gameweek), 'Phoenix Player' (player name), and '15' (cap value), per BR-CHIP-057 template. players.captaincyChipsUsed for P is now 16 (was 15) — counter increments by 1 because GW20 counts toward the cap, even though the picked player exceeded it via bypass.",
+      "postconditions": "Auto-fallback row written with bypass annotation; counter pushed past cap by 1 to reflect reality",
+      "requirementId": "AC-CHIP-059",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Exercises pickTempCaptain wouldExceedCap branch + persist path."
+    },
+    {
+      "id": "TC-CHIP-084",
+      "feature": "Auto-Fallback - No Bypass Under Cap",
+      "scenario": "Auto-fallback no-bypass: lowest scorer P has chipsUsed < cap; row written with null bypassReason and counter increments normally",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "TVT default league L with playoffStartGw=31 (cap = 15); team T has not posted a captain for GW18; T's lowest scorer P has captaincyChipsUsed=8 (well below cap); L.GW18 deadline has passed; GW18 is within the league stage and counts toward the cap",
+      "testData": "Do not POST captain for Team T in GW18. Then POST /api/gameweeks/18 to trigger processing.",
+      "testSteps": [
+        "1. Set up Team T with two players, P being the lower scorer for GW18",
+        "2. Seed P with captaincyChipsUsed=8",
+        "3. Do NOT POST a captain for Team T in GW18",
+        "4. POST /api/gameweeks/18 to run the processor",
+        "5. SELECT the gameweek_captains row WHERE teamId=T.id AND gameweekId=L.GW18.id",
+        "6. SELECT players.captaincyChipsUsed for P"
+      ],
+      "expectedResult": "The gameweek_captains row exists for Team T's GW18 with playerId = P.id, isValid = false (auto-fallback), and bypassReason = null (because P is below cap, the wouldExceedCap branch did not trigger). players.captaincyChipsUsed for P is now 9 (was 8) — incremented by 1 normally because GW18 counts toward the cap. The resulting counter (9) is still <= cap (15).",
+      "postconditions": "Auto-fallback recorded without bypass annotation; counter stays within cap",
+      "requirementId": "AC-CHIP-060",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Pairs with TC-CHIP-083 (over-cap) to lock in both branches of pickTempCaptain wouldExceedCap."
     }
   ],
   "gapFlags": [],
@@ -2742,9 +2878,9 @@
       "pinningTestCases": [
         "TC-CHIP-077"
       ],
-      "notes": "Read leagues.playoffStartGw alongside format and compute captainCheckLimit = playoffStartGw - 1. Coordinate with module 05 to confirm what 'League Stage' means in the captaincy cap. [DEV] Self-verified: read playoffStartGw alongside format; derived limit dynamically. [QA] Re-run TC-CHIP-077 against TVT-8 league and confirm captain at GW31..GW35 counts toward the per-player cap. [BA] BR-CHIP-004 + AC-CHIP-013 describe the hardcoded-30 behaviour; rewrite to playoffStartGw-1. [BA-UPDATED]: 2026-05-26 — BR-CHIP-004 + AC-CHIP-013 updated.",
-      "resolution": "Derived captainCheckLimit from league.playoffStartGw - 1 (src/app/api/team/captain/route.ts:48-58) instead of the hardcoded 30. TC retains its 38. TVT-8 (playoffStartGw=36) now correctly enforces the 15-per-player chip cap across its full league stage GW1-35; TVT-16/32 (playoffStartGw=31) is unchanged at 30; any future variant lands at playoffStartGw-1 automatically.",
-      "resolutionDate": "2026-05-26"
+      "notes": "Read leagues.playoffStartGw alongside format and compute captainCheckLimit = playoffStartGw - 1. Coordinate with module 05 to confirm what 'League Stage' means in the captaincy cap. [DEV] Self-verified: read playoffStartGw alongside format; derived limit dynamically. [QA] Re-run TC-CHIP-077 against TVT-8 league and confirm captain at GW31..GW35 counts toward the per-player cap. [BA] BR-CHIP-004 + AC-CHIP-013 describe the hardcoded-30 behaviour; rewrite to playoffStartGw-1. [BA-UPDATED]: 2026-05-26 — BR-CHIP-004 + AC-CHIP-013 updated. [BA-UPDATED]: 2026-05-28 — BR-CHIP-004 rewritten to describe the ceil(nonPlayoffGws/2) formula; AC-CHIP-004 + AC-CHIP-005 updated; new boundary AC added for TVT-8.\n[DEV 2026-05-28] Client revision: cap is now ceil(nonPlayoffGws/2), not hardcoded 15/19. Helper extracted to @/lib/captains. All 3 production callsites swapped. Dashboard route had pre-existing drift (hardcoded 30/19:15) — also corrected.",
+      "resolution": "Captain cap now derives from formula ceil(nonPlayoffGws / 2) instead of hardcoded 15/19. Shared helper in src/lib/captains.ts (computeCaptainCap + computeCaptainCheckLimit). Replaced 3 callsites: team/captain/route.ts, admin/[leagueId]/import-captains/route.ts, team/dashboard/route.ts. TVT default 31 → 15 unchanged; TVT-8 36 → 18 (was incorrectly 15); TC 38 → 19 unchanged.",
+      "resolutionDate": "2026-05-28"
     },
     {
       "id": "DEF-CHIP-008",
@@ -2798,9 +2934,9 @@
       "pinningTestCases": [
         "TC-CHIP-064"
       ],
-      "notes": "Admin import is intentionally authoritative ('skip validation'), so a strict reject may be too aggressive — a warning may be the right product call. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
-      "resolution": "Added per-player CAPTAIN_CAP overflow check inside the import-captains row loop (src/app/api/admin/[leagueId]/import-captains/route.ts:170-185). Before queuing a new gameweekCaptains insert, the handler now sums the player's existing captaincyChipsUsed with the pending in-upload increment; if the next entry would exceed CAPTAIN_CAP (15 for TVT, 19 for TC) AND the GW is within the league-stage range (gw <= captainCheckLimit = playoffStartGw-1 for non-TC), the row is pushed to results.errors and the chip count is NOT incremented.",
-      "resolutionDate": "2026-05-26"
+      "notes": "Admin import is intentionally authoritative ('skip validation'), so a strict reject may be too aggressive — a warning may be the right product call. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed. [BA-UPDATED]: 2026-05-28 — BR-CHIP-044 rewritten to describe bypass-with-reason behaviour; new BR + 3 ACs added for auto-fallback bypass (with and without cap exceeded).\n[DEV 2026-05-28] Client revision: bypass cap in both CSV import (admin override) and auto-fallback (fail-to-announce) paths; record reason on the captaincy row. captaincyChipsUsed now increments past cap to reflect reality.",
+      "resolution": "CSV import no longer rejects rows that would exceed the per-player cap. Instead, always inserts the row; when the GW counts toward the cap AND the new total would exceed it, stamps gameweek_captains.bypassReason with an audit string (GW + player name + cap value). Auto-fallback path (autoAssignDefaultCaptain in /api/gameweeks/[gw]/route.ts; persistAutoCaptain in TC processor) also picks lowest scorer regardless of cap and stamps a parallel bypassReason. Both paths now increment players.captaincyChipsUsed when the GW counts toward the cap, so the counter reflects reality past cap. Schema column gameweek_captains.bypass_reason added via drizzle/0015_add_captain_bypass_reason.sql. pickTempCaptain return shape extended to { playerId, playerName, wouldExceedCap }.",
+      "resolutionDate": "2026-05-28"
     },
     {
       "id": "DEF-CHIP-010",

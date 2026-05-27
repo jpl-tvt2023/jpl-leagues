@@ -9,11 +9,13 @@
  */
 
 import { db, fixtures, gameweeks, groups, results, teams, players, auditLogs, gameweekCaptains, type Fixture, type Team, type Player, type Group, type Result } from "@/lib/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { getAllCachedScores } from "@/lib/fpl-cache";
 import { calculateGhostScore, determineGhostMatchResult, calculateCupGroupPoints } from "./scoring";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
+import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
+import { leagues } from "@/lib/db/schema";
 import { generateId } from "@/lib/id";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
@@ -168,17 +170,39 @@ export async function processTripleCrownGameweek(
       }
     }
 
+    // DEF-CHIP-009: cap context for auto-fallback bypass detection. TC uses 38
+    // non-playoff GWs (cap = 19), so playoffStartGw is mostly informational here,
+    // but we fetch it from the league row so we never re-hardcode the boundary.
+    const leagueRow = await db.select({ format: leagues.format, playoffStartGw: leagues.playoffStartGw })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    const tcFormat = leagueRow[0]?.format ?? "triple-crown";
+    const tcPlayoffStartGw = leagueRow[0]?.playoffStartGw ?? null;
+    const tcCaptainCap = computeCaptainCap(tcFormat, tcPlayoffStartGw);
+    const tcCaptainCheckLimit = computeCaptainCheckLimit(tcFormat, tcPlayoffStartGw);
+
     // Helper to insert an auto-pick gameweek_captains row when no captain announced.
     // Mirrors autoAssignDefaultCaptain in /api/gameweeks/[gw] route — keeps the captain
     // visible to live-refresh / dashboard / playoff-bracket paths post-process.
-    async function persistAutoCaptain(teamId: string, playerId: string): Promise<void> {
+    async function persistAutoCaptain(teamId: string, playerId: string, bypassReason: string | null): Promise<void> {
       await db.insert(gameweekCaptains).values({
         id: generateId(),
         gameweekId,
         playerId,
         announcedAt: new Date(),
         isValid: false,
+        bypassReason,
       });
+      // DEF-CHIP-009: bump captaincyChipsUsed when the GW counts toward the cap so
+      // the counter reflects reality across auto-fallback (including past-cap counts
+      // via bypass). TC: tcCaptainCheckLimit=38, so every GW counts.
+      if (gameweekNumber <= tcCaptainCheckLimit) {
+        await db
+          .update(players)
+          .set({ captaincyChipsUsed: sql`${players.captaincyChipsUsed} + 1` })
+          .where(eq(players.id, playerId));
+      }
       captainByTeam.set(teamId, playerId);
       autoAssignedByTeam.set(teamId, true);
     }
@@ -216,7 +240,9 @@ export async function processTripleCrownGameweek(
 
         // Resolve captain per side (announced > auto via lowest net + prev-GW rotation).
         // Persist auto-picks into gameweek_captains so live-refresh / dashboard share the same captain.
-        const resolveCaptainForSide = async (teamId: string, teamPlayers: Player[], scoresArr: typeof homeScores) => {
+        // DEF-CHIP-009: when the auto-fallback chooses a player who has already met
+        // their cap, we record a bypassReason on the persisted row.
+        const resolveCaptainForSide = async (teamId: string, teamName: string, teamPlayers: Player[], scoresArr: typeof homeScores) => {
           let captainId = captainByTeam.get(teamId) ?? null;
           let isAutoAssigned = autoAssignedByTeam.get(teamId) ?? false;
           if (!captainId) {
@@ -224,19 +250,26 @@ export async function processTripleCrownGameweek(
               id: p.id,
               name: p.name,
               netScore: scoresArr[idx].points - scoresArr[idx].transferHits,
+              captaincyChipsUsed: p.captaincyChipsUsed ?? 0,
             }));
-            const picked = pickTempCaptain(candidates, prevCaptainByTeam.get(teamId) ?? null);
+            const picked = pickTempCaptain(candidates, prevCaptainByTeam.get(teamId) ?? null, {
+              cap: tcCaptainCap,
+              gwCountsTowardCap: gameweekNumber <= tcCaptainCheckLimit,
+            });
             if (picked) {
-              await persistAutoCaptain(teamId, picked);
-              captainId = picked;
+              const bypassReason = picked.wouldExceedCap
+                ? `Auto-fallback: team ${teamName} failed to announce in GW${gameweekNumber}; lowest scorer ${picked.playerName} selected despite cap of ${tcCaptainCap} reached`
+                : null;
+              await persistAutoCaptain(teamId, picked.playerId, bypassReason);
+              captainId = picked.playerId;
               isAutoAssigned = true;
             }
           }
           return { captainId, isAutoAssigned };
         };
 
-        const homeCap = await resolveCaptainForSide(fixture.homeTeamId, fixture.homeTeam.players, homeScores);
-        const awayCap = await resolveCaptainForSide(fixture.awayTeamId, fixture.awayTeam.players, awayScores);
+        const homeCap = await resolveCaptainForSide(fixture.homeTeamId, fixture.homeTeam.name, fixture.homeTeam.players, homeScores);
+        const awayCap = await resolveCaptainForSide(fixture.awayTeamId, fixture.awayTeam.name, fixture.awayTeam.players, awayScores);
 
         // Per-format docs: Team Score = sum(non-captain net) + (captain net × 2). Same captain
         // applies to PL, cup, and knockout. See TripleCrownHelp.tsx → "Captain & Scoring".
@@ -492,7 +525,7 @@ export async function processTripleCrownGameweek(
     // side when Pass 1 didn't cache it (e.g. PL fixture for these teams was already
     // processed earlier and skipped this run). Mirrors PL Pass 1's captain logic so the
     // SF / Final breakdowns show the same C / C* badges and (net × 2) totals.
-    const buildKnockoutSide = async (teamId: string, teamPlayers: Player[]) => {
+    const buildKnockoutSide = async (teamId: string, teamName: string, teamPlayers: Player[]) => {
       const scoresArr = await Promise.all(
         teamPlayers.map(async (p) => {
           const score = await calculateTeamGameweekScore(p.fplId, gameweekNumber, leagueId);
@@ -504,12 +537,21 @@ export async function processTripleCrownGameweek(
       let isAutoAssigned = autoAssignedByTeam.get(teamId) ?? false;
       if (!captainId) {
         const candidates = teamPlayers.map((p, idx) => ({
-          id: p.id, name: p.name, netScore: scoresArr[idx].points - scoresArr[idx].transferHits,
+          id: p.id,
+          name: p.name,
+          netScore: scoresArr[idx].points - scoresArr[idx].transferHits,
+          captaincyChipsUsed: p.captaincyChipsUsed ?? 0,
         }));
-        const picked = pickTempCaptain(candidates, prevCaptainByTeam.get(teamId) ?? null);
+        const picked = pickTempCaptain(candidates, prevCaptainByTeam.get(teamId) ?? null, {
+          cap: tcCaptainCap,
+          gwCountsTowardCap: gameweekNumber <= tcCaptainCheckLimit,
+        });
         if (picked) {
-          await persistAutoCaptain(teamId, picked);
-          captainId = picked;
+          const bypassReason = picked.wouldExceedCap
+            ? `Auto-fallback: team ${teamName} failed to announce in GW${gameweekNumber}; lowest scorer ${picked.playerName} selected despite cap of ${tcCaptainCap} reached`
+            : null;
+          await persistAutoCaptain(teamId, picked.playerId, bypassReason);
+          captainId = picked.playerId;
           isAutoAssigned = true;
         }
       }
@@ -547,13 +589,13 @@ export async function processTripleCrownGameweek(
         let awayPlayerScoresJson = playerScoreCache.get(fixture.awayTeamId) ?? null;
 
         if (homeTeamScore === undefined) {
-          const home = await buildKnockoutSide(fixture.homeTeamId, fixture.homeTeam.players);
+          const home = await buildKnockoutSide(fixture.homeTeamId, fixture.homeTeam.name, fixture.homeTeam.players);
           homeTeamScore = home.total;
           homePlayerScoresJson = home.json;
         }
 
         if (awayTeamScore === undefined) {
-          const away = await buildKnockoutSide(fixture.awayTeamId, fixture.awayTeam.players);
+          const away = await buildKnockoutSide(fixture.awayTeamId, fixture.awayTeam.name, fixture.awayTeam.players);
           awayTeamScore = away.total;
           awayPlayerScoresJson = away.json;
         }

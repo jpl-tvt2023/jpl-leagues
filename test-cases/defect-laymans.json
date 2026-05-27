@@ -108,10 +108,10 @@
     "example": "Before: an admin trying to undo a wasted Score Lock had no way to see it on the override page. After: all six chips are visible per set, gated by which ones the league turned on."
   },
   "DEF-CHIP-007": {
-    "title": "Captaincy chip-count cap was wrong for 8-team leagues",
-    "summary": "Every player has a per-season captaincy cap (15 chips for TVT, 19 for Triple Crown). The cap was applied using a hard-coded gameweek cut-off (GW30) for non-Triple-Crown leagues. For 8-team leagues — whose league stage runs to GW35 — captaincies in weeks 31-35 were treated as 'playoff' (unlimited) when they should still have counted against the 15-per-player cap.",
-    "fix": "The cut-off is now derived from each league's actual playoff-start gameweek, so the cap is applied correctly for every league variant.",
-    "example": "Before: in an 8-team league, a player could be captained 20+ times across the season without ever hitting the 15 cap. After: the cap kicks in at GW35 as designed."
+    "title": "Captain chip cap was a flat 15 even when the league had more than 30 league-stage weeks",
+    "summary": "The number of times each player can wear the captain armband over the season was hard-coded at 15, regardless of how long the league actually runs before its playoffs. For shorter formats like TVT-8 — which keep playing league games right up to GW35 — that meant captaincies in the last few weeks effectively had no cap.",
+    "fix": "The cap is now calculated from the league itself: half the number of non-playoff gameweeks, rounded up. So a regular 30-week TVT league still has a cap of 15, but a TVT-8 league (35 non-playoff weeks) now has a cap of 18, and Triple Crown stays at 19. One shared piece of code now serves the captain announce, the admin CSV import, and the dashboard display.",
+    "example": "Before: in a TVT-8 league a player could be captained in any of weeks 31-35 without it counting against any limit. After: those weeks count toward an 18-per-player cap, so heavy-hitters can no longer be captained every single week of the season."
   },
   "DEF-ECON-001": {
     "title": "Any logged-in team could read any other team's private finances",
@@ -282,15 +282,15 @@
     "example": "Before: a network drop mid-bulk-delete left the league with half-deleted teams and no audit trail. After: the same drop leaves the league in its original state and the admin can retry safely."
   },
   "DEF-TRADE-002": {
-    "title": "Primary-tier teams could release players when they shouldn't be able to",
-    "summary": "The auction marketplace — including the player-release feature — is meant to be a Complete-tier-only feature. The release endpoint never checked the tier, so a team in a Primary-tier league could still flip players to 'pending release' through the API.",
-    "fix": "Release now refuses for any league that isn't Complete tier and matches the existing trade endpoint's gate.",
-    "example": "Before: a Primary-tier team could trigger a release on a player. After: that call returns a 403 'Releases are only available in Complete tier'."
+    "title": "Releasing a player is now available in Primary tier (just not during a live auction)",
+    "summary": "The previous fix went too far: it limited the \"release a player\" feature to Complete-tier leagues only. The client clarified that Primary-tier leagues should also be able to release players. They just shouldn't be able to do it while an auction is actively running.",
+    "fix": "Removed the Complete-tier-only gate from the release endpoints. Release is now available in any auction tier. The existing live-auction guard (added by a separate fix) is the only restriction — it blocks releases while an auction session is active or paused, regardless of tier.",
+    "example": "Before: a Primary-tier team trying to release a player got a 403 with \"Releases are only available in Complete tier\". After: the same team can release the player normally, unless an auction is live, in which case both Primary and Complete tiers get a 409 with \"Marketplace is closed during a live auction\"."
   },
   "DEF-TRADE-003": {
-    "title": "Players could be released while a live auction was running",
-    "summary": "The trade endpoint refused operations while an auction session was in progress, but the release endpoint did not. A team could mark a player for release in the middle of an active draft, partially undermining the bidding state.",
-    "fix": "Release now refuses with the same 'Marketplace is closed during a live auction' error the trade endpoint already used.",
+    "title": "Releasing players during a live auction is correctly blocked",
+    "summary": "Players could be released while a live auction was running, which let a team game the marketplace while bidding was active. The previous fix added a guard that blocks release requests whenever an auction session is in progress.",
+    "fix": "No code change in this revision. The client confirmed the guard added in the earlier fix is correct as-is. After the companion change to DEF-TRADE-002 (which removed the Complete-tier-only restriction), the live-auction guard is now the single rule that controls when releases are allowed, and it applies to every tier equally.",
     "example": null
   },
   "DEF-TRADE-004": {
@@ -306,10 +306,10 @@
     "example": null
   },
   "DEF-AUC-003": {
-    "title": "Admin could save an auction with negative bid timers",
-    "summary": "When creating an auction session, the bid timer and nomination timeout values were saved verbatim with no sanity check. An admin who typed -5 seconds or 0 would brick the auction — every bid would instantly expire.",
-    "fix": "Both values are now validated as positive integers within sensible ranges (5-600 seconds for bids, 5-3600 for nominations), and out-of-range values are rejected with a clear error.",
-    "example": null
+    "title": "Anti-snipe buffer for last-second bids is documented (no code change needed)",
+    "summary": "The client asked whether the auction engine gives a buffer for bids submitted at the last second. The answer is yes: bids placed within the final 5 seconds of the timer push the timer forward by 10 seconds (capped at the session's configured bid timer), and a 2-second post-expiry grace catches bids whose network arrival lagged behind. None of that was written down — the rule and four acceptance criteria were added so future readers can see it without reading code.",
+    "fix": "No code change. Added a business rule and four acceptance criteria covering: (1) a bid inside the 5-second window extends the timer; (2) a bid outside the window does not; (3) back-to-back snipes can't push the timer past the session max; (4) the 2-second post-expiry grace accepts late bids but rejects anything more than 2 seconds past expiry.",
+    "example": "Before: nothing in the test-case workbook described last-second bid behaviour — it lived only in the code. After: the rule states the exact thresholds (5-second window, 10-second extension, 2-second grace), and four positive/boundary test cases pin them down."
   },
   "DEF-BACKUP-005": {
     "title": "Backup list flag for 'has fixtures' was always true",
@@ -342,10 +342,10 @@
     "example": null
   },
   "DEF-CHIP-009": {
-    "title": "Captain CSV import bypassed the per-player chip cap",
-    "summary": "When a team submitted captains directly through the UI, the system enforced the cap of 15 captaincies per player (19 for Triple Crown). When an admin uploaded a captain CSV, the same cap was not enforced — an upload could push a single player far past the limit.",
-    "fix": "The upload now applies the same cap row-by-row and rejects entries that would exceed it, with a clear per-row error message.",
-    "example": null
+    "title": "Admin imports and auto-fallback captaincy now bypass the cap (with an audit reason)",
+    "summary": "Two captaincy paths needed to override the per-player cap rather than block on it. An admin uploading a captain CSV needed the rows to land even if a player was already at their season cap, and the automatic fallback that happens when a team forgets to announce a captain needed to pick the lowest-scoring player even if that player had no cap chips left.",
+    "fix": "Both paths now insert the captaincy row regardless of the cap. When the cap is exceeded the row carries a 'bypassReason' audit string explaining which gameweek bypassed it, who the player was, and what the cap was. The chips-used counter is incremented past the cap so it reflects reality. The cap is still enforced on the normal team-driven captain-announcement screen — only the two override paths bypass it.",
+    "example": "Before: an admin CSV row for a player already at 15 captaincies was thrown into 'details.errors' and skipped. After: the row is inserted, the player's counter goes to 16, and the captaincy row records \"Admin CSV import override: GW12 captaincy for X inserted despite per-player cap of 15 reached\". The admin still sees a warning, but the data lands."
   },
   "DEF-CHIP-010": {
     "title": "Some wasted-chip imports didn't fully record their wasted state",
@@ -462,10 +462,10 @@
     "example": null
   },
   "DEF-TRADE-005": {
-    "title": "Dead columns and status values from the removed veto system",
-    "summary": "The peer-veto system on trades was removed, but the trade-proposals table still had veto-deadline and veto-votes columns, the schema still listed 'vetoed' as a valid status, and the trade list response still echoed those fields. API consumers and test writers were left with confusing dead lifecycle artifacts.",
-    "fix": "Removed veto fields from the trade-list response, marked the columns as deprecated in the schema comment, and documented 'vetoed' as a historical-only status. Columns remain in the database for backwards compatibility with existing rows.",
-    "example": null
+    "title": "Old veto system columns and code are now fully removed",
+    "summary": "The peer-veto system was removed earlier, but the database columns it used ('veto_deadline' and 'veto_votes') were left in place \"for backwards compatibility\". The client confirmed those should also go, along with any leftover references in the code.",
+    "fix": "A new database migration physically drops both columns from the 'trade_proposals' table (using the standard SQLite recreate-table pattern so foreign keys stay intact). The columns are gone from the drizzle schema, the backup/restore code, the marketplace pages, and the admin pages. The historical \"vetoed\" status string is documented as legacy-only and is never emitted by any code path.",
+    "example": "Before: querying the trade_proposals table schema showed 'veto_deadline' and 'veto_votes' columns even though no live code wrote to them. After: the same query returns zero rows for any column whose name begins with 'veto_'."
   },
   "DEF-TRADE-006": {
     "title": "League admins could do low-level corrections but not approve trades",
