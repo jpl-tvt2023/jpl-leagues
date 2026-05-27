@@ -46,6 +46,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Normalise to lowercase for case-insensitive storage + comparison
+    const normalizedLoginId = String(teamLoginId).toLowerCase();
+
     // Check league format — auction leagues don't use groups
     const leagueRow = await db.select({ format: leagues.format }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
     const isAuction = leagueRow[0]?.format === "auction";
@@ -77,9 +80,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Global uniqueness check on teamLoginId (unless it's the same team's current login ID)
+    // Global uniqueness check on teamLoginId (case-insensitive; unless it's the same team's current login ID)
     const conflictingLoginId = await db.select().from(teams).where(
-      eq(teams.teamLoginId, teamLoginId)
+      sql`LOWER(${teams.teamLoginId}) = ${normalizedLoginId}`
     );
     if (conflictingLoginId.length > 0 && conflictingLoginId[0].id !== teamId) {
       return NextResponse.json(
@@ -117,7 +120,7 @@ export async function PUT(request: NextRequest) {
 
     // Update team
     const updateData: Record<string, unknown> = {
-      teamLoginId,
+      teamLoginId: normalizedLoginId,
       name: teamName,
     };
 

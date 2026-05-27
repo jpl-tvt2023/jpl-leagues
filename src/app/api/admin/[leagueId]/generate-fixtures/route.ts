@@ -87,19 +87,36 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Ensure all 38 gameweeks exist, all isPlayoffs=false (Triple Crown has no TVT playoffs)
+      // Triple Crown PL fixture math is hardcoded for 20 teams × 2 reps = 38 GWs.
+      // Any other team count breaks the season skeleton (10 teams × 2 reps = 18 GWs,
+      // 22 × 2 = 42 GWs etc.). Refuse with HTTP 400 rather than silently producing
+      // a malformed schedule. The downstream Berger-table generator (used elsewhere)
+      // also asserts on this — failing early here gives a cleaner error response.
+      if (plTeams.length !== 20) {
+        return NextResponse.json(
+          { error: `Triple Crown requires exactly 20 PL teams; this league has ${plTeams.length}.` },
+          { status: 400 }
+        );
+      }
+
+      // Triple Crown requires all 38 gameweeks to exist with real FPL deadlines
+      // before fixtures can be generated. Refuse instead of silently creating
+      // placeholder deadlines (`new Date()`), which would otherwise drift the
+      // entire season schedule from the actual Premier League calendar.
       const existingGws = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId));
       const existingGwNums = new Set(existingGws.map((gw) => gw.number));
+      const missingGws: number[] = [];
       for (let n = 1; n <= 38; n++) {
-        if (!existingGwNums.has(n)) {
-          await db.insert(gameweeks).values({
-            id: generateId(),
-            number: n,
-            leagueId,
-            isPlayoffs: false,
-            deadline: new Date(),
-          });
-        }
+        if (!existingGwNums.has(n)) missingGws.push(n);
+      }
+      if (missingGws.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Cannot generate Triple Crown fixtures — ${missingGws.length} gameweek(s) missing. Run POST /api/admin/[leagueId]/create-gameweeks first to populate real FPL deadlines for GW1-38.`,
+            missingGameweeks: missingGws,
+          },
+          { status: 400 }
+        );
       }
 
       const allGws = await db.select().from(gameweeks).where(eq(gameweeks.leagueId, leagueId)).orderBy(asc(gameweeks.number));
@@ -204,23 +221,21 @@ export async function POST(request: NextRequest) {
     // 32-team: 30/15=2, 16-team: 30/15=2, 8-team: 35/7=5
     const repetitions = (effectivePlayoffStart - 1) / (teamsPerGroup - 1);
 
-    // Ensure league-stage gameweeks exist for this league
+    // League-stage gameweeks must already exist with real FPL deadlines. Refuse
+    // rather than silently creating placeholder deadlines (`new Date()`), which
+    // would drift the season schedule from the actual Premier League calendar.
     const existingLeagueGws = await db
       .select()
       .from(gameweeks)
       .where(and(eq(gameweeks.leagueId, leagueId), eq(gameweeks.isPlayoffs, false)));
 
     if (existingLeagueGws.length === 0) {
-      const gwData = generateGameweeks(effectivePlayoffStart);
-      for (const gw of gwData.filter((g) => !g.isPlayoffs)) {
-        await db.insert(gameweeks).values({
-          id: generateId(),
-          number: gw.number,
-          leagueId,
-          isPlayoffs: false,
-          deadline: new Date(),
-        });
-      }
+      return NextResponse.json(
+        {
+          error: "Cannot generate TVT fixtures — no league-stage gameweeks exist for this league. Run POST /api/admin/[leagueId]/create-gameweeks first to populate real FPL deadlines.",
+        },
+        { status: 400 }
+      );
     }
 
     // Build gameweek map for this league (non-playoff only)

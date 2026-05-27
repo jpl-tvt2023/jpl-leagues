@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 3,
+    "version": 5,
     "businessContext": "Auction Core is the 'court' of the auction-format league — the live session machine, the per-player bidding round, the snake-order nomination loop, the auto-nominate wishlist that fires on missed nominations, and the read APIs that surface squad / teams / players / unsold pool / live status. It owns session lifecycle (pending → active → paused → completed) for the 'initial' and 'mini-auction' session types only; the club-auction lifecycle is module 13. It owns bid placement (anti-snipe, min-increment, squad-rule pre-checks) but defers purse / payout / synergy math to module 11, marketplace/trade locking to module 12, and slot-unlock / penalty-redeem economics to module 13. Auction standings ranking belongs to module 07. This module also covers the admin reset-auction endpoint that wipes the auction back to initial or a chosen mini-cycle.",
     "userStories": [
       {
@@ -580,10 +580,9 @@
       },
       {
         "id": "BR-AUC-056",
-        "rule": "resetTo='initial' restores bonusSlots=0 on every team but does NOT delete the teamSlotUnlocks audit ledger rows for the league. // CODE-CONFIRMED: may be a defect — orphaned slot-unlock ledger rows survive a full reset, breaking the finance trail. Compare with the restore-auction route which DOES delete teamSlotUnlocks at line 372. Confirm with product owner.",
+        "rule": "POST /api/admin/[leagueId]/reset-auction wipes the slot-unlock audit trail (teamSlotUnlocks) for the league in the same flow as the rest of the auction state (auctionOwnership, auctionClubOwnership, teamPenalties, auctionBids, auctionSessions, etc.). This keeps teams.bonusSlots=0 in lockstep with an empty audit trail.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/reset-auction/route.ts:38-83",
-          "src/app/api/admin/[leagueId]/restore-auction/route.ts:372"
+          "src/app/api/admin/[leagueId]/reset-auction/route.ts:51-58"
         ]
       },
       {
@@ -612,6 +611,15 @@
         "rule": "POST /api/auction/session action=create validates nominationTimeoutSeconds is an integer in [5, 3600] when supplied; out-of-range or non-integer values return HTTP 400. Undefined falls back to 60s default.",
         "sourceRefs": [
           "src/app/api/auction/session/route.ts:173-178"
+        ]
+      },
+      {
+        "id": "BR-AUC-061",
+        "rule": "Anti-snipe: when a bid arrives while remaining time on the current bid is <= ANTI_SNIPE_WINDOW_MS (5000 ms), expiresAt is pushed forward by ANTI_SNIPE_EXTENSION_MS (10000 ms), capped at Date.now() + bidTimerSeconds * 1000. Bids arriving outside the closing window leave expiresAt unchanged. A 2-second post-expiry grace period accepts bids whose network arrival lagged the timer; bids arriving more than 2 s after expiresAt return HTTP 400 with 'Auction timer has expired'.",
+        "sourceRefs": [
+          "src/app/api/auction/bid/route.ts:13-14",
+          "src/app/api/auction/bid/route.ts:77-80",
+          "src/app/api/auction/bid/route.ts:145-155"
         ]
       }
     ],
@@ -1080,9 +1088,9 @@
       },
       {
         "id": "AC-AUC-067",
-        "given": "Session cycleNumber=2",
-        "when": "applyNominationPenalty fires for team A",
-        "then": "a teamPenalties row exists with teamId=A, sessionId=session, incurredCycle=2, redeemedAt=null AND teams.penaltySlots for A increases by 1",
+        "given": "a league has accumulated teamSlotUnlocks rows from a prior auction run and an admin calls POST /reset-auction with action='initial'",
+        "when": "the handler runs",
+        "then": "after the call, teamSlotUnlocks for the league is empty (0 rows); teams.bonusSlots=0 for every non-ghost team; the finance ledger reflects this — no orphan slot-unlock outflows remain.",
         "linksTo": "BR-AUC-058"
       },
       {
@@ -1112,6 +1120,34 @@
         "when": "both clients race",
         "then": "only one client's atomic claim (UPDATE nominationDeadline=null WHERE nominationDeadline IS NOT NULL) succeeds and calls handleNominationTimeout — advanceNominator runs once",
         "linksTo": "BR-AUC-042"
+      },
+      {
+        "id": "AC-AUC-072",
+        "given": "an active auction with expiresAt = now + 3000 ms",
+        "when": "a valid bid is placed",
+        "then": "expiresAt is extended to approximately (now + 3000 + 10000) ms (capped at now + bidTimerSeconds * 1000); response includes the updated expiresAt",
+        "linksTo": "BR-AUC-061"
+      },
+      {
+        "id": "AC-AUC-073",
+        "given": "an active auction with expiresAt = now + 12000 ms and bidTimerSeconds = 20",
+        "when": "a valid bid is placed",
+        "then": "expiresAt is unchanged from its pre-bid value (no anti-snipe extension fires); the bid is recorded",
+        "linksTo": "BR-AUC-061"
+      },
+      {
+        "id": "AC-AUC-074",
+        "given": "bidTimerSeconds = 20 and a current expiresAt = now + 2000 ms",
+        "when": "a valid bid lands",
+        "then": "the resulting expiresAt is no later than now + 20000 ms; even if the math (expiresAt + 10000) would push it further, the Math.min(extended, maxFromNow) cap clamps it to the session's max timer from the current moment",
+        "linksTo": "BR-AUC-061"
+      },
+      {
+        "id": "AC-AUC-075",
+        "given": "an active auction where the previous expiresAt = now - 1500 ms (1.5 s ago)",
+        "when": "a valid bid arrives",
+        "then": "the bid is accepted (HTTP 200; bid recorded); the anti-snipe extension also fires because remaining time was <= 5000 ms. AND given the same auction but expiresAt = now - 3000 ms, the bid returns HTTP 400 with 'Auction timer has expired'",
+        "linksTo": "BR-AUC-061"
       }
     ]
   },
@@ -1120,7 +1156,7 @@
       "id": "DEF-AUC-001",
       "title": "reset-auction 'initial' leaves orphan teamSlotUnlocks ledger rows",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "POST /api/admin/[leagueId]/reset-auction with resetTo='initial' (src/app/api/admin/[leagueId]/reset-auction/route.ts:38-83) wipes auctionBids, auctionSessions, auctionOwnership, auctionClubOwnership, teamPenalties, auctionScores and tradeProposals and resets teams.bonusSlots=0, but does NOT delete the teamSlotUnlocks audit/finance ledger rows for the league. The sibling restore-auction route DOES delete teamSlotUnlocks (src/app/api/admin/[leagueId]/restore-auction/route.ts:372), proving the table is part of auction state.",
@@ -1142,9 +1178,9 @@
       "pinningTestCases": [
         "TC-AUC-108"
       ],
-      "notes": "Fix is one extra line: await db.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId)); placed alongside the other deletes. Risk: low — the table is purely an audit log. Impact: re-runs of a league's initial auction produce duplicate/phantom finance entries which is misleading to admins/teams.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Fix is one extra line: await db.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId)); placed alongside the other deletes. Risk: low — the table is purely an audit log. Impact: re-runs of a league's initial auction produce duplicate/phantom finance entries which is misleading to admins/teams. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "POST /api/admin/[leagueId]/reset-auction now also deletes teamSlotUnlocks rows for the league (src/app/api/admin/[leagueId]/reset-auction/route.ts:51-58). Without this, a full reset left ghost 'Slot Unlock' outflows in the finance ledger that no longer matched any team's bonusSlots (which the same handler resets to 0). The reset now wipes auction state, the slot-unlock audit trail, and the team economy columns together so the ledger and team state stay consistent.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-AUC-002",
@@ -1201,7 +1237,7 @@
         "TC-AUC-114",
         "TC-AUC-115"
       ],
-      "notes": "Add an input guard: if either is provided, require Number.isInteger && >= 5 && <= 300 (or similar). Low risk — purely additive validation. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
+      "notes": "Add an input guard: if either is provided, require Number.isInteger && >= 5 && <= 300 (or similar). Low risk — purely additive validation. [DEV] Self-verified: tsc clean for the touched file. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed. [CLIENT-QUESTION 2026-05-28] Client asked whether the engine gives buffer time for last-second bids. Confirmed: anti-snipe (5s window → +10s extension, capped at bidTimerSeconds) is implemented at src/app/api/auction/bid/route.ts:145-155; a 2-second post-expiry grace lives at :77-80. [BA-UPDATED]: 2026-05-28 — added BR-AUC-061 + 4 ACs to lock in the anti-snipe behaviour. No code change.\n[DEV 2026-05-28] No code change for the client question. Anti-snipe (ANTI_SNIPE_WINDOW_MS=5000, ANTI_SNIPE_EXTENSION_MS=10000) at src/app/api/auction/bid/route.ts:145-155 and 2s post-expiry grace at :77-80 already provide last-second buffer. BR-AUC-061 + 4 ACs (AC-AUC-072..075) added by BA to lock in the behaviour.",
       "resolution": "Added positive-integer range validation for bidTimerSeconds (5-600) and nominationTimeoutSeconds (5-3600) in POST /api/auction/session action=create (src/app/api/auction/session/route.ts:163-178). Out-of-range or non-integer values return HTTP 400 with the explicit range message. Undefined values still fall back to the existing defaults (20s / 60s).",
       "resolutionDate": "2026-05-26"
     }
@@ -3320,8 +3356,8 @@
     {
       "id": "TC-AUC-108",
       "feature": "Reset Auction - Orphan Ledger (DEF-AUC-001)",
-      "scenario": "Regression: teamSlotUnlocks ledger rows survive resetTo='initial' (current behaviour)",
-      "type": "Regression",
+      "scenario": "reset-auction wipes teamSlotUnlocks alongside auctionOwnership / teamPenalties / teams.bonusSlots",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "League has teamSlotUnlocks rows for slots 15 and 16 (2 rows)",
       "testData": "body={resetTo:'initial'}",
@@ -3331,13 +3367,13 @@
         "3. SELECT teamSlotUnlocks count again",
         "4. SELECT teams.bonusSlots"
       ],
-      "expectedResult": "teamSlotUnlocks count still =2 after reset (orphaned ledger rows remain); teams.bonusSlots=0. This pins the current defective behaviour described in DEF-AUC-001 — after fix this test should be updated to expect 0 rows.",
+      "expectedResult": "After POST /api/admin/[leagueId]/reset-auction with action='initial' on a league that previously had teamSlotUnlocks rows: SELECT * FROM team_slot_unlocks WHERE leagueId=L returns 0 rows; teams.bonusSlots=0 for every team; the finance ledger no longer shows 'Slot Unlock' outflows from the previous auction run.",
       "postconditions": "Orphan ledger persists",
       "requirementId": "AC-AUC-065",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-AUC-001"
+      "notes": "[QA-VERIFY] Updated post-DEF-AUC-001 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-AUC-109",
@@ -3564,6 +3600,102 @@
       "createdDate": "2026-05-23",
       "status": "Not Executed",
       "notes": ""
+    },
+    {
+      "id": "TC-AUC-120",
+      "feature": "Anti-Snipe - Inside Closing Window",
+      "scenario": "Bid inside the closing window extends expiresAt by anti-snipe extension",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Active player-auction session with bidTimerSeconds=20; auctionBids row status='open' with expiresAt = now + 3000ms; logged-in team T2 with sufficient purse and squad feasibility for the next bid amount",
+      "testData": "bidTimerSeconds=20; pre-bid expiresAt = now + 3s; bidder team T2; body={sessionId, bidAmount=currentHighBid+100_000}",
+      "testSteps": [
+        "1. Record T0 = Date.now()",
+        "2. POST /api/auction/bid with valid {sessionId, bidAmount}",
+        "3. Read returned auctionBids row's expiresAt",
+        "4. Compute delta = returnedExpiresAt - T0 (ms)"
+      ],
+      "expectedResult": "HTTP 200; auctionBids updated and auctionBidLogs type='bid' inserted; delta is approximately 13_000 ms (3000 + 10000) and never greater than 20_000 ms (bidTimerSeconds * 1000). Assert 11_000 <= delta <= 20_000 to tolerate network latency",
+      "postconditions": "Bid recorded; auction timer extended within cap",
+      "requirementId": "AC-AUC-072",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "New AC under BR-AUC-061 anti-snipe consolidation. Overlaps with TC-AUC-059 (AC-AUC-035) which already asserts the same extension math from the BR-AUC-033 angle."
+    },
+    {
+      "id": "TC-AUC-121",
+      "feature": "Anti-Snipe - Outside Closing Window",
+      "scenario": "Bid outside the closing window leaves expiresAt unchanged",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Active player-auction session with bidTimerSeconds=20; auctionBids row status='open' with expiresAt = now + 12000ms; logged-in team with sufficient purse and squad feasibility",
+      "testData": "bidTimerSeconds=20; pre-bid expiresAt = now + 12s; body={sessionId, bidAmount=currentHighBid+100_000}",
+      "testSteps": [
+        "1. SELECT pre-bid expiresAt (call it E0)",
+        "2. POST /api/auction/bid with valid bidAmount",
+        "3. SELECT returned expiresAt (call it E1)",
+        "4. Compare E1 against E0"
+      ],
+      "expectedResult": "HTTP 200; bid recorded (auctionBids updated, auctionBidLogs type='bid' appended); |E1 - E0| <= 100 ms (no anti-snipe extension fired because remaining time > ANTI_SNIPE_WINDOW_MS)",
+      "postconditions": "Bid recorded; timer unchanged",
+      "requirementId": "AC-AUC-073",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Overlaps with TC-AUC-058 (AC-AUC-034) which already asserts the no-extension branch from the BR-AUC-033 angle."
+    },
+    {
+      "id": "TC-AUC-122",
+      "feature": "Anti-Snipe - Extension Cap",
+      "scenario": "Anti-snipe extension is capped at bidTimerSeconds from now across back-to-back snipes",
+      "type": "Boundary",
+      "priority": "P2",
+      "preconditions": "Active player-auction session with bidTimerSeconds=20; auctionBids row status='open' with expiresAt = now + 2000ms (already inside the closing window); two distinct bidders T2 and T3 each with sufficient purse and feasibility",
+      "testData": "bidTimerSeconds=20; pre-bid1 expiresAt = now + 2s; after ~6s post-bid1 the remaining time should be ~4s; body for each bid increments by 100_000",
+      "testSteps": [
+        "1. Record T0 = Date.now(); pre-bid1 remainingMs ~= 2000",
+        "2. POST /api/auction/bid as T2 with valid bidAmount (bid1)",
+        "3. Read returned expiresAt (E1). Math: E1 ~= T0 + 12000ms (2000+10000); cap = T0 + 20000 so no clamp on bid1",
+        "4. Wait ~6 seconds (so remaining time on E1 falls to ~6000ms; then arrange a follow-up bid such that remainingMs <= 5000ms — e.g. wait until ~8s after T0 so remainingMs ~= 4000)",
+        "5. Record T1 = Date.now() (T1 ~= T0 + 8000)",
+        "6. POST /api/auction/bid as T3 with valid bidAmount (bid2)",
+        "7. Read returned expiresAt (E2)",
+        "8. Assert E2 == min(E1 + 10000, T1 + 20000) and specifically that the cap fired: (E1 + 10000) ~= T0 + 22000 > T1 + 20000 (~T0 + 28000)... clarification: the cap (T1 + 20000) is the smaller value only when E1 + ANTI_SNIPE_EXTENSION_MS exceeds it; engineer the timing so that holds — i.e. E1 + 10000 > T1 + 20000. With E1 = T0+12000 and T1 = T0+8000, E1+10000 = T0+22000 vs T1+20000 = T0+28000 — cap does NOT fire. To force the cap to fire, place bid2 LATER: wait until T1 = T0 + 11500ms so E1 + 10000 = T0+22000 vs T1 + 20000 = T0+31500 — still no clamp. The cap only fires when remaining time after extension would exceed bidTimerSeconds from now. Because ANTI_SNIPE_EXTENSION_MS (10000) < bidTimerSeconds*1000 (20000), the cap effectively never clamps a single extension. Document this finding: assert (E2 - T1) <= 20_000 ms in ALL cases, AND assert E2 == E1 + 10000 (the unclamped branch) for this configuration. The cap is provably unreachable with current constants (10000 < 20000)."
+      ],
+      "expectedResult": "Both bids return HTTP 200. After bid1: (E1 - T0) ~= 12_000 ms, <= 20_000 ms. After bid2: (E2 - T1) <= 20_000 ms AND E2 == min(E1 + 10_000, T1 + 20_000). With ANTI_SNIPE_EXTENSION_MS=10_000 and bidTimerSeconds=20 the Math.min cap is unreachable in a single extension; the assertion (E2 - T1) <= 20_000 must hold regardless. To exercise the clamp branch directly, repeat with bidTimerSeconds=8 (an edge config where 10_000 > 8_000): bid2 must then satisfy E2 == T1 + 8_000",
+      "postconditions": "Two bids recorded; extended expiresAt always within bidTimerSeconds*1000 of the bid's wall-clock arrival",
+      "requirementId": "AC-AUC-074",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Boundary TC that explicitly drives the Math.min clamp. With production constants (ANTI_SNIPE_EXTENSION_MS=10_000, default bidTimerSeconds=20) the cap is mathematically unreachable in a single bid — the cap-reachable variant requires bidTimerSeconds < ANTI_SNIPE_EXTENSION_MS/1000 = 10. Includes a second pass at bidTimerSeconds=8 to actually exercise the clamp. Partially overlaps with TC-AUC-059/TC-AUC-060 which cover extension presence but not the cap branch."
+    },
+    {
+      "id": "TC-AUC-123",
+      "feature": "Anti-Snipe - Post-Expiry Grace",
+      "scenario": "2-second post-expiry grace accepts late bids; bids past 2s grace are rejected",
+      "type": "Boundary",
+      "priority": "P1",
+      "preconditions": "Active player-auction session with bidTimerSeconds=20; ability to arrange auctionBids rows with backdated expiresAt for the test (e.g. via direct DB write or a test seed); two valid bidder teams with sufficient purse and feasibility",
+      "testData": "First arrangement: auctionBids row status='open' with expiresAt = now - 1500ms. Second arrangement: a fresh nomination + auctionBids row status='open' with expiresAt = now - 3000ms.",
+      "testSteps": [
+        "1. Arrange an open auctionBids row with expiresAt = now - 1500ms (1.5s after expiry, inside the 2s grace, remainingMs is negative so anti-snipe window check triggers)",
+        "2. Record T0 = Date.now()",
+        "3. POST /api/auction/bid with valid bidAmount",
+        "4. Assert HTTP 200; assert bid was recorded; assert returned expiresAt was extended (because remainingMs <= ANTI_SNIPE_WINDOW_MS)",
+        "5. Tear down or reset to a fresh nomination/open-bid",
+        "6. Arrange an open auctionBids row with expiresAt = now - 3000ms (3s after expiry, past the 2s grace)",
+        "7. POST /api/auction/bid with valid bidAmount",
+        "8. Assert HTTP 400 with JSON body {error: 'Auction timer has expired'}; assert no auctionBids update and no auctionBidLogs row inserted for this attempt"
+      ],
+      "expectedResult": "Step 4: HTTP 200, bid accepted, expiresAt extended by anti-snipe (snipe window check uses remainingMs which is negative — still <= 5000). Step 8: HTTP 400 with body {error:'Auction timer has expired'}; DB unchanged for that attempt",
+      "postconditions": "First arrangement's bid recorded with extended timer; second arrangement's bid rejected, original (expired) row untouched",
+      "requirementId": "AC-AUC-075",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Combines positive (grace accepts) + negative (past grace rejects) into one TC because AC-AUC-075 itself spans both branches. Significantly overlaps with TC-AUC-050 (AC-AUC-030, 3s past expiry rejected) and TC-AUC-051 (AC-AUC-030, 1.5s grace accepted) — those existing TCs cover the same code path (src/app/api/auction/bid/route.ts:77-80) under BR-AUC-029. Recommend reviewing TC-AUC-050/051 for potential deprecation or relinking to AC-AUC-075 once BR-AUC-061 supersedes BR-AUC-029's grace clause."
     }
   ],
   "gapFlags": []

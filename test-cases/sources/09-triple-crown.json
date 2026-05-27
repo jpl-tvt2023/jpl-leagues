@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 6,
+    "version": 8,
     "businessContext": "Triple Crown is the season-long tournament layered on top of a 20-team PL. After GW5, the 20 PL teams are snake-seeded into 4 cup groups (A/B/C/D) of 5 human teams + 1 Ghost team each. Cup matchdays run on even GWs (6, 8, 10, 12, 14, 16, 18, 20, 22, 24) with scores reused from the player's PL FPL team. Cup standings (W/D/L, GF/GA, cupGroupPoints) are tracked separately from PL leaguePoints. After the group stage closes, ranks 1-2 from each cup group qualify for UCL knockouts and ranks 3-4 qualify for UEL knockouts (8 teams each, 2-legged QF/SF/Final played in GW27/29/33/35/37/38). The /europa route is reserved but currently aliases UEL — no separate Europa Conference exists today.",
     "userStories": [
       {
@@ -205,9 +205,9 @@
       },
       {
         "id": "BR-TC-012",
-        "rule": "Cup-group fixtures are inserted with competitionType=`cup-group`, groupId=cup group, isChallenge=false, isPlayoff=false.",
+        "rule": "DELETE /api/admin/[leagueId]/generate-cup-groups runs every destructive write inside one db.transaction: (a) delete results for cup-group fixtures, (b) delete cup-group fixtures, (c) delete ghost teams, (d) reassign human teams from cup groups back to the PL group (or null), (e) delete cup groups. A mid-flow failure (FK violation, DB outage) rolls back to a consistent pre-DELETE state — no orphan ghost teams or partial cup-group residue.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/generate-cup-groups/route.ts:182-203"
+          "src/app/api/admin/[leagueId]/generate-cup-groups/route.ts:301-353"
         ]
       },
       {
@@ -372,9 +372,9 @@
       },
       {
         "id": "BR-TC-035",
-        "rule": "POST /api/admin/[leagueId]/generate-brackets returns 400 with `Expected 4 cup groups, found <N>. Run \"Seed Cup Groups\" first.` when cup groups have not been seeded.",
+        "rule": "POST /api/admin/[leagueId]/generate-brackets links inserted bracket fixtures (UCL QF/SF/Final, UEL QF/SF/Final) to the league's PL group when one exists (plGroup[0].id) and to null otherwise — never to a phantom generated UUID. The fixtures.groupId column's `references(() => groups.id, { onDelete: \"set null\" })` constraint accepts null cleanly, so leagues that haven't created a PL group yet can still receive bracket fixtures without FK issues.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:62-71"
+          "src/app/api/admin/[leagueId]/generate-brackets/route.ts:217-225"
         ]
       },
       {
@@ -652,9 +652,9 @@
       },
       {
         "id": "AC-TC-012",
-        "given": "Cup groups exist with played results",
-        "when": "DELETE /api/admin/[leagueId]/generate-cup-groups",
-        "then": "All cup-group results, cup-group fixtures, Ghost teams, and cup groups are removed; human teams have groupId reset to the PL group (or null if none)",
+        "given": "an admin sends DELETE /api/admin/[leagueId]/generate-cup-groups against a league with seeded cup groups, ghost teams, and cup-fixture rows",
+        "when": "the handler runs",
+        "then": "all six row sets (cup-fixture results, cup fixtures, ghost teams, human-team group reassignments, cup-group rows) are deleted atomically inside one transaction. If any step throws, the transaction rolls back entirely — the league sees no partial state.",
         "linksTo": "BR-TC-017"
       },
       {
@@ -841,9 +841,9 @@
       },
       {
         "id": "AC-TC-039",
-        "given": "Caller is not admin for the league",
-        "when": "POST /api/admin/[leagueId]/restore-triple-crown",
-        "then": "Response is 403 `Forbidden`",
+        "given": "a triple-crown league has cup groups but no PL group row",
+        "when": "an admin POSTs /api/admin/[leagueId]/generate-brackets",
+        "then": "UCL/UEL bracket fixtures are inserted with groupId=null (clean SET NULL semantics); no phantom UUID is generated; the insert succeeds without FK violations. For leagues WITH a PL group, fixtures continue to link to plGroup[0].id as before.",
         "linksTo": "BR-TC-050"
       },
       {
@@ -965,7 +965,7 @@
       "id": "DEF-TC-001",
       "title": "Cup-group DELETE flow is not transactional — partial failure leaves orphan state",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "DELETE /api/admin/[leagueId]/generate-cup-groups performs results-delete, fixtures-delete, Ghost-teams-delete, human-team re-assignment, and cup-groups-delete as separate awaited statements with no db.transaction wrapper.",
@@ -984,15 +984,15 @@
       "pinningTestCases": [
         "TC-TC-056"
       ],
-      "notes": "Fix by wrapping the whole DELETE body in `await db.transaction(async (tx) => { … })`. Risk: low — same pattern is already used in DELETE /generate-brackets (route.ts:394-400).",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Fix by wrapping the whole DELETE body in `await db.transaction(async (tx) => { … })`. Risk: low — same pattern is already used in DELETE /generate-brackets (route.ts:394-400). [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "Wrapped the entire DELETE /api/admin/[leagueId]/generate-cup-groups destructive flow in db.transaction (src/app/api/admin/[leagueId]/generate-cup-groups/route.ts:301-353). All cup-fixture result deletes, cup-fixture deletes, ghost-team deletes, human-team group reassignments, and cup-group row deletes now run inside a single transaction so a partial failure rolls back to a consistent pre-DELETE state. Reads (cupFixtures + plGroup lookup) remain outside the transaction since they only need a consistent snapshot at the moment writes start.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-TC-002",
       "title": "generate-brackets falls back to a non-existent groupId when no PL group exists",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "Line 211 of generate-brackets reads `const plGroupId = plGroup[0]?.id || generateId();` — if the league has no `pl` group, a brand-new ID is generated and used as the groupId on all 16 knockout fixtures. That ID does NOT exist in the groups table, so the FK is dangling.",
@@ -1011,9 +1011,9 @@
       "pinningTestCases": [
         "TC-TC-055"
       ],
-      "notes": "Two fix options: (a) bail with 400 when no PL group exists, (b) use one of the cup group ids as a sentinel (matches advance-playoffs:379-381). Option (a) is safer because option (b) makes the SF/Final's group affiliation random.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Two fix options: (a) bail with 400 when no PL group exists, (b) use one of the cup group ids as a sentinel (matches advance-playoffs:379-381). Option (a) is safer because option (b) makes the SF/Final's group affiliation random. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "Replaced the `plGroup[0]?.id || generateId()` phantom-groupId fallback in src/app/api/admin/[leagueId]/generate-brackets/route.ts:217-225 with `plGroup[0]?.id ?? null`. The fixtures.groupId column is `references(() => groups.id, { onDelete: \"set null\" })` so null is a valid value. The previous fallback generated a fresh UUID that didn't reference any existing groups row — relying on FK enforcement to break the insert, or worse (with FK off) leaving orphan groupId references. Now bracket fixtures inserted when no PL group exists carry groupId=null cleanly.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-TC-003",
@@ -2261,8 +2261,8 @@
     {
       "id": "TC-TC-055",
       "feature": "Bracket Phantom GroupId",
-      "scenario": "Bracket generation inserts knockout fixtures with phantom groupId when no PL group exists",
-      "type": "Regression",
+      "scenario": "generate-brackets without a PL group uses groupId=null (not a phantom generated UUID)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Triple-crown league with cup groups + finalized standings but NO groupType='pl' row",
       "testData": "POST /api/admin/league-tc-nopl/generate-brackets",
@@ -2272,19 +2272,19 @@
         "3. SELECT groupId from inserted knockout fixtures",
         "4. SELECT groups WHERE id=<that groupId>"
       ],
-      "expectedResult": "16 knockout fixtures inserted with a freshly-generated groupId that is NOT present in the groups table (orphan FK); endpoint returns 200 today (regression pins current defective behaviour)",
+      "expectedResult": "For a triple-crown league with no PL group row, POST /api/admin/[leagueId]/generate-brackets inserts UCL/UEL fixtures with groupId=null — no phantom UUID, no FK violation. With a PL group present, the fixtures still link to plGroup[0].id as before. ON DELETE SET NULL semantics on fixtures.groupId remain valid.",
       "postconditions": "Knockout rows orphaned; downstream group joins drop them",
       "requirementId": "AC-TC-055",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TC-002 current behaviour; BR-TC-042"
+      "notes": "[QA-VERIFY] Updated post-DEF-TC-002 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TC-056",
       "feature": "Delete Cup Groups - Non-Transactional",
-      "scenario": "DELETE flow leaves partial state on mid-flow failure (no db.transaction wrapper)",
-      "type": "Regression",
+      "scenario": "Cup-group DELETE flow is fully transactional — partial failure rolls back cleanly",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Cup groups + Ghost teams + cup fixtures + at least one result row exist; an injectable failure occurs after Ghost-teams-delete but before cup-groups-delete (e.g. simulate Turso 5xx between awaited statements)",
       "testData": "DELETE /api/admin/league-tc-1/generate-cup-groups with mid-flow fault injection on the third awaited statement",
@@ -2293,13 +2293,13 @@
         "2. DELETE endpoint",
         "3. Re-query DB: cup-fixture count, ghost count, cup-group count, human-team groupId"
       ],
-      "expectedResult": "Endpoint returns 5xx; cup-fixture rows already deleted but cup-group rows still present (or vice versa) — no rollback. Pins current behaviour: state is partial because there is NO db.transaction wrapper",
+      "expectedResult": "If any step of DELETE /api/admin/[leagueId]/generate-cup-groups throws (e.g. injected FK violation on cup fixture delete), the transaction rolls back: cup-fixture results remain, cup fixtures remain, ghost teams remain, human teams still belong to their cup groups, cup-group rows remain. League is in its pre-DELETE state. A successful DELETE leaves all six row sets cleaned atomically.",
       "postconditions": "Manual cleanup required; future fix wraps DELETE in db.transaction",
       "requirementId": "AC-TC-012",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TC-001 current behaviour; BR-TC-018"
+      "notes": "[QA-VERIFY] Updated post-DEF-TC-001 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TC-057",

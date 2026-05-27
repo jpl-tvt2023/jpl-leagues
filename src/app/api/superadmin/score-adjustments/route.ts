@@ -110,22 +110,33 @@ export async function PATCH(request: NextRequest) {
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
   if (!reason) return NextResponse.json({ error: "reason is required (audit trail)" }, { status: 400 });
 
+  // Actor id is set by middleware after isSuperAdmin passes — captured so the audit
+  // trail can attribute the adjustment to a specific superadmin in multi-SA platforms.
+  const actorUserId = request.headers.get("x-session-id") ?? "unknown";
+
   // Bound the bonus values so a single typo can't wreck a GW total. The cap
   // is comfortably higher than any legitimate adjustment (a full GW's worth of
   // FPL points for one team is rarely above ~150) but still flags 1e9-style typos.
+  // synergyBonus is a REAL column (naturally fractional — 0.5 × raw) so it accepts
+  // any finite number in range; clubResultBonus is INTEGER so we keep the integer gate.
   const MAX_BONUS = 500;
   const MIN_BONUS = -500;
-  const isValidBonus = (v: unknown): v is number =>
+  const isValidSynergyBonus = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v) && v >= MIN_BONUS && v <= MAX_BONUS;
+  const isValidClubResultBonus = (v: unknown): v is number =>
     typeof v === "number" && Number.isInteger(v) && v >= MIN_BONUS && v <= MAX_BONUS;
-  const synergyBonus: number | null = isValidBonus(body.synergyBonus) ? body.synergyBonus : null;
-  const clubResultBonus: number | null = isValidBonus(body.clubResultBonus) ? body.clubResultBonus : null;
+  const synergyBonus: number | null = isValidSynergyBonus(body.synergyBonus) ? body.synergyBonus : null;
+  const clubResultBonus: number | null = isValidClubResultBonus(body.clubResultBonus) ? body.clubResultBonus : null;
   if (synergyBonus === null && clubResultBonus === null) {
-    if (
-      (body.synergyBonus !== undefined && !isValidBonus(body.synergyBonus)) ||
-      (body.clubResultBonus !== undefined && !isValidBonus(body.clubResultBonus))
-    ) {
+    if (body.synergyBonus !== undefined && !isValidSynergyBonus(body.synergyBonus)) {
       return NextResponse.json(
-        { error: `synergyBonus and clubResultBonus must be integers in [${MIN_BONUS}, ${MAX_BONUS}]` },
+        { error: `synergyBonus must be a finite number in [${MIN_BONUS}, ${MAX_BONUS}]` },
+        { status: 400 }
+      );
+    }
+    if (body.clubResultBonus !== undefined && !isValidClubResultBonus(body.clubResultBonus)) {
+      return NextResponse.json(
+        { error: `clubResultBonus must be an integer in [${MIN_BONUS}, ${MAX_BONUS}]` },
         { status: 400 }
       );
     }
@@ -207,10 +218,10 @@ export async function PATCH(request: NextRequest) {
     await tx.insert(auditLogs).values({
       id: generateId(),
       type: "AUCTION_SCORE_ADJUSTMENT",
-      description: `[Superadmin] ${beforeAfter} — Reason: ${reason}`,
+      description: `[Superadmin ${actorUserId}] ${beforeAfter} — Reason: ${reason}`,
       teamId: row.teamId,
       gameweekId: row.gameweekId,
-      pointsAffected: deltaTotal,
+      pointsAffected: Math.round(deltaTotal),
     });
   });
 

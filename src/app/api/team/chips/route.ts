@@ -306,6 +306,14 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
+    // Load league config (playoffStartGw drives dynamic set boundaries)
+    const leagueRow = await db.select({ playoffStartGw: leagues.playoffStartGw })
+      .from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
+    if (leagueRow.length === 0) {
+      return NextResponse.json({ error: "League not found" }, { status: 404 });
+    }
+    const playoffStartGw = leagueRow[0].playoffStartGw ?? 31;
+
     // Get gameweek (must be in this team's league)
     const gw = await db.query.gameweeks.findFirst({
       where: and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, team.leagueId)),
@@ -340,8 +348,20 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Delete the chip
-    await db.delete(gameweekChips).where(eq(gameweekChips.id, existingChip.id));
+    // Resolve which teams.*Set<N>Used column the cancelled chip occupies
+    const chipSet = getChipSet(gameweekNumber, playoffStartGw);
+    const chipCols = CHIP_SET_COL[existingChip.chipType as ChipCode];
+    const flagCol = chipSet === 1 ? chipCols?.[0] : chipSet === 2 ? chipCols?.[1] : undefined;
+
+    // Delete the chip and clear the set-used flag atomically
+    await db.transaction(async (tx) => {
+      await tx.delete(gameweekChips).where(eq(gameweekChips.id, existingChip.id));
+      if (flagCol) {
+        await tx.update(teams)
+          .set({ [flagCol]: false })
+          .where(eq(teams.id, teamId));
+      }
+    });
 
     return NextResponse.json({
       success: true,

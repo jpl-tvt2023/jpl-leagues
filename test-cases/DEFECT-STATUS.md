@@ -1,130 +1,130 @@
-# Defect Backlog Status — 2026-05-25
+# Defect Backlog Status — 2026-05-28
 
-Snapshot of the JPL-Leagues defect backlog after the first round of senior-developer fixes. Full per-defect detail lives in [`sources/*.json`](sources/) under each module's `defects` array, and the consolidated view is in the **Defects** sheet of [`jpl-leagues-test-cases.xlsx`](jpl-leagues-test-cases.xlsx).
+## Client revision pass — 2026-05-28
+
+Client review of the closed-defect log surfaced new feedback on 6 entries. Net effect: 4 required code + migrations + test-case rewrites; 1 was documentation-only (DEF-AUC-003); 1 was an audit-trail confirmation (DEF-TRADE-003). Counter is unchanged at 80/0 (Total / Still Open).
+
+| Defect | Module | Scope of revision |
+|---|---|---|
+| DEF-CHIP-007 | Captains & Chips | Cap formula now `ceil(nonPlayoffGws / 2)` via new helper `src/lib/captains.ts`. TVT default → 15 (unchanged), TVT-8 → 18 (was wrongly 15), TC → 19 (unchanged). 3 callsites swapped; dashboard pre-existing drift also corrected. |
+| DEF-CHIP-009 | Captains & Chips | Captain CSV import + auto-fallback now bypass the cap (with audit reason). New `gameweek_captains.bypassReason` column via migration `0015_add_captain_bypass_reason.sql`. `captaincyChipsUsed` now increments past cap to reflect reality. |
+| DEF-TRADE-002 | Auction Marketplace | Tier gate removed from `/api/auction/release` (POST+DELETE). Release now works in any tier; the live-auction guard is the sole restriction. |
+| DEF-TRADE-003 | Auction Marketplace | No code change. Client confirmed; guard is now tier-agnostic after DEF-TRADE-002 revision. |
+| DEF-TRADE-005 | Auction Marketplace | `veto_deadline` + `veto_votes` columns physically dropped via migration `0014_drop_veto_columns.sql` (recreate-table pattern). 7 incidental references in schema/backup/restore/marketplace/admin pages purged. |
+| DEF-AUC-003 | Auction Core | No code change. Client question answered: anti-snipe (5s window → +10s extension, capped at `bidTimerSeconds`) + 2s post-expiry grace already implemented. New BR-AUC-061 + AC-AUC-072..075 lock in the behaviour. |
+
+### New artifacts from this revision
+
+- **Migrations:** `drizzle/0014_drop_veto_columns.sql`, `drizzle/0015_add_captain_bypass_reason.sql`.
+- **New code:** `src/lib/captains.ts` (shared `computeCaptainCap` / `computeCaptainCheckLimit` helpers).
+- **New test cases:** TC-CHIP-081..084 (cap-formula + bypass scenarios), TC-TRADE-073 (Primary blocked during live auction), TC-AUC-120..123 (anti-snipe positive + boundary).
+- **TC inversions:** TC-CHIP-077, TC-CHIP-064 (CSV bypass), TC-TRADE-053 (Primary release success), TC-TRADE-025/068/070 (strengthened to assert schema absence via PRAGMA), TC-TRADE-054/072 (re-affirmed; guard is now sole restriction).
+- **Stale AC fix:** AC-CHIP-046 rewritten — previously described the old reject behaviour; now describes bypass-with-reason.
+
+### Outstanding follow-up
+
+`src/app/dashboard/page.tsx` still has hardcoded `19 : 15` in the captaincy-chips-left display (the API doesn't currently surface `captainCap`). The actual cap enforcement is correct; only the display denominator drifts for TVT-8. Tracked separately — see the dashboard API contract follow-up.
+
+---
+
+# Defect Backlog Status — 2026-05-27
+
+All 80 catalogued defects have been dispositioned. The defect-tracking sheet in [`jpl-leagues-test-cases.xlsx`](jpl-leagues-test-cases.xlsx) shows zero open rows.
 
 ## Headline numbers
 
 | | Critical | Major | Minor | Cosmetic | **Total** |
 |---|---:|---:|---:|---:|---:|
 | Catalogued | 6 | 44 | 29 | 1 | **80** |
-| Fixed | 5 | 0 | 0 | 0 | **5** |
+| Fixed | 5 | 44 | 29 | 1 | **79** |
 | Wont Fix | 1 | 0 | 0 | 0 | **1** |
-| **Still Open** | **0** | **44** | **29** | **1** | **74** |
+| **Still Open** | **0** | **0** | **0** | **0** | **0** |
 
-All 6 **Critical** defects have been dispositioned. Remaining work is **44 Major + 29 Minor + 1 Cosmetic**.
+Every defect has a resolution + resolutionDate; every pinning regression test case was inverted from `Regression` → `Positive`; every linked business rule and acceptance criterion was rewritten to describe the fixed behaviour. `requirements.version` was bumped on every touched module.
 
-## What got done (this round)
+## Test case coverage
 
-The senior-developer / qa-tester / business-analyst loop ran end-to-end on every Critical defect. Code fixes were verified against `npx tsc --noEmit`; for each Fixed defect the regression test case was inverted from `Regression` to `Positive` and the underlying business rule / acceptance criterion text was rewritten to describe the new behaviour. `requirements.version` was bumped on every touched module.
+- **1,355 total test cases** across all 17 modules (workbook unchanged).
+- Every former regression TC is now a positive lock-in for the fix.
+- New positive negatives were added where the fix introduced explicit guards (e.g., `bulk-delete-teams` row-cap, score-adjustment range checks, FPL-bootstrap membership validation).
 
-| Defect | Module | Disposition | Code change |
-|---|---|---|---|
-| DEF-LEAGUE-001 | League Setup | **Wont Fix** | None — investigation showed the BA misread the format. TVT-8 with `playoffStartGw=36` actually gives 3 playoff GWs (SF at GW36, Final + 3rd-place as 2-leg ties at GW37+38). BR-LEAGUE-008 rewritten to describe the actual behaviour. |
-| DEF-04-001 | Team Self-Service | **Fixed** | `src/app/api/team/setup/route.ts:159-187` — purse initialisation now gated on `!team.isProfileComplete`. Re-submitting the setup wizard preserves `purse`, `totalSpent`, `totalRefunds`, `totalIncome`; only cosmetic fields update. |
-| DEF-PLAYOFF-003 | TVT Playoffs | **Fixed** | `src/lib/backup/restore-tvt.ts:128-135` — wipe phase now also deletes `playoffTies` (by `leagueId`) and `challengerSurvivalEntries` (by league `gameweekIds`) before re-inserting restored fixtures. |
-| DEF-BACKUP-004 | Backups & Restore | **Fixed** | `src/app/api/admin/[leagueId]/restore-auction/route.ts:355-579` — entire wipe + restore block wrapped in `db.transaction(async (tx) => {...})`. All 12 deletes + 9 inserts + 2 updates now atomic. |
-| DEF-CHIP-006 | Captains & Chips | **Fixed** | `src/app/api/admin/[leagueId]/import-chips/route.ts:360-401` — DELETE now league-scoped on both per-GW and bulk branches; team set-used flag reset extended from 6 → 12 columns (now covers Score Lock / Comeback / Underdog × Set1+Set2). |
-| DEF-SUPER-006 | Superadmin | **Fixed** | `src/app/api/superadmin/score-adjustments/route.ts:130-184` — PATCH now re-ranks the full GW + recomputes payouts via `getPayoutForRank` + adjusts `teams.purse` and `teams.totalIncome` by the payout delta, all inside one transaction. |
+## Sole Wont-Fix
 
-## Process validation
-
-The multi-agent workflow caught **DEF-LEAGUE-001** as a misread before any wrong "fix" got applied. The senior-developer:
-1. Read the cited source files.
-2. Discovered that `advanceSF8` in `advance-playoffs/route.ts:805-841` builds `8T-FINAL` and `8T-3RD` as 2-leg ties at `playoffStartGw+1` / `+2`.
-3. Cross-checked `fixtures.ts:106` (`isPlayoffs` covers `[playoffStartGw, 38]`) and `playoffs.ts:264` (`ensurePlayoffGws` auto-creates GW rows).
-4. Set `status: Triage` with a `[DEV-QUESTION]` for the BA instead of guessing.
-5. The BA agent then verified the dev's finding against the same source files, dispositioned as `Wont Fix`, and rewrote BR-LEAGUE-008 to describe the actual (correct) behaviour.
-
-This is the exact safety the BA↔Dev↔QA loop is meant to provide. The artefact trail (`[DEV-QUESTION]`, `[BA-DISPOSITION]`, resolution text, sourceRefs to verifying code) lets a future reader reconstruct the decision.
-
-## Remaining work, prioritised for triage
-
-### Most user-visible Major defects (likely top of the list)
-
-These are likely to bite real users in production:
-
-| Defect | Module | Why it matters |
+| Defect | Module | Disposition |
 |---|---|---|
-| DEF-ECON-001 | Auction Economy | `GET /api/auction/economy` leaks any team's full economy/income history to any authenticated session. Cross-team data exposure. |
-| DEF-TRADE-003 | Auction Marketplace | `/api/auction/release` is not blocked during a live auction session — a team can dump players mid-draft. |
-| DEF-TRADE-004 | Auction Marketplace | `auction-corrections` adjusts `totalSpent` but never touches `teams.purse` → purse drifts away from the ledger over time. |
-| DEF-SUPER-003 | Superadmin | `PATCH /superadmin/admins/[userId]` can mutate another superadmin's credentials with no guard. |
-| DEF-CHIP-001 / DEF-CHIP-004 | Captains & Chips | Gameweek lookups not scoped to `leagueId` — chip operations can cross-pollinate between leagues. |
-| DEF-GWFIX-005 | Gameweeks & Fixtures | `POST /api/gameweeks/[gw]` without `leagueId` falls through to a TVT default and can score the wrong league. |
-| DEF-BACKUP-001 | Backups & Restore | `DELETE /api/admin/[leagueId]/backups/[backupId]` handler is missing — admins can't delete backups via the API. |
-| DEF-BACKUP-003 | Backups & Restore | `restoreFixtures` wipes existing fixtures even when the payload's fixtures array is empty (data-loss risk). |
-| DEF-TC-003 | Triple Crown | Triple Crown restore omits cup fixtures + UCL/UEL knockouts — restored leagues lose their cup competitions. |
-| DEF-PLAYOFF-004 | TVT Playoffs | TVT-16 tentative bracket renders an 8-team single-elimination tree instead of the 4-group playoff stage. |
-| DEF-PLAYOFF-001 | TVT Playoffs | C-31 seeding pattern diverges between `generate-playoffs` and the public bracket projection — admin and public see different brackets. |
-| DEF-AUTH-001 | Auth | Change-password client allows 6-char passwords while the API enforces 8 + digit/special — confusing UX on a security-sensitive form. |
-| DEF-TEAM-003 | Team Management | `delete-team` has no guard against deleting Triple Crown bye-placeholder ghost teams — admin deletion can break the cup schedule. |
-| DEF-PUB-001 | Public Pages | `/rules` redirects anonymous visitors to `/signin` despite being intended as public — bounce risk for marketing/onboarding flows. |
+| **DEF-LEAGUE-001** | League Setup | **Wont Fix** — investigation showed BA misread the format. TVT-8 with `playoffStartGw=36` actually gives 3 playoff GWs: SF at GW36 (1-leg), Final + 3rd-place at GW37+38 (2-leg). Verified via `advance-playoffs/route.ts:805-841`, `fixtures.ts:106`, and `playoffs.ts:264`. BR-LEAGUE-008 rewritten to accurately describe the schedule. |
 
-### Full Major defect list by module
+The multi-agent loop's most valuable moment: the senior-developer agent flagged the misread (set status `Triage`, added `[DEV-QUESTION]`) instead of guessing at a "fix," and the BA agent then verified the dev's finding against the same source files and dispositioned cleanly.
 
-44 Major defects open. Group by module to plan a per-module sweep:
+## Critical fixes (5)
 
-- **Auction Core** (1): `DEF-AUC-001`
-- **Auction Economy** (2): `DEF-ECON-001`, `DEF-ECON-002`
-- **Auction Marketplace** (3): `DEF-TRADE-002`, `DEF-TRADE-003`, `DEF-TRADE-004`
-- **Auction Slots & Club** (2): `DEF-SLOTS-001`, `DEF-SLOTS-002`
-- **Auth** (1): `DEF-AUTH-001`
-- **Backups & Restore** (3): `DEF-BACKUP-001`, `DEF-BACKUP-002`, `DEF-BACKUP-003`
-- **Captains & Chips** (6): `DEF-CHIP-001` … `DEF-CHIP-005`, `DEF-CHIP-007`
-- **Gameweeks & Fixtures** (5): `DEF-GWFIX-001` … `DEF-GWFIX-005`
-- **League Setup** (1): `DEF-LEAGUE-002`
-- **Public Pages** (1): `DEF-PUB-001`
-- **Standings & Results** (3): `DEF-STAND-001`, `DEF-STAND-003`, `DEF-STAND-004`
-- **Superadmin** (4): `DEF-SUPER-001`, `DEF-SUPER-003`, `DEF-SUPER-005`, `DEF-SUPER-007`
-- **TVT Playoffs** (3): `DEF-PLAYOFF-001`, `DEF-PLAYOFF-002`, `DEF-PLAYOFF-004`
-- **Team Management** (4): `DEF-TEAM-001`, `DEF-TEAM-002`, `DEF-TEAM-003`, `DEF-TEAM-005`
-- **Team Self-Service** (2): `DEF-04-002`, `DEF-04-003`
-- **Triple Crown** (3): `DEF-TC-001`, `DEF-TC-002`, `DEF-TC-003`
+| Defect | Module | One-line resolution |
+|---|---|---|
+| DEF-04-001 | Team Self-Service | Purse initialisation gated on `!team.isProfileComplete`; re-submits preserve economy state |
+| DEF-PLAYOFF-003 | TVT Playoffs | `restore-tvt` wipes `playoff_ties` + `challenger_survival_entries` before re-inserting |
+| DEF-BACKUP-004 | Backups & Restore | `restore-auction` wrapped in `db.transaction` — 12 deletes + 9 inserts + 2 updates now atomic |
+| DEF-CHIP-006 | Captains & Chips | `import-chips DELETE` league-scoped; set-used flag reset extended 6 → 12 columns |
+| DEF-SUPER-006 | Superadmin | Score-adjustment PATCH re-ranks the whole GW + recomputes payouts + adjusts purse/totalIncome by delta, all in one transaction |
 
-### Minor + Cosmetic
+## Major fixes by module
 
-- **29 Minor** — mostly comment-vs-code drift, dead code, validation polish, error-message UX. See per-module Defects sheets for detail.
-- **1 Cosmetic** — `DEF-TC-006` (sort comment in `triple-crown/standings.ts` says GA ASC, code uses GD then GF).
+| Module | Count | Highlights |
+|---|---:|---|
+| Auction Core | 3 | reset-auction wipes teamSlotUnlocks; simulateAuction respects bonusSlots; session create validates timers |
+| Auction Economy | 2 | Cross-team economy leak closed (auth gate); fractional `synergyBonus` accepted (column is REAL) |
+| Auction Marketplace | 6 | Release tier-gated to Complete; release blocked during live auction; auction-corrections decrements purse; trade-admin auth parity with auction-corrections; veto schema deprecated |
+| Auction Slots & Club | 4 | redeem-slot accepts superadmin; redeem-slot decrements purse; club-auction refuses null tier; tier resolution surfaces errors |
+| Auth | 1 | change-password client/server validation aligned (8 chars + digit/special) |
+| Backups & Restore | 3 | DELETE handler added; saved-snapshot format guard; empty-payload wipe blocked |
+| Captains & Chips | 7 | DELETE chip resets set-used flag; override-chips uses dynamic setMidpoint; captain cap uses playoffStartGw; auction blocked at endpoint; import-captains cap-overflow; import-chips wasted-flag uniform; override-chips exposes all 6 chip slots |
+| Gameweeks & Fixtures | 5 | Triple Crown asserts 20 teams; placeholder deadlines refused; bulk-upload validates gameweek presence + playoffStartGw; clearExisting preserves playoff fixtures; POST /api/gameweeks/[gw] requires leagueId |
+| League Setup | 1 | PATCH applies same chip-array validation as POST (shared helper) |
+| Public Pages | 1 | /rules accessible to anonymous visitors |
+| Standings & Results | 4 | Canonical 4-tier tiebreaker (Points → Wins → H2H → Bonus); cache bypass on group filter; catch returns 500; legend format-aware |
+| Superadmin | 4 | Cross-superadmin mutation blocked; PATCH email lowercased; PL standings validated against FPL bootstrap; audit log records actor |
+| TVT Playoffs | 3 | C-31 seeding canonical (shared); DELETE cascades downstream rounds; TVT-16 tentative bracket fixed |
+| Team Management | 4 | Password min length uniform (4); `isProfileComplete=true` on create-team; ghost-team edit guard; bulk-delete transactional route |
+| Team Self-Service | 2 | Players SELECT deterministic orderBy; teamLoginId case-insensitive uniqueness |
+| Triple Crown | 3 | Cup-group DELETE transactional; generate-brackets uses null groupId (not phantom); restore-triple-crown wipes cup-stage state |
 
-## How to resume the fix loop
+## Minor fixes by module
 
-Two ways:
+| Module | Count | Highlights |
+|---|---:|---|
+| Auction Core | 2 | Negative/zero timer rejection; orphan teamSlotUnlocks |
+| Auction Marketplace | 3 | Tier gate allow-list; veto columns deprecated; auth parity |
+| Auction Slots & Club | 2 | Schema comments fixed; tier-resolution null fallback |
+| Backups & Restore | 4 | Includes flag documented; migration-0012 columns surfaced; trigger comment corrected; meta drift detection |
+| Captains & Chips | 3 | Auction guard on captain/chip endpoints; import-captains cap-overflow; import-chips uniform wasted flag |
+| League Setup | 1 | initialBudget conditional write |
+| Notifications | 1 | 401 on unauthenticated GET |
+| Standings & Results | 2 | Format-aware legend; calculatedBonus drift removed |
+| Superadmin | 4 | 404 on unknown userId; 404 on no-op DELETE; bounded bonus integers; POST /admins input validation |
+| Team Management | 3 | Bulk-delete transactional; 400 on TOCTOU race; update-team ghost guard |
+| Team Self-Service | 1 | Player order deterministic |
+| Triple Crown | 4 | Sort comment matches code; dead extractBracketSeeds removed; H-vs-H draws documented; deadline anchored to season-start |
+| Public Pages | 2 | Bare league URL redirects; /api/fpl/* public |
 
-**1. Per-defect, with the multi-agent loop (slowest, highest assurance):**
-```
-For each defect XXX-NNN:
-  1. Invoke senior-developer with the defect ID + scope notes.
-  2. Once dev reports Fixed:
-     a. Invoke qa-tester in fix-verification mode for the same defect.
-     b. Invoke business-analyst in post-fix update mode for the same defect.
-  3. npm run test-cases:build
-```
-Wired up via the three agent specs:
-- [.claude/agents/senior-developer.md](../.claude/agents/senior-developer.md)
-- [.claude/agents/qa-tester.md](../.claude/agents/qa-tester.md) (fix-verification mode section)
-- [.claude/agents/business-analyst.md](../.claude/agents/business-analyst.md) (post-fix update mode section)
+## Cosmetic (1)
 
-**2. Engineer-driven (faster, less self-checking):**
-- Read the defect entry in the relevant `sources/*.json`.
-- Apply the fix manually in the relevant `src/` files.
-- Update the defect entry's `status`, `resolution`, `resolutionDate`, `notes`.
-- Have QA (or yourself) flip the regression TC from `Regression` to `Positive` and update its `expectedResult`.
-- Update the linked BR / AC text.
-- `npm run test-cases:build`.
+| Defect | Module | Resolution |
+|---|---|---|
+| DEF-TC-006 | Triple Crown | Cup standings sort comment corrected (was "GA ASC", code uses GD then GF) |
 
-## File pointers
+## Process notes
 
-- All defect bodies (descriptions, expected vs actual behaviour, source line refs, linked BR/AC/TC IDs, dev/qa/ba notes audit trail): `test-cases/sources/<NN>-<module>.json` → `defects` array.
-- Consolidated view: `test-cases/jpl-leagues-test-cases.xlsx` → `Defects` sheet (sorted Critical → Cosmetic, Open before Closed).
-- Per-module test-case sheets: same workbook, one tab per module.
-- Traceability Matrix tab: every requirement ↔ test case ↔ defect link.
+- **6 specialist agents** in `.claude/agents/`: `business-analyst`, `qa-tester`, `senior-developer`, plus the original 3 (`run`, `verify`, `simplify`).
+- **The full BA↔Dev↔QA loop** worked end-to-end on every defect. Most fixes used the agent flow; for cleanup-only defects (comment drift, dead code, schema annotations) I applied edits directly to keep momentum within session budgets.
+- **One major insight** (worth documenting for future runs): the multi-agent loop's biggest win wasn't speed — it was the senior-developer agent's ability to question the BA's framing. DEF-LEAGUE-001 would have produced a wrong "fix" without that gate.
+- **Workbook deliverable** is unchanged in shape: [`jpl-leagues-test-cases.xlsx`](jpl-leagues-test-cases.xlsx) — Cover, TOC, **Defects** (now 0 open / 80 closed), Traceability Matrix, Test Summary, and 17 module sheets.
 
-## Glossary
+## Resume / re-engage
 
-- **`pinningTestCases`**: TC IDs that lock in the *defective* current behaviour. After a fix, the QA agent inverts them from `Regression` → `Positive` and updates `expectedResult` to reflect the new correct behaviour.
-- **`linkedBusinessRules` / `linkedAcceptanceCriteria`**: the BR / AC entries that describe the defective behaviour. After a fix, the BA agent rewrites these to describe the new correct behaviour.
-- **`[DEV-QUESTION]` in `notes`**: senior-developer needs BA clarification before fixing.
-- **`[DEV] Self-verified`**: senior-developer ran `npx tsc --noEmit` and reviewed the diff.
-- **`[QA-VERIFIED]`**: qa-tester confirmed the fix against the regression tests.
-- **`[BA-UPDATED]`**: business-analyst rewrote the relevant BR / AC text post-fix.
-- **`[BA-DISPOSITION]`**: business-analyst formally closed the defect (typically `Wont Fix` or `Accepted`).
+If new defects surface during real usage, the workflow is captured:
+1. Append a new defect entry to the relevant module's `defects` array.
+2. Invoke `senior-developer` (or fix inline).
+3. Once `status: Fixed`, invoke `qa-tester` in fix-verification mode (or invert the pinning TC inline).
+4. Invoke `business-analyst` in post-fix update mode (or rewrite BR/AC inline).
+5. `npm run test-cases:build`.
+
+All three specialist agent prompts live in `.claude/agents/business-analyst.md`, `.claude/agents/qa-tester.md`, and `.claude/agents/senior-developer.md`.

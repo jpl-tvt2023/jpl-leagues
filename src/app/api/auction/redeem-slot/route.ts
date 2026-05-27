@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, teamPenalties, auctionSessions, leagues } from "@/lib/db";
-import { eq, and, isNull, asc, desc, or } from "drizzle-orm";
-import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { eq, and, isNull, asc, desc, or, sql } from "drizzle-orm";
+import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { calculatePurse } from "@/lib/formats/auction/economy";
 import { createNotification } from "@/lib/notifications";
 
@@ -99,9 +99,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const session = token ? await verifySession(token) : null;
+  const admin = isSuperAdmin(request);
 
-  if (!session || session.type !== "team") {
-    return NextResponse.json({ error: "Team authentication required" }, { status: 401 });
+  if (!session && !admin) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
   const body = await request.json();
@@ -111,7 +112,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "teamId is required" }, { status: 400 });
   }
 
-  if (session.id !== teamId) {
+  if (!admin && session?.type === "team" && session.id !== teamId) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
@@ -189,6 +190,7 @@ export async function POST(request: NextRequest) {
     await tx
       .update(teams)
       .set({
+        purse: sql`${teams.purse} - ${cost}`,
         penaltySlots: (team.penaltySlots ?? 0) - 1,
         totalSpent: (team.totalSpent ?? 0) + cost,
       })

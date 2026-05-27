@@ -109,6 +109,16 @@ interface ModuleFile {
   defects?: Defect[];
 }
 
+// Stakeholder-facing companion record for a single defect. The engineer-facing
+// record lives on the per-module JSON; this layer is plain English only.
+interface LaymanEntry {
+  title: string;
+  summary: string;
+  fix: string;
+  example: string | null;
+}
+type LaymanFile = Record<string, LaymanEntry>;
+
 // ---------- Validation ----------
 
 const TEST_CASE_TYPES = new Set(["Positive", "Negative", "Edge", "Boundary", "Smoke", "Regression"]);
@@ -496,6 +506,115 @@ function buildDefectsSheet(modules: ModuleFile[]): XLSX.WorkSheet {
   return sheet;
 }
 
+const DEFECT_DETAILS_COLUMNS = [
+  "Defect ID",
+  "Title",
+  "What it was",
+  "What we did",
+  "Example",
+];
+
+function buildDefectDetailsSheet(modules: ModuleFile[], laymans: LaymanFile): XLSX.WorkSheet {
+  // Mirror buildDefectsSheet ordering: Critical > Major > Minor > Cosmetic, then defect ID asc.
+  const sevRank: Record<string, number> = { Critical: 0, Major: 1, Minor: 2, Cosmetic: 3 };
+
+  type FlatDefect = Defect & { _module: string };
+  const flat: FlatDefect[] = modules.flatMap((m) =>
+    (m.defects ?? []).map((d) => ({ ...d, _module: m.moduleName })),
+  );
+
+  flat.sort((a, b) => {
+    const sa = sevRank[a.severity] ?? 99;
+    const sb = sevRank[b.severity] ?? 99;
+    if (sa !== sb) return sa - sb;
+    return a.id.localeCompare(b.id);
+  });
+
+  const rows = flat.map((d) => {
+    const entry = laymans[d.id];
+    return {
+      "Defect ID": d.id,
+      "Title": entry?.title ?? d.title,
+      "What it was": entry?.summary ?? "",
+      "What we did": entry?.fix ?? "",
+      "Example": entry?.example ?? "",
+    };
+  });
+
+  const sheet = rows.length > 0
+    ? XLSX.utils.json_to_sheet(rows, { header: DEFECT_DETAILS_COLUMNS })
+    : XLSX.utils.aoa_to_sheet([DEFECT_DETAILS_COLUMNS]);
+  setColumnWidths(sheet, [16, 50, 80, 80, 60]);
+  applyCommonSheetStyle(sheet, DEFECT_DETAILS_COLUMNS.length, rows.length);
+
+  // Enable wrap-text on the three prose columns (Title=B, What it was=C, What we did=D, Example=E)
+  // so readers see whole paragraphs without horizontal scrolling.
+  const wrapCols = ["B", "C", "D", "E"];
+  for (let r = 2; r <= rows.length + 1; r++) {
+    for (const col of wrapCols) {
+      const cellRef = `${col}${r}`;
+      const cell = sheet[cellRef];
+      if (cell) {
+        cell.s = cell.s || {};
+        cell.s.alignment = { ...(cell.s.alignment || {}), wrapText: true, vertical: "top" };
+      }
+    }
+  }
+  return sheet;
+}
+
+function loadLaymanFile(rootDir: string): LaymanFile {
+  const filePath = path.join(rootDir, "test-cases", "defect-laymans.json");
+  if (!existsSync(filePath)) {
+    throw new Error(`Layman companion file not found: ${filePath}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, "utf8"));
+  } catch (e) {
+    throw new Error(`Layman companion file is malformed JSON: ${(e as Error).message}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Layman companion file must be a JSON object keyed by defect ID.`);
+  }
+  return parsed as LaymanFile;
+}
+
+function validateLaymanCoverage(modules: ModuleFile[], laymans: LaymanFile): string[] {
+  const errs: string[] = [];
+  const defectIds = new Set(modules.flatMap((m) => (m.defects ?? []).map((d) => d.id)));
+  const laymanIds = new Set(Object.keys(laymans));
+
+  for (const id of defectIds) {
+    if (!laymanIds.has(id)) {
+      errs.push(`defect-laymans.json: missing entry for defect "${id}"`);
+    }
+  }
+  for (const id of laymanIds) {
+    if (!defectIds.has(id)) {
+      errs.push(`defect-laymans.json: entry "${id}" does not correspond to any catalogued defect`);
+    }
+    const entry = laymans[id];
+    if (!entry || typeof entry !== "object") {
+      errs.push(`defect-laymans.json: entry "${id}" is not an object`);
+      continue;
+    }
+    if (typeof entry.summary !== "string" || entry.summary.trim() === "") {
+      errs.push(`defect-laymans.json: entry "${id}" has missing/empty "summary"`);
+    }
+    if (typeof entry.fix !== "string" || entry.fix.trim() === "") {
+      errs.push(`defect-laymans.json: entry "${id}" has missing/empty "fix"`);
+    }
+    if (typeof entry.title !== "string" || entry.title.trim() === "") {
+      errs.push(`defect-laymans.json: entry "${id}" has missing/empty "title"`);
+    }
+    if (entry.example !== null && typeof entry.example !== "string") {
+      errs.push(`defect-laymans.json: entry "${id}" has "example" that is neither string nor null`);
+    }
+  }
+  return errs;
+}
+
 function buildModuleSheet(mod: ModuleFile): XLSX.WorkSheet {
   const rows = moduleSheetRows(mod);
   // Always emit the header row, even when testCases is empty.
@@ -538,6 +657,12 @@ function main() {
     else modules.push(parsed);
   }
 
+  // Stakeholder-facing layman summaries live in a companion file. Refuse to build
+  // if it drifts from the source-of-truth defect IDs in either direction.
+  const laymans = loadLaymanFile(root);
+  const laymanErrors = validateLaymanCoverage(modules, laymans);
+  allErrors.push(...laymanErrors);
+
   if (allErrors.length > 0) {
     console.error("\n❌  Validation failed:\n");
     for (const e of allErrors) console.error("  -", e);
@@ -548,6 +673,7 @@ function main() {
   XLSX.utils.book_append_sheet(wb, buildCoverSheet(modules), "Cover");
   XLSX.utils.book_append_sheet(wb, buildTocSheet(modules), "TOC");
   XLSX.utils.book_append_sheet(wb, buildDefectsSheet(modules), "Defects");
+  XLSX.utils.book_append_sheet(wb, buildDefectDetailsSheet(modules, laymans), "defect_details");
   XLSX.utils.book_append_sheet(wb, buildTraceabilitySheet(modules), "Traceability Matrix");
   XLSX.utils.book_append_sheet(wb, buildSummarySheet(modules), "Test Summary");
   for (const m of modules) {

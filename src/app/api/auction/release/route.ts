@@ -134,6 +134,11 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "You don't own this player" }, { status: 403 });
   }
 
+  const leagueRow = await db.select().from(leagues).where(eq(leagues.id, ownership.leagueId)).limit(1);
+  if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
+    return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
+  }
+
   if (await isAuctionLive(ownership.leagueId)) {
     return NextResponse.json(
       { error: "Marketplace is closed during a live auction" },

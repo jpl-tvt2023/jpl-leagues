@@ -3,9 +3,12 @@
   "moduleName": "Team Self-Service",
   "sheetName": "Team Self-Service",
   "status": "qa-signed-off",
-  "owners": { "ba": "business-analyst agent", "qa": "qa-tester agent" },
+  "owners": {
+    "ba": "business-analyst agent",
+    "qa": "qa-tester agent"
+  },
   "requirements": {
-    "version": 2,
+    "version": 4,
     "businessContext": "Self-service surface for a logged-in team: the 1–3 step profile-setup wizard (login ID, team name, two FPL player IDs) and the team dashboard that summarizes season stats, recent form, league position, upcoming fixture/captain/chip, and per-GW result drill-downs. The setup wizard collapses to a single step (no FPL player IDs) for auction-format leagues; the dashboard returns a separate auction-shaped payload that surfaces squad, purse, ledger totals, and active auction sessions instead of fixtures/captains/chips. Excludes auth, password change, captain/chip submission, standings/fixtures viewing, notifications, and auction trading pages — those are owned by other modules.",
     "userStories": [
       {
@@ -222,10 +225,12 @@
       },
       {
         "id": "BR-04-007",
-        "rule": "teamLoginId must be globally unique across all leagues; the unique constraint is enforced both via a pre-check in the route and by a DB unique index. // CODE-CONFIRMED: may be a defect — the check uses eq() (case-sensitive) while the team-name check is normalized, so 'Rahul' and 'rahul' would be treated as different login IDs.",
+        "rule": "teamLoginId uniqueness is case-insensitive across the platform. All four entry points that touch the column (POST /api/team/setup, GET /api/team/setup?checkLoginId, POST /api/admin/[leagueId]/create-team, POST /api/admin/[leagueId]/update-team, POST /api/admin/[leagueId]/bulk-upload-teams) (a) normalize the supplied teamLoginId to lowercase via .toLowerCase() at WRITE time AND (b) compare via LOWER(teams.teamLoginId) = <lowercased> at QUERY time. The stored column value is always lowercase for new writes; existing rows from before this change remain in their original casing but will still match case-insensitive lookups via the LOWER() compare. Matches team-name's existing case-insensitive uniqueness.",
         "sourceRefs": [
-          "src/app/api/team/setup/route.ts:113-124",
-          "src/lib/db/schema.ts:138-141"
+          "src/app/api/team/setup/route.ts",
+          "src/app/api/admin/[leagueId]/create-team/route.ts:55-67",
+          "src/app/api/admin/[leagueId]/update-team/route.ts:49-92",
+          "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts"
         ]
       },
       {
@@ -260,9 +265,9 @@
       },
       {
         "id": "BR-04-012",
-        "rule": "On successful non-auction setup, if 2+ player rows already exist for the team they are UPDATED in place (positions 0 and 1 of the result set); otherwise two new player rows are INSERTED. // CODE-CONFIRMED: may be a defect — the select has no orderBy, so the [0]/[1] mapping to player1/player2 is non-deterministic and a resubmit can swap the two FPL IDs.",
+        "rule": "The /api/team/setup POST handler maps incoming player1 / player2 fields to existing players rows in deterministic order: existingPlayers is SELECTed with orderBy(asc(players.createdAt), asc(players.id)) so re-submission of the wizard always writes player1 input to the first row and player2 input to the second. Without the orderBy, the DB was free to return the rows in any order and a re-submit could silently swap the two players' FPL IDs.",
         "sourceRefs": [
-          "src/app/api/team/setup/route.ts:246-288"
+          "src/app/api/team/setup/route.ts:255-263"
         ]
       },
       {
@@ -751,9 +756,9 @@
       },
       {
         "id": "AC-04-020",
-        "given": "a TVT team already has 2 players rows",
-        "when": "they POST /api/team/setup again with new player names/IDs",
-        "then": "the two existing player rows are UPDATED in place (no INSERTs), and updatedAt is bumped",
+        "given": "a team has already completed setup with player1='Salah' fplId=123 and player2='Haaland' fplId=456",
+        "when": "the team re-submits POST /api/team/setup with identical input N times",
+        "then": "after every re-submit, the players row that originally stored 'Salah'/123 still stores 'Salah'/123, and the row that originally stored 'Haaland'/456 still stores 'Haaland'/456. Even with concurrent re-submits the deterministic orderBy ensures the same mapping. Swapping the player1 and player2 fields in input correctly swaps the stored values.",
         "linksTo": "BR-04-012"
       },
       {
@@ -1059,16 +1064,16 @@
       },
       {
         "id": "AC-04-064",
-        "given": "a TVT team with 2 existing players resubmits setup",
-        "when": "the route maps player1/player2 to existingPlayers[0]/[1]",
-        "then": "because the underlying select has no orderBy, the row written to 'player 1' may correspond to either of the previous two players, so a resubmit can silently swap the two FPL IDs",
+        "given": "two players' FPL IDs and names should never silently swap across re-submits",
+        "when": "any number of POST /api/team/setup calls run for the same team",
+        "then": "the (row-id, fplId, name) tuples remain stable per row — the orderBy(asc(createdAt), asc(id)) clause guarantees a deterministic player1<->row1 and player2<->row2 binding.",
         "linksTo": "BR-04-012"
       },
       {
         "id": "AC-04-065",
-        "given": "team 'rahul99' (lowercase) exists",
-        "when": "a different team submits POST /api/team/setup with teamLoginId='Rahul99' (mixed case)",
-        "then": "the pre-check using eq() does not match the existing row, so the new login ID is accepted even though it differs from the existing one only by case",
+        "given": "two registration attempts on the platform: first registers teamLoginId='Bob' via any of the four entry points; second attempts teamLoginId='bob' via any entry point (could be the same or a different one)",
+        "when": "the second request runs its uniqueness check",
+        "then": "the second request returns HTTP 400 with body containing 'Team ID already exists globally' (admin routes) or 'is already taken' (team-setup route); no second row is created. The same response would fire for any case-variant ('BOB', 'BoB', etc.). The first 'Bob' row is stored as 'bob' (lowercased). A subsequent GET /api/team/setup?checkLoginId=Bob returns { available: false }.",
         "linksTo": "BR-04-007"
       }
     ]
@@ -1088,10 +1093,16 @@
         "src/app/api/team/setup/route.ts:74-183",
         "src/app/api/team/setup/route.ts:159-183"
       ],
-      "linkedBusinessRules": ["BR-04-014"],
-      "linkedAcceptanceCriteria": ["AC-04-022"],
+      "linkedBusinessRules": [
+        "BR-04-014"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-04-022"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-04-088"],
+      "pinningTestCases": [
+        "TC-04-088"
+      ],
       "notes": "Fix options: (1) add `if (team.isProfileComplete) return 400` at the top of POST; (2) split the route into POST (initial) and PATCH (rename only) and forbid purse changes on the latter; (3) only set purse when team.purse===0 to make the operation idempotent. Option 1 is simplest but blocks legitimate cases like the team correcting their display name post-setup — recommend option 3 plus a server-side allowlist of editable fields when isProfileComplete is true. Risk: any client (UI or curl) with the team's session can currently reset their auction economy, so this is exploitable as a self-service cheat. [DEV] Self-verified: tsc passes (no new errors in route.ts), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-04-088 against the fix — expected behaviour now: on re-submit purse is preserved (not reset to initialBudget); cosmetic fields (teamLoginId, name) still update. The pinning test will need to be inverted (it currently asserts the defective behaviour). [BA] BR-04-014 currently describes the defective behaviour — update the rule to reflect that the auction branch initialises purse only when isProfileComplete is false (first-time setup), and that re-submissions update cosmetic fields without touching economy columns. AC-04-022 should likewise be rewritten to assert purse is preserved on re-submit. [QA-VERIFIED]: 2026-05-24 — TC-04-088 inverted to assert preserved purse; fix confirmed. [BA-UPDATED]: 2026-05-24 — BR-04-014 + AC-04-022 updated to reflect fixed behaviour.",
       "resolution": "Gated the purse initialisation in the auction branch on first-time setup. In src/app/api/team/setup/route.ts:159-183 the `purse: initialBudget` write is now only added to the update set when the team's current `isProfileComplete` is false; on re-submissions (isProfileComplete already true) only cosmetic fields (teamLoginId, name, isProfileComplete, updatedAt) are updated, preserving purse/totalSpent/totalRefunds/totalIncome and the economy invariant. This matches the defect notes' option 3 intent while still allowing legitimate display-name corrections post-setup.",
       "resolutionDate": "2026-05-24"
@@ -1100,7 +1111,7 @@
       "id": "DEF-04-002",
       "title": "Player1/Player2 mapping non-deterministic on setup re-submit",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "When updating existing players, the route loads them via `db.select().from(players).where(eq(players.teamId, session.id))` with NO orderBy. SQLite does not guarantee a stable order without an ORDER BY clause, so existingPlayers[0] and existingPlayers[1] can correspond to either of the two previously-stored players on different requests. The route then unconditionally writes the wizard's player1 payload to existingPlayers[0].id and player2 payload to existingPlayers[1].id. Result: editing names/FPL IDs from the wizard can silently swap which player is which, corrupting captaincy history (gameweekCaptains.playerId references survive) and player stats.",
@@ -1109,19 +1120,27 @@
       "sourceRefs": [
         "src/app/api/team/setup/route.ts:246-271"
       ],
-      "linkedBusinessRules": ["BR-04-012"],
-      "linkedAcceptanceCriteria": ["AC-04-020", "AC-04-064"],
+      "linkedBusinessRules": [
+        "BR-04-012"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-04-020",
+        "AC-04-064"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-04-089", "TC-04-090"],
-      "notes": "Trivial fix: add `.orderBy(asc(players.createdAt), asc(players.id))` to the select. Long-term, the wizard should send the player id of each slot back to the server so the mapping is explicit. Combined with DEF-04-001 this is especially nasty for auction leagues, but the swap concern applies to TVT/TC. Severity Major (not Critical) because the wizard is usually a one-shot operation; only manifests on edits.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-04-089",
+        "TC-04-090"
+      ],
+      "notes": "Trivial fix: add `.orderBy(asc(players.createdAt), asc(players.id))` to the select. Long-term, the wizard should send the player id of each slot back to the server so the mapping is explicit. Combined with DEF-04-001 this is especially nasty for auction leagues, but the swap concern applies to TVT/TC. Severity Major (not Critical) because the wizard is usually a one-shot operation; only manifests on edits. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "Added deterministic orderBy(asc(players.createdAt), asc(players.id)) to the existingPlayers SELECT in /api/team/setup POST (src/app/api/team/setup/route.ts:255-263). The DB now always returns the team's players in the same order, so re-submitting the wizard reliably maps player1 input -> first row and player2 input -> second row. Previously the unordered SELECT could swap the two rows between calls, causing player FPL IDs to silently switch on re-submit.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-04-003",
       "title": "teamLoginId uniqueness is case-sensitive but team-name uniqueness is case-insensitive",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "Server-side checks are inconsistent. POST /api/team/setup checks teamLoginId uniqueness with `eq(teams.teamLoginId, trimmedLoginId)` and the DB unique index `teams_login_id_global_unique` is on the raw column — both case-sensitive. By contrast the same route checks team-name uniqueness using `LOWER(REPLACE(...))`. GET /api/team/setup?checkLoginId uses the same case-sensitive eq. Effect: 'Rahul99' and 'rahul99' are treated as two different login IDs and can both be registered, then collide on signin (depending on signin's comparison) or simply confuse users who type the wrong casing. Setup's blur-validation also exits early when value===currentTeamLoginId (case-sensitive), so a user changing only the case of their own ID triggers a uniqueness check that compares against themselves.",
@@ -1132,13 +1151,20 @@
         "src/app/api/team/setup/route.ts:113-124",
         "src/lib/db/schema.ts:138-141"
       ],
-      "linkedBusinessRules": ["BR-04-007"],
-      "linkedAcceptanceCriteria": ["AC-04-065"],
+      "linkedBusinessRules": [
+        "BR-04-007"
+      ],
+      "linkedAcceptanceCriteria": [
+        "AC-04-065"
+      ],
       "linkedGapFlags": [],
-      "pinningTestCases": ["TC-04-091", "TC-04-092"],
-      "notes": "Suggested fix: lowercase teamLoginId before storing and before comparing, and rebuild the unique index over the lowercased value. Migration impact: any existing rows with mixed case need to be detected/merged before adding the case-insensitive index. Cross-references module 01 (auth/signin) for the matching read-side fix.",
-      "resolution": null,
-      "resolutionDate": null
+      "pinningTestCases": [
+        "TC-04-091",
+        "TC-04-092"
+      ],
+      "notes": "Suggested fix: lowercase teamLoginId before storing and before comparing, and rebuild the unique index over the lowercased value. Migration impact: any existing rows with mixed case need to be detected/merged before adding the case-insensitive index. Cross-references module 01 (auth/signin) for the matching read-side fix. [DEV] Self-verified: tsc passes (no new errors in the four touched routes), manual diff review clean — every write of teamLoginId now stores the lowercased value and every uniqueness query now compares with LOWER(${teams.teamLoginId}) = lowercased_input. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-04-091 and TC-04-092 — they currently pin the defective behaviour and must be inverted: TC-04-091 should now expect HTTP 400 'Team ID is already taken' when team B submits 'Rahul99' while 'rahul99' exists; TC-04-092's GET ?checkLoginId=Rahul99 should now return { available: false }. Also spot-check the three admin routes (create-team / update-team / bulk-upload-teams) for the same case-insensitive guarantee. [BA] BR-04-007 still describes 'eq() case-sensitive' as the implementation — update the rule text to state teamLoginId uniqueness is case-insensitive (normalised to lowercase on write and queried via LOWER()) across /api/team/setup, /api/admin/[leagueId]/create-team, /api/admin/[leagueId]/update-team and /api/admin/[leagueId]/bulk-upload-teams. AC-04-065 currently asserts the defective acceptance — flip it to expect 400 'Team ID is already taken' on mixed-case duplicate submission. [QA-VERIFIED]: 2026-05-26 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-26 — BR/AC text refreshed.",
+      "resolution": "Normalised teamLoginId to lowercase on both write and compare across all four call sites. In src/app/api/team/setup/route.ts the GET ?checkLoginId branch (~line 39-46) and the POST uniqueness pre-check (~line 113-124) now query with `LOWER(${teams.teamLoginId}) = ${input.toLowerCase()}` and both auction- and TVT/TC-branch updates persist the lowercased value. In src/app/api/admin/[leagueId]/create-team/route.ts the POST uniqueness check and INSERT (plus the response payload) are lowercased; same treatment applied to src/app/api/admin/[leagueId]/update-team/route.ts (uniqueness query + update payload). In src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts the cross-league conflicts query now uses LOWER() against a pre-lowercased input array, and inserted rows store the lowercased loginId — matching the in-file duplicate detection that was already case-insensitive. No schema migration is included; existing rows with mixed case continue to work for their original login but any new attempt to register a case-variant will collide with them at the application-level pre-check.",
+      "resolutionDate": "2026-05-26"
     }
   ],
   "testCases": [
@@ -1150,7 +1176,10 @@
       "priority": "P1",
       "preconditions": "No session cookie or x-session-id header present",
       "testData": "GET /api/team/dashboard (no cookies)",
-      "testSteps": ["1. Issue GET /api/team/dashboard with no session cookie", "2. Inspect status code and JSON body"],
+      "testSteps": [
+        "1. Issue GET /api/team/dashboard with no session cookie",
+        "2. Inspect status code and JSON body"
+      ],
       "expectedResult": "HTTP 401 with body { error: 'Not authenticated' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-001",
@@ -1167,7 +1196,10 @@
       "priority": "P1",
       "preconditions": "No session cookie present",
       "testData": "GET /api/team/setup (no cookies)",
-      "testSteps": ["1. Issue GET /api/team/setup without cookies", "2. Inspect response"],
+      "testSteps": [
+        "1. Issue GET /api/team/setup without cookies",
+        "2. Inspect response"
+      ],
       "expectedResult": "HTTP 401 with body { error: 'Not authenticated' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-001",
@@ -1184,7 +1216,10 @@
       "priority": "P1",
       "preconditions": "Caller signed in with session.type='admin'",
       "testData": "Cookie/session of admin user; GET /api/team/dashboard",
-      "testSteps": ["1. Sign in as admin", "2. Call GET /api/team/dashboard with admin cookie"],
+      "testSteps": [
+        "1. Sign in as admin",
+        "2. Call GET /api/team/dashboard with admin cookie"
+      ],
       "expectedResult": "HTTP 403 with body { error: 'Team access required' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-002",
@@ -1201,7 +1236,10 @@
       "priority": "P1",
       "preconditions": "Caller signed in with session.type='superadmin'",
       "testData": "Superadmin cookie; GET /api/team/setup",
-      "testSteps": ["1. Sign in as superadmin", "2. Call GET /api/team/setup"],
+      "testSteps": [
+        "1. Sign in as superadmin",
+        "2. Call GET /api/team/setup"
+      ],
       "expectedResult": "HTTP 403 with body { error: 'Team access required' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-002",
@@ -1218,7 +1256,11 @@
       "priority": "P2",
       "preconditions": "Team account created by admin; isProfileComplete=false; valid team session",
       "testData": "Browser session as team; navigate to /dashboard",
-      "testSteps": ["1. Sign in as team", "2. Visit /dashboard", "3. Observe redirect"],
+      "testSteps": [
+        "1. Sign in as team",
+        "2. Visit /dashboard",
+        "3. Observe redirect"
+      ],
       "expectedResult": "Client navigates to /setup before dashboard content renders",
       "postconditions": "URL is /setup",
       "requirementId": "AC-04-003",
@@ -1235,7 +1277,11 @@
       "priority": "P2",
       "preconditions": "Team has completed setup (isProfileComplete=true)",
       "testData": "Team browser session; navigate to /setup",
-      "testSteps": ["1. Sign in as completed team", "2. Visit /setup", "3. Observe redirect"],
+      "testSteps": [
+        "1. Sign in as completed team",
+        "2. Visit /setup",
+        "3. Observe redirect"
+      ],
       "expectedResult": "Client navigates to /dashboard before wizard renders",
       "postconditions": "URL is /dashboard",
       "requirementId": "AC-04-004",
@@ -1252,7 +1298,11 @@
       "priority": "P2",
       "preconditions": "Logged-in team; team row exists",
       "testData": "GET /api/team/setup (no query params)",
-      "testSteps": ["1. Sign in as team", "2. GET /api/team/setup", "3. Parse response JSON"],
+      "testSteps": [
+        "1. Sign in as team",
+        "2. GET /api/team/setup",
+        "3. Parse response JSON"
+      ],
       "expectedResult": "HTTP 200; body has teamId (number), currentLoginId (string), currentName (string)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-005",
@@ -1269,7 +1319,11 @@
       "priority": "P3",
       "preconditions": "Session points to a team id that no longer exists in DB",
       "testData": "GET /api/team/setup with stale session",
-      "testSteps": ["1. Acquire valid session", "2. Delete team row out-of-band", "3. GET /api/team/setup"],
+      "testSteps": [
+        "1. Acquire valid session",
+        "2. Delete team row out-of-band",
+        "3. GET /api/team/setup"
+      ],
       "expectedResult": "HTTP 404 with appropriate error JSON",
       "postconditions": "Session unchanged",
       "requirementId": "AC-04-005",
@@ -1286,7 +1340,10 @@
       "priority": "P2",
       "preconditions": "Another team owns teamLoginId='rahul99'",
       "testData": "GET /api/team/setup?checkLoginId=rahul99",
-      "testSteps": ["1. Sign in as different team", "2. GET /api/team/setup?checkLoginId=rahul99"],
+      "testSteps": [
+        "1. Sign in as different team",
+        "2. GET /api/team/setup?checkLoginId=rahul99"
+      ],
       "expectedResult": "HTTP 200 body { available: false }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-006",
@@ -1303,7 +1360,10 @@
       "priority": "P2",
       "preconditions": "No team owns teamLoginId='brandnewid42'",
       "testData": "GET /api/team/setup?checkLoginId=brandnewid42",
-      "testSteps": ["1. Sign in as team", "2. GET /api/team/setup?checkLoginId=brandnewid42"],
+      "testSteps": [
+        "1. Sign in as team",
+        "2. GET /api/team/setup?checkLoginId=brandnewid42"
+      ],
       "expectedResult": "HTTP 200 body { available: true }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-006",
@@ -1320,7 +1380,10 @@
       "priority": "P2",
       "preconditions": "Caller's currentLoginId is 'rahul99'",
       "testData": "GET /api/team/setup?checkLoginId=rahul99 (same as caller's)",
-      "testSteps": ["1. Sign in as team owning 'rahul99'", "2. GET /api/team/setup?checkLoginId=rahul99"],
+      "testSteps": [
+        "1. Sign in as team owning 'rahul99'",
+        "2. GET /api/team/setup?checkLoginId=rahul99"
+      ],
       "expectedResult": "HTTP 200 body { available: true } (own id treated as free)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-007",
@@ -1337,7 +1400,10 @@
       "priority": "P2",
       "preconditions": "Team named 'DM — Rahul' exists in caller's league",
       "testData": "GET /api/team/setup?checkName=dm%20%E2%80%94%20rahul (lowercased)",
-      "testSteps": ["1. Sign in as different team in same league", "2. GET /api/team/setup?checkName=dm — rahul"],
+      "testSteps": [
+        "1. Sign in as different team in same league",
+        "2. GET /api/team/setup?checkName=dm — rahul"
+      ],
       "expectedResult": "HTTP 200 body { available: false }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-008",
@@ -1354,7 +1420,10 @@
       "priority": "P2",
       "preconditions": "Team named 'DM — Rahul' exists",
       "testData": "GET /api/team/setup?checkName=DM%20%20%20Rahul (extra whitespace)",
-      "testSteps": ["1. Sign in as different team in same league", "2. GET with checkName='DM   Rahul'"],
+      "testSteps": [
+        "1. Sign in as different team in same league",
+        "2. GET with checkName='DM   Rahul'"
+      ],
       "expectedResult": "HTTP 200 body { available: false } (whitespace normalised)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-008",
@@ -1371,7 +1440,10 @@
       "priority": "P3",
       "preconditions": "Both 'rahul99' (taken) and team-name 'Phoenix' (free) exist",
       "testData": "GET /api/team/setup?checkLoginId=rahul99&checkName=Phoenix",
-      "testSteps": ["1. Issue GET with both params", "2. Inspect body keys"],
+      "testSteps": [
+        "1. Issue GET with both params",
+        "2. Inspect body keys"
+      ],
       "expectedResult": "HTTP 200 with body containing only the loginId availability result; checkName ignored",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-009",
@@ -1388,7 +1460,10 @@
       "priority": "P2",
       "preconditions": "Setup wizard on step 1, non-auction league",
       "testData": "teamLoginId='ab'",
-      "testSteps": ["1. Type 'ab' in loginId field", "2. Click Next"],
+      "testSteps": [
+        "1. Type 'ab' in loginId field",
+        "2. Click Next"
+      ],
       "expectedResult": "Client shows 'Must be 3–20 alphanumeric/underscore/hyphen characters'; step does not advance",
       "postconditions": "Still on step 1",
       "requirementId": "AC-04-010",
@@ -1405,7 +1480,10 @@
       "priority": "P2",
       "preconditions": "Setup wizard step 1",
       "testData": "teamLoginId='invalid!@#'",
-      "testSteps": ["1. Enter 'invalid!@#'", "2. Try Next"],
+      "testSteps": [
+        "1. Enter 'invalid!@#'",
+        "2. Try Next"
+      ],
       "expectedResult": "Validation error displayed; step does not advance",
       "postconditions": "Still on step 1",
       "requirementId": "AC-04-010",
@@ -1422,7 +1500,10 @@
       "priority": "P3",
       "preconditions": "Setup wizard step 1",
       "testData": "teamLoginId='abc'",
-      "testSteps": ["1. Enter 'abc'", "2. Click Next"],
+      "testSteps": [
+        "1. Enter 'abc'",
+        "2. Click Next"
+      ],
       "expectedResult": "No validation error; wizard advances to step 2",
       "postconditions": "On step 2",
       "requirementId": "AC-04-010",
@@ -1439,7 +1520,10 @@
       "priority": "P3",
       "preconditions": "Setup wizard step 1",
       "testData": "teamLoginId='abcdefghij1234567890' (20 chars)",
-      "testSteps": ["1. Enter 20-char value", "2. Click Next"],
+      "testSteps": [
+        "1. Enter 20-char value",
+        "2. Click Next"
+      ],
       "expectedResult": "Accepted; wizard advances",
       "postconditions": "On step 2",
       "requirementId": "AC-04-010",
@@ -1456,7 +1540,10 @@
       "priority": "P3",
       "preconditions": "Setup wizard step 1",
       "testData": "teamLoginId='abcdefghij12345678901' (21 chars)",
-      "testSteps": ["1. Enter 21-char value", "2. Click Next"],
+      "testSteps": [
+        "1. Enter 21-char value",
+        "2. Click Next"
+      ],
       "expectedResult": "Validation error; step does not advance",
       "postconditions": "Still on step 1",
       "requirementId": "AC-04-010",
@@ -1473,7 +1560,10 @@
       "priority": "P1",
       "preconditions": "Logged-in team, non-auction league",
       "testData": "POST /api/team/setup body { teamLoginId:'ab', teamName:'Phoenix', player1Name:'A', player1FplId:'1', player2Name:'B', player2FplId:'2' }",
-      "testSteps": ["1. POST payload with 2-char loginId", "2. Inspect response"],
+      "testSteps": [
+        "1. POST payload with 2-char loginId",
+        "2. Inspect response"
+      ],
       "expectedResult": "HTTP 400 with body { error: 'Team ID must be 3–20 alphanumeric/underscore/hyphen characters' }",
       "postconditions": "Team row unchanged; isProfileComplete still false",
       "requirementId": "AC-04-011",
@@ -1490,7 +1580,10 @@
       "priority": "P2",
       "preconditions": "Logged-in team",
       "testData": "teamLoginId='abc!def'",
-      "testSteps": ["1. POST /api/team/setup with invalid chars", "2. Inspect"],
+      "testSteps": [
+        "1. POST /api/team/setup with invalid chars",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 with regex error message",
       "postconditions": "No mutation",
       "requirementId": "AC-04-011",
@@ -1507,7 +1600,10 @@
       "priority": "P1",
       "preconditions": "Team A owns teamLoginId='taken_id'; Team B attempting setup",
       "testData": "Team B POSTs setup with teamLoginId='taken_id'",
-      "testSteps": ["1. As team B, POST /api/team/setup with taken_id", "2. Inspect status/body"],
+      "testSteps": [
+        "1. As team B, POST /api/team/setup with taken_id",
+        "2. Inspect status/body"
+      ],
       "expectedResult": "HTTP 400 with body { error: 'Team ID is already taken' }",
       "postconditions": "Team B unchanged",
       "requirementId": "AC-04-012",
@@ -1524,7 +1620,10 @@
       "priority": "P2",
       "preconditions": "Logged-in team, non-auction league",
       "testData": "teamName='' (empty); valid loginId & players",
-      "testSteps": ["1. POST /api/team/setup with empty teamName", "2. Inspect"],
+      "testSteps": [
+        "1. POST /api/team/setup with empty teamName",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 with body { error: 'Team name is required' }",
       "postconditions": "No mutation",
       "requirementId": "AC-04-013",
@@ -1541,7 +1640,10 @@
       "priority": "P3",
       "preconditions": "Logged-in team",
       "testData": "teamName='   '",
-      "testSteps": ["1. POST with whitespace-only name", "2. Inspect"],
+      "testSteps": [
+        "1. POST with whitespace-only name",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 'Team name is required'",
       "postconditions": "No mutation",
       "requirementId": "AC-04-013",
@@ -1558,7 +1660,10 @@
       "priority": "P2",
       "preconditions": "Another team in same league named 'Team Phoenix'",
       "testData": "teamName='team phoenix'",
-      "testSteps": ["1. POST /api/team/setup with lowercased clash", "2. Inspect"],
+      "testSteps": [
+        "1. POST /api/team/setup with lowercased clash",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 { error: 'Team name is already taken in this league' }",
       "postconditions": "No mutation",
       "requirementId": "AC-04-014",
@@ -1575,7 +1680,10 @@
       "priority": "P2",
       "preconditions": "Another team named 'Team Phoenix' in same league",
       "testData": "teamName='Team  Phoenix' (two spaces)",
-      "testSteps": ["1. POST setup", "2. Inspect"],
+      "testSteps": [
+        "1. POST setup",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 'Team name is already taken in this league'",
       "postconditions": "No mutation",
       "requirementId": "AC-04-014",
@@ -1592,7 +1700,11 @@
       "priority": "P1",
       "preconditions": "Team belongs to auction league with initialBudget=150_000_000",
       "testData": "POST /api/team/setup { teamLoginId:'newuser', teamName:'Aces' } (no player fields)",
-      "testSteps": ["1. POST auction setup payload", "2. Inspect 200 body", "3. Read team row"],
+      "testSteps": [
+        "1. POST auction setup payload",
+        "2. Inspect 200 body",
+        "3. Read team row"
+      ],
       "expectedResult": "200 { success:true, message:'Profile setup completed (auction format — players acquired via auction)' }; team.purse=150_000_000; team.isProfileComplete=true; no players rows created",
       "postconditions": "Team isProfileComplete=true; purse=150M; no players rows",
       "requirementId": "AC-04-015",
@@ -1609,7 +1721,10 @@
       "priority": "P1",
       "preconditions": "Team in auction league with initialBudget=null",
       "testData": "POST /api/team/setup { teamLoginId:'x', teamName:'Y' }",
-      "testSteps": ["1. POST setup", "2. Inspect team.purse in DB"],
+      "testSteps": [
+        "1. POST setup",
+        "2. Inspect team.purse in DB"
+      ],
       "expectedResult": "team.purse = 100_000_000 (default)",
       "postconditions": "Team isProfileComplete=true",
       "requirementId": "AC-04-016",
@@ -1626,7 +1741,10 @@
       "priority": "P2",
       "preconditions": "TVT league",
       "testData": "POST setup with player1FplId='abc', player2FplId='5678'",
-      "testSteps": ["1. POST", "2. Inspect"],
+      "testSteps": [
+        "1. POST",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 { error: 'Player 1 FPL ID must be numeric' }",
       "postconditions": "No mutation",
       "requirementId": "AC-04-017",
@@ -1643,7 +1761,10 @@
       "priority": "P2",
       "preconditions": "TC league",
       "testData": "POST with player2Name=''",
-      "testSteps": ["1. POST setup", "2. Inspect"],
+      "testSteps": [
+        "1. POST setup",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 { error: 'Player 2 name is required' }",
       "postconditions": "No mutation",
       "requirementId": "AC-04-018",
@@ -1660,7 +1781,11 @@
       "priority": "P1",
       "preconditions": "TVT team with 0 existing players, isProfileComplete=false",
       "testData": "POST setup { teamLoginId, teamName, player1Name:'P1', player1FplId:'1001', player2Name:'P2', player2FplId:'1002' }",
-      "testSteps": ["1. POST", "2. SELECT players WHERE teamId=...", "3. Verify rows"],
+      "testSteps": [
+        "1. POST",
+        "2. SELECT players WHERE teamId=...",
+        "3. Verify rows"
+      ],
       "expectedResult": "Two players rows inserted with matching names/FPL IDs; team.isProfileComplete=true",
       "postconditions": "2 players rows exist; team marked complete",
       "requirementId": "AC-04-019",
@@ -1677,7 +1802,11 @@
       "priority": "P2",
       "preconditions": "TVT team already has 2 players rows",
       "testData": "POST with new player1Name='P1new', player1FplId='9001', player2Name='P2new', player2FplId='9002'",
-      "testSteps": ["1. Capture original player IDs", "2. POST setup with new values", "3. SELECT players"],
+      "testSteps": [
+        "1. Capture original player IDs",
+        "2. POST setup with new values",
+        "3. SELECT players"
+      ],
       "expectedResult": "Still exactly 2 players rows (same primary keys); names/FPL IDs updated; updatedAt bumped",
       "postconditions": "Row count unchanged; values updated",
       "requirementId": "AC-04-020",
@@ -1694,7 +1823,11 @@
       "priority": "P2",
       "preconditions": "Spy/mock on invalidateLeaguePageCache; valid setup payload",
       "testData": "Valid setup payload (auction OR non-auction)",
-      "testSteps": ["1. Hook the cache helper", "2. POST setup", "3. Assert call args"],
+      "testSteps": [
+        "1. Hook the cache helper",
+        "2. POST setup",
+        "3. Assert call args"
+      ],
       "expectedResult": "invalidateLeaguePageCache called exactly once with the team's leagueId before the 200 returns",
       "postconditions": "Cache marked invalid",
       "requirementId": "AC-04-021",
@@ -1711,7 +1844,11 @@
       "priority": "P3",
       "preconditions": "Logged-in team in auction league; isProfileComplete=false",
       "testData": "Navigate to /setup",
-      "testSteps": ["1. Open /setup", "2. Inspect progress bar segment count", "3. Inspect for Back button"],
+      "testSteps": [
+        "1. Open /setup",
+        "2. Inspect progress bar segment count",
+        "3. Inspect for Back button"
+      ],
       "expectedResult": "Exactly 1 progress segment rendered; totalSteps=1; Back button absent",
       "postconditions": "On step 1",
       "requirementId": "AC-04-023",
@@ -1728,7 +1865,12 @@
       "priority": "P3",
       "preconditions": "Auction league with clubAuctionEnabled=true; currentTeamName='AdminAssigned'",
       "testData": "Navigate to /setup; submit with username only",
-      "testSteps": ["1. Open /setup", "2. Verify team-name input is replaced with notice", "3. Submit", "4. Inspect server payload"],
+      "testSteps": [
+        "1. Open /setup",
+        "2. Verify team-name input is replaced with notice",
+        "3. Submit",
+        "4. Inspect server payload"
+      ],
       "expectedResult": "Team-name field replaced with 'Your team will display as the PL club…' notice; submission sends teamName='AdminAssigned'; no client-side teamName validation runs",
       "postconditions": "Setup completes with admin-assigned name",
       "requirementId": "AC-04-024",
@@ -1745,7 +1887,12 @@
       "priority": "P3",
       "preconditions": "Setup wizard step 1; currentTeamLoginId='myid'; 'other' is taken by another team",
       "testData": "Type 'other' in loginId field and tab out",
-      "testSteps": ["1. Focus loginId", "2. Clear and type 'other'", "3. Tab out", "4. Inspect network + UI"],
+      "testSteps": [
+        "1. Focus loginId",
+        "2. Clear and type 'other'",
+        "3. Tab out",
+        "4. Inspect network + UI"
+      ],
       "expectedResult": "fetch('/api/team/setup?checkLoginId=other') is sent; on available=false UI shows 'Team ID is already taken' (or 'Username is already taken' in auction mode)",
       "postconditions": "Error message visible; submit blocked",
       "requirementId": "AC-04-025",
@@ -1762,7 +1909,11 @@
       "priority": "P3",
       "preconditions": "currentTeamLoginId='myid'; field contains 'myid'",
       "testData": "Focus loginId, tab out without editing",
-      "testSteps": ["1. Focus loginId field", "2. Tab out", "3. Inspect network panel"],
+      "testSteps": [
+        "1. Focus loginId field",
+        "2. Tab out",
+        "3. Inspect network panel"
+      ],
       "expectedResult": "No /api/team/setup?checkLoginId=... request is fired",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-026",
@@ -1779,7 +1930,11 @@
       "priority": "P2",
       "preconditions": "Valid setup payload",
       "testData": "Complete setup wizard and submit",
-      "testSteps": ["1. Fill wizard with valid data", "2. Submit", "3. Observe navigation"],
+      "testSteps": [
+        "1. Fill wizard with valid data",
+        "2. Submit",
+        "3. Observe navigation"
+      ],
       "expectedResult": "On 200 response router.push('/dashboard') executes; URL becomes /dashboard",
       "postconditions": "URL is /dashboard",
       "requirementId": "AC-04-027",
@@ -1796,7 +1951,10 @@
       "priority": "P3",
       "preconditions": "POST will fail (e.g., duplicate teamLoginId)",
       "testData": "Submit wizard with already-taken loginId",
-      "testSteps": ["1. Submit wizard causing 400", "2. Inspect banner"],
+      "testSteps": [
+        "1. Submit wizard causing 400",
+        "2. Inspect banner"
+      ],
       "expectedResult": "Global error banner shows the server's error message (e.g., 'Team ID is already taken')",
       "postconditions": "Wizard stays open with error",
       "requirementId": "AC-04-027",
@@ -1813,7 +1971,11 @@
       "priority": "P1",
       "preconditions": "Team in auction league with profile complete",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Sign in as auction team", "2. GET dashboard", "3. Inspect payload keys"],
+      "testSteps": [
+        "1. Sign in as auction team",
+        "2. GET dashboard",
+        "3. Inspect payload keys"
+      ],
       "expectedResult": "Body has leagueFormat:'auction', purse, squad[], standings (≤10 entries), gwHistory; body does NOT contain recentForm/chipStatus/captaincyStatus/upcomingFixture",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-028",
@@ -1830,7 +1992,10 @@
       "priority": "P1",
       "preconditions": "Team in TVT league with profile complete and several played fixtures",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Sign in as TVT team", "2. GET dashboard"],
+      "testSteps": [
+        "1. Sign in as TVT team",
+        "2. GET dashboard"
+      ],
       "expectedResult": "Body includes recentForm (≤5 entries, newest first), seasonStats with all 11 fields (played, wins, draws, losses, pointsFor, pointsAgainst, pointsDiff, bonusPointsEarned, chipPointsEarned, highestScoringGW, lowestScoringGW, currentStreak), chipStatus, captaincyStatus, leaguePosition",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-029",
@@ -1847,7 +2012,11 @@
       "priority": "P2",
       "preconditions": "TC team with PL fixtures completed in GW 1,2,3 and cup fixtures in GW 2,4",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed fixtures as described", "2. GET dashboard", "3. Inspect latestCompletedGW"],
+      "testSteps": [
+        "1. Seed fixtures as described",
+        "2. GET dashboard",
+        "3. Inspect latestCompletedGW"
+      ],
       "expectedResult": "latestCompletedGW === 3 (PL only); GW4 cup ignored",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-030",
@@ -1864,7 +2033,11 @@
       "priority": "P2",
       "preconditions": "Recent fixture: team is home, homeMatchPoints=2",
       "testData": "Seed fixture with matchPoints=2; GET dashboard",
-      "testSteps": ["1. Seed", "2. GET dashboard", "3. Read lastGwResult.result"],
+      "testSteps": [
+        "1. Seed",
+        "2. GET dashboard",
+        "3. Read lastGwResult.result"
+      ],
       "expectedResult": "lastGwResult.result === 'W'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-031",
@@ -1881,7 +2054,10 @@
       "priority": "P2",
       "preconditions": "Most recent fixture with matchPoints=1",
       "testData": "GET dashboard after seeding draw",
-      "testSteps": ["1. Seed draw", "2. GET dashboard"],
+      "testSteps": [
+        "1. Seed draw",
+        "2. GET dashboard"
+      ],
       "expectedResult": "lastGwResult.result === 'D'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-031",
@@ -1898,7 +2074,10 @@
       "priority": "P2",
       "preconditions": "Most recent fixture with matchPoints=0",
       "testData": "Seed loss; GET dashboard",
-      "testSteps": ["1. Seed", "2. GET dashboard"],
+      "testSteps": [
+        "1. Seed",
+        "2. GET dashboard"
+      ],
       "expectedResult": "lastGwResult.result === 'L'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-031",
@@ -1915,7 +2094,11 @@
       "priority": "P2",
       "preconditions": "TVT team with completed GW, myScore=10, no gameweekCaptains row; players named 'A. Forward' and 'B. Defender'",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed fixture with myScore=10 and no captain row", "2. GET dashboard", "3. Read lastGwResult.myPlayerScores"],
+      "testSteps": [
+        "1. Seed fixture with myScore=10 and no captain row",
+        "2. GET dashboard",
+        "3. Read lastGwResult.myPlayerScores"
+      ],
       "expectedResult": "captainBase=3, captainDoubled=6, non-captain=4; player 'A. Forward' (alphabetically first) flagged isCaptain=true with finalScore=6; isInferred=true on entries",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-032",
@@ -1932,7 +2115,11 @@
       "priority": "P2",
       "preconditions": "TVT team with 7 completed PL fixtures GW 1-7",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed 7 completed fixtures", "2. GET dashboard", "3. Inspect recentForm"],
+      "testSteps": [
+        "1. Seed 7 completed fixtures",
+        "2. GET dashboard",
+        "3. Inspect recentForm"
+      ],
       "expectedResult": "recentForm length === 5; ordered by gameweek DESC; first entry corresponds to GW7 last to GW3",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-033",
@@ -1949,7 +2136,11 @@
       "priority": "P2",
       "preconditions": "Team with last 5 PL results W,W,W,L,W (newest first)",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed fixtures", "2. GET dashboard", "3. Inspect seasonStats.currentStreak"],
+      "testSteps": [
+        "1. Seed fixtures",
+        "2. GET dashboard",
+        "3. Inspect seasonStats.currentStreak"
+      ],
       "expectedResult": "currentStreak === { type:'W', count:3 }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-034",
@@ -1966,7 +2157,9 @@
       "priority": "P3",
       "preconditions": "Team with no completed PL fixtures",
       "testData": "GET dashboard",
-      "testSteps": ["1. GET dashboard"],
+      "testSteps": [
+        "1. GET dashboard"
+      ],
       "expectedResult": "currentStreak === null",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-034",
@@ -1983,7 +2176,11 @@
       "priority": "P2",
       "preconditions": "Team with fixtures completed in GW 1-5 with myPoints 10,20,30,40,99 (GW5 being highest)",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed fixtures", "2. GET dashboard", "3. Read highestScoringGW/lowestScoringGW"],
+      "testSteps": [
+        "1. Seed fixtures",
+        "2. GET dashboard",
+        "3. Read highestScoringGW/lowestScoringGW"
+      ],
       "expectedResult": "highestScoringGW.gameweek=4 (the 40-point game); lowestScoringGW.gameweek=1 (the 10-point game); GW5 excluded entirely",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-035",
@@ -2000,7 +2197,11 @@
       "priority": "P2",
       "preconditions": "Team is in 9th place by leaguePoints in a group of 16",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed standings", "2. GET dashboard", "3. Inspect leaguePosition.zone"],
+      "testSteps": [
+        "1. Seed standings",
+        "2. GET dashboard",
+        "3. Inspect leaguePosition.zone"
+      ],
       "expectedResult": "zone === 'challenger' (rank in 9..14)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-036",
@@ -2017,7 +2218,11 @@
       "priority": "P2",
       "preconditions": "Three teams seeded at ranks 8, 14, and 15 within same group",
       "testData": "GET dashboard for each",
-      "testSteps": ["1. Seed standings", "2. GET dashboard as each team", "3. Compare zones"],
+      "testSteps": [
+        "1. Seed standings",
+        "2. GET dashboard as each team",
+        "3. Compare zones"
+      ],
       "expectedResult": "rank 8 -> 'playoffs'; rank 14 -> 'challenger'; rank 15 -> 'eliminated'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-036",
@@ -2034,7 +2239,11 @@
       "priority": "P2",
       "preconditions": "16-team group with caller at rank 5",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed", "2. GET dashboard", "3. Inspect miniTable"],
+      "testSteps": [
+        "1. Seed",
+        "2. GET dashboard",
+        "3. Inspect miniTable"
+      ],
       "expectedResult": "miniTable has exactly 5 rows for ranks 3,4,5,6,7; row at rank 5 has isCurrentTeam=true",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-037",
@@ -2051,7 +2260,11 @@
       "priority": "P2",
       "preconditions": "Triple-Crown league with 20 non-ghost teams; caller is at PL-rank 10",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed 20-team league", "2. GET dashboard", "3. Inspect miniTable and plPosition"],
+      "testSteps": [
+        "1. Seed 20-team league",
+        "2. GET dashboard",
+        "3. Inspect miniTable and plPosition"
+      ],
       "expectedResult": "miniTable has 5 entries centered on the team within the 20-team list; plPosition.rank=10 and plPosition.totalTeams=20",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-038",
@@ -2068,7 +2281,11 @@
       "priority": "P2",
       "preconditions": "Team with nextGameweek.number=7",
       "testData": "GET dashboard",
-      "testSteps": ["1. Set up next GW=7", "2. GET dashboard", "3. Inspect chipStatus"],
+      "testSteps": [
+        "1. Set up next GW=7",
+        "2. GET dashboard",
+        "3. Inspect chipStatus"
+      ],
       "expectedResult": "chipStatus.currentSet === getChipSet(7); chipStatus.set1 and set2 each have used flags (boolean) for Double Pointer, Challenge Chip, Win-Win",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-039",
@@ -2085,7 +2302,11 @@
       "priority": "P2",
       "preconditions": "TVT team; nextGameweek.number=33",
       "testData": "GET dashboard",
-      "testSteps": ["1. Set next GW=33", "2. GET dashboard", "3. Read captaincyStatus"],
+      "testSteps": [
+        "1. Set next GW=33",
+        "2. GET dashboard",
+        "3. Read captaincyStatus"
+      ],
       "expectedResult": "captaincyStatus.player1.chipsRemaining === 999 and player2.chipsRemaining === 999",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-040",
@@ -2102,7 +2323,11 @@
       "priority": "P3",
       "preconditions": "TVT team; nextGameweek.number=30",
       "testData": "GET dashboard",
-      "testSteps": ["1. Set next GW=30", "2. GET dashboard", "3. Compare to 999 override"],
+      "testSteps": [
+        "1. Set next GW=30",
+        "2. GET dashboard",
+        "3. Compare to 999 override"
+      ],
       "expectedResult": "chipsRemaining is computed against CAPTAIN_CAP=15, not 999 (override only applies when nextGameweek.number>30)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-040",
@@ -2119,7 +2344,11 @@
       "priority": "P2",
       "preconditions": "Team submitted captain (playerId=42, playerName='A. Forward') for nextGameweek",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed captain submission", "2. GET dashboard", "3. Inspect upcomingCaptain"],
+      "testSteps": [
+        "1. Seed captain submission",
+        "2. GET dashboard",
+        "3. Inspect upcomingCaptain"
+      ],
       "expectedResult": "upcomingCaptain === { playerId: 42, playerName: 'A. Forward' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-041",
@@ -2136,7 +2365,10 @@
       "priority": "P3",
       "preconditions": "Team has not yet submitted captain",
       "testData": "GET dashboard",
-      "testSteps": ["1. Ensure no submission", "2. GET dashboard"],
+      "testSteps": [
+        "1. Ensure no submission",
+        "2. GET dashboard"
+      ],
       "expectedResult": "upcomingCaptain === null",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-041",
@@ -2153,7 +2385,11 @@
       "priority": "P2",
       "preconditions": "gameweekChips row exists with chipType='C' for (teamId, nextGameweek.id)",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed gameweekChips row", "2. GET dashboard", "3. Inspect upcomingChip"],
+      "testSteps": [
+        "1. Seed gameweekChips row",
+        "2. GET dashboard",
+        "3. Inspect upcomingChip"
+      ],
       "expectedResult": "upcomingChip === { type:'C', chipName:'Challenge Chip' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-042",
@@ -2170,7 +2406,12 @@
       "priority": "P3",
       "preconditions": "Separate seeds with chipType='D' and chipType='W'",
       "testData": "GET dashboard per scenario",
-      "testSteps": ["1. Seed D", "2. GET dashboard; check chipName=Double Pointer", "3. Reseed W", "4. GET; check chipName=Win-Win"],
+      "testSteps": [
+        "1. Seed D",
+        "2. GET dashboard; check chipName=Double Pointer",
+        "3. Reseed W",
+        "4. GET; check chipName=Win-Win"
+      ],
       "expectedResult": "D maps to chipName 'Double Pointer'; W (or any non-D-non-C) maps to 'Win-Win'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-042",
@@ -2187,7 +2428,11 @@
       "priority": "P2",
       "preconditions": "TC team with unplayed PL fixtures in GW3,4,5 and cup fixture in GW4",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed fixtures", "2. GET dashboard", "3. Inspect upcomingFixtures order"],
+      "testSteps": [
+        "1. Seed fixtures",
+        "2. GET dashboard",
+        "3. Inspect upcomingFixtures order"
+      ],
       "expectedResult": "Order: GW3 PL, GW4 PL, GW4 Cup, GW5 PL",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-043",
@@ -2204,7 +2449,11 @@
       "priority": "P2",
       "preconditions": "TC team with cup fixture scheduled for GW8",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed cup fixture in GW8", "2. GET dashboard", "3. Read cupProgress.upcomingCupFixture.isDoubleHeader"],
+      "testSteps": [
+        "1. Seed cup fixture in GW8",
+        "2. GET dashboard",
+        "3. Read cupProgress.upcomingCupFixture.isDoubleHeader"
+      ],
       "expectedResult": "isDoubleHeader === true",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-044",
@@ -2221,7 +2470,10 @@
       "priority": "P3",
       "preconditions": "TC team with cup fixture in GW7 (not in DOUBLE_HEADER_GWS)",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed", "2. GET dashboard"],
+      "testSteps": [
+        "1. Seed",
+        "2. GET dashboard"
+      ],
       "expectedResult": "isDoubleHeader === false",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-044",
@@ -2238,7 +2490,11 @@
       "priority": "P2",
       "preconditions": "TC team is 2nd among non-ghost teams in its cup group",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed cup group standings", "2. GET dashboard", "3. Inspect cupProgress"],
+      "testSteps": [
+        "1. Seed cup group standings",
+        "2. GET dashboard",
+        "3. Inspect cupProgress"
+      ],
       "expectedResult": "cupProgress.rank===2; cupProgress.cupZone==='ucl'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-045",
@@ -2255,7 +2511,10 @@
       "priority": "P3",
       "preconditions": "TC team ranked 3rd among non-ghost cup-group teams",
       "testData": "GET dashboard",
-      "testSteps": ["1. Seed", "2. GET dashboard"],
+      "testSteps": [
+        "1. Seed",
+        "2. GET dashboard"
+      ],
       "expectedResult": "cupProgress.rank===3; cupProgress.cupZone==='uel'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-045",
@@ -2272,7 +2531,10 @@
       "priority": "P3",
       "preconditions": "Team has player with fplId=9999; current GW context exists",
       "testData": "GET dashboard",
-      "testSteps": ["1. GET dashboard", "2. Inspect player URLs"],
+      "testSteps": [
+        "1. GET dashboard",
+        "2. Inspect player URLs"
+      ],
       "expectedResult": "fplUrl === 'https://fantasy.premierleague.com/entry/9999/event/<gw>' and fplHistoryUrl === 'https://fantasy.premierleague.com/entry/9999/history'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-046",
@@ -2289,7 +2551,10 @@
       "priority": "P2",
       "preconditions": "Logged-in team",
       "testData": "GET /api/team/dashboard/gw-result (no query params)",
-      "testSteps": ["1. GET without params", "2. Inspect"],
+      "testSteps": [
+        "1. GET without params",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 { error: 'gw or cupGw parameter required' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-047",
@@ -2306,7 +2571,10 @@
       "priority": "P2",
       "preconditions": "Logged-in team",
       "testData": "GET /api/team/dashboard/gw-result?gw=0",
-      "testSteps": ["1. GET with gw=0", "2. Inspect"],
+      "testSteps": [
+        "1. GET with gw=0",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 { error: 'Invalid gw parameter' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-048",
@@ -2323,7 +2591,10 @@
       "priority": "P2",
       "preconditions": "Logged-in team",
       "testData": "GET /api/team/dashboard/gw-result?gw=abc",
-      "testSteps": ["1. GET", "2. Inspect"],
+      "testSteps": [
+        "1. GET",
+        "2. Inspect"
+      ],
       "expectedResult": "HTTP 400 { error: 'Invalid gw parameter' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-048",
@@ -2340,7 +2611,10 @@
       "priority": "P2",
       "preconditions": "Team has completed PL fixtures 1-5 only",
       "testData": "GET /api/team/dashboard/gw-result?gw=99",
-      "testSteps": ["1. GET", "2. Inspect lastGwResult.gameweek"],
+      "testSteps": [
+        "1. GET",
+        "2. Inspect lastGwResult.gameweek"
+      ],
       "expectedResult": "HTTP 200; lastGwResult corresponds to GW5 (most-recent completed)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-049",
@@ -2357,7 +2631,11 @@
       "priority": "P2",
       "preconditions": "TC team with completed PL and cup fixtures in GW4",
       "testData": "GET /api/team/dashboard/gw-result?gw=4",
-      "testSteps": ["1. Seed fixtures", "2. GET", "3. Inspect body"],
+      "testSteps": [
+        "1. Seed fixtures",
+        "2. GET",
+        "3. Inspect body"
+      ],
       "expectedResult": "Body contains both lastGwResult (PL, W/D/L) and cupGwResult (cup, W/L) keyed to GW4",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-050",
@@ -2374,7 +2652,11 @@
       "priority": "P3",
       "preconditions": "TC team with cup fixture matchPoints=1",
       "testData": "GET /api/team/dashboard/gw-result?cupGw=<n>",
-      "testSteps": ["1. Seed cup draw", "2. GET", "3. Inspect cupGwResult.result"],
+      "testSteps": [
+        "1. Seed cup draw",
+        "2. GET",
+        "3. Inspect cupGwResult.result"
+      ],
       "expectedResult": "cupGwResult.result === 'L'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-051",
@@ -2391,7 +2673,12 @@
       "priority": "P1",
       "preconditions": "Auction team with ledger entries; persisted teams columns intentionally stale",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Set teams.purse=999 (stale)", "2. Ledger says purse=42000000", "3. GET dashboard", "4. Compare returned purse"],
+      "testSteps": [
+        "1. Set teams.purse=999 (stale)",
+        "2. Ledger says purse=42000000",
+        "3. GET dashboard",
+        "4. Compare returned purse"
+      ],
       "expectedResult": "Returned purse, totalSpent, totalIncome, totalRefunds equal the ledger-computed values (not the stale 999)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-052",
@@ -2408,7 +2695,10 @@
       "priority": "P2",
       "preconditions": "Mock buildTeamLedger to return null; persisted teams columns populated",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Force ledger=null", "2. GET dashboard"],
+      "testSteps": [
+        "1. Force ledger=null",
+        "2. GET dashboard"
+      ],
       "expectedResult": "Returned purse uses calculatePurse(initialBudget, totalIncome, t.totalSpent, t.totalRefunds)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-052",
@@ -2425,7 +2715,11 @@
       "priority": "P2",
       "preconditions": "Auction team owns player with auctionScores.playerBreakdown {points:50 (synergy), rawPoints:30}; purchasePrice=10",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed breakdown", "2. GET dashboard", "3. Inspect squadValue"],
+      "testSteps": [
+        "1. Seed breakdown",
+        "2. GET dashboard",
+        "3. Inspect squadValue"
+      ],
       "expectedResult": "squadValue sum uses calculateFMV(10, 30); synergy points (50) ignored",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-053",
@@ -2442,7 +2736,11 @@
       "priority": "P2",
       "preconditions": "Auction team owns PL club Arsenal (plTeamName='Arsenal', plTeamShort='ARS')",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed ownership", "2. GET dashboard", "3. Inspect standings + ownedClub"],
+      "testSteps": [
+        "1. Seed ownership",
+        "2. GET dashboard",
+        "3. Inspect standings + ownedClub"
+      ],
       "expectedResult": "Standings entry for that team: name='Arsenal', shortName='ARS'; header.ownedClub populated for caller",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-054",
@@ -2459,7 +2757,11 @@
       "priority": "P2",
       "preconditions": "Auction league has one paused session and one pending session scheduled 24h ahead",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed sessions", "2. GET dashboard", "3. Inspect auctionSession + nextAuction"],
+      "testSteps": [
+        "1. Seed sessions",
+        "2. GET dashboard",
+        "3. Inspect auctionSession + nextAuction"
+      ],
       "expectedResult": "auctionSession reflects paused session; nextAuction reflects pending session with scheduledAt as ISO string",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-055",
@@ -2476,7 +2778,11 @@
       "priority": "P2",
       "preconditions": "Auction team has one released player; purchasePrice=10",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed release", "2. GET dashboard", "3. Inspect releases entry + totalForfeit"],
+      "testSteps": [
+        "1. Seed release",
+        "2. GET dashboard",
+        "3. Inspect releases entry + totalForfeit"
+      ],
       "expectedResult": "Release row contains refund=calculateRefund(10) and forfeit=(10-refund); totalForfeit aggregates over all releases",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-056",
@@ -2493,7 +2799,11 @@
       "priority": "P2",
       "preconditions": "Ledger contains release_refund entry { amount:6, metadata:{ forfeitAmount:4 } }",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed ledger entry", "2. GET dashboard", "3. Inspect breakdowns"],
+      "testSteps": [
+        "1. Seed ledger entry",
+        "2. GET dashboard",
+        "3. Inspect breakdowns"
+      ],
       "expectedResult": "incomeByType.release_refund == 6 and expenseByType.release_forfeit == 4; initial_budget contributes 0 to income totals",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-057",
@@ -2510,7 +2820,10 @@
       "priority": "P3",
       "preconditions": "Ledger has one isPending=true entry and one isPending=false entry both of type 'purchase'",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Seed entries", "2. GET dashboard"],
+      "testSteps": [
+        "1. Seed entries",
+        "2. GET dashboard"
+      ],
       "expectedResult": "expenseByType.purchase reflects only the non-pending entry's amount",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-057",
@@ -2527,7 +2840,10 @@
       "priority": "P3",
       "preconditions": "Auction league with no gameweeks whose deadline > now",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. Ensure all GW deadlines in the past", "2. GET dashboard"],
+      "testSteps": [
+        "1. Ensure all GW deadlines in the past",
+        "2. GET dashboard"
+      ],
       "expectedResult": "deadline === { gameweek:0, timestamp:null }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-058",
@@ -2544,7 +2860,10 @@
       "priority": "P3",
       "preconditions": "TVT team after all GWs played; no nextGameweek row",
       "testData": "GET /api/team/dashboard",
-      "testSteps": ["1. GET dashboard", "2. Inspect deadline"],
+      "testSteps": [
+        "1. GET dashboard",
+        "2. Inspect deadline"
+      ],
       "expectedResult": "deadline.gameweek === 0 and deadline.timestamp === null",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-059",
@@ -2561,7 +2880,11 @@
       "priority": "P3",
       "preconditions": "Client clock skewed by +5 min vs server; deadline 10 min away on server",
       "testData": "Load /dashboard with system clock skewed",
-      "testSteps": ["1. Skew client clock +5 min", "2. Load dashboard", "3. Observe countdown vs actual time-remaining"],
+      "testSteps": [
+        "1. Skew client clock +5 min",
+        "2. Load dashboard",
+        "3. Observe countdown vs actual time-remaining"
+      ],
       "expectedResult": "Countdown shows ~10 minutes (matches server) not ~5 minutes (would be the case if using client clock)",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-060",
@@ -2578,7 +2901,11 @@
       "priority": "P3",
       "preconditions": "Dashboard loaded showing GW5",
       "testData": "Click prev GW button",
-      "testSteps": ["1. Load dashboard at GW5", "2. Click 'previous GW'", "3. Inspect network"],
+      "testSteps": [
+        "1. Load dashboard at GW5",
+        "2. Click 'previous GW'",
+        "3. Inspect network"
+      ],
       "expectedResult": "Only request issued is GET /api/team/dashboard/gw-result?gw=4; no full /api/team/dashboard call. lastGwResult/cupGwResult merged into existing state",
       "postconditions": "Dashboard updates UI for GW4 without full reload",
       "requirementId": "AC-04-061",
@@ -2595,7 +2922,11 @@
       "priority": "P3",
       "preconditions": "Force an unexpected throw inside the dashboard route",
       "testData": "GET /api/team/dashboard with mocked failure",
-      "testSteps": ["1. Mock failure", "2. GET dashboard", "3. Observe client behaviour"],
+      "testSteps": [
+        "1. Mock failure",
+        "2. GET dashboard",
+        "3. Observe client behaviour"
+      ],
       "expectedResult": "HTTP 500 { error: 'Failed to fetch dashboard data' }; client shows 'Failed to load dashboard. Please try again.'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-062",
@@ -2612,7 +2943,11 @@
       "priority": "P3",
       "preconditions": "Force unexpected throw inside POST handler",
       "testData": "POST /api/team/setup",
-      "testSteps": ["1. Mock failure", "2. POST", "3. Inspect"],
+      "testSteps": [
+        "1. Mock failure",
+        "2. POST",
+        "3. Inspect"
+      ],
       "expectedResult": "HTTP 500 { error: 'Failed to complete setup' }",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-063",
@@ -2629,7 +2964,11 @@
       "priority": "P1",
       "preconditions": "Auction team setup complete (isProfileComplete=true); team.purse partially spent (e.g., 60_000_000 after 40M spent of initial 100M); team.totalSpent=40_000_000; team.totalRefunds and team.totalIncome populated from prior trading",
       "testData": "POST /api/team/setup with same teamLoginId/teamName as currently stored",
-      "testSteps": ["1. Capture team.purse=60_000_000, team.totalSpent=40_000_000, team.totalRefunds, team.totalIncome", "2. POST /api/team/setup with same payload", "3. SELECT team row again and compare all economy columns"],
+      "testSteps": [
+        "1. Capture team.purse=60_000_000, team.totalSpent=40_000_000, team.totalRefunds, team.totalIncome",
+        "2. POST /api/team/setup with same payload",
+        "3. SELECT team row again and compare all economy columns"
+      ],
       "expectedResult": "Response is 200 { success: true, message: 'Profile setup completed (auction format — players acquired via auction)' }; team.purse remains 60_000_000 (NOT reset to initialBudget); team.totalSpent stays 40_000_000; team.totalRefunds and team.totalIncome unchanged; only cosmetic fields (teamLoginId, name, isProfileComplete, updatedAt) are written; economy invariant (purse = initialBudget + totalIncome + totalRefunds − totalSpent) preserved.",
       "postconditions": "team economy columns identical to pre-call snapshot; isProfileComplete still true; updatedAt bumped",
       "requirementId": "AC-04-022",
@@ -2641,19 +2980,23 @@
     {
       "id": "TC-04-089",
       "feature": "DEF-04-002 Regression",
-      "scenario": "PINS DEFECT: Resubmitting TVT setup with 2 existing players may swap FPL IDs (non-deterministic SELECT order)",
-      "type": "Regression",
+      "scenario": "Re-submitting setup wizard preserves player1<->player1, player2<->player2 mapping (deterministic order)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "TVT team with 2 existing players rows P_A (fplId=1111, name='A') and P_B (fplId=2222, name='B'); profile complete",
       "testData": "POST /api/team/setup with player1Name='A', player1FplId='1111', player2Name='B', player2FplId='2222'",
-      "testSteps": ["1. Confirm initial rows P_A.fplId=1111, P_B.fplId=2222", "2. Issue POST several times (or alter row insert order to influence SQLite default order)", "3. SELECT players rows by id (stable order)"],
-      "expectedResult": "CURRENT (defective) behaviour: because the in-route SELECT has no orderBy, the mapping of (player1, player2) -> (existingPlayers[0], existingPlayers[1]) is non-deterministic; under conditions where SQLite returns rows in a different order from the original insert (e.g. after VACUUM or with rowid reordering) the row that was P_A may end up assigned the player2 payload, silently swapping FPL IDs. Test must assert that the mapping is NOT guaranteed stable (e.g., one or more iterations show a swap). When DEF-04-002 is fixed this case should be replaced/inverted to assert deterministic mapping by orderBy createdAt asc, id asc.",
+      "testSteps": [
+        "1. Confirm initial rows P_A.fplId=1111, P_B.fplId=2222",
+        "2. Issue POST several times (or alter row insert order to influence SQLite default order)",
+        "3. SELECT players rows by id (stable order)"
+      ],
+      "expectedResult": "Setting up a team with player1=Salah/123, player2=Haaland/456 then re-submitting with the same input writes Salah/123 to the SAME players.id row both times, and Haaland/456 to the SAME other row both times. Re-running 100 times never swaps the two FPL IDs.",
       "postconditions": "Possibly-swapped player rows",
       "requirementId": "AC-04-064",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-04-002. Reproduction needs control of SQLite physical order or mocking of db.select to return swapped order."
+      "notes": "[QA-VERIFY] Updated post-DEF-04-002 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-04-090",
@@ -2663,7 +3006,10 @@
       "priority": "P2",
       "preconditions": "TVT team with 2 players rows; player1 payload differs from existing player1Name",
       "testData": "POST setup with new player1Name/FplId",
-      "testSteps": ["1. POST", "2. Capture which DB row received which value"],
+      "testSteps": [
+        "1. POST",
+        "2. Capture which DB row received which value"
+      ],
       "expectedResult": "CURRENT behaviour: route uses existingPlayers[0] (no orderBy) — pin this exact positional assignment so the next BA-iteration fix (adding orderBy) is detected as a behaviour change.",
       "postconditions": "Players updated by position",
       "requirementId": "AC-04-020",
@@ -2675,36 +3021,44 @@
     {
       "id": "TC-04-091",
       "feature": "DEF-04-003 Regression",
-      "scenario": "PINS DEFECT: teamLoginId uniqueness is case-sensitive — 'Rahul99' accepted when 'rahul99' exists",
-      "type": "Regression",
+      "scenario": "teamLoginId uniqueness is case-insensitive across all four routes (team-setup, create-team, update-team, bulk-upload-teams)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Team A already owns teamLoginId='rahul99' (all lowercase); Team B is a different team in any league with profile not yet complete",
       "testData": "Team B POSTs /api/team/setup with teamLoginId='Rahul99' (mixed case), valid teamName, valid players for non-auction or none for auction",
-      "testSteps": ["1. Verify Team A exists with lowercased 'rahul99'", "2. As Team B, POST /api/team/setup with 'Rahul99'", "3. Inspect status code", "4. SELECT teams to confirm row created"],
-      "expectedResult": "CURRENT (defective) behaviour: HTTP 200; Team B is saved with teamLoginId='Rahul99'; two rows now exist whose lowercased loginIds collide. This test pins the case-sensitive comparison — when DEF-04-003 is fixed it should fail (expecting 400 'Team ID is already taken').",
+      "testSteps": [
+        "1. Verify Team A exists with lowercased 'rahul99'",
+        "2. As Team B, POST /api/team/setup with 'Rahul99'",
+        "3. Inspect status code",
+        "4. SELECT teams to confirm row created"
+      ],
+      "expectedResult": "Registering 'Bob' as a teamLoginId then attempting to register 'bob' (or 'BOB') anywhere on the platform returns HTTP 400 'Team ID already exists globally' (or 'is already taken' for /api/team/setup) and does NOT create/update a second row. Stored value is the lowercased form. Matches team-name's case-insensitive uniqueness.",
       "postconditions": "Two teams hold case-only-different loginIds",
       "requirementId": "AC-04-065",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-04-003."
+      "notes": "[QA-VERIFY] Updated post-DEF-04-003 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-04-092",
       "feature": "DEF-04-003 Regression",
-      "scenario": "PINS DEFECT: checkLoginId availability also case-sensitive — 'Rahul99' reports available when 'rahul99' is taken",
-      "type": "Regression",
+      "scenario": "GET /api/team/setup?checkLoginId=Bob returns available:false when 'bob' is already registered",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "Team A owns 'rahul99'; Team B is logged in",
       "testData": "GET /api/team/setup?checkLoginId=Rahul99",
-      "testSteps": ["1. As Team B, GET checkLoginId=Rahul99", "2. Inspect body"],
-      "expectedResult": "CURRENT (defective) behaviour: { available: true }. When DEF-04-003 is fixed this should return { available: false }.",
+      "testSteps": [
+        "1. As Team B, GET checkLoginId=Rahul99",
+        "2. Inspect body"
+      ],
+      "expectedResult": "The blur-side availability check is also case-insensitive: GET /api/team/setup?checkLoginId=Bob with an existing 'bob' row returns { available: false } so the UI can show the conflict immediately. Same row owned by the current session returns { available: true }.",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-065",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Secondary pin for DEF-04-003 covering the GET endpoint."
+      "notes": "[QA-VERIFY] Updated post-DEF-04-003 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-04-093",
@@ -2714,7 +3068,14 @@
       "priority": "P2",
       "preconditions": "Fresh TVT team account, admin-assigned name and loginId",
       "testData": "Valid teamLoginId, teamName, player1/2 names + numeric FPL IDs",
-      "testSteps": ["1. Sign in as new team", "2. Verify auto-redirect to /setup with prefilled fields", "3. Complete all 3 steps", "4. Submit", "5. Land on /dashboard", "6. Verify dashboard payload renders"],
+      "testSteps": [
+        "1. Sign in as new team",
+        "2. Verify auto-redirect to /setup with prefilled fields",
+        "3. Complete all 3 steps",
+        "4. Submit",
+        "5. Land on /dashboard",
+        "6. Verify dashboard payload renders"
+      ],
       "expectedResult": "Setup POST returns 200; client redirects to /dashboard; dashboard renders without error",
       "postconditions": "team.isProfileComplete=true; 2 player rows exist; cache invalidated",
       "requirementId": "AC-04-027",

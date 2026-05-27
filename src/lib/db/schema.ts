@@ -237,7 +237,12 @@ export const gameweekCaptains = sqliteTable("gameweek_captains", {
   // Announcement tracking
   announcedAt: integer("announced_at", { mode: "timestamp" }),
   isValid: integer("is_valid", { mode: "boolean" }).notNull().default(true), // false if announced late or spammed
-  
+
+  // Captaincy cap bypass — free-text reason recorded when this captaincy row was
+  // inserted past the per-player league-stage cap (admin CSV override or auto-fallback
+  // when team failed to announce). See BR-CHIP-044 and the auto-fallback BR.
+  bypassReason: text("bypass_reason"),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
@@ -534,11 +539,10 @@ export const teamSlotUnlocks = sqliteTable("team_slot_unlocks", {
 });
 
 // Trade proposals — P2P marketplace.
-// Note: the original peer-veto system has been removed (the veto endpoint now returns 410 and the
-// GET projection no longer surfaces vetoDeadline / vetoVotes). The vetoDeadline + vetoVotes columns
-// below are deprecated and retained only for backwards compatibility with existing rows; new code
-// MUST NOT write to or read from them. The "vetoed" status value is no longer emitted by the
-// platform (existing historical rows with that value remain visible via GET).
+// Note: the peer-veto system has been removed entirely. /api/auction/trade/veto returns HTTP 410 Gone,
+// the GET projection does not include vetoDeadline / vetoVotes, and the columns themselves were
+// dropped from the database in migration 0014_drop_veto_columns.sql. The "vetoed" status value is
+// historical-only — no code path emits it, but legacy rows (if any) remain visible.
 export const tradeProposals = sqliteTable("trade_proposals", {
   id: text("id").primaryKey(),
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
@@ -548,8 +552,6 @@ export const tradeProposals = sqliteTable("trade_proposals", {
   requestedPlayerIds: text("requested_player_ids").notNull().default("[]"), // JSON array of auctionOwnership IDs
   cashOffered: integer("cash_offered").notNull().default(0), // Positive = proposer pays target, negative = target pays
   status: text("status").notNull().default("pending"), // "pending" | "accepted" | "rejected" | "expired" (historical: "vetoed")
-  vetoDeadline: integer("veto_deadline", { mode: "timestamp" }),
-  vetoVotes: text("veto_votes").notNull().default("{}"), // JSON: {teamId: "veto" | "approve"}
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, leagues } from "@/lib/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, asc } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -37,8 +37,9 @@ export async function GET(request: NextRequest) {
     const checkName = request.nextUrl.searchParams.get("checkName");
 
     if (checkLoginId) {
-      // Global uniqueness check on teamLoginId
-      const existing = await db.select().from(teams).where(eq(teams.teamLoginId, checkLoginId)).limit(1);
+      // Global uniqueness check on teamLoginId (case-insensitive)
+      const checkLoginIdLower = checkLoginId.toLowerCase();
+      const existing = await db.select().from(teams).where(sql`LOWER(${teams.teamLoginId}) = ${checkLoginIdLower}`).limit(1);
       // Available if: no team with this loginId, OR this is the current team's loginId
       return NextResponse.json({
         available: existing.length === 0 || existing[0].id === session.id,
@@ -110,11 +111,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check global uniqueness (across all leagues, unless it's the current team's ID)
+    // Normalise to lowercase for case-insensitive storage + comparison
+    const normalizedLoginId = trimmedLoginId.toLowerCase();
+
+    // Check global uniqueness (across all leagues, unless it's the current team's ID) — case-insensitive
     const existingLoginId = await db
       .select()
       .from(teams)
-      .where(eq(teams.teamLoginId, trimmedLoginId))
+      .where(sql`LOWER(${teams.teamLoginId}) = ${normalizedLoginId}`)
       .limit(1);
     if (existingLoginId.length > 0 && existingLoginId[0].id !== session.id) {
       return NextResponse.json(
@@ -161,7 +165,7 @@ export async function POST(request: NextRequest) {
       // Update team: teamLoginId, name, isProfileComplete = true
       // Also initialize purse from league's initial budget on first-time setup only
       const updateSet: Partial<typeof teams.$inferInsert> = {
-        teamLoginId: trimmedLoginId,
+        teamLoginId: normalizedLoginId,
         name: trimmedTeamName,
         isProfileComplete: true,
         updatedAt: new Date(),
@@ -238,7 +242,7 @@ export async function POST(request: NextRequest) {
     await db
       .update(teams)
       .set({
-        teamLoginId: trimmedLoginId,
+        teamLoginId: normalizedLoginId,
         name: trimmedTeamName,
         isProfileComplete: true,
         updatedAt: new Date(),
@@ -247,11 +251,15 @@ export async function POST(request: NextRequest) {
 
     // ============= Create/Update Players =============
 
-    // Check if players already exist for this team
+    // Check if players already exist for this team. Deterministic order so
+    // re-submitting the wizard always maps player1 input -> first row and
+    // player2 input -> second row; without orderBy the DB is free to swap
+    // the rows and re-submit would silently switch the two players' FPL IDs.
     const existingPlayers = await db
       .select()
       .from(players)
-      .where(eq(players.teamId, session.id));
+      .where(eq(players.teamId, session.id))
+      .orderBy(asc(players.createdAt), asc(players.id));
 
     if (existingPlayers.length >= 2) {
       // Update existing players

@@ -8,6 +8,7 @@ import {
   auctionClubOwnership,
   auctionScores,
   teamPenalties,
+  teamSlotUnlocks,
   tradeProposals,
   teams,
   leagues,
@@ -53,6 +54,10 @@ export async function POST(request: NextRequest) {
     await db.delete(auctionClubOwnership).where(eq(auctionClubOwnership.leagueId, leagueId));
     // Penalty ledger — full reset clears accumulated nomination penalties along with everything else.
     await db.delete(teamPenalties).where(eq(teamPenalties.leagueId, leagueId));
+    // Slot-unlock audit trail — must also be wiped on a full reset so the finance
+    // ledger matches teams.bonusSlots=0 below. Otherwise the league keeps ghost
+    // "slot unlock" outflows from a previous auction run.
+    await db.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId));
     // Wishlists are preserved across resets — they are user-curated
     await db.delete(auctionScores).where(eq(auctionScores.leagueId, leagueId));
     await db.delete(tradeProposals).where(eq(tradeProposals.leagueId, leagueId));

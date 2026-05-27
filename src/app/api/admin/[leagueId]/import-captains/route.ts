@@ -4,6 +4,7 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
+import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
 
 // Safely convert any value to a trimmed string
 function toStr(value: unknown): string {
@@ -43,9 +44,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const results: { success: string[]; errors: string[] } = {
+    const results: { success: string[]; errors: string[]; warnings: string[] } = {
       success: [],
       errors: [],
+      warnings: [],
     };
 
     // Fetch league config
@@ -60,8 +62,8 @@ export async function POST(request: NextRequest) {
     // TC=19 chips/player, others=15. captainCheckLimit is the upper League-Stage
     // GW boundary; chips used at GW > captainCheckLimit are playoff captaincies and
     // do NOT count toward the cap.
-    const CAPTAIN_CAP = leagueFormat === "triple-crown" ? 19 : 15;
-    const captainCheckLimit = leagueFormat === "triple-crown" ? 38 : (playoffStartGw - 1);
+    const CAPTAIN_CAP = computeCaptainCap(leagueFormat, playoffStartGw);
+    const captainCheckLimit = computeCaptainCheckLimit(leagueFormat, playoffStartGw);
 
     // Get all teams with players for this league
     const allTeams = await db.query.teams.findMany({
@@ -98,6 +100,7 @@ export async function POST(request: NextRequest) {
       doubledScore: number;
       isValid: boolean;
       announcedAt: Date;
+      bypassReason: string | null;
     }> = [];
     const toUpdate: Array<{ id: string; newPlayerId: string }> = [];
     // Track chips increments: playerId → count of new captain entries
@@ -175,20 +178,22 @@ export async function POST(request: NextRequest) {
             }
             // else: same player, no change needed
           } else {
-            // New entry — apply the per-player CAPTAIN_CAP overflow check, but only
-            // for league-stage GWs (playoff captaincies are unlimited). Mirror the
-            // team-side POST /api/team/captain rule so an admin bulk-import can't
-            // silently put a player past the cap that the user-facing route enforces.
-            if (gw <= captainCheckLimit) {
-              const currentUsed = player.captaincyChipsUsed ?? 0;
-              const pendingIncrement = chipsIncrement.get(player.id) ?? 0;
-              if (currentUsed + pendingIncrement >= CAPTAIN_CAP) {
-                results.errors.push(
-                  `Row ${rowNum}: ${playerName} has already used all ${CAPTAIN_CAP} League-Stage captaincy chips — GW${gw} entry skipped`
-                );
-                continue;
-              }
-            }
+            // DEF-CHIP-009 reopen: admin CSV imports BYPASS the per-player cap.
+            // Client requirement: "when user import captain details we need to escape
+            // the check". The row is still inserted and `captaincyChipsUsed` still
+            // increments (past the cap if needed) — but when the cap would be
+            // exceeded we annotate the row with a free-text `bypassReason` so the
+            // audit trail explains why a player is past their League-Stage limit.
+            // Playoff GWs (gw > captainCheckLimit) never count toward the cap.
+            const currentUsed = player.captaincyChipsUsed ?? 0;
+            const pendingIncrement = chipsIncrement.get(player.id) ?? 0;
+            const wouldExceedCap =
+              gw <= captainCheckLimit &&
+              currentUsed + pendingIncrement >= CAPTAIN_CAP;
+            const bypassReason = wouldExceedCap
+              ? `Admin CSV import override: GW${gw} captaincy for ${playerName} inserted despite per-player cap of ${CAPTAIN_CAP} reached`
+              : null;
+
             const newId = generateId();
             toInsert.push({
               id: newId,
@@ -199,11 +204,24 @@ export async function POST(request: NextRequest) {
               doubledScore: 0,
               isValid: true,
               announcedAt: new Date(),
+              bypassReason,
             });
             // Register in map so duplicate rows in same upload don't double-insert
             existingCaptainsMap.set(`${gameweek.id}|${player.id}`, { id: newId, gameweekId: gameweek.id, playerId: player.id });
-            // Track chips increment (only counts toward cap for league-stage GWs above)
-            chipsIncrement.set(player.id, (chipsIncrement.get(player.id) ?? 0) + 1);
+            // Track chips increment unconditionally (count reflects reality, even
+            // past cap — bookkeeping decision recorded against DEF-CHIP-009).
+            // Note: still only league-stage GWs feed into the cap check above; the
+            // increment runs regardless because the audit row already carries the
+            // bypassReason explaining any overflow.
+            if (gw <= captainCheckLimit) {
+              chipsIncrement.set(player.id, (chipsIncrement.get(player.id) ?? 0) + 1);
+            }
+
+            if (wouldExceedCap) {
+              results.warnings.push(
+                `Row ${rowNum}: ${playerName} captaincy in GW${gw} inserted with bypass reason (cap exceeded)`
+              );
+            }
           }
         }
 

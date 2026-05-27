@@ -54,6 +54,10 @@ interface TeamStanding {
   chipPoints: number;
   cbpPoints: number;
   cbpTooltip: CbpTooltip;
+  // Match points (W=2, D=1, L=0) earned vs each opponent — used by the
+  // canonical 4-tier tiebreaker (Overall Points → Wins → Head-to-Head → Bonus).
+  // Internal-only; stripped before responding to the client (see toResponseRow).
+  headToHeadRecord: Record<string, number>;
   players: { name: string; fplId: string; captaincyChipsUsed: number }[];
 }
 
@@ -101,12 +105,18 @@ export async function GET(request: NextRequest) {
       .where(and(eq(settings.leagueId, leagueId), eq(settings.key, "groupsRevealed")));
     const groupsRevealed = groupsRevealedRows[0]?.value === "true";
 
-    // Return cached standings if available (populated by cron or previous request)
-    try {
-      const cached = await getCachedStandings(leagueId);
-      if (cached) return NextResponse.json(cached);
-    } catch {
-      // Cache miss or Redis error — fall through to DB computation
+    // Return cached standings if available (populated by cron or previous request).
+    // Skip the cache when a `group` filter is present: the cache stores the full
+    // (unfiltered) payload, so returning it verbatim to a group-filtered request
+    // would leak the other group's teams (DEF-STAND-003). Writes are gated below
+    // for the same reason — a group-filtered response must not poison the slot.
+    if (!group) {
+      try {
+        const cached = await getCachedStandings(leagueId);
+        if (cached) return NextResponse.json(cached);
+      } catch {
+        // Cache miss or Redis error — fall through to DB computation
+      }
     }
 
     // ============================================
@@ -476,6 +486,11 @@ export async function GET(request: NextRequest) {
       let pointsAgainst = 0;
       let bonusPtsTotal = 0;
       const bpsEntries: { gameweek: number; points: number }[] = [];
+      // Match points (W=2, D=1, L=0) earned against each opponent — used as the
+      // 3rd-tier tiebreaker per src/lib/formats/tvt/scoring.ts:215-246. When two
+      // teams are level on Overall Points and Wins, the team that has earned
+      // more match points head-to-head ranks higher.
+      const headToHeadRecord: Record<string, number> = {};
 
       // Process home fixtures (league stage only)
       for (const fixture of team.homeFixtures) {
@@ -486,9 +501,11 @@ export async function GET(request: NextRequest) {
           pointsAgainst += fixture.result.awayScore;
 
           // W/D/L based on raw FPL scores (not chip-adjusted match points)
-          if (fixture.result.homeScore > fixture.result.awayScore) wins++;
-          else if (fixture.result.homeScore === fixture.result.awayScore) draws++;
+          let matchPts = 0;
+          if (fixture.result.homeScore > fixture.result.awayScore) { wins++; matchPts = 2; }
+          else if (fixture.result.homeScore === fixture.result.awayScore) { draws++; matchPts = 1; }
           else losses++;
+          headToHeadRecord[fixture.awayTeamId] = (headToHeadRecord[fixture.awayTeamId] ?? 0) + matchPts;
 
           if (fixture.result.homeGotBonus) {
             const pts = fixture.result.homeUsedDoublePointer ? 2 : 1;
@@ -507,9 +524,11 @@ export async function GET(request: NextRequest) {
           pointsAgainst += fixture.result.homeScore;
 
           // W/D/L based on raw FPL scores (not chip-adjusted match points)
-          if (fixture.result.awayScore > fixture.result.homeScore) wins++;
-          else if (fixture.result.awayScore === fixture.result.homeScore) draws++;
+          let matchPts = 0;
+          if (fixture.result.awayScore > fixture.result.homeScore) { wins++; matchPts = 2; }
+          else if (fixture.result.awayScore === fixture.result.homeScore) { draws++; matchPts = 1; }
           else losses++;
+          headToHeadRecord[fixture.homeTeamId] = (headToHeadRecord[fixture.homeTeamId] ?? 0) + matchPts;
 
           if (fixture.result.awayGotBonus) {
             const pts = fixture.result.awayUsedDoublePointer ? 2 : 1;
@@ -609,6 +628,7 @@ export async function GET(request: NextRequest) {
         chipPoints: chipPts,
         cbpPoints: cbpPts,
         cbpTooltip,
+        headToHeadRecord,
         players: team.players.map((p: Player) => ({
           name: p.name,
           fplId: p.fplId,
@@ -617,14 +637,31 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Sort by league points (desc), then wins (desc), then points diff (desc)
+    // Canonical TVT league-stage tiebreaker (src/lib/formats/tvt/scoring.ts:215-246):
+    //   1) Overall Points (leaguePoints) DESC
+    //   2) Max Wins DESC
+    //   3) Head-to-Head match points DESC (each team's points earned vs the other)
+    //   4) Bonus Points DESC
+    // Previously the route used (leaguePoints, pointsFor, cbpPoints) which mismatched
+    // the documented rule and could resolve ties incorrectly.
     standings.sort((a: TeamStanding, b: TeamStanding) => {
       if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
-      if (a.pointsFor !== b.pointsFor) return b.pointsFor - a.pointsFor;
-      return b.cbpPoints - a.cbpPoints;
+      if (a.wins !== b.wins) return b.wins - a.wins;
+      const aH2H = a.headToHeadRecord[b.teamId] ?? 0;
+      const bH2H = b.headToHeadRecord[a.teamId] ?? 0;
+      if (aH2H !== bH2H) return bH2H - aH2H;
+      return b.bonusPoints - a.bonusPoints;
     });
 
-    type RankedStanding = TeamStanding & { rank: number; zone: string };
+    // Strip internal-only fields from the public team row.
+    type ResponseTeam = Omit<TeamStanding, "headToHeadRecord">;
+    const toResponseRow = (team: TeamStanding): ResponseTeam => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { headToHeadRecord, ...rest } = team;
+      return rest;
+    };
+
+    type RankedStanding = ResponseTeam & { rank: number; zone: string };
 
     // Group standings by group name (exclude cup group names for Triple Crown)
     const groupNames = [...new Set(standings.map(t => t.group).filter((g): g is string => g !== null && !g.toLowerCase().startsWith("cup-")))].sort();
@@ -635,7 +672,7 @@ export async function GET(request: NextRequest) {
         const groupRank = index + 1;
         const prevRank = maxPlayedGw > 1 ? prevRankByTeam.get(team.teamId) ?? null : null;
         return {
-          ...team,
+          ...toResponseRow(team),
           rank: groupRank,
           groupRank,
           zone: getQualificationZone(groupRank, leagueTeamSize),
@@ -651,7 +688,7 @@ export async function GET(request: NextRequest) {
         const groupRank = index + 1;
         const prevRank = maxPlayedGw > 1 ? prevRankByTeam.get(team.teamId) ?? null : null;
         return {
-          ...team,
+          ...toResponseRow(team),
           rank: groupRank,
           groupRank,
           zone: getQualificationZone(groupRank, leagueTeamSize),
@@ -686,22 +723,27 @@ export async function GET(request: NextRequest) {
       legend,
     };
 
-    // Fire-and-forget cache write — must not block or break the response
-    if (leagueId) {
+    // Fire-and-forget cache write — must not block or break the response.
+    // Skip the write when a `group` filter is active: caching a filtered payload
+    // under the unfiltered key would leak group-A teams to group-B callers
+    // (mirror of the read-side guard above for DEF-STAND-003).
+    if (leagueId && !group) {
       setCachedStandings(leagueId, responseData).catch(() => {});
     }
 
     return NextResponse.json(responseData);
   } catch (error) {
     console.error("Error fetching standings:", error);
-    // Return empty standings instead of error — likely no fixtures generated yet
-    return NextResponse.json({
-      groupA: [],
-      groupB: [],
-      leagueStageEnd: 30,
-      teamSize: 32,
-      groupsRevealed: false,
-    });
+    // Surface real failures as 500 so clients + monitoring can distinguish a
+    // server fault from an empty league. The "no fixtures yet" / "no teams yet"
+    // states are handled organically by the happy path above — an empty league
+    // produces empty `groupA`/`groupB` with the league's real teamSize and
+    // leagueStageEnd, not the magic 32/30 stub this catch used to return.
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json(
+      { error: "Failed to compute standings", detail: message },
+      { status: 500 }
+    );
   }
 }
 

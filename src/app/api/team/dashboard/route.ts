@@ -9,6 +9,7 @@ import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schem
 import { calculatePurse, calculateRefund, calculateFMV } from "@/lib/formats/auction/economy";
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 import { buildTeamLedger } from "@/lib/formats/auction/finance";
+import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
@@ -53,11 +54,12 @@ export async function GET(request: NextRequest) {
     const teamBasic = await db.select({ leagueId: teams.leagueId }).from(teams).where(eq(teams.id, teamId)).limit(1);
     const teamLeagueId = teamBasic[0]?.leagueId;
     const leagueSlugRow = teamLeagueId
-      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount, format: leagues.format }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
+      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount, format: leagues.format, playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
       : [];
     const leagueSlug = leagueSlugRow[0]?.slug ?? "";
     const leagueGroupCount = leagueSlugRow[0]?.groupCount ?? 1;
     const leagueFormat = leagueSlugRow[0]?.format ?? "tvt";
+    const leaguePlayoffStartGw = leagueSlugRow[0]?.playoffStartGw ?? 31;
 
     // ===== Auction format: separate dashboard payload =====
     if (leagueFormat === "auction" && teamLeagueId) {
@@ -448,7 +450,7 @@ export async function GET(request: NextRequest) {
     });
     
     // Count actual captain announcements per player (within the league stage GW range)
-    const captainCheckLimit = leagueFormat === "triple-crown" ? 38 : 30;
+    const captainCheckLimit = computeCaptainCheckLimit(leagueFormat, leaguePlayoffStartGw);
     const player1CaptainCount = captainHistory.filter(
       c => c.playerId === team.players[0]?.id && c.gameweek.number <= captainCheckLimit
     ).length;
@@ -456,10 +458,11 @@ export async function GET(request: NextRequest) {
       c => c.playerId === team.players[1]?.id && c.gameweek.number <= captainCheckLimit
     ).length;
 
-    const CAPTAIN_CAP = leagueFormat === "triple-crown" ? 19 : 15;
-    const isPlayoffPhase = leagueFormat === "triple-crown" ? false : (nextGameweek?.number || 0) > 30;
+    const CAPTAIN_CAP = computeCaptainCap(leagueFormat, leaguePlayoffStartGw);
+    const isPlayoffPhase = leagueFormat === "triple-crown" ? false : (nextGameweek?.number || 0) > captainCheckLimit;
 
     const captaincyStatus = {
+      cap: CAPTAIN_CAP,
       player1: {
         id: team.players[0]?.id || "",
         name: team.players[0]?.name || "",

@@ -16,8 +16,6 @@ interface TradeProposal {
   requestedPlayerIds: string[];
   cashOffered: number;
   status: "pending" | "accepted" | "rejected" | "vetoed" | "expired" | "completed";
-  vetoDeadline: string | null;
-  vetoVotes: Record<string, "veto" | "approve">;
   createdAt: number;
 }
 

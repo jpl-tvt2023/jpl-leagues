@@ -163,6 +163,18 @@ export async function POST(request: NextRequest) {
     const setNumber = setMatch ? parseInt(setMatch[1]) : 1;
     const chipCode = chipToTypeCode[chipType as ChipType];
 
+    // Load this league's playoffStartGw so set boundaries match the actual
+    // league configuration (TVT-8: playoffStartGw=36 → set1=GW1..17, set2=GW18..35;
+    // TVT-16/32: playoffStartGw=31 → set1=GW1..15, set2=GW16..30). Hardcoded
+    // 15/30 was wrong for any non-default playoffStartGw.
+    const leagueCfg = await db
+      .select({ playoffStartGw: leagues.playoffStartGw })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    const playoffStartGw = leagueCfg[0]?.playoffStartGw ?? 31;
+    const setMidpoint = Math.ceil((playoffStartGw - 1) / 2);
+
     // Find existing chip record for this team and chip type in this set
     const existingChips = await db.select()
       .from(gameweekChips)
@@ -174,10 +186,13 @@ export async function POST(request: NextRequest) {
         )
       );
 
-    // Find chips in the target set (GW1-15 for set1, GW16-30 for set2)
+    // Find chips in the target set, using setMidpoint derived from playoffStartGw
+    // (set1 = GW1..midpoint; set2 = GW(midpoint+1)..playoffStartGw-1).
     const chipsInSet = existingChips.filter(c => {
       const gwNum = c.gameweeks.number;
-      return setNumber === 1 ? gwNum <= 15 : gwNum > 15 && gwNum <= 30;
+      return setNumber === 1
+        ? gwNum <= setMidpoint
+        : gwNum > setMidpoint && gwNum < playoffStartGw;
     });
 
     // Delete any existing chip records for this chip type/set

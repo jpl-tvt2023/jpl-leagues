@@ -94,9 +94,9 @@ export async function GET(request: NextRequest) {
       cashOffered: p.cashOffered,
       status: p.status,
       createdAt: p.createdAt,
-      // vetoDeadline + vetoVotes intentionally omitted — the veto system was
-      // removed; columns persist in the DB for backwards compatibility but
-      // are no longer surfaced to API consumers (see DEF-TRADE-005).
+      // vetoDeadline + vetoVotes are no longer part of the schema — the veto
+      // system was removed and the columns were physically dropped from the
+      // database in migration 0014_drop_veto_columns.sql (DEF-TRADE-005).
     })),
   });
 }

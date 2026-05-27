@@ -1362,7 +1362,9 @@ async function advanceGW33(groupId: string, leagueId: string, actions: string[])
       let resolvedCaptainId: string | null = announcedCaptainId;
       let isTemp = autoAssignedByTeam33.get(entry.teamId) ?? false;
       if (!resolvedCaptainId) {
-        resolvedCaptainId = pickTempCaptain(raw, prevCaptainId);
+        // Live preview only — no capContext, so wouldExceedCap is irrelevant here.
+        const picked = pickTempCaptain(raw, prevCaptainId);
+        resolvedCaptainId = picked?.playerId ?? null;
         isTemp = !!resolvedCaptainId;
       }
 

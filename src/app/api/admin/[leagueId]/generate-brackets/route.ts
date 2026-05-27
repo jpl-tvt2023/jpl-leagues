@@ -217,7 +217,11 @@ export async function POST(request: NextRequest) {
     const plGroup = await db.select().from(groups).where(
       and(eq(groups.leagueId, leagueId), eq(groups.groupType, "pl"))
     );
-    const plGroupId = plGroup[0]?.id || generateId();
+    // fixtures.groupId is `references(() => groups.id, { onDelete: "set null" })`
+    // so null is a valid value — use it when there is no PL group instead of
+    // generating a phantom id that points at no row (FK violation on insert,
+    // or orphan reference if the constraint is somehow bypassed).
+    const plGroupId: string | null = plGroup[0]?.id ?? null;
 
     // Create UCL QF ties (cross-group pairing)
     const uclQfMatches = [

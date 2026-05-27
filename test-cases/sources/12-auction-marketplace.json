@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 5,
+    "version": 7,
     "businessContext": "The Auction Marketplace lets teams in Complete-tier auction leagues trade rostered players and cash between themselves, or release players back into the mini-auction pool. Every accepted P2P trade requires a final admin approval, and superadmins also hold direct override tools (force-approve / force-reject / cancel) plus low-level corrections (undo-sale, manual-transfer) for auction results. The marketplace is locked while a live auction session is running, and pending proposals are purged when a session begins.",
     "userStories": [
       {
@@ -287,10 +287,11 @@
       },
       {
         "id": "BR-TRADE-023",
-        "rule": "The peer-veto system has been removed. /api/auction/trade/veto returns HTTP 410 Gone unconditionally. GET /api/auction/trade response does NOT expose vetoDeadline or vetoVotes. The tradeProposals.vetoDeadline + tradeProposals.vetoVotes columns remain in the schema for backwards compatibility with existing rows but are deprecated; new code must not write to them.",
+        "rule": "The peer-veto system has been removed entirely. /api/auction/trade/veto returns HTTP 410 Gone. The `vetoDeadline` and `vetoVotes` columns were dropped from `trade_proposals` in migration `drizzle/0014_drop_veto_columns.sql` (2026-05-28). The drizzle schema no longer declares these fields. The historical `'vetoed'` status enum value is not emitted by any code path; legacy rows (if any) remain visible but no new row will land on that status.",
         "sourceRefs": [
           "src/app/api/auction/trade/veto/route.ts:1-12",
           "src/app/api/auction/trade/route.ts:90-100",
+          "drizzle/0014_drop_veto_columns.sql",
           "src/lib/db/schema.ts:536-547"
         ]
       },
@@ -399,9 +400,11 @@
       },
       {
         "id": "BR-TRADE-038",
-        "rule": "POST /api/auction/release does NOT enforce any auction-tier check. // CODE-CONFIRMED: may be a defect — releases are a Complete-tier-only feature per the marketplace scope brief, but the endpoint is reachable by Primary-tier teams. Confirm tier gate requirement with product owner.",
+        "rule": "POST and DELETE on /api/auction/release are available in any auctionTier (primary, complete). The endpoints are blocked ONLY during a live auction (auctionSessions.status in ['active', 'paused']) — returns HTTP 409 with `{ error: 'Marketplace is closed during a live auction' }`. The tier gate from the previous implementation was removed on 2026-05-28 per client clarification.",
         "sourceRefs": [
-          "src/app/api/auction/release/route.ts:14-72"
+          "src/app/api/auction/release/route.ts:63-70",
+          "src/app/api/auction/release/route.ts:141-148",
+          "src/lib/formats/auction/live-session.ts:8-20"
         ]
       },
       {
@@ -864,9 +867,9 @@
       },
       {
         "id": "AC-TRADE-050",
-        "given": "a Primary-tier league",
-        "when": "a team calls POST /api/auction/release",
-        "then": "the release succeeds — the endpoint does not gate on tier (CODE-CONFIRMED behaviour; see DEF-TRADE-002)",
+        "given": "Primary-tier auction league with no live auction session",
+        "when": "team POSTs to /api/auction/release with a valid `ownershipId` they own",
+        "then": "HTTP 200 with `{ success: true, status: 'pending_release', ... }`; the auctionOwnership row is updated to status='pending_release'",
         "linksTo": "BR-TRADE-038"
       },
       {
@@ -969,10 +972,10 @@
       },
       {
         "id": "AC-TRADE-065",
-        "given": "any GET /api/auction/trade response",
-        "when": "the response body is inspected",
-        "then": "each proposal exposes id, proposerTeamId, targetTeamId, offeredPlayerIds (array), requestedPlayerIds (array), cashOffered, status, vetoDeadline (ISO or null), vetoVotes (object), createdAt — the legacy veto fields are present even though the veto endpoint is deprecated",
-        "linksTo": "BR-TRADE-050"
+        "given": "a fresh database with migration 0014 applied",
+        "when": "querying `PRAGMA table_info('trade_proposals')`",
+        "then": "zero rows whose `name` starts with `veto_`. AND: the GET response on /api/auction/trade returns no `vetoDeadline` or `vetoVotes` properties on any trade proposal",
+        "linksTo": "BR-TRADE-023"
       },
       {
         "id": "AC-TRADE-066",
@@ -987,6 +990,13 @@
         "when": "each transition fires",
         "then": "no transition ever produces status='vetoed' — that legacy value documented in the schema is unreachable in the current code paths",
         "linksTo": "BR-TRADE-052"
+      },
+      {
+        "id": "AC-TRADE-068",
+        "given": "Primary-tier auction league with an active auction session (auctionSessions.status='active')",
+        "when": "team POSTs to /api/auction/release",
+        "then": "HTTP 409 with error 'Marketplace is closed during a live auction'; the auctionOwnership row is NOT updated",
+        "linksTo": "BR-TRADE-038"
       }
     ]
   },
@@ -1025,7 +1035,7 @@
       "id": "DEF-TRADE-002",
       "title": "/api/auction/release lacks a tier gate (Primary tier can release players)",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "POST /api/auction/release never reads `leagues.auctionTier`. According to the module 12 scope brief, marketplace features (including releases) are Complete-tier ONLY. The trade endpoint enforces this server-side; the release endpoint does not.",
@@ -1044,9 +1054,9 @@
       "pinningTestCases": [
         "TC-TRADE-053"
       ],
-      "notes": "Direct economy impact at the next refund boundary. Fix: add the same `auctionTier === 'primary'` (or 'complete' allowlist) check the trade route uses.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Direct economy impact at the next refund boundary. Fix: add the same `auctionTier === 'primary'` (or 'complete' allowlist) check the trade route uses. [DEV 2026-05-26] Self-verified: tsc passes for touched files (pre-existing errors in tests/league-types/*.spec.ts are unrelated), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-TRADE-053 against the fix — expect 403 with body { error: 'Releases are only available in Complete tier' } on POST /api/auction/release when leagues.auctionTier !== 'complete'; same gate now also covers DELETE /api/auction/release (release cancellation). Behaviour now matches expectedBehaviour. [BA] BR-TRADE-038 / AC-TRADE-050 already describe the post-fix behaviour — no update required; however the TC-TRADE-053 given/when/then (around line 869) referencing CODE-CONFIRMED 'release succeeds — endpoint does not gate on tier' should be retargeted to the now-correct 403 outcome. [QA-VERIFIED]: 2026-05-26 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-26 — BR/AC text refreshed. [BA-UPDATED]: 2026-05-28 — BR-TRADE-038 rewritten to remove the Complete-tier gate; AC-TRADE-050 inverted to assert success in Primary tier; new AC added for Primary tier blocked during live auction.\n[DEV 2026-05-28] Client revision: removed Complete-tier gate. Release is tier-agnostic; live-auction guard remains the only restriction.",
+      "resolution": "Tier gates DELETED from POST and DELETE handlers in src/app/api/auction/release/route.ts (formerly at L63-65 and L146-148). Release is now available in any auctionTier (primary, complete). The isAuctionLive(leagueId) guard at L63-70 (POST) and L141-148 (DELETE) is now the sole restriction — returns 409 during a live auction. Previous fix (2026-05-26) wrongly gated to Complete tier; client clarified 2026-05-28 that Primary teams should be able to release players too.",
+      "resolutionDate": "2026-05-28"
     },
     {
       "id": "DEF-TRADE-003",
@@ -1073,7 +1083,7 @@
         "TC-TRADE-054",
         "TC-TRADE-072"
       ],
-      "notes": "Inconsistency with the trade path. Fix: add `if (await isAuctionLive(leagueId)) return 409 ...` to both POST and DELETE on the release route. [DEV 2026-05-25] Self-verified: tsc passes for touched files (pre-existing errors in tests/league-types/*.spec.ts are unrelated), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-TRADE-054 against the fix — expect 409 with body { error: 'Marketplace is closed during a live auction' } on POST /api/auction/release while an auctionSessions row for the league has status='active' or 'paused'; same gate now also covers DELETE /api/auction/release (release cancellation). Behaviour now matches expectedBehaviour. [BA] BR-TRADE-039 / AC-TRADE-051 already describe the post-fix behaviour — no update required; however the pinningTestCases note referencing CODE-CONFIRMED 'release succeeds during live auction' (TC-TRADE-054 given/when/then around line 872) should be retargeted to the now-correct 409 outcome. [QA-VERIFIED]: 2026-05-25 — TC-TRADE-054 inverted; POST + DELETE both gated; DELETE coverage added.",
+      "notes": "Inconsistency with the trade path. Fix: add `if (await isAuctionLive(leagueId)) return 409 ...` to both POST and DELETE on the release route. [DEV 2026-05-25] Self-verified: tsc passes for touched files (pre-existing errors in tests/league-types/*.spec.ts are unrelated), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-TRADE-054 against the fix — expect 409 with body { error: 'Marketplace is closed during a live auction' } on POST /api/auction/release while an auctionSessions row for the league has status='active' or 'paused'; same gate now also covers DELETE /api/auction/release (release cancellation). Behaviour now matches expectedBehaviour. [BA] BR-TRADE-039 / AC-TRADE-051 already describe the post-fix behaviour — no update required; however the pinningTestCases note referencing CODE-CONFIRMED 'release succeeds during live auction' (TC-TRADE-054 given/when/then around line 872) should be retargeted to the now-correct 409 outcome. [QA-VERIFIED]: 2026-05-25 — TC-TRADE-054 inverted; POST + DELETE both gated; DELETE coverage added. [CLIENT-CONFIRM 2026-05-28] Behaviour confirmed correct after DEF-TRADE-002 revision; isAuctionLive guard is now the sole restriction on /api/auction/release and applies uniformly across tiers. [BA-UPDATED]: 2026-05-28 — no BR/AC change; behaviour reaffirmed via DEF-TRADE-002's revised BR-TRADE-038.\n[DEV 2026-05-28] No code change. After DEF-TRADE-002 revision removed the tier gate, the isAuctionLive guard at release/route.ts:67-72 + 150-155 is the SOLE restriction and applies uniformly to Primary and Complete tiers.",
       "resolution": "Added `isAuctionLive(leagueId)` gate to both POST and DELETE handlers in src/app/api/auction/release/route.ts. Imported the existing helper from @/lib/formats/auction/live-session and inserted a 409 short-circuit ({ error: 'Marketplace is closed during a live auction' }) after auth/ownership/league validation but before any state-changing update — mirroring the pattern already used by src/app/api/auction/trade/route.ts (POST line 139, PATCH line 313). POST now gates after the auction-league check (route.ts:62-67); DELETE gates after the ownership-of-player check (route.ts:135-140).",
       "resolutionDate": "2026-05-25"
     },
@@ -1139,9 +1149,9 @@
         "TC-TRADE-068",
         "TC-TRADE-070"
       ],
-      "notes": "No active data risk, but adds documentation/test maintenance cost and confuses API consumers. Fix: schema migration to drop columns + status-enum comment update + remove veto fields from the GET projection. [DEV] Self-verified: cleanup-only fix; no behaviour change. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
-      "resolution": "Removed vetoDeadline + vetoVotes from the GET /api/auction/trade response projection (route.ts lines 90-100). Updated the tradeProposals schema comment (src/lib/db/schema.ts:536-547) to mark vetoDeadline + vetoVotes columns as deprecated and document 'vetoed' as a historical-only status value. Columns themselves retained for backwards compatibility with existing rows — dropping them requires a separate migration.",
-      "resolutionDate": "2026-05-26"
+      "notes": "No active data risk, but adds documentation/test maintenance cost and confuses API consumers. Fix: schema migration to drop columns + status-enum comment update + remove veto fields from the GET projection. [DEV] Self-verified: cleanup-only fix; no behaviour change. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed. [BA-UPDATED]: 2026-05-28 — BR-TRADE-023 rewritten to reflect physical column drop in migration 0014; AC-TRADE-065 strengthened to assert column absence via PRAGMA table_info.\n[DEV 2026-05-28] Client revision: columns physically dropped via migration 0014, not just hidden from API. Schema declarations + 7 incidental references purged.",
+      "resolution": "veto_deadline and veto_votes columns physically dropped from trade_proposals via drizzle/0014_drop_veto_columns.sql (recreate-table pattern: BEGIN TX → CREATE __new → INSERT...SELECT → DROP old → RENAME → COMMIT). Schema declarations removed from src/lib/db/schema.ts. Seven incidental references purged: src/lib/backup/generate.ts (CSV row schema + emit), src/app/api/admin/[leagueId]/restore-auction/route.ts (TradeRow type + insert), src/app/[leagueSlug]/marketplace/page.tsx (client type), src/app/admin/[leagueId]/page.tsx (client type + JSX block), src/app/api/auction/trade/route.ts (comment). Previous fix (2026-05-26) kept the columns dormant; client clarified 2026-05-28 that they should be fully dropped.",
+      "resolutionDate": "2026-05-28"
     },
     {
       "id": "DEF-TRADE-006",
@@ -1649,22 +1659,24 @@
     },
     {
       "id": "TC-TRADE-025",
-      "feature": "PATCH action validation",
-      "scenario": "GET /api/auction/trade response no longer exposes vetoDeadline / vetoVotes",
+      "feature": "Veto columns physically dropped",
+      "scenario": "trade_proposals table has no veto_deadline / veto_votes columns and GET response omits vetoDeadline / vetoVotes",
       "type": "Positive",
       "priority": "P3",
-      "preconditions": "Valid pending proposal P1",
-      "testData": "PATCH body={proposalId:P1, action:'vetoed'}",
+      "preconditions": "Fresh database with migration drizzle/0014_drop_veto_columns.sql applied; at least one pending proposal P1 exists for the GET assertion",
+      "testData": "PRAGMA table_info('trade_proposals') AND GET /api/auction/trade?leagueId=L1&teamId=X",
       "testSteps": [
-        "1. PATCH as target with action='vetoed'"
+        "1. Run: SELECT name FROM pragma_table_info('trade_proposals') WHERE name IN ('veto_deadline', 'veto_votes')",
+        "2. GET /api/auction/trade?leagueId=L1&teamId=X",
+        "3. Inspect each proposal object in the response"
       ],
-      "expectedResult": "The response.proposals[i] shape contains id, proposerTeamId, targetTeamId, offeredPlayerIds, requestedPlayerIds, cashOffered, status, createdAt. vetoDeadline and vetoVotes are NOT present. API consumers can no longer build veto UI from this endpoint.",
-      "postconditions": "P1 unchanged",
-      "requirementId": "AC-TRADE-023",
+      "expectedResult": "The PRAGMA query returns ZERO rows (columns veto_deadline and veto_votes are physically absent from trade_proposals). The GET response.proposals[i] shape contains id, proposerTeamId, targetTeamId, offeredPlayerIds, requestedPlayerIds, cashOffered, status, createdAt — NO vetoDeadline and NO vetoVotes properties on any proposal.",
+      "postconditions": "Schema absence is enforced at the migration layer; GET projection cannot accidentally re-introduce veto fields because the columns no longer exist.",
+      "requirementId": "AC-TRADE-065",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "[QA-VERIFY] Updated post-DEF-TRADE-005 fix on 2026-05-26 — retagged Regression -> Positive."
+      "notes": "[QA-VERIFY] Updated post-DEF-TRADE-005 fix on 2026-05-26 — retagged Regression -> Positive. Updated 2026-05-28 — assertion strengthened to schema absence (migration 0014 drops the columns physically). Previous version checked GET projection only."
     },
     {
       "id": "TC-TRADE-026",
@@ -2200,22 +2212,25 @@
     },
     {
       "id": "TC-TRADE-053",
-      "feature": "Release tier gate (defect)",
-      "scenario": "Primary-tier release currently succeeds (pinning current buggy behaviour)",
-      "type": "Regression",
+      "feature": "Release available in Primary tier",
+      "scenario": "Primary-tier team releases an owned player when no live auction is running",
+      "type": "Positive",
       "priority": "P1",
-      "preconditions": "League L1 auctionTier='primary'; O1 active",
-      "testData": "body={ownershipId:O1}",
+      "preconditions": "Auction league L1 with auctionTier='primary'; team T owns ownership O1 of player P with auctionOwnership.status='active'; NO auctionSessions row for L1 has status='active' or 'paused' (isAuctionLive(L1) returns false)",
+      "testData": "POST /api/auction/release body={ownershipId:O1} as team T",
       "testSteps": [
-        "1. As owning team in Primary tier, POST release"
+        "1. Sign in as team T (owner of O1) in Primary-tier league L1",
+        "2. Verify no auctionSessions row for L1 has status='active' or 'paused'",
+        "3. POST /api/auction/release with body={ownershipId:O1}",
+        "4. Inspect response status, response body, and the auctionOwnership row"
       ],
-      "expectedResult": "200 success today (no tier gate); O1.status='pending_release' — see DEF-TRADE-002. Post-fix: 403 'Releases are not available in Primary tier'",
-      "postconditions": "Pinning record of defect behaviour",
+      "expectedResult": "HTTP 200 with body { success: true, status: 'pending_release', ownershipId: O1, projectedRefund: <number>, projectedForfeit: <number> }; auctionOwnership row for O1 is updated to status='pending_release'",
+      "postconditions": "Release is allowed regardless of tier when no live auction is running; isAuctionLive guard is the sole restriction",
       "requirementId": "AC-TRADE-050",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-002"
+      "notes": "Updated 2026-05-28 — inverted from regression(403) to positive(success in Primary). Tier gate removed; isAuctionLive guard is the sole restriction."
     },
     {
       "id": "TC-TRADE-054",
@@ -2237,7 +2252,7 @@
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-003. [QA-VERIFY] Updated post-DEF-TRADE-003 fix on 2026-05-25."
+      "notes": "Pins DEF-TRADE-003. [QA-VERIFY] Updated post-DEF-TRADE-003 fix on 2026-05-25. Re-affirmed 2026-05-28 — client confirmed live-auction guard behaviour. Guard is now tier-agnostic; mirrors TC-TRADE-068 for Primary tier."
     },
     {
       "id": "TC-TRADE-055",
@@ -2499,23 +2514,24 @@
     },
     {
       "id": "TC-TRADE-068",
-      "feature": "GET response shape (veto fields)",
-      "scenario": "GET still exposes vetoDeadline and vetoVotes on every proposal",
-      "type": "Regression",
+      "feature": "GET response shape (veto fields absent) + schema absence",
+      "scenario": "trade_proposals has no veto_deadline / veto_votes columns; GET response omits vetoDeadline and vetoVotes on every proposal",
+      "type": "Positive",
       "priority": "P3",
-      "preconditions": "Any GET returning at least one proposal",
-      "testData": "GET /api/auction/trade?leagueId=L1&teamId=X",
+      "preconditions": "Migration drizzle/0014_drop_veto_columns.sql has been applied; GET returns at least one proposal",
+      "testData": "PRAGMA table_info('trade_proposals') AND GET /api/auction/trade?leagueId=L1&teamId=X",
       "testSteps": [
-        "1. GET endpoint",
-        "2. Inspect each proposal object"
+        "1. Run: SELECT name FROM pragma_table_info('trade_proposals') WHERE name IN ('veto_deadline', 'veto_votes') — expect zero rows",
+        "2. GET /api/auction/trade?leagueId=L1&teamId=X",
+        "3. Inspect each proposal object"
       ],
-      "expectedResult": "Each proposal has id, proposerTeamId, targetTeamId, offeredPlayerIds[], requestedPlayerIds[], cashOffered, status, vetoDeadline (ISO|null), vetoVotes (object), createdAt",
-      "postconditions": "Legacy fields still present (see DEF-TRADE-005)",
+      "expectedResult": "PRAGMA query returns ZERO rows. Each proposal in the GET response has id, proposerTeamId, targetTeamId, offeredPlayerIds[], requestedPlayerIds[], cashOffered, status, createdAt — and NO vetoDeadline, NO vetoVotes properties.",
+      "postconditions": "Schema absence enforced at migration layer; GET projection cannot reintroduce veto fields because the columns no longer exist",
       "requirementId": "AC-TRADE-065",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-005 — dead vetoDeadline/vetoVotes still exposed"
+      "notes": "Pins DEF-TRADE-005 — dead vetoDeadline/vetoVotes still exposed. Updated 2026-05-28 — assertion strengthened to schema absence (migration 0014 drops the columns physically). Previous version checked GET projection only."
     },
     {
       "id": "TC-TRADE-069",
@@ -2539,25 +2555,26 @@
     },
     {
       "id": "TC-TRADE-070",
-      "feature": "Lifecycle has no vetoed state",
-      "scenario": "End-to-end pending->accepted->completed never produces status='vetoed'",
-      "type": "Regression",
+      "feature": "Lifecycle has no vetoed state + schema absence",
+      "scenario": "End-to-end pending->accepted->completed never produces status='vetoed'; veto columns physically absent from schema",
+      "type": "Positive",
       "priority": "P3",
-      "preconditions": "Fresh proposal P1",
-      "testData": "Drive P1 through PATCH accept then admin approve",
+      "preconditions": "Fresh proposal P1; migration drizzle/0014_drop_veto_columns.sql applied",
+      "testData": "Drive P1 through PATCH accept then admin approve; PRAGMA table_info('trade_proposals')",
       "testSteps": [
         "1. POST P1",
         "2. PATCH accept",
         "3. Admin approve",
-        "4. Inspect status at every step"
+        "4. Inspect status at every step",
+        "5. Run: SELECT name FROM pragma_table_info('trade_proposals') WHERE name IN ('veto_deadline', 'veto_votes')"
       ],
-      "expectedResult": "Statuses observed: pending → accepted → completed. 'vetoed' never appears (legacy enum value unreachable)",
-      "postconditions": "Lifecycle confirmed",
+      "expectedResult": "Statuses observed: pending → accepted → completed. 'vetoed' never appears (legacy enum value unreachable). The PRAGMA query in step 5 returns ZERO rows — veto_deadline and veto_votes are physically absent from trade_proposals (no row in the lifecycle could carry a veto column even in principle).",
+      "postconditions": "Lifecycle confirmed; schema-level absence of veto columns prevents any future code path from re-introducing the dead status",
       "requirementId": "AC-TRADE-067",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TRADE-005 — confirms 'vetoed' status is dead code"
+      "notes": "Pins DEF-TRADE-005 — confirms 'vetoed' status is dead code. Updated 2026-05-28 — assertion strengthened to schema absence (migration 0014 drops the columns physically). Previous version checked GET projection only."
     },
     {
       "id": "TC-TRADE-071",
@@ -2599,7 +2616,29 @@
       "author": "qa-tester",
       "createdDate": "2026-05-25",
       "status": "Not Executed",
-      "notes": "Locks in DEF-TRADE-003 fix on the DELETE handler (src/app/api/auction/release/route.ts:137-142)."
+      "notes": "Locks in DEF-TRADE-003 fix on the DELETE handler (src/app/api/auction/release/route.ts:137-142). Re-affirmed 2026-05-28 — DELETE-release guard still fires regardless of tier."
+    },
+    {
+      "id": "TC-TRADE-073",
+      "feature": "Release live-session block (Primary tier)",
+      "scenario": "Primary-tier release blocked during live auction",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Auction league L1 with auctionTier='primary'; team T owns ownership O1 of player P with auctionOwnership.status='active'; an auctionSessions row for L1 has status='active' (isAuctionLive(L1) returns true)",
+      "testData": "POST /api/auction/release body={ownershipId:O1} as team T",
+      "testSteps": [
+        "1. Sign in as team T (owner of O1) in Primary-tier league L1",
+        "2. Ensure an auctionSessions row for L1 has status='active' so isAuctionLive(L1) returns true",
+        "3. POST /api/auction/release with body={ownershipId:O1}",
+        "4. Inspect response status, response body, and the auctionOwnership row"
+      ],
+      "expectedResult": "HTTP 409 with body containing error message 'Marketplace is closed during a live auction'; auctionOwnership row for O1 is NOT updated (status remains 'active'); no DB writes to auctionOwnership",
+      "postconditions": "Live-auction guard fires regardless of tier; Primary tier is gated by isAuctionLive identically to Complete tier (mirrors TC-TRADE-054)",
+      "requirementId": "AC-TRADE-068",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Added 2026-05-28 — locks in BR-TRADE-038 / AC-TRADE-068: live-auction guard is tier-agnostic. Sibling of TC-TRADE-054 (Complete tier) and TC-TRADE-072 (DELETE)."
     }
   ],
   "gapFlags": []
