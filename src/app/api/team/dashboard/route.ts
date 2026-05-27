@@ -939,6 +939,54 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // League-wide captain announcements for the upcoming GW — shown in the
+    // dashboard's top widget. Immediately visible to every team on announcement;
+    // no deadline gate. Two queries bounded by team count (≤32 per league).
+    let leagueCaptains: Array<{
+      teamId: string;
+      teamName: string;
+      groupName: string;
+      isOwnTeam: boolean;
+      captainPlayerName: string | null;
+      announcedAt: string | null;
+    }> = [];
+    if (nextGameweek && teamLeagueId) {
+      const allTeamsInLeague = await db.query.teams.findMany({
+        where: eq(teams.leagueId, teamLeagueId),
+        with: { group: true },
+      });
+      const captainsForGw = await db.query.gameweekCaptains.findMany({
+        where: eq(gameweekCaptains.gameweekId, nextGameweek.id),
+        with: { player: true },
+      });
+      const captainByTeam = new Map<string, { name: string; announcedAt: Date | null }>();
+      for (const c of captainsForGw) {
+        if (c.player?.teamId) {
+          captainByTeam.set(c.player.teamId, {
+            name: c.player.name,
+            announcedAt: c.announcedAt ?? null,
+          });
+        }
+      }
+      leagueCaptains = allTeamsInLeague.map((t) => {
+        const picked = captainByTeam.get(t.id);
+        return {
+          teamId: t.id,
+          teamName: t.name,
+          groupName: t.group?.name ?? "",
+          isOwnTeam: t.id === team.id,
+          captainPlayerName: picked?.name ?? null,
+          announcedAt: picked?.announcedAt ? picked.announcedAt.toISOString() : null,
+        };
+      });
+      leagueCaptains.sort((a, b) => {
+        if (a.isOwnTeam !== b.isOwnTeam) return a.isOwnTeam ? -1 : 1;
+        const g = a.groupName.localeCompare(b.groupName);
+        if (g !== 0) return g;
+        return a.teamName.localeCompare(b.teamName);
+      });
+    }
+
     return NextResponse.json({
       team: {
         id: team.id,
@@ -955,6 +1003,7 @@ export async function GET(request: NextRequest) {
       upcomingFixture,
       upcomingCaptain,
       upcomingChip,
+      leagueCaptains,
       lastGwResult,
       minCompletedGw,
       maxCompletedGw,

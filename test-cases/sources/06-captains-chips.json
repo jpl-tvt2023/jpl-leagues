@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 12,
+    "version": 13,
     "businessContext": "The Captains & Chips module owns the SUBMISSION lifecycle for the two strategic levers a TVT/Triple-Crown team controls each gameweek: (1) declaring which player on their 2-man team is the captain (whose net score is doubled by the scoring engine), and (2) deciding whether to play a TVT chip (Win-Win, Double Pointer, Challenge Chip, Score Lock, Comeback or Underdog) in that GW. The module covers team-facing submission/switch/cancel endpoints, admin force-overrides, and bulk CSV/XLSX imports. It does not handle scoring/processing of those choices (module 05 owns that) nor the league-settings UI (module 02). The Auction format has NO captains/chips — those teams must not be exposed to these endpoints.",
     "userStories": [
       {
@@ -582,6 +582,20 @@
           "src/app/api/gameweeks/[gw]/route.ts:170-256",
           "src/lib/formats/triple-crown/process-gameweek.ts:185-208"
         ]
+      },
+      {
+        "id": "BR-CHIP-058",
+        "rule": "GET /api/team/dashboard returns a leagueCaptains array — one entry per team in the viewer's league with { teamId, teamName, groupName, isOwnTeam, captainPlayerName, announcedAt }. captainPlayerName is null when the team has not yet announced a captain for the upcoming gameweek. Visibility is immediate: every team sees every other team's pick the moment a row lands in gameweek_captains for the upcoming GW (no deadline gate). Auction-format leagues are not affected (they use a separate dashboard payload).",
+        "sourceRefs": [
+          "src/app/api/team/dashboard/route.ts:940-985"
+        ]
+      },
+      {
+        "id": "BR-CHIP-059",
+        "rule": "The team dashboard re-fetches /api/team/dashboard whenever the browser tab regains focus (window focus event or document.visibilitychange to visible). This keeps the league-wide captain announcements widget fresh without manual polling. A manual Refresh button is also available on the widget itself.",
+        "sourceRefs": [
+          "src/app/dashboard/page.tsx:921-934"
+        ]
       }
     ],
     "acceptanceCriteria": [
@@ -1004,6 +1018,34 @@
         "when": "Gameweek processing runs and the auto-fallback selects P",
         "then": "`gameweek_captains` row is inserted for P with `isValid=false` and `bypassReason = null`; `players.captaincyChipsUsed` for P increments by 1; the resulting counter is still <= cap",
         "linksTo": "BR-CHIP-057"
+      },
+      {
+        "id": "AC-CHIP-061",
+        "given": "a TVT league with 4 teams (A,B,C,D); team A is the viewer; teams A and B have announced captains for GW10 but C and D have not",
+        "when": "team A loads /dashboard",
+        "then": "the response's leagueCaptains array contains 4 entries; team A appears first with isOwnTeam=true; B has captainPlayerName set; C and D have captainPlayerName=null. The dashboard renders a Captain Announcements section at the top showing A and B's picks and \"Not Announced\" for C and D",
+        "linksTo": "BR-CHIP-058"
+      },
+      {
+        "id": "AC-CHIP-062",
+        "given": "a TVT-16 league with 2 groups (A, B), team T1 (group A) is the viewer",
+        "when": "team T1 loads /dashboard",
+        "then": "leagueCaptains is sorted with T1 first, then by groupName then by teamName; the UI renders teams grouped under each group heading because leagueGroupCount > 1",
+        "linksTo": "BR-CHIP-058"
+      },
+      {
+        "id": "AC-CHIP-063",
+        "given": "team A loaded /dashboard at T=0 when no captains were announced; team B then announces their captain at T=30s while team A's tab is in the background",
+        "when": "team A switches back to the dashboard tab (window focus event fires)",
+        "then": "the dashboard re-fetches /api/team/dashboard automatically; team B's captain now appears in the leagueCaptains section without team A clicking Refresh",
+        "linksTo": "BR-CHIP-059"
+      },
+      {
+        "id": "AC-CHIP-064",
+        "given": "team A is on /dashboard; team B announces a captain after the initial load",
+        "when": "team A clicks the Refresh button inside the Captain Announcements section",
+        "then": "the dashboard re-fetches /api/team/dashboard; team B's captain appears in the section without a full page reload",
+        "linksTo": "BR-CHIP-059"
       }
     ]
   },
@@ -2686,6 +2728,92 @@
       "createdDate": "2026-05-28",
       "status": "Not Executed",
       "notes": "Pairs with TC-CHIP-083 (over-cap) to lock in both branches of pickTempCaptain wouldExceedCap."
+    },
+    {
+      "id": "TC-CHIP-085",
+      "feature": "Captain Announcements Widget",
+      "scenario": "Dashboard surfaces every team's captain pick for the upcoming GW (mix of announced and not-announced)",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "TVT league with 4 teams (A, B, C, D) in a single group; team A is logged in; GW10 is the upcoming gameweek; teams A and B have rows in gameweek_captains for GW10; teams C and D do not",
+      "testData": "leagueId=L1; gw=10; teamA.captain=Salah; teamB.captain=Haaland",
+      "testSteps": [
+        "1. Sign in as team A.",
+        "2. GET /api/team/dashboard.",
+        "3. Inspect response.leagueCaptains array."
+      ],
+      "expectedResult": "response.leagueCaptains.length === 4; the entry for teamA has isOwnTeam=true and captainPlayerName=\"Salah\"; teamB has captainPlayerName=\"Haaland\"; teamC and teamD have captainPlayerName=null. Sort order: A first, then B,C,D by teamName.",
+      "postconditions": "no DB change",
+      "requirementId": "AC-CHIP-061",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Verifies the new Captain Announcements widget data shape."
+    },
+    {
+      "id": "TC-CHIP-086",
+      "feature": "Captain Announcements Widget",
+      "scenario": "leagueGroupCount > 1: teams are sorted by group then by name; own team first",
+      "type": "Edge",
+      "priority": "P2",
+      "preconditions": "TVT-16 league with 2 groups; team T1 is in group A; multiple teams in each group, none announced",
+      "testData": "leagueId=L2; viewer=T1; group A has T1,T3,T5; group B has T2,T4",
+      "testSteps": [
+        "1. Sign in as T1.",
+        "2. GET /api/team/dashboard.",
+        "3. Read leagueCaptains order."
+      ],
+      "expectedResult": "order is T1 (own, group A), then T3, T5 (group A, alpha), then T2, T4 (group B, alpha). All entries have captainPlayerName=null.",
+      "postconditions": "no DB change",
+      "requirementId": "AC-CHIP-062",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-CHIP-087",
+      "feature": "Captain Announcements Widget",
+      "scenario": "Tab regains focus -> dashboard auto-refetches and surfaces new captain announcements",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Team A is on /dashboard with the tab focused; no captains announced for GW10 yet; a second browser session can act as team B",
+      "testData": "leagueId=L1; gw=10; viewer=team A; second-actor=team B",
+      "testSteps": [
+        "1. Team A loads /dashboard; confirm Captain Announcements shows team B as \"Not Announced\".",
+        "2. Switch team A's browser tab away from /dashboard.",
+        "3. In a second session, team B POSTs /api/team/captain announcing player X for GW10.",
+        "4. Team A switches back to the /dashboard tab.",
+        "5. Observe whether team A's widget updates without manual reload."
+      ],
+      "expectedResult": "Within the next render after focus/visibility change, team B's row updates from \"Not Announced\" to player X's name. No full-page reload; only a fetch to /api/team/dashboard.",
+      "postconditions": "no DB change",
+      "requirementId": "AC-CHIP-063",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Exercises the focus/visibilitychange refetch wired in dashboard/page.tsx."
+    },
+    {
+      "id": "TC-CHIP-088",
+      "feature": "Captain Announcements Widget",
+      "scenario": "Manual Refresh button re-fetches the dashboard and updates the widget",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team A is on /dashboard; team B has just announced after team A's initial load (but team A's tab is still focused)",
+      "testData": "leagueId=L1; viewer=team A; team B captain=Salah",
+      "testSteps": [
+        "1. Team A is on /dashboard.",
+        "2. Team B announces captain Salah for GW10.",
+        "3. Team A clicks the Refresh button inside the Captain Announcements section."
+      ],
+      "expectedResult": "A new GET /api/team/dashboard fires; the widget row for team B updates from \"Not Announced\" to \"Salah\".",
+      "postconditions": "no DB change",
+      "requirementId": "AC-CHIP-064",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
     }
   ],
   "gapFlags": [],

@@ -1,0 +1,651 @@
+{
+  "moduleId": "FB",
+  "moduleName": "Feedback",
+  "sheetName": "Feedback",
+  "status": "qa-signed-off",
+  "owners": {
+    "ba": "inline (planning + execution single-pass)",
+    "qa": "inline (planning + execution single-pass)"
+  },
+  "requirements": {
+    "version": 1,
+    "businessContext": "The Feedback module lets logged-in teams submit free-text feedback either about the JPL-Leagues platform in general (scope=\"site\", visible to superadmins only) or about a specific league they are in (scope=\"league\", visible to that league's admins plus superadmins). Admins and superadmins read feedback in a new Feedback tab on the league admin dashboard and on the superadmin dashboard; per row they can flag a row important, mark it resolved (with an optional one-line note), or delete it. The data lives in a single `feedback` table with a nullable `leagueId` and a typed `scope` enum.",
+    "userStories": [
+      {
+        "id": "US-FB-001",
+        "asA": "team",
+        "iWant": "to submit free-text feedback either about the platform as a whole or about my current league",
+        "soThat": "I can flag bugs, request features, or share concerns with the people who can act on them",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/feedback/page.tsx:1-200",
+          "src/app/api/feedback/route.ts:1-100"
+        ]
+      },
+      {
+        "id": "US-FB-002",
+        "asA": "league admin",
+        "iWant": "to read every feedback row submitted against my league and triage each one (flag important, mark resolved, delete)",
+        "soThat": "I can keep on top of what my teams are saying about this league",
+        "sourceRefs": [
+          "src/app/admin/[leagueId]/page.tsx:126",
+          "src/app/admin/[leagueId]/FeedbackTab.tsx:1-220",
+          "src/app/api/admin/[leagueId]/feedback/route.ts:1-30",
+          "src/app/api/feedback/[id]/route.ts:1-150"
+        ]
+      },
+      {
+        "id": "US-FB-003",
+        "asA": "superadmin",
+        "iWant": "to read every site-wide feedback row (and triage them with the same actions as league admins)",
+        "soThat": "I see the global health of the platform and can prioritise platform-level work",
+        "sourceRefs": [
+          "src/app/superadmin/page.tsx:30",
+          "src/app/api/superadmin/feedback/route.ts:1-30",
+          "src/app/api/feedback/[id]/route.ts:1-150"
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-FB-001",
+        "rule": "The `feedback` table holds free-text user submissions with a typed scope (\"site\" | \"league\"), a nullable `leagueId` (null only when scope=\"site\"), the submitter's team id + name (denormalised), an optional subject, the message body, an isImportant boolean, a resolvedAt timestamp (nullable), an optional resolutionNote, and createdAt/updatedAt timestamps.",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:574-595"
+        ]
+      },
+      {
+        "id": "BR-FB-002",
+        "rule": "POST /api/feedback requires a team session (x-session-type=team, x-session-id set). When scope=\"league\" the leagueId is derived from the submitter's team row — the client may not supply it. When scope=\"site\" the leagueId is forced to null.",
+        "sourceRefs": [
+          "src/app/api/feedback/route.ts:1-100"
+        ]
+      },
+      {
+        "id": "BR-FB-003",
+        "rule": "POST /api/feedback validates: scope ∈ {\"site\",\"league\"} (else 400); message is a string trimmed to length ≥5 and ≤5000 (else 400); subject is optional, trimmed to ≤200 chars (else 400). The trimmed values are persisted; an empty subject becomes null.",
+        "sourceRefs": [
+          "src/app/api/feedback/route.ts:6-60"
+        ]
+      },
+      {
+        "id": "BR-FB-004",
+        "rule": "GET /api/admin/[leagueId]/feedback returns ONLY rows where scope=\"league\" AND leagueId=<param>, ordered by createdAt descending. Access is gated by getAuthorizedLeagueId — league admins (active league) and superadmins pass; everyone else gets 403.",
+        "sourceRefs": [
+          "src/app/api/admin/[leagueId]/feedback/route.ts:1-30",
+          "src/lib/league-auth.ts:13-56"
+        ]
+      },
+      {
+        "id": "BR-FB-005",
+        "rule": "GET /api/superadmin/feedback returns ONLY rows where scope=\"site\", ordered by createdAt descending. Superadmin session required; everyone else gets 403.",
+        "sourceRefs": [
+          "src/app/api/superadmin/feedback/route.ts:1-30",
+          "src/lib/auth.ts:80-95"
+        ]
+      },
+      {
+        "id": "BR-FB-006",
+        "rule": "PATCH /api/feedback/[id] supports two actions: \"toggle-important\" flips isImportant; \"toggle-resolved\" sets resolvedAt=now() and resolutionNote (optional, trimmed, ≤500 chars) when currently null, OR clears both when currently set. Every successful mutation bumps updatedAt.",
+        "sourceRefs": [
+          "src/app/api/feedback/[id]/route.ts:1-150"
+        ]
+      },
+      {
+        "id": "BR-FB-007",
+        "rule": "PATCH and DELETE /api/feedback/[id] load the row first, then enforce access by scope: site-scope rows require superadmin; league-scope rows require admin of that league (in leagueAdmins for the row's leagueId, with league active) OR superadmin. Anyone else gets 403; missing rows return 404.",
+        "sourceRefs": [
+          "src/app/api/feedback/[id]/route.ts:13-60"
+        ]
+      },
+      {
+        "id": "BR-FB-008",
+        "rule": "DELETE /api/feedback/[id] hard-deletes the row after passing access control. There is no soft-delete or undo.",
+        "sourceRefs": [
+          "src/app/api/feedback/[id]/route.ts:120-150"
+        ]
+      },
+      {
+        "id": "BR-FB-009",
+        "rule": "Foreign-key cascades: deleting a league removes all feedback rows scoped to it; deleting a team removes that team's submitted feedback rows. Site-scope rows (leagueId=null) survive league deletions and are only removed by their submitter team's deletion or an explicit DELETE on the feedback row.",
+        "sourceRefs": [
+          "src/lib/db/schema.ts:574-595"
+        ]
+      },
+      {
+        "id": "BR-FB-010",
+        "rule": "The user-facing feedback page at /[leagueSlug]/feedback is gated by an authenticated team session; unauthenticated users are redirected to /signin. The page exposes a scope dropdown with two options — the current league (default) and \"Site (general)\" — plus an optional subject and required message textarea. A Feedback nav link appears in LeagueNav for logged-in users in all three formats (TVT, Triple Crown, Auction).",
+        "sourceRefs": [
+          "src/app/[leagueSlug]/feedback/page.tsx:1-200",
+          "src/components/LeagueNav.tsx:100-145"
+        ]
+      },
+      {
+        "id": "BR-FB-011",
+        "rule": "The Feedback admin tab (league admin dashboard + superadmin dashboard) shows rows sorted by createdAt descending with badges: yellow border + \"Important\" pill when isImportant=true; green tint + \"Resolved\" pill when resolvedAt is set. Each row exposes Flag important / Unflag, Mark resolved / Reopen, and Delete (with confirmation) buttons. Resolved rows show the resolutionNote inline when present.",
+        "sourceRefs": [
+          "src/app/admin/[leagueId]/FeedbackTab.tsx:1-220"
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-FB-001",
+        "given": "team A is signed in",
+        "when": "team A POSTs /api/feedback with { scope: \"site\", message: \"Login flow is confusing on mobile.\" }",
+        "then": "HTTP 201; a row lands in `feedback` with scope=\"site\", leagueId=null, submitterTeamId=A.id, submitterName=A.name, subject=null, message=\"Login flow is confusing on mobile.\", isImportant=false, resolvedAt=null",
+        "linksTo": "BR-FB-002"
+      },
+      {
+        "id": "AC-FB-002",
+        "given": "team A is signed in and belongs to league L",
+        "when": "team A POSTs /api/feedback with { scope: \"league\", subject: \"GW8 scoring\", message: \"My captain double didn't apply for GW8 — please check.\" }",
+        "then": "HTTP 201; a row lands with scope=\"league\", leagueId=L.id (server-derived), subject=\"GW8 scoring\", message preserved",
+        "linksTo": "BR-FB-002"
+      },
+      {
+        "id": "AC-FB-003",
+        "given": "team A is signed in",
+        "when": "team A POSTs /api/feedback with { scope: \"site\", message: \"hi\" } (3 characters, under the 5-char minimum)",
+        "then": "HTTP 400 with error \"message must be between 5 and 5000 characters\"; no row is inserted",
+        "linksTo": "BR-FB-003"
+      },
+      {
+        "id": "AC-FB-004",
+        "given": "team A is signed in",
+        "when": "team A POSTs /api/feedback with scope=\"sideways\"",
+        "then": "HTTP 400 with error \"scope must be 'site' or 'league'\"; no row is inserted",
+        "linksTo": "BR-FB-003"
+      },
+      {
+        "id": "AC-FB-005",
+        "given": "an unauthenticated request",
+        "when": "POSTing /api/feedback",
+        "then": "HTTP 401 with error \"Not authenticated\"; no row inserted",
+        "linksTo": "BR-FB-002"
+      },
+      {
+        "id": "AC-FB-006",
+        "given": "league L has 3 feedback rows scoped to it and 2 site-scoped rows",
+        "when": "an admin of league L (active league) calls GET /api/admin/L.id/feedback",
+        "then": "HTTP 200 with { feedback: [...] } containing exactly 3 rows — only those with scope=\"league\" AND leagueId=L.id — ordered by createdAt descending",
+        "linksTo": "BR-FB-004"
+      },
+      {
+        "id": "AC-FB-007",
+        "given": "league L1 and L2 exist; an admin of L1 attempts to read feedback for L2",
+        "when": "GET /api/admin/L2.id/feedback with the L1 admin's session",
+        "then": "HTTP 403 (the admin is not in leagueAdmins for L2)",
+        "linksTo": "BR-FB-004"
+      },
+      {
+        "id": "AC-FB-008",
+        "given": "5 site-scoped feedback rows + 7 league-scoped rows exist in the DB",
+        "when": "a superadmin calls GET /api/superadmin/feedback",
+        "then": "HTTP 200 with exactly 5 rows — only those with scope=\"site\" — ordered by createdAt descending",
+        "linksTo": "BR-FB-005"
+      },
+      {
+        "id": "AC-FB-009",
+        "given": "a league admin tries to read /api/superadmin/feedback",
+        "when": "GET /api/superadmin/feedback with a league-admin session",
+        "then": "HTTP 403",
+        "linksTo": "BR-FB-005"
+      },
+      {
+        "id": "AC-FB-010",
+        "given": "feedback row F (scope=\"league\", isImportant=false) exists in a league the admin owns",
+        "when": "the admin PATCHes /api/feedback/F.id with { action: \"toggle-important\" }",
+        "then": "HTTP 200; the row's isImportant flips to true; updatedAt bumps; a second call flips it back to false",
+        "linksTo": "BR-FB-006"
+      },
+      {
+        "id": "AC-FB-011",
+        "given": "feedback row F (resolvedAt=null) exists",
+        "when": "the league admin PATCHes /api/feedback/F.id with { action: \"toggle-resolved\", resolutionNote: \"Fixed in GW9 export.\" }",
+        "then": "HTTP 200; resolvedAt is set to now(); resolutionNote is stored; a follow-up PATCH with the same action clears both fields (un-resolve)",
+        "linksTo": "BR-FB-006"
+      },
+      {
+        "id": "AC-FB-012",
+        "given": "an admin of league L1 attempts to PATCH a feedback row F scoped to league L2",
+        "when": "PATCH /api/feedback/F.id with the L1 admin's session",
+        "then": "HTTP 403",
+        "linksTo": "BR-FB-007"
+      },
+      {
+        "id": "AC-FB-013",
+        "given": "a league admin attempts to PATCH a site-scoped feedback row",
+        "when": "PATCH /api/feedback/F.id with the admin's session (no superadmin)",
+        "then": "HTTP 403",
+        "linksTo": "BR-FB-007"
+      },
+      {
+        "id": "AC-FB-014",
+        "given": "a superadmin PATCHes either a site-scoped or any league-scoped feedback row",
+        "when": "PATCH /api/feedback/F.id with { action: \"toggle-important\" }",
+        "then": "HTTP 200; the action succeeds regardless of which league the row belongs to",
+        "linksTo": "BR-FB-007"
+      },
+      {
+        "id": "AC-FB-015",
+        "given": "feedback row F exists in league L",
+        "when": "the L admin DELETEs /api/feedback/F.id",
+        "then": "HTTP 200; the row no longer exists in `feedback` (verified by a follow-up SELECT)",
+        "linksTo": "BR-FB-008"
+      },
+      {
+        "id": "AC-FB-016",
+        "given": "league L is hard-deleted from the DB",
+        "when": "all feedback rows with leagueId=L.id are inspected after the delete",
+        "then": "they are gone (cascade fired). Site-scope rows are unaffected.",
+        "linksTo": "BR-FB-009"
+      },
+      {
+        "id": "AC-FB-017",
+        "given": "an unauthenticated visitor opens /[leagueSlug]/feedback",
+        "when": "the page renders",
+        "then": "the visitor is redirected to /signin (no form rendered)",
+        "linksTo": "BR-FB-010"
+      }
+    ]
+  },
+  "testCases": [
+    {
+      "id": "TC-FB-001",
+      "feature": "Feedback Submission",
+      "scenario": "Logged-in team submits site-wide feedback",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team A is signed in and has a valid session",
+      "testData": "scope=\"site\", message=\"Login flow is confusing on mobile.\"",
+      "testSteps": [
+        "1. POST /api/feedback with the body { scope: \"site\", message: \"Login flow is confusing on mobile.\" }.",
+        "2. Read the response status and body.",
+        "3. SELECT * FROM feedback WHERE id = response.id."
+      ],
+      "expectedResult": "HTTP 201; response body { success: true, id: <uuid> }; DB row has scope=\"site\", leagueId=null, submitterTeamId=A.id, submitterName=A.name, message preserved, isImportant=false, resolvedAt=null",
+      "postconditions": "feedback table grew by 1 row",
+      "requirementId": "AC-FB-001",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-002",
+      "feature": "Feedback Submission",
+      "scenario": "League-scoped submission derives leagueId from session, not from client",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "Team A is signed in; A.leagueId = L1",
+      "testData": "scope=\"league\", subject=\"GW8 scoring\", message=\"My captain double didn't apply for GW8 — please check.\"",
+      "testSteps": [
+        "1. POST /api/feedback with the body above.",
+        "2. Inspect the inserted row."
+      ],
+      "expectedResult": "HTTP 201; DB row has scope=\"league\", leagueId=L1 (NOT any value the client might have tried to inject), subject and message preserved",
+      "postconditions": "feedback table grew by 1 row",
+      "requirementId": "AC-FB-002",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-003",
+      "feature": "Feedback Submission",
+      "scenario": "Message under minimum length returns 400",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Team A is signed in",
+      "testData": "message=\"hi\" (2 chars after trim)",
+      "testSteps": [
+        "1. POST /api/feedback with the body."
+      ],
+      "expectedResult": "HTTP 400 with error \"message must be between 5 and 5000 characters\"; no row inserted",
+      "postconditions": "feedback table count unchanged",
+      "requirementId": "AC-FB-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-004",
+      "feature": "Feedback Submission",
+      "scenario": "Invalid scope value rejected",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "Team A is signed in",
+      "testData": "scope=\"sideways\", message=\"valid message body\"",
+      "testSteps": [
+        "1. POST /api/feedback with the body."
+      ],
+      "expectedResult": "HTTP 400 with error \"scope must be 'site' or 'league'\"; no row inserted",
+      "postconditions": "feedback table count unchanged",
+      "requirementId": "AC-FB-004",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-005",
+      "feature": "Feedback Submission",
+      "scenario": "Unauthenticated POST rejected",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "No session cookie",
+      "testData": "scope=\"site\", message=\"hello world\"",
+      "testSteps": [
+        "1. POST /api/feedback with no auth headers."
+      ],
+      "expectedResult": "HTTP 401 with error \"Not authenticated\"; no row inserted",
+      "postconditions": "feedback table count unchanged",
+      "requirementId": "AC-FB-005",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-006",
+      "feature": "Feedback Submission",
+      "scenario": "Message at the 5000-character boundary accepted",
+      "type": "Boundary",
+      "priority": "P3",
+      "preconditions": "Team A is signed in",
+      "testData": "message = 5000-character string; subject omitted",
+      "testSteps": [
+        "1. POST /api/feedback with the body."
+      ],
+      "expectedResult": "HTTP 201; row inserted with the exact message preserved",
+      "postconditions": "feedback table grew by 1 row",
+      "requirementId": "AC-FB-003",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "5001 chars would return 400"
+    },
+    {
+      "id": "TC-FB-007",
+      "feature": "League Admin Feedback Tab",
+      "scenario": "League admin sees only league-scoped feedback for their league",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "League L1 has 3 league-scoped feedback rows; the DB also has 2 site-scoped rows and 4 rows for league L2; the requester is an admin of active L1 only",
+      "testData": "GET /api/admin/L1.id/feedback",
+      "testSteps": [
+        "1. GET the endpoint with the L1 admin's session."
+      ],
+      "expectedResult": "HTTP 200; response.feedback.length === 3; every row has scope=\"league\" and leagueId=L1; ordered by createdAt DESC; no site-scope and no L2 rows leak in",
+      "postconditions": "no DB change",
+      "requirementId": "AC-FB-006",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-008",
+      "feature": "League Admin Feedback Tab",
+      "scenario": "Cross-league admin access blocked",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin A1 is registered as admin of L1 only; league L2 also exists with feedback rows",
+      "testData": "GET /api/admin/L2.id/feedback with A1's session",
+      "testSteps": [
+        "1. GET the endpoint."
+      ],
+      "expectedResult": "HTTP 403",
+      "postconditions": "no DB change; no rows leaked",
+      "requirementId": "AC-FB-007",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-009",
+      "feature": "Superadmin Feedback Tab",
+      "scenario": "Superadmin sees only site-scoped feedback",
+      "type": "Positive",
+      "priority": "P1",
+      "preconditions": "DB has 5 site-scoped rows and 7 league-scoped rows; requester is superadmin",
+      "testData": "GET /api/superadmin/feedback",
+      "testSteps": [
+        "1. GET the endpoint with a superadmin session."
+      ],
+      "expectedResult": "HTTP 200; response.feedback.length === 5; every row has scope=\"site\"; ordered by createdAt DESC",
+      "postconditions": "no DB change",
+      "requirementId": "AC-FB-008",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-010",
+      "feature": "Superadmin Feedback Tab",
+      "scenario": "League admin (not superadmin) blocked from site feedback",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Admin A1 is a league admin, not a superadmin",
+      "testData": "GET /api/superadmin/feedback with A1's session",
+      "testSteps": [
+        "1. GET the endpoint."
+      ],
+      "expectedResult": "HTTP 403",
+      "postconditions": "no DB change",
+      "requirementId": "AC-FB-009",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-011",
+      "feature": "Feedback Moderation",
+      "scenario": "Toggle important flag",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Row F (scope=\"league\" in L1, isImportant=false); requester is admin of L1",
+      "testData": "PATCH /api/feedback/F.id { action: \"toggle-important\" }",
+      "testSteps": [
+        "1. PATCH with the body.",
+        "2. SELECT * FROM feedback WHERE id = F.id.",
+        "3. PATCH a second time with the same body."
+      ],
+      "expectedResult": "Step 1 → HTTP 200; row's isImportant=true and updatedAt bumped. Step 3 → HTTP 200; row's isImportant=false again",
+      "postconditions": "row's createdAt unchanged; updatedAt updated twice",
+      "requirementId": "AC-FB-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-012",
+      "feature": "Feedback Moderation",
+      "scenario": "Mark resolved with note, then re-open",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Row F (resolvedAt=null); requester is league admin",
+      "testData": "PATCH { action: \"toggle-resolved\", resolutionNote: \"Fixed in GW9 export.\" }",
+      "testSteps": [
+        "1. PATCH /api/feedback/F.id with the body.",
+        "2. SELECT *.",
+        "3. PATCH again with { action: \"toggle-resolved\" } (no note).",
+        "4. SELECT * again."
+      ],
+      "expectedResult": "Step 1 → HTTP 200; resolvedAt=now(), resolutionNote=\"Fixed in GW9 export.\". Step 3 → HTTP 200; resolvedAt=null, resolutionNote=null",
+      "postconditions": "row exists; updatedAt bumped both times",
+      "requirementId": "AC-FB-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-013",
+      "feature": "Feedback Moderation",
+      "scenario": "Cross-league mutation blocked",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Row F belongs to league L2; requester is admin of L1 only (not superadmin)",
+      "testData": "PATCH /api/feedback/F.id { action: \"toggle-important\" }",
+      "testSteps": [
+        "1. PATCH with the L1 admin's session."
+      ],
+      "expectedResult": "HTTP 403; row unchanged",
+      "postconditions": "no DB change",
+      "requirementId": "AC-FB-012",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-014",
+      "feature": "Feedback Moderation",
+      "scenario": "League admin cannot mutate site-scoped feedback",
+      "type": "Negative",
+      "priority": "P1",
+      "preconditions": "Row F has scope=\"site\"; requester is a league admin (not superadmin)",
+      "testData": "PATCH /api/feedback/F.id { action: \"toggle-resolved\" }",
+      "testSteps": [
+        "1. PATCH with the admin's session."
+      ],
+      "expectedResult": "HTTP 403; row unchanged",
+      "postconditions": "no DB change",
+      "requirementId": "AC-FB-013",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-015",
+      "feature": "Feedback Moderation",
+      "scenario": "Superadmin can mutate any feedback row regardless of scope",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Row S has scope=\"site\"; row L has scope=\"league\" in L1; requester is superadmin",
+      "testData": "Two PATCH calls with toggle-important",
+      "testSteps": [
+        "1. PATCH /api/feedback/S.id with toggle-important as superadmin.",
+        "2. PATCH /api/feedback/L.id with toggle-important as superadmin."
+      ],
+      "expectedResult": "Both → HTTP 200; both rows' isImportant flipped to true",
+      "postconditions": "two rows updated",
+      "requirementId": "AC-FB-014",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-016",
+      "feature": "Feedback Moderation",
+      "scenario": "Delete a feedback row",
+      "type": "Positive",
+      "priority": "P2",
+      "preconditions": "Row F exists in league L1; requester is admin of L1",
+      "testData": "DELETE /api/feedback/F.id",
+      "testSteps": [
+        "1. DELETE the endpoint.",
+        "2. SELECT * FROM feedback WHERE id = F.id."
+      ],
+      "expectedResult": "Step 1 → HTTP 200. Step 2 → 0 rows.",
+      "postconditions": "feedback table count decremented by 1",
+      "requirementId": "AC-FB-015",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-017",
+      "feature": "Schema Integrity",
+      "scenario": "Cascade: deleting a league removes its feedback rows but spares site-scope rows",
+      "type": "Edge",
+      "priority": "P3",
+      "preconditions": "League L1 has 3 league-scope feedback rows; 2 site-scope rows exist (any submitter)",
+      "testData": "DELETE FROM leagues WHERE id = L1.id",
+      "testSteps": [
+        "1. Count feedback rows before: total = N.",
+        "2. Delete the league row.",
+        "3. Count again: should be N-3.",
+        "4. Verify the 2 site-scope rows still exist."
+      ],
+      "expectedResult": "league-scope rows for L1 are gone via cascade; site-scope rows untouched",
+      "postconditions": "DB state per expected",
+      "requirementId": "AC-FB-016",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-018",
+      "feature": "User Feedback Page",
+      "scenario": "Unauthenticated visitor on /[leagueSlug]/feedback is bounced to /signin",
+      "type": "Negative",
+      "priority": "P2",
+      "preconditions": "No session cookie; an active league with slug \"my-league\" exists",
+      "testData": "Visit /my-league/feedback in a fresh browser",
+      "testSteps": [
+        "1. Open the URL with no session."
+      ],
+      "expectedResult": "Client navigates to /signin (the page's useEffect runs router.push when viewer.authenticated is false)",
+      "postconditions": "no DB change",
+      "requirementId": "AC-FB-017",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    },
+    {
+      "id": "TC-FB-019",
+      "feature": "User Feedback Page",
+      "scenario": "Scope dropdown shows the user's league + Site option",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Team A is signed in to league L (name=\"Champions 2026\")",
+      "testData": "Visit /[L.slug]/feedback",
+      "testSteps": [
+        "1. Load the page.",
+        "2. Open the scope dropdown."
+      ],
+      "expectedResult": "Two options visible: \"Champions 2026\" (default selected) and \"Site (general)\"",
+      "postconditions": "no DB change",
+      "requirementId": "BR-FB-010",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": "Cosmetic UI verification."
+    },
+    {
+      "id": "TC-FB-020",
+      "feature": "Admin Feedback Tab",
+      "scenario": "Resolution note shown inline when row is marked resolved",
+      "type": "Positive",
+      "priority": "P3",
+      "preconditions": "Row F has resolvedAt set and resolutionNote=\"Fixed in GW9.\"; admin is on the Feedback tab",
+      "testData": "Render the tab",
+      "testSteps": [
+        "1. Open /admin/[leagueId] → Feedback tab.",
+        "2. Locate row F."
+      ],
+      "expectedResult": "Row F shows the green Resolved badge and the italic line \"Resolution: Fixed in GW9.\" below the message body",
+      "postconditions": "no DB change",
+      "requirementId": "BR-FB-011",
+      "author": "qa-tester",
+      "createdDate": "2026-05-28",
+      "status": "Not Executed",
+      "notes": ""
+    }
+  ],
+  "gapFlags": [],
+  "defects": []
+}

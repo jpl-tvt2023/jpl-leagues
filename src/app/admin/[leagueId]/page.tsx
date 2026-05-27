@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TierChip } from "@/components/TierChip";
 import { formatCurrency } from "@/lib/format/currency";
+import { FeedbackTab } from "./FeedbackTab";
 
 interface Team {
   id: string;
@@ -123,7 +124,7 @@ interface CacheStats {
   gameweeks: { gameweek: number; entries: number }[];
 }
 
-type TabType = "teams" | "groups" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction" | "finance" | "marketplace";
+type TabType = "teams" | "groups" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction" | "finance" | "marketplace" | "feedback";
 
 // Auction-specific interfaces
 interface AuctionSessionInfo {
@@ -2307,6 +2308,16 @@ export default function AdminDashboard() {
             }`}
           >
             Settings
+          </button>
+          <button
+            onClick={() => { setActiveTab("feedback"); setMessage(null); }}
+            className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
+              activeTab === "feedback"
+                ? "bg-yellow-500 text-slate-900"
+                : "bg-white/5 text-gray-300 hover:bg-white/10"
+            }`}
+          >
+            Feedback
           </button>
           </div>
         </div>
@@ -4688,6 +4699,14 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Feedback Tab */}
+        {activeTab === "feedback" && (
+          <FeedbackTab
+            endpoint={`/api/admin/${leagueId}/feedback`}
+            scopeLabel="this league"
+          />
         )}
       </div>
     </div>

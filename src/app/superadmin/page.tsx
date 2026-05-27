@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { FeedbackTab } from "../admin/[leagueId]/FeedbackTab";
 
 interface League {
   id: string;
@@ -27,7 +28,7 @@ interface Admin {
   assignedLeagueIds: string[];
 }
 
-type TabType = "leagues" | "admins" | "operations" | "pl-standings" | "score-adjustments";
+type TabType = "leagues" | "admins" | "operations" | "pl-standings" | "score-adjustments" | "feedback";
 
 // ── PL Standings (Club Auction tier mapping) ──
 type PLBootstrapTeam = { id: number; name: string; short_name: string };
@@ -803,6 +804,7 @@ export default function SuperAdminDashboard() {
     { id: "operations", label: "Operations" },
     { id: "pl-standings", label: "PL Standings" },
     { id: "score-adjustments", label: "Score Adjustments" },
+    { id: "feedback", label: "Feedback" },
   ];
 
   return (
@@ -2233,6 +2235,11 @@ export default function SuperAdminDashboard() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Feedback Tab — site-scoped feedback only */}
+        {activeTab === "feedback" && (
+          <FeedbackTab endpoint="/api/superadmin/feedback" scopeLabel="site-wide" />
         )}
       </div>
     </div>
