@@ -60,6 +60,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
   }
 
+  if (leagueRow[0].auctionTier !== "complete") {
+    return NextResponse.json({ error: "Releases are only available in Complete tier" }, { status: 403 });
+  }
+
   if (await isAuctionLive(ownership.leagueId)) {
     return NextResponse.json(
       { error: "Marketplace is closed during a live auction" },
@@ -132,6 +136,15 @@ export async function DELETE(request: NextRequest) {
   // Verify the requesting team owns this player (unless admin)
   if (!isAdmin && session?.id !== ownership.teamId) {
     return NextResponse.json({ error: "You don't own this player" }, { status: 403 });
+  }
+
+  const leagueRow = await db.select().from(leagues).where(eq(leagues.id, ownership.leagueId)).limit(1);
+  if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
+    return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
+  }
+
+  if (leagueRow[0].auctionTier !== "complete") {
+    return NextResponse.json({ error: "Releases are only available in Complete tier" }, { status: 403 });
   }
 
   if (await isAuctionLive(ownership.leagueId)) {

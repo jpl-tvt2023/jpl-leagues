@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 9,
+    "version": 11,
     "businessContext": "The Captains & Chips module owns the SUBMISSION lifecycle for the two strategic levers a TVT/Triple-Crown team controls each gameweek: (1) declaring which player on their 2-man team is the captain (whose net score is doubled by the scoring engine), and (2) deciding whether to play a TVT chip (Win-Win, Double Pointer, Challenge Chip, Score Lock, Comeback or Underdog) in that GW. The module covers team-facing submission/switch/cancel endpoints, admin force-overrides, and bulk CSV/XLSX imports. It does not handle scoring/processing of those choices (module 05 owns that) nor the league-settings UI (module 02). The Auction format has NO captains/chips — those teams must not be exposed to these endpoints.",
     "userStories": [
       {
@@ -345,9 +345,9 @@
       },
       {
         "id": "BR-CHIP-026",
-        "rule": "DELETE /api/team/chips physically removes the gameweekChips row; it does NOT reset the team's <chip>Set<N>Used boolean flag. // CODE-CONFIRMED: may be a defect — confirm with product owner — cancelling a chip leaves the set-flag set if it was ever set, potentially locking the team out of using that chip again in the set.",
+        "rule": "DELETE /api/team/chips deletes the gameweekChips row AND clears the team's corresponding *Set<N>Used flag (mapped via CHIP_SET_COL[chipType][setIndex]) inside one db.transaction. Set is derived from getChipSet(gw, playoffStartGw). The team can then submit a different chip in the same set without hitting the 'already used' guard. The atomic delete + flag-clear is the inverse of the POST submit's flag-set.",
         "sourceRefs": [
-          "src/app/api/team/chips/route.ts:325-326"
+          "src/app/api/team/chips/route.ts:309-364"
         ]
       },
       {
@@ -407,9 +407,9 @@
       },
       {
         "id": "BR-CHIP-034",
-        "rule": "Chip override identifies which existing chip row to replace by 'set' (gwNum<=15 for set1, 15<gwNum<=30 for set2) — these set boundaries are hardcoded and ignore league.playoffStartGw. // CODE-CONFIRMED: may be a defect — confirm with product owner — leagues with non-default playoffStartGw will have override-chips mis-categorize set membership.",
+        "rule": "POST /api/admin/[leagueId]/override-chips computes set-membership boundaries from the league's actual playoffStartGw: setMidpoint = Math.ceil((playoffStartGw - 1) / 2); set1 = GW1..setMidpoint; set2 = GW(setMidpoint+1)..(playoffStartGw - 1). Hardcoded 15/30 was wrong for TVT-8 (playoffStartGw=36, setMidpoint=17). The set boundaries now match team-side POST /api/team/chips' getChipSet() logic for parity.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/override-chips/route.ts:160-187"
+          "src/app/api/admin/[leagueId]/override-chips/route.ts:161-195"
         ]
       },
       {
@@ -764,9 +764,9 @@
       },
       {
         "id": "AC-CHIP-028",
-        "given": "Team has used W chip for GW5 (winWinSet1Used=true)",
-        "when": "Team DELETEs that chip, then posts chipType='W' for GW10",
-        "then": "The DELETE removes the row but winWinSet1Used remains true, so the second post returns 400 'Win-Win has already been used for Set 1' (defect)",
+        "given": "a team with doublePointerSet1Used=true (submitted 'D' in GW5) calls DELETE /api/team/chips for GW5",
+        "when": "the handler runs",
+        "then": "the gameweekChips row for GW5/team is deleted; teams.doublePointerSet1Used is reset to false; both writes happen in one db.transaction. A subsequent POST /api/team/chips for any other set-1 chip ('W' or 'C') in GW5+ succeeds normally; submitting another 'D' in set 1 also succeeds since the flag is cleared.",
         "linksTo": "BR-CHIP-026"
       },
       {
@@ -834,9 +834,9 @@
       },
       {
         "id": "AC-CHIP-038",
-        "given": "League playoffStartGw=36 (Set 2 should be GW18-35)",
-        "when": "Admin posts override-chips for chipType='doublePointerSet2', gameweek=20",
-        "then": "The set-membership filter chipsInSet uses gwNum>15 && gwNum<=30, so an existing GW20 D chip is correctly matched, but a GW33 D chip (also Set 2 under playoffStartGw=36) would NOT be matched (defect)",
+        "given": "an admin POSTs /api/admin/[leagueId]/override-chips on a TVT-8 league with chipType='doublePointerSet1' (set 1)",
+        "when": "the handler computes setMidpoint from league.playoffStartGw=36 (setMidpoint=17)",
+        "then": "existing chips in GW1..17 of that chip type are deleted; chips in GW18..35 are untouched. For TVT-16/32 (playoffStartGw=31) the same handler operates on GW1..15 / GW16..30 — unchanged behaviour from the previous hardcoded path.",
         "linksTo": "BR-CHIP-034"
       },
       {
@@ -1811,8 +1811,8 @@
     {
       "id": "TC-CHIP-044",
       "feature": "Chip Cancel - Set Flag Not Reset",
-      "scenario": "REGRESSION: DELETE chip leaves set-used flag set, blocking re-use",
-      "type": "Regression",
+      "scenario": "DELETE /api/team/chips clears the team's *Set<N>Used flag atomically with the chip row delete",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "team.winWinSet1Used was set to true previously (e.g. via admin override); team has chip row for GW5",
       "testData": "DELETE { gameweek: 5 }; then POST { gameweek: 10, chipType: 'W' }",
@@ -1822,13 +1822,13 @@
         "3. Confirm team.winWinSet1Used still true",
         "4. POST W GW10"
       ],
-      "expectedResult": "Step 4 returns 400 'Win-Win has already been used for Set 1' due to lingering flag (pins defect)",
+      "expectedResult": "After DELETE /api/team/chips for a chip submitted in GW5 (set 1), the team's matching *Set1Used column (e.g., doublePointerSet1Used for a 'D' chip) goes back to false; the gameweekChips row is removed in the same transaction. The team can re-submit a different chip in the same set without hitting the 'already used' guard.",
       "postconditions": "Flag remains true",
       "requirementId": "AC-CHIP-028",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-002"
+      "notes": "[QA-VERIFY] Updated post-DEF-CHIP-002 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-CHIP-045",
@@ -2007,8 +2007,8 @@
     {
       "id": "TC-CHIP-054",
       "feature": "Admin Override Chips - Set Membership Defect",
-      "scenario": "REGRESSION: 8-team league GW33 D chip not matched as Set 2 due to hardcoded 30-cap",
-      "type": "Regression",
+      "scenario": "override-chips set-membership filter uses playoffStartGw-derived setMidpoint, not hardcoded 15/30",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "League playoffStartGw=36 (Set 2 = GW18-35); existing chip row D for GW33 belonging to team",
       "testData": "{ teamId, chipType: 'doublePointerSet2', status: 'used', gameweek: 20, reason: 'x' }",
@@ -2017,13 +2017,13 @@
         "2. POST override-chips doublePointerSet2 GW20",
         "3. Inspect chip rows for team"
       ],
-      "expectedResult": "Existing GW33 D row is NOT matched/removed (set filter uses gwNum<=30); a new GW20 D row is inserted; team now has BOTH GW20 and GW33 D rows (pins defect)",
+      "expectedResult": "For a TVT-8 league (playoffStartGw=36, setMidpoint=17), override-chips POST scoping the chip type to set1 deletes only chips in GW1..17; set2 deletes only chips in GW18..35. For a TVT-16/32 league (playoffStartGw=31, setMidpoint=15) the boundaries match the prior hardcoded 15/30. No regressions in 16/32-team behaviour.",
       "postconditions": "Duplicate set-2 chip rows on the team",
       "requirementId": "AC-CHIP-038",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-CHIP-003"
+      "notes": "[QA-VERIFY] Updated post-DEF-CHIP-003 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-CHIP-055",
@@ -2583,7 +2583,7 @@
       "id": "DEF-CHIP-002",
       "title": "DELETE /api/team/chips does not reset the team's set-used flag",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "When a team cancels a chip submission before deadline, src/app/api/team/chips/route.ts:325-326 deletes the gameweekChips row but never clears the corresponding team.<chip>Set<N>Used boolean. Today the team POST handler does NOT flip the flag to true on submission either (only admin import/override do), so the bug may be latent for the team flow specifically — but if a future fix sets the flag on submission, cancel-and-resubmit will be silently broken. Inconsistency between submission and cancellation is itself a defect.",
@@ -2603,15 +2603,15 @@
       "pinningTestCases": [
         "TC-CHIP-044"
       ],
-      "notes": "Investigate whether POST /api/team/chips intends to set the flag (a missing UPDATE teams ... set <col>=true). Decide product behaviour first; the schema design suggests the flag should track 'used in this set', which means POST should set true and DELETE should set false.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Investigate whether POST /api/team/chips intends to set the flag (a missing UPDATE teams ... set <col>=true). Decide product behaviour first; the schema design suggests the flag should track 'used in this set', which means POST should set true and DELETE should set false. [DEV] Self-verified: tsc passes for touched file (only pre-existing unrelated tests/league-types/* errors remain), manual diff review clean. Awaiting QA re-run of pinningTestCases. [QA] Re-run TC-CHIP-044 against the fix. Expected behaviour now matches the fix: DELETE clears the team.<chip>Set<N>Used flag for the cancelled chip's set; a cancel-then-resubmit-different-chip-same-set sequence is no longer blocked by a stale flag. Note: BR-CHIP-026 / AC-CHIP-028 still describe the defective behaviour (DELETE keeps flag true) — BA needs to update them. [BA] BR-CHIP-026 + AC-CHIP-028 now describe defective behaviour that has been corrected — update to: 'DELETE /api/team/chips deletes the gameweekChips row AND clears the corresponding team.<chip>Set<N>Used flag (using getChipSet with the league's playoffStartGw) in a single transaction.' Confirm with module owner whether POST should also set the flag on insert (currently it does not — admin/import-only). [QA-VERIFIED]: 2026-05-26 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-26 — BR/AC text refreshed.",
+      "resolution": "Fixed in src/app/api/team/chips/route.ts DELETE handler (lines 309-369). The handler now (1) loads league.playoffStartGw from the leagues table, (2) computes which set the cancelled chip occupies via getChipSet(gameweekNumber, playoffStartGw), (3) looks up the matching teams.<chip>Set<N>Used column via the existing CHIP_SET_COL map keyed on existingChip.chipType, and (4) wraps the gameweekChips delete + the teams flag-reset in a single db.transaction so the row removal and flag clear succeed or fail together. The same setMidpoint logic the POST handler uses now governs cancellation, so leagues with non-default playoffStartGw stay consistent.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-CHIP-003",
       "title": "override-chips set-membership filter hardcodes GW15/30 boundaries",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/admin/[leagueId]/override-chips/route.ts:178-181 filters chipsInSet by 'gwNum <= 15' for set1 and 'gwNum > 15 && gwNum <= 30' for set2. These boundaries are hardcoded and ignore the league's playoffStartGw. For an 8-team league (playoffStartGw=36) Set 1 is actually GW1-17 and Set 2 GW18-35; this filter will fail to match existing chip rows in GW16-17 (mis-categorised as Set 2) and GW31-35 (excluded entirely).",
@@ -2630,9 +2630,9 @@
       "pinningTestCases": [
         "TC-CHIP-054"
       ],
-      "notes": "Same fix as DEF-CHIP-006. Replace the inline gwNum<=15 check with getChipSet().",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Same fix as DEF-CHIP-006. Replace the inline gwNum<=15 check with getChipSet(). [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "Replaced the hardcoded GW15/30 boundaries in /api/admin/[leagueId]/override-chips POST (src/app/api/admin/[leagueId]/override-chips/route.ts:161-195) with setMidpoint derived from the league's actual playoffStartGw (setMidpoint = Math.ceil((playoffStartGw - 1) / 2)). The set-1/set-2 filter now correctly partitions chips by the league's real boundaries: TVT-8 (playoffStartGw=36) uses set1=GW1..17 / set2=GW18..35; TVT-16/32 (playoffStartGw=31) uses set1=GW1..15 / set2=GW16..30.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-CHIP-004",

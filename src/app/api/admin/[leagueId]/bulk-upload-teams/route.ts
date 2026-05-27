@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups, leagues } from "@/lib/db";
-import { eq, and, ne, inArray } from "drizzle-orm";
+import { eq, and, ne, inArray, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -119,13 +119,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Validation failed", details: errors }, { status: 400 });
     }
 
-    // ---- Global teamLoginId uniqueness against OTHER leagues ----
+    // ---- Global teamLoginId uniqueness against OTHER leagues (case-insensitive) ----
     // (Within this league, the wipe below clears the way.)
-    const loginIds = rows.map(r => r.teamLoginId);
+    const loginIdsLower = rows.map(r => r.teamLoginId.toLowerCase());
     const conflicts = await db
       .select({ teamLoginId: teams.teamLoginId, leagueId: teams.leagueId })
       .from(teams)
-      .where(and(inArray(teams.teamLoginId, loginIds), ne(teams.leagueId, leagueId)));
+      .where(and(inArray(sql`LOWER(${teams.teamLoginId})`, loginIdsLower), ne(teams.leagueId, leagueId)));
     if (conflicts.length > 0) {
       return NextResponse.json(
         {
@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
       const hashed = await bcrypt.hash(r.password, 10);
       await db.insert(teams).values({
         id: teamId,
-        teamLoginId: r.teamLoginId,
+        teamLoginId: r.teamLoginId.toLowerCase(),
         name: r.teamName,
         password: hashed,
         mustChangePassword: true,

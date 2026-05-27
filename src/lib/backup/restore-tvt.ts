@@ -97,10 +97,18 @@ export async function loadRestoreSnapshot(backupId: string, leagueId: string): P
   if (!row) return { error: "Snapshot not found for this league" };
 
   const fixturesJson = row.fixturesJson ? JSON.parse(row.fixturesJson) : [];
+  // The backups row doesn't carry a stored `format` — derive the snapshot's
+  // ORIGINAL format from which JSON columns are populated (same heuristic the
+  // /backups/[backupId] download route uses, see DEF-BACKUP-008). When this
+  // differs from the target league's current format the calling route must
+  // refuse the restore — otherwise a TVT-era backup could be restored into a
+  // league that was later re-formatted to triple-crown (or vice versa).
+  const inferredFormat: string =
+    row.auctionSquadsJson != null ? "auction"
+    : row.chipsJson != null ? "tvt"
+    : "triple-crown";
   return {
-    // The backups row has `leagueId` but not `format` — the saved-snapshot SELECT already filters
-    // by both id AND leagueId so cross-league restore via backupId can't reach this code path.
-    meta: { leagueId: row.leagueId },
+    meta: { leagueId: row.leagueId, format: inferredFormat },
     fixtures: fixturesJson,
     rawCaptains: row.captainsJson ? JSON.parse(row.captainsJson) : [],
     rawChips: row.chipsJson ? JSON.parse(row.chipsJson) : [],

@@ -137,6 +137,37 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Total of top8 + mid + promoted must be 20 team IDs" }, { status: 400 });
   }
 
+  let validTeamIds: Set<number>;
+  try {
+    const bootstrap = await fetchBootstrapData();
+    const raw = (bootstrap.teams ?? []) as Array<{ id: number }>;
+    validTeamIds = new Set(raw.map((t) => t.id));
+  } catch (err) {
+    console.error("Failed to fetch FPL bootstrap for PUT pl-standings validation:", err);
+    return NextResponse.json(
+      { error: "Unable to verify team IDs against FPL bootstrap; try again shortly" },
+      { status: 503 }
+    );
+  }
+
+  if (validTeamIds.size === 0) {
+    return NextResponse.json(
+      { error: "FPL bootstrap returned no teams; cannot validate IDs" },
+      { status: 503 }
+    );
+  }
+
+  const invalidIds = all.filter((id) => !validTeamIds.has(id));
+  if (invalidIds.length > 0) {
+    return NextResponse.json(
+      {
+        error: `Team IDs not in current FPL bootstrap: ${invalidIds.join(", ")}`,
+        invalidIds,
+      },
+      { status: 400 }
+    );
+  }
+
   await readOrSeedConfig();
 
   const now = new Date();

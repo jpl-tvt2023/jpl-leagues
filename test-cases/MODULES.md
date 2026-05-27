@@ -51,4 +51,5 @@ a single Excel workbook.
 
 After running `npm run test-cases:build`:
 
-- **[jpl-leagues-test-cases.xlsx](jpl-leagues-test-cases.xlsx)** — the consolidated workbook with Cover, TOC, Traceability Matrix, Test Summary, and one sheet per module above.
+- **[jpl-leagues-test-cases.xlsx](jpl-leagues-test-cases.xlsx)** — the consolidated workbook with Cover, TOC, Defects, **defect_details** (stakeholder-facing plain-English summaries), Traceability Matrix, Test Summary, and one sheet per module above.
+- **[defect-laymans.json](defect-laymans.json)** — companion file holding the plain-English `title` / `summary` / `fix` / `example` per defect ID. The build script refuses to run if any defect lacks an entry or any entry references an unknown defect.

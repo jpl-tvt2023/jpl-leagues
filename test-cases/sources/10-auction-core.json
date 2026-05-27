@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 3,
+    "version": 4,
     "businessContext": "Auction Core is the 'court' of the auction-format league — the live session machine, the per-player bidding round, the snake-order nomination loop, the auto-nominate wishlist that fires on missed nominations, and the read APIs that surface squad / teams / players / unsold pool / live status. It owns session lifecycle (pending → active → paused → completed) for the 'initial' and 'mini-auction' session types only; the club-auction lifecycle is module 13. It owns bid placement (anti-snipe, min-increment, squad-rule pre-checks) but defers purse / payout / synergy math to module 11, marketplace/trade locking to module 12, and slot-unlock / penalty-redeem economics to module 13. Auction standings ranking belongs to module 07. This module also covers the admin reset-auction endpoint that wipes the auction back to initial or a chosen mini-cycle.",
     "userStories": [
       {
@@ -580,10 +580,9 @@
       },
       {
         "id": "BR-AUC-056",
-        "rule": "resetTo='initial' restores bonusSlots=0 on every team but does NOT delete the teamSlotUnlocks audit ledger rows for the league. // CODE-CONFIRMED: may be a defect — orphaned slot-unlock ledger rows survive a full reset, breaking the finance trail. Compare with the restore-auction route which DOES delete teamSlotUnlocks at line 372. Confirm with product owner.",
+        "rule": "POST /api/admin/[leagueId]/reset-auction wipes the slot-unlock audit trail (teamSlotUnlocks) for the league in the same flow as the rest of the auction state (auctionOwnership, auctionClubOwnership, teamPenalties, auctionBids, auctionSessions, etc.). This keeps teams.bonusSlots=0 in lockstep with an empty audit trail.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/reset-auction/route.ts:38-83",
-          "src/app/api/admin/[leagueId]/restore-auction/route.ts:372"
+          "src/app/api/admin/[leagueId]/reset-auction/route.ts:51-58"
         ]
       },
       {
@@ -1080,9 +1079,9 @@
       },
       {
         "id": "AC-AUC-067",
-        "given": "Session cycleNumber=2",
-        "when": "applyNominationPenalty fires for team A",
-        "then": "a teamPenalties row exists with teamId=A, sessionId=session, incurredCycle=2, redeemedAt=null AND teams.penaltySlots for A increases by 1",
+        "given": "a league has accumulated teamSlotUnlocks rows from a prior auction run and an admin calls POST /reset-auction with action='initial'",
+        "when": "the handler runs",
+        "then": "after the call, teamSlotUnlocks for the league is empty (0 rows); teams.bonusSlots=0 for every non-ghost team; the finance ledger reflects this — no orphan slot-unlock outflows remain.",
         "linksTo": "BR-AUC-058"
       },
       {
@@ -1120,7 +1119,7 @@
       "id": "DEF-AUC-001",
       "title": "reset-auction 'initial' leaves orphan teamSlotUnlocks ledger rows",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "POST /api/admin/[leagueId]/reset-auction with resetTo='initial' (src/app/api/admin/[leagueId]/reset-auction/route.ts:38-83) wipes auctionBids, auctionSessions, auctionOwnership, auctionClubOwnership, teamPenalties, auctionScores and tradeProposals and resets teams.bonusSlots=0, but does NOT delete the teamSlotUnlocks audit/finance ledger rows for the league. The sibling restore-auction route DOES delete teamSlotUnlocks (src/app/api/admin/[leagueId]/restore-auction/route.ts:372), proving the table is part of auction state.",
@@ -1142,9 +1141,9 @@
       "pinningTestCases": [
         "TC-AUC-108"
       ],
-      "notes": "Fix is one extra line: await db.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId)); placed alongside the other deletes. Risk: low — the table is purely an audit log. Impact: re-runs of a league's initial auction produce duplicate/phantom finance entries which is misleading to admins/teams.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Fix is one extra line: await db.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId)); placed alongside the other deletes. Risk: low — the table is purely an audit log. Impact: re-runs of a league's initial auction produce duplicate/phantom finance entries which is misleading to admins/teams. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "POST /api/admin/[leagueId]/reset-auction now also deletes teamSlotUnlocks rows for the league (src/app/api/admin/[leagueId]/reset-auction/route.ts:51-58). Without this, a full reset left ghost 'Slot Unlock' outflows in the finance ledger that no longer matched any team's bonusSlots (which the same handler resets to 0). The reset now wipes auction state, the slot-unlock audit trail, and the team economy columns together so the ledger and team state stay consistent.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-AUC-002",
@@ -3320,8 +3319,8 @@
     {
       "id": "TC-AUC-108",
       "feature": "Reset Auction - Orphan Ledger (DEF-AUC-001)",
-      "scenario": "Regression: teamSlotUnlocks ledger rows survive resetTo='initial' (current behaviour)",
-      "type": "Regression",
+      "scenario": "reset-auction wipes teamSlotUnlocks alongside auctionOwnership / teamPenalties / teams.bonusSlots",
+      "type": "Positive",
       "priority": "P2",
       "preconditions": "League has teamSlotUnlocks rows for slots 15 and 16 (2 rows)",
       "testData": "body={resetTo:'initial'}",
@@ -3331,13 +3330,13 @@
         "3. SELECT teamSlotUnlocks count again",
         "4. SELECT teams.bonusSlots"
       ],
-      "expectedResult": "teamSlotUnlocks count still =2 after reset (orphaned ledger rows remain); teams.bonusSlots=0. This pins the current defective behaviour described in DEF-AUC-001 — after fix this test should be updated to expect 0 rows.",
+      "expectedResult": "After POST /api/admin/[leagueId]/reset-auction with action='initial' on a league that previously had teamSlotUnlocks rows: SELECT * FROM team_slot_unlocks WHERE leagueId=L returns 0 rows; teams.bonusSlots=0 for every team; the finance ledger no longer shows 'Slot Unlock' outflows from the previous auction run.",
       "postconditions": "Orphan ledger persists",
       "requirementId": "AC-AUC-065",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-AUC-001"
+      "notes": "[QA-VERIFY] Updated post-DEF-AUC-001 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-AUC-109",

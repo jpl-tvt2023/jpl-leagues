@@ -52,9 +52,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Global uniqueness check on teamLoginId
+    // Normalise to lowercase for case-insensitive storage + comparison
+    const normalizedLoginId = String(teamLoginId).toLowerCase();
+
+    // Global uniqueness check on teamLoginId (case-insensitive)
     const existingLoginId = await db.select().from(teams).where(
-      eq(teams.teamLoginId, teamLoginId)
+      sql`LOWER(${teams.teamLoginId}) = ${normalizedLoginId}`
     );
     if (existingLoginId.length > 0) {
       return NextResponse.json(
@@ -109,7 +112,7 @@ export async function POST(request: NextRequest) {
     const teamId = generateId();
     await db.insert(teams).values({
       id: teamId,
-      teamLoginId,
+      teamLoginId: normalizedLoginId,
       name: teamName,
       password: hashedPassword,
       mustChangePassword: true,
@@ -129,7 +132,7 @@ export async function POST(request: NextRequest) {
       message: "Team created successfully. Team must change password on first login.",
       team: {
         id: teamId,
-        teamLoginId,
+        teamLoginId: normalizedLoginId,
         name: teamName,
         group: group || null,
       },

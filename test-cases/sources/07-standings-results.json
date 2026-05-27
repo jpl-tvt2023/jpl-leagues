@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 3,
+    "version": 6,
     "businessContext": "Module 07 exposes the public standings READ endpoint (`GET /api/standings`) and the standings-shaping logic that aggregates already-persisted GW results into ranked tables. It covers three computation paths — TVT league-stage standings, Triple Crown PL standings (38 GWs, no bonus margin, leaguePoints stored authoritatively by the GW processor), and JPL Auction standings (pure cumulative-points race with payout history and squad-value tie-breakers). It also serves the rank-change indicator, the CBP tooltip (chips / bonus points / hit penalty), the qualification-zone legend used by the standings UI, and the Redis-backed page cache that fronts the response. The WRITE side (computing match points, bonus, payouts during GW processing) lives in module 05; UI rendering is module 17; playoffs are module 08; cup-group standings detail is deferred to module 09.",
     "userStories": [
       {
@@ -230,10 +230,10 @@
       },
       {
         "id": "BR-STAND-014",
-        "rule": "PL standings final sort order: `leaguePoints DESC`, then `pointsFor DESC`, then `cbpPoints DESC`. // CODE-CONFIRMED: may be a defect — the TVT scoring spec in `tvt/scoring.ts:215-246` documents a 4-tier tiebreaker (Overall Points → Max Wins → Head-to-Head → Bonus Points) which the route does not implement.",
+        "rule": "GET /api/standings sorts teams within each group using the canonical TVT 4-tier tiebreaker: 1) Overall Points (leaguePoints) DESC, 2) Max Wins DESC, 3) Head-to-Head match points DESC (the points each team earned against the other using W=2/D=1/L=0), 4) Bonus Points DESC. Matches the spec at src/lib/formats/tvt/scoring.ts:215-246. The previously-used pointsFor and cbpPoints tiers are no longer part of the sort.",
         "sourceRefs": [
-          "jpl-leagues/src/app/api/standings/route.ts:616-620",
-          "jpl-leagues/src/lib/formats/tvt/scoring.ts:215-246"
+          "src/app/api/standings/route.ts:626-660",
+          "src/lib/formats/tvt/scoring.ts:215-246"
         ]
       },
       {
@@ -408,10 +408,10 @@
       },
       {
         "id": "BR-STAND-038",
-        "rule": "Standings response is fronted by a Redis cache keyed `standings:v2:{leagueId}` with TTL = `PAGE_CACHE_TTL`; cache hits short-circuit ALL DB computation and the cached value is returned verbatim. // CODE-CONFIRMED: may be a defect — the cache key does NOT include `group` or `leagueSlug`, so a cached response built with no `group` filter will be returned even when the caller passes `?group=B` (and vice-versa).",
+        "rule": "GET /api/standings caches the FULL (unfiltered) standings payload per leagueId. When a `group` query parameter is supplied, BOTH the cache read and the cache write are skipped — the response is computed fresh from the DB and never written back. This prevents (a) returning the wrong group's slice from a cached unfiltered payload, and (b) a group-filtered response from poisoning the slot for subsequent unfiltered callers. Cache-key shape in fpl-cache.ts is unchanged.",
         "sourceRefs": [
-          "jpl-leagues/src/app/api/standings/route.ts:102-108",
-          "jpl-leagues/src/lib/fpl-cache.ts:363-378"
+          "src/app/api/standings/route.ts:104-115",
+          "src/app/api/standings/route.ts:693-699"
         ]
       },
       {
@@ -424,9 +424,9 @@
       },
       {
         "id": "BR-STAND-040",
-        "rule": "Top-level try/catch swallows ANY computation error and returns an empty standings payload `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }` with HTTP 200. // CODE-CONFIRMED: may be a defect — masking server errors as 200/empty makes failures invisible to clients and to monitoring; defaults of 30/32 also leak even for 8-team leagues.",
+        "rule": "GET /api/standings catch block returns HTTP 500 with body { error: string, detail: string }. The magic-defaults stub ({ groupA:[], groupB:[], leagueStageEnd:30, teamSize:32, groupsRevealed:false }) is gone — it masked real server errors by serving them as 200 OK. Empty-league cases (no fixtures yet) are handled in the happy path and return 200 with the league's real teamSize/leagueStageEnd.",
         "sourceRefs": [
-          "jpl-leagues/src/app/api/standings/route.ts:680-690"
+          "src/app/api/standings/route.ts:697-709"
         ]
       },
       {
@@ -538,16 +538,16 @@
       },
       {
         "id": "AC-STAND-014",
-        "given": "two TVT teams tied on `leaguePoints` and `pointsFor` but team A has higher `cbpPoints`",
-        "when": "standings are sorted",
-        "then": "team A appears above team B",
+        "given": "two teams T1 and T2 are tied on leaguePoints=15 and wins=5; T1 beat T2 6-2 head-to-head (2 match points for T1, 0 for T2)",
+        "when": "GET /api/standings sorts the group",
+        "then": "T1 ranks above T2 regardless of pointsFor / bonusPoints. The 3rd-tier (H2H) tiebreaker resolves the ordering before the 4th-tier (bonusPoints) is consulted.",
         "linksTo": "BR-STAND-014"
       },
       {
         "id": "AC-STAND-015",
-        "given": "two TVT teams tied on `leaguePoints` but team A has 5 wins and team B has 6 wins (same `pointsFor`)",
-        "when": "standings are sorted",
-        "then": "the current code ranks them by `pointsFor` first and ignores the wins-based tiebreaker documented in `tvt/scoring.ts` — flag DEF-STAND-001",
+        "given": "two teams T1 and T2 are tied on leaguePoints, wins AND H2H match points; T1 has bonusPoints=4, T2 has bonusPoints=2",
+        "when": "GET /api/standings sorts the group",
+        "then": "T1 ranks above T2 via the 4th-tier bonusPoints tiebreaker. If bonusPoints is also tied, ordering is stable per Array.sort with the ties unresolved (the 4-tier rule terminates here).",
         "linksTo": "BR-STAND-014"
       },
       {
@@ -713,16 +713,16 @@
       },
       {
         "id": "AC-STAND-039",
-        "given": "Redis cache contains a payload built from a request with no `group` filter",
-        "when": "the client requests `GET /api/standings?leagueSlug=foo&group=B`",
-        "then": "the cached (unfiltered) payload is returned even though it includes group A teams — flag DEF-STAND-003",
+        "given": "a client first calls GET /api/standings?leagueSlug=X (caches the full payload) then GET /api/standings?leagueSlug=X&group=A",
+        "when": "the standings route runs each request",
+        "then": "the second call computes a fresh group-filtered payload from the DB and returns it; the first call's cached payload is untouched; a subsequent third unfiltered call still hits the cache and gets the full payload.",
         "linksTo": "BR-STAND-038"
       },
       {
         "id": "AC-STAND-040",
-        "given": "the DB throws inside the standings computation",
-        "when": "the route catches the error",
-        "then": "HTTP 200 is returned with `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }` — flag DEF-STAND-004",
+        "given": "a client GETs /api/standings during a DB outage or with a malformed row that causes a thrown exception in the handler",
+        "when": "the catch block fires",
+        "then": "HTTP 500 with body { error, detail } describing the failure; the previous 200-with-stub response shape is gone. Empty-league (no fixtures) still returns 200 with empty arrays AND the league's real teamSize/leagueStageEnd values, not the hardcoded 32/30 defaults.",
         "linksTo": "BR-STAND-040"
       },
       {
@@ -767,7 +767,7 @@
       "id": "DEF-STAND-001",
       "title": "PL standings tiebreaker diverges from documented 4-tier rule (missing max-wins and head-to-head)",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "The `/api/standings` route sorts teams by `leaguePoints DESC → pointsFor DESC → cbpPoints DESC` (src/app/api/standings/route.ts:616-620). However the TVT scoring spec at src/lib/formats/tvt/scoring.ts:215-246 defines the league-stage tiebreaker as 1) Overall Points, 2) Max Wins, 3) Head-to-Head, 4) Bonus Points. Neither `wins`, `headToHeadRecord`, nor `bonusPoints` are used by the standings sort. Two teams tied on league points and points-for will be ordered by chips+bonus, which can flip the documented ranking.",
@@ -789,9 +789,9 @@
       "pinningTestCases": [
         "TC-STAND-023"
       ],
-      "notes": "Options: (a) replace the standings sort with `compareTiebreaker` from tvt/scoring.ts (requires materialising W and H2H records here); (b) update the spec to match the simpler sort if product owner approves. Risk: any cup-tied podium decided by current sort may be product-incorrect. Cross-check with playoffs.ts which uses its own `getGroupStandings`.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Options: (a) replace the standings sort with `compareTiebreaker` from tvt/scoring.ts (requires materialising W and H2H records here); (b) update the spec to match the simpler sort if product owner approves. Risk: any cup-tied podium decided by current sort may be product-incorrect. Cross-check with playoffs.ts which uses its own `getGroupStandings`. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "Standings sort now uses the canonical 4-tier TVT tiebreaker from src/lib/formats/tvt/scoring.ts:215-246: leaguePoints DESC -> wins DESC -> head-to-head match points DESC -> bonusPoints DESC. Each TeamStanding now carries a `headToHeadRecord: Record<opponentTeamId, matchPts>` built during the fixture loop (W=2, D=1, L=0 against each opponent). The field is internal-only — toResponseRow strips it before serialization so the public API shape is unchanged. Replaces the previous (leaguePoints, pointsFor, cbpPoints) sort that diverged from the documented rule.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-STAND-002",
@@ -825,7 +825,7 @@
       "id": "DEF-STAND-003",
       "title": "Redis standings cache key ignores `group` filter so cached payloads bleed across group views",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "`getCachedStandings`/`setCachedStandings` use the key `standings:v2:{leagueId}` (src/lib/fpl-cache.ts:365-378). The standings route applies the `group` query param AFTER the cache lookup (src/app/api/standings/route.ts:102-108 vs 332-335), so a payload cached from an unfiltered request is returned verbatim to a caller asking for `?group=B`, and vice-versa. The cache also does not key on `leagueSlug` vs `leagueId` aliasing.",
@@ -846,15 +846,15 @@
       "pinningTestCases": [
         "TC-STAND-052"
       ],
-      "notes": "Trivial fix; bump cache version (STANDINGS_CACHE_VERSION) when shipping. Impact today is minimal because the UI generally doesn't pass `group`, but any deep-link that does will be broken.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Trivial fix; bump cache version (STANDINGS_CACHE_VERSION) when shipping. Impact today is minimal because the UI generally doesn't pass `group`, but any deep-link that does will be broken. [DEV] Self-verified: tsc clean for touched files, manual diff review clean. Awaiting QA re-run of TC-STAND-052. [QA] Re-run TC-STAND-052 — the second response (with ?group=B) should now bypass the cache and return only group-B teams; expected behaviour now matches AC-STAND-039 (after inversion to confirm the fix). [BA] BR-STAND-038 / AC-STAND-039 text should be updated: cache reads AND writes are now skipped when a `group` filter is present (chose bypass over a group-suffixed key because group-filtered requests are rare and a per-group key would fragment the cache). [QA-VERIFIED]: 2026-05-26 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-26 — BR/AC text refreshed.",
+      "resolution": "Gated both the cache read (src/app/api/standings/route.ts:104-115) and the TVT cache write (src/app/api/standings/route.ts:693-699) on `!group`. When a group filter is present the route now bypasses Redis on both sides, so a filtered response cannot poison the unfiltered slot and an unfiltered cached entry cannot be served to a filtered caller. Chose bypass over a group-suffixed key because group-filtered requests are uncommon and a separate key would fragment the cache for negligible benefit.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-STAND-004",
       "title": "Top-level catch returns HTTP 200 with stub payload, masking real errors",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "Any exception thrown during standings computation is swallowed and the response is HTTP 200 with `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }` (src/app/api/standings/route.ts:680-690). This hides DB failures, drizzle relational errors, transient FPL/cache issues, and prevents Sentry/UI from differentiating a real outage from a brand-new league with no fixtures. The defaulted `leagueStageEnd: 30` / `teamSize: 32` also leak even for 8-team leagues.",
@@ -873,9 +873,9 @@
       "pinningTestCases": [
         "TC-STAND-053"
       ],
-      "notes": "Risk: silent regressions during deploys; on-call sees no alerts. Suggested fix: tighten the catch to known empty-state cases or return `{ status: 500, error }` for unknown failures.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Risk: silent regressions during deploys; on-call sees no alerts. Suggested fix: tighten the catch to known empty-state cases or return `{ status: 500, error }` for unknown failures. [DEV] Self-verified: tsc clean for touched files, manual diff review clean. Awaiting QA re-run of TC-STAND-053. [QA] Re-run TC-STAND-053 — a DB error injected inside the standings computation should now produce HTTP 500 with body `{ error: 'Failed to compute standings', detail: <message> }`, not the old 200/stub. The 'no fixtures yet' case is handled organically by the happy path (empty groups with the league's real teamSize/leagueStageEnd) and never reaches the catch. [BA] BR-STAND-040 / AC-STAND-040 must be rewritten: the catch now returns HTTP 500 with `{ error, detail }`, and the magic defaults (leagueStageEnd:30, teamSize:32, groupsRevealed:false) are gone. AC-STAND-040 currently asserts the stub shape and must be inverted. [QA-VERIFIED]: 2026-05-26 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-26 — BR/AC text refreshed.",
+      "resolution": "Replaced the swallow-all catch with a proper HTTP 500 response carrying `{ error: 'Failed to compute standings', detail: <message> }` (src/app/api/standings/route.ts:697-709). The defaulted 32/30 stub is gone — the empty-league case is handled organically by the happy path (zero teams produces empty groupA/groupB with the league's real teamSize and leagueStageEnd, so it never hits the catch). Server errors are now visible to clients and monitoring.",
+      "resolutionDate": "2026-05-26"
     },
     {
       "id": "DEF-STAND-005",
@@ -1355,8 +1355,8 @@
     {
       "id": "TC-STAND-023",
       "feature": "PL tie-breakers (regression)",
-      "scenario": "DEF-STAND-001 pin: wins-based tiebreaker ignored",
-      "type": "Regression",
+      "scenario": "Standings sort uses canonical 4-tier tiebreaker (leaguePoints -> wins -> H2H -> bonusPoints)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Teams Alpha and Bravo same leaguePoints=30; Alpha 6W/2D/0L pointsFor=580; Bravo 5W/4D/0L pointsFor=600 (Bravo higher pointsFor but fewer wins)",
       "testData": "leagueSlug=tvt-2026",
@@ -1364,13 +1364,13 @@
         "1. GET /api/standings?leagueSlug=tvt-2026",
         "2. Verify ordering of Alpha and Bravo"
       ],
-      "expectedResult": "Bravo ranks above Alpha (current code uses pointsFor tiebreaker, ignoring the documented max-wins rule). Defect pinned.",
+      "expectedResult": "Two teams tied on leaguePoints AND wins are resolved by head-to-head match points (W=2, D=1, L=0 each direction). Only when those are also equal does bonusPoints break the tie. The old (pointsFor, cbpPoints) tiebreaker is no longer used.",
       "postconditions": "",
       "requirementId": "AC-STAND-015",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-STAND-001"
+      "notes": "[QA-VERIFY] Updated post-DEF-STAND-001 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-STAND-024",
@@ -1939,8 +1939,8 @@
     {
       "id": "TC-STAND-052",
       "feature": "Standings cache - group bleed (regression)",
-      "scenario": "DEF-STAND-003 pin: cached unfiltered payload returned to a ?group=B request",
-      "type": "Regression",
+      "scenario": "Group-filtered standings request bypasses the Redis cache (read + write)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Cache `standings:v2:{leagueId}` contains an unfiltered payload built from a previous /api/standings?leagueSlug=foo request (both groupA and groupB populated)",
       "testData": "leagueSlug=foo, then leagueSlug=foo&group=B",
@@ -1949,19 +1949,19 @@
         "2. Issue GET /api/standings?leagueSlug=foo&group=B",
         "3. Inspect groupA and groupB in the second response"
       ],
-      "expectedResult": "Second response is identical to first (still contains groupA group-A teams) even though ?group=B was requested. Defect pinned.",
+      "expectedResult": "GET /api/standings?leagueSlug=X&group=A bypasses both the cache read AND the cache write — so a Group A request cannot read a previously-cached unfiltered payload and cannot poison the cache for subsequent unfiltered requests. Unfiltered requests still cache as before.",
       "postconditions": "",
       "requirementId": "AC-STAND-039",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-STAND-003"
+      "notes": "[QA-VERIFY] Updated post-DEF-STAND-003 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-STAND-053",
       "feature": "Top-level catch (regression)",
-      "scenario": "DEF-STAND-004 pin: DB error swallowed, 200 with stub payload returned",
-      "type": "Regression",
+      "scenario": "Unhandled standings error returns HTTP 500 with diagnostic body (not 200 with stub)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Force DB layer to throw inside the standings computation (e.g., mock drizzle to reject)",
       "testData": "leagueSlug=tvt-2026 (causing DB error)",
@@ -1970,13 +1970,13 @@
         "2. GET /api/standings?leagueSlug=tvt-2026",
         "3. Capture HTTP status and JSON body"
       ],
-      "expectedResult": "HTTP 200 with body `{ groupA: [], groupB: [], leagueStageEnd: 30, teamSize: 32, groupsRevealed: false }`; error logged server-side. Defect pinned.",
+      "expectedResult": "When the handler throws (DB connection failure, malformed row, etc.), the catch block returns HTTP 500 with { error, detail } — NOT HTTP 200 with the previous { groupA:[], groupB:[], leagueStageEnd:30, teamSize:32, groupsRevealed:false } stub. The 'no fixtures yet' empty-league case is handled organically by the happy path and still returns 200 with the league's real teamSize/leagueStageEnd values.",
       "postconditions": "",
       "requirementId": "AC-STAND-040",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-STAND-004"
+      "notes": "[QA-VERIFY] Updated post-DEF-STAND-004 fix on 2026-05-26 — retagged Regression -> Positive."
     },
     {
       "id": "TC-STAND-054",

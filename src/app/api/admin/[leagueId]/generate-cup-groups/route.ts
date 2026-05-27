@@ -300,49 +300,57 @@ export async function DELETE(request: NextRequest) {
 
     const cupGroupIds = cupGroups.map((g) => g.id);
 
-    // Find all cup-group fixtures and delete their results first
+    // Find all cup-group fixtures (reads can run outside the transaction —
+    // we only need a consistent snapshot when the writes start). PL group
+    // lookup is also a read.
     const cupFixtures = await db.select().from(fixtures).where(
       eq(fixtures.competitionType, "cup-group")
     );
     const leagueCupFixtures = cupFixtures.filter((f) => cupGroupIds.includes(f.groupId || ""));
     const fixtureIds = leagueCupFixtures.map((f) => f.id);
 
-    // Delete results for cup fixtures
-    for (const fixtureId of fixtureIds) {
-      await db.delete(results).where(eq(results.fixtureId, fixtureId));
-    }
-
-    // Delete cup fixtures
-    for (const fixtureId of fixtureIds) {
-      await db.delete(fixtures).where(eq(fixtures.id, fixtureId));
-    }
-
-    // Delete ghost teams (isGhost = true for this league)
-    await db.delete(teams).where(
-      and(eq(teams.leagueId, leagueId), eq(teams.isGhost, true))
-    );
-
-    // Reassign human teams back to PL group (or null if no PL group exists)
     const plGroup = await db.select().from(groups).where(
       and(eq(groups.leagueId, leagueId), eq(groups.groupType, "pl"))
     );
     const plGroupId = plGroup.length > 0 ? plGroup[0].id : null;
 
-    for (const cupGroupId of cupGroupIds) {
-      const cupTeams = await db.select().from(teams).where(
-        and(eq(teams.groupId, cupGroupId), eq(teams.isGhost, false))
-      );
-      for (const team of cupTeams) {
-        await db.update(teams)
-          .set({ groupId: plGroupId })
-          .where(eq(teams.id, team.id));
+    // All destructive writes run inside one transaction so a partial failure
+    // (cup fixtures wiped but ghost teams left behind, etc.) rolls back to a
+    // consistent pre-DELETE state. Previously each delete/update was
+    // independent and could orphan rows on mid-flow failure.
+    await db.transaction(async (tx) => {
+      // Delete results for cup fixtures
+      for (const fixtureId of fixtureIds) {
+        await tx.delete(results).where(eq(results.fixtureId, fixtureId));
       }
-    }
 
-    // Delete cup groups
-    for (const cupGroupId of cupGroupIds) {
-      await db.delete(groups).where(eq(groups.id, cupGroupId));
-    }
+      // Delete cup fixtures
+      for (const fixtureId of fixtureIds) {
+        await tx.delete(fixtures).where(eq(fixtures.id, fixtureId));
+      }
+
+      // Delete ghost teams (isGhost = true for this league)
+      await tx.delete(teams).where(
+        and(eq(teams.leagueId, leagueId), eq(teams.isGhost, true))
+      );
+
+      // Reassign human teams back to PL group (or null if no PL group exists)
+      for (const cupGroupId of cupGroupIds) {
+        const cupTeams = await tx.select().from(teams).where(
+          and(eq(teams.groupId, cupGroupId), eq(teams.isGhost, false))
+        );
+        for (const team of cupTeams) {
+          await tx.update(teams)
+            .set({ groupId: plGroupId })
+            .where(eq(teams.id, team.id));
+        }
+      }
+
+      // Delete cup groups
+      for (const cupGroupId of cupGroupIds) {
+        await tx.delete(groups).where(eq(groups.id, cupGroupId));
+      }
+    });
 
     await invalidateLeaguePageCache(leagueId);
 

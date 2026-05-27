@@ -1,0 +1,482 @@
+{
+  "DEF-AUTH-001": {
+    "title": "Change-password page accepted weaker passwords than the server allowed",
+    "summary": "The change-password screen accepted passwords that the server then turned around and rejected. A user could fill in a password the page seemed happy with, click Save, and get a confusing 400 error back from the API.",
+    "fix": "The on-page password rules were brought in line with the server's rules — the same 8-character minimum plus a required digit or special character — so the page tells the user about a weak password before they ever click Save.",
+    "example": "Before: typing 'sixchr' on the change-password page passed validation but the server then rejected it with a 400 error. After: the page itself shows the error inline before the user clicks Save."
+  },
+  "DEF-04-001": {
+    "title": "Auction team could reset its own purse back to full",
+    "summary": "In an auction league, a team that had already spent purse on players could go back to the profile setup page and refill its wallet to the full starting budget, while still keeping the players it had bought.",
+    "fix": "The setup page now only sets a team's purse the first time setup is completed. After that, re-saving the page can only change cosmetic details like the team name — the wallet, spending, refunds and income totals stay untouched.",
+    "example": "Before: a team spent 60 of its 100 purse, then re-saved the setup page and was back to 100 purse with the players still on its squad. After: re-saving the setup page leaves the purse at 40 and the squad intact."
+  },
+  "DEF-BACKUP-004": {
+    "title": "An auction-league restore could leave the league half-restored",
+    "summary": "Restoring an auction-league backup ran a long sequence of deletes and inserts with no safety net. If anything failed partway through, some tables were wiped and others were left empty — the league was stuck in an unusable in-between state that needed manual database surgery to fix.",
+    "fix": "The whole restore now runs as one atomic operation. Either everything is restored cleanly, or nothing is changed at all and the admin gets a clear error.",
+    "example": "Before: a restore failure left the league with squads wiped but bids and sessions empty, and no rollback. After: the same failure leaves the league exactly as it was before the admin clicked Restore."
+  },
+  "DEF-CHIP-006": {
+    "title": "Chip wipe could destroy every league's chips, not just the current one",
+    "summary": "When an admin used the chip-import \"clear\" action, it deleted chip submissions across every league on the platform instead of only the admin's own league. It also left some newer chip types stuck as \"used\" even after the clear.",
+    "fix": "The clear is now strictly limited to the admin's league, and it resets all six chip types (not just three) so the team can re-import correctly.",
+    "example": "Before: admin of League A clicked Clear; teams in League B suddenly lost all their chip history. After: only League A's chips are removed; League B is untouched."
+  },
+  "DEF-LEAGUE-001": {
+    "title": "TVT-8 leagues looked like they had no playoff weeks (false alarm)",
+    "summary": "A reading of the league-creation defaults suggested that 8-team leagues had zero playoff gameweeks scheduled, meaning Semi-finals and Final would have nowhere to play.",
+    "fix": "Investigation showed the default was actually correct: 8-team leagues play Semi-finals in week 36 and the Final plus 3rd-place play-off across weeks 37 and 38. The misread was corrected in the requirements documentation; no code change was needed.",
+    "example": "Before: documentation said the format was unshippable. After: the format runs as designed — Semi-finals at GW36, then Final (two legs) at GW37+38, plus 3rd-place playoff alongside."
+  },
+  "DEF-PLAYOFF-003": {
+    "title": "Restoring a TVT league left stale playoff brackets behind",
+    "summary": "After restoring a TVT-league backup, the playoff bracket from the previous season was still attached. The new fixtures were correct but the bracket showed stale winners, and the admin had no clean way to recover without database access.",
+    "fix": "The restore now also clears the old playoff bracket and any Challenger Cup entries, so the league comes back in a clean pre-playoff state that lines up with the restored fixtures.",
+    "example": "Before: after a restore, the public bracket page showed last season's Final winner against this season's restored fixtures — a Frankenstein view. After: the bracket is empty and the admin can regenerate cleanly."
+  },
+  "DEF-SUPER-006": {
+    "title": "Score correction didn't update standings or payouts",
+    "summary": "When a superadmin manually adjusted a team's points for a gameweek, the new total was saved but the leaderboard rank and the prize-money payout for that week never recalculated. The team's row showed the new score but ranked in the wrong place.",
+    "fix": "The correction now re-sorts every team in the affected gameweek, recomputes payouts, and updates each affected team's wallet and income totals — all in a single atomic step.",
+    "example": "Before: adjusting Team B's score above Team A's left Team A still listed as the gameweek winner with the larger prize. After: the leaderboard flips, prize money moves to Team B's wallet, and Team A's wallet is debited accordingly."
+  },
+  "DEF-04-002": {
+    "title": "Re-saving the setup page could swap a team's two players",
+    "summary": "When a team re-submitted the setup wizard, the two players in the squad could get silently swapped — Player 1's name might end up attached to Player 2's stats and vice versa.",
+    "fix": "The wizard now reads existing players in a strict, predictable order so the same player input always maps to the same database row no matter how many times the page is saved.",
+    "example": "Before: re-saving with Salah/Haaland sometimes flipped them so Haaland was now identified as Player 1. After: Player 1 always remains Player 1, Player 2 always remains Player 2."
+  },
+  "DEF-04-003": {
+    "title": "Two teams could register login IDs that differed only by capitalisation",
+    "summary": "The platform treated 'Rahul99' and 'rahul99' as different login IDs, but team-name uniqueness was case-insensitive. Two people could end up with very similar credentials, causing ambiguity at the sign-in screen.",
+    "fix": "All login-ID checks and stored values are now case-insensitive across team setup, single-team create, single-team edit, and bulk upload — matching how team-name uniqueness already worked.",
+    "example": "Before: 'Rahul99' was already taken, but trying 'rahul99' succeeded — and either user might end up signing into the other's team. After: the second registration is rejected as a duplicate."
+  },
+  "DEF-AUC-001": {
+    "title": "Resetting an auction left ghost slot-purchase entries in the ledger",
+    "summary": "When an admin reset an auction back to its starting state, the bonus-slot purchase history was not cleared. The finance ledger continued to show large slot-unlock spends that no longer matched any actual slot a team owned.",
+    "fix": "A full reset now also wipes the slot-purchase audit trail along with the rest of the auction state, so the ledger and the team's slot count stay in sync.",
+    "example": "Before: after reset, Team A's bonus slot count was back to zero but the ledger still showed a £10M slot-unlock outflow. After: the ledger is empty in step with the team state."
+  },
+  "DEF-BACKUP-001": {
+    "title": "Admins could not delete saved backups via the API",
+    "summary": "There was no way to delete an old backup snapshot through the API — the endpoint existed for reading but not for removing. Admins who wanted to prune their backup list had to go directly to the database.",
+    "fix": "Added a proper delete endpoint that requires admin authorisation, confirms the backup belongs to the league, and removes it cleanly.",
+    "example": "Before: clicking Delete on a backup in the admin UI returned a 405 error. After: the same click removes the backup row in one call."
+  },
+  "DEF-BACKUP-002": {
+    "title": "Saved-snapshot restore skipped the format-mismatch check",
+    "summary": "Restoring a backup from a multipart upload correctly refused if the backup was for a different format (e.g., trying to restore a TVT backup into a Triple Crown league). But the same restore, when triggered by selecting a saved snapshot, silently skipped that check.",
+    "fix": "The saved-snapshot path now also enforces the format check by inferring the original format from the snapshot's contents, so cross-format restores are blocked on both routes.",
+    "example": "Before: selecting an old TVT snapshot for a now-auction league restored it and corrupted the league. After: the same selection is refused with a clear format-mismatch error."
+  },
+  "DEF-BACKUP-003": {
+    "title": "Restoring an empty backup silently wiped the league's fixtures",
+    "summary": "If the uploaded backup happened to contain zero fixtures, the restore still wiped every fixture from the target league before trying to insert the empty list — leaving the league with no fixtures at all and no warning to the admin.",
+    "fix": "The restore now refuses upfront when the backup contains no fixtures, returning a clear error and leaving the league's existing fixtures untouched.",
+    "example": "Before: uploading a backup with an empty fixtures sheet returned 'success: 0 fixtures restored' and the league's real fixtures were gone. After: the restore is rejected with a guardrail message and nothing is wiped."
+  },
+  "DEF-CHIP-001": {
+    "title": "Cancelling a chip could affect the wrong league's gameweek",
+    "summary": "When a team cancelled a chip submission, the system looked up the gameweek by its number alone (e.g., 'GW7') without checking which league it belonged to. In a multi-league deployment this could find a different league's gameweek and operate on the wrong data.",
+    "fix": "The cancel operation now finds the gameweek by both number AND the team's own league, eliminating the cross-league mix-up.",
+    "example": null
+  },
+  "DEF-CHIP-002": {
+    "title": "Cancelling a chip didn't free up the chip slot for re-use",
+    "summary": "When a team cancelled a chip submission, the chip row was deleted but the team's 'chip already used' flag stayed set. The team was effectively locked out of submitting any other chip for that set of gameweeks.",
+    "fix": "Cancelling a chip now clears the corresponding chip-used flag in the same operation, so the team can submit a different chip in the same period.",
+    "example": "Before: a team submitted Double Pointer in GW5, cancelled it the next day, then could not submit any chip in GW6 because the slot was still marked used. After: cancelling frees the slot and the team can re-submit."
+  },
+  "DEF-CHIP-003": {
+    "title": "Admin chip overrides used the wrong week boundaries for 8-team leagues",
+    "summary": "The admin chip-override screen used hard-coded gameweek boundaries (GW1-15 and GW16-30) when matching existing chip submissions. For 8-team leagues — which have different chip-set boundaries — this caused the override to miss the correct row and could create duplicate chip records.",
+    "fix": "Boundaries are now derived from the league's actual playoff-start gameweek, so the override matches the right rows for every league size.",
+    "example": null
+  },
+  "DEF-CHIP-004": {
+    "title": "Admin chip override could target the wrong league's gameweek",
+    "summary": "The admin chip-override endpoint looked up gameweeks by number alone, with no league filter. In a multi-league deployment this could write chip records against a different league's gameweek row.",
+    "fix": "The override now matches gameweeks by both number and the admin's authorised league. The auto-create branch also uses the league's actual playoff-start gameweek to decide if the row is a playoff one.",
+    "example": null
+  },
+  "DEF-CHIP-005": {
+    "title": "Admin chip-override page hid three of the six chip types",
+    "summary": "The admin override page could only display and edit three older chip types (Double Pointer, Challenge Chip, Win-Win). The three newer chip types (Score Lock, Comeback, Underdog) existed in the database but never appeared in the override UI, so admins couldn't see or correct their state.",
+    "fix": "The page now lists every chip type that the league has enabled, with friendly labels derived from the league's actual gameweek configuration.",
+    "example": "Before: an admin trying to undo a wasted Score Lock had no way to see it on the override page. After: all six chips are visible per set, gated by which ones the league turned on."
+  },
+  "DEF-CHIP-007": {
+    "title": "Captaincy chip-count cap was wrong for 8-team leagues",
+    "summary": "Every player has a per-season captaincy cap (15 chips for TVT, 19 for Triple Crown). The cap was applied using a hard-coded gameweek cut-off (GW30) for non-Triple-Crown leagues. For 8-team leagues — whose league stage runs to GW35 — captaincies in weeks 31-35 were treated as 'playoff' (unlimited) when they should still have counted against the 15-per-player cap.",
+    "fix": "The cut-off is now derived from each league's actual playoff-start gameweek, so the cap is applied correctly for every league variant.",
+    "example": "Before: in an 8-team league, a player could be captained 20+ times across the season without ever hitting the 15 cap. After: the cap kicks in at GW35 as designed."
+  },
+  "DEF-ECON-001": {
+    "title": "Any logged-in team could read any other team's private finances",
+    "summary": "The endpoint that returned a team's full economy — starting budget, current balance, total spent, total income, refunds, and per-gameweek prize-money history — required only that the requester was signed in, with no check that they actually owned the team they were asking about. Any team or admin could read any other team's private financial history.",
+    "fix": "The endpoint now enforces strict access control: a team can only read its own economy, an admin can only read teams in leagues they administer, and a superadmin can read any team.",
+    "example": "Before: a curious manager could browse a rival's spending and income at will. After: that request returns a 403 Forbidden."
+  },
+  "DEF-ECON-002": {
+    "title": "Score-adjustment screen silently rejected legitimate fractional bonus values",
+    "summary": "A superadmin trying to adjust a team's bonus points to a fractional value (like 6.5, because synergy bonuses are naturally half-points) was silently treated as if they'd entered nothing — the form then complained that no value was provided.",
+    "fix": "Fractional synergy values are now accepted within sensible limits, since the underlying column stores decimals. The other bonus field, which is always whole numbers, still requires integers.",
+    "example": "Before: typing synergyBonus = 6.5 produced 'Provide at least one of synergyBonus or clubResultBonus'. After: the same value saves cleanly."
+  },
+  "DEF-GWFIX-001": {
+    "title": "Triple Crown fixture generation didn't enforce the 20-team rule",
+    "summary": "Triple Crown leagues are designed around exactly 20 teams playing twice — for a 38-gameweek season. If an admin tried to generate fixtures with any other team count, the system silently produced a malformed schedule (too many or too few gameweeks) rather than refusing.",
+    "fix": "Fixture generation now hard-checks that the league has exactly 20 teams and returns a clear error if not.",
+    "example": "Before: a 10-team Triple Crown league produced 18 gameweeks of fixtures with no warning. After: the admin gets a 400 error explaining that Triple Crown requires 20 teams."
+  },
+  "DEF-GWFIX-002": {
+    "title": "Fixture generation could set every gameweek's deadline to right now",
+    "summary": "If an admin clicked Generate Fixtures without first running the FPL gameweek-import step, the system silently created every gameweek with its deadline set to the moment the admin clicked the button — instead of the real Premier League deadlines.",
+    "fix": "Fixture generation now refuses to run if the league's gameweeks haven't been imported with real FPL deadlines first, and tells the admin which step to run.",
+    "example": "Before: an admin pressed Generate Fixtures on a fresh league and every weekly deadline ended up at the same timestamp. After: the admin is told to run Create Gameweeks first and the real Premier League deadlines come through."
+  },
+  "DEF-GWFIX-003": {
+    "title": "Bulk fixture upload made up the wrong gameweek deadlines",
+    "summary": "Uploading fixtures via spreadsheet would invent gameweek deadlines as 'today plus N weeks' if the gameweek didn't already exist — instead of the real Premier League deadlines. It also misclassified playoff weeks when the league's playoff-start setting hadn't been configured.",
+    "fix": "The upload now rejects rows whose gameweek doesn't exist (with a clear message to run the proper import step first), and refuses to file playoff-range fixtures when playoff settings are missing.",
+    "example": null
+  },
+  "DEF-GWFIX-004": {
+    "title": "Bulk fixture re-upload could destroy the playoff bracket",
+    "summary": "Using the 'clear existing' option on a fixture re-upload deleted everything, including the playoff fixtures that had been generated separately. An admin who only wanted to refresh the league-stage matches would unknowingly lose their entire playoff bracket.",
+    "fix": "The clear-existing option now only removes league-stage fixtures and preserves the playoff bracket, matching how the delete-fixtures button already worked.",
+    "example": "Before: re-uploading a league's regular-season CSV with 'clear existing' on wiped the playoff QFs, SFs and Final the admin had already drawn up. After: only the regular-season fixtures are replaced; the bracket survives."
+  },
+  "DEF-GWFIX-005": {
+    "title": "Manually processing a gameweek could score the wrong league",
+    "summary": "When an admin manually triggered the scoring run for a gameweek but forgot to specify which league, the system would silently pick whichever league happened to be first in the database — and could run the wrong format's scoring engine against the wrong data.",
+    "fix": "The endpoint now requires the league to be specified and rejects calls that don't include it with a clear error.",
+    "example": "Before: a manual GW8 retry without a league ID could end up rewriting League B's standings instead of League A's. After: the same call returns a 400 telling the admin to include the league."
+  },
+  "DEF-LEAGUE-002": {
+    "title": "Editing a league's chip list bypassed the validation rules",
+    "summary": "Creating a league enforced strict chip-list rules (exactly 3 unique entries from a fixed set). But editing a league's chip list afterwards accepted any array — including empty lists, duplicates, or made-up chip codes — and silently saved them, breaking chip submission mid-season.",
+    "fix": "The edit endpoint now applies the same validation as the create endpoint, and refuses to update chips on non-TVT leagues at all.",
+    "example": "Before: a superadmin could edit a TVT league's chip list to a 4-entry or empty array and the team-side chip submission would then mysteriously stop working. After: the same edit is rejected with a clear validation error."
+  },
+  "DEF-PLAYOFF-001": {
+    "title": "Public bracket showed different match-ups than the actual draw",
+    "summary": "For 32-team TVT leagues, the Challenger Cup's first-round match-ups shown on the public bracket page were not the same as the match-ups that would actually be drawn when the admin clicked Generate Playoffs. Two different versions of the bracket coexisted in different parts of the code.",
+    "fix": "The public bracket and the draw now share one canonical seeding table, so the preview always matches what will be generated.",
+    "example": "Before: the public page showed C-31-B as one pairing while the live draw produced a different pairing for the same match. After: both views are identical."
+  },
+  "DEF-PLAYOFF-002": {
+    "title": "Deleting playoffs left stale brackets behind",
+    "summary": "When an admin clicked Delete Playoffs intending to start the bracket over, only the first-round matches were removed. Any later rounds the admin had already advanced (Quarter-finals, Semi-finals, Final, Challenger Cup) stayed in the database. When the admin then regenerated, the bracket ended up in a tangled state.",
+    "fix": "Delete Playoffs now wipes the entire bracket for the league in one operation, leaving a clean slate before the admin regenerates.",
+    "example": "Before: deleting and regenerating a half-played playoff bracket left phantom Quarter-Final rows that prevented future Advance steps from working. After: the league lands on a clean slate ready for a full regeneration."
+  },
+  "DEF-PLAYOFF-004": {
+    "title": "16-team playoff preview showed the wrong format",
+    "summary": "For 16-team TVT leagues, the public preview of the playoff bracket showed a simple 8-team knockout tree — but the actual format is a 4-group stage followed by Semi-finals and a 3-leg Final, plus a parallel Challenger track. Viewers were seeing something that bore no resemblance to what would actually be drawn.",
+    "fix": "The 16-team preview now mirrors the real format: four playoff groups with proper snake-seeding, then the Semis, 3-leg Final, 3rd-place play-off, and the Challenger path.",
+    "example": "Before: a manager browsing the bracket page saw 1v8/2v7/3v6/4v5 Quarter-Finals that would never actually happen. After: the page shows the real group-stage and Final structure."
+  },
+  "DEF-PUB-001": {
+    "title": "Anonymous visitors couldn't read the league rules page",
+    "summary": "The rules page was meant to be public marketing/onboarding content but was secretly redirecting anonymous visitors to the sign-in screen — they could never actually read the rules before deciding whether to join.",
+    "fix": "Removed the sign-in redirect from the rules page. The page now renders for anyone, with the navigation showing 'All Leagues' and a Sign In button if the visitor isn't logged in.",
+    "example": "Before: clicking 'Rules' from a shared league link bounced visitors to /signin. After: the same link shows the rules directly."
+  },
+  "DEF-SLOTS-001": {
+    "title": "Superadmin could unlock a slot for a team but not redeem one",
+    "summary": "The two sibling endpoints for managing a team's auction slots had inconsistent rules: superadmin support staff could unlock bonus slots on behalf of any team, but couldn't redeem a penalty slot on behalf of the same team.",
+    "fix": "Redeeming a penalty slot now accepts superadmin sessions the same way unlocking a bonus slot already did, so admin authority is symmetric across the two operations.",
+    "example": null
+  },
+  "DEF-SLOTS-002": {
+    "title": "Penalty-slot redemption drained the ledger but not the wallet",
+    "summary": "When a team paid to redeem a penalty slot, the spend was added to its 'total spent' counter but the actual wallet balance wasn't deducted. Over time the wallet displayed in the UI drifted away from what the ledger said had been spent.",
+    "fix": "The redemption now decrements the wallet, increments total spent, and adjusts the slot count all in the same atomic step — matching how the slot-unlock endpoint already worked.",
+    "example": "Before: a team paid £5M to redeem a penalty slot; the ledger showed +£5M spent but the wallet was unchanged. After: both values move in step."
+  },
+  "DEF-STAND-001": {
+    "title": "Standings used the wrong tiebreaker rules",
+    "summary": "When two teams ended up on the same number of league points, the documented tiebreaker rules say: more wins beats fewer wins, then head-to-head record, then bonus points. The standings page was instead breaking ties on raw points-for and chip-bonus totals — which could flip the documented ranking.",
+    "fix": "The sort now follows the canonical four-tier rule: league points first, then most wins, then head-to-head match points, then bonus points. The standings page no longer needs reformatting to match the rule book.",
+    "example": "Before: two teams tied on 15 points and 5 wins each were ranked by raw points-for, which could rank the team that lost their head-to-head encounter above the one that won it. After: the head-to-head winner correctly ranks higher."
+  },
+  "DEF-STAND-003": {
+    "title": "Standings cache could serve Group A's table when you asked for Group B",
+    "summary": "Standings were cached without including the group filter in the cache key. So a request for the full standings would cache the full payload, and a follow-up request for just Group B might receive the cached full standings — or vice versa, where a filtered response could poison the cache for an unfiltered request.",
+    "fix": "Requests that include a group filter now bypass the cache on both read and write, so the full and group-filtered views can never contaminate each other.",
+    "example": null
+  },
+  "DEF-STAND-004": {
+    "title": "Server errors on standings were hidden as 'no data'",
+    "summary": "If anything failed when computing standings — a database outage, a malformed row — the page would silently return an empty success response with magic default values (32 teams, week 30) instead of a real error. Real outages looked the same as a brand-new league with no fixtures.",
+    "fix": "Errors now surface as a proper server-error response with diagnostic detail, while genuine empty-league cases (no fixtures yet) still return a clean empty payload reflecting the league's actual configuration.",
+    "example": "Before: a database hiccup made the standings page appear empty with no clue that anything went wrong. After: monitoring sees the 500 immediately and the team knows there's a real problem."
+  },
+  "DEF-SUPER-001": {
+    "title": "Admin email edits kept the original capitalisation",
+    "summary": "Creating an admin account normalised the email address to lowercase. Editing the same admin's email did not — it kept whatever capitalisation the operator typed, which could mismatch the sign-in lookup and the unique-email rule.",
+    "fix": "Edits now normalise the email to lowercase exactly the way creation does.",
+    "example": null
+  },
+  "DEF-SUPER-003": {
+    "title": "Any superadmin could lock another superadmin out",
+    "summary": "There was no protection stopping one superadmin from changing another superadmin's email and password and forcing them to change their password on next login — effectively locking the other person out of the platform.",
+    "fix": "Edits to another superadmin's account are now refused with a 403. A superadmin can still edit their own row, and can still manage non-superadmin admins.",
+    "example": "Before: Superadmin A could reset Superadmin B's password and email in a single API call. After: that call is rejected with 'Cannot modify another superadmin's account.'"
+  },
+  "DEF-SUPER-005": {
+    "title": "PL standings config accepted any integer, even non-existent team IDs",
+    "summary": "The page that configures which Premier League teams are top-8, mid-table, or promoted accepted any integers in those lists — including IDs that don't correspond to real PL teams. A typo or stale paste could silently break the Club Auction's tier resolution.",
+    "fix": "The save action now validates every ID against the live FPL team list and refuses to save if any aren't real, listing the bad IDs in the error.",
+    "example": "Before: pasting '[101, 102, ...]' into the top-8 list saved without complaint and the Club Auction silently mis-tiered teams. After: the same paste returns a 400 listing the invalid IDs."
+  },
+  "DEF-SUPER-007": {
+    "title": "Score-adjustment audit trail didn't record who made the change",
+    "summary": "Every score adjustment was written to the audit log with a generic '[Superadmin]' prefix — there was no way to tell which superadmin actually made the change. On a platform with multiple superadmins, that's a serious gap for post-incident review.",
+    "fix": "The audit log now records the actor's user ID alongside each adjustment so the trail is fully attributable.",
+    "example": "Before: two different superadmins making different adjustments produced indistinguishable audit rows. After: each row clearly identifies who made the change."
+  },
+  "DEF-TC-001": {
+    "title": "Deleting Triple Crown cup groups could leave the league in a torn state",
+    "summary": "The 'delete cup groups' operation ran several deletes and updates in sequence with no safety net. If the run aborted partway through (e.g., a transient database error), the league could be left with ghost teams gone but cup fixtures still around, or vice versa — requiring manual database cleanup.",
+    "fix": "The whole operation now runs as one atomic transaction. Either the cup-group state is fully cleared, or the league is left exactly as it was.",
+    "example": null
+  },
+  "DEF-TC-002": {
+    "title": "Bracket generation could use a fake group ID when no group existed",
+    "summary": "When generating UCL/UEL knockout brackets for a Triple Crown league that didn't have a PL group set up, the code invented a fresh ID and attached it to all 16 knockout fixtures — pointing at a group row that didn't exist anywhere.",
+    "fix": "The code now uses a real null reference (which the database schema supports) when no PL group exists, so the bracket fixtures are inserted cleanly without orphan references.",
+    "example": null
+  },
+  "DEF-TC-003": {
+    "title": "Triple Crown restore lost the cup competitions",
+    "summary": "Restoring a Triple Crown backup only brought back the Premier League fixtures. Cup-group fixtures, ghost-team setup, and UCL/UEL knockout fixtures were not restored — the admin had to manually reseed cup groups and regenerate brackets, losing any partial cup standings.",
+    "fix": "The restore now also wipes the league's cup-stage state cleanly so the admin lands on a fresh pre-cup-groups state and can re-run cup-group generation without conflicts. (Note: fully re-inserting cup fixtures from the backup payload is a separate backup-writer enhancement still tracked.)",
+    "example": "Before: after a restore the admin found ghost teams from the previous season still attached to cup groups. After: ghosts are cleaned up and cup-group generation can be run fresh."
+  },
+  "DEF-TEAM-001": {
+    "title": "Team passwords could be just one character via single-team forms",
+    "summary": "The admin's bulk team upload required at least 4 characters for a team's password. The single-team Create and Edit forms accepted any non-empty value, including a single character. So bulk-imported team accounts were modestly protected and single-team-created accounts were trivially brute-forceable.",
+    "fix": "Both single-team forms now enforce the same 4-character minimum that bulk upload always did.",
+    "example": "Before: admin Create-Team accepted password = 'a'. After: the same attempt is rejected with 'Password must be at least 4 characters'."
+  },
+  "DEF-TEAM-002": {
+    "title": "Admin-created teams couldn't skip the team setup wizard",
+    "summary": "When an admin created a team in bulk, the team was marked as 'setup complete' and could go straight to the dashboard on first login. But when an admin used the single-team form (supplying the same data), the team was marked incomplete and forced through the setup wizard again — creating inconsistent onboarding within the same league.",
+    "fix": "Single-team admin creation now also marks the team as setup-complete, matching bulk upload.",
+    "example": "Before: 19 teams in a league were imported via CSV and went straight to dashboard, but Team 20 was added via the single-team form and had to fill out the wizard on first login. After: all 20 teams behave the same way."
+  },
+  "DEF-TEAM-003": {
+    "title": "Ghost teams in Triple Crown could be deleted accidentally",
+    "summary": "Triple Crown leagues use 'ghost' teams as placeholders to represent bye opponents in cup groups with an odd number of real teams. The delete-team endpoint didn't refuse ghost deletions — an admin who clicked Delete on a ghost row could permanently break the bye schedule.",
+    "fix": "Delete-team now refuses to remove ghost teams with a clear error message pointing the admin to the cup-group regeneration flow instead.",
+    "example": null
+  },
+  "DEF-TEAM-005": {
+    "title": "Admin bulk-delete had no rollback if the network dropped halfway",
+    "summary": "The 'delete multiple teams' button in the admin UI fired one delete request per team in a loop. If the admin's connection dropped after three of eight deletes had succeeded, those three teams were gone and the other five remained — with no rollback mechanism.",
+    "fix": "Added a single bulk-delete endpoint that removes all selected teams in one atomic transaction. Either every team is deleted or none are.",
+    "example": "Before: a network drop mid-bulk-delete left the league with half-deleted teams and no audit trail. After: the same drop leaves the league in its original state and the admin can retry safely."
+  },
+  "DEF-TRADE-002": {
+    "title": "Primary-tier teams could release players when they shouldn't be able to",
+    "summary": "The auction marketplace — including the player-release feature — is meant to be a Complete-tier-only feature. The release endpoint never checked the tier, so a team in a Primary-tier league could still flip players to 'pending release' through the API.",
+    "fix": "Release now refuses for any league that isn't Complete tier and matches the existing trade endpoint's gate.",
+    "example": "Before: a Primary-tier team could trigger a release on a player. After: that call returns a 403 'Releases are only available in Complete tier'."
+  },
+  "DEF-TRADE-003": {
+    "title": "Players could be released while a live auction was running",
+    "summary": "The trade endpoint refused operations while an auction session was in progress, but the release endpoint did not. A team could mark a player for release in the middle of an active draft, partially undermining the bidding state.",
+    "fix": "Release now refuses with the same 'Marketplace is closed during a live auction' error the trade endpoint already used.",
+    "example": null
+  },
+  "DEF-TRADE-004": {
+    "title": "Admin corrections updated spending but not the team's wallet",
+    "summary": "When an admin used the auction-corrections tools to undo a sale or manually transfer a player, the team's 'total spent' counter was adjusted but the wallet balance was not. The team's spendable cash drifted away from the ledger until something else recomputed it.",
+    "fix": "Every correction now also credits or debits the wallet to match — refunds on undo, debits on a new purchase, both sides on a cross-team transfer — all in one atomic step.",
+    "example": "Before: admin undid a £50M sale; the buyer's total-spent dropped by £50M but their wallet stayed where it was. After: the wallet is refunded by £50M alongside the ledger adjustment."
+  },
+  "DEF-AUC-002": {
+    "title": "Simulated auction ignored teams' purchased bonus slots",
+    "summary": "When running a simulated auction (for testing), the simulator capped every team's squad at 15 players, ignoring any bonus slots a team had already paid to unlock. Simulated post-auction state did not match what a live auction would have produced.",
+    "fix": "The simulator now respects bonus slots so a team that had pre-unlocked slot 16 ends up with up to 16 players, matching live behaviour.",
+    "example": null
+  },
+  "DEF-AUC-003": {
+    "title": "Admin could save an auction with negative bid timers",
+    "summary": "When creating an auction session, the bid timer and nomination timeout values were saved verbatim with no sanity check. An admin who typed -5 seconds or 0 would brick the auction — every bid would instantly expire.",
+    "fix": "Both values are now validated as positive integers within sensible ranges (5-600 seconds for bids, 5-3600 for nominations), and out-of-range values are rejected with a clear error.",
+    "example": null
+  },
+  "DEF-BACKUP-005": {
+    "title": "Backup list flag for 'has fixtures' was always true",
+    "summary": "The backup-list response included a boolean flag indicating whether each backup contained fixtures. Because the underlying column never allows nulls, the flag was always true and gave the admin UI no useful signal.",
+    "fix": "Documented the field as structurally always-true (kept for API stability) and added a comment so future readers don't rely on it to distinguish empty vs populated fixture backups.",
+    "example": null
+  },
+  "DEF-BACKUP-006": {
+    "title": "Backup list response didn't show all the data each backup contained",
+    "summary": "The list view of saved backups only surfaced flags for the older data categories — team, fixture, captain, chip data. It didn't show whether a backup also captured the newer auction-history data (trades, slot unlocks, wishlists, bid logs, notifications). The admin UI couldn't tell pre-migration backups from full ones.",
+    "fix": "The list now surfaces eight additional flags covering every category the backup captures, so the UI can distinguish old vs full snapshots.",
+    "example": null
+  },
+  "DEF-BACKUP-007": {
+    "title": "Schema documentation drifted from actual backup trigger values",
+    "summary": "The database schema's comment for the backup-trigger field listed values that the running code never actually emits, while omitting the values the code does emit. A developer reading the schema for guidance would get the wrong picture.",
+    "fix": "Updated the schema comment to enumerate the real trigger values: 'manual', the gameweek-auto pattern, and the auction-completion variants. No runtime change.",
+    "example": null
+  },
+  "DEF-BACKUP-008": {
+    "title": "Backup download was labelled with the league's current details, not the backup's",
+    "summary": "When an admin downloaded a saved backup, the metadata inside the zip described the league as it is today — not as it was when the backup was taken. If the league had since been renamed or changed format, the downloaded zip looked like it was for a different league.",
+    "fix": "The download now includes an 'inferred original format' alongside the current format. When the two differ, restore tooling can flag the drift instead of silently misreading the payload.",
+    "example": null
+  },
+  "DEF-CHIP-008": {
+    "title": "Auction teams could submit captain/chip picks even though their format doesn't have them",
+    "summary": "The auction format has no captaincy or TVT chips — the scoring engine never reads them. But the endpoints that handle captain/chip submission didn't check the league's format, so an auction-league team that knew the URLs could still POST and pollute the database with dead rows.",
+    "fix": "Both endpoints now reject auction-format submissions with a clear error before any database write.",
+    "example": null
+  },
+  "DEF-CHIP-009": {
+    "title": "Captain CSV import bypassed the per-player chip cap",
+    "summary": "When a team submitted captains directly through the UI, the system enforced the cap of 15 captaincies per player (19 for Triple Crown). When an admin uploaded a captain CSV, the same cap was not enforced — an upload could push a single player far past the limit.",
+    "fix": "The upload now applies the same cap row-by-row and rejects entries that would exceed it, with a clear per-row error message.",
+    "example": null
+  },
+  "DEF-CHIP-010": {
+    "title": "Some wasted-chip imports didn't fully record their wasted state",
+    "summary": "When an admin imported a wasted chip via CSV, only the Win-Win chip type had its 'wasted' flag set. The other five chip types were saved as wasted but with the marker missing — confusing downstream displays.",
+    "fix": "All six chip types now set the wasted flag uniformly on import.",
+    "example": null
+  },
+  "DEF-LEAGUE-003": {
+    "title": "Non-auction leagues stored a meaningless starting-budget value",
+    "summary": "On league creation the system unconditionally wrote a £100M starting-budget value for every league, even though the field is only meaningful for auction leagues. The value was harmless but cluttered admin views and could mislead future readers.",
+    "fix": "Non-auction league creation no longer writes the starting-budget explicitly. The schema's default still fires implicitly so existing rows are unchanged; the code is just clearer about what's actually used.",
+    "example": null
+  },
+  "DEF-NOTIF-001": {
+    "title": "Anonymous visitors to the notifications page saw an empty inbox instead of being asked to sign in",
+    "summary": "The notifications API returned a 200-OK empty-inbox response for anyone who wasn't signed in, instead of the 401 the page expected. The page's 'redirect to sign in' branch was therefore unreachable and an anonymous visitor saw a permanent 'all caught up' empty state.",
+    "fix": "Anonymous requests now return 401 (and non-team sessions return 403). The page's redirect-to-signin branch reliably fires for anonymous visitors.",
+    "example": "Before: an anonymous visitor went to /notifications and saw 'You're all caught up' with no prompt to sign in. After: the same visit redirects them to the sign-in page."
+  },
+  "DEF-PUB-002": {
+    "title": "Bare league URLs returned a 404 instead of a landing page",
+    "summary": "Visiting a league's root URL directly (with no trailing path) returned a 404, even though the league existed and its sub-pages worked fine. A shared link with the trailing path trimmed off would land on the global 404 page.",
+    "fix": "The bare league URL now redirects to the league's standings page, which is the natural landing tab.",
+    "example": "Before: opening '/jpl-tvt-32' returned 404. After: it redirects to '/jpl-tvt-32/standings'."
+  },
+  "DEF-PUB-003": {
+    "title": "The 'FPL passthrough' endpoints required a login despite their name",
+    "summary": "Two endpoints that pass through public FPL (Premier League) data were behind the sign-in wall — even though the data they return is already publicly cached and contains no league-private information. The naming suggested they were public but the behaviour was authenticated-only.",
+    "fix": "Both endpoints are now properly public, matching their 'passthrough' framing. The auth check was removed.",
+    "example": null
+  },
+  "DEF-SLOTS-003": {
+    "title": "Schema comments for slot pricing were outdated",
+    "summary": "The schema comments documented an old slot-pricing scheme (slot 15 for £10M and slot 16 for £25M) that hadn't matched the actual code in some time — current pricing is slots 16/17/18 at £10M/£20M/£30M. Maintainers reading the schema for guidance would get the wrong picture.",
+    "fix": "Comments now match the code and point at the canonical pricing source for future readers.",
+    "example": null
+  },
+  "DEF-SLOTS-004": {
+    "title": "Club tier silently fell back to 'mid' when the standings config was broken",
+    "summary": "When a team bought a Premier League club at auction, the code looked up the club's tier (top-8, mid, or promoted) from the standings config. If the club wasn't in any tier list (because the config was misconfigured), the code silently assigned 'mid' tier — masking a real configuration problem until scoring went wrong.",
+    "fix": "When tier lookup fails, the code now refuses to record the club purchase and logs a loud error. A superadmin must repair the standings config and re-allocate via the corrections tool.",
+    "example": "Before: a misconfigured standings list let a 'top-8' club register as 'mid' for the season, with no warning. After: the purchase fails loudly and the admin must fix the config first."
+  },
+  "DEF-STAND-002": {
+    "title": "Standings legend was wrong for 8-team leagues",
+    "summary": "The standings response always included a fixed legend block ('Top 8 = playoffs, 9-14 = challenger, 15-16 = eliminated') — even for 8-team leagues, where ranks 9-16 don't exist and the actual cutoff is top-4.",
+    "fix": "The legend is now derived from the league's team size, so 8-team leagues see a 'Top 4 / 5-8 eliminated' legend and larger leagues keep their existing labels.",
+    "example": "Before: an 8-team league's UI displayed bands for ranks that no team could ever occupy. After: only the bands that actually apply to the league size are shown."
+  },
+  "DEF-STAND-005": {
+    "title": "Standings exposed two different bonus-point totals that could disagree",
+    "summary": "Each team's standings row contained both a 'stored bonus points' field and a 'calculated bonus' field. When the league's scoring pipeline had skipped an update, the two values would silently disagree — different parts of the UI could display different bonus totals for the same team.",
+    "fix": "Only the stored ledger value is returned now. There is one bonus-points value per team.",
+    "example": null
+  },
+  "DEF-SUPER-002": {
+    "title": "Editing a non-existent admin returned 'success'",
+    "summary": "If a superadmin tried to edit an admin user whose ID didn't exist, the call succeeded silently — affecting zero rows but returning 'success: true'. The operator had no way to know their request had no effect.",
+    "fix": "The endpoint now looks up the user first and returns 404 'User not found' if the ID doesn't exist.",
+    "example": null
+  },
+  "DEF-SUPER-004": {
+    "title": "Removing a non-existent league assignment returned 'success'",
+    "summary": "If a stale UI tried to remove an admin's assignment to a league that had already been removed, the call returned a green 'success' even though nothing was actually deleted.",
+    "fix": "The endpoint now confirms the assignment exists first and returns 404 if it doesn't.",
+    "example": null
+  },
+  "DEF-SUPER-008": {
+    "title": "Score adjustments accepted any number, including obvious typos",
+    "summary": "The score-adjustment endpoint accepted any integer for the synergy and club-result bonuses — including absurdly large positives like 1,000,000,000. A single typo could wreck a gameweek's totals.",
+    "fix": "Both values are now bounded to a sensible range (-500 to 500). Anything outside that range is rejected with a clear error before being saved.",
+    "example": "Before: typing 1000000000 in the synergy field saved without complaint. After: the same input is rejected with 'must be an integer in [-500, 500]'."
+  },
+  "DEF-SUPER-009": {
+    "title": "Admin creation had almost no input validation",
+    "summary": "When creating a new admin account, the only check was that name, email, and password were non-empty. The system would happily save a one-character password, a malformed email like 'a', or a name a megabyte long.",
+    "fix": "The endpoint now validates: name is 1-100 characters, email matches a basic email pattern and is under 254 characters, and password is 8-256 characters with at least one digit or special character.",
+    "example": "Before: 'password = a' for a new admin saved without complaint. After: the same input is rejected with a clear message."
+  },
+  "DEF-TC-004": {
+    "title": "Cup-group scoring documentation said draws were impossible but the code allowed them",
+    "summary": "A comment at the top of the Triple Crown scoring file said 'no draws possible' for cup-group fixtures. But the actual code awarded a 1-1 draw when two real teams tied in the same cup group. Future maintainers and QA writing edge-case tests were getting conflicting signals.",
+    "fix": "Comments now correctly describe both branches: human-vs-human cup fixtures can draw (1 point each), and human-vs-ghost outcomes can technically draw too when integer scores happen to tie.",
+    "example": null
+  },
+  "DEF-TC-005": {
+    "title": "Dead code: an unused helper function was left in the codebase",
+    "summary": "A helper that extracted bracket seeds from cup-group standings was exported but never imported anywhere — the only place that needed it had reimplemented the same logic inline. Two divergent implementations of the same rule could drift apart.",
+    "fix": "Removed the unused helper and the dangling import. There is now a single source of truth for the rule.",
+    "example": null
+  },
+  "DEF-TC-007": {
+    "title": "Cup-stage deadlines were anchored to the wrong start date",
+    "summary": "When generating cup-group fixtures or knockout brackets, missing gameweek deadlines were computed as 'today plus N weeks'. If the admin ran the seeding partway through the season, the deadlines all landed in the wrong week.",
+    "fix": "Deadlines are now computed relative to the league's earliest existing gameweek (treated as the season anchor), so late-season seeding still produces deadlines in the correct weeks.",
+    "example": null
+  },
+  "DEF-TEAM-004": {
+    "title": "Admin could edit Triple Crown ghost teams via the edit form",
+    "summary": "The delete-team form correctly refused to remove ghost teams (the bye placeholders used by Triple Crown cup groups). But the edit-team form had no such check — an admin could rename a ghost, give it a login ID, or set a password on it, partially turning a placeholder into a broken real account.",
+    "fix": "The edit form now refuses ghost-team edits with the same clear message the delete form uses.",
+    "example": null
+  },
+  "DEF-TEAM-006": {
+    "title": "Concurrent admin creates returned a generic 500 on a duplicate ID",
+    "summary": "If two admins clicked Create-Team at the exact same moment using the same team login ID, both passed the up-front uniqueness check; the second insert then failed the database's uniqueness constraint and the admin saw a generic 'Server Error' with no useful information.",
+    "fix": "The endpoint now recognises the duplicate-ID error and returns a clean 'Team ID already exists globally' message just like the up-front check does, so admins get actionable feedback.",
+    "example": null
+  },
+  "DEF-TRADE-001": {
+    "title": "Trades were allowed for any tier that wasn't literally 'primary'",
+    "summary": "Trades were meant to be available only in the Complete tier. The endpoint enforced this by checking that the tier was not 'primary'. If a third tier was added later, or if the field was ever blank or typo'd, trades would silently be enabled.",
+    "fix": "The endpoint now allow-lists 'complete' explicitly. Anything else — including primary, null, or any future tier — defaults to denied.",
+    "example": null
+  },
+  "DEF-TRADE-005": {
+    "title": "Dead columns and status values from the removed veto system",
+    "summary": "The peer-veto system on trades was removed, but the trade-proposals table still had veto-deadline and veto-votes columns, the schema still listed 'vetoed' as a valid status, and the trade list response still echoed those fields. API consumers and test writers were left with confusing dead lifecycle artifacts.",
+    "fix": "Removed veto fields from the trade-list response, marked the columns as deprecated in the schema comment, and documented 'vetoed' as a historical-only status. Columns remain in the database for backwards compatibility with existing rows.",
+    "example": null
+  },
+  "DEF-TRADE-006": {
+    "title": "League admins could do low-level corrections but not approve trades",
+    "summary": "The two admin override surfaces for the auction economy had inconsistent authority rules. League admins could undo a sale or manually transfer a player, but they couldn't approve, reject, or cancel a peer-to-peer trade — only a platform-wide superadmin could do that.",
+    "fix": "The trade-admin endpoint now also accepts league admins of the proposal's league, matching the corrections endpoint's authority rules. Superadmin access is unchanged.",
+    "example": null
+  },
+  "DEF-TC-006": {
+    "title": "Cup standings sort comment didn't match the actual code",
+    "summary": "A code comment described the cup-standings tiebreaker as 'goals against ascending'. The code actually used 'goal difference, then goals for'. Future maintainers reading the comment would write the wrong tests.",
+    "fix": "Updated the comment to match the code. No behaviour change.",
+    "example": null
+  }
+}

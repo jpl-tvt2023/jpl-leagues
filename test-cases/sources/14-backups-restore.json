@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 7,
+    "version": 8,
     "businessContext": "Backups & Restore covers the snapshot lifecycle for a league: an on-demand .zip download of current state, persisted JSON snapshots in the `backups` table (manual, gw1-lock, auction-complete triggers), per-format restore endpoints (TVT, triple-crown, auction) that wipe-then-reinsert fixtures or auction state from a parsed .zip or stored snapshot, and the idempotent auto-snapshot helper invoked from session-completion and the cron's per-GW pipeline. Restore is destructive and operates per-format with strict cross-league + cross-format guards on the multipart upload path; saved-snapshot path enforces league ownership via the SELECT's WHERE clause.",
     "userStories": [
       {
@@ -326,9 +326,11 @@
       },
       {
         "id": "BR-BACKUP-027",
-        "rule": "POST /restore-tvt rejects with 400 when `league.format !== \"tvt\"`.",
+        "rule": "Both restore-tvt and restore-triple-crown enforce a cross-format guard on BOTH the multipart-upload branch AND the saved-snapshot ({backupId}) branch. For the saved-snapshot path the format is inferred from which JSON columns are populated in the backups row (loadRestoreSnapshot — see DEF-BACKUP-008's inferredOriginalFormat heuristic). Cross-format restores return HTTP 400 before any destructive operation runs.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:33-35"
+          "src/lib/backup/restore-tvt.ts:91-112",
+          "src/app/api/admin/[leagueId]/restore-tvt/route.ts:71-85",
+          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:67-79"
         ]
       },
       {
@@ -741,9 +743,9 @@
       },
       {
         "id": "AC-BACKUP-024",
-        "given": "an admin of a triple-crown league",
-        "when": "they POST /restore-triple-crown against a TVT league",
-        "then": "the response is 400 \"Restore is for triple-crown leagues only\"",
+        "given": "an admin POSTs /api/admin/[leagueId]/restore-tvt with body {backupId} pointing at a backup whose auctionSquadsJson is populated (inferred format='auction')",
+        "when": "the handler runs the saved-snapshot path",
+        "then": "HTTP 400 with body containing 'Format mismatch — this backup is for a auction league but the target is TVT'; no destructive operation runs. Same guard fires for restore-triple-crown when the backup's inferred format isn't 'triple-crown'.",
         "linksTo": "BR-BACKUP-028"
       },
       {
@@ -1580,8 +1582,8 @@
     {
       "id": "TC-BACKUP-031",
       "feature": "Saved-snapshot format guard bypass",
-      "scenario": "REGRESSION: triple-crown snapshot restored via /restore-tvt on same-league re-format succeeds (guard skipped)",
-      "type": "Regression",
+      "scenario": "Saved-snapshot restore via backupId enforces cross-format guard",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "League X currently format=tvt; backup row B was taken when X was format=triple-crown (B.leagueId=X, no format stored)",
       "testData": "POST /api/admin/X/restore-tvt body={backupId: B}",
@@ -1590,13 +1592,13 @@
         "2. Inspect response",
         "3. Inspect fixtures table"
       ],
-      "expectedResult": "200 success (no format mismatch raised because loadRestoreSnapshot returns meta without format field); fixtures wipe+restore runs — pins guard bypass",
+      "expectedResult": "POST /api/admin/[leagueId]/restore-tvt with body {backupId} pointing at a backup whose auctionSquadsJson is non-null (inferred format='auction') returns HTTP 400 'Format mismatch — this backup is for a auction league but the target is TVT.' Same guard for restore-triple-crown. The data is NOT wiped/restored.",
       "postconditions": "X's fixtures replaced from triple-crown snapshot — invalid cross-format state",
       "requirementId": "AC-BACKUP-031",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-BACKUP-002."
+      "notes": "[QA-VERIFY] Updated post-DEF-BACKUP-002 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-BACKUP-032",
@@ -2237,7 +2239,7 @@
       "id": "DEF-BACKUP-002",
       "title": "Saved-snapshot restore path skips cross-format guard for TVT/triple-crown",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "loadRestoreSnapshot (src/lib/backup/restore-tvt.ts:80-97) builds `meta: { leagueId: row.leagueId }` with NO `format` field. The route's format guard `if (parsed.meta.format && parsed.meta.format !== \"tvt\")` short-circuits as falsy because `parsed.meta.format` is undefined. A triple-crown snapshot of league X can therefore be restored into the same league (after re-format) via /restore-tvt without the format mismatch check ever firing.",
@@ -2258,9 +2260,9 @@
       "pinningTestCases": [
         "TC-BACKUP-031"
       ],
-      "notes": "Easiest fix: add a `format` text column to `backups` (defaulting to NULL for legacy rows) and populate from `league.format` on insert; loadRestoreSnapshot returns it; route guard checks it. Risk: cross-format restore is destructive (BR-BACKUP-036) and silently produces an invalid state.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Easiest fix: add a `format` text column to `backups` (defaulting to NULL for legacy rows) and populate from `league.format` on insert; loadRestoreSnapshot returns it; route guard checks it. Risk: cross-format restore is destructive (BR-BACKUP-036) and silently produces an invalid state. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "loadRestoreSnapshot (src/lib/backup/restore-tvt.ts:91-112) now derives an inferredFormat from which JSON columns are populated (auctionSquadsJson -> 'auction'; chipsJson -> 'tvt'; otherwise 'triple-crown') and sets meta.format on the returned RestorePayload. Both restore routes (src/app/api/admin/[leagueId]/restore-tvt/route.ts:78 and restore-triple-crown/route.ts:74) now enforce the same format guard on the backupId branch that the multipart branch already had — refusing the restore with HTTP 400 when the inferred original format differs from the target league's current format.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-BACKUP-003",

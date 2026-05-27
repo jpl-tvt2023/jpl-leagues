@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      if (parsed.meta.format && parsed.meta.format !== "triple-crown") {
+      if (parsed.meta && parsed.meta.format && parsed.meta.format !== "triple-crown") {
         return NextResponse.json(
           { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is triple-crown.` },
           { status: 400 }
@@ -70,6 +70,13 @@ export async function POST(request: NextRequest) {
       }
       const parsed = await loadRestoreSnapshot(backupId, leagueId);
       if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 404 });
+      // Cross-format guard for the saved-snapshot path — mirror the multipart guard.
+      if (parsed.meta && parsed.meta.format && parsed.meta.format !== "triple-crown") {
+        return NextResponse.json(
+          { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is triple-crown.` },
+          { status: 400 }
+        );
+      }
       payload = parsed;
     }
   } catch (err) {

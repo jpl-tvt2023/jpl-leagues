@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      if (parsed.meta.format && parsed.meta.format !== "tvt") {
+      if (parsed.meta && parsed.meta.format && parsed.meta.format !== "tvt") {
         return NextResponse.json(
           { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is TVT.` },
           { status: 400 }
@@ -74,6 +74,15 @@ export async function POST(request: NextRequest) {
       }
       const parsed = await loadRestoreSnapshot(backupId, leagueId);
       if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 404 });
+      // Cross-format guard for the saved-snapshot path — mirror the multipart
+      // guard above. The inferred original format comes from which JSON
+      // columns are populated in the backups row (see loadRestoreSnapshot).
+      if (parsed.meta && parsed.meta.format && parsed.meta.format !== "tvt") {
+        return NextResponse.json(
+          { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is TVT.` },
+          { status: 400 }
+        );
+      }
       payload = parsed;
     }
   } catch (err) {

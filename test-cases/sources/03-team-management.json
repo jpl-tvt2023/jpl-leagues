@@ -8,7 +8,7 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 6,
+    "version": 7,
     "businessContext": "Admin-side lifecycle management of team accounts inside a league. Covers single-team CRUD (create / edit / delete), CSV/XLSX bulk replace of the roster, group A/B assignment for TVT, and the implicit force-password-reset behaviour that fires whenever an admin (re)sets a team's password. Scoped to admin operations only; the team-side self-service wizard lives in module 04. Cross-league uniqueness of `teamLoginId` (DB unique index `teams_login_id_global_unique`) is the single most important invariant enforced across every write path here.",
     "userStories": [
       {
@@ -473,10 +473,9 @@
       },
       {
         "id": "BR-TEAM-045",
-        "rule": "Update-team uses the HTTP PUT verb (not POST) — admin UI must call `fetch(..., { method: 'PUT' })`. All other team-management endpoints use POST (or DELETE for delete-team).",
+        "rule": "POST /api/admin/[leagueId]/bulk-delete-teams accepts {teamIds:string[]} (cap 200) and deletes N teams + their dependent rows (gameweekCaptains via player IDs, auditLogs, results, fixtures where home or away, players, teams) inside ONE db.transaction. Pre-validation partitions requested ids into `deletable` (in league, non-ghost) and `skipped` (with reason: not found / is ghost). Mid-transaction failure rolls back ALL deletions; the response reports a `deleted` array of successfully removed ids and a `skipped` array. The existing single-team delete-team endpoint is preserved for one-off deletions.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/update-team/route.ts:13",
-          "src/app/admin/[leagueId]/page.tsx:1845-1849"
+          "src/app/api/admin/[leagueId]/bulk-delete-teams/route.ts"
         ]
       },
       {
@@ -872,9 +871,9 @@
       },
       {
         "id": "AC-TEAM-052",
-        "given": "a successful POST /create-team",
-        "when": "the response is serialised",
-        "then": "the team's bcrypt hash is never present in the response body — only id, teamLoginId, name, and group",
+        "given": "an admin POSTs /api/admin/[leagueId]/bulk-delete-teams with teamIds=[T1, T2, T3] where T2 is a ghost team and T3 belongs to a different league",
+        "when": "the handler runs",
+        "then": "T1 is deleted with its dependent rows in one transaction; the response is {success:true, deleted:[T1], skipped:[{id:T2, reason:'ghost'}, {id:T3, reason:'Team not found in this league'}]}. If the transaction throws mid-delete, NO team is removed (atomicity preserved); response is HTTP 500 with body 'Failed to delete teams (transaction rolled back — no team was deleted)'.",
         "linksTo": "BR-TEAM-049"
       },
       {
@@ -1044,7 +1043,7 @@
       "id": "DEF-TEAM-005",
       "title": "Admin bulk-delete fires N independent DELETE requests with no cross-team transaction",
       "severity": "Major",
-      "status": "Open",
+      "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/admin/[leagueId]/page.tsx:1897-1932 iterates over `selectedTeamIds` and fires a sequential DELETE per team to /api/admin/[leagueId]/delete-team. Each individual DELETE is transactional internally, but there is no umbrella transaction across the batch and no server-side bulk endpoint. A mid-batch network failure leaves the league in a partially-deleted state (some teams gone, others still present), and the UI only reports aggregate success/failure counts.",
@@ -1063,9 +1062,9 @@
       "pinningTestCases": [
         "TC-TEAM-079"
       ],
-      "notes": "Recommend a new bulk-delete-teams endpoint that takes `teamIds: string[]` and runs the same delete sequence inside a single db.transaction. Risk: cascade deletes across N teams can be heavy on SQLite — add an upper bound (e.g. 50) like bulk-upload's 200-row limit.",
-      "resolution": null,
-      "resolutionDate": null
+      "notes": "Recommend a new bulk-delete-teams endpoint that takes `teamIds: string[]` and runs the same delete sequence inside a single db.transaction. Risk: cascade deletes across N teams can be heavy on SQLite — add an upper bound (e.g. 50) like bulk-upload's 200-row limit. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "Added new POST /api/admin/[leagueId]/bulk-delete-teams route (src/app/api/admin/[leagueId]/bulk-delete-teams/route.ts) that deletes N teams + all dependent rows (gameweekCaptains, auditLogs, results, fixtures, players, teams) inside ONE db.transaction. Body: { teamIds: string[] } (cap 200). Pre-validates: only teams in the league are eligible; ghost teams are skipped with a reason; the response includes `deleted` and `skipped` arrays. A transaction throw aborts the entire bulk — no half-applied state. The existing single-team DELETE /api/admin/[leagueId]/delete-team route remains unchanged.",
+      "resolutionDate": "2026-05-27"
     },
     {
       "id": "DEF-TEAM-006",
@@ -2676,8 +2675,8 @@
     {
       "id": "TC-TEAM-079",
       "feature": "Regression - DEF-TEAM-005 - bulk-delete is N independent calls",
-      "scenario": "Mid-batch network failure leaves roster partially deleted (pins lack of cross-team transaction)",
-      "type": "Regression",
+      "scenario": "bulk-delete-teams runs all N team deletes in one transaction (no half-applied state on failure)",
+      "type": "Positive",
       "priority": "P1",
       "preconditions": "Admin selects 8 teams to bulk-delete; throttle network to fail on the 4th DELETE",
       "testData": "selectedTeamIds=[t1..t8]; simulate network drop after t3 succeeds",
@@ -2687,13 +2686,13 @@
         "3. Cut network after 3 succeed",
         "4. Query teams table"
       ],
-      "expectedResult": "3 teams gone (and their cascade dependants); 5 teams still present; UI shows partial-failure count; no rollback of t1..t3. Pins current behaviour.",
+      "expectedResult": "POST /api/admin/[leagueId]/bulk-delete-teams with body {teamIds:[T1,T2,T3]} deletes all three teams + their dependent rows inside one db.transaction. If injected FK violation throws mid-flow, the entire transaction rolls back: all three teams + their players + their fixtures remain. Response shape: {success, deleted:[...], skipped:[...]}; ghost teams or teams from other leagues are reported in `skipped` with a reason. Cap: 200 teams per call.",
       "postconditions": "Roster left in partially-deleted state",
       "requirementId": "AC-TEAM-048",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TEAM-005. After fix (server-side bulk-delete-teams endpoint with single transaction), failure should roll back all 8."
+      "notes": "[QA-VERIFY] Updated post-DEF-TEAM-005 fix on 2026-05-27 — retagged Regression -> Positive."
     },
     {
       "id": "TC-TEAM-080",
