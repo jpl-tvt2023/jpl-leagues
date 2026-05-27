@@ -29,6 +29,9 @@ export async function PUT(request: NextRequest) {
       player2FplId,
       group,
     } = body;
+    // Distinguish "group not provided" from "group explicitly set to empty".
+    // Only mutate groupId when the client actually included a `group` key.
+    const groupProvided = Object.prototype.hasOwnProperty.call(body, "group");
 
     // Validate required fields (player fields, password, and group are optional)
     if (!teamId || !teamLoginId || !teamName) {
@@ -53,8 +56,12 @@ export async function PUT(request: NextRequest) {
     const leagueRow = await db.select({ format: leagues.format }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
     const isAuction = leagueRow[0]?.format === "auction";
 
-    // Validate group (optional; if provided, must be A or B — skip for auction format)
-    if (!isAuction && group && group !== "A" && group !== "B") {
+    // Validate group: only when the client actually sent a `group` key AND the
+    // league uses the A/B PL grouping (TVT-16 / similar). Triple Crown, TVT-32,
+    // and auction leagues use different group concepts (cup groups, multi-letter
+    // groups, or none) — for those, the team's groupId is preserved as-is and
+    // the validator is skipped entirely.
+    if (groupProvided && !isAuction && group && group !== "A" && group !== "B") {
       return NextResponse.json(
         { error: "Group must be either A or B" },
         { status: 400 }
@@ -124,8 +131,10 @@ export async function PUT(request: NextRequest) {
       name: teamName,
     };
 
-    // Only update groupId for non-auction formats
-    if (!isAuction) {
+    // Only mutate groupId when the client actually sent a `group` key and the
+    // league uses groups at all. Otherwise preserve the existing groupId
+    // (important for TC / TVT-32 where the modal hides the Group field).
+    if (groupProvided && !isAuction) {
       updateData.groupId = groupId;
     }
 

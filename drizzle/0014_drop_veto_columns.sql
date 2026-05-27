@@ -4,13 +4,10 @@
 -- exposes these fields); this migration removes the columns themselves.
 --
 -- SQLite's `ALTER TABLE ... DROP COLUMN` support varies by version, so we use
--- the recreate-table pattern. Foreign keys referencing `trade_proposals.id`
--- from other tables remain valid because the new table is renamed back to the
--- original name within the same transaction.
+-- the recreate-table pattern. drizzle-kit wraps each migration in its own
+-- transaction, so no explicit BEGIN/COMMIT here.
 
 PRAGMA foreign_keys=OFF;--> statement-breakpoint
-BEGIN TRANSACTION;--> statement-breakpoint
-
 CREATE TABLE `__new_trade_proposals` (
 	`id` text PRIMARY KEY NOT NULL,
 	`league_id` text NOT NULL,
@@ -26,15 +23,8 @@ CREATE TABLE `__new_trade_proposals` (
 	FOREIGN KEY (`proposer_team_id`) REFERENCES `teams`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`target_team_id`) REFERENCES `teams`(`id`) ON UPDATE no action ON DELETE cascade
 );--> statement-breakpoint
-
 INSERT INTO `__new_trade_proposals` ("id", "league_id", "proposer_team_id", "target_team_id", "offered_player_ids", "requested_player_ids", "cash_offered", "status", "created_at", "updated_at")
 SELECT "id", "league_id", "proposer_team_id", "target_team_id", "offered_player_ids", "requested_player_ids", "cash_offered", "status", "created_at", "updated_at" FROM `trade_proposals`;--> statement-breakpoint
-
 DROP TABLE `trade_proposals`;--> statement-breakpoint
 ALTER TABLE `__new_trade_proposals` RENAME TO `trade_proposals`;--> statement-breakpoint
-
--- No indexes existed on `trade_proposals` in prior migrations (0000, 0001), so
--- none need to be recreated here.
-
-COMMIT;--> statement-breakpoint
 PRAGMA foreign_keys=ON;

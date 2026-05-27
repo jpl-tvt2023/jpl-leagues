@@ -939,9 +939,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // League-wide captain announcements for the upcoming GW — shown in the
-    // dashboard's top widget. Immediately visible to every team on announcement;
-    // no deadline gate. Two queries bounded by team count (≤32 per league).
+    // League-wide captain + chip announcements for the upcoming GW — shown in
+    // the dashboard's top widget. Immediately visible to every team on
+    // announcement; no deadline gate. Chips are TVT-only — for Triple Crown the
+    // chip mapping stays null. Queries bounded by team count (≤32 per league).
+    const CHIP_NAMES_TVT: Record<string, string> = {
+      W: "Win-Win",
+      D: "Double Pointer",
+      C: "Challenge Chip",
+      SL: "Score Lock",
+      CB: "Comeback",
+      UD: "Underdog",
+    };
     let leagueCaptains: Array<{
       teamId: string;
       teamName: string;
@@ -949,6 +958,8 @@ export async function GET(request: NextRequest) {
       isOwnTeam: boolean;
       captainPlayerName: string | null;
       announcedAt: string | null;
+      chipType: string | null;
+      chipName: string | null;
     }> = [];
     if (nextGameweek && teamLeagueId) {
       const allTeamsInLeague = await db.query.teams.findMany({
@@ -968,8 +979,21 @@ export async function GET(request: NextRequest) {
           });
         }
       }
+      // Chip announcements — only TVT has chips. TC + auction skip the fetch.
+      const chipByTeam = new Map<string, string>();
+      if (leagueFormat !== "triple-crown") {
+        const chipsForGw = await db.query.gameweekChips.findMany({
+          where: eq(gameweekChips.gameweekId, nextGameweek.id),
+        });
+        for (const ch of chipsForGw) {
+          if (ch.teamId && ch.chipType) {
+            chipByTeam.set(ch.teamId, ch.chipType);
+          }
+        }
+      }
       leagueCaptains = allTeamsInLeague.map((t) => {
         const picked = captainByTeam.get(t.id);
+        const chipType = chipByTeam.get(t.id) ?? null;
         return {
           teamId: t.id,
           teamName: t.name,
@@ -977,6 +1001,8 @@ export async function GET(request: NextRequest) {
           isOwnTeam: t.id === team.id,
           captainPlayerName: picked?.name ?? null,
           announcedAt: picked?.announcedAt ? picked.announcedAt.toISOString() : null,
+          chipType,
+          chipName: chipType ? (CHIP_NAMES_TVT[chipType] ?? chipType) : null,
         };
       });
       leagueCaptains.sort((a, b) => {

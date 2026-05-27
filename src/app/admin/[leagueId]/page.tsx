@@ -1841,10 +1841,19 @@ export default function AdminDashboard() {
     setMessage(null);
 
     try {
+      // Only send `group` when the Group field is actually editable in the modal
+      // (groupCount === 2 → Group A/B selector renders). For TVT-32 / Triple Crown
+      // the field is hidden and the team's existing group must not be overwritten
+      // with the modal's unchanged value (which can be "Cup-A", "C", etc. and
+      // would fail the server's A/B validator).
+      const payload: Record<string, unknown> = { ...editFormData };
+      if (leagueConfig.groupCount !== 2) {
+        delete payload.group;
+      }
       const response = await fetch(`/api/admin/${leagueId}/update-team`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editFormData),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
