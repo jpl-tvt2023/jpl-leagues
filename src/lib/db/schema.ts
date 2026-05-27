@@ -571,6 +571,30 @@ export const notifications = sqliteTable("notifications", {
   teamUnread: index("notifications_team_unread").on(table.teamId, table.readAt),
 }));
 
+// Feedback — user-submitted free-text feedback. Scope is either "site" (general
+// platform feedback, visible only to superadmins) or "league" (a specific league
+// the submitter is in, visible to that league's admins + superadmins).
+export const feedback = sqliteTable("feedback", {
+  id: text("id").primaryKey(),
+  scope: text("scope", { enum: ["site", "league"] }).notNull(),
+  leagueId: text("league_id").references(() => leagues.id, { onDelete: "cascade" }), // null when scope='site'
+  submitterTeamId: text("submitter_team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  submitterName: text("submitter_name").notNull(),
+  subject: text("subject"),
+  message: text("message").notNull(),
+  isImportant: integer("is_important", { mode: "boolean" }).notNull().default(false),
+  resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+  resolutionNote: text("resolution_note"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  scopeCreatedIdx: index("feedback_scope_created").on(table.scope, table.createdAt),
+  leagueCreatedIdx: index("feedback_league_created").on(table.leagueId, table.createdAt),
+}));
+
+export type Feedback = typeof feedback.$inferSelect;
+export type FeedbackInsert = typeof feedback.$inferInsert;
+
 // ============================================
 // Relations
 // ============================================

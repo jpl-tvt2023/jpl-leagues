@@ -46,6 +46,7 @@ a single Excel workbook.
 | 15 | Notifications | [15-notifications.json](sources/15-notifications.json) | Notifications | qa-signed-off |
 | 16 | Superadmin (admin CRUD, PL standings) | [16-superadmin.json](sources/16-superadmin.json) | Superadmin | qa-signed-off |
 | 17 | Public Pages (landing, rules, winners) | [17-public-pages.json](sources/17-public-pages.json) | Public Pages | qa-signed-off |
+| 18 | Feedback (user submissions + admin moderation) | [18-feedback.json](sources/18-feedback.json) | Feedback | qa-signed-off |
 
 ## Generated artifact
 

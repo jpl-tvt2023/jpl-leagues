@@ -104,6 +104,14 @@ interface DashboardData {
     captainAnnouncementEnabled: boolean;
     chipAnnouncementEnabled: boolean;
   };
+  leagueCaptains: {
+    teamId: string;
+    teamName: string;
+    groupName: string;
+    isOwnTeam: boolean;
+    captainPlayerName: string | null;
+    announcedAt: string | null;
+  }[];
   teamMembers: {
     name: string;
     fplId: string;
@@ -912,6 +920,19 @@ export default function DashboardPage() {
     checkAuth();
   }, [fetchDashboard, router]);
 
+  // Refetch the dashboard when the tab regains focus or becomes visible again,
+  // so the league-wide captain announcements stay fresh without manual reload.
+  useEffect(() => {
+    const onFocus = () => { fetchDashboard(); };
+    const onVisibility = () => { if (!document.hidden) fetchDashboard(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [fetchDashboard]);
+
   // GW navigation handlers
   const handlePrevGw = () => {
     if (data && viewedGw && data.minCompletedGw && viewedGw > data.minCompletedGw) {
@@ -1210,6 +1231,76 @@ export default function DashboardPage() {
               : `${data.leagueGroupCount && data.leagueGroupCount > 1 ? `Group ${data.team.group} • ` : ""}Rank #${data.leaguePosition.groupRank} • ${data.team.leaguePoints} Points`}
           </p>
         </div>
+
+        {/* Captain Announcements — league-wide, top of page */}
+        {data.leagueCaptains && data.leagueCaptains.length > 0 && (
+          <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <span className="text-yellow-400">👑</span> Captain Announcements
+                {data.deadline.gameweek ? <span className="text-gray-400 font-normal text-sm">— GW{data.deadline.gameweek}</span> : null}
+              </h2>
+              <button
+                type="button"
+                onClick={() => fetchDashboard()}
+                className="text-xs px-3 py-1 rounded-md bg-white/10 hover:bg-white/20 text-gray-200 transition"
+                aria-label="Refresh captain announcements"
+              >
+                Refresh
+              </button>
+            </div>
+            {(() => {
+              const hasGroups = (data.leagueGroupCount ?? 1) > 1;
+              if (!hasGroups) {
+                return (
+                  <ul className="divide-y divide-white/5">
+                    {data.leagueCaptains.map((c) => (
+                      <li
+                        key={c.teamId}
+                        className={`flex items-center justify-between py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
+                      >
+                        <span>{c.teamName}{c.isOwnTeam ? " (you)" : ""}</span>
+                        <span className={c.captainPlayerName ? "" : "text-gray-500"}>
+                          {c.captainPlayerName ?? "Not Announced"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              }
+              // Group by groupName
+              const byGroup = new Map<string, typeof data.leagueCaptains>();
+              for (const c of data.leagueCaptains) {
+                const g = c.groupName || "Ungrouped";
+                if (!byGroup.has(g)) byGroup.set(g, []);
+                byGroup.get(g)!.push(c);
+              }
+              const orderedGroups = Array.from(byGroup.keys()).sort();
+              return (
+                <div className="space-y-3">
+                  {orderedGroups.map((groupName) => (
+                    <div key={groupName}>
+                      <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Group {groupName}</div>
+                      <ul className="divide-y divide-white/5">
+                        {byGroup.get(groupName)!.map((c) => (
+                          <li
+                            key={c.teamId}
+                            className={`flex items-center justify-between py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
+                          >
+                            <span>{c.teamName}{c.isOwnTeam ? " (you)" : ""}</span>
+                            <span className={c.captainPlayerName ? "" : "text-gray-500"}>
+                              {c.captainPlayerName ?? "Not Announced"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </section>
+        )}
 
         {/* Main Grid */}
         <div className="grid gap-6 lg:grid-cols-3">

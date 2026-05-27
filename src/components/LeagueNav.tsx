@@ -117,6 +117,9 @@ export function LeagueNav({
             <NavLink href={`/${leagueSlug}/finance`} activeClass={activeClass} active={currentPage ==="finance"}>Finance</NavLink>
             <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>
             <NavLink href={`/${leagueSlug}/help`} activeClass={activeClass} active={currentPage ==="help"}>Help</NavLink>
+            {isLoggedIn && (
+              <NavLink href={`/${leagueSlug}/feedback`} activeClass={activeClass} active={currentPage ==="feedback"}>Feedback</NavLink>
+            )}
           </>
         ) : isTripleCrown ? (
           <>
@@ -128,6 +131,9 @@ export function LeagueNav({
             <NavLink href={`/${leagueSlug}/winners`} activeClass={activeClass} active={currentPage ==="winners"}>Winners</NavLink>
             <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>
             <NavLink href={`/${leagueSlug}/help`} activeClass={activeClass} active={currentPage ==="help"}>Help</NavLink>
+            {isLoggedIn && (
+              <NavLink href={`/${leagueSlug}/feedback`} activeClass={activeClass} active={currentPage ==="feedback"}>Feedback</NavLink>
+            )}
           </>
         ) : (
           <>
@@ -137,6 +143,9 @@ export function LeagueNav({
             <NavLink href={`/${leagueSlug}/winners`} activeClass={activeClass} active={currentPage ==="winners"}>Winners</NavLink>
             <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>
             <NavLink href={`/${leagueSlug}/help`} activeClass={activeClass} active={currentPage ==="help"}>Help</NavLink>
+            {isLoggedIn && (
+              <NavLink href={`/${leagueSlug}/feedback`} activeClass={activeClass} active={currentPage ==="feedback"}>Feedback</NavLink>
+            )}
           </>
         )}
 
