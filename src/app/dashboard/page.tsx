@@ -111,6 +111,8 @@ interface DashboardData {
     isOwnTeam: boolean;
     captainPlayerName: string | null;
     announcedAt: string | null;
+    chipType: string | null;
+    chipName: string | null;
   }[];
   teamMembers: {
     name: string;
@@ -1162,6 +1164,78 @@ export default function DashboardPage() {
 
   const currentChipSet = data.chipStatus.currentSet === 1 ? data.chipStatus.set1 : data.chipStatus.set2;
 
+  // Captain Announcements card — extracted so it can sit either in the TVT 3-col
+  // top row (between Deadline and Fixture) or as a standalone full-width section
+  // for Triple Crown (where deadline+captain are merged into one card).
+  const captainAnnouncementsCard = data.leagueCaptains && data.leagueCaptains.length > 0 ? (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <span className="text-yellow-400">👑</span> {leagueFormat === "triple-crown" ? "Captains" : "Captains & Chips"}
+          {data.deadline.gameweek ? <span className="text-gray-400 font-normal text-sm">— GW{data.deadline.gameweek}</span> : null}
+        </h2>
+        <button
+          type="button"
+          onClick={() => fetchDashboard()}
+          className="text-xs px-3 py-1 rounded-md bg-white/10 hover:bg-white/20 text-gray-200 transition"
+          aria-label="Refresh captain announcements"
+        >
+          Refresh
+        </button>
+      </div>
+      {(() => {
+        const renderRow = (c: (typeof data.leagueCaptains)[number]) => (
+          <li
+            key={c.teamId}
+            className={`flex items-start justify-between gap-2 py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
+          >
+            <span className="truncate flex-shrink-0 max-w-[55%]">{c.teamName}{c.isOwnTeam ? " (you)" : ""}</span>
+            <div className="flex flex-col items-end min-w-0">
+              <span className={`truncate ${c.captainPlayerName ? "" : "text-gray-500"}`}>
+                {c.captainPlayerName ?? "Not Announced"}
+              </span>
+              {c.chipName && (
+                <span
+                  className="mt-1 text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-300 font-semibold uppercase tracking-wide truncate max-w-full"
+                  title={c.chipName}
+                >
+                  {c.chipType}: {c.chipName}
+                </span>
+              )}
+            </div>
+          </li>
+        );
+        const hasGroups = (data.leagueGroupCount ?? 1) > 1;
+        if (!hasGroups) {
+          return (
+            <ul className="divide-y divide-white/5">
+              {data.leagueCaptains.map(renderRow)}
+            </ul>
+          );
+        }
+        const byGroup = new Map<string, typeof data.leagueCaptains>();
+        for (const c of data.leagueCaptains) {
+          const g = c.groupName || "Ungrouped";
+          if (!byGroup.has(g)) byGroup.set(g, []);
+          byGroup.get(g)!.push(c);
+        }
+        const orderedGroups = Array.from(byGroup.keys()).sort();
+        return (
+          <div className="space-y-3">
+            {orderedGroups.map((groupName) => (
+              <div key={groupName}>
+                <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Group {groupName}</div>
+                <ul className="divide-y divide-white/5">
+                  {byGroup.get(groupName)!.map(renderRow)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+    </div>
+  ) : null;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
@@ -1232,74 +1306,11 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Captain Announcements — league-wide, top of page */}
-        {data.leagueCaptains && data.leagueCaptains.length > 0 && (
-          <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <span className="text-yellow-400">👑</span> Captain Announcements
-                {data.deadline.gameweek ? <span className="text-gray-400 font-normal text-sm">— GW{data.deadline.gameweek}</span> : null}
-              </h2>
-              <button
-                type="button"
-                onClick={() => fetchDashboard()}
-                className="text-xs px-3 py-1 rounded-md bg-white/10 hover:bg-white/20 text-gray-200 transition"
-                aria-label="Refresh captain announcements"
-              >
-                Refresh
-              </button>
-            </div>
-            {(() => {
-              const hasGroups = (data.leagueGroupCount ?? 1) > 1;
-              if (!hasGroups) {
-                return (
-                  <ul className="divide-y divide-white/5">
-                    {data.leagueCaptains.map((c) => (
-                      <li
-                        key={c.teamId}
-                        className={`flex items-center justify-between py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
-                      >
-                        <span>{c.teamName}{c.isOwnTeam ? " (you)" : ""}</span>
-                        <span className={c.captainPlayerName ? "" : "text-gray-500"}>
-                          {c.captainPlayerName ?? "Not Announced"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                );
-              }
-              // Group by groupName
-              const byGroup = new Map<string, typeof data.leagueCaptains>();
-              for (const c of data.leagueCaptains) {
-                const g = c.groupName || "Ungrouped";
-                if (!byGroup.has(g)) byGroup.set(g, []);
-                byGroup.get(g)!.push(c);
-              }
-              const orderedGroups = Array.from(byGroup.keys()).sort();
-              return (
-                <div className="space-y-3">
-                  {orderedGroups.map((groupName) => (
-                    <div key={groupName}>
-                      <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Group {groupName}</div>
-                      <ul className="divide-y divide-white/5">
-                        {byGroup.get(groupName)!.map((c) => (
-                          <li
-                            key={c.teamId}
-                            className={`flex items-center justify-between py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
-                          >
-                            <span>{c.teamName}{c.isOwnTeam ? " (you)" : ""}</span>
-                            <span className={c.captainPlayerName ? "" : "text-gray-500"}>
-                              {c.captainPlayerName ?? "Not Announced"}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </section>
+        {/* Captain Announcements — Triple Crown only (full-width, since TC has
+            merged deadline+captain card lower down). TVT places this card inside
+            its 3-col top row, below. */}
+        {leagueFormat === "triple-crown" && captainAnnouncementsCard && (
+          <div className="mb-6">{captainAnnouncementsCard}</div>
         )}
 
         {/* Main Grid */}
@@ -1310,8 +1321,8 @@ export default function DashboardPage() {
             {leagueFormat === "triple-crown" ? (
               <></>
             ) : (
-              /* TVT: Deadline + Upcoming Fixture side by side */
-              <div className="grid md:grid-cols-2 gap-6">
+              /* TVT: Deadline + Captain Announcements + Upcoming Fixture side by side */
+              <div className={`grid gap-6 ${captainAnnouncementsCard ? "md:grid-cols-2 lg:grid-cols-3" : "md:grid-cols-2"}`}>
                 {/* Deadline Timer */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                   <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -1319,6 +1330,9 @@ export default function DashboardPage() {
                   </h2>
                   <DeadlineTimer deadline={data.deadline.timestamp} gameweek={data.deadline.gameweek} serverTime={data.serverTime} />
                 </div>
+
+                {/* Captain Announcements — middle column */}
+                {captainAnnouncementsCard}
 
                 {/* Upcoming Fixture */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
