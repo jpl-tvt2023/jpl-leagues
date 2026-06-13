@@ -52,8 +52,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Normalise to lowercase for case-insensitive storage + comparison
-    const normalizedLoginId = String(teamLoginId).toLowerCase();
+    // Preserve the submitted casing for storage; the lowercased copy is used only
+    // for the case-insensitive uniqueness check below. (Login is case-insensitive.)
+    const trimmedLoginId = String(teamLoginId).trim();
+    const normalizedLoginId = trimmedLoginId.toLowerCase();
 
     // Global uniqueness check on teamLoginId (case-insensitive)
     const existingLoginId = await db.select().from(teams).where(
@@ -112,7 +114,7 @@ export async function POST(request: NextRequest) {
     const teamId = generateId();
     await db.insert(teams).values({
       id: teamId,
-      teamLoginId: normalizedLoginId,
+      teamLoginId: trimmedLoginId,
       name: teamName,
       password: hashedPassword,
       mustChangePassword: true,

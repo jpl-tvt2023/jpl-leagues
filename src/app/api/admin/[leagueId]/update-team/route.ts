@@ -49,8 +49,10 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Normalise to lowercase for case-insensitive storage + comparison
-    const normalizedLoginId = String(teamLoginId).toLowerCase();
+    // Preserve the submitted casing for storage; the lowercased copy is used only
+    // for the case-insensitive uniqueness check below. (Login is case-insensitive.)
+    const trimmedLoginId = String(teamLoginId).trim();
+    const normalizedLoginId = trimmedLoginId.toLowerCase();
 
     // Check league format — auction leagues don't use groups
     const leagueRow = await db.select({ format: leagues.format }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
@@ -127,7 +129,7 @@ export async function PUT(request: NextRequest) {
 
     // Update team
     const updateData: Record<string, unknown> = {
-      teamLoginId: normalizedLoginId,
+      teamLoginId: trimmedLoginId,
       name: teamName,
     };
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, users, teams } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { createSession, SESSION_COOKIE_NAME, SESSION_COOKIE_OPTIONS } from "@/lib/auth";
 
@@ -60,7 +60,9 @@ export async function POST(request: NextRequest) {
       return response;
     } else {
       // Team login via team login ID
-      const teamList = await db.select().from(teams).where(eq(teams.teamLoginId, identifier));
+      const teamList = await db.select().from(teams).where(
+        sql`LOWER(${teams.teamLoginId}) = ${String(identifier).toLowerCase()}`
+      );
       const team = teamList[0];
 
       if (!team) {

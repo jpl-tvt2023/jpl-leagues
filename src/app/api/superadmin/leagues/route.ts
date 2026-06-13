@@ -183,9 +183,8 @@ export async function POST(request: NextRequest) {
       // Auto-create placeholder team accounts for every format. Teams complete
       // their own profile (name, players) on first login via /setup.
       for (let i = 1; i <= resolvedTeamSize; i++) {
-        const padded = String(i).padStart(2, "0");
-        const loginId = `${slug}Team${i}`;
-        const plainPassword = `Team@${padded}`;
+        const loginId = `${slug}-Team${i}`;
+        const plainPassword = `Team${i}`;
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
         const groupId = teamIndexToGroupId.get(i);
 
