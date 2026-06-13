@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
       const hashed = await bcrypt.hash(r.password, 10);
       await db.insert(teams).values({
         id: teamId,
-        teamLoginId: r.teamLoginId.toLowerCase(),
+        teamLoginId: r.teamLoginId.trim(),
         name: r.teamName,
         password: hashed,
         mustChangePassword: true,
