@@ -298,25 +298,37 @@ export async function advanceNominator(sessionId: string): Promise<void> {
     .where(eq(auctionSessions.id, sessionId));
 }
 
+const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+
+export interface CompositionOffender {
+  teamId: string;
+  teamName: string;
+  /** e.g. { pos1: 1, pos2: 2 } — how many more of each position are still required. */
+  missing: Record<string, number>;
+  /** Human-readable summary, e.g. "1 GKP, 2 DEF". */
+  summary: string;
+}
+
 /**
- * One-time squad-composition audit, run when an admin completes a player auction: flags any team
- * finishing below the 1/3/3/1 minimum into `audit_logs` (non-blocking). No-op for club auctions.
- * Moved out of `advanceNominator` now that auctions no longer auto-complete.
+ * Find the teams in a player auction's snake order that currently sit below the 1/3/3/1 positional
+ * minimum. No-op (empty array) for club auctions. Used both for the non-blocking audit log and as
+ * the hard gate that blocks an admin from completing the auction (a team that released players must
+ * rebuild to 1/3/3/1 before the next auction concludes).
  */
-export async function auditAuctionComposition(sessionId: string): Promise<void> {
+export async function findCompositionOffenders(sessionId: string): Promise<CompositionOffender[]> {
   const sessionRow = await db
     .select({ leagueId: auctionSessions.leagueId, type: auctionSessions.type, snakeOrder: auctionSessions.snakeOrder })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
-  if (!sessionRow.length || sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) return;
+  if (!sessionRow.length || sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) return [];
   const leagueId = sessionRow[0].leagueId;
   let snakeOrder: string[] = [];
-  try { snakeOrder = JSON.parse(sessionRow[0].snakeOrder); } catch { return; }
-  if (!Array.isArray(snakeOrder) || snakeOrder.length === 0) return;
+  try { snakeOrder = JSON.parse(sessionRow[0].snakeOrder); } catch { return []; }
+  if (!Array.isArray(snakeOrder) || snakeOrder.length === 0) return [];
 
-  try {
-    const allOwnership = await db
+  const [allOwnership, teamRows] = await Promise.all([
+    db
       .select({ teamId: auctionOwnership.teamId, elementType: auctionOwnership.elementType })
       .from(auctionOwnership)
       .where(
@@ -325,35 +337,92 @@ export async function auditAuctionComposition(sessionId: string): Promise<void> 
           inArray(auctionOwnership.teamId, snakeOrder),
           eq(auctionOwnership.status, "active"),
         ),
-      );
-    const byTeam = new Map<string, { elementType: number | null }[]>();
-    for (const r of allOwnership) {
-      const list = byTeam.get(r.teamId) ?? [];
-      list.push(r);
-      byTeam.set(r.teamId, list);
-    }
-    const offenders: Array<{ teamId: string; missing: Record<string, number> }> = [];
-    for (const teamId of snakeOrder) {
-      const counts = countsFromOwnership(byTeam.get(teamId) ?? []);
-      const missing: Record<string, number> = {};
-      for (const t of [1, 2, 3, 4] as const) {
-        const need = Math.max(0, MIN_QUOTA[t] - counts[t]);
-        if (need > 0) missing[`pos${t}`] = need;
+      ),
+    db.select({ id: teams.id, name: teams.name }).from(teams).where(inArray(teams.id, snakeOrder)),
+  ]);
+  const nameByTeam = new Map(teamRows.map((t) => [t.id, t.name]));
+  const byTeam = new Map<string, { elementType: number | null }[]>();
+  for (const r of allOwnership) {
+    const list = byTeam.get(r.teamId) ?? [];
+    list.push(r);
+    byTeam.set(r.teamId, list);
+  }
+  const offenders: CompositionOffender[] = [];
+  for (const teamId of snakeOrder) {
+    const counts = countsFromOwnership(byTeam.get(teamId) ?? []);
+    const missing: Record<string, number> = {};
+    const parts: string[] = [];
+    for (const t of [1, 2, 3, 4] as const) {
+      const need = Math.max(0, MIN_QUOTA[t] - counts[t]);
+      if (need > 0) {
+        missing[`pos${t}`] = need;
+        parts.push(`${need} ${POSITION_LABELS[t]}`);
       }
-      if (Object.keys(missing).length > 0) offenders.push({ teamId, missing });
     }
+    if (parts.length > 0) {
+      offenders.push({ teamId, teamName: nameByTeam.get(teamId) ?? teamId, missing, summary: parts.join(", ") });
+    }
+  }
+  return offenders;
+}
+
+/**
+ * One-time squad-composition audit, run when an admin completes a player auction: flags any team
+ * finishing below the 1/3/3/1 minimum into `audit_logs` (non-blocking). No-op for club auctions.
+ * Moved out of `advanceNominator` now that auctions no longer auto-complete.
+ */
+export async function auditAuctionComposition(sessionId: string): Promise<void> {
+  try {
+    const offenders = await findCompositionOffenders(sessionId);
     if (offenders.length > 0) {
       await db.insert(auditLogs).values({
         id: generateId(),
         type: "AUCTION_COMPLETED_COMPOSITION_WARNING",
-        description: `Session ${sessionId} (league ${leagueId}) completed but ${offenders.length} team(s) finish below 1/3/3/1 minimum: ${JSON.stringify(offenders).slice(0, 1500)}`,
+        description: `Session ${sessionId} completed but ${offenders.length} team(s) finish below 1/3/3/1 minimum: ${JSON.stringify(offenders).slice(0, 1500)}`,
         pointsAffected: 0,
       });
-      console.warn("[auditAuctionComposition] composition warning at completion", { sessionId, leagueId, offenders });
+      console.warn("[auditAuctionComposition] composition warning at completion", { sessionId, offenders });
     }
   } catch (e) {
     console.error("[auditAuctionComposition] failed (non-blocking):", e);
   }
+}
+
+/**
+ * True when every team in `teamIds` has filled its squad to the effective cap (no open slots) — i.e.
+ * no team can still nominate. This is the player-auction analogue of "all clubs allocated": it marks
+ * the point where a live auction has effectively run its course and only awaits admin completion.
+ */
+export async function allSquadsFull(leagueId: string, teamIds: string[]): Promise<boolean> {
+  if (teamIds.length === 0) return false;
+  const [teamRows, ownership] = await Promise.all([
+    db
+      .select({ id: teams.id, penaltySlots: teams.penaltySlots, bonusSlots: teams.bonusSlots })
+      .from(teams)
+      .where(inArray(teams.id, teamIds)),
+    db
+      .select({ teamId: auctionOwnership.teamId, elementType: auctionOwnership.elementType })
+      .from(auctionOwnership)
+      .where(
+        and(
+          eq(auctionOwnership.leagueId, leagueId),
+          inArray(auctionOwnership.teamId, teamIds),
+          eq(auctionOwnership.status, "active"),
+        ),
+      ),
+  ]);
+  const byTeam = new Map<string, { elementType: number | null }[]>();
+  for (const r of ownership) {
+    const list = byTeam.get(r.teamId) ?? [];
+    list.push(r);
+    byTeam.set(r.teamId, list);
+  }
+  for (const t of teamRows) {
+    const counts = countsFromOwnership(byTeam.get(t.id) ?? []);
+    const maxSize = effectiveMaxSquadSize(t.penaltySlots ?? 0, t.bonusSlots ?? 0);
+    if (counts.total < maxSize) return false; // this team still has an open slot → can nominate
+  }
+  return true;
 }
 
 /**

@@ -10,6 +10,8 @@ import {
   advanceNominator,
   setNominationDeadline,
   auditAuctionComposition,
+  findCompositionOffenders,
+  allSquadsFull,
 } from "@/lib/formats/auction/resolve-bid";
 import { simulateAuction } from "@/lib/formats/auction/simulate";
 import { finalizePendingReleasesNow } from "@/lib/formats/auction/process-gameweek";
@@ -143,6 +145,16 @@ export async function GET(request: NextRequest) {
     allClubsAllocated = (await getClubLessTeamIds(leagueId)).length === 0;
   }
 
+  // For a player auction (initial / mini), signal when every squad is full so the UI shows a
+  // "auction complete — awaiting admin" conclusion instead of "Waiting for <team>..." while the
+  // session idles with no eligible nominators left.
+  let nominationsComplete = false;
+  if (activeSession && activeSession.type !== CLUB_AUCTION_SESSION_TYPE && !currentBid) {
+    let snakeOrder: string[] = [];
+    try { snakeOrder = JSON.parse(activeSession.snakeOrder); } catch { snakeOrder = []; }
+    nominationsComplete = await allSquadsFull(leagueId, snakeOrder);
+  }
+
   return NextResponse.json({
     sessions: sessions.map((s) => ({
       id: s.id,
@@ -168,6 +180,7 @@ export async function GET(request: NextRequest) {
           intermissionSeconds: activeSession.intermissionSeconds ?? 5,
           intermissionUntil: activeSession.intermissionUntil?.toISOString() ?? null,
           allClubsAllocated,
+          nominationsComplete,
           currentBid,
         }
       : null,
@@ -412,6 +425,25 @@ export async function POST(request: NextRequest) {
   }
 
   const newStatus = action === "start" || action === "resume" ? "active" : action === "pause" ? "paused" : "completed";
+
+  // Composition gate: a player auction cannot be completed while any team sits below the 1/3/3/1
+  // minimum. Releases are allowed to drop a squad below the minimum, but the team must rebuild before
+  // the (consecutive) auction concludes — so block completion here and tell the admin which teams owe
+  // which positions. Club auctions and simulated leagues (auto-filled to a valid composition) are exempt.
+  if (action === "complete" && sessionRow[0].type !== CLUB_AUCTION_SESSION_TYPE && !leagueRow[0].isSimulated) {
+    const offenders = await findCompositionOffenders(sessionId);
+    if (offenders.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot complete the auction yet — ${offenders.length} team(s) are below the 1 GKP / 3 DEF / 3 MID / 1 FWD minimum: ${offenders
+            .map((o) => `${o.teamName} (needs ${o.summary})`)
+            .join("; ")}. They must fill these positions before the auction can be completed.`,
+          offenders,
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   // If starting a session in a simulated league, run auto-allocation instead of a live auction —
   // but ONLY for the club auction and the initial player auction. Mini-auctions always run live

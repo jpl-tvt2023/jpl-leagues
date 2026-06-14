@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, leagues, auctionOwnership, auctionScores } from "@/lib/db";
+import { db, leagues, auctionOwnership, auctionScores } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { isAuctionLive } from "@/lib/formats/auction/live-session";
-import { countsFromOwnership, MIN_QUOTA } from "@/lib/formats/auction/squad-rules";
-
-const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 
 /**
  * POST /api/auction/release
@@ -70,29 +67,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Min-position guard: a release must not drop the squad below the positional minimum (1/3/3/1).
-  if (ownership.elementType != null) {
-    const activeOwnership = await db
-      .select({ elementType: auctionOwnership.elementType })
-      .from(auctionOwnership)
-      .where(
-        and(
-          eq(auctionOwnership.leagueId, ownership.leagueId),
-          eq(auctionOwnership.teamId, ownership.teamId),
-          eq(auctionOwnership.status, "active"),
-        ),
-      );
-    const counts = countsFromOwnership(activeOwnership);
-    const pos = ownership.elementType as 1 | 2 | 3 | 4;
-    if ((counts[pos] ?? 0) - 1 < (MIN_QUOTA[pos] ?? 0)) {
-      return NextResponse.json(
-        {
-          error: `Releasing this player would drop you below the minimum of ${MIN_QUOTA[pos]} ${POSITION_LABELS[pos] ?? "for this position"}. Acquire a replacement first.`,
-        },
-        { status: 400 },
-      );
-    }
-  }
+  // NOTE: A release is allowed to drop the squad below the 1/3/3/1 positional minimum. Teams are
+  // free to release and then rebuild during the next mini-auction; the minimum is enforced at the
+  // point the *next* auction is completed (see `findCompositionOffenders` / the session-complete
+  // guard), not at release time.
 
   // Refund = 50% of the player's FMV *at release time* (not the purchase price). FMV = purchase +
   // appreciation from cumulative RAW points (mirrors the squad API). Snapshot it now so the amount
