@@ -312,6 +312,7 @@ export default function AuctionRoomPage() {
   const [intermissionUntil, setIntermissionUntil] = useState<string | null>(null);
   // Club auction only: true once every team owns a club (the session idles awaiting admin Complete).
   const [allClubsAllocated, setAllClubsAllocated] = useState(false);
+  const [nominationsComplete, setNominationsComplete] = useState(false);
   const [intermissionSec, setIntermissionSec] = useState<number>(0);
   const [currentBid, setCurrentBid] = useState<CurrentBid | null>(null);
   const [teamMap, setTeamMap] = useState<Map<string, StandingEntry>>(new Map());
@@ -459,6 +460,7 @@ export default function AuctionRoomPage() {
           setNominationDeadline(active.nominationDeadline ?? null);
           setIntermissionUntil(active.intermissionUntil ?? null);
           setAllClubsAllocated(!!active.allClubsAllocated);
+          setNominationsComplete(!!active.nominationsComplete);
           if (active.currentBid) setCurrentBid(active.currentBid);
         } else {
           // Fallback: find pending/paused session
@@ -560,6 +562,7 @@ export default function AuctionRoomPage() {
     setNominationDeadline((prev) => (prev === (a.nominationDeadline ?? null) ? prev : (a.nominationDeadline ?? null)));
     setIntermissionUntil((prev) => (prev === (a.intermissionUntil ?? null) ? prev : (a.intermissionUntil ?? null)));
     setAllClubsAllocated((prev) => (prev === !!a.allClubsAllocated ? prev : !!a.allClubsAllocated));
+    setNominationsComplete((prev) => (prev === !!a.nominationsComplete ? prev : !!a.nominationsComplete));
 
     if (a.currentBid) {
       setCurrentBid(a.currentBid);
@@ -1391,6 +1394,12 @@ export default function AuctionRoomPage() {
                       </>
                     )}
                     {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
+                  </div>
+                ) : nominationsComplete ? (
+                  <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center gap-2">
+                    <div className="text-3xl">🏁</div>
+                    <div className="text-base font-bold text-white">{session.type === "initial" ? "Initial auction complete" : "Mini-auction complete"}</div>
+                    <p className="text-sm text-gray-300">Every squad is full — there&apos;s nothing left to nominate. Waiting for the admin to finalize the auction.</p>
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center">
