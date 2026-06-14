@@ -149,7 +149,7 @@ export function NotificationBell() {
       {open && (
         <div
           ref={dropdownRef}
-          className="fixed w-[92vw] max-w-sm sm:w-80 max-h-[70vh] sm:max-h-96 overflow-y-auto overflow-x-hidden rounded-lg border border-white/10 bg-slate-900 shadow-xl z-[60]"
+          className="fixed w-[92vw] max-w-sm sm:w-80 max-h-[70vh] sm:max-h-96 overflow-y-auto overflow-x-hidden whitespace-normal rounded-lg border border-white/10 bg-slate-900 shadow-xl z-[60]"
           style={dropdownPos ? { top: dropdownPos.top, right: dropdownPos.right } : { top: -9999, right: 0 }}
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">

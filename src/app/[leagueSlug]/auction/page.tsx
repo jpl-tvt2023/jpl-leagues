@@ -92,6 +92,73 @@ function formatCurrency(amount: number): string {
   return `${sign}£${abs}`;
 }
 
+interface BidHistoryResponse {
+  bids?: Array<{
+    id: string;
+    playerName: string;
+    currentHighBid: number;
+    currentHighBidderId: string;
+    nominatorTeamId: string;
+    minBid: number;
+    status: string;
+    updatedAt: string;
+    logs?: Array<{ id: string; teamId: string; amount: number; type: string; createdAt: string }>;
+  }>;
+  penalties?: Array<{ id: string; teamId: string; createdAt: string }>;
+}
+
+/**
+ * Rebuild the live feed from the authoritative bid-history (+ session penalties). Each sold/unsold
+ * lot keeps its nomination/bid sub-entries grouped directly beneath it (so the expand view works),
+ * and standalone "penalised — missed nomination" lines are interleaved by time. Groups are ordered
+ * newest-first to match the live-append convention. Shared by initial load and every resync, so the
+ * feed (incl. penalties) survives reconnects, intermissions, and reloads.
+ */
+function buildFeedFromHistory(hist: BidHistoryResponse, teamName: (id: string) => string): BidFeedItem[] {
+  const groups: { ts: number; items: BidFeedItem[] }[] = [];
+  for (const b of hist.bids ?? []) {
+    const soldTs = new Date(b.updatedAt).getTime();
+    const items: BidFeedItem[] = [{
+      id: b.id,
+      text: b.status === "sold"
+        ? `SOLD: ${b.playerName} → ${teamName(b.currentHighBidderId)} for ${formatCurrency(b.currentHighBid)}`
+        : `UNSOLD: ${b.playerName}`,
+      kind: b.status === "sold" ? "sold" : "unsold",
+      ts: soldTs,
+      bidId: b.id,
+    }];
+    if (b.logs && b.logs.length > 0) {
+      for (const log of b.logs) {
+        if (log.type === "sold" || log.type === "unsold") continue;
+        items.push({
+          id: log.id,
+          text: log.type === "nomination"
+            ? `${teamName(log.teamId)} nominated ${b.playerName} — base ${formatCurrency(log.amount)}`
+            : `${teamName(log.teamId)} bid ${formatCurrency(log.amount)} on ${b.playerName}`,
+          kind: log.type === "nomination" ? "info" : "bid",
+          ts: new Date(log.createdAt).getTime(),
+          bidId: b.id,
+        });
+      }
+    } else {
+      items.push({
+        id: `${b.id}-nom`,
+        text: `${teamName(b.nominatorTeamId)} nominated ${b.playerName} — base ${formatCurrency(b.minBid)}`,
+        kind: "info",
+        ts: soldTs - 1,
+        bidId: b.id,
+      });
+    }
+    groups.push({ ts: soldTs, items });
+  }
+  for (const p of hist.penalties ?? []) {
+    const ts = new Date(p.createdAt).getTime();
+    groups.push({ ts, items: [{ id: p.id, text: `${teamName(p.teamId)} penalised — missed nomination`, kind: "unsold", ts }] });
+  }
+  groups.sort((a, b) => b.ts - a.ts); // newest group first
+  return groups.flatMap((g) => g.items);
+}
+
 /** Compute the next bid based on the current high bid amount. */
 function getNextBidAmount(currentHighBid: number): number {
   if (currentHighBid < 2_000_000) return currentHighBid + 100_000;
@@ -292,6 +359,7 @@ export default function AuctionRoomPage() {
   const plTeamsRef = useRef<Map<number, BootstrapTeam>>(new Map());
   // Track the current session type so feed handlers can branch their formatting without re-binding.
   const sessionTypeRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const lastHeartbeatRef = useRef<number>(Date.now());
 
   useEffect(() => { teamMapRef.current = teamMap; }, [teamMap]);
@@ -299,6 +367,7 @@ export default function AuctionRoomPage() {
   useEffect(() => { myTeamIdRef.current = myTeamId; }, [myTeamId]);
   useEffect(() => { currentBidRef.current = currentBid; }, [currentBid]);
   useEffect(() => { sessionTypeRef.current = session?.type ?? null; }, [session]);
+  useEffect(() => { sessionIdRef.current = session?.id ?? null; }, [session]);
 
   /** Build "[POS·TEAM]" suffix from an FPL element id, or empty string. For club-auction sessions
    *  the same ID is a PL team ID, not an element ID — skip the tag entirely; the bid feed already
@@ -432,51 +501,12 @@ export default function AuctionRoomPage() {
         setMySlotStatus(sqJson.slotStatus ?? null);
       }
 
-      // Load historical bid feed (persists across page reloads)
+      // Load historical bid feed (persists across page reloads; includes missed-nomination penalties)
       if (activeSessionId) {
         const histRes = await fetch(`/api/auction/bid-history?sessionId=${activeSessionId}`);
         if (histRes.ok) {
-          const histJson = await histRes.json();
-          const histFeed: BidFeedItem[] = [];
-          for (const b of histJson.bids ?? []) {
-            // Sold/unsold entry (shown in feed)
-            histFeed.push({
-              id: b.id,
-              text: b.status === "sold"
-                ? `SOLD: ${b.playerName} → ${standingsMap.get(b.currentHighBidderId)?.teamName ?? "Unknown"} for ${formatCurrency(b.currentHighBid)}`
-                : `UNSOLD: ${b.playerName}`,
-              kind: (b.status === "sold" ? "sold" : "unsold") as BidFeedItem["kind"],
-              ts: new Date(b.updatedAt).getTime(),
-              bidId: b.id,
-            });
-            // Sub-entries from persisted logs (nomination + bids)
-            if (b.logs && b.logs.length > 0) {
-              for (const log of b.logs) {
-                if (log.type === "sold" || log.type === "unsold") continue; // already the main entry
-                const teamName = standingsMap.get(log.teamId)?.teamName ?? "Unknown";
-                const text = log.type === "nomination"
-                  ? `${teamName} nominated ${b.playerName} — base ${formatCurrency(log.amount)}`
-                  : `${teamName} bid ${formatCurrency(log.amount)} on ${b.playerName}`;
-                histFeed.push({
-                  id: log.id,
-                  text,
-                  kind: log.type === "nomination" ? "info" : "bid",
-                  ts: new Date(log.createdAt).getTime(),
-                  bidId: b.id,
-                });
-              }
-            } else {
-              // Legacy fallback: no logs persisted yet, synthesize nomination sub-entry
-              histFeed.push({
-                id: `${b.id}-nom`,
-                text: `${standingsMap.get(b.nominatorTeamId)?.teamName ?? "Unknown"} nominated ${b.playerName} — base ${formatCurrency(b.minBid)}`,
-                kind: "info",
-                ts: new Date(b.updatedAt).getTime() - 1,
-                bidId: b.id,
-              });
-            }
-          }
-          setBidFeed(histFeed);
+          const histJson: BidHistoryResponse = await histRes.json();
+          setBidFeed(buildFeedFromHistory(histJson, (id) => standingsMap.get(id)?.teamName ?? "Unknown"));
         }
       }
     } catch (err) {
@@ -533,6 +563,36 @@ export default function AuctionRoomPage() {
     }
   }, []);
 
+  // One-stop authoritative resync of the whole auction screen — session/currentBid, league-owned,
+  // purse, wishlist, unsold, my slot status, and the live feed (rebuilt from bid-history, incl.
+  // missed-nomination penalties). Used as the per-lot intermission sync barrier, on SSE (re)connect,
+  // on the fallback poll, and after a transient bid/nominate error. `feed` is optional so the cheap
+  // fallback poll can skip the heavier feed rebuild on most ticks.
+  const resyncAuctionScreen = useCallback(async (opts?: { feed?: boolean }) => {
+    await refreshSessionState();
+    const lid = leagueIdRef.current;
+    const mtid = myTeamIdRef.current;
+    const sid = sessionIdRef.current;
+    if (lid) {
+      fetch(`/api/auction/league-owned?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (!d) return;
+        setOwnedElementIds(new Set(d.ownedElementIds ?? []));
+        setTeamSummaries(d.teamSummaries ?? {});
+      }).catch(() => {});
+      fetch(`/api/auction/unsold?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUnsoldPlayers(d.unsold ?? []); }).catch(() => {});
+    }
+    if (mtid) {
+      fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); }).catch(() => {});
+      fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setWishlist(d.wishlist ?? []); }).catch(() => {});
+      fetch(`/api/auction/squad?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMySlotStatus(d.slotStatus ?? null); }).catch(() => {});
+    }
+    if (sid && opts?.feed !== false) {
+      fetch(`/api/auction/bid-history?sessionId=${sid}`).then((r) => (r.ok ? r.json() : null)).then((d: BidHistoryResponse | null) => {
+        if (d) setBidFeed(buildFeedFromHistory(d, (id) => teamMapRef.current.get(id)?.teamName ?? "Unknown"));
+      }).catch(() => {});
+    }
+  }, [refreshSessionState]);
+
   // SSE subscription — depends only on session id + status (primitives) so it
   // doesn't tear down every time nominationDeadline or currentNominatorIndex
   // ticks. Handlers read changing values via refs.
@@ -544,56 +604,9 @@ export default function AuctionRoomPage() {
     const es = new EventSource(`/api/auction/session/stream?sessionId=${sessionId}`);
     eventSourceRef.current = es;
 
-    // Fresh REST sync on connect — belt & braces against SSE initial-poll race
-    refreshSessionState();
-
-    // On (re)connect, rebuild the append-only / event-driven panels (live feed, unsold, wishlist)
-    // from the server so a dropped-and-restored stream recovers anything missed while disconnected.
-    (async () => {
-      try {
-        const histRes = await fetch(`/api/auction/bid-history?sessionId=${sessionId}`);
-        if (histRes.ok) {
-          const histJson = await histRes.json();
-          const tmap = teamMapRef.current;
-          const rebuilt: BidFeedItem[] = [];
-          for (const b of histJson.bids ?? []) {
-            rebuilt.push({
-              id: b.id,
-              text: b.status === "sold"
-                ? `SOLD: ${b.playerName} → ${tmap.get(b.currentHighBidderId)?.teamName ?? "Unknown"} for ${formatCurrency(b.currentHighBid)}`
-                : `UNSOLD: ${b.playerName}`,
-              kind: (b.status === "sold" ? "sold" : "unsold") as BidFeedItem["kind"],
-              ts: new Date(b.updatedAt).getTime(),
-              bidId: b.id,
-            });
-            if (b.logs && b.logs.length > 0) {
-              for (const log of b.logs) {
-                if (log.type === "sold" || log.type === "unsold") continue;
-                const teamName = tmap.get(log.teamId)?.teamName ?? "Unknown";
-                rebuilt.push({
-                  id: log.id,
-                  text: log.type === "nomination"
-                    ? `${teamName} nominated ${b.playerName} — base ${formatCurrency(log.amount)}`
-                    : `${teamName} bid ${formatCurrency(log.amount)} on ${b.playerName}`,
-                  kind: log.type === "nomination" ? "info" : "bid",
-                  ts: new Date(log.createdAt).getTime(),
-                  bidId: b.id,
-                });
-              }
-            }
-          }
-          setBidFeed(rebuilt);
-        }
-      } catch { /* ignore */ }
-      const lid = leagueIdRef.current;
-      const mtid = myTeamIdRef.current;
-      if (lid) {
-        fetch(`/api/auction/unsold?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUnsoldPlayers(d.unsold ?? []); }).catch(() => {});
-      }
-      if (mtid) {
-        fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setWishlist(d.wishlist ?? []); }).catch(() => {});
-      }
-    })();
+    // On (re)connect, fully resync the screen (session, owned, purse, wishlist, unsold, slot status,
+    // and the live feed incl. penalties) so a dropped-and-restored stream recovers anything missed.
+    resyncAuctionScreen();
 
     es.onopen = () => { setSseConnected(true); lastHeartbeatRef.current = Date.now(); };
     es.onerror = () => setSseConnected(false);
@@ -674,22 +687,9 @@ export default function AuctionRoomPage() {
       const data = JSON.parse((e as MessageEvent).data);
       if (currentBidRef.current !== null) setCurrentBid(null);
       setIntermissionUntil((prev) => (prev === (data.intermissionUntil ?? null) ? prev : (data.intermissionUntil ?? null)));
-      // The intermission is the synchronisation beat: re-pull authoritative state so every client
-      // converges before the next nomination.
-      const lid = leagueIdRef.current;
-      const mtid = myTeamIdRef.current;
-      if (lid) {
-        fetch(`/api/auction/league-owned?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
-          if (!d) return;
-          setOwnedElementIds(new Set(d.ownedElementIds ?? []));
-          setTeamSummaries(d.teamSummaries ?? {});
-        }).catch(() => {});
-        fetch(`/api/auction/unsold?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUnsoldPlayers(d.unsold ?? []); }).catch(() => {});
-      }
-      if (mtid) {
-        fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); }).catch(() => {});
-        fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setWishlist(d.wishlist ?? []); }).catch(() => {});
-      }
+      // The intermission is the synchronisation beat: fully resync every panel (incl. the feed +
+      // penalties) so all clients converge before the next nomination.
+      resyncAuctionScreen();
     });
     es.addEventListener("auto-nominated", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
@@ -700,6 +700,12 @@ export default function AuctionRoomPage() {
       const data = JSON.parse((e as MessageEvent).data);
       const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
       addFeed(`${teamName} penalised — missed nomination (wishlist empty)`, "unsold");
+      // If I'm the penalised team, refetch my slot status so the −1 (lost slot) shows immediately.
+      const mtid = myTeamIdRef.current;
+      if (mtid && data.teamId === mtid) {
+        fetch(`/api/auction/squad?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMySlotStatus(d.slotStatus ?? null); }).catch(() => {});
+        fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); }).catch(() => {});
+      }
     });
     es.addEventListener("skipped-full", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
@@ -712,7 +718,7 @@ export default function AuctionRoomPage() {
       eventSourceRef.current = null;
       setSseConnected(false);
     };
-  }, [sessionId, sessionStatus, addFeed, refreshSessionState, sseReconnectTick]);
+  }, [sessionId, sessionStatus, addFeed, refreshSessionState, resyncAuctionScreen, sseReconnectTick]);
 
   // Heartbeat watchdog: if no event (heartbeat or otherwise) lands for >25s while the session is
   // active, the SSE connection is presumed dead — bump the reconnect tick to tear down + reopen the
@@ -729,35 +735,19 @@ export default function AuctionRoomPage() {
     return () => clearInterval(watchdog);
   }, [sessionId, sessionStatus]);
 
-  // Refetch session + currentBid on intervals (SSE fallback). Also refresh
-  // cross-team summaries and my purse so penalty/spend changes from other
-  // teams (e.g. SOLD events on other clients) propagate without a hard reload.
+  // SSE fallback poll: every 3s fully resync the screen so wishlist, unsold, slot status, purse,
+  // owned, and (on a lighter cadence) the live feed stay current even when SSE is lagging or dropped.
+  // The heavier feed rebuild runs only every other tick (~6s) to bound cost.
   useEffect(() => {
     if (!leagueId || !sessionId) return;
+    let n = 0;
     const tick = () => {
-      refreshSessionState();
-      const lid = leagueIdRef.current;
-      const mtid = myTeamIdRef.current;
-      if (lid) {
-        fetch(`/api/auction/league-owned?leagueId=${lid}`)
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => {
-            if (!d) return;
-            setOwnedElementIds(new Set(d.ownedElementIds ?? []));
-            setTeamSummaries(d.teamSummaries ?? {});
-          })
-          .catch(() => {});
-      }
-      if (mtid) {
-        fetch(`/api/auction/economy?teamId=${mtid}`)
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); })
-          .catch(() => {});
-      }
+      n += 1;
+      resyncAuctionScreen({ feed: n % 2 === 0 });
     };
     const t = setInterval(tick, 3000);
     return () => clearInterval(t);
-  }, [leagueId, sessionId, refreshSessionState]);
+  }, [leagueId, sessionId, resyncAuctionScreen]);
 
   // Timer countdown
   useEffect(() => {
@@ -864,6 +854,23 @@ export default function AuctionRoomPage() {
 
   const isWlFiltered = wlPositionFilter !== null || wlTeamFilter !== null;
 
+  // Bid/nominate can fail with a transient, stale-state error if the user acted a beat out of sync
+  // (e.g. the lot just resolved, the intermission just opened, or their turn just passed). Rather
+  // than showing a scary persistent "Auction session is not active" toast, quietly resync the screen
+  // and flash a brief, auto-clearing notice. Genuine validation errors (e.g. "Insufficient purse")
+  // still surface normally.
+  const handleAuctionActionError = useCallback((err: unknown, fallback: string) => {
+    const msg = err instanceof Error ? err.message : fallback;
+    if (/not active|between lots|not your turn|no open auction|timer has expired/i.test(msg)) {
+      void resyncAuctionScreen();
+      const NOTICE = "Out of sync — refreshing…";
+      setBidError(NOTICE);
+      window.setTimeout(() => setBidError((cur) => (cur === NOTICE ? null : cur)), 2500);
+    } else {
+      setBidError(msg);
+    }
+  }, [resyncAuctionScreen]);
+
   const handlePlaceBid = async (bidAmount?: number) => {
     if (!currentBid || !session) return;
     const amount = bidAmount ?? getNextBidAmount(currentBid.currentHighBid);
@@ -884,7 +891,7 @@ export default function AuctionRoomPage() {
         );
       }
     } catch (err) {
-      setBidError(err instanceof Error ? err.message : "Bid failed");
+      handleAuctionActionError(err, "Bid failed");
     } finally {
       setPlacing(false);
     }
@@ -906,7 +913,7 @@ export default function AuctionRoomPage() {
       // Immediately refresh to pick up the new bid (don't rely solely on SSE)
       await refreshSessionState();
     } catch (err) {
-      setBidError(err instanceof Error ? err.message : "Nomination failed");
+      handleAuctionActionError(err, "Nomination failed");
     } finally {
       setNominating(null);
     }
@@ -927,7 +934,7 @@ export default function AuctionRoomPage() {
       setClubSearchTerm("");
       await refreshSessionState();
     } catch (err) {
-      setBidError(err instanceof Error ? err.message : "Nomination failed");
+      handleAuctionActionError(err, "Nomination failed");
     } finally {
       setNominating(null);
     }
@@ -1485,6 +1492,14 @@ export default function AuctionRoomPage() {
                                       </span>
                                     )}
                                     {isMe && <span className="text-[10px] text-purple-400">(you)</span>}
+                                    {summary && summary.penaltySlots > 0 && (
+                                      <span
+                                        title={`${summary.penaltySlots} penalty slot${summary.penaltySlots === 1 ? "" : "s"} — effective squad cap reduced by ${summary.penaltySlots}`}
+                                        className="text-[9px] font-bold text-red-300 bg-red-500/15 border border-red-500/30 rounded px-1"
+                                      >
+                                        ✕{summary.penaltySlots}
+                                      </span>
+                                    )}
                                   </span>
                                 </td>
                                 <td className="py-1.5 px-2 text-right font-mono text-green-300">

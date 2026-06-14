@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, auctionBids, auctionBidLogs } from "@/lib/db";
+import { db, auctionBids, auctionBidLogs, teamPenalties } from "@/lib/db";
 import { eq, desc, asc, inArray } from "drizzle-orm";
 
 /**
  * GET /api/auction/bid-history?sessionId=xxx
  * Returns all resolved bids (sold/unsold) for a session, newest first.
  * Each bid includes its event logs (nomination, bids, sold) for expand view.
+ * Also returns the session's missed-nomination penalties so the live-feed rebuild can keep those
+ * entries (they live in `teamPenalties`, not in the bid logs).
  */
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId");
@@ -66,5 +68,16 @@ export async function GET(request: NextRequest) {
     logs: logsByBidId[b.id] ?? [],
   }));
 
-  return NextResponse.json({ bids: bidsWithLogs });
+  // Missed-nomination penalties for this session — feed source for the "penalised" lines.
+  const penalties = await db
+    .select({
+      id: teamPenalties.id,
+      teamId: teamPenalties.teamId,
+      createdAt: teamPenalties.createdAt,
+    })
+    .from(teamPenalties)
+    .where(eq(teamPenalties.sessionId, sessionId))
+    .orderBy(asc(teamPenalties.createdAt));
+
+  return NextResponse.json({ bids: bidsWithLogs, penalties });
 }

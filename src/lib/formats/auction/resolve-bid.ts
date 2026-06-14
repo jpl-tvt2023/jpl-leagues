@@ -27,7 +27,6 @@ import { leagues } from "@/lib/db/schema";
 import { calculatePurse } from "./economy";
 import { countsFromOwnership, validateAddPlayer, effectiveMaxSquadSize, MIN_QUOTA } from "./squad-rules";
 import { ownerOfPlayer } from "./ownership";
-import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
 import {
   CLUB_AUCTION_SESSION_TYPE,
   resolveClubBid,
@@ -286,17 +285,36 @@ export async function advanceNominator(sessionId: string): Promise<void> {
     }
   }
 
-  // No eligible nominators left — every team's squad is full. Complete the session so the
-  // auction-completion auto-snapshot fires and the UI flips to "complete".
-  console.info("[advanceNominator] no eligible nominators (all squads full) — completing session", {
+  // No eligible nominators left — every team's squad is full. Per spec, do NOT auto-complete the
+  // session: leave it active and idle (deadline cleared) and wait for the admin to mark it complete.
+  console.info("[advanceNominator] no eligible nominators (all squads full) — idling, awaiting admin completion", {
     sessionId,
     leagueId,
     snakeOrderSize: snakeOrder.length,
   });
+  await db
+    .update(auctionSessions)
+    .set({ nominationDeadline: null })
+    .where(eq(auctionSessions.id, sessionId));
+}
 
-  // Composition audit: walk every team in the snake order and flag any squad below 1/3/3/1.
-  // We can't force a team to fix composition once the auction has run out, but admins get a
-  // single audit_logs row so the league can be addressed out-of-band. Never blocks completion.
+/**
+ * One-time squad-composition audit, run when an admin completes a player auction: flags any team
+ * finishing below the 1/3/3/1 minimum into `audit_logs` (non-blocking). No-op for club auctions.
+ * Moved out of `advanceNominator` now that auctions no longer auto-complete.
+ */
+export async function auditAuctionComposition(sessionId: string): Promise<void> {
+  const sessionRow = await db
+    .select({ leagueId: auctionSessions.leagueId, type: auctionSessions.type, snakeOrder: auctionSessions.snakeOrder })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+  if (!sessionRow.length || sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) return;
+  const leagueId = sessionRow[0].leagueId;
+  let snakeOrder: string[] = [];
+  try { snakeOrder = JSON.parse(sessionRow[0].snakeOrder); } catch { return; }
+  if (!Array.isArray(snakeOrder) || snakeOrder.length === 0) return;
+
   try {
     const allOwnership = await db
       .select({ teamId: auctionOwnership.teamId, elementType: auctionOwnership.elementType })
@@ -322,28 +340,20 @@ export async function advanceNominator(sessionId: string): Promise<void> {
         const need = Math.max(0, MIN_QUOTA[t] - counts[t]);
         if (need > 0) missing[`pos${t}`] = need;
       }
-      if (Object.keys(missing).length > 0) {
-        offenders.push({ teamId, missing });
-      }
+      if (Object.keys(missing).length > 0) offenders.push({ teamId, missing });
     }
     if (offenders.length > 0) {
       await db.insert(auditLogs).values({
         id: generateId(),
         type: "AUCTION_COMPLETED_COMPOSITION_WARNING",
-        description: `Session ${sessionId} (league ${leagueId}) auto-completed at all-teams-full but ${offenders.length} team(s) finish below 1/3/3/1 minimum: ${JSON.stringify(offenders).slice(0, 1500)}`,
+        description: `Session ${sessionId} (league ${leagueId}) completed but ${offenders.length} team(s) finish below 1/3/3/1 minimum: ${JSON.stringify(offenders).slice(0, 1500)}`,
         pointsAffected: 0,
       });
-      console.warn("[advanceNominator] composition warning at completion", { sessionId, leagueId, offenders });
+      console.warn("[auditAuctionComposition] composition warning at completion", { sessionId, leagueId, offenders });
     }
   } catch (e) {
-    console.error("[advanceNominator] composition audit failed (continuing to complete session anyway):", e);
+    console.error("[auditAuctionComposition] failed (non-blocking):", e);
   }
-
-  await db
-    .update(auctionSessions)
-    .set({ status: "completed", nominationDeadline: null })
-    .where(eq(auctionSessions.id, sessionId));
-  await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
 }
 
 /**
