@@ -6,6 +6,7 @@ import {
   advanceNominator,
   setNominationDeadline,
   handleNominationTimeout,
+  beginIntermission,
 } from "@/lib/formats/auction/resolve-bid";
 import {
   CLUB_AUCTION_SESSION_TYPE,
@@ -179,9 +180,9 @@ export async function GET(request: NextRequest) {
               const outcome = await resolveExpiredBid(bid);
 
               if (outcome === "sold") {
-                // Advance nominator BEFORE notifying clients so the DB is already
-                // updated when the client calls refreshSessionState() on "sold".
-                await advanceNominator(sessionId);
+                // Begin a post-sale intermission (sync beat + pacing) instead of advancing
+                // immediately. The nominator is armed once the cooldown elapses (handled below).
+                await beginIntermission(sessionId);
 
                 // Re-read the bid to get the freshest winner/amount (counter-bids
                 // may have arrived after the initial read)
@@ -211,6 +212,33 @@ export async function GET(request: NextRequest) {
             // No open bid — check nomination deadline
             const currentNominatorId = snakeOrder[session.currentNominatorIndex];
             const now = new Date();
+
+            // Post-sale intermission: hold off arming the next nominator until the cooldown elapses.
+            if (session.intermissionUntil) {
+              if (now < session.intermissionUntil) {
+                // Still cooling down — emit a countdown (deduped) and skip nomination logic.
+                const snap = `intermission|${session.intermissionUntil.toISOString()}`;
+                if (snap !== lastWaitingSnapshot) {
+                  lastWaitingSnapshot = snap;
+                  send("intermission", {
+                    intermissionUntil: session.intermissionUntil.toISOString(),
+                    currentNominatorIndex: session.currentNominatorIndex,
+                    snakeOrder,
+                  });
+                }
+                return;
+              }
+              // Cooldown elapsed — atomically claim it so only one stream advances, then arm the
+              // next nominator. Next poll picks up the fresh nomination state.
+              const claimedIntermission = await db
+                .update(auctionSessions)
+                .set({ intermissionUntil: null })
+                .where(and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.intermissionUntil)));
+              if (claimedIntermission.rowsAffected > 0) {
+                await advanceNominator(sessionId);
+              }
+              return;
+            }
 
             if (session.nominationDeadline && now > session.nominationDeadline) {
               // Atomically claim the timeout — only one SSE stream wins the race.

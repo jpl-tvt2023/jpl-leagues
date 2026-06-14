@@ -7,6 +7,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { TierChip } from "@/components/TierChip";
 import { SlotStatus } from "@/components/SlotStatus";
+import { AuctionTimerRing } from "@/components/AuctionTimerRing";
 import type { ClubTier } from "@/lib/db/schema";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { MAX_SQUAD_SIZE, effectiveMaxSquadSize } from "@/lib/formats/auction/squad-rules";
@@ -21,6 +22,9 @@ interface AuctionSession {
   snakeOrder: string[];
   currentNominatorIndex: number;
   scheduledAt?: string | null;
+  bidTimerSeconds?: number;
+  nominationTimeoutSeconds?: number;
+  intermissionSeconds?: number;
 }
 
 interface WishlistEntry {
@@ -108,6 +112,15 @@ function getJumpBidOptions(currentHighBid: number): number[] {
   return [minNext, ...jumps.slice(0, 3)];
 }
 
+function CountdownSegment({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="flex flex-col items-center px-4">
+      <div className="text-4xl sm:text-5xl font-mono font-bold text-white tabular-nums">{String(value).padStart(2, "0")}</div>
+      <div className="text-[10px] uppercase tracking-widest text-gray-400 mt-1">{label}</div>
+    </div>
+  );
+}
+
 function ScheduledCountdown({ scheduledAt }: { scheduledAt: string }) {
   // Lazy initializer keeps Date.now() out of the render path (React purity rule).
   const [now, setNow] = useState<number>(() => Date.now());
@@ -129,20 +142,14 @@ function ScheduledCountdown({ scheduledAt }: { scheduledAt: string }) {
   const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  const Segment = ({ value, label }: { value: number; label: string }) => (
-    <div className="flex flex-col items-center px-4">
-      <div className="text-4xl sm:text-5xl font-mono font-bold text-white tabular-nums">{String(value).padStart(2, "0")}</div>
-      <div className="text-[10px] uppercase tracking-widest text-gray-400 mt-1">{label}</div>
-    </div>
-  );
   return (
     <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
-      {days > 0 && <><Segment value={days} label="Days" /><div className="text-3xl text-gray-600">:</div></>}
-      <Segment value={hours} label="Hours" />
+      {days > 0 && <><CountdownSegment value={days} label="Days" /><div className="text-3xl text-gray-600">:</div></>}
+      <CountdownSegment value={hours} label="Hours" />
       <div className="text-3xl text-gray-600">:</div>
-      <Segment value={minutes} label="Minutes" />
+      <CountdownSegment value={minutes} label="Minutes" />
       <div className="text-3xl text-gray-600">:</div>
-      <Segment value={seconds} label="Seconds" />
+      <CountdownSegment value={seconds} label="Seconds" />
     </div>
   );
 }
@@ -232,6 +239,9 @@ export default function AuctionRoomPage() {
   const [leagueId, setLeagueId] = useState<string | null>(null);
   const [session, setSession] = useState<AuctionSession | null>(null);
   const [nominationDeadline, setNominationDeadline] = useState<string | null>(null);
+  // Post-sale intermission window (sync beat) — drives the "Next nomination in N" countdown.
+  const [intermissionUntil, setIntermissionUntil] = useState<string | null>(null);
+  const [intermissionSec, setIntermissionSec] = useState<number>(0);
   const [currentBid, setCurrentBid] = useState<CurrentBid | null>(null);
   const [teamMap, setTeamMap] = useState<Map<string, StandingEntry>>(new Map());
   const [elements, setElements] = useState<BootstrapElement[]>([]);
@@ -251,12 +261,18 @@ export default function AuctionRoomPage() {
   const [placing, setPlacing] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
+  // Bumped by the heartbeat watchdog to force the SSE effect to tear down + reconnect when the
+  // stream silently dies (mobile/tab-suspend/proxy) — otherwise feed/wishlist/unsold freeze.
+  const [sseReconnectTick, setSseReconnectTick] = useState(0);
   const [showNominate, setShowNominate] = useState(false);
+  const [showNominateClub, setShowNominateClub] = useState(false);
+  const [clubSearchTerm, setClubSearchTerm] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [positionFilter, setPositionFilter] = useState<number | null>(null);
   const [nominating, setNominating] = useState<number | null>(null);
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
+  const [wlSearchTerm, setWlSearchTerm] = useState("");
   const [wlTeamFilter, setWlTeamFilter] = useState<number | null>(null);
   // Tabbed panel: "wishlist" (existing list) vs "unsold" (players nominated this session but received
   // no bid). The Unsold tab supports multi-select + bulk add to wishlist.
@@ -275,6 +291,7 @@ export default function AuctionRoomPage() {
   const plTeamsRef = useRef<Map<number, BootstrapTeam>>(new Map());
   // Track the current session type so feed handlers can branch their formatting without re-binding.
   const sessionTypeRef = useRef<string | null>(null);
+  const lastHeartbeatRef = useRef<number>(Date.now());
 
   useEffect(() => { teamMapRef.current = teamMap; }, [teamMap]);
   useEffect(() => { leagueIdRef.current = leagueId; }, [leagueId]);
@@ -362,8 +379,12 @@ export default function AuctionRoomPage() {
             snakeOrder: active.snakeOrder ?? [],
             currentNominatorIndex: active.currentNominatorIndex ?? 0,
             scheduledAt: active.scheduledAt ?? null,
+            bidTimerSeconds: active.bidTimerSeconds ?? 20,
+            nominationTimeoutSeconds: active.nominationTimeoutSeconds ?? 60,
+            intermissionSeconds: active.intermissionSeconds ?? 5,
           });
           setNominationDeadline(active.nominationDeadline ?? null);
+          setIntermissionUntil(active.intermissionUntil ?? null);
           if (active.currentBid) setCurrentBid(active.currentBid);
         } else {
           // Fallback: find pending/paused session
@@ -502,6 +523,7 @@ export default function AuctionRoomPage() {
     });
 
     setNominationDeadline((prev) => (prev === (a.nominationDeadline ?? null) ? prev : (a.nominationDeadline ?? null)));
+    setIntermissionUntil((prev) => (prev === (a.intermissionUntil ?? null) ? prev : (a.intermissionUntil ?? null)));
 
     if (a.currentBid) {
       setCurrentBid(a.currentBid);
@@ -524,12 +546,64 @@ export default function AuctionRoomPage() {
     // Fresh REST sync on connect — belt & braces against SSE initial-poll race
     refreshSessionState();
 
-    es.onopen = () => setSseConnected(true);
+    // On (re)connect, rebuild the append-only / event-driven panels (live feed, unsold, wishlist)
+    // from the server so a dropped-and-restored stream recovers anything missed while disconnected.
+    (async () => {
+      try {
+        const histRes = await fetch(`/api/auction/bid-history?sessionId=${sessionId}`);
+        if (histRes.ok) {
+          const histJson = await histRes.json();
+          const tmap = teamMapRef.current;
+          const rebuilt: BidFeedItem[] = [];
+          for (const b of histJson.bids ?? []) {
+            rebuilt.push({
+              id: b.id,
+              text: b.status === "sold"
+                ? `SOLD: ${b.playerName} → ${tmap.get(b.currentHighBidderId)?.teamName ?? "Unknown"} for ${formatCurrency(b.currentHighBid)}`
+                : `UNSOLD: ${b.playerName}`,
+              kind: (b.status === "sold" ? "sold" : "unsold") as BidFeedItem["kind"],
+              ts: new Date(b.updatedAt).getTime(),
+              bidId: b.id,
+            });
+            if (b.logs && b.logs.length > 0) {
+              for (const log of b.logs) {
+                if (log.type === "sold" || log.type === "unsold") continue;
+                const teamName = tmap.get(log.teamId)?.teamName ?? "Unknown";
+                rebuilt.push({
+                  id: log.id,
+                  text: log.type === "nomination"
+                    ? `${teamName} nominated ${b.playerName} — base ${formatCurrency(log.amount)}`
+                    : `${teamName} bid ${formatCurrency(log.amount)} on ${b.playerName}`,
+                  kind: log.type === "nomination" ? "info" : "bid",
+                  ts: new Date(log.createdAt).getTime(),
+                  bidId: b.id,
+                });
+              }
+            }
+          }
+          setBidFeed(rebuilt);
+        }
+      } catch { /* ignore */ }
+      const lid = leagueIdRef.current;
+      const mtid = myTeamIdRef.current;
+      if (lid) {
+        fetch(`/api/auction/unsold?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUnsoldPlayers(d.unsold ?? []); }).catch(() => {});
+      }
+      if (mtid) {
+        fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setWishlist(d.wishlist ?? []); }).catch(() => {});
+      }
+    })();
+
+    es.onopen = () => { setSseConnected(true); lastHeartbeatRef.current = Date.now(); };
     es.onerror = () => setSseConnected(false);
+
+    // Stamp liveness on the server's 15s heartbeat so the watchdog can detect a silently-dead stream.
+    es.addEventListener("heartbeat", () => { lastHeartbeatRef.current = Date.now(); });
 
     es.addEventListener("auction-state", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       setCurrentBid(data);
+      setIntermissionUntil(null); // A new lot is live — the intermission (if any) is over.
       setBidError(null); // Clear stale error — buttons re-render with correct amounts
       // New nomination detected — bidId changed
       if (data.bidId && data.bidId !== lastBidIdRef.current) {
@@ -595,6 +669,27 @@ export default function AuctionRoomPage() {
       if (currentBidRef.current !== null) setCurrentBid(null);
       setNominationDeadline((prev) => (prev === (data.nominationDeadline ?? null) ? prev : (data.nominationDeadline ?? null)));
     });
+    es.addEventListener("intermission", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      if (currentBidRef.current !== null) setCurrentBid(null);
+      setIntermissionUntil((prev) => (prev === (data.intermissionUntil ?? null) ? prev : (data.intermissionUntil ?? null)));
+      // The intermission is the synchronisation beat: re-pull authoritative state so every client
+      // converges before the next nomination.
+      const lid = leagueIdRef.current;
+      const mtid = myTeamIdRef.current;
+      if (lid) {
+        fetch(`/api/auction/league-owned?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+          if (!d) return;
+          setOwnedElementIds(new Set(d.ownedElementIds ?? []));
+          setTeamSummaries(d.teamSummaries ?? {});
+        }).catch(() => {});
+        fetch(`/api/auction/unsold?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUnsoldPlayers(d.unsold ?? []); }).catch(() => {});
+      }
+      if (mtid) {
+        fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); }).catch(() => {});
+        fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setWishlist(d.wishlist ?? []); }).catch(() => {});
+      }
+    });
     es.addEventListener("auto-nominated", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
@@ -616,7 +711,22 @@ export default function AuctionRoomPage() {
       eventSourceRef.current = null;
       setSseConnected(false);
     };
-  }, [sessionId, sessionStatus, addFeed, refreshSessionState]);
+  }, [sessionId, sessionStatus, addFeed, refreshSessionState, sseReconnectTick]);
+
+  // Heartbeat watchdog: if no event (heartbeat or otherwise) lands for >25s while the session is
+  // active, the SSE connection is presumed dead — bump the reconnect tick to tear down + reopen the
+  // stream. The server emits a heartbeat every 15s, so 25s is a safe bound. Mirrors the admin monitor.
+  useEffect(() => {
+    if (!sessionId || sessionStatus !== "active") return;
+    lastHeartbeatRef.current = Date.now();
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastHeartbeatRef.current > 25_000) {
+        lastHeartbeatRef.current = Date.now();
+        setSseReconnectTick((t) => t + 1);
+      }
+    }, 5000);
+    return () => clearInterval(watchdog);
+  }, [sessionId, sessionStatus]);
 
   // Refetch session + currentBid on intervals (SSE fallback). Also refresh
   // cross-team summaries and my purse so penalty/spend changes from other
@@ -677,6 +787,23 @@ export default function AuctionRoomPage() {
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
   }, [currentBid, nominationDeadline]);
+
+  // Post-sale intermission countdown ("Next nomination in N").
+  useEffect(() => {
+    if (!intermissionUntil) {
+      setIntermissionSec(0);
+      return;
+    }
+    const tick = () => {
+      const ms = new Date(intermissionUntil).getTime() - Date.now();
+      const sec = Math.max(0, Math.ceil(ms / 1000));
+      setIntermissionSec(sec);
+      if (sec === 0) setIntermissionUntil(null); // window elapsed — fall back to normal waiting view
+    };
+    tick();
+    const t = setInterval(tick, 250);
+    return () => clearInterval(t);
+  }, [intermissionUntil]);
 
   const currentNominatorId = useMemo(() => {
     if (!session?.snakeOrder?.length) return null;
@@ -784,6 +911,27 @@ export default function AuctionRoomPage() {
     }
   };
 
+  const handleNominateClub = async (plTeamId: number) => {
+    if (!session) return;
+    setNominating(plTeamId);
+    try {
+      const res = await fetch("/api/auction/nominate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id, plTeamId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Nomination failed");
+      setShowNominateClub(false);
+      setClubSearchTerm("");
+      await refreshSessionState();
+    } catch (err) {
+      setBidError(err instanceof Error ? err.message : "Nomination failed");
+    } finally {
+      setNominating(null);
+    }
+  };
+
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
     window.location.href = "/signin";
@@ -802,6 +950,22 @@ export default function AuctionRoomPage() {
       .sort((a, b) => b.total_points - a.total_points)
       .slice(0, 30);
   }, [elements, ownedElementIds, searchTerm, positionFilter]);
+
+  // Available PL clubs for the club-auction nominate modal: all 20 PL teams minus those already
+  // owned by a fantasy team in this league (derived from each team's ownedClub), minus the one
+  // currently on the block. Filtered by the club search box.
+  const availableClubs = useMemo(() => {
+    const ownedClubIds = new Set<number>();
+    for (const t of teamMap.values()) {
+      if (t.ownedClub?.plTeamId != null) ownedClubIds.add(t.ownedClub.plTeamId);
+    }
+    const lc = clubSearchTerm.trim().toLowerCase();
+    return [...plTeams.values()]
+      .filter((c) => !ownedClubIds.has(c.id))
+      .filter((c) => currentBidRef.current?.fplElementId !== c.id)
+      .filter((c) => !lc || c.name.toLowerCase().includes(lc) || (c.short_name ?? "").toLowerCase().includes(lc))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [plTeams, teamMap, clubSearchTerm]);
 
   const refreshWishlist = useCallback(async () => {
     if (!myTeamId) return;
@@ -877,6 +1041,14 @@ export default function AuctionRoomPage() {
     if (res.ok) await refreshWishlist();
   };
 
+  // Add or remove a player from the shortlist by element id — used by the on-block star toggle and
+  // the searchable wishlist panel so users can shortlist without opening the nominate modal.
+  const handleToggleWishlist = async (elementId: number, playerName: string) => {
+    const entry = wishlist.find((w) => w.fplElementId === elementId);
+    if (entry) await handleRemoveFromWishlist(entry.id);
+    else await handleAddToWishlist(elementId, playerName);
+  };
+
   const handleReorderWishlist = async (fromIdx: number, toIdx: number) => {
     if (!myTeamId || toIdx < 0 || toIdx >= wishlist.length) return;
     const next = [...wishlist];
@@ -893,6 +1065,17 @@ export default function AuctionRoomPage() {
   };
 
   const wishlistElementIds = useMemo(() => new Set(wishlist.map((w) => w.fplElementId)), [wishlist]);
+
+  // Search results for the in-panel wishlist search box — lets users add/remove any unowned player
+  // directly from the auction screen without opening the nominate modal. Empty query → no results.
+  const wlSearchResults = useMemo(() => {
+    const lc = wlSearchTerm.trim().toLowerCase();
+    if (!lc) return [];
+    return elements
+      .filter((el) => !ownedElementIds.has(el.id) && el.web_name.toLowerCase().includes(lc))
+      .sort((a, b) => b.total_points - a.total_points)
+      .slice(0, 20);
+  }, [wlSearchTerm, elements, ownedElementIds]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -1039,7 +1222,19 @@ export default function AuctionRoomPage() {
             {/* Row 1: Bid card + Nomination Order table */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
               <div className="lg:col-span-2">
-                {currentBid ? (
+                {intermissionSec > 0 ? (
+                  <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/10 to-slate-900/40 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center gap-3">
+                    <div className="text-[10px] uppercase tracking-widest text-yellow-300/80">Lot sold — next up</div>
+                    <AuctionTimerRing
+                      seconds={intermissionSec}
+                      max={session.intermissionSeconds ?? 5}
+                      size={104}
+                      stroke={9}
+                      label="next nom"
+                    />
+                    <p className="text-sm text-gray-300">Get ready — the next nomination is coming up</p>
+                  </div>
+                ) : currentBid ? (
                   <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 to-slate-900/40 p-5 backdrop-blur h-full">
                     {(() => {
                       const isClubAuction = session.type === CLUB_AUCTION_TYPE;
@@ -1062,7 +1257,7 @@ export default function AuctionRoomPage() {
                               {plTeam && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">{plTeam.short_name}</span>}
                             </div>
                             <div className="text-xs text-gray-400">
-                              System-nominated · Base {formatCurrency(currentBid.minBid)}
+                              Nominated by {teamMap.get(currentBid.nominatorTeamId)?.teamName ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
                             </div>
                           </div>
                         );
@@ -1081,6 +1276,19 @@ export default function AuctionRoomPage() {
                           <div className="text-xs text-gray-400">
                             Nominated by {teamMap.get(currentBid.nominatorTeamId)?.teamName ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
                           </div>
+                          {myTeamId && (
+                            <button
+                              onClick={() => handleToggleWishlist(currentBid.fplElementId, currentBid.playerName)}
+                              className={`mt-2 inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                                wishlistElementIds.has(currentBid.fplElementId)
+                                  ? "border-yellow-400/50 bg-yellow-400/15 text-yellow-300 hover:bg-yellow-400/25"
+                                  : "border-white/20 bg-white/5 text-gray-300 hover:bg-white/10"
+                              }`}
+                              title={wishlistElementIds.has(currentBid.fplElementId) ? "Remove from shortlist" : "Add to shortlist"}
+                            >
+                              {wishlistElementIds.has(currentBid.fplElementId) ? "★ In shortlist" : "☆ Add to shortlist"}
+                            </button>
+                          )}
                         </div>
                       );
                     })()}
@@ -1096,9 +1304,9 @@ export default function AuctionRoomPage() {
                           {isHighBidder && " (YOU)"}
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[10px] uppercase text-gray-400">Timer</div>
-                        <div className={`text-3xl sm:text-5xl font-mono font-bold ${timerSec <= 5 ? "text-red-400 animate-pulse" : "text-amber-300"}`}>{timerSec}s</div>
+                      <div className="flex flex-col items-center">
+                        <div className="text-[10px] uppercase text-gray-400 mb-1">Timer</div>
+                        <AuctionTimerRing seconds={timerSec} max={session.bidTimerSeconds ?? 20} size={88} stroke={8} />
                       </div>
                     </div>
                     {isHighBidder ? (
@@ -1131,9 +1339,37 @@ export default function AuctionRoomPage() {
                 ) : session.type === CLUB_AUCTION_TYPE ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center">
                     <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Waiting for next club</div>
-                    <p className="text-gray-300 text-sm">
-                      The system auto-nominates one PL club at a time. The next club will appear shortly.
-                    </p>
+                    {isMyTurn && session.status === "active" ? (
+                      <>
+                        <p className="text-white text-sm mb-2">It&apos;s your turn to nominate a PL club.</p>
+                        {nominationDeadlineSec > 0 && (
+                          <div className="mb-3 flex justify-center">
+                            <AuctionTimerRing
+                              seconds={nominationDeadlineSec}
+                              max={session.nominationTimeoutSeconds ?? 60}
+                              size={64}
+                              stroke={6}
+                              label="auto-pick"
+                            />
+                          </div>
+                        )}
+                        <button
+                          onClick={() => setShowNominateClub(true)}
+                          className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm"
+                        >
+                          Nominate a Club
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-gray-400 text-sm">
+                          {currentNominatorId ? `Waiting for ${teamMap.get(currentNominatorId)?.teamName ?? "nominator"} to nominate a club...` : "Waiting for the next club nomination..."}
+                        </p>
+                        {nominationDeadlineSec > 0 && (
+                          <div className="mt-1 text-xs font-mono text-gray-500">Auto-pick in {nominationDeadlineSec}s</div>
+                        )}
+                      </>
+                    )}
                     {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
                   </div>
                 ) : (
@@ -1143,8 +1379,14 @@ export default function AuctionRoomPage() {
                       <>
                         <p className="text-white text-sm mb-2">It&apos;s your turn to nominate a player.</p>
                         {nominationDeadlineSec > 0 && (
-                          <div className={`mb-3 text-sm font-mono ${nominationDeadlineSec <= 10 ? "text-red-400" : "text-yellow-300"}`}>
-                            Auto-nom in {nominationDeadlineSec}s
+                          <div className="mb-3 flex justify-center">
+                            <AuctionTimerRing
+                              seconds={nominationDeadlineSec}
+                              max={session.nominationTimeoutSeconds ?? 60}
+                              size={64}
+                              stroke={6}
+                              label="auto-nom"
+                            />
                           </div>
                         )}
                         <button
@@ -1325,6 +1567,44 @@ export default function AuctionRoomPage() {
 
                 {wishlistTab === "wishlist" ? (
                   <>
+                    {/* In-panel search: add/remove any unowned player to the shortlist directly */}
+                    <div className="mb-2">
+                      <input
+                        type="text"
+                        placeholder="Search any player to shortlist…"
+                        value={wlSearchTerm}
+                        onChange={(e) => setWlSearchTerm(e.target.value)}
+                        className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
+                      />
+                      {wlSearchTerm.trim() && (
+                        <div className="mt-1 max-h-44 overflow-y-auto space-y-1 rounded-lg border border-white/10 bg-black/20 p-1">
+                          {wlSearchResults.length === 0 ? (
+                            <div className="text-[10px] text-gray-500 py-2 text-center">No unowned players match</div>
+                          ) : (
+                            wlSearchResults.map((el) => {
+                              const inWl = wishlistElementIds.has(el.id);
+                              return (
+                                <div key={el.id} className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-white/5">
+                                  <div className="min-w-0">
+                                    <div className="text-xs text-white truncate">{el.web_name}</div>
+                                    <div className="text-[9px] text-gray-500">{POSITION_LABELS[el.element_type]} · {plTeams.get(el.team)?.short_name ?? "—"} · {el.total_points} pts</div>
+                                  </div>
+                                  <button
+                                    onClick={() => handleToggleWishlist(el.id, el.web_name)}
+                                    className={`h-6 w-6 shrink-0 flex items-center justify-center rounded-full text-xs transition ${
+                                      inWl ? "bg-yellow-400/20 text-yellow-400 hover:bg-yellow-400/30" : "bg-white/10 text-gray-300 hover:bg-purple-500/30 hover:text-purple-300"
+                                    }`}
+                                    title={inWl ? "Remove from shortlist" : "Add to shortlist"}
+                                  >
+                                    {inWl ? "★" : "+"}
+                                  </button>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
                     {wishlist.length > 0 && (
                       <div className="flex gap-1.5 mb-2">
                         <select
@@ -1352,7 +1632,7 @@ export default function AuctionRoomPage() {
                     )}
                     {wishlist.length === 0 ? (
                       <div className="text-[10px] text-gray-500 py-2 text-center">
-                        Empty — add players from the nomination modal or the Unsold tab.
+                        Empty — search above, or add players from the nomination modal or the Unsold tab.
                       </div>
                     ) : filteredWishlist.length === 0 ? (
                       <div className="text-[10px] text-gray-500 py-2 text-center">
@@ -1582,6 +1862,51 @@ export default function AuctionRoomPage() {
                           </div>
                         );
                       })
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Club Nomination Modal */}
+            {showNominateClub && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowNominateClub(false)}>
+                <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold text-white">Nominate a Club</h3>
+                    <button onClick={() => setShowNominateClub(false)} className="text-gray-400 hover:text-white">✕</button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search club name..."
+                    value={clubSearchTerm}
+                    onChange={(e) => setClubSearchTerm(e.target.value)}
+                    autoFocus
+                    className="w-full rounded-lg bg-white/10 border border-white/20 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none mb-3"
+                  />
+                  <div className="mb-3">
+                    <span className="text-xs text-gray-500">Opening bid: £500K (you open as the high bidder) • {availableClubs.length} club(s) available</span>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto space-y-1">
+                    {availableClubs.length === 0 ? (
+                      <div className="text-sm text-gray-500 py-6 text-center">No clubs available</div>
+                    ) : (
+                      availableClubs.map((club) => (
+                        <button
+                          key={club.id}
+                          onClick={() => handleNominateClub(club.id)}
+                          disabled={nominating === club.id}
+                          className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition text-left disabled:opacity-50"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-white/20 bg-white/10 text-gray-300">
+                              {club.short_name}
+                            </span>
+                            <span className="text-white font-semibold">{club.name}</span>
+                          </div>
+                          {nominating === club.id && <span className="text-xs text-gray-400">Nominating...</span>}
+                        </button>
+                      ))
                     )}
                   </div>
                 </div>

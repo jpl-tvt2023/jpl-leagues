@@ -6,6 +6,7 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TierChip } from "@/components/TierChip";
+import { AuctionTimerRing } from "@/components/AuctionTimerRing";
 import { formatCurrency } from "@/lib/format/currency";
 import { FeedbackTab } from "./FeedbackTab";
 
@@ -136,6 +137,7 @@ interface AuctionSessionInfo {
   currentNominatorIndex: number;
   scheduledAt: string | null;
   createdAt: string;
+  bidTimerSeconds?: number;
 }
 
 interface AuctionSquadPlayer {
@@ -301,10 +303,14 @@ export default function AdminDashboard() {
   const [liveFeed, setLiveFeed] = useState<{ id: string; text: string; kind: string; ts: number }[]>([]);
   const [liveTimerSec, setLiveTimerSec] = useState(0);
   const [liveNominationDeadline, setLiveNominationDeadline] = useState<string | null>(null);
+  const [liveIntermissionUntil, setLiveIntermissionUntil] = useState<string | null>(null);
   const liveEsRef = useRef<EventSource | null>(null);
   const lastLiveBidIdRef = useRef<string | null>(null);
   const liveCurrentBidRef = useRef<typeof liveCurrentBid>(null);
   useEffect(() => { liveCurrentBidRef.current = liveCurrentBid; }, [liveCurrentBid]);
+  // Holds the latest fetchSoldBids so SSE handlers (defined before fetchSoldBids) can refresh the
+  // Corrections / Undo-Sale list when a lot resolves, without re-subscribing the stream.
+  const fetchSoldBidsRef = useRef<(() => void) | null>(null);
 
   // Auction Reset State
   const [auctionResetting, setAuctionResetting] = useState(false);
@@ -1010,6 +1016,14 @@ export default function AdminDashboard() {
   };
 
   const updateAuctionSession = async (sessionId: string, action: string) => {
+    // Confirm disruptive controls on an in-progress auction before acting.
+    const confirmMsg: Record<string, string> = {
+      start: "Start/resume the auction? Bidding will be open for all teams.",
+      pause: "Pause the auction? Bidding stops for all teams until you resume.",
+      resume: "Resume the auction? Bidding reopens for all teams.",
+      complete: "Complete the auction? This permanently ends bidding for all teams and cannot be undone.",
+    };
+    if (confirmMsg[action] && !confirm(confirmMsg[action])) return;
     setAuctionSessionAction(action);
     try {
       const res = await fetch("/api/auction/session", {
@@ -1091,11 +1105,14 @@ export default function AdminDashboard() {
       addLiveFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatAuctionCurrency(data.finalBid)}`, "sold");
       setLiveCurrentBid(null);
       fetchAuctionData();
+      // Refresh the Corrections / Undo-Sale list so newly-sold lots (incl. club auctions) appear live.
+      fetchSoldBidsRef.current?.();
     });
     es.addEventListener("unsold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       addLiveFeed(`UNSOLD: ${data.playerName}`, "unsold");
       setLiveCurrentBid(null);
+      fetchSoldBidsRef.current?.();
     });
     es.addEventListener("auto-nominated", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
@@ -1116,12 +1133,20 @@ export default function AdminDashboard() {
       addLiveFeed("Auction session completed", "info");
       setLiveCurrentBid(null);
       fetchAuctionData();
+      fetchSoldBidsRef.current?.();
     });
     es.addEventListener("waiting", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       if (liveCurrentBidRef.current !== null) setLiveCurrentBid(null);
       setLiveNominationDeadline(data.nominationDeadline ?? null);
+      setLiveIntermissionUntil(null);
     });
+    es.addEventListener("intermission", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      if (liveCurrentBidRef.current !== null) setLiveCurrentBid(null);
+      setLiveIntermissionUntil(data.intermissionUntil ?? null);
+    });
+    es.addEventListener("auction-state", () => { setLiveIntermissionUntil(null); });
 
     return () => { es.close(); liveEsRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1173,6 +1198,8 @@ export default function AdminDashboard() {
       }
     } catch { /* ignore */ }
   }, [auctionActiveSession]);
+
+  useEffect(() => { fetchSoldBidsRef.current = fetchSoldBids; }, [fetchSoldBids]);
 
   useEffect(() => {
     if (isAuctionFormat && auctionActiveSession) fetchSoldBids();
@@ -3785,9 +3812,7 @@ export default function AdminDashboard() {
                               Nominated by {teamNameById(liveCurrentBid.nominatorTeamId)} — Base {formatAuctionCurrency(liveCurrentBid.minBid)}
                             </div>
                           </div>
-                          <div className={`text-5xl sm:text-6xl font-mono font-bold ${liveTimerSec <= 5 ? "text-red-400 animate-pulse" : "text-amber-300"}`}>
-                            {liveTimerSec}s
-                          </div>
+                          <AuctionTimerRing seconds={liveTimerSec} max={auctionActiveSession.bidTimerSeconds ?? 20} size={96} stroke={9} />
                         </div>
                         <div className="flex items-center justify-between rounded-lg bg-white/5 px-4 py-2">
                           <div>
@@ -3799,6 +3824,18 @@ export default function AdminDashboard() {
                             <div className="text-sm font-semibold text-white">{teamNameById(liveCurrentBid.currentHighBidderId)}</div>
                           </div>
                         </div>
+                      </div>
+                    ) : liveIntermissionUntil && new Date(liveIntermissionUntil).getTime() > Date.now() ? (
+                      <div className="flex flex-col items-center justify-center py-4 gap-2">
+                        <div className="text-[10px] uppercase tracking-widest text-yellow-300/80">Lot sold — next up</div>
+                        <AuctionTimerRing
+                          seconds={Math.max(0, Math.ceil((new Date(liveIntermissionUntil).getTime() - Date.now()) / 1000))}
+                          max={5}
+                          size={88}
+                          stroke={8}
+                          label="next nom"
+                        />
+                        <div className="text-xs text-gray-400">Next nomination coming up</div>
                       </div>
                     ) : (
                       <div className="text-center py-6">
@@ -4483,7 +4520,10 @@ export default function AdminDashboard() {
                       onChange={(e) => setAuctionResetTarget(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white border border-white/20 text-sm"
                     >
-                      <option value="initial">Before Initial Auction (full wipe)</option>
+                      <option value="initial">Before Club Auction (full wipe)</option>
+                      {leagueConfig.clubAuctionEnabled && (
+                        <option value="player-initial">Before Initial Player Auction (keep clubs)</option>
+                      )}
                       <option value="mini-1">Before Mini-Auction 1</option>
                       <option value="mini-2">Before Mini-Auction 2</option>
                       <option value="mini-3">Before Mini-Auction 3</option>
@@ -4491,15 +4531,29 @@ export default function AdminDashboard() {
                   </div>
                   {auctionResetTarget === "initial" && (
                     <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-[11px] text-red-200/90 space-y-1">
-                      <p className="font-semibold">Full wipe clears:</p>
+                      <p className="font-semibold">Full wipe (before club auction) clears:</p>
                       <ul className="list-disc list-inside text-red-200/80">
                         <li>Auction sessions, bids, and bid logs</li>
                         <li>Player ownerships, scores, and trade proposals</li>
                         <li><strong>PL club ownerships</strong> (so a fresh club auction can run)</li>
                         <li>Penalty slots and accumulated penalty ledger</li>
                         <li>Team purse, totalSpent, totalIncome, totalRefunds (reset to initial budget)</li>
+                        <li><strong>All league notifications</strong></li>
                       </ul>
                       <p className="pt-1 text-red-200/70">Preserved: team accounts, wishlists, gameweeks, fixtures.</p>
+                    </div>
+                  )}
+                  {auctionResetTarget === "player-initial" && (
+                    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] text-amber-200/90 space-y-1">
+                      <p className="font-semibold">Player reset (keeps the club auction) clears:</p>
+                      <ul className="list-disc list-inside text-amber-200/80">
+                        <li>Player auction + mini-auction sessions, bids, and logs</li>
+                        <li>Player ownerships, scores, and trade proposals</li>
+                        <li>Penalty slots, penalty ledger, and slot unlocks</li>
+                        <li>Player-phase notifications (trades, GW results, slots) — <strong>club purchase notices kept</strong></li>
+                        <li>Team purse restored to initial budget <strong>minus each team&apos;s club spend</strong></li>
+                      </ul>
+                      <p className="pt-1 text-amber-200/70">Preserved: <strong>PL club ownerships</strong>, the club auction session, team accounts, wishlists, gameweeks, fixtures.</p>
                     </div>
                   )}
                   <div className="flex gap-3">

@@ -139,7 +139,7 @@ export function NotificationBell() {
 
       {open && (
         <div
-          className="fixed w-[92vw] max-w-sm sm:w-80 max-h-[70vh] sm:max-h-96 overflow-y-auto rounded-lg border border-white/10 bg-slate-900 shadow-xl z-[60]"
+          className="fixed w-[92vw] max-w-sm sm:w-80 max-h-[70vh] sm:max-h-96 overflow-y-auto overflow-x-hidden rounded-lg border border-white/10 bg-slate-900 shadow-xl z-[60]"
           style={dropdownPos ? { top: dropdownPos.top, right: dropdownPos.right } : { top: -9999, right: 0 }}
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
@@ -191,8 +191,8 @@ export function NotificationBell() {
                       <div className="flex items-start gap-2">
                         {!n.readAt && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-yellow-400" />}
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-white">{n.title}</div>
-                          <div className="text-xs text-gray-300 mt-0.5">{n.body}</div>
+                          <div className="text-sm font-semibold text-white break-words">{n.title}</div>
+                          <div className="text-xs text-gray-300 mt-0.5 break-words">{n.body}</div>
                           <div className="text-[10px] text-gray-500 mt-1">{new Date(n.createdAt).toLocaleString()}</div>
                         </div>
                       </div>

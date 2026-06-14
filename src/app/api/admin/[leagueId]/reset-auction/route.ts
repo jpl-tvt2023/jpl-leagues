@@ -12,18 +12,22 @@ import {
   tradeProposals,
   teams,
   leagues,
+  notifications,
 } from "@/lib/db";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, ne, sql } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
 /**
  * POST /api/admin/[leagueId]/reset-auction
  * Reset auction state to a prior checkpoint.
  *
- * Body: { resetTo: "initial" | "mini-1" | "mini-2" | "mini-3" }
+ * Body: { resetTo: "initial" | "player-initial" | "mini-1" | "mini-2" | "mini-3" }
  *
- * "initial" — full wipe of all auction data
- * "mini-N"  — keep data from sessions with cycleNumber < N, delete the rest
+ * "initial"        — full wipe of ALL auction data incl. the club auction (i.e. "before club auction").
+ * "player-initial" — wipe only the player-auction state; PRESERVE the club auction + club ownership
+ *                    (i.e. "before the initial player auction"). Team purses are restored to
+ *                    initialBudget minus what each team spent on its club.
+ * "mini-N"         — keep data from sessions with cycleNumber < N, delete the rest
  */
 export async function POST(request: NextRequest) {
   const leagueId = await getAuthorizedLeagueId(request);
@@ -61,6 +65,9 @@ export async function POST(request: NextRequest) {
     // Wishlists are preserved across resets — they are user-curated
     await db.delete(auctionScores).where(eq(auctionScores.leagueId, leagueId));
     await db.delete(tradeProposals).where(eq(tradeProposals.leagueId, leagueId));
+    // Full wipe also clears the entire league's notification history (club purchases, trades, GW
+    // results, slot/release notices) so the inbox matches the wiped state.
+    await db.delete(notifications).where(eq(notifications.leagueId, leagueId));
 
     // Get league's initial budget to restore purse
     const leagueRow = await db.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
@@ -83,7 +90,71 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Auction fully reset to initial state",
+      message: "Auction fully reset to initial state (club auction wiped)",
+      resetTo,
+    });
+  }
+
+  if (resetTo === "player-initial") {
+    // Reset to "before the initial player auction": wipe the player-auction state but PRESERVE the
+    // club auction (session + club ownership). Team purses are restored to initialBudget minus each
+    // team's club spend.
+
+    // Identify player-auction sessions (everything except the club auction).
+    const playerSessions = await db
+      .select({ id: auctionSessions.id })
+      .from(auctionSessions)
+      .where(and(eq(auctionSessions.leagueId, leagueId), ne(auctionSessions.type, "club-auction")));
+    const playerSessionIds = playerSessions.map((s) => s.id);
+
+    // Delete bid logs → bids for those sessions (FK order), leaving the club-auction bids intact.
+    for (const sid of playerSessionIds) {
+      const bidsInSession = await db.select({ id: auctionBids.id }).from(auctionBids).where(eq(auctionBids.sessionId, sid));
+      for (const bid of bidsInSession) {
+        await db.delete(auctionBidLogs).where(eq(auctionBidLogs.bidId, bid.id));
+      }
+      await db.delete(auctionBids).where(eq(auctionBids.sessionId, sid));
+      await db.delete(auctionSessions).where(eq(auctionSessions.id, sid));
+    }
+
+    // Player ownership, scores, trades, penalties, slot unlocks are all player-phase — wipe them.
+    // Club ownership (auctionClubOwnership) is intentionally preserved.
+    await db.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, leagueId));
+    await db.delete(auctionScores).where(eq(auctionScores.leagueId, leagueId));
+    await db.delete(tradeProposals).where(eq(tradeProposals.leagueId, leagueId));
+    await db.delete(teamPenalties).where(eq(teamPenalties.leagueId, leagueId));
+    await db.delete(teamSlotUnlocks).where(eq(teamSlotUnlocks.leagueId, leagueId));
+    // Clear player-phase notifications (trades, GW results, slot/release notices) but KEEP the
+    // club-purchase notifications since the club auction stands.
+    await db.delete(notifications).where(and(eq(notifications.leagueId, leagueId), ne(notifications.type, "club_purchased")));
+
+    // Restore each team's economy: purse = initialBudget − (club spend); totalSpent = club spend.
+    const leagueRow = await db.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+    const initialBudget = leagueRow[0]?.initialBudget ?? 0;
+
+    const leagueTeams = await db.select({ id: teams.id }).from(teams).where(eq(teams.leagueId, leagueId));
+    for (const team of leagueTeams) {
+      const clubRows = await db
+        .select({ purchasePrice: auctionClubOwnership.purchasePrice })
+        .from(auctionClubOwnership)
+        .where(and(eq(auctionClubOwnership.leagueId, leagueId), eq(auctionClubOwnership.teamId, team.id)));
+      const clubSpend = clubRows.reduce((sum, r) => sum + r.purchasePrice, 0);
+      await db
+        .update(teams)
+        .set({
+          totalSpent: clubSpend,
+          totalRefunds: 0,
+          totalIncome: 0,
+          penaltySlots: 0,
+          bonusSlots: 0,
+          purse: initialBudget - clubSpend,
+        })
+        .where(eq(teams.id, team.id));
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Player auction reset (club auction preserved)",
       resetTo,
     });
   }
