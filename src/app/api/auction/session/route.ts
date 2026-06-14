@@ -6,7 +6,7 @@ import { generateId } from "@/lib/id";
 import { generateSnakeOrder } from "@/lib/formats/auction/mini-auction";
 import {
   resolveExpiredBid,
-  advanceNominator,
+  beginIntermission,
   setNominationDeadline,
 } from "@/lib/formats/auction/resolve-bid";
 import { simulateAuction } from "@/lib/formats/auction/simulate";
@@ -15,8 +15,7 @@ import { purgePendingTrades } from "@/lib/formats/auction/live-session";
 import {
   CLUB_AUCTION_SESSION_TYPE,
   fetchAllPLClubsWithTiers,
-  buildInitialClubQueue,
-  autoNominateNextClub,
+  setClubNominationDeadline,
   simulateClubAuction,
   loadStandingsConfig,
 } from "@/lib/formats/auction/club-auction";
@@ -43,7 +42,9 @@ async function resolveExpiredBids(sessionId: string) {
     if (now > bid.expiresAt) {
       const outcome = await resolveExpiredBid(bid);
       if (outcome === "sold") {
-        await advanceNominator(sessionId);
+        // Begin the post-sale intermission (the SSE stream advances the nominator when it elapses),
+        // mirroring the stream's resolution path so the safety-net doesn't skip the cooldown.
+        await beginIntermission(sessionId);
       }
     }
   }
@@ -130,6 +131,10 @@ export async function GET(request: NextRequest) {
           currentNominatorIndex: activeSession.currentNominatorIndex,
           nominationDeadline: activeSession.nominationDeadline?.toISOString() ?? null,
           scheduledAt: activeSession.scheduledAt?.toISOString() ?? null,
+          bidTimerSeconds: activeSession.bidTimerSeconds ?? 20,
+          nominationTimeoutSeconds: activeSession.nominationTimeoutSeconds ?? 60,
+          intermissionSeconds: activeSession.intermissionSeconds ?? 5,
+          intermissionUntil: activeSession.intermissionUntil?.toISOString() ?? null,
           currentBid,
         }
       : null,
@@ -149,7 +154,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { leagueId, action, sessionId, type, cycleNumber, scheduledAt, bidTimerSeconds, nominationTimeoutSeconds } = body;
+  const { leagueId, action, sessionId, type, cycleNumber, scheduledAt, bidTimerSeconds, nominationTimeoutSeconds, intermissionSeconds } = body;
 
   if (!leagueId || !action) {
     return NextResponse.json({ error: "leagueId and action are required" }, { status: 400 });
@@ -174,6 +179,13 @@ export async function POST(request: NextRequest) {
     if (nominationTimeoutSeconds !== undefined && (!isPosInt(nominationTimeoutSeconds) || nominationTimeoutSeconds < 5 || nominationTimeoutSeconds > 3600)) {
       return NextResponse.json(
         { error: "nominationTimeoutSeconds must be an integer between 5 and 3600" },
+        { status: 400 }
+      );
+    }
+    // 0 disables the post-sale intermission; otherwise 1–60s.
+    if (intermissionSeconds !== undefined && (typeof intermissionSeconds !== "number" || !Number.isInteger(intermissionSeconds) || intermissionSeconds < 0 || intermissionSeconds > 60)) {
+      return NextResponse.json(
+        { error: "intermissionSeconds must be an integer between 0 and 60" },
         { status: 400 }
       );
     }
@@ -211,6 +223,8 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         );
       }
+      // Validate the FPL/standings config loads (so the admin gets an early, clear error rather
+      // than a mid-auction tier-resolution failure). We don't queue clubs — teams nominate them.
       let clubs;
       try {
         clubs = await fetchAllPLClubsWithTiers();
@@ -221,22 +235,36 @@ export async function POST(request: NextRequest) {
       if (clubs.length === 0) {
         return NextResponse.json({ error: "FPL bootstrap returned no PL clubs" }, { status: 502 });
       }
-      const queue = buildInitialClubQueue(clubs.map((c) => c.id));
+
+      // Team-based nomination: snakeOrder holds fantasy team IDs (random order, like the initial
+      // player auction). Each club-less team takes a turn nominating a PL club.
+      const clubTeams = await db
+        .select({ id: teams.id })
+        .from(teams)
+        .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)));
+      if (clubTeams.length === 0) {
+        return NextResponse.json({ error: "No teams in league" }, { status: 400 });
+      }
+      const clubSnakeOrder = clubTeams
+        .map((t) => ({ id: t.id, sort: Math.random() }))
+        .sort((a, b) => a.sort - b.sort)
+        .map((t) => t.id);
 
       const id = generateId();
       await db.insert(auctionSessions).values({
         id,
         leagueId,
         type: CLUB_AUCTION_SESSION_TYPE,
-        cycleNumber: 1, // Round 1 of nominations
+        cycleNumber: 1,
         status: "pending",
-        snakeOrder: JSON.stringify(queue),
+        snakeOrder: JSON.stringify(clubSnakeOrder),
         currentNominatorIndex: 0,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         bidTimerSeconds: bidTimerSeconds ?? 20,
         nominationTimeoutSeconds: nominationTimeoutSeconds ?? 60,
+        intermissionSeconds: intermissionSeconds ?? 5,
       });
-      return NextResponse.json({ success: true, id, queueLength: queue.length });
+      return NextResponse.json({ success: true, id, teamCount: clubSnakeOrder.length });
     }
 
     // Ordering guards for player auctions.
@@ -301,6 +329,7 @@ export async function POST(request: NextRequest) {
       scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
       bidTimerSeconds: bidTimerSeconds ?? 20,
       nominationTimeoutSeconds: nominationTimeoutSeconds ?? 60,
+      intermissionSeconds: intermissionSeconds ?? 3,
     });
 
     return NextResponse.json({ success: true, id, snakeOrder });
@@ -452,12 +481,12 @@ export async function POST(request: NextRequest) {
     await finalizePendingReleasesNow(leagueId, gwNumber);
   }
 
-  // When starting a player auction (first-time only, not resume — resume already restored the
-  // shifted deadline above), set the nomination deadline for the current nominator. For a club
-  // auction, there is no per-team nomination — the system auto-nominates one PL club at a time.
+  // When starting an auction (first-time only, not resume — resume already restored the shifted
+  // deadline above), arm the nomination deadline for the current nominator. Club auctions are now
+  // team-nominated too, so both paths set a deadline for the first team in the snake order.
   if (newStatus === "active" && action === "start") {
     if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
-      await autoNominateNextClub(sessionId);
+      await setClubNominationDeadline(sessionId);
     } else {
       await setNominationDeadline(sessionId);
     }

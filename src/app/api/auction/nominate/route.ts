@@ -11,7 +11,7 @@ import { calculatePurse } from "@/lib/formats/auction/economy";
 import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
 import { ownerOfPlayer } from "@/lib/formats/auction/ownership";
 import { fetchElementInfo } from "@/lib/fpl";
-import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
+import { CLUB_AUCTION_SESSION_TYPE, nominateClub } from "@/lib/formats/auction/club-auction";
 
 const DEFAULT_MIN_BID = 500_000; // 500K minimum starting bid
 
@@ -31,13 +31,10 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { sessionId, fplElementId, playerName, minBid } = body;
+  const { sessionId, fplElementId, playerName, minBid, plTeamId } = body;
 
-  if (!sessionId || !fplElementId || !playerName) {
-    return NextResponse.json(
-      { error: "sessionId, fplElementId, and playerName are required" },
-      { status: 400 }
-    );
+  if (!sessionId) {
+    return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
   }
 
   // Get the auction session
@@ -52,10 +49,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Auction session is not active" }, { status: 400 });
   }
 
-  // Club auctions are system-nominated (random queue) — there is no team turn to nominate from.
-  if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
+  // Post-sale intermission: nominations are locked until the cooldown elapses (sync beat). Applies to
+  // both player and club auctions; the SSE stream arms the next nominator when the window ends.
+  if (sessionRow[0].intermissionUntil && Date.now() < new Date(sessionRow[0].intermissionUntil).getTime()) {
     return NextResponse.json(
-      { error: "Club auctions are system-nominated. Use the bid endpoint to bid on the currently nominated club." },
+      { error: "Auction is between lots — wait for the next nomination window." },
+      { status: 409 }
+    );
+  }
+
+  // Club auctions are team-nominated (snake order of fantasy teams). The current nominator (or admin)
+  // picks a PL club; `nominateClub` validates club-less eligibility + availability and opens the bid.
+  if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
+    if (typeof plTeamId !== "number") {
+      return NextResponse.json({ error: "plTeamId is required to nominate a club" }, { status: 400 });
+    }
+    const clubSnakeOrder: string[] = JSON.parse(sessionRow[0].snakeOrder);
+    const clubNominatorId = clubSnakeOrder[sessionRow[0].currentNominatorIndex];
+    if (!isAdmin && session?.id !== clubNominatorId) {
+      return NextResponse.json({ error: "Not your turn to nominate a club" }, { status: 403 });
+    }
+    // When an admin nominates on a team's behalf, attribute it to the current nominator.
+    const nominatorTeamId = !isAdmin && session ? session.id : clubNominatorId;
+    const result = await nominateClub(sessionId, nominatorTeamId, plTeamId);
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    return NextResponse.json({ success: true, bidId: result.bidId });
+  }
+
+  // Player auction requires the element identity.
+  if (!fplElementId || !playerName) {
+    return NextResponse.json(
+      { error: "fplElementId and playerName are required" },
       { status: 400 }
     );
   }

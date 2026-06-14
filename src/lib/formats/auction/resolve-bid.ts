@@ -31,7 +31,9 @@ import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
 import {
   CLUB_AUCTION_SESSION_TYPE,
   resolveClubBid,
-  advanceClubQueue,
+  advanceClubNominator,
+  setClubNominationDeadline,
+  autoNominateClubForTeam,
 } from "./club-auction";
 
 const DEFAULT_MIN_BID = 500_000;
@@ -257,7 +259,7 @@ export async function advanceNominator(sessionId: string): Promise<void> {
   if (!sessionRow.length) return;
 
   if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
-    await advanceClubQueue(sessionId);
+    await advanceClubNominator(sessionId);
     return;
   }
 
@@ -366,7 +368,7 @@ export async function setNominationDeadline(sessionId: string): Promise<void> {
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
   if (sessionRow[0]?.type === CLUB_AUCTION_SESSION_TYPE) {
-    await advanceClubQueue(sessionId);
+    await setClubNominationDeadline(sessionId);
     return;
   }
   if (!sessionRow.length) return;
@@ -386,6 +388,30 @@ export async function setNominationDeadline(sessionId: string): Promise<void> {
   await db
     .update(auctionSessions)
     .set({ nominationDeadline: deadline })
+    .where(eq(auctionSessions.id, sessionId));
+}
+
+/**
+ * Start a post-sale intermission: a short cooldown after a lot sells, during which all clients
+ * re-sync to authoritative state and see a "next nomination in N" countdown before the next
+ * nominator is armed. Sets `intermissionUntil` and clears any nomination deadline; the SSE stream
+ * advances the nominator once the window elapses. If the session's `intermissionSeconds` is 0 the
+ * intermission is disabled and we advance immediately (preserving the old instant-advance behaviour).
+ */
+export async function beginIntermission(sessionId: string): Promise<void> {
+  const row = await db
+    .select({ intermissionSeconds: auctionSessions.intermissionSeconds })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+  const secs = row[0]?.intermissionSeconds ?? 5;
+  if (secs <= 0) {
+    await advanceNominator(sessionId);
+    return;
+  }
+  await db
+    .update(auctionSessions)
+    .set({ intermissionUntil: new Date(Date.now() + secs * 1000), nominationDeadline: null })
     .where(eq(auctionSessions.id, sessionId));
 }
 
@@ -573,6 +599,18 @@ export async function handleNominationTimeout(
   nominatorTeamId: string,
   leagueId: string
 ): Promise<"auto-nominated" | "penalised" | "skipped-full"> {
+  // Club auction: no wishlist / penalty model — auto-pick a random available club for the team so
+  // the snake keeps moving. A "completed"/"noop" outcome (e.g. clubs exhausted) maps to skipped-full.
+  const sessTypeRow = await db
+    .select({ type: auctionSessions.type })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+  if (sessTypeRow[0]?.type === CLUB_AUCTION_SESSION_TYPE) {
+    const outcome = await autoNominateClubForTeam(sessionId, nominatorTeamId);
+    return outcome === "auto-nominated" ? "auto-nominated" : "skipped-full";
+  }
+
   // If the team's squad is already full (or full minus penalty slots), skip
   // them without penalty — they have nothing left to bid on.
   const [teamRow, ownership] = await Promise.all([

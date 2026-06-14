@@ -4,21 +4,21 @@
  * The club auction is a separate auction session (`auctionSessions.type = "club-auction"`)
  * that runs before the initial player auction. State is co-located in the existing tables:
  *
- *   - `auctionSessions.snakeOrder`  → JSON array of remaining PL team IDs queued for this round.
- *   - `auctionSessions.currentNominatorIndex` → pointer into snakeOrder for the next club to nominate.
- *   - `auctionSessions.cycleNumber` → which pass we are on (1 = first pass over all 20 clubs,
- *                                     2 = re-nomination of unsold clubs).
+ *   - `auctionSessions.snakeOrder`  → JSON array of fantasy team IDs (the nomination snake order).
+ *   - `auctionSessions.currentNominatorIndex` → pointer into snakeOrder for the team whose turn it is.
  *   - `auctionBids` row per club nomination:
  *       fplElementId = PL bootstrap team id (re-purposed; both are int IDs, just different namespaces)
  *       playerName   = PL team name
- *       nominatorTeamId / currentHighBidderId = SENTINEL — first fantasy team in the league (any club-less team).
- *       Real bids show up as `auctionBidLogs.type = "bid"` rows; "no bids" → unsold.
+ *       nominatorTeamId / currentHighBidderId = the nominating (club-less) fantasy team, who opens as
+ *       the floor bidder. Other club-less teams may outbid via `auctionBidLogs.type = "bid"` rows.
  *
- * When a club bid resolves:
- *   - SOLD  (≥1 real bid): write `auctionClubOwnership` row, deduct purse, emit `club_purchased` notification.
- *   - UNSOLD (no real bid): mark bid status; club rejoins round-2 queue (if cycle === 1).
+ * Each club-less team takes a turn nominating a PL club; the nominator opens at the floor, so a
+ * nominated club always SELLS (to the nominator, or a higher counter-bid). Teams that already own a
+ * club are skipped and barred from bidding, so the session completes once every team owns exactly one
+ * club — guaranteeing full distribution.
  *
- * The whole flow is admin/system driven — there is no nomination-by-team turn.
+ * When a club bid resolves (always SOLD): write `auctionClubOwnership` row, deduct purse, emit a
+ * `club_purchased` notification, then advance to the next club-less nominator.
  */
 
 import { db } from "@/lib/db";
@@ -31,7 +31,7 @@ import {
   leagues,
   plStandingsConfig,
 } from "@/lib/db/schema";
-import { eq, and, count, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { getFplFixturesForGw } from "@/lib/fpl-live/players-left";
@@ -207,14 +207,6 @@ function shuffleInPlace<T>(arr: T[]): T[] {
   return arr;
 }
 
-/**
- * Build the initial randomised queue for a brand new club auction session.
- * Returns the PL team IDs (as numbers) in nomination order.
- */
-export function buildInitialClubQueue(plClubIds: number[]): number[] {
-  return shuffleInPlace([...plClubIds]);
-}
-
 // ── Eligibility / state helpers ──
 
 /**
@@ -247,122 +239,131 @@ export async function getUnsoldClubIds(leagueId: string, allClubIds: number[]): 
   return allClubIds.filter((id) => !ownedSet.has(id));
 }
 
-/**
- * Pick a sentinel team to populate `auctionBids.nominatorTeamId` / `currentHighBidderId`
- * during a club nomination. Any non-ghost team in the league works — the bid resolver
- * doesn't trust this value; it inspects `auctionBidLogs.type = "bid"` to decide sold/unsold.
- */
-async function pickSentinelTeam(leagueId: string): Promise<string | null> {
-  const row = await db
-    .select({ id: teams.id })
-    .from(teams)
-    .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)))
-    .limit(1);
-  return row[0]?.id ?? null;
+// ── Team-based club nomination (snake order, one club per team) ──
+//
+// The club auction mirrors the player auction: `snakeOrder` holds fantasy team IDs and each
+// club-less team takes a turn nominating a PL club of their choice. The nominator opens as the
+// floor bidder, so a nominated club always sells (to the nominator, or to a higher counter-bid from
+// another club-less team). Teams that already own a club are skipped, and the session completes
+// once every team owns one — guaranteeing full distribution.
+
+const CLUB_NOMINATION_TIMEOUT_DEFAULT = 60;
+
+/** All 20 PL club IDs that are not yet owned in this league. */
+export async function getAvailableClubIds(leagueId: string): Promise<number[]> {
+  const bootstrap = await fetchBootstrapData();
+  const allIds = ((bootstrap.teams ?? []) as Array<{ id: number }>).map((t) => t.id);
+  return getUnsoldClubIds(leagueId, allIds);
 }
 
-// ── Auto-nominate the next club in the queue ──
+/** Find the first club-less team at or after `startIdx` (scanning the whole snake ring once). */
+async function findClublessFrom(
+  leagueId: string,
+  snakeOrder: string[],
+  startIdx: number
+): Promise<{ index: number; teamId: string } | null> {
+  const clubless = new Set(await getClubLessTeamIds(leagueId));
+  if (clubless.size === 0) return null;
+  const n = snakeOrder.length;
+  for (let step = 0; step < n; step++) {
+    const idx = (((startIdx + step) % n) + n) % n;
+    const tid = snakeOrder[idx];
+    if (tid && clubless.has(tid)) return { index: idx, teamId: tid };
+  }
+  return null;
+}
+
+async function completeClubSession(sessionId: string): Promise<void> {
+  await db
+    .update(auctionSessions)
+    .set({ status: "completed", nominationDeadline: null })
+    .where(eq(auctionSessions.id, sessionId));
+  await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
+}
 
 /**
- * Create the next club nomination if the session has one queued and no open bid.
- * Returns the bid id on success, or null if the queue is exhausted / a bid is already open.
- *
- * If the queue is exhausted on cycle 1, this rebuilds it from unsold clubs for cycle 2.
- * If exhausted on cycle 2 (or if every team already has a club), this marks the session "completed".
+ * Point the session at a club-less nominator and arm their nomination deadline.
+ *   - `startOffset = 0` arms the current nominator (or the next club-less team if they already own one).
+ *   - `startOffset = 1` advances to the next club-less team after the current index.
+ * Completes the session when every team already owns a club. No-ops while a club is on the block.
  */
-export async function autoNominateNextClub(sessionId: string): Promise<string | null> {
-  const sessionRow = await db
-    .select()
-    .from(auctionSessions)
-    .where(eq(auctionSessions.id, sessionId))
-    .limit(1);
-  if (sessionRow.length === 0 || sessionRow[0].type !== CLUB_AUCTION_SESSION_TYPE) return null;
-  if (sessionRow[0].status !== "active") return null;
+async function armClubNominator(sessionId: string, startOffset: number): Promise<void> {
+  const sess = await db.select().from(auctionSessions).where(eq(auctionSessions.id, sessionId)).limit(1);
+  if (!sess.length || sess[0].type !== CLUB_AUCTION_SESSION_TYPE || sess[0].status !== "active") return;
 
-  // Don't nominate if a bid is already open
+  // Don't arm a nominator while a club is still on the block.
   const openBids = await db
     .select({ id: auctionBids.id })
     .from(auctionBids)
     .where(and(eq(auctionBids.sessionId, sessionId), eq(auctionBids.status, "open")))
     .limit(1);
-  if (openBids.length > 0) return null;
+  if (openBids.length > 0) return;
 
-  const leagueId = sessionRow[0].leagueId;
-  const cycleNumber = sessionRow[0].cycleNumber ?? 1;
-  let queue: number[] = [];
+  let snakeOrder: string[] = [];
   try {
-    const parsed = JSON.parse(sessionRow[0].snakeOrder);
-    if (Array.isArray(parsed)) queue = parsed.filter((n): n is number => typeof n === "number");
+    const parsed = JSON.parse(sess[0].snakeOrder);
+    if (Array.isArray(parsed)) snakeOrder = parsed.filter((s): s is string => typeof s === "string");
   } catch { /* fall through to empty */ }
-  let cursor = sessionRow[0].currentNominatorIndex ?? 0;
+  if (snakeOrder.length === 0) { await completeClubSession(sessionId); return; }
 
-  // Skip past already-owned clubs (defence against stale queue)
-  const clubLess = await getClubLessTeamIds(leagueId);
-  if (clubLess.length === 0) {
-    await db.update(auctionSessions).set({ status: "completed" }).where(eq(auctionSessions.id, sessionId));
-    await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
-    return null;
-  }
+  const currentIdx = sess[0].currentNominatorIndex ?? 0;
+  const found = await findClublessFrom(sess[0].leagueId, snakeOrder, currentIdx + startOffset);
+  if (!found) { await completeClubSession(sessionId); return; }
 
-  const ownedNow = new Set<number>(
-    (await db
-      .select({ plTeamId: auctionClubOwnership.plTeamId })
-      .from(auctionClubOwnership)
-      .where(eq(auctionClubOwnership.leagueId, leagueId))
-    ).map((r) => r.plTeamId)
-  );
+  const nomTimeout = sess[0].nominationTimeoutSeconds ?? CLUB_NOMINATION_TIMEOUT_DEFAULT;
+  await db
+    .update(auctionSessions)
+    .set({ currentNominatorIndex: found.index, nominationDeadline: new Date(Date.now() + nomTimeout * 1000) })
+    .where(eq(auctionSessions.id, sessionId));
+}
 
-  while (cursor < queue.length && ownedNow.has(queue[cursor])) {
-    cursor++;
-  }
+/** Arm the current club-less nominator (used on session start / SSE no-deadline poll). */
+export async function setClubNominationDeadline(sessionId: string): Promise<void> {
+  await armClubNominator(sessionId, 0);
+}
 
-  // Queue exhausted — try to rebuild for round 2, or complete the session.
-  if (cursor >= queue.length) {
-    if (cycleNumber >= 2) {
-      await db.update(auctionSessions).set({ status: "completed" }).where(eq(auctionSessions.id, sessionId));
-      await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
-      return null;
-    }
-    const bootstrap = await fetchBootstrapData();
-    const allIds = ((bootstrap.teams ?? []) as Array<{ id: number }>).map((t) => t.id);
-    const unsold = await getUnsoldClubIds(leagueId, allIds);
-    if (unsold.length === 0) {
-      await db.update(auctionSessions).set({ status: "completed" }).where(eq(auctionSessions.id, sessionId));
-      await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
-      return null;
-    }
-    const newQueue = shuffleInPlace(unsold);
-    await db
-      .update(auctionSessions)
-      .set({
-        snakeOrder: JSON.stringify(newQueue),
-        currentNominatorIndex: 0,
-        cycleNumber: 2,
-      })
-      .where(eq(auctionSessions.id, sessionId));
-    queue = newQueue;
-    cursor = 0;
-  }
+/** Advance to the next club-less nominator after a club resolves. */
+export async function advanceClubNominator(sessionId: string): Promise<void> {
+  await armClubNominator(sessionId, 1);
+}
 
-  const nextPlTeamId = queue[cursor];
+/**
+ * Open a club nomination by `teamId` for PL club `plTeamId`. The nominator becomes the opening high
+ * bidder at the floor price, so the club always sells — to the nominator, or to a higher counter-bid
+ * from another club-less team. Returns the new bid id, or a typed error.
+ */
+export async function nominateClub(
+  sessionId: string,
+  teamId: string,
+  plTeamId: number
+): Promise<{ bidId: string } | { error: string; status: number }> {
+  const sess = await db.select().from(auctionSessions).where(eq(auctionSessions.id, sessionId)).limit(1);
+  if (!sess.length || sess[0].type !== CLUB_AUCTION_SESSION_TYPE) return { error: "Not a club auction session", status: 400 };
+  if (sess[0].status !== "active") return { error: "Auction session is not active", status: 400 };
+  const leagueId = sess[0].leagueId;
 
-  // Resolve club name from FPL bootstrap (also gives us the short_name)
+  // Reject if a club is already on the block.
+  const open = await db
+    .select({ id: auctionBids.id })
+    .from(auctionBids)
+    .where(and(eq(auctionBids.sessionId, sessionId), eq(auctionBids.status, "open")))
+    .limit(1);
+  if (open.length > 0) return { error: "A club is already on the block", status: 409 };
+
+  // Nominator must still be club-less.
+  const clubless = new Set(await getClubLessTeamIds(leagueId));
+  if (!clubless.has(teamId)) return { error: "You already own a PL club", status: 400 };
+
+  // Club must be available (unowned).
+  const available = new Set(await getAvailableClubIds(leagueId));
+  if (!available.has(plTeamId)) return { error: "That club is no longer available", status: 409 };
+
   const bootstrap = await fetchBootstrapData();
   const club = ((bootstrap.teams ?? []) as Array<{ id: number; name: string; short_name: string }>)
-    .find((t) => t.id === nextPlTeamId);
-  if (!club) {
-    // Stale ID — skip and try again
-    await db
-      .update(auctionSessions)
-      .set({ currentNominatorIndex: cursor + 1 })
-      .where(eq(auctionSessions.id, sessionId));
-    return autoNominateNextClub(sessionId);
-  }
+    .find((t) => t.id === plTeamId);
+  if (!club) return { error: "Unknown PL club", status: 400 };
 
-  const sentinelTeamId = await pickSentinelTeam(leagueId);
-  if (!sentinelTeamId) return null;
-
-  const bidTimerSeconds = sessionRow[0].bidTimerSeconds ?? 20;
+  const bidTimerSeconds = sess[0].bidTimerSeconds ?? 20;
   const bidId = generateId();
   const expiresAt = new Date(Date.now() + bidTimerSeconds * 1000);
 
@@ -370,11 +371,11 @@ export async function autoNominateNextClub(sessionId: string): Promise<string | 
     id: bidId,
     leagueId,
     sessionId,
-    nominatorTeamId: sentinelTeamId,
-    fplElementId: nextPlTeamId,
+    nominatorTeamId: teamId,
+    fplElementId: plTeamId,
     playerName: club.name,
     currentHighBid: CLUB_FLOOR_BID,
-    currentHighBidderId: sentinelTeamId,
+    currentHighBidderId: teamId,
     minBid: CLUB_FLOOR_BID,
     status: "open",
     expiresAt,
@@ -383,18 +384,44 @@ export async function autoNominateNextClub(sessionId: string): Promise<string | 
   await db.insert(auctionBidLogs).values({
     id: generateId(),
     bidId,
-    teamId: sentinelTeamId,
+    teamId,
     amount: CLUB_FLOOR_BID,
     type: "nomination",
   });
 
-  // Persist the advanced cursor; on resolve we will increment further past the now-resolved club.
+  // The bid timer now governs — clear the nomination deadline.
   await db
     .update(auctionSessions)
-    .set({ currentNominatorIndex: cursor, nominationDeadline: null })
+    .set({ nominationDeadline: null })
     .where(eq(auctionSessions.id, sessionId));
 
-  return bidId;
+  return { bidId };
+}
+
+/**
+ * Auto-pick a random available club for the current nominator when their nomination deadline lapses,
+ * so the auction can't stall. Returns the outcome for the SSE feed.
+ */
+export async function autoNominateClubForTeam(
+  sessionId: string,
+  teamId: string
+): Promise<"auto-nominated" | "completed" | "noop"> {
+  const sess = await db
+    .select({ leagueId: auctionSessions.leagueId })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, sessionId))
+    .limit(1);
+  if (!sess.length) return "noop";
+  const available = await getAvailableClubIds(sess[0].leagueId);
+  if (available.length === 0) { await completeClubSession(sessionId); return "completed"; }
+  const pick = available[Math.floor(Math.random() * available.length)];
+  const res = await nominateClub(sessionId, teamId, pick);
+  if ("error" in res) {
+    // Nominator may have just won a club elsewhere, or lost their turn — re-arm the next one.
+    await advanceClubNominator(sessionId);
+    return "noop";
+  }
+  return "auto-nominated";
 }
 
 // ── Resolve a club-auction bid (sold or unsold) ──
@@ -418,22 +445,16 @@ interface BidRow {
  *
  * Idempotent: only proceeds if the bid is still "open".
  */
-export async function resolveClubBid(bid: BidRow): Promise<"sold" | "unsold" | "already-resolved"> {
-  // Idempotent claim: only one caller flips status from open.
-  const realBids = await db
-    .select({ c: count() })
-    .from(auctionBidLogs)
-    .where(and(eq(auctionBidLogs.bidId, bid.id), eq(auctionBidLogs.type, "bid")));
-  const hadBids = (realBids[0]?.c ?? 0) > 0;
-
-  if (hadBids) {
-    const updated = await db
-      .update(auctionBids)
-      .set({ status: "sold", updatedAt: new Date() })
-      .where(and(eq(auctionBids.id, bid.id), eq(auctionBids.status, "open")))
-      .returning();
-    if (updated.length === 0) return "already-resolved";
-    const fresh = updated[0];
+export async function resolveClubBid(bid: BidRow): Promise<"sold" | "already-resolved"> {
+  // The nominator is always the opening floor bidder, so a nominated club always sells — to the
+  // nominator, or to a higher counter-bid. Idempotent: only one caller flips status from open.
+  const updated = await db
+    .update(auctionBids)
+    .set({ status: "sold", updatedAt: new Date() })
+    .where(and(eq(auctionBids.id, bid.id), eq(auctionBids.status, "open")))
+    .returning();
+  if (updated.length === 0) return "already-resolved";
+  const fresh = updated[0];
 
     // Look up tier. resolveTier returns null only when the PL team id is in
     // none of {top8, mid, promoted} — i.e., the standings config is
@@ -519,47 +540,7 @@ export async function resolveClubBid(bid: BidRow): Promise<"sold" | "unsold" | "
       console.error("[club-auction] notification failed:", err);
     }
 
-    return "sold";
-  }
-
-  // No real bids → unsold
-  const updated = await db
-    .update(auctionBids)
-    .set({ status: "unsold", updatedAt: new Date() })
-    .where(and(eq(auctionBids.id, bid.id), eq(auctionBids.status, "open")))
-    .returning();
-  if (updated.length === 0) return "already-resolved";
-
-  await db.insert(auctionBidLogs).values({
-    id: generateId(),
-    bidId: bid.id,
-    teamId: bid.nominatorTeamId,
-    amount: 0,
-    type: "unsold",
-  });
-
-  return "unsold";
-}
-
-/**
- * After a club bid resolves, advance the queue cursor and (if appropriate) auto-nominate the next club.
- * Mirrors `advanceNominator` for player auctions.
- */
-export async function advanceClubQueue(sessionId: string): Promise<void> {
-  const sess = await db
-    .select({ currentNominatorIndex: auctionSessions.currentNominatorIndex })
-    .from(auctionSessions)
-    .where(eq(auctionSessions.id, sessionId))
-    .limit(1);
-  if (!sess.length) return;
-
-  await db
-    .update(auctionSessions)
-    .set({ currentNominatorIndex: (sess[0].currentNominatorIndex ?? 0) + 1 })
-    .where(eq(auctionSessions.id, sessionId));
-
-  // Try to nominate the next club. If the queue is exhausted, this marks the session completed.
-  await autoNominateNextClub(sessionId);
+  return "sold";
 }
 
 // ── Public introspection ──
