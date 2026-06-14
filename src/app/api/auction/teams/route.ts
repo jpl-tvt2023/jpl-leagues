@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
     .select({
       id: teams.id,
       name: teams.name,
+      teamLoginId: teams.teamLoginId,
       purse: teams.purse,
       penaltySlots: teams.penaltySlots,
       bonusSlots: teams.bonusSlots,
@@ -96,15 +97,16 @@ export async function GET(request: NextRequest) {
   const clubByTeamId = await fetchClubOwnershipMap(leagueId);
 
   const slotsByTeam = new Map(leagueTeams.map((t) => [t.id, { penaltySlots: t.penaltySlots ?? 0, bonusSlots: t.bonusSlots ?? 0 }]));
+  const loginByTeam = new Map(leagueTeams.map((t) => [t.id, t.teamLoginId]));
   const teamList = standings.map((s) => {
     const tp = topPerformerByTeam.get(s.teamId);
     const ownedClub = clubByTeamId.get(s.teamId) ?? null;
     const slots = slotsByTeam.get(s.teamId) ?? { penaltySlots: 0, bonusSlots: 0 };
     return {
       teamId: s.teamId,
-      // Teams page shows the user-supplied team name + a separate ownedClub chip — no override here.
-      // (Every other auction surface still applies the club-name override via its own API helpers.)
-      name: s.teamName,
+      // Display the owned-club name (override), and surface the Username for the hover tooltip.
+      name: ownedClub?.plTeamName ?? s.teamName,
+      teamLoginId: loginByTeam.get(s.teamId) ?? null,
       rank: s.rank,
       totalPoints: s.totalPoints,
       purse: s.purse,

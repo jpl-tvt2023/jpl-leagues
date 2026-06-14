@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, leagues, auctionOwnership } from "@/lib/db";
+import { db, teams, leagues, auctionOwnership, auctionScores } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
-import { calculateRefund } from "@/lib/formats/auction/economy";
+import { calculateFMV } from "@/lib/formats/auction/economy";
 import { isAuctionLive } from "@/lib/formats/auction/live-session";
+import { countsFromOwnership, MIN_QUOTA } from "@/lib/formats/auction/squad-rules";
+
+const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 
 /**
  * POST /api/auction/release
@@ -67,14 +70,55 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Calculate projected refund (50% of purchase price) — for display only, not credited yet
-  const projectedRefund = calculateRefund(ownership.purchasePrice);
+  // Min-position guard: a release must not drop the squad below the positional minimum (1/3/3/1).
+  if (ownership.elementType != null) {
+    const activeOwnership = await db
+      .select({ elementType: auctionOwnership.elementType })
+      .from(auctionOwnership)
+      .where(
+        and(
+          eq(auctionOwnership.leagueId, ownership.leagueId),
+          eq(auctionOwnership.teamId, ownership.teamId),
+          eq(auctionOwnership.status, "active"),
+        ),
+      );
+    const counts = countsFromOwnership(activeOwnership);
+    const pos = ownership.elementType as 1 | 2 | 3 | 4;
+    if ((counts[pos] ?? 0) - 1 < (MIN_QUOTA[pos] ?? 0)) {
+      return NextResponse.json(
+        {
+          error: `Releasing this player would drop you below the minimum of ${MIN_QUOTA[pos]} ${POSITION_LABELS[pos] ?? "for this position"}. Acquire a replacement first.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
 
-  // Mark as pending release — do NOT update purse or totalRefunds
+  // Refund = 50% of the player's FMV *at release time* (not the purchase price). FMV = purchase +
+  // appreciation from cumulative RAW points (mirrors the squad API). Snapshot it now so the amount
+  // is locked even if the player keeps scoring before the release finalises.
+  const playerScores = await db
+    .select({ playerBreakdown: auctionScores.playerBreakdown })
+    .from(auctionScores)
+    .where(and(eq(auctionScores.leagueId, ownership.leagueId), eq(auctionScores.teamId, ownership.teamId)));
+  let totalPoints = 0;
+  for (const s of playerScores) {
+    try {
+      const breakdown: Array<{ elementId: number; points?: number; rawPoints?: number }> = JSON.parse(s.playerBreakdown);
+      for (const p of breakdown) {
+        if (p.elementId === ownership.fplElementId) totalPoints += p.rawPoints ?? p.points ?? 0;
+      }
+    } catch { /* tolerate malformed rows */ }
+  }
+  const fmv = calculateFMV(ownership.purchasePrice, totalPoints);
+  const projectedRefund = Math.floor(fmv * 0.5);
+
+  // Mark as pending release and snapshot the refund — do NOT update purse or totalRefunds yet.
   await db
     .update(auctionOwnership)
     .set({
       status: "pending_release",
+      releaseRefund: projectedRefund,
       updatedAt: new Date(),
     })
     .where(eq(auctionOwnership.id, ownershipId));
@@ -86,6 +130,7 @@ export async function POST(request: NextRequest) {
     playerName: ownership.playerName,
     fplElementId: ownership.fplElementId,
     purchasePrice: ownership.purchasePrice,
+    fmv,
     projectedRefund,
     projectedForfeit: ownership.purchasePrice - projectedRefund,
   });

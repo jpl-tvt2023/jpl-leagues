@@ -20,6 +20,7 @@ import {
   setClubNominationDeadline,
   simulateClubAuction,
   loadStandingsConfig,
+  getClubLessTeamIds,
 } from "@/lib/formats/auction/club-auction";
 import { resolveTier } from "@/lib/data/pl-standings-seed";
 import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
@@ -135,6 +136,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // For a club auction, signal when every team owns a club so the UI can show a "complete — awaiting
+  // admin" conclusion (the session idles rather than auto-completing).
+  let allClubsAllocated = false;
+  if (activeSession && activeSession.type === CLUB_AUCTION_SESSION_TYPE) {
+    allClubsAllocated = (await getClubLessTeamIds(leagueId)).length === 0;
+  }
+
   return NextResponse.json({
     sessions: sessions.map((s) => ({
       id: s.id,
@@ -159,6 +167,7 @@ export async function GET(request: NextRequest) {
           nominationTimeoutSeconds: activeSession.nominationTimeoutSeconds ?? 60,
           intermissionSeconds: activeSession.intermissionSeconds ?? 5,
           intermissionUntil: activeSession.intermissionUntil?.toISOString() ?? null,
+          allClubsAllocated,
           currentBid,
         }
       : null,
@@ -404,9 +413,15 @@ export async function POST(request: NextRequest) {
 
   const newStatus = action === "start" || action === "resume" ? "active" : action === "pause" ? "paused" : "completed";
 
-  // If starting a session in a simulated league, run auto-allocation instead of live auction.
-  // Dispatch by session type so a club-auction session runs the club allocator (not the player draft).
-  if (newStatus === "active" && (action === "start") && leagueRow[0].isSimulated) {
+  // If starting a session in a simulated league, run auto-allocation instead of a live auction —
+  // but ONLY for the club auction and the initial player auction. Mini-auctions always run live
+  // (they fall through to the normal live-start path below) even in a simulated league.
+  if (
+    newStatus === "active" &&
+    action === "start" &&
+    leagueRow[0].isSimulated &&
+    sessionRow[0].type !== "mini-auction"
+  ) {
     await db
       .update(auctionSessions)
       .set({ status: "active" })
@@ -423,6 +438,7 @@ export async function POST(request: NextRequest) {
           clubsAllocated: result.allocated,
         });
       }
+      // type === "initial"
       const result = await simulateAuction(leagueId, sessionId);
       return NextResponse.json({
         success: true,

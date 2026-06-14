@@ -5,6 +5,7 @@ import { db, teams, auctionScores, auctionOwnership, leagues } from "../../db";
 import { eq, and } from "drizzle-orm";
 import { calculateAuctionTeamScore } from "./scoring";
 import { getPayoutForRank, calculateRefund, calculateFMV } from "./economy";
+import { isPrimary } from "./tier";
 import { createNotification } from "../../notifications";
 import { randomUUID } from "crypto";
 
@@ -148,10 +149,19 @@ export async function processAuctionGameweek(
     return (purseByTeam.get(b.teamId) ?? 0) - (purseByTeam.get(a.teamId) ?? 0);
   });
 
+  // Primary-tier leagues have no GW payouts (trades are disabled, so extra purse is useless). Ranks
+  // are still assigned for standings; the payout is just recorded/credited as £0.
+  const leagueTierRow = await db
+    .select({ auctionTier: leagues.auctionTier })
+    .from(leagues)
+    .where(eq(leagues.id, leagueId))
+    .limit(1);
+  const noPayouts = isPrimary(leagueTierRow[0]?.auctionTier);
+
   // Assign ranks and payouts
   const rankedScores = teamScores.map((score, index) => {
     const rank = index + 1;
-    const payout = getPayoutForRank(rank);
+    const payout = noPayouts ? 0 : getPayoutForRank(rank);
     return { ...score, rank, payout };
   });
 
@@ -258,9 +268,10 @@ export async function processAuctionGameweek(
           )
         );
 
-      // Aggregate refunds per team to avoid multiple round-trips
+      // Aggregate refunds per team to avoid multiple round-trips. Use the FMV-based refund snapshotted
+      // at mark-for-release time; fall back to 50% of purchase for legacy rows with no snapshot.
       for (const p of pendingReleases) {
-        const refund = calculateRefund(p.purchasePrice);
+        const refund = p.releaseRefund ?? calculateRefund(p.purchasePrice);
         await tx
           .update(auctionOwnership)
           .set({
@@ -384,10 +395,11 @@ export async function finalizePendingReleasesNow(
 
   if (pendingReleases.length === 0) return { finalized: 0 };
 
-  // Aggregate refunds per team
+  // Aggregate refunds per team — use the FMV-based refund snapshotted at release; fall back to 50%
+  // of purchase for legacy rows.
   const refundByTeam = new Map<string, number>();
   for (const p of pendingReleases) {
-    const refund = calculateRefund(p.purchasePrice);
+    const refund = p.releaseRefund ?? calculateRefund(p.purchasePrice);
     await db
       .update(auctionOwnership)
       .set({ status: "released", releasedGw: gwNumber, updatedAt: new Date() })

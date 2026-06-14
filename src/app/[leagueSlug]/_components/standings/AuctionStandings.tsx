@@ -128,6 +128,7 @@ interface AuctionGwHistoryEntry {
 interface AuctionStandingRow {
   teamId: string;
   teamName: string;
+  teamLoginId?: string | null;
   totalPoints: number;
   rawPoints: number;
   synergyBonus: number;
@@ -210,6 +211,7 @@ export function AuctionStandings() {
         return {
           teamId: s.teamId,
           teamName: s.teamName,
+          teamLoginId: s.teamLoginId ?? null,
           points: entry.points,
           payout: entry.payout,
           gwRank: entry.rank,
@@ -299,7 +301,7 @@ export function AuctionStandings() {
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{r.rank}</td>
                               <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
                                 <div className="font-semibold text-white flex items-center gap-2 flex-wrap">
-                                  <span>{getTeamDisplayName({ id: r.teamId, name: r.teamName }, clubByTeamId[r.teamId])}</span>
+                                  <span title={r.teamLoginId ? `Manager: ${r.teamLoginId}` : undefined}>{getTeamDisplayName({ id: r.teamId, name: r.teamName }, clubByTeamId[r.teamId])}</span>
                                   {clubByTeamId[r.teamId] && (
                                     <TierChip
                                       tier={clubByTeamId[r.teamId].tier}
@@ -386,7 +388,7 @@ export function AuctionStandings() {
                             </td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
                               <div className="font-semibold text-white flex items-center gap-2 flex-wrap">
-                                <span>{getTeamDisplayName({ id: row.teamId, name: row.teamName }, clubByTeamId[row.teamId])}</span>
+                                <span title={row.teamLoginId ? `Manager: ${row.teamLoginId}` : undefined}>{getTeamDisplayName({ id: row.teamId, name: row.teamName }, clubByTeamId[row.teamId])}</span>
                                 {clubByTeamId[row.teamId] && (
                                   <TierChip
                                     tier={clubByTeamId[row.teamId].tier}

@@ -127,6 +127,13 @@
       "when": 1780100000000,
       "tag": "0017_auction_intermission",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1780200000000,
+      "tag": "0018_auction_release_refund",
+      "breakpoints": true
     }
   ]
 }

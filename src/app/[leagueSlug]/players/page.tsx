@@ -68,6 +68,7 @@ interface PlayerRow {
   plTeamShort: string;
   ownerTeamId: string | null;
   ownerTeamName: string | null;
+  ownerTeamLoginId: string | null;
   gwPoints: number;
   seasonPoints: number;
   status: string;
@@ -386,6 +387,7 @@ export default function PlayersPage() {
                           {p.ownerTeamName ? (
                             <span
                               className={`text-xs font-semibold ${isMine ? "text-yellow-300" : "text-purple-300"}`}
+                              title={p.ownerTeamLoginId ? `Manager: ${p.ownerTeamLoginId}` : undefined}
                             >
                               {p.ownerTeamName}
                             </span>

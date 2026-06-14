@@ -1078,8 +1078,8 @@ export async function GET(request: NextRequest) {
 // ===== Auction format dashboard =====
 async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug: string) {
   try {
-    // Get league config (for initialBudget + tier gating)
-    const leagueRow = await db.select({ initialBudget: leagues.initialBudget, auctionTier: leagues.auctionTier }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+    // Get league config (for initialBudget + tier gating + whether the team name is club-derived)
+    const leagueRow = await db.select({ initialBudget: leagues.initialBudget, auctionTier: leagues.auctionTier, clubAuctionEnabled: leagues.clubAuctionEnabled }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
 
     // Get team info
     const team = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
@@ -1261,9 +1261,11 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
       leagueSlug,
       leagueFormat: "auction",
       auctionTier: leagueRow[0]?.auctionTier ?? "complete",
+      clubAuctionEnabled: !!leagueRow[0]?.clubAuctionEnabled,
       team: {
         id: t.id,
         name: t.name,
+        teamLoginId: t.teamLoginId,
         ownedClub: myClub,
       },
       purse: ledgerPurse,

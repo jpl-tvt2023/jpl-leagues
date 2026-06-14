@@ -26,6 +26,7 @@ interface BreakdownPlayer {
 interface TeamRow {
   teamId: string;
   teamName: string;
+  teamLoginId?: string | null;
   totalPoints: number;
   rawPoints: number;
   synergyBonus: number;
@@ -291,7 +292,7 @@ export function AuctionGwResults() {
                                   <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-bold text-white">{row.rank || "—"}</td>
                                   <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">
                                     <div className={`font-semibold ${isMine ? "text-yellow-300" : "text-white"} flex items-center gap-2 flex-wrap`}>
-                                      <span>{getTeamDisplayName({ id: row.teamId, name: row.teamName }, clubByTeamId[row.teamId])}</span>
+                                      <span title={row.teamLoginId ? `Manager: ${row.teamLoginId}` : undefined}>{getTeamDisplayName({ id: row.teamId, name: row.teamName }, clubByTeamId[row.teamId])}</span>
                                       {clubByTeamId[row.teamId] && (
                                         <TierChip
                                           tier={clubByTeamId[row.teamId].tier}
