@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TierChip } from "@/components/TierChip";
+import { HelpTip } from "@/components/HelpTip";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 
 interface TeamCard {
@@ -84,6 +85,7 @@ function SortableTh({
   setSortDir,
   align = "left",
   className = "",
+  tip,
 }: {
   label: string;
   k: SortKey;
@@ -93,6 +95,7 @@ function SortableTh({
   setSortDir: (d: SortDir) => void;
   align?: "left" | "right";
   className?: string;
+  tip?: string;
 }) {
   const active = sortKey === k;
   const onClick = () => {
@@ -109,9 +112,10 @@ function SortableTh({
       <button
         type="button"
         onClick={onClick}
+        title="Click to sort by this column"
         className={`inline-flex items-center gap-1 transition hover:text-white ${active ? "text-yellow-300" : "text-gray-300"}`}
       >
-        {label}
+        {tip ? <HelpTip tip={tip}>{label}</HelpTip> : label}
         <span className="text-[9px]">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
       </button>
     </th>
@@ -293,12 +297,12 @@ export default function TeamsPage() {
                 <table className="w-full text-left min-w-[760px]">
                   <thead className="bg-white/10 text-xs uppercase tracking-wider">
                     <tr>
-                      <SortableTh label="#" k="rank" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} />
-                      <SortableTh label="Team" k="name" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} />
-                      <SortableTh label="Points" k="totalPoints" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" />
-                      <SortableTh label="Purse" k="purse" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" />
-                      <SortableTh label="Squad Value" k="squadValue" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" />
-                      <SortableTh label="Squad" k="squadSize" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" />
+                      <SortableTh label="#" k="rank" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} tip="Overall league rank by total points." />
+                      <SortableTh label="Team" k="name" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} tip="The league team (and owned PL club, if any). Click a row to see its squad." />
+                      <SortableTh label="Points" k="totalPoints" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" tip="Cumulative total points across all gameweeks." />
+                      <SortableTh label="Purse" k="purse" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" tip="Cash the team has available to bid and trade." />
+                      <SortableTh label="Squad Value" k="squadValue" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" tip="Combined fair-market value of the team's players." />
+                      <SortableTh label="Squad" k="squadSize" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" tip="Number of active players in the squad (out of the team's cap)." />
                       <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs uppercase tracking-wider font-semibold text-right text-gray-300">Top Scorer</th>
                     </tr>
                   </thead>

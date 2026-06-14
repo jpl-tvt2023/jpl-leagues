@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { HelpTip } from "@/components/HelpTip";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -27,6 +28,7 @@ function SortableTh({
   setSortDir,
   className = "",
   align = "left",
+  tip,
 }: {
   label: string;
   k: SortKey;
@@ -36,6 +38,7 @@ function SortableTh({
   setSortDir: (d: SortDir) => void;
   className?: string;
   align?: "left" | "right";
+  tip?: string;
 }) {
   const active = sortKey === k;
   const onClick = () => {
@@ -47,9 +50,10 @@ function SortableTh({
       <button
         type="button"
         onClick={onClick}
+        title="Click to sort by this column"
         className={`inline-flex items-center gap-1 hover:text-white transition ${active ? "text-yellow-300" : ""}`}
       >
-        {label}
+        {tip ? <HelpTip tip={tip}>{label}</HelpTip> : label}
         <span className="text-[9px]">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
       </button>
     </th>
@@ -263,6 +267,7 @@ export default function PlayersPage() {
               <select
                 value={positionFilter}
                 onChange={(e) => setPositionFilter(e.target.value)}
+                title="Filter the list by playing position"
                 className="bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white"
               >
                 <option value="" className="bg-slate-800">All</option>
@@ -279,6 +284,7 @@ export default function PlayersPage() {
               <select
                 value={plTeamFilter}
                 onChange={(e) => setPlTeamFilter(e.target.value)}
+                title="Filter by the player's Premier League club"
                 className="bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white"
               >
                 <option value="" className="bg-slate-800">All</option>
@@ -297,6 +303,7 @@ export default function PlayersPage() {
               <select
                 value={ownershipFilter}
                 onChange={(e) => setOwnershipFilter(e.target.value)}
+                title="Filter by who owns the player — all, free agents, your squad, or a specific team"
                 className="bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white"
               >
                 <option value="all" className="bg-slate-800">All</option>
@@ -326,6 +333,7 @@ export default function PlayersPage() {
               <input
                 type="text"
                 placeholder="Search player..."
+                title="Type part of a player's name to filter the list"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500/50"
@@ -345,12 +353,12 @@ export default function PlayersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-left">
-                  <SortableTh label="Player" k="webName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-4" />
-                  <SortableTh label="Owned By" k="ownerTeamName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" />
-                  <SortableTh label="Pos" k="position" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" />
-                  <SortableTh label="PL Team" k="plTeamShort" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" />
-                  <SortableTh label="Season" k="seasonPoints" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" align="right" />
-                  <SortableTh label="Price" k="purchasePrice" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" align="right" />
+                  <SortableTh label="Player" k="webName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-4" tip="The FPL player's name." />
+                  <SortableTh label="Owned By" k="ownerTeamName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" tip="Which league team currently owns this player. Blank = free agent (available to nominate)." />
+                  <SortableTh label="Pos" k="position" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" tip="Playing position: GKP, DEF, MID or FWD." />
+                  <SortableTh label="PL Team" k="plTeamShort" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" tip="The player's Premier League club." />
+                  <SortableTh label="Season" k="seasonPoints" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" align="right" tip="Total FPL points the player has scored this season." />
+                  <SortableTh label="Price" k="purchasePrice" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" align="right" tip="What the owning team paid for this player at auction. Blank for free agents." />
                 </tr>
               </thead>
               <tbody>
@@ -425,6 +433,7 @@ export default function PlayersPage() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1}
+                title="Go to the previous page of players"
                 className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-sm hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
               >
                 Previous
@@ -435,6 +444,7 @@ export default function PlayersPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
+                title="Go to the next page of players"
                 className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-sm hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
               >
                 Next

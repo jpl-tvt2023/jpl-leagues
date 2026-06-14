@@ -1078,8 +1078,8 @@ export async function GET(request: NextRequest) {
 // ===== Auction format dashboard =====
 async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug: string) {
   try {
-    // Get league config (for initialBudget)
-    const leagueRow = await db.select({ initialBudget: leagues.initialBudget }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+    // Get league config (for initialBudget + tier gating)
+    const leagueRow = await db.select({ initialBudget: leagues.initialBudget, auctionTier: leagues.auctionTier }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
 
     // Get team info
     const team = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
@@ -1260,6 +1260,7 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     return NextResponse.json({
       leagueSlug,
       leagueFormat: "auction",
+      auctionTier: leagueRow[0]?.auctionTier ?? "complete",
       team: {
         id: t.id,
         name: t.name,

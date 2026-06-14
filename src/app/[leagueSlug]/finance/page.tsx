@@ -175,10 +175,10 @@ export default function FinancePage() {
 
             {/* Summary cards — Net P&L removed since it's algebraically identical to (purse - initial). */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-              <SummaryCard label="Initial Budget" value={formatCurrency(data.initialBudget)} color="text-white" />
-              <SummaryCard label="Current Purse" value={formatCurrency(data.currentPurse)} color="text-green-300" />
-              <SummaryCard label="Total Spent" value={formatCurrency(data.summary.totalSpent)} color="text-red-300" />
-              <SummaryCard label="Total Earned" value={formatCurrency(totalEarned)} color="text-blue-300" />
+              <SummaryCard label="Initial Budget" value={formatCurrency(data.initialBudget)} color="text-white" tip="The starting purse every manager was given at the start of the season." />
+              <SummaryCard label="Current Purse" value={formatCurrency(data.currentPurse)} color="text-green-300" tip="Cash you have right now to bid and trade = initial budget + earnings − spending." />
+              <SummaryCard label="Total Spent" value={formatCurrency(data.summary.totalSpent)} color="text-red-300" tip="Everything you've paid out — purchases, club, slot unlocks, trade payments, transfer fees." />
+              <SummaryCard label="Total Earned" value={formatCurrency(totalEarned)} color="text-blue-300" tip="Everything credited to your purse — GW payouts, release refunds, trade income." />
             </div>
 
             {/* Filter pills */}
@@ -204,12 +204,12 @@ export default function FinancePage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/10 text-xs uppercase text-gray-400 bg-white/5">
-                      <th className="text-left py-3 px-3">GW</th>
-                      <th className="text-left py-3 px-3">Date</th>
-                      <th className="text-left py-3 px-3">Type</th>
-                      <th className="text-left py-3 px-3">Description</th>
-                      <th className="text-right py-3 px-3">Amount</th>
-                      <th className="text-right py-3 px-3">Balance</th>
+                      <th className="text-left py-3 px-3 cursor-help" title="The gameweek this transaction is tied to (— for pre-season).">GW</th>
+                      <th className="text-left py-3 px-3 cursor-help" title="When the transaction happened.">Date</th>
+                      <th className="text-left py-3 px-3 cursor-help" title="What kind of transaction it was — purchase, release, GW payout, trade, etc.">Type</th>
+                      <th className="text-left py-3 px-3 cursor-help" title="Details of the transaction.">Description</th>
+                      <th className="text-right py-3 px-3 cursor-help" title="How much your purse changed — green is money in, red is money out.">Amount</th>
+                      <th className="text-right py-3 px-3 cursor-help" title="Your running purse balance after this transaction.">Balance</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -262,9 +262,9 @@ export default function FinancePage() {
   );
 }
 
-function SummaryCard({ label, value, color }: { label: string; value: string; color: string }) {
+function SummaryCard({ label, value, color, tip }: { label: string; value: string; color: string; tip?: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur">
+    <div className="rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur" title={tip}>
       <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">{label}</div>
       <div className={`text-lg sm:text-xl font-mono font-bold ${color}`}>{value}</div>
     </div>

@@ -3,7 +3,10 @@
 import { GW_PAYOUTS, MINIMUM_FLOOR_PAYOUT } from "@/lib/formats/auction/economy";
 import { RuleItem, SectionHeader, formatPayout } from "./shared";
 
-export function AuctionRules() {
+export function AuctionRules({ tier = "complete" }: { tier?: "primary" | "complete" }) {
+  // Primary tier disables trades and slot 16/17/18 expansion — hide those rules so they aren't
+  // shown for a feature the league can't use.
+  const primary = tier === "primary";
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
@@ -31,9 +34,11 @@ export function AuctionRules() {
         <SectionHeader letter="C" color="yellow" title="Squad Requirements" />
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
           <RuleItem>Initial auction fills <strong className="text-white">15 active players</strong> per squad. Minimum position requirements: <strong className="text-white">1 GK, 3 DEF, 3 MID, 1 FWD</strong>.</RuleItem>
-          <RuleItem>
-            <strong className="text-white">Bonus slots (slots 16, 17 &amp; 18):</strong> after the initial auction completes, teams can unlock additional squad slots with purse money — <strong className="text-purple-300">£10M for slot 16</strong>, <strong className="text-purple-300">£20M for slot 17</strong>, then <strong className="text-purple-300">£30M for slot 18</strong>. Sequential — each slot only unlocks after the previous one. Locked slots cannot be filled during the initial auction.
-          </RuleItem>
+          {!primary && (
+            <RuleItem>
+              <strong className="text-white">Bonus slots (slots 16, 17 &amp; 18):</strong> after the initial auction completes, teams can unlock additional squad slots with purse money — <strong className="text-purple-300">£10M for slot 16</strong>, <strong className="text-purple-300">£20M for slot 17</strong>, then <strong className="text-purple-300">£30M for slot 18</strong>. Sequential — each slot only unlocks after the previous one. Locked slots cannot be filled during the initial auction.
+            </RuleItem>
+          )}
           <RuleItem>
             <strong className="text-white">Penalty slots:</strong> if you miss a nomination with an empty wishlist, your effective squad cap drops by 1. Redeem from your purse — <strong className="text-cyan-300">£2.5M same cycle</strong> / <strong className="text-cyan-300">£5M later cycle</strong>.
           </RuleItem>
@@ -82,17 +87,19 @@ export function AuctionRules() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
-        <SectionHeader letter="E" color="orange" title="Player Trades" />
-        <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
-          <RuleItem>Any manager can <strong className="text-white">propose a trade</strong> to another team — offering players and/or cash in exchange for players.</RuleItem>
-          <RuleItem>The target team must <strong className="text-white">accept</strong> the trade, after which it awaits admin approval before executing.</RuleItem>
-          <RuleItem>Trades are subject to an <strong className="text-white">80% Fair Market Value (FMV) floor</strong>: the total value given by each side must be at least 80% of what they receive.</RuleItem>
-          <RuleItem>FMV is calculated based on purchase price and cumulative points earned.</RuleItem>
-          <RuleItem>A <strong className="text-white">5% transfer tax</strong> is charged on all cash received in a trade. If you receive £10M, you keep £9.5M.</RuleItem>
-          <RuleItem>Both squads must maintain valid size (8–18 players, depending on bonus slots) and position minimums after any trade.</RuleItem>
-        </ul>
-      </section>
+      {!primary && (
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+          <SectionHeader letter="E" color="orange" title="Player Trades" />
+          <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
+            <RuleItem>Any manager can <strong className="text-white">propose a trade</strong> to another team — offering players and/or cash in exchange for players.</RuleItem>
+            <RuleItem>The target team must <strong className="text-white">accept</strong> the trade, after which it awaits admin approval before executing.</RuleItem>
+            <RuleItem>Trades are subject to an <strong className="text-white">80% Fair Market Value (FMV) floor</strong>: the total value given by each side must be at least 80% of what they receive.</RuleItem>
+            <RuleItem>FMV is calculated based on purchase price and cumulative points earned.</RuleItem>
+            <RuleItem>A <strong className="text-white">5% transfer tax</strong> is charged on all cash received in a trade. If you receive £10M, you keep £9.5M.</RuleItem>
+            <RuleItem>Both squads must maintain valid size (8–18 players, depending on bonus slots) and position minimums after any trade.</RuleItem>
+          </ul>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
         <SectionHeader letter="F" color="red" title="Player Releases" />

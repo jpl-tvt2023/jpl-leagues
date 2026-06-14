@@ -276,14 +276,14 @@ export function AuctionStandings() {
                       <table className="w-full text-left min-w-[640px]">
                         <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
                           <tr>
-                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
-                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
-                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">GW Points</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm cursor-help" title="Rank for this gameweek (by GW points).">#</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm cursor-help" title="League team — and its owned PL club, if any. Click a row to open GW Results.">Team</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Total FPL points this team's active squad scored this gameweek (before synergy/club bonuses).">GW Points</th>
                             <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="+50% bonus on owned-club players (this GW). Hover the value to see per-player breakdown.">Syn <span className="text-gray-500" aria-hidden>ⓘ</span></th>
                             <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Club W/D bonus (this GW). Hover the value to see per-GW fixture breakdown.">Club <span className="text-gray-500" aria-hidden>ⓘ</span></th>
-                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
-                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Squad Value</th>
-                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Purse</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Purse credited to this team for its rank this gameweek.">Payout</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Combined fair-market value of all players in the team's squad.">Squad Value</th>
+                            <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Cash currently available to bid and trade.">Purse</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -349,14 +349,14 @@ export function AuctionStandings() {
                     <table className="w-full text-left min-w-[640px]">
                       <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
                         <tr>
-                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
-                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Cumulative raw FPL points">Raw</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm cursor-help" title="Overall season rank. The small ▲/▼ shows movement vs the previous gameweek.">#</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm cursor-help" title="League team — and its owned PL club, if any. Click a row to open GW Results.">Team</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Cumulative raw FPL points">Raw</th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Cumulative +50% bonus on owned-club players. Hover the value to see per-GW breakdown.">Syn <span className="text-gray-500" aria-hidden>ⓘ</span></th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Cumulative club W/D bonus. Hover the value to see per-GW fixtures.">Club <span className="text-gray-500" aria-hidden>ⓘ</span></th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Raw + Synergy + Club">Total</th>
-                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Purse</th>
-                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Squad Value</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Raw + Synergy + Club — this is what determines season standings.">Total</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Cash currently available to bid and trade.">Purse</th>
+                          <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Combined fair-market value of all players in the team's squad.">Squad Value</th>
                         </tr>
                       </thead>
                       <tbody>

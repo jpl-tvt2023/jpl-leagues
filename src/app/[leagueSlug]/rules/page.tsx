@@ -70,7 +70,7 @@ export default function LeagueRulesPage() {
           </div>
         </div>
 
-        {isAuction ? <AuctionRules /> : isTripleCrown ? <TripleCrownRules /> : <TvtRules config={config} />}
+        {isAuction ? <AuctionRules tier={league.auctionTier ?? "complete"} /> : isTripleCrown ? <TripleCrownRules /> : <TvtRules config={config} />}
       </div>
     </div>
   );

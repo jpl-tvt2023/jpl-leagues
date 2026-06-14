@@ -217,6 +217,7 @@ export function AuctionGwResults() {
                       type="button"
                       onClick={() => prevGw != null && goToGw(prevGw)}
                       disabled={prevGw == null}
+                      title="View the previous gameweek's results"
                       className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-sm hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
                     >
                       ← Prev
@@ -224,6 +225,7 @@ export function AuctionGwResults() {
                     <select
                       value={selectedGw ?? ""}
                       onChange={(e) => goToGw(parseInt(e.target.value, 10))}
+                      title="Jump to a specific gameweek"
                       className="bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white"
                     >
                       {selectableGws.map((gw) => (
@@ -236,6 +238,7 @@ export function AuctionGwResults() {
                       type="button"
                       onClick={() => nextGw != null && goToGw(nextGw)}
                       disabled={nextGw == null}
+                      title="View the next gameweek's results"
                       className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-sm hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
                     >
                       Next →
@@ -257,15 +260,15 @@ export function AuctionGwResults() {
                     <table className="w-full text-left min-w-[560px]">
                       <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
                         <tr>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">#</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm">Team</th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Raw FPL points">Raw</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm cursor-help" title="Rank for this gameweek (by total GW score).">#</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm cursor-help" title="League team. Click a row to expand each player's score for this gameweek.">Team</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Raw FPL points">Raw</th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="+50% bonus on owned-club players. Hover the value to see per-player breakdown.">Syn <span className="text-gray-500" aria-hidden>ⓘ</span></th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Per-fixture bonus when owned club wins/draws. Hover the value to see the fixture scoreline.">Club <span className="text-gray-500" aria-hidden>ⓘ</span></th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right" title="Total = Raw + Synergy + Club">Total</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Payout</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Rank</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">Left</th>
+                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Total = Raw + Synergy + Club">Total</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Purse credited to this team for its rank this gameweek.">Payout</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="This team's finishing rank for the gameweek.">Rank</th>
+                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Fixtures still left to play for this team's active roster in this gameweek.">Left</th>
                         </tr>
                       </thead>
                       <tbody>

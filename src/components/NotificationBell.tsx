@@ -27,20 +27,29 @@ export function NotificationBell() {
   // forces vertical overflow → Chromium renders a thin vertical scrollbar in
   // the nav. Using `position: fixed` escapes that overflow container; we just
   // need to pin the dropdown to the bell button's rect when it opens.
+  const dropdownRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!open || !buttonRef.current) return;
     const update = () => {
       const rect = buttonRef.current?.getBoundingClientRect();
       if (!rect) return;
+      // Right-anchor to the bell, but clamp so a wide (92vw) panel can never overflow the left edge
+      // when the bell sits mid-nav on a narrow screen. Max `right` keeps `left` >= 8px.
+      const width = dropdownRef.current?.offsetWidth ?? Math.min(window.innerWidth * 0.92, 384);
+      const desiredRight = window.innerWidth - rect.right;
+      const maxRight = Math.max(8, window.innerWidth - width - 8);
       setDropdownPos({
         top: rect.bottom + 8,
-        right: Math.max(8, window.innerWidth - rect.right),
+        right: Math.min(Math.max(8, desiredRight), maxRight),
       });
     };
     update();
+    // Re-run once after the panel has mounted so we can measure its real width and re-clamp.
+    const raf = requestAnimationFrame(update);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
@@ -139,6 +148,7 @@ export function NotificationBell() {
 
       {open && (
         <div
+          ref={dropdownRef}
           className="fixed w-[92vw] max-w-sm sm:w-80 max-h-[70vh] sm:max-h-96 overflow-y-auto overflow-x-hidden rounded-lg border border-white/10 bg-slate-900 shadow-xl z-[60]"
           style={dropdownPos ? { top: dropdownPos.top, right: dropdownPos.right } : { top: -9999, right: 0 }}
         >
