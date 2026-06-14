@@ -8,6 +8,7 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { TierChip } from "@/components/TierChip";
 import { SlotStatus } from "@/components/SlotStatus";
 import { AuctionTimerRing } from "@/components/AuctionTimerRing";
+import { HelpTip } from "@/components/HelpTip";
 import type { ClubTier } from "@/lib/db/schema";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { MAX_SQUAD_SIZE, effectiveMaxSquadSize } from "@/lib/formats/auction/squad-rules";
@@ -1294,18 +1295,18 @@ export default function AuctionRoomPage() {
                     })()}
                     <div className="grid grid-cols-3 gap-3 mb-4 text-center">
                       <div>
-                        <div className="text-[10px] uppercase text-gray-400">Bid</div>
+                        <div className="text-[10px] uppercase text-gray-400"><HelpTip tip="The current highest bid on this player/club. Your next bid must beat it.">Bid</HelpTip></div>
                         <div className="text-lg sm:text-2xl font-mono font-bold text-[#00ff85]">{formatCurrency(currentBid.currentHighBid)}</div>
                       </div>
                       <div>
-                        <div className="text-[10px] uppercase text-gray-400">Leader</div>
+                        <div className="text-[10px] uppercase text-gray-400"><HelpTip tip="The team currently holding the top bid. If the timer hits zero, they win.">Leader</HelpTip></div>
                         <div className={`text-sm font-bold ${isHighBidder ? "text-yellow-400" : "text-white"}`}>
                           {teamMap.get(currentBid.currentHighBidderId)?.teamName ?? "—"}
                           {isHighBidder && " (YOU)"}
                         </div>
                       </div>
                       <div className="flex flex-col items-center">
-                        <div className="text-[10px] uppercase text-gray-400 mb-1">Timer</div>
+                        <div className="text-[10px] uppercase text-gray-400 mb-1"><HelpTip tip="Seconds left to bid. Each new bid resets it; when it reaches zero the leader wins.">Timer</HelpTip></div>
                         <AuctionTimerRing seconds={timerSec} max={session.bidTimerSeconds ?? 20} size={88} stroke={8} />
                       </div>
                     </div>
@@ -1321,6 +1322,7 @@ export default function AuctionRoomPage() {
                               key={amount}
                               onClick={() => handlePlaceBid(amount)}
                               disabled={placing || amount > myPurse}
+                              title={amount > myPurse ? "More than your available purse" : `Place a bid of ${formatCurrency(amount)}`}
                               className={`flex-1 min-w-[80px] rounded-lg px-2 py-2.5 font-bold transition disabled:opacity-50 ${
                                 i === 0
                                   ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 hover:from-yellow-300 hover:to-orange-400"
@@ -1549,6 +1551,7 @@ export default function AuctionRoomPage() {
                 <div className="flex items-center gap-1 mb-3 border-b border-white/10">
                   <button
                     onClick={() => setWishlistTab("wishlist")}
+                    title="Your priority shortlist — the top unowned player is auto-nominated if your turn's timer runs out."
                     className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px transition ${
                       wishlistTab === "wishlist" ? "border-yellow-400 text-yellow-300" : "border-transparent text-gray-400 hover:text-white"
                     }`}
@@ -1557,6 +1560,7 @@ export default function AuctionRoomPage() {
                   </button>
                   <button
                     onClick={() => { setWishlistTab("unsold"); void refreshUnsold(); }}
+                    title="Players that went unsold in the latest session — quickly add them to your shortlist."
                     className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px transition ${
                       wishlistTab === "unsold" ? "border-yellow-400 text-yellow-300" : "border-transparent text-gray-400 hover:text-white"
                     }`}

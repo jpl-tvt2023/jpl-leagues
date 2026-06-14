@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { NotificationBell } from "@/components/NotificationBell";
 import { TierChip } from "@/components/TierChip";
+import { HelpTip } from "@/components/HelpTip";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
 
@@ -384,6 +385,7 @@ const INCOME_ROWS: Array<{ key: keyof AuctionDashboardData["incomeBreakdown"]["b
 interface AuctionDashboardData {
   leagueSlug: string;
   leagueFormat: "auction";
+  auctionTier?: "primary" | "complete";
   team: {
     id: string;
     name: string;
@@ -481,12 +483,14 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
           <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
-          {!data.auctionSession && (
+          {/* Marketplace hidden in Primary tier (trades disabled) and during a live auction (trade freeze) — mirrors LeagueNav. */}
+          {data.auctionTier !== "primary" && !data.auctionSession && (
             <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
           )}
           <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
+          <Link href={`/${leagueSlug}/feedback`} className="text-gray-300 hover:text-white transition">Feedback</Link>
           <NotificationBell />
           <button onClick={onSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
             Sign Out
@@ -665,8 +669,8 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <PerformerPanel title="Top Performers" accent="text-green-400" players={topPerformers} posLabels={POS_LABEL} formatCurrency={formatCurrency} />
-                    <PerformerPanel title="Least Performers" accent="text-red-400" players={leastPerformers} posLabels={POS_LABEL} formatCurrency={formatCurrency} emptyHint="Need 5+ players" />
+                    <PerformerPanel title="Top Performers" accent="text-green-400" players={topPerformers} posLabels={POS_LABEL} formatCurrency={formatCurrency} titleTip="Your highest-scoring players this season, by total points." />
+                    <PerformerPanel title="Least Performers" accent="text-red-400" players={leastPerformers} posLabels={POS_LABEL} formatCurrency={formatCurrency} emptyHint="Need 5+ players" titleTip="Your lowest-scoring players this season — candidates to release or trade." />
                   </div>
 
                   <div className="mt-4 text-right">
@@ -746,7 +750,8 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
             {/* Mini Standings */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <span className="text-yellow-400">🏆</span> Standings
+                <span className="text-yellow-400">🏆</span>
+                <HelpTip tip="League table by cumulative total points (raw + synergy + club bonuses). Your team is highlighted.">Standings</HelpTip>
               </h2>
               <div className="space-y-1">
                 {data.standings.map(s => (
@@ -754,16 +759,16 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                     key={s.id}
                     className={`flex items-center justify-between px-3 py-2 rounded-lg ${s.isCurrentTeam ? "bg-yellow-500/10 border border-yellow-500/20" : "bg-white/5"}`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-6">#{s.rank}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs text-gray-500 w-6 shrink-0">#{s.rank}</span>
                       <span
-                        className={`text-sm font-mono ${s.isCurrentTeam ? "text-yellow-300 font-semibold" : "text-white"}`}
+                        className={`text-sm truncate ${s.isCurrentTeam ? "text-yellow-300 font-semibold" : "text-white"}`}
                         title={s.name}
                       >
-                        {s.shortName}
+                        {s.name}
                       </span>
                     </div>
-                    <span className="text-sm text-white font-mono">{s.totalPoints}</span>
+                    <span className="text-sm text-white font-mono shrink-0 ml-2">{s.totalPoints}</span>
                   </div>
                 ))}
               </div>
@@ -785,6 +790,7 @@ function PerformerPanel({
   posLabels,
   formatCurrency,
   emptyHint,
+  titleTip,
 }: {
   title: string;
   accent: string;
@@ -792,10 +798,11 @@ function PerformerPanel({
   posLabels: Record<number, string>;
   formatCurrency: (n: number) => string;
   emptyHint?: string;
+  titleTip?: string;
 }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <div className={`text-xs uppercase tracking-wider mb-2 font-semibold ${accent}`}>{title}</div>
+      <div className={`text-xs uppercase tracking-wider mb-2 font-semibold ${accent}`}>{titleTip ? <HelpTip tip={titleTip}>{title}</HelpTip> : title}</div>
       {players.length === 0 ? (
         <div className="text-sm text-gray-500 py-4 text-center">{emptyHint ?? "No data"}</div>
       ) : (
@@ -1268,6 +1275,8 @@ export default function DashboardPage() {
           <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
+          <Link href={`/${leagueSlug}/feedback`} className="text-gray-300 hover:text-white transition">Feedback</Link>
+          <NotificationBell />
           <button
             onClick={handleSignOut}
             className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition"

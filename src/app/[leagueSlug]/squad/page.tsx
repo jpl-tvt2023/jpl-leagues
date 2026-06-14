@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { SlotStatus, type SlotStatusData } from "@/components/SlotStatus";
+import { HelpTip } from "@/components/HelpTip";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { MAX_SQUAD_SIZE } from "@/lib/formats/auction/squad-rules";
 
@@ -402,8 +403,8 @@ export default function SquadPage() {
               </div>
               {/* Economy summary — always visible */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-white/10 text-sm">
-                <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Total Spent</div><div className="font-mono text-red-300">{formatCurrency(economy.totalSpent)}</div></div>
-                <div><div className="text-[10px] text-gray-400 uppercase mb-0.5">Total Income</div><div className="font-mono text-green-300">{formatCurrency(economy.totalIncome)}</div></div>
+                <div title="Everything you've spent — player purchases, club, slot unlocks, trade payments and transfer fees"><div className="text-[10px] text-gray-400 uppercase mb-0.5">Total Spent</div><div className="font-mono text-red-300">{formatCurrency(economy.totalSpent)}</div></div>
+                <div title="Everything credited to your purse — GW payouts, release refunds and trade income"><div className="text-[10px] text-gray-400 uppercase mb-0.5">Total Income</div><div className="font-mono text-green-300">{formatCurrency(economy.totalIncome)}</div></div>
                 <div title="Sum of purchase prices — what you originally paid"><div className="text-[10px] text-gray-400 uppercase mb-0.5">Old Squad Value</div><div className="font-mono text-white">{formatCurrency(oldSquadValue)}</div></div>
                 <div title="Sum of current fair-market values (purchase + point appreciation)"><div className="text-[10px] text-gray-400 uppercase mb-0.5">FMV Squad Value</div><div className="font-mono text-white">{formatCurrency(fmvSquadValue)}</div></div>
               </div>
@@ -418,6 +419,7 @@ export default function SquadPage() {
             <div className="mb-6 flex gap-2 border-b border-white/10">
               <button
                 onClick={() => setActiveTab("squad")}
+                title="View the players you currently own"
                 className={`px-4 py-2 text-sm font-semibold uppercase tracking-wider transition border-b-2 ${
                   activeTab === "squad" ? "border-yellow-400 text-yellow-400" : "border-transparent text-gray-400 hover:text-white"
                 }`}
@@ -426,6 +428,7 @@ export default function SquadPage() {
               </button>
               <button
                 onClick={() => setActiveTab("wishlist")}
+                title="Your priority list for auto-nomination when your turn's timer runs out"
                 className={`px-4 py-2 text-sm font-semibold uppercase tracking-wider transition border-b-2 ${
                   activeTab === "wishlist" ? "border-yellow-400 text-yellow-400" : "border-transparent text-gray-400 hover:text-white"
                 }`}
@@ -478,6 +481,7 @@ export default function SquadPage() {
                   <input
                     type="text"
                     placeholder="Search player name..."
+                    title="Type part of a player's name to find them, then add to your wishlist"
                     value={wlSearch}
                     onChange={(e) => setWlSearch(e.target.value)}
                     className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none mb-3"
@@ -643,9 +647,9 @@ export default function SquadPage() {
                     {/* Expanded details */}
                     {isExpanded && (
                       <div className="px-4 pb-4 space-y-1 text-xs text-gray-300 border-t border-white/10 pt-3">
-                        <div className="flex justify-between"><span>FMV</span><span className="font-mono text-white">{formatCurrency(p.fmv)}</span></div>
+                        <div className="flex justify-between"><span><HelpTip tip="Fair Market Value — what this player is worth now (purchase price adjusted for points scored). Used for trade floors.">FMV</HelpTip></span><span className="font-mono text-white">{formatCurrency(p.fmv)}</span></div>
                         <div className="flex justify-between">
-                          <span>P&amp;L</span>
+                          <span><HelpTip tip="Profit & Loss — current FMV minus what you paid.">P&amp;L</HelpTip></span>
                           <span className={`font-mono ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
                             {pnl >= 0 ? "+" : ""}{formatCurrency(pnl)}
                           </span>
@@ -677,6 +681,7 @@ export default function SquadPage() {
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
                             disabled={releasing === p.ownershipId}
+                            title={`Release this deadwood player for a 50% refund (${formatCurrency(Math.floor(p.purchasePrice * 0.5))}), credited at the next GW 10/20/30 boundary.`}
                             className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
                           >
                             {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.purchasePrice * 0.5))})`}
@@ -686,6 +691,7 @@ export default function SquadPage() {
                           <button
                             onClick={(e) => { e.stopPropagation(); handleCancelRelease(p.ownershipId, p.playerName); }}
                             disabled={releasing === p.ownershipId}
+                            title="Cancel the pending release and keep this player — only possible before it finalizes."
                             className="mt-2 w-full rounded-lg bg-white/10 border border-white/20 text-white text-xs font-semibold py-1.5 hover:bg-white/20 transition disabled:opacity-50"
                           >
                             {releasing === p.ownershipId ? "..." : "Cancel Release"}

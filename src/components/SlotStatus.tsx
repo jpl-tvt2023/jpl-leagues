@@ -69,7 +69,10 @@ export function SlotStatus({ slotStatus, onUnlock, onRedeem, compact, auctionTie
 
   return (
     <div className={`inline-flex flex-wrap items-center rounded-lg border border-white/10 bg-white/[0.03] ${sizing}`}>
-      <span className="font-mono font-semibold text-white">
+      <span
+        className="font-mono font-semibold text-white cursor-help"
+        title="Active players / effective squad cap (15 base + unlocked bonus slots − lost penalty slots)."
+      >
         {active} / {effectiveMax}
       </span>
       <span className="text-gray-500">squad</span>
@@ -102,6 +105,7 @@ export function SlotStatus({ slotStatus, onUnlock, onRedeem, compact, auctionTie
             <button
               type="button"
               onClick={onRedeem}
+              title={`Pay ${formatM(redeemableCost)} from your purse to recover a slot lost to a missed nomination.`}
               className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 border border-cyan-500/40 font-semibold transition"
             >
               Redeem
@@ -129,6 +133,7 @@ export function SlotStatus({ slotStatus, onUnlock, onRedeem, compact, auctionTie
             <button
               type="button"
               onClick={onUnlock}
+              title={`Spend ${formatM(nextUnlockCost)} from your purse to permanently add an extra squad slot (slots 16→17→18, unlocked in order).`}
               className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-200 hover:bg-purple-500/30 border border-purple-500/40 font-semibold transition"
             >
               Unlock {formatM(nextUnlockCost)}
