@@ -8,10 +8,9 @@ import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/sq
 import { fetchElementInfo } from "@/lib/fpl";
 import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
 
-// Anti-snipe: only extend the timer when a bid lands inside the closing window,
-// and then bump it by ANTI_SNIPE_EXTENSION_MS (capped at the admin's bidTimerSeconds).
-const ANTI_SNIPE_WINDOW_MS = 5_000;
-const ANTI_SNIPE_EXTENSION_MS = 10_000;
+// Anti-snipe: every bid pushes the timer out by ANTI_SNIPE_EXTENSION_MS, hard-capped at the admin's
+// configured bidTimerSeconds (the countdown can never exceed the set timer).
+const ANTI_SNIPE_EXTENSION_MS = 5_000;
 const MIN_BID_INCREMENT = 100_000; // 100K minimum raise
 
 /**
@@ -142,17 +141,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Anti-snipe: only extend the bid timer when the bid lands inside the
-    // closing window (≤ ANTI_SNIPE_WINDOW_MS remaining). Outside that window
-    // the existing expiry stands. Always cap at the admin's bidTimerSeconds.
-    const remainingMs = currentBid.expiresAt.getTime() - Date.now();
+    // Anti-snipe: every bid adds ANTI_SNIPE_EXTENSION_MS to the clock, capped so the remaining time
+    // never exceeds the admin's bidTimerSeconds. So after any bid you have min(remaining + 5s, setTimer).
     const bidMaxTimerMs = (sessionRow[0].bidTimerSeconds ?? 20) * 1000;
-    let newExpiry = currentBid.expiresAt;
-    if (remainingMs <= ANTI_SNIPE_WINDOW_MS) {
-      const extended = currentBid.expiresAt.getTime() + ANTI_SNIPE_EXTENSION_MS;
-      const maxFromNow = Date.now() + bidMaxTimerMs;
-      newExpiry = new Date(Math.min(extended, maxFromNow));
-    }
+    const extended = currentBid.expiresAt.getTime() + ANTI_SNIPE_EXTENSION_MS;
+    const maxFromNow = Date.now() + bidMaxTimerMs;
+    const newExpiry = new Date(Math.min(extended, maxFromNow));
     await tx
       .update(auctionBids)
       .set({

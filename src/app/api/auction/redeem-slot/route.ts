@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, teamPenalties, auctionSessions, leagues } from "@/lib/db";
+import { db, teams, teamPenalties, auctionSessions, auctionBids, leagues } from "@/lib/db";
 import { eq, and, isNull, asc, desc, or, sql } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { calculatePurse } from "@/lib/formats/auction/economy";
 import { createNotification } from "@/lib/notifications";
+import { setNominationDeadline } from "@/lib/formats/auction/resolve-bid";
+import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
 
 // Pricing rules: £2.5M while still inside the cycle that issued the penalty;
 // £5M once that cycle has ended (i.e. before/during a later mini-auction).
@@ -198,6 +200,37 @@ export async function POST(request: NextRequest) {
   });
 
   const remainingPenaltySlots = (team.penaltySlots ?? 0) - 1;
+
+  // If the player auction has drained to idle (all squads full → nobody armed, waiting on the admin
+  // to Complete) and this redemption frees a slot, resume nominations so the team can fill it. Only
+  // touch an active player-auction session that is genuinely idle: no open bid, no nomination
+  // deadline, no intermission. Best-effort — must never fail the redemption.
+  try {
+    const activeSession = await db
+      .select({
+        id: auctionSessions.id,
+        type: auctionSessions.type,
+        nominationDeadline: auctionSessions.nominationDeadline,
+        intermissionUntil: auctionSessions.intermissionUntil,
+      })
+      .from(auctionSessions)
+      .where(and(eq(auctionSessions.leagueId, leagueId), eq(auctionSessions.status, "active")))
+      .limit(1);
+    const s = activeSession[0];
+    if (s && s.type !== CLUB_AUCTION_SESSION_TYPE && !s.nominationDeadline && !s.intermissionUntil) {
+      const openBid = await db
+        .select({ id: auctionBids.id })
+        .from(auctionBids)
+        .where(and(eq(auctionBids.sessionId, s.id), eq(auctionBids.status, "open")))
+        .limit(1);
+      if (openBid.length === 0) {
+        // Idle/drained — arm a nominator (the freed-up redeeming team is now the eligible one).
+        await setNominationDeadline(s.id);
+      }
+    }
+  } catch (e) {
+    console.warn("[redeem-slot] re-arm after redeem failed (non-blocking)", { teamId, error: e });
+  }
 
   // Best-effort notification — must not fail the redemption response.
   try {

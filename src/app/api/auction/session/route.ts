@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, leagues, auctionSessions, auctionBids, teams } from "@/lib/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { isSuperAdmin, verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { generateSnakeOrder } from "@/lib/formats/auction/mini-auction";
 import {
   resolveExpiredBid,
   beginIntermission,
+  advanceNominator,
   setNominationDeadline,
+  auditAuctionComposition,
 } from "@/lib/formats/auction/resolve-bid";
 import { simulateAuction } from "@/lib/formats/auction/simulate";
 import { finalizePendingReleasesNow } from "@/lib/formats/auction/process-gameweek";
@@ -38,13 +40,35 @@ async function resolveExpiredBids(sessionId: string) {
     );
 
   const now = new Date();
+  let hadOpenBids = false;
   for (const bid of openBids) {
+    hadOpenBids = true;
     if (now > bid.expiresAt) {
       const outcome = await resolveExpiredBid(bid);
       if (outcome === "sold") {
         // Begin the post-sale intermission (the SSE stream advances the nominator when it elapses),
         // mirroring the stream's resolution path so the safety-net doesn't skip the cooldown.
         await beginIntermission(sessionId);
+      }
+    }
+  }
+
+  // Intermission self-healing: if the post-sale cooldown has elapsed and nothing is on the block,
+  // advance the nominator here too — so the auction can't stall between lots when no SSE stream is
+  // live to do it. Atomic claim (intermissionUntil → null) guarantees a single advance across pollers.
+  if (!hadOpenBids) {
+    const sess = await db
+      .select({ status: auctionSessions.status, intermissionUntil: auctionSessions.intermissionUntil })
+      .from(auctionSessions)
+      .where(eq(auctionSessions.id, sessionId))
+      .limit(1);
+    if (sess.length && sess[0].status === "active" && sess[0].intermissionUntil && now >= sess[0].intermissionUntil) {
+      const claimed = await db
+        .update(auctionSessions)
+        .set({ intermissionUntil: null })
+        .where(and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.intermissionUntil)));
+      if (claimed.rowsAffected > 0) {
+        await advanceNominator(sessionId);
       }
     }
   }
@@ -473,6 +497,8 @@ export async function POST(request: NextRequest) {
   // Idempotent — `writeAutoSnapshot` skips if a snapshot for this (leagueId, trigger) pair exists.
   if (newStatus === "completed") {
     await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
+    // Auctions no longer auto-complete, so run the 1/3/3/1 composition audit here, on admin completion.
+    await auditAuctionComposition(sessionId).catch((e) => console.error("[auction composition audit]", e));
   }
 
   // When starting a mini-auction, finalize any pending player releases first

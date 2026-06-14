@@ -273,12 +273,13 @@ async function findClublessFrom(
   return null;
 }
 
-async function completeClubSession(sessionId: string): Promise<void> {
+async function idleClubSession(sessionId: string): Promise<void> {
+  // Per spec, the club auction does NOT auto-complete when every team owns a club. Leave it active
+  // and idle (deadline cleared); the admin marks it complete (which writes the snapshot).
   await db
     .update(auctionSessions)
-    .set({ status: "completed", nominationDeadline: null })
+    .set({ nominationDeadline: null })
     .where(eq(auctionSessions.id, sessionId));
-  await writeAuctionCompleteSnapshot(sessionId).catch((e) => console.error("[auction snapshot]", e));
 }
 
 /**
@@ -304,11 +305,11 @@ async function armClubNominator(sessionId: string, startOffset: number): Promise
     const parsed = JSON.parse(sess[0].snakeOrder);
     if (Array.isArray(parsed)) snakeOrder = parsed.filter((s): s is string => typeof s === "string");
   } catch { /* fall through to empty */ }
-  if (snakeOrder.length === 0) { await completeClubSession(sessionId); return; }
+  if (snakeOrder.length === 0) { await idleClubSession(sessionId); return; }
 
   const currentIdx = sess[0].currentNominatorIndex ?? 0;
   const found = await findClublessFrom(sess[0].leagueId, snakeOrder, currentIdx + startOffset);
-  if (!found) { await completeClubSession(sessionId); return; }
+  if (!found) { await idleClubSession(sessionId); return; }
 
   const nomTimeout = sess[0].nominationTimeoutSeconds ?? CLUB_NOMINATION_TIMEOUT_DEFAULT;
   await db
@@ -405,7 +406,7 @@ export async function nominateClub(
 export async function autoNominateClubForTeam(
   sessionId: string,
   teamId: string
-): Promise<"auto-nominated" | "completed" | "noop"> {
+): Promise<"auto-nominated" | "noop"> {
   const sess = await db
     .select({ leagueId: auctionSessions.leagueId })
     .from(auctionSessions)
@@ -413,7 +414,7 @@ export async function autoNominateClubForTeam(
     .limit(1);
   if (!sess.length) return "noop";
   const available = await getAvailableClubIds(sess[0].leagueId);
-  if (available.length === 0) { await completeClubSession(sessionId); return "completed"; }
+  if (available.length === 0) { await idleClubSession(sessionId); return "noop"; }
   const pick = available[Math.floor(Math.random() * available.length)];
   const res = await nominateClub(sessionId, teamId, pick);
   if ("error" in res) {
