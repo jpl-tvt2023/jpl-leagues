@@ -19,6 +19,7 @@ interface SquadPlayer {
   status: "active" | "deadwood" | "released" | "pending_release";
   totalPoints: number;
   fmv: number;
+  releaseRefund?: number | null;
 }
 
 interface SquadResponse {
@@ -659,32 +660,35 @@ export default function SquadPage() {
                         {p.status === "deadwood" && (
                           <div className="pt-1 text-[10px] uppercase tracking-wider text-yellow-400 font-bold">Deadwood</div>
                         )}
-                        {p.status === "pending_release" && (
+                        {p.status === "pending_release" && (() => {
+                          const refund = p.releaseRefund ?? Math.floor(p.fmv * 0.5);
+                          return (
                           <div
                             className="pt-1 text-[10px] uppercase tracking-wider text-orange-400 font-bold"
-                            title={`Finalizes at next GW 10/20/30 boundary. Projected refund: ${formatCurrency(Math.floor(p.purchasePrice * 0.5))}. Projected forfeit: ${formatCurrency(p.purchasePrice - Math.floor(p.purchasePrice * 0.5))}. Player continues scoring for you until finalization.`}
+                            title={`Finalizes at next GW 10/20/30 boundary. Projected refund: ${formatCurrency(refund)} (50% of FMV at release). Projected forfeit: ${formatCurrency(p.purchasePrice - refund)}. Player continues scoring for you until finalization.`}
                           >
-                            Pending Release — projected refund {formatCurrency(Math.floor(p.purchasePrice * 0.5))}
+                            Pending Release — projected refund {formatCurrency(refund)}
                           </div>
-                        )}
+                          );
+                        })()}
                         {canRelease && p.status === "active" && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
                             disabled={releasing === p.ownershipId}
-                            title={`50% refund (${formatCurrency(Math.floor(p.purchasePrice * 0.5))}) credited at GW 10/20/30. Player keeps scoring until then. Cancellable before finalization.`}
+                            title={`50% of current FMV (${formatCurrency(Math.floor(p.fmv * 0.5))}) credited at GW 10/20/30. Player keeps scoring until then. Cancellable before finalization.`}
                             className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
                           >
-                            {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.purchasePrice * 0.5))})`}
+                            {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.fmv * 0.5))})`}
                           </button>
                         )}
                         {canRelease && p.status === "deadwood" && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
                             disabled={releasing === p.ownershipId}
-                            title={`Release this deadwood player for a 50% refund (${formatCurrency(Math.floor(p.purchasePrice * 0.5))}), credited at the next GW 10/20/30 boundary.`}
+                            title={`Release this deadwood player for 50% of current FMV (${formatCurrency(Math.floor(p.fmv * 0.5))}), credited at the next GW 10/20/30 boundary.`}
                             className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
                           >
-                            {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.purchasePrice * 0.5))})`}
+                            {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.fmv * 0.5))})`}
                           </button>
                         )}
                         {p.status === "pending_release" && (

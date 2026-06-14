@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, auctionBids, auctionBidLogs, auctionSessions, auctionOwnership, teams, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import {
   resolveExpiredBid,
-  clearNominationDeadline,
 } from "@/lib/formats/auction/resolve-bid";
 import { calculatePurse } from "@/lib/formats/auction/economy";
 import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
@@ -211,6 +210,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Atomically claim the nomination window. This is the synchronisation point that makes a late
+  // nomination and the deadline-expiry penalty mutually exclusive: whoever flips `nominationDeadline`
+  // to null first wins. If the SSE penalty path already claimed it (the team missed its window),
+  // rowsAffected is 0 here and we reject — so a team can never be both penalised AND nominate.
+  const claimedDeadline = await db
+    .update(auctionSessions)
+    .set({ nominationDeadline: null })
+    .where(and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.nominationDeadline)));
+  if (claimedDeadline.rowsAffected === 0) {
+    return NextResponse.json({ error: "Your nomination window has passed." }, { status: 409 });
+  }
+
   // Create the auction bid item
   const bidTimerSeconds = auctionSession.bidTimerSeconds ?? 20;
   const expiresAt = new Date(Date.now() + bidTimerSeconds * 1000);
@@ -239,8 +250,7 @@ export async function POST(request: NextRequest) {
     type: "nomination",
   });
 
-  // Clear nomination deadline — the 30s bid timer takes over
-  await clearNominationDeadline(sessionId);
+  // (The nomination deadline was already atomically claimed above; the bid timer now takes over.)
 
   return NextResponse.json({
     success: true,

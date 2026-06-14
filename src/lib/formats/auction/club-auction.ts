@@ -323,9 +323,11 @@ export async function setClubNominationDeadline(sessionId: string): Promise<void
   await armClubNominator(sessionId, 0);
 }
 
-/** Advance to the next club-less nominator after a club resolves. */
+/** Advance to the next club-less nominator after a club resolves. Offset 0 (not 1) so the scan
+ *  starts at the current index and `findClublessFrom` skips club-owners — this is idempotent, so a
+ *  double-trigger (SSE + REST safety-net) re-arms the same team instead of skipping one. */
 export async function advanceClubNominator(sessionId: string): Promise<void> {
-  await armClubNominator(sessionId, 1);
+  await armClubNominator(sessionId, 0);
 }
 
 /**

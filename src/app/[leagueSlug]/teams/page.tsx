@@ -11,6 +11,7 @@ import { useEnforceFormat, useLeague } from "@/lib/league-context";
 interface TeamCard {
   teamId: string;
   name: string;
+  teamLoginId?: string | null;
   rank: number;
   totalPoints: number;
   purse: number;
@@ -327,7 +328,7 @@ export default function TeamsPage() {
                             </td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`text-sm font-semibold ${t.isMine ? "text-yellow-300" : "text-white"}`}>{t.name}</span>
+                                <span className={`text-sm font-semibold ${t.isMine ? "text-yellow-300" : "text-white"}`} title={t.teamLoginId ? `Manager: ${t.teamLoginId}` : undefined}>{t.name}</span>
                                 {t.ownedClub && (
                                   <TierChip tier={t.ownedClub.tier} clubName={t.ownedClub.plTeamName} short={t.ownedClub.plTeamShort} />
                                 )}

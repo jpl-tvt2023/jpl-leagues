@@ -34,9 +34,11 @@ export async function GET(request: NextRequest) {
     const summaries = await buildAllTeamsSummary(leagueIdParam);
     // PL Club Auction rename + ownedClub for tier-chip rendering.
     const clubByTeamId = await fetchClubOwnershipMap(leagueIdParam);
+    const loginRows = await db.select({ id: teams.id, teamLoginId: teams.teamLoginId }).from(teams).where(eq(teams.leagueId, leagueIdParam));
+    const loginByTeam = new Map(loginRows.map((t) => [t.id, t.teamLoginId]));
     const renamed = summaries.map((s) => {
       const ownedClub = clubByTeamId.get(s.teamId) ?? null;
-      return { ...s, teamName: ownedClub?.plTeamName ?? s.teamName, ownedClub };
+      return { ...s, teamName: ownedClub?.plTeamName ?? s.teamName, teamLoginId: loginByTeam.get(s.teamId) ?? null, ownedClub };
     });
     return NextResponse.json({ leagueId: leagueIdParam, teams: renamed });
   }
@@ -68,8 +70,8 @@ export async function GET(request: NextRequest) {
   const clubByTeamId = await fetchClubOwnershipMap(teamRow[0].leagueId);
   const ownedClub = clubByTeamId.get(teamId) ?? null;
   const renamedLedger = ownedClub
-    ? { ...ledger, teamName: ownedClub.plTeamName, ownedClub }
-    : { ...ledger, ownedClub: null };
+    ? { ...ledger, teamName: ownedClub.plTeamName, teamLoginId: teamRow[0].teamLoginId, ownedClub }
+    : { ...ledger, teamLoginId: teamRow[0].teamLoginId, ownedClub: null };
 
   return NextResponse.json(renamedLedger);
 }

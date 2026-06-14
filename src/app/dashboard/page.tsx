@@ -386,9 +386,11 @@ interface AuctionDashboardData {
   leagueSlug: string;
   leagueFormat: "auction";
   auctionTier?: "primary" | "complete";
+  clubAuctionEnabled?: boolean;
   team: {
     id: string;
     name: string;
+    teamLoginId?: string;
     ownedClub?: { plTeamId: number; plTeamName: string; plTeamShort: string; tier: "top8" | "mid" | "promoted" } | null;
   };
   purse: number;
@@ -454,6 +456,10 @@ function PurseRow({ label, amount }: { label: string; amount: number }) {
 function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashboardData; leagueSlug: string; onSignOut: () => void }) {
   const router = useRouter();
 
+  // The dashboard header shows the user's own Username (in club-auction leagues the team name is the
+  // club, shown everywhere else). Falls back to the team name if no login id.
+  const headerName = data.clubAuctionEnabled ? (data.team.teamLoginId || data.team.name) : data.team.name;
+
   const POS_LABEL: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
   const positionCounts = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<number, number>;
   for (const p of data.squad) {
@@ -473,7 +479,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
             JPL
           </div>
-          <span className="text-xl font-bold text-white hidden sm:inline">{data.team.name}</span>
+          <span className="text-xl font-bold text-white hidden sm:inline">{headerName}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
           <Link href="/dashboard" className="text-yellow-400 font-semibold transition">Dashboard</Link>
@@ -502,7 +508,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
         {/* Header */}
         <div className="mb-8">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
-            <h1 className="text-2xl sm:text-4xl font-bold text-white truncate">{data.team.name}</h1>
+            <h1 className="text-2xl sm:text-4xl font-bold text-white truncate">{headerName}</h1>
             {data.team.ownedClub && (
               <TierChip
                 tier={data.team.ownedClub.tier}

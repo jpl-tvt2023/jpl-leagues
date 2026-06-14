@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
     // Fetch team names + PL Club Auction rename. Team that owns Liverpool displays as "Liverpool"
     // everywhere — including the "Owned By" column on the players list.
     const [leagueTeamsRaw, clubByTeamId] = await Promise.all([
-      db.select({ id: teams.id, name: teams.name })
+      db.select({ id: teams.id, name: teams.name, teamLoginId: teams.teamLoginId })
         .from(teams)
         .where(eq(teams.leagueId, leagueId)),
       fetchClubOwnershipMap(leagueId),
@@ -103,8 +103,10 @@ export async function GET(request: NextRequest) {
       name: clubByTeamId.get(t.id)?.plTeamName ?? t.name,
     }));
     const teamNameMap = new Map<string, string>();
+    const teamLoginMap = new Map<string, string | null>();
     for (const t of leagueTeams) {
       teamNameMap.set(t.id, t.name);
+      teamLoginMap.set(t.id, t.teamLoginId ?? null);
     }
 
     // Determine requesting team's ID for "mine" filter
@@ -119,6 +121,7 @@ export async function GET(request: NextRequest) {
       plTeamShort: string;
       ownerTeamId: string | null;
       ownerTeamName: string | null;
+      ownerTeamLoginId: string | null;
       gwPoints: number;
       seasonPoints: number;
       nowCost: number;
@@ -159,6 +162,7 @@ export async function GET(request: NextRequest) {
         plTeamShort: plTeamMap.get(el.team) ?? `Team ${el.team}`,
         ownerTeamId,
         ownerTeamName: ownerTeamId ? (teamNameMap.get(ownerTeamId) ?? null) : null,
+        ownerTeamLoginId: ownerTeamId ? (teamLoginMap.get(ownerTeamId) ?? null) : null,
         gwPoints: gwPoints[el.id] ?? 0,
         seasonPoints: el.total_points,
         nowCost: el.now_cost,

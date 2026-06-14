@@ -394,7 +394,8 @@ export const auctionOwnership = sqliteTable("auction_ownership", {
   purchasePrice: integer("purchase_price").notNull(),
   acquiredGw: integer("acquired_gw").notNull(), // GW in which player was acquired (0 = pre-season)
   releasedGw: integer("released_gw"), // GW in which player was released (null if active)
-  status: text("status").notNull().default("active"), // "active" | "deadwood" | "released"
+  releaseRefund: integer("release_refund"), // 50% of the player's FMV snapshotted at mark-for-release time (null = legacy/pre-migration → falls back to 50% of purchase price)
+  status: text("status").notNull().default("active"), // "active" | "deadwood" | "pending_release" | "released"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({

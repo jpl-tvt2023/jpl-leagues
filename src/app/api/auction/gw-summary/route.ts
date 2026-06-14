@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
   const isLive = selectedGw === liveGameweek;
 
   const teamRows = await db
-    .select({ id: teams.id, name: teams.name })
+    .select({ id: teams.id, name: teams.name, teamLoginId: teams.teamLoginId })
     .from(teams)
     .where(eq(teams.leagueId, league.id));
 
@@ -123,6 +123,8 @@ export async function GET(request: NextRequest) {
   // we can rename `teamNameMap` entries in-place — downstream `teamName` reads pick the rename up.
   const clubByTeamId = await getClubOwnershipsByTeam(league.id);
   const teamNameMap = new Map(teamRows.map((t) => [t.id, clubByTeamId[t.id]?.plTeamName ?? t.name]));
+  // Username per team for the hover tooltip on the (club) name.
+  const teamLoginMap = new Map(teamRows.map((t) => [t.id, t.teamLoginId]));
 
   // Build elementId → elementType map from ownership. A player's position is
   // immutable, so a single map covers every gameweek even when ownership
@@ -204,6 +206,7 @@ export async function GET(request: NextRequest) {
     type LiveRow = {
       teamId: string;
       teamName: string;
+      teamLoginId: string | null;
       totalPoints: number;
       rawPoints: number;
       synergyBonus: number;
@@ -289,6 +292,7 @@ export async function GET(request: NextRequest) {
         teamId: t.id,
         // teamNameMap was already renamed above to reflect PL Club Auction ownership.
         teamName: teamNameMap.get(t.id) ?? t.name,
+        teamLoginId: teamLoginMap.get(t.id) ?? null,
         totalPoints: live?.totalPoints ?? 0,
         rawPoints: live?.rawPoints ?? 0,
         synergyBonus: live?.synergyBonus ?? 0,
@@ -328,6 +332,7 @@ export async function GET(request: NextRequest) {
       rows: liveRows.map((r) => ({
         teamId: r.teamId,
         teamName: r.teamName,
+        teamLoginId: r.teamLoginId,
         totalPoints: r.totalPoints,
         rawPoints: r.rawPoints,
         synergyBonus: r.synergyBonus,
@@ -438,6 +443,7 @@ export async function GET(request: NextRequest) {
       return {
         teamId: s.teamId,
         teamName: teamNameMap.get(s.teamId) ?? "Unknown",
+        teamLoginId: teamLoginMap.get(s.teamId) ?? null,
         totalPoints: s.totalPoints,
         rawPoints: s.rawPoints ?? 0,
         synergyBonus: s.synergyBonus ?? 0,

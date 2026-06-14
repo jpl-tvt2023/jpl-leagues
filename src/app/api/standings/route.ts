@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
     // ============================================
     if (leagueFormat === "auction") {
       const leagueTeams = await db
-        .select({ id: teams.id, name: teams.name, purse: teams.purse })
+        .select({ id: teams.id, name: teams.name, teamLoginId: teams.teamLoginId, purse: teams.purse })
         .from(teams)
         .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)));
 
@@ -180,9 +180,11 @@ export async function GET(request: NextRequest) {
 
       // Apply PL Club Auction rename to each standings row's `teamName` + backfill missing
       // clubResultSummary entries in gwHistory.
+      const loginByTeam = new Map(leagueTeams.map((t) => [t.id, t.teamLoginId]));
       const renamedStandings = standings.map((s) => ({
         ...s,
         teamName: clubByTeamId[s.teamId]?.plTeamName ?? s.teamName,
+        teamLoginId: loginByTeam.get(s.teamId) ?? null,
         gwHistory: s.gwHistory.map((h) => ({
           ...h,
           clubResultSummary: h.clubResultSummary ?? backfilledSummaries.get(`${s.teamId}:${h.gw}`) ?? null,

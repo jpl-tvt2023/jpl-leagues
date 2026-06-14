@@ -44,6 +44,7 @@ interface TransactionEntry {
 interface LedgerResponse {
   teamId: string;
   teamName: string;
+  teamLoginId?: string | null;
   initialBudget: number;
   currentPurse: number;
   summary: {
@@ -169,7 +170,7 @@ export default function FinancePage() {
         ) : (
           <>
             <div className="mb-6">
-              <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">{data.teamName} — Finance Ledger</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1"><span title={data.teamLoginId ? `Manager: ${data.teamLoginId}` : undefined}>{data.teamName}</span> — Finance Ledger</h1>
               <p className="text-sm text-gray-400">Every transaction from initial auction onward.</p>
             </div>
 

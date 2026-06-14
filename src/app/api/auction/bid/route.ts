@@ -10,7 +10,7 @@ import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
 
 // Anti-snipe: every bid pushes the timer out by ANTI_SNIPE_EXTENSION_MS, hard-capped at the admin's
 // configured bidTimerSeconds (the countdown can never exceed the set timer).
-const ANTI_SNIPE_EXTENSION_MS = 5_000;
+const ANTI_SNIPE_EXTENSION_MS = 10_000;
 const MIN_BID_INCREMENT = 100_000; // 100K minimum raise
 
 /**

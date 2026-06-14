@@ -66,6 +66,7 @@ interface BootstrapTeam {
 interface StandingEntry {
   teamId: string;
   teamName: string;
+  teamLoginId?: string | null;
   ownedClub?: {
     plTeamId: number;
     plTeamName: string;
@@ -309,6 +310,8 @@ export default function AuctionRoomPage() {
   const [nominationDeadline, setNominationDeadline] = useState<string | null>(null);
   // Post-sale intermission window (sync beat) — drives the "Next nomination in N" countdown.
   const [intermissionUntil, setIntermissionUntil] = useState<string | null>(null);
+  // Club auction only: true once every team owns a club (the session idles awaiting admin Complete).
+  const [allClubsAllocated, setAllClubsAllocated] = useState(false);
   const [intermissionSec, setIntermissionSec] = useState<number>(0);
   const [currentBid, setCurrentBid] = useState<CurrentBid | null>(null);
   const [teamMap, setTeamMap] = useState<Map<string, StandingEntry>>(new Map());
@@ -455,6 +458,7 @@ export default function AuctionRoomPage() {
           });
           setNominationDeadline(active.nominationDeadline ?? null);
           setIntermissionUntil(active.intermissionUntil ?? null);
+          setAllClubsAllocated(!!active.allClubsAllocated);
           if (active.currentBid) setCurrentBid(active.currentBid);
         } else {
           // Fallback: find pending/paused session
@@ -555,6 +559,7 @@ export default function AuctionRoomPage() {
 
     setNominationDeadline((prev) => (prev === (a.nominationDeadline ?? null) ? prev : (a.nominationDeadline ?? null)));
     setIntermissionUntil((prev) => (prev === (a.intermissionUntil ?? null) ? prev : (a.intermissionUntil ?? null)));
+    setAllClubsAllocated((prev) => (prev === !!a.allClubsAllocated ? prev : !!a.allClubsAllocated));
 
     if (a.currentBid) {
       setCurrentBid(a.currentBid);
@@ -1345,6 +1350,12 @@ export default function AuctionRoomPage() {
                     ) : null}
                     {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
                   </div>
+                ) : session.type === CLUB_AUCTION_TYPE && allClubsAllocated ? (
+                  <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center gap-2">
+                    <div className="text-3xl">🏁</div>
+                    <div className="text-base font-bold text-white">Club auction complete</div>
+                    <p className="text-sm text-gray-300">Every team has its club. Waiting for the admin to finalize the auction.</p>
+                  </div>
                 ) : session.type === CLUB_AUCTION_TYPE ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center">
                     <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Waiting for next club</div>
@@ -1478,7 +1489,7 @@ export default function AuctionRoomPage() {
                                 </td>
                                 <td className={`py-1.5 px-2 font-semibold ${isCurrent ? "text-yellow-300" : isMe ? "text-purple-300" : "text-white"}`}>
                                   <span className="inline-flex items-center gap-1.5">
-                                    <span>{team?.teamName ?? tid}</span>
+                                    <span title={team?.teamLoginId ? `Manager: ${team.teamLoginId}` : undefined}>{team?.teamName ?? tid}</span>
                                     {team?.ownedClub && (
                                       <span
                                         title={`${team.ownedClub.plTeamName} · ${team.ownedClub.tier}`}
@@ -1509,22 +1520,35 @@ export default function AuctionRoomPage() {
                                 <td className={`py-1.5 px-1 text-center font-mono ${cellClass("DEF")}`}>{counts.DEF}<span className="text-gray-500">/{MIN_QUOTA.DEF}</span></td>
                                 <td className={`py-1.5 px-1 text-center font-mono ${cellClass("MID")}`}>{counts.MID}<span className="text-gray-500">/{MIN_QUOTA.MID}</span></td>
                                 <td className={`py-1.5 px-1 text-center font-mono ${cellClass("FWD")}`}>{counts.FWD}<span className="text-gray-500">/{MIN_QUOTA.FWD}</span></td>
-                                <td className="py-1.5 px-1 text-center text-white font-semibold">{players.length}</td>
+                                <td className="py-1.5 px-1 text-center text-white font-semibold" title="Players filled / effective squad cap (15 + unlocked bonus − lost penalty slots)">
+                                  {players.length}<span className="text-gray-500">/{effectiveMaxSquadSize(summary?.penaltySlots ?? 0, summary?.bonusSlots ?? 0)}</span>
+                                </td>
                               </tr>
                               {isExpanded && players.length > 0 && (
                                 <tr>
                                   <td colSpan={8} className="px-2 py-2 bg-white/[0.02]">
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
-                                      {players.map((p) => {
-                                        const el = elementById.get(p.fplElementId);
-                                        const pos = el ? POSITION_LABELS[el.element_type] : "—";
-                                        const plTeam = el ? plTeams.get(el.team) : null;
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                      {([1, 2, 3, 4] as const).map((ptype) => {
+                                        const colPlayers = players.filter((p) => elementById.get(p.fplElementId)?.element_type === ptype);
                                         return (
-                                          <div key={p.fplElementId} className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 text-[11px]">
-                                            <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-white/15 text-gray-400">{pos}</span>
-                                            <span className="text-white truncate flex-1">{p.playerName}</span>
-                                            {plTeam && <span className="text-gray-500 text-[9px]">{plTeam.short_name}</span>}
-                                            <span className="text-green-400 font-mono text-[10px]">{formatCurrency(p.purchasePrice)}</span>
+                                          <div key={ptype} className="space-y-1">
+                                            <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 px-1">
+                                              {POSITION_LABELS[ptype]} <span className="text-gray-600">({colPlayers.length})</span>
+                                            </div>
+                                            {colPlayers.length === 0 ? (
+                                              <div className="text-[10px] text-gray-600 px-2 py-1">—</div>
+                                            ) : (
+                                              colPlayers.map((p) => {
+                                                const plTeam = plTeams.get(elementById.get(p.fplElementId)?.team ?? -1);
+                                                return (
+                                                  <div key={p.fplElementId} className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 text-[11px]">
+                                                    <span className="text-white truncate flex-1">{p.playerName}</span>
+                                                    {plTeam && <span className="text-gray-500 text-[9px]">{plTeam.short_name}</span>}
+                                                    <span className="text-green-400 font-mono text-[10px]">{formatCurrency(p.purchasePrice)}</span>
+                                                  </div>
+                                                );
+                                              })
+                                            )}
                                           </div>
                                         );
                                       })}

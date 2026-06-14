@@ -138,6 +138,7 @@ interface AuctionSessionInfo {
   scheduledAt: string | null;
   createdAt: string;
   bidTimerSeconds?: number;
+  allClubsAllocated?: boolean;
 }
 
 interface AuctionSquadPlayer {
@@ -3799,6 +3800,12 @@ export default function AdminDashboard() {
                     </button>
                   </div>
                 </div>
+
+                {auctionActiveSession.allClubsAllocated && (
+                  <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200">
+                    🏁 All clubs allocated — every team has its club. Click <strong>Complete</strong> when ready to finalize the club auction.
+                  </div>
+                )}
 
                 <div className="grid md:grid-cols-3 gap-4">
                   {/* Current Bid Card */}

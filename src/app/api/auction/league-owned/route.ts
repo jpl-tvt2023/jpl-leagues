@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auctionOwnership, leagues, teams } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculatePurse } from "@/lib/formats/auction/economy";
+
+// A player is "owned" (and so excluded from the nominate pool) while active OR pending release —
+// a pending-release player still belongs to its team until the release finalises. Without including
+// pending_release here, those players leaked into the mini-auction nominate list.
+const OWNED_STATUSES = ["active", "pending_release"] as const;
 
 /**
  * GET /api/auction/league-owned?leagueId=xxx
  *
- * Returns the set of FPL element IDs currently owned (status = "active") by any
- * team in the given auction league, plus per-team ownership details for the
- * nomination order table (purse, owned players with purchasePrice).
+ * Returns the set of FPL element IDs currently owned (active or pending_release) by any team in the
+ * given auction league, plus per-team ownership details for the nomination order table.
  */
 export async function GET(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
@@ -46,7 +50,7 @@ export async function GET(request: NextRequest) {
     .where(
       and(
         eq(auctionOwnership.leagueId, leagueId),
-        eq(auctionOwnership.status, "active")
+        inArray(auctionOwnership.status, OWNED_STATUSES)
       )
     );
 
