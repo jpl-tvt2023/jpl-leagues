@@ -62,7 +62,7 @@ export function ClassicStandings() {
   }, [leagueSlug]);
 
   const totalTeams = groupA.length + groupB.length;
-  const isTripleCrown = leagueFormat === "triple-crown";
+  const isTripleCrown = leagueFormat === "continental-championship";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -70,7 +70,7 @@ export function ClassicStandings() {
         leagueSlug={leagueSlug}
         leagueName={leagueName}
         currentPage="standings"
-        format={isTripleCrown ? "triple-crown" : "tvt"}
+        format={isTripleCrown ? "continental-championship" : "tvt"}
         teamSize={teamSize}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
@@ -88,7 +88,7 @@ export function ClassicStandings() {
               </h1>
               {isTripleCrown && (
                 <p className="text-[#00ff85] text-sm font-semibold uppercase tracking-widest mb-2">
-                  Premier League · 2025/26 Season
+                  JPL · 2025/26 Season
                 </p>
               )}
               {!isTripleCrown && (

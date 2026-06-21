@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
   let resolvedPlayoffStartGw: number;
   let resolvedEnabledChips: string[];
 
-  if (format === "triple-crown") {
+  if (format === "continental-championship") {
     // Triple Crown: hardcoded values
     resolvedTeamSize = 20;
     resolvedGroupCount = 4; // 1 PL group + 4 cup groups (managed separately)
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
         const groupNames = resolvedGroupCount === 2 ? ["A", "B"] : ["A"];
         for (const gn of groupNames) {
           const gid = generateId();
-          await tx.insert(groups).values({ id: gid, name: gn, leagueId: id, groupType: "pl" });
+          await tx.insert(groups).values({ id: gid, name: gn, leagueId: id, groupType: "jpl" });
           tvtGroupIds.push(gid);
         }
       }

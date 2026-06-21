@@ -69,7 +69,7 @@ export async function processTripleCrownGameweek(
       for (const fixture of gameweek.fixtures) {
         if (fixture.result) {
           // Revert PL points
-          if (fixture.competitionType === "pl") {
+          if (fixture.competitionType === "jpl") {
             const homeTeam = await db.select().from(teams).where(eq(teams.id, fixture.homeTeamId));
             const awayTeam = await db.select().from(teams).where(eq(teams.id, fixture.awayTeamId));
             if (homeTeam[0]) {
@@ -135,7 +135,7 @@ export async function processTripleCrownGameweek(
     const playerScoreCache = new Map<string, string>(); // teamId → JSON player scores
 
     const plFixtures = gameweek.fixtures.filter(
-      f => f.competitionType === "pl" && !f.result
+      f => f.competitionType === "jpl" && !f.result
     ) as FixtureWithRelations[];
 
     if (plFixtures.length === 0 && !DOUBLE_HEADER_GWS.includes(gameweekNumber)) {
@@ -177,7 +177,7 @@ export async function processTripleCrownGameweek(
       .from(leagues)
       .where(eq(leagues.id, leagueId))
       .limit(1);
-    const tcFormat = leagueRow[0]?.format ?? "triple-crown";
+    const tcFormat = leagueRow[0]?.format ?? "continental-championship";
     const tcPlayoffStartGw = leagueRow[0]?.playoffStartGw ?? null;
     const tcCaptainCap = computeCaptainCap(tcFormat, tcPlayoffStartGw);
     const tcCaptainCheckLimit = computeCaptainCheckLimit(tcFormat, tcPlayoffStartGw);
@@ -497,7 +497,7 @@ export async function processTripleCrownGameweek(
     // which fails for test/future GWs with no FPL data. Per TC docs the same team score
     // is used across PL/cup/knockout the same GW, so reusing the stored PL aggregate is correct.
     for (const f of gameweek.fixtures) {
-      if (f.competitionType !== "pl" || !f.result) continue;
+      if (f.competitionType !== "jpl" || !f.result) continue;
       if (!teamScoreCache.has(f.homeTeamId)) {
         teamScoreCache.set(f.homeTeamId, f.result.homeScore);
       }
@@ -516,7 +516,7 @@ export async function processTripleCrownGameweek(
     // competitionType; advance-playoffs (which creates SF + Final fixtures via create2LegTie)
     // only set roundType. Accept either so previously-created SF/Final rows still process.
     const isKnockout = (val: string | null | undefined) =>
-      val === "ucl-knockout" || val === "uel-knockout";
+      val === "jcl-knockout" || val === "jel-knockout";
     const knockoutFixtures = gameweek.fixtures.filter(
       f => (isKnockout(f.competitionType) || isKnockout(f.roundType)) && !f.result
     ) as FixtureWithRelations[];

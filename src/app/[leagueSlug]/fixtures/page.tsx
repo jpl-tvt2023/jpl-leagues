@@ -196,7 +196,7 @@ export default function LeagueFixturesPage() {
         const data = await response.json();
         const fixturesData = data.fixtures || {};
         // For Triple Crown, show all 38 GWs; for TVT, show up to playoffStartGw - 1
-        const leaguePhaseEnd: number = leagueFormat === "triple-crown" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : league.playoffStartGw - 1);
+        const leaguePhaseEnd: number = leagueFormat === "continental-championship" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : league.playoffStartGw - 1);
         setFixtures(fixturesData);
 
         const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
@@ -231,11 +231,11 @@ export default function LeagueFixturesPage() {
   }, [leagueSlug, leagueFormat, league.playoffStartGw]);
 
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
-  const isTripleCrown = leagueFormat === "triple-crown";
+  const isTripleCrown = leagueFormat === "continental-championship";
 
   // Triple Crown: only show PL fixtures on this page (cup/knockout live on UCL/Europa pages)
   const displayFixtures = isTripleCrown
-    ? selectedFixtures.filter((f: Fixture) => !f.competitionType || f.competitionType === "pl")
+    ? selectedFixtures.filter((f: Fixture) => !f.competitionType || f.competitionType === "jpl")
     : selectedFixtures;
 
   const groupAFixtures = displayFixtures.filter((f: Fixture) => !f.group?.name || f.group.name === "A");
@@ -263,7 +263,7 @@ export default function LeagueFixturesPage() {
         leagueSlug={leagueSlug}
         leagueName={leagueName}
         currentPage="fixtures"
-        format={leagueFormat === "auction" ? "auction" : leagueFormat === "triple-crown" ? "triple-crown" : "tvt"}
+        format={leagueFormat === "auction" ? "auction" : leagueFormat === "continental-championship" ? "continental-championship" : "tvt"}
         teamSize={league.teamSize}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}

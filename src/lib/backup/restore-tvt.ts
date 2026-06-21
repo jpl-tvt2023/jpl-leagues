@@ -106,7 +106,7 @@ export async function loadRestoreSnapshot(backupId: string, leagueId: string): P
   const inferredFormat: string =
     row.auctionSquadsJson != null ? "auction"
     : row.chipsJson != null ? "tvt"
-    : "triple-crown";
+    : "continental-championship";
   return {
     meta: { leagueId: row.leagueId, format: inferredFormat },
     fixtures: fixturesJson,
@@ -167,7 +167,7 @@ export async function restoreFixtures(leagueId: string, payload: RestorePayload)
   // re-seed without manual cleanup. The backup payload doesn't yet round-trip cup-group fixtures,
   // knockout fixtures, or Ghost teams — that round-trip is a backup-writer follow-up (see
   // DEF-TC-003 [DEV-QUESTION] re: backup schema bump).
-  if (league.format === "triple-crown") {
+  if (league.format === "continental-championship") {
     const cupGroups = await db
       .select({ id: groups.id })
       .from(groups)
@@ -177,7 +177,7 @@ export async function restoreFixtures(leagueId: string, payload: RestorePayload)
     const [plGroup] = await db
       .select({ id: groups.id })
       .from(groups)
-      .where(and(eq(groups.leagueId, leagueId), eq(groups.groupType, "pl")))
+      .where(and(eq(groups.leagueId, leagueId), eq(groups.groupType, "jpl")))
       .limit(1);
     const plGroupId = plGroup?.id ?? null;
 

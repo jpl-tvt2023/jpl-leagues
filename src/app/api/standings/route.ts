@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
     let leagueEnabledChips: string[] = ["D", "W", "C"];
     try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
     // Triple Crown runs PL all 38 GWs; TVT league stage ends at playoffStartGw - 1
-    const leagueStageEnd = leagueFormat === "triple-crown" ? 38 : playoffStartGw - 1;
+    const leagueStageEnd = leagueFormat === "continental-championship" ? 38 : playoffStartGw - 1;
 
     // Check if groups have been revealed to teams
     const groupsRevealedRows = await db
@@ -275,7 +275,7 @@ export async function GET(request: NextRequest) {
     // by processTripleCrownGameweek and is authoritative. Computing it here via FPL API
     // calls would be extremely slow (38 GWs × 40 players = 1500+ sequential requests).
     const processedGws = new Set<number>();
-    if (leagueFormat !== "triple-crown") {
+    if (leagueFormat !== "continental-championship") {
       // Wrap the whole hit-penalty fetch in try/catch — if FPL is down or rate-limited,
       // we skip the deduction this run rather than 500ing the entire standings response.
       // The standings remain useful (chip + bonus points still computed); the hit penalty
@@ -283,7 +283,7 @@ export async function GET(request: NextRequest) {
       try {
         for (const t of allTeamsUnfiltered) {
           for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-            if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
+            if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "jpl")) {
               processedGws.add(f.gameweek.number);
             }
           }
@@ -385,7 +385,7 @@ export async function GET(request: NextRequest) {
     let maxPlayedGw = 0;
     for (const t of allTeams) {
       for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-        if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "pl")) {
+        if (f.result && f.gameweek.number <= leagueStageEnd && (!f.competitionType || f.competitionType === "jpl")) {
           if (f.gameweek.number > maxPlayedGw) maxPlayedGw = f.gameweek.number;
         }
       }
@@ -415,7 +415,7 @@ export async function GET(request: NextRequest) {
         for (const f of team.homeFixtures) {
           if (f.gameweek.number > leagueStageEnd) continue;
           if (f.gameweek.number === maxPlayedGw) continue;
-          if (f.competitionType && f.competitionType !== "pl") continue;
+          if (f.competitionType && f.competitionType !== "jpl") continue;
           if (!f.result) continue;
           pPointsFor += f.result.homeScore;
           if (f.result.homeScore > f.result.awayScore) pWins++;
@@ -426,7 +426,7 @@ export async function GET(request: NextRequest) {
         for (const f of team.awayFixtures) {
           if (f.gameweek.number > leagueStageEnd) continue;
           if (f.gameweek.number === maxPlayedGw) continue;
-          if (f.competitionType && f.competitionType !== "pl") continue;
+          if (f.competitionType && f.competitionType !== "jpl") continue;
           if (!f.result) continue;
           pPointsFor += f.result.awayScore;
           if (f.result.awayScore > f.result.homeScore) pWins++;
@@ -497,7 +497,7 @@ export async function GET(request: NextRequest) {
       // Process home fixtures (league stage only)
       for (const fixture of team.homeFixtures) {
         if (fixture.gameweek.number > leagueStageEnd) continue;
-        if (fixture.competitionType && fixture.competitionType !== "pl") continue;
+        if (fixture.competitionType && fixture.competitionType !== "jpl") continue;
         if (fixture.result) {
           pointsFor += fixture.result.homeScore;
           pointsAgainst += fixture.result.awayScore;
@@ -520,7 +520,7 @@ export async function GET(request: NextRequest) {
       // Process away fixtures (league stage only)
       for (const fixture of team.awayFixtures) {
         if (fixture.gameweek.number > leagueStageEnd) continue;
-        if (fixture.competitionType && fixture.competitionType !== "pl") continue;
+        if (fixture.competitionType && fixture.competitionType !== "jpl") continue;
         if (fixture.result) {
           pointsFor += fixture.result.awayScore;
           pointsAgainst += fixture.result.homeScore;
@@ -561,7 +561,7 @@ export async function GET(request: NextRequest) {
 
       // For Triple Crown: use the stored leaguePoints (computed by processTripleCrownGameweek)
       // which already includes hit penalties baked in. For TVT: compute from W/D/L + chips - hits.
-      const leaguePoints = leagueFormat === "triple-crown"
+      const leaguePoints = leagueFormat === "continental-championship"
         ? team.leaguePoints
         : (wins * 2) + (draws * 1) + cbpPts - hitPenaltyTotal;
       const teamRawChips = teamChipsRawMap.get(team.id) || [];

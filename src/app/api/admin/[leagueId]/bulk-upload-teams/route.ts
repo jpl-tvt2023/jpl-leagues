@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
       for (const name of neededGroups) {
         if (!groupIdByName.has(name)) {
           const gid = generateId();
-          await db.insert(groups).values({ id: gid, name, leagueId, groupType: "pl" });
+          await db.insert(groups).values({ id: gid, name, leagueId, groupType: "jpl" });
           groupIdByName.set(name, gid);
         }
       }

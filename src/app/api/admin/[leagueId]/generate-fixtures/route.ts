@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { teamSize, groupCount, playoffStartGw, format } = leagueRows[0];
-    const isTripleCrown = format === "triple-crown";
+    const isTripleCrown = format === "continental-championship";
     const teamsPerGroup = (teamSize ?? 32) / (groupCount ?? 2);
     const effectivePlayoffStart = playoffStartGw ?? 31;
 
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
         awayTeamId: f.awayTeamId,
         gameweekId: gameweekMap.get(f.gameweekNumber)!,
         groupId: plGroupId,
-        competitionType: "pl",
+        competitionType: "jpl",
       })).filter((f) => f.gameweekId != null);
 
       for (const fixture of fixtureData) {

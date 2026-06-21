@@ -75,12 +75,12 @@ export default function FeedbackPage() {
     }
   };
 
-  const isTripleCrown = league.format === "triple-crown";
+  const isTripleCrown = league.format === "continental-championship";
   const isAuction = league.format === "auction";
-  const navFormat: "auction" | "triple-crown" | "tvt" = isAuction
+  const navFormat: "auction" | "continental-championship" | "tvt" = isAuction
     ? "auction"
     : isTripleCrown
-    ? "triple-crown"
+    ? "continental-championship"
     : "tvt";
 
   return (

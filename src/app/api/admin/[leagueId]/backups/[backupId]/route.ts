@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   // from which JSON columns are populated:
   //   auctionSquadsJson != null  →  inferred "auction"
   //   chipsJson != null          →  inferred "tvt"
-  //   otherwise                  →  inferred "triple-crown" (or other non-tvt, non-auction format)
+  //   otherwise                  →  inferred "continental-championship" (or other non-tvt, non-auction format)
   // If the inferred format differs from the current league.format the league was re-formatted after
   // this backup was taken — `inferredOriginalFormat` exposes the drift so restore tooling can
   // refuse with a meaningful error instead of silently misinterpreting the payload.
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     row.auctionSquadsJson != null ? "auction"
     : row.chipsJson != null ? "tvt"
     : league.format === "auction" || league.format === "tvt"
-      ? "triple-crown"
+      ? "continental-championship"
       : league.format;
   const rows: BackupRows = {
     meta: {

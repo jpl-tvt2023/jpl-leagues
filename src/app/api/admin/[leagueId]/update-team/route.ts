@@ -121,7 +121,7 @@ export async function PUT(request: NextRequest) {
 
       if (!groupRecord) {
         groupId = generateId();
-        await db.insert(groups).values({ id: groupId, name: group, leagueId, groupType: "pl" });
+        await db.insert(groups).values({ id: groupId, name: group, leagueId, groupType: "jpl" });
       } else {
         groupId = groupRecord.id;
       }

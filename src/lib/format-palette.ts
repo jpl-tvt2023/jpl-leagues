@@ -11,6 +11,12 @@
  * surfaces just means consuming the hook, no per-component branching.
  */
 
+/**
+ * Canonical stored value of the JPL Continental Championship format (formerly Triple Crown).
+ * Imported wherever the format is compared so the token lives in one place.
+ */
+export const CONTINENTAL_FORMAT = "continental-championship";
+
 export type FormatPalette = {
   /** Hue family — useful for ad-hoc class composition (e.g. `text-${family}-300`). */
   family: "purple" | "indigo" | "violet" | "amber" | "emerald";
@@ -70,7 +76,7 @@ const TC_PALETTE: FormatPalette = {
   borderTint: "border-amber-500/30",
   badgeBg: "bg-amber-500/20",
   badgeText: "text-amber-200",
-  label: "TC",
+  label: "JCC",
   pageBg: "bg-gradient-to-b from-slate-900 via-amber-900/40 to-slate-900",
 };
 
@@ -93,7 +99,7 @@ const DEFAULT_PALETTE: FormatPalette = TVT_32_PALETTE;
  */
 export function getFormatPalette(format: string | null | undefined, teamSize: number | null): FormatPalette {
   if (format === "auction") return AUCTION_PALETTE;
-  if (format === "triple-crown") return TC_PALETTE;
+  if (format === CONTINENTAL_FORMAT) return TC_PALETTE;
   if (format === "tvt") {
     if (teamSize === 8) return TVT_8_PALETTE;
     if (teamSize === 16) return TVT_16_PALETTE;

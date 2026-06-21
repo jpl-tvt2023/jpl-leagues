@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "League not found" }, { status: 404 });
     }
 
-    if (leagueRow[0].format !== "triple-crown") {
+    if (leagueRow[0].format !== "continental-championship") {
       return NextResponse.json({
         error: "Cup group seeding only available for Triple Crown format",
       }, { status: 400 });
@@ -253,7 +253,7 @@ export async function GET(request: NextRequest) {
     );
 
     const plGroup = await db.select().from(groups).where(
-      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "pl"))
+      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "jpl"))
     );
 
     const cupFixtureCount = cupGroups.length > 0
@@ -310,7 +310,7 @@ export async function DELETE(request: NextRequest) {
     const fixtureIds = leagueCupFixtures.map((f) => f.id);
 
     const plGroup = await db.select().from(groups).where(
-      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "pl"))
+      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "jpl"))
     );
     const plGroupId = plGroup.length > 0 ? plGroup[0].id : null;
 

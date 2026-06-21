@@ -125,14 +125,14 @@ export async function GET(request: NextRequest) {
     const allTeamFixtures = [...team.homeFixtures, ...team.awayFixtures];
 
     // For TC: separate PL vs cup fixtures. For TVT: all fixtures are PL.
-    const plTeamFixtures = leagueFormat === "triple-crown"
-      ? allTeamFixtures.filter(f => (f as any).competitionType === "pl" || !(f as any).competitionType)
+    const plTeamFixtures = leagueFormat === "continental-championship"
+      ? allTeamFixtures.filter(f => (f as any).competitionType === "jpl" || !(f as any).competitionType)
       : allTeamFixtures;
-    const cupTeamFixtures = leagueFormat === "triple-crown"
+    const cupTeamFixtures = leagueFormat === "continental-championship"
       ? allTeamFixtures.filter(f =>
           (f as any).competitionType === "cup-group" ||
-          (f as any).competitionType === "ucl-knockout" ||
-          (f as any).competitionType === "uel-knockout"
+          (f as any).competitionType === "jcl-knockout" ||
+          (f as any).competitionType === "jel-knockout"
         )
       : [];
 
@@ -459,7 +459,7 @@ export async function GET(request: NextRequest) {
     ).length;
 
     const CAPTAIN_CAP = computeCaptainCap(leagueFormat, leaguePlayoffStartGw);
-    const isPlayoffPhase = leagueFormat === "triple-crown" ? false : (nextGameweek?.number || 0) > captainCheckLimit;
+    const isPlayoffPhase = leagueFormat === "continental-championship" ? false : (nextGameweek?.number || 0) > captainCheckLimit;
 
     const captaincyStatus = {
       cap: CAPTAIN_CAP,
@@ -576,11 +576,11 @@ export async function GET(request: NextRequest) {
     // ============================================
     // NEXT 5 PL FIXTURES
     // ============================================
-    const plHomeFixtures = leagueFormat === "triple-crown"
-      ? team.homeFixtures.filter(f => !(f as any).competitionType || (f as any).competitionType === "pl")
+    const plHomeFixtures = leagueFormat === "continental-championship"
+      ? team.homeFixtures.filter(f => !(f as any).competitionType || (f as any).competitionType === "jpl")
       : team.homeFixtures;
-    const plAwayFixtures = leagueFormat === "triple-crown"
-      ? team.awayFixtures.filter(f => !(f as any).competitionType || (f as any).competitionType === "pl")
+    const plAwayFixtures = leagueFormat === "continental-championship"
+      ? team.awayFixtures.filter(f => !(f as any).competitionType || (f as any).competitionType === "jpl")
       : team.awayFixtures;
 
     const upcomingHomeFixtures = plHomeFixtures
@@ -589,8 +589,8 @@ export async function GET(request: NextRequest) {
         gameweek: f.gameweek.number,
         opponent: f.awayTeam.name,
         isHome: true,
-        competitionType: "pl" as string,
-        competitionLabel: "PL",
+        competitionType: "jpl" as string,
+        competitionLabel: "JPL",
       }));
     const upcomingAwayFixtures = plAwayFixtures
       .filter(f => !f.result)
@@ -598,8 +598,8 @@ export async function GET(request: NextRequest) {
         gameweek: f.gameweek.number,
         opponent: f.homeTeam.name,
         isHome: false,
-        competitionType: "pl" as string,
-        competitionLabel: "PL",
+        competitionType: "jpl" as string,
+        competitionLabel: "JPL",
       }));
     const upcomingPlFixtures = [...upcomingHomeFixtures, ...upcomingAwayFixtures]
       .sort((a, b) => a.gameweek - b.gameweek)
@@ -607,7 +607,7 @@ export async function GET(request: NextRequest) {
 
     // For TC: interleave cup fixtures after PL fixture for same GW
     let upcomingFixtures = upcomingPlFixtures;
-    if (leagueFormat === "triple-crown") {
+    if (leagueFormat === "continental-championship") {
       const upcomingCupRows = cupTeamFixtures
         .filter(f => !f.result)
         .sort((a, b) => a.gameweek.number - b.gameweek.number)
@@ -622,7 +622,7 @@ export async function GET(request: NextRequest) {
             opponent,
             isHome,
             competitionType: f.competitionType ?? "cup-group",
-            competitionLabel: f.competitionType === "ucl-knockout" ? "UCL" : f.competitionType === "uel-knockout" ? "Europa" : "Cup",
+            competitionLabel: f.competitionType === "jcl-knockout" ? "JCL" : f.competitionType === "jel-knockout" ? "JEL" : "JPL Cup",
           };
         });
 
@@ -635,13 +635,13 @@ export async function GET(request: NextRequest) {
       }
       // Also include any cup fixtures on GWs not in the PL top-5 (e.g. standalone knockout GWs)
       for (const cupF of upcomingCupRows) {
-        if (!merged.find(m => m.gameweek === cupF.gameweek && m.competitionType !== "pl")) {
+        if (!merged.find(m => m.gameweek === cupF.gameweek && m.competitionType !== "jpl")) {
           if (!upcomingPlFixtures.find(p => p.gameweek === cupF.gameweek)) {
             merged.push(cupF);
           }
         }
       }
-      upcomingFixtures = merged.sort((a, b) => a.gameweek - b.gameweek || (a.competitionType === "pl" ? -1 : 1));
+      upcomingFixtures = merged.sort((a, b) => a.gameweek - b.gameweek || (a.competitionType === "jpl" ? -1 : 1));
     }
 
     // ============================================
@@ -728,7 +728,7 @@ export async function GET(request: NextRequest) {
     // ============================================
     let plPosition: { rank: number; totalTeams: number } | null = null;
     let allNonGhostSorted: { id: string; name: string; leaguePoints: number }[] = [];
-    if (leagueFormat === "triple-crown" && teamLeagueId) {
+    if (leagueFormat === "continental-championship" && teamLeagueId) {
       try {
         const allNonGhost = await db.select({ id: teams.id, name: teams.name, leaguePoints: teams.leaguePoints })
           .from(teams)
@@ -762,7 +762,7 @@ export async function GET(request: NextRequest) {
       groupName: string;
       rank: number;
       totalTeams: number;
-      cupZone: "ucl" | "uel";
+      cupZone: "jcl" | "jel";
       minCompletedCupGw: number | null;
       maxCompletedCupGw: number | null;
       completedCupGws: number[];
@@ -791,7 +791,7 @@ export async function GET(request: NextRequest) {
       } | null;
     } | null = null;
 
-    if (leagueFormat === "triple-crown" && team.groupId) {
+    if (leagueFormat === "continental-championship" && team.groupId) {
       try {
         const cupGroupTeams = await db.select().from(teams).where(eq(teams.groupId, team.groupId));
         const cupGroupFixtures = await db.query.fixtures.findMany({
@@ -836,7 +836,7 @@ export async function GET(request: NextRequest) {
         const completedCupGws = [...new Set(completedCupGwNums)].sort((a, b) => a - b);
 
         const compLabel = (type: string) =>
-          type === "cup-group" ? "Cup Group" : type === "ucl-knockout" ? "UCL" : "Europa";
+          type === "cup-group" ? "JPL Cup Group" : type === "jcl-knockout" ? "JCL" : "JEL";
 
         // Build cup player scores for lastCupResult
         let cupLastMyPlayerScores: any[] = [];
@@ -892,7 +892,7 @@ export async function GET(request: NextRequest) {
           groupName: team.group?.name || "Cup Group",
           rank: cupGroupRank,
           totalTeams: humanStandings.length,
-          cupZone: cupGroupRank <= 2 ? "ucl" : "uel",
+          cupZone: cupGroupRank <= 2 ? "jcl" : "jel",
           minCompletedCupGw,
           maxCompletedCupGw,
           completedCupGws,
@@ -981,7 +981,7 @@ export async function GET(request: NextRequest) {
       }
       // Chip announcements — only TVT has chips. TC + auction skip the fetch.
       const chipByTeam = new Map<string, string>();
-      if (leagueFormat !== "triple-crown") {
+      if (leagueFormat !== "continental-championship") {
         const chipsForGw = await db.query.gameweekChips.findMany({
           where: eq(gameweekChips.gameweekId, nextGameweek.id),
         });

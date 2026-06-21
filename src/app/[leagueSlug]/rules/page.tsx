@@ -26,13 +26,13 @@ export default function LeagueRulesPage() {
     enabledChips: league.enabledChips.length ? league.enabledChips : ["D", "W", "C"],
   };
 
-  const isTripleCrown = league.format === "triple-crown";
+  const isTripleCrown = league.format === "continental-championship";
   const isAuction = league.format === "auction";
 
   const variantLabel = isAuction
     ? "Auction Format"
     : isTripleCrown
-    ? "Triple Crown (20 Teams)"
+    ? "JPL Continental Championship (20 Teams)"
     : config.teamSize === 8
     ? "8-Team Format"
     : config.teamSize === 16
@@ -42,7 +42,7 @@ export default function LeagueRulesPage() {
   const title = isAuction
     ? "Auction League Rules & Regulations"
     : isTripleCrown
-    ? "Triple Crown Rules & Regulations"
+    ? "JPL Continental Championship Rules & Regulations"
     : "TVT Rules & Regulations";
 
   return (
@@ -51,7 +51,7 @@ export default function LeagueRulesPage() {
         leagueSlug={leagueSlug}
         leagueName={league.name}
         currentPage="rules"
-        format={isAuction ? "auction" : isTripleCrown ? "triple-crown" : "tvt"}
+        format={isAuction ? "auction" : isTripleCrown ? "continental-championship" : "tvt"}
         teamSize={league.teamSize}
         auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={viewer.authenticated}

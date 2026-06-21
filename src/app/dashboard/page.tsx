@@ -131,7 +131,7 @@ interface DashboardData {
     groupName: string | null;
     rank: number;
     totalTeams: number;
-    cupZone: "ucl" | "uel";
+    cupZone: "jcl" | "jel";
     minCompletedCupGw?: number | null;
     maxCompletedCupGw?: number | null;
     completedCupGws?: number[];
@@ -1184,7 +1184,7 @@ export default function DashboardPage() {
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <span className="text-yellow-400">👑</span> {leagueFormat === "triple-crown" ? "Captains" : "Captains & Chips"}
+          <span className="text-yellow-400">👑</span> {leagueFormat === "continental-championship" ? "Captains" : "Captains & Chips"}
           {data.deadline.gameweek ? <span className="text-gray-400 font-normal text-sm">— GW{data.deadline.gameweek}</span> : null}
         </h2>
         <button
@@ -1263,12 +1263,12 @@ export default function DashboardPage() {
           <Link href="/dashboard" className="text-yellow-400 font-semibold transition">
             Dashboard
           </Link>
-          {leagueFormat === "triple-crown" ? (
+          {leagueFormat === "continental-championship" ? (
             <>
-              <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">PL Standings</Link>
-              <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">PL Fixtures</Link>
-              <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">UEFA Standings</Link>
-              <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">UEFA Fixtures</Link>
+              <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">JPL Standings</Link>
+              <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">JPL Fixtures</Link>
+              <Link href={`/${leagueSlug}/jpl-cup-standings`} className="text-gray-300 hover:text-white transition">JPL Cup Standings</Link>
+              <Link href={`/${leagueSlug}/jpl-cup-fixtures`} className="text-gray-300 hover:text-white transition">JPL Cup Fixtures</Link>
               <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
             </>
           ) : (
@@ -1297,7 +1297,7 @@ export default function DashboardPage() {
         <div className="mb-8">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
             <h1 className="text-2xl sm:text-4xl font-bold text-white truncate">{data.team.name}</h1>
-            {leagueFormat === "triple-crown" ? (
+            {leagueFormat === "continental-championship" ? (
               <>
                 {data.plPosition && (
                   <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300">
@@ -1305,8 +1305,8 @@ export default function DashboardPage() {
                   </span>
                 )}
                 {data.cupProgress && (
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${data.cupProgress.cupZone === "ucl" ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400"}`}>
-                    UEFA {data.cupProgress.groupName} #{data.cupProgress.rank} → {data.cupProgress.cupZone === "ucl" ? "UCL" : "Europa"}
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${data.cupProgress.cupZone === "jcl" ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400"}`}>
+                    JPL Cup {data.cupProgress.groupName} #{data.cupProgress.rank} → {data.cupProgress.cupZone === "jcl" ? "JCL" : "JEL"}
                   </span>
                 )}
               </>
@@ -1315,7 +1315,7 @@ export default function DashboardPage() {
             )}
           </div>
           <p className="text-sm sm:text-base text-gray-400">
-            {leagueFormat === "triple-crown"
+            {leagueFormat === "continental-championship"
               ? `${data.team.leaguePoints} PL Points`
               : `${data.leagueGroupCount && data.leagueGroupCount > 1 ? `Group ${data.team.group} • ` : ""}Rank #${data.leaguePosition.groupRank} • ${data.team.leaguePoints} Points`}
           </p>
@@ -1324,7 +1324,7 @@ export default function DashboardPage() {
         {/* Captain Announcements — Triple Crown only (full-width, since TC has
             merged deadline+captain card lower down). TVT places this card inside
             its 3-col top row, below. */}
-        {leagueFormat === "triple-crown" && captainAnnouncementsCard && (
+        {leagueFormat === "continental-championship" && captainAnnouncementsCard && (
           <div className="mb-6">{captainAnnouncementsCard}</div>
         )}
 
@@ -1333,7 +1333,7 @@ export default function DashboardPage() {
           {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
             {/* TC layout: merged Deadline+Captain, then Next Fixture */}
-            {leagueFormat === "triple-crown" ? (
+            {leagueFormat === "continental-championship" ? (
               <></>
             ) : (
               /* TVT: Deadline + Captain Announcements + Upcoming Fixture side by side */
@@ -1402,7 +1402,7 @@ export default function DashboardPage() {
             )}
 
             {/* TC: Merged Deadline + Captain card */}
-            {leagueFormat === "triple-crown" && (
+            {leagueFormat === "continental-championship" && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 {data.deadline.gameweek === 0 ? (
                   <div className="text-center py-6">
@@ -1489,7 +1489,7 @@ export default function DashboardPage() {
             )}
 
             {/* TC: Next Fixture card — full width for single, half-half for double header */}
-            {leagueFormat === "triple-crown" && data.upcomingFixture && (
+            {leagueFormat === "continental-championship" && data.upcomingFixture && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                   <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} Fixture{DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture ? "s" : ""}
@@ -1500,7 +1500,7 @@ export default function DashboardPage() {
                 <div className={DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture ? "grid md:grid-cols-2 gap-6 divide-x divide-white/10" : ""}>
                   {/* PL Fixture */}
                   <div className={DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture ? "pr-6" : ""}>
-                    <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Premier League</div>
+                    <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">JPL</div>
                     <div className="flex items-center justify-center gap-4 mb-3">
                       <div className="text-center">
                         <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "HOME" : "AWAY"}</div>
@@ -1563,7 +1563,7 @@ export default function DashboardPage() {
             )}
 
             {/* TVT: Captain & Chip Submission */}
-            {leagueFormat !== "triple-crown" && <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            {leagueFormat !== "continental-championship" && <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <span className="text-yellow-400">📋</span> GW{data.deadline.gameweek > 0 ? data.deadline.gameweek : "?"} Submissions
               </h2>
@@ -1643,7 +1643,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* TVT Chips Submission — hidden for Triple Crown */}
-                {leagueFormat !== "triple-crown" && <div className="p-4 rounded-xl bg-white/5">
+                {leagueFormat !== "continental-championship" && <div className="p-4 rounded-xl bg-white/5">
                   <h3 className="font-semibold text-white mb-3">
                     TVT Chips (Set {data.chipStatus.currentSet === "playoffs" ? "Playoffs" : data.chipStatus.currentSet})
                   </h3>
@@ -1743,7 +1743,7 @@ export default function DashboardPage() {
                     <span className="text-yellow-400">📊</span>
                     {data.lastGwResult.isPlayoff
                       ? `${data.lastGwResult.tieId || data.lastGwResult.roundName || "Playoff"}${data.lastGwResult.leg ? ` Leg ${data.lastGwResult.leg}` : ""} (GW${data.lastGwResult.gameweek})`
-                      : leagueFormat === "triple-crown"
+                      : leagueFormat === "continental-championship"
                         ? `PL — GW${data.lastGwResult.gameweek}`
                         : `Group Stage — GW${data.lastGwResult.gameweek}`}
                     <button
@@ -1917,7 +1917,7 @@ export default function DashboardPage() {
             )}
 
             {/* TC Cup Last Result — independent navigation, always-visible breakdown */}
-            {leagueFormat === "triple-crown" && (() => {
+            {leagueFormat === "continental-championship" && (() => {
               const cupResult = data.cupGwResult ?? data.cupProgress?.lastCupResult ?? null;
               if (!cupResult) return null;
               const cupPlayerScores = cupResult.myPlayerScores ?? [];
@@ -2132,12 +2132,12 @@ export default function DashboardPage() {
           {/* Right Column */}
           <div className="space-y-6">
             {/* Mini Table(s) */}
-            {leagueFormat === "triple-crown" ? (
+            {leagueFormat === "continental-championship" ? (
               <>
                 {/* PL Mini Table */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-white">PL Table</h2>
+                    <h2 className="text-lg font-bold text-white">JPL Table</h2>
                     {data.plPosition && (
                       <span className="text-sm font-bold text-yellow-400">
                         #{data.plPosition.rank} / {data.plPosition.totalTeams}
@@ -2172,7 +2172,7 @@ export default function DashboardPage() {
                     href={`/${leagueSlug}/standings`}
                     className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
                   >
-                    View Full PL Table →
+                    View Full JPL Table →
                   </Link>
 
                   {/* My PL Stats */}
@@ -2203,10 +2203,10 @@ export default function DashboardPage() {
                 {data.cupProgress && (
                   <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 sm:p-6 backdrop-blur">
                     <h2 className="text-lg font-bold text-white mb-1">
-                      Cup Group {data.cupProgress.groupName}
+                      JPL Cup Group {data.cupProgress.groupName}
                     </h2>
                     <p className="text-xs text-gray-400 mb-4">
-                      Top 2 → UCL · Bottom 2 → Europa
+                      Top 2 → JCL · Bottom 2 → JEL
                     </p>
                     <div className="space-y-2">
                       {data.cupProgress.miniTable.map((t) => (
@@ -2231,10 +2231,10 @@ export default function DashboardPage() {
                       ))}
                     </div>
                     <Link
-                      href={`/${leagueSlug}/uefa-standings`}
+                      href={`/${leagueSlug}/jpl-cup-standings`}
                       className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
                     >
-                      View Full UEFA Standings →
+                      View Full JPL Cup Standings →
                     </Link>
 
                     {/* Cup Stats */}
@@ -2276,8 +2276,8 @@ export default function DashboardPage() {
                           byGw.get(f.gameweek)!.push(f);
                         }
                         return Array.from(byGw.entries()).map(([gw, gwFixtures]) => {
-                          const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "pl");
-                          const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "pl");
+                          const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "jpl");
+                          const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "jpl");
                           const isDouble = !!plFix && !!cupFix;
                           return (
                             <div key={gw} className="rounded-xl border border-white/10 overflow-hidden">
@@ -2290,14 +2290,14 @@ export default function DashboardPage() {
                                   <div className="flex items-center gap-2 px-3 py-2.5">
                                     <span className={`text-xs px-2 py-0.5 rounded font-semibold ${plFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>{plFix.isHome ? "H" : "A"}</span>
                                     <span className="text-white text-sm truncate">{plFix.opponent}</span>
-                                    <span className="text-xs text-gray-500 ml-auto shrink-0">PL</span>
+                                    <span className="text-xs text-gray-500 ml-auto shrink-0">JPL</span>
                                   </div>
                                 )}
                                 {cupFix && (
                                   <div className="flex items-center gap-2 px-3 py-2.5">
                                     <span className={`text-xs px-2 py-0.5 rounded font-semibold ${cupFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>{cupFix.isHome ? "H" : "A"}</span>
                                     <span className="text-blue-200 text-sm truncate">{cupFix.opponent}</span>
-                                    <span className="text-xs text-blue-400/70 ml-auto shrink-0">{cupFix.competitionLabel ?? "Cup"}</span>
+                                    <span className="text-xs text-blue-400/70 ml-auto shrink-0">{cupFix.competitionLabel ?? "JPL Cup"}</span>
                                   </div>
                                 )}
                               </div>
@@ -2345,7 +2345,7 @@ export default function DashboardPage() {
             )}
 
             {/* Next 5 Fixtures — grouped by GW (TVT only; TC shows these above results) */}
-            {leagueFormat !== "triple-crown" && <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            {leagueFormat !== "continental-championship" && <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
               {data.upcomingFixtures.length === 0 ? (
                 <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
@@ -2359,8 +2359,8 @@ export default function DashboardPage() {
                       byGw.get(f.gameweek)!.push(f);
                     }
                     return Array.from(byGw.entries()).map(([gw, gwFixtures]) => {
-                      const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "pl");
-                      const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "pl");
+                      const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "jpl");
+                      const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "jpl");
                       const isDouble = !!plFix && !!cupFix;
                       return (
                         <div key={gw} className="rounded-xl border border-white/8 overflow-hidden">

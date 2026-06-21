@@ -11,7 +11,7 @@ import { AuctionHelp } from "../_components/help/AuctionHelp";
 import type { UserRole } from "../_components/help/shared";
 
 export default function LeagueHelpPage() {
-  useEnforceFormat(["tvt", "triple-crown", "auction"]);
+  useEnforceFormat(["tvt", "continental-championship", "auction"]);
 
   const params = useParams();
   const router = useRouter();
@@ -35,12 +35,12 @@ export default function LeagueHelpPage() {
       ? "team"
       : "public";
 
-  const isTripleCrown = league.format === "triple-crown";
+  const isTripleCrown = league.format === "continental-championship";
   const isAuction = league.format === "auction";
   const variantLabel = isAuction
     ? "Auction"
     : isTripleCrown
-    ? "Triple Crown"
+    ? "JPL Continental Championship"
     : league.teamSize === 8
     ? "8-Team"
     : league.teamSize === 16
@@ -53,7 +53,7 @@ export default function LeagueHelpPage() {
         leagueSlug={leagueSlug}
         leagueName={league.name}
         currentPage="help"
-        format={isAuction ? "auction" : isTripleCrown ? "triple-crown" : "tvt"}
+        format={isAuction ? "auction" : isTripleCrown ? "continental-championship" : "tvt"}
         teamSize={league.teamSize}
         auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={viewer.authenticated}

@@ -12,8 +12,8 @@ import {
   PlayerBreakdown,
 } from "../_components/fixtures/shared";
 
-export default function UEFAFixturesPage() {
-  useEnforceFormat(["triple-crown"]);
+export default function JplCupFixturesPage() {
+  useEnforceFormat(["continental-championship"]);
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
@@ -183,16 +183,16 @@ export default function UEFAFixturesPage() {
             {isLoggedIn ? "Dashboard" : "All Leagues"}
           </Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
-            PL Standings
+            JPL Standings
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            PL Fixtures
+            JPL Fixtures
           </Link>
-          <Link href={`/${leagueSlug}/uefa-standings`} className="text-gray-300 hover:text-white transition">
-            UEFA Standings
+          <Link href={`/${leagueSlug}/jpl-cup-standings`} className="text-gray-300 hover:text-white transition">
+            JPL Cup Standings
           </Link>
-          <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-yellow-400 font-semibold transition">
-            UEFA Fixtures
+          <Link href={`/${leagueSlug}/jpl-cup-fixtures`} className="text-yellow-400 font-semibold transition">
+            JPL Cup Fixtures
           </Link>
           <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
             Playoffs
@@ -225,7 +225,7 @@ export default function UEFAFixturesPage() {
         {/* Hero */}
         <div className="text-center mb-6 sm:mb-10">
           <div className="inline-flex items-center gap-2 bg-[#0066cc]/20 border border-[#0066cc]/30 rounded-full px-4 py-1.5 mb-4">
-            <span className="text-[#4da6ff] text-xs font-semibold uppercase tracking-widest">UEFA · Triple Crown</span>
+            <span className="text-[#4da6ff] text-xs font-semibold uppercase tracking-widest">JPL Cup · Continental Championship</span>
           </div>
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-2">Group Stage Fixtures</h1>
           <p className="text-sm sm:text-base text-gray-400">Cup group stage · 2025/26 Season</p>

@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         .from(groups)
         .where(and(eq(groups.name, groupName), eq(groups.leagueId, leagueId)));
       if (existing.length === 0) {
-        await db.insert(groups).values({ id: generateId(), name: groupName, leagueId, groupType: "pl" });
+        await db.insert(groups).values({ id: generateId(), name: groupName, leagueId, groupType: "jpl" });
       }
     }
 
