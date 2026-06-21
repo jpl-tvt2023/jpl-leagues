@@ -74,7 +74,7 @@ export const groups = sqliteTable("groups", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
-  groupType: text("group_type").default("pl"), // "pl" | "cup" (Triple Crown uses "cup" for cup groups)
+  groupType: text("group_type").default("jpl"), // "pl" | "cup" (Triple Crown uses "cup" for cup groups)
 }, (table) => ({
   leagueNameUnique: uniqueIndex("groups_league_name_unique").on(table.leagueId, table.name),
 }));
@@ -180,7 +180,7 @@ export const fixtures = sqliteTable("fixtures", {
   // Fixture type
   isChallenge: integer("is_challenge", { mode: "boolean" }).notNull().default(false), // Challenge Chip fixture
   isPlayoff: integer("is_playoff", { mode: "boolean" }).notNull().default(false), // Playoff fixture
-  competitionType: text("competition_type"), // "pl" | "cup-group" | "ucl-knockout" | "uel-knockout" (Triple Crown)
+  competitionType: text("competition_type"), // "pl" | "cup-group" | "jcl-knockout" | "jel-knockout" (Triple Crown)
   
   // Playoff-specific fields (null for league-phase fixtures)
   roundName: text("round_name"), // "RO16", "QF", "SF", "Final", "C-31", etc.

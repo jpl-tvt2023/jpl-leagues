@@ -87,11 +87,11 @@ export async function GET(request: NextRequest) {
     const allFixtures = [...team.homeFixtures, ...team.awayFixtures].filter(f => f.result);
 
     // For TC: separate PL and cup fixtures
-    const plFixtures = leagueFormat === "triple-crown"
-      ? allFixtures.filter(f => !((f as any).competitionType) || (f as any).competitionType === "pl")
+    const plFixtures = leagueFormat === "continental-championship"
+      ? allFixtures.filter(f => !((f as any).competitionType) || (f as any).competitionType === "jpl")
       : allFixtures;
-    const cupFixtures = leagueFormat === "triple-crown"
-      ? allFixtures.filter(f => (f as any).competitionType && (f as any).competitionType !== "pl")
+    const cupFixtures = leagueFormat === "continental-championship"
+      ? allFixtures.filter(f => (f as any).competitionType && (f as any).competitionType !== "jpl")
       : [];
 
     const plFixturesSorted = plFixtures.sort((a, b) => b.gameweek.number - a.gameweek.number);
@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         cupGwResult: {
           gameweek: cupF.gameweek.number, competitionType: compType,
-          competitionLabel: compType === "ucl-knockout" ? "UCL" : compType === "uel-knockout" ? "Europa" : "Cup Group",
+          competitionLabel: compType === "jcl-knockout" ? "UCL" : compType === "jel-knockout" ? "Europa" : "Cup Group",
           result: cupMyPoints === 2 ? "W" : "L",
           myScore: cupMyScore, oppScore: cupOppScore, isHome: cupIsHome,
           myTeamName: team.name,
@@ -296,7 +296,7 @@ export async function GET(request: NextRequest) {
     // TC: Cup fixture for the same GW (double-header)
     // ============================================================
     let cupGwResult: any = null;
-    if (leagueFormat === "triple-crown") {
+    if (leagueFormat === "continental-championship") {
       const cupF: any = cupFixtures.find(f => f.gameweek.number === lastF.gameweek.number);
       if (cupF && cupF.result) {
         const cupIsHome = cupF.homeTeamId === teamId;
@@ -362,7 +362,7 @@ export async function GET(request: NextRequest) {
         cupGwResult = {
           gameweek: cupF.gameweek.number,
           competitionType: compType,
-          competitionLabel: compType === "ucl-knockout" ? "UCL" : compType === "uel-knockout" ? "Europa" : "Cup Group",
+          competitionLabel: compType === "jcl-knockout" ? "UCL" : compType === "jel-knockout" ? "Europa" : "Cup Group",
           result: cupResult,
           myScore: cupMyScore,
           oppScore: cupOppScore,

@@ -17,7 +17,7 @@ export function TripleCrownPlayoffs() {
   const dashboardHref = viewer.dashboardHref;
 
   const { data, isLoading, refreshing, tempLiveScores, handleRefreshRound } = usePlayoffsBracket(leagueSlug);
-  const [tcTab, setTcTab] = useState<"ucl" | "uel">("ucl");
+  const [tcTab, setTcTab] = useState<"jcl" | "jel">("jcl");
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -40,7 +40,7 @@ export function TripleCrownPlayoffs() {
         leagueSlug={leagueSlug}
         leagueName={leagueName}
         currentPage="playoffs"
-        format="triple-crown"
+        format="continental-championship"
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
         onSignOut={handleSignOut}
@@ -49,7 +49,7 @@ export function TripleCrownPlayoffs() {
       <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 sm:py-8">
         <div className="mb-4 sm:mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Knockout Stage</h1>
-          <p className="text-gray-400 text-xs sm:text-sm">UEFA Champions League &amp; Europa League · Triple Crown</p>
+          <p className="text-gray-400 text-xs sm:text-sm">JPL Champions League &amp; JPL Europa League · Continental Championship</p>
           {data.mode === "tentative" && (
             <div className="mt-2 inline-flex items-center gap-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-4 py-2">
               <span className="text-yellow-400 text-sm font-semibold">&#9888; TENTATIVE</span>
@@ -66,30 +66,30 @@ export function TripleCrownPlayoffs() {
 
         <div className="flex gap-1 mb-6 sm:mb-8 bg-slate-800/50 rounded-lg p-1 w-full sm:w-fit">
           <button
-            onClick={() => setTcTab("ucl")}
+            onClick={() => setTcTab("jcl")}
             className={`flex-1 sm:flex-none px-4 sm:px-5 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
-              tcTab === "ucl" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+              tcTab === "jcl" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
             }`}
           >
-            ★ UCL
+            ★ JCL
           </button>
           <button
-            onClick={() => setTcTab("uel")}
+            onClick={() => setTcTab("jel")}
             className={`flex-1 sm:flex-none px-4 sm:px-5 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
-              tcTab === "uel" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-white"
+              tcTab === "jel" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-white"
             }`}
           >
-            ◆ Europa League
+            ◆ JPL Europa League
           </button>
         </div>
 
-        {tcTab === "ucl" && (
+        {tcTab === "jcl" && (
           <div>
             <div className="flex items-center gap-3 mb-4 sm:mb-6">
               <div className="h-8 w-1 rounded-full bg-blue-500" />
               <div>
-                <h2 className="text-lg sm:text-xl font-bold text-white">UCL Knockouts</h2>
-                <p className="text-blue-400 text-[10px] sm:text-xs font-semibold uppercase tracking-wider">UEFA Champions League</p>
+                <h2 className="text-lg sm:text-xl font-bold text-white">JCL Knockouts</h2>
+                <p className="text-blue-400 text-[10px] sm:text-xs font-semibold uppercase tracking-wider">JPL Champions League</p>
               </div>
             </div>
             {(data.tvt.qf?.length || data.tvt.sf?.length || data.tvt.final?.length) ? (
@@ -97,24 +97,24 @@ export function TripleCrownPlayoffs() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
                   <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
                   <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
-                  <RoundColumn title="UCL Final 🏆" ties={data.tvt.final ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-yellow-500/50 pl-3" />
+                  <RoundColumn title="JCL Final 🏆" ties={data.tvt.final ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-yellow-500/50 pl-3" />
                 </div>
               </div>
             ) : (
               <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-5 py-6 text-sm text-blue-300">
-                UCL bracket will be generated after the group stage (GW24).
+                JCL bracket will be generated after the group stage (GW24).
               </div>
             )}
           </div>
         )}
 
-        {tcTab === "uel" && (
+        {tcTab === "jel" && (
           <div>
             <div className="flex items-center gap-3 mb-6">
               <div className="h-8 w-1 rounded-full bg-orange-500" />
               <div>
-                <h2 className="text-xl font-bold text-white">Europa Knockouts</h2>
-                <p className="text-orange-400 text-xs font-semibold uppercase tracking-wider">UEFA Europa League</p>
+                <h2 className="text-xl font-bold text-white">JEL Knockouts</h2>
+                <p className="text-orange-400 text-xs font-semibold uppercase tracking-wider">JPL Europa League</p>
               </div>
             </div>
             {(() => {
@@ -127,12 +127,12 @@ export function TripleCrownPlayoffs() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
                     <RoundColumn title="Quarter-Finals" ties={uelQF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
                     <RoundColumn title="Semi-Finals" ties={uelSF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
-                    <RoundColumn title="Europa Final 🏆" ties={uelFinal}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />
+                    <RoundColumn title="JEL Final 🏆" ties={uelFinal}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />
                   </div>
                 </div>
               ) : (
                 <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 px-5 py-6 text-sm text-orange-300">
-                  Europa bracket will be generated after the group stage (GW24).
+                  JEL bracket will be generated after the group stage (GW24).
                 </div>
               );
             })()}

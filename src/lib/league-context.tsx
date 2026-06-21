@@ -4,14 +4,14 @@ import { createContext, useContext, type ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { getFormatPalette, type FormatPalette } from "@/lib/format-palette";
 
-export type LeagueFormat = "tvt" | "triple-crown" | "auction";
+export type LeagueFormat = "tvt" | "continental-championship" | "auction";
 
 export interface LeagueInfo {
   id: string;
   slug: string;
   name: string;
   sport: string;
-  format: string; // "tvt" | "auction" | "triple-crown"
+  format: string; // "tvt" | "auction" | "continental-championship"
   season: string;
   teamSize: number;
   groupCount: number;

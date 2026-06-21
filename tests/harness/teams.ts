@@ -122,7 +122,7 @@ export async function setupAllTeams(
   request: APIRequestContext,
   slug: string,
   count: number,
-  format: "tvt" | "triple-crown" | "auction",
+  format: "tvt" | "continental-championship" | "auction",
   opts: { fplBase?: number } = {},
 ): Promise<TeamHandle[]> {
   const setup = format === "auction" ? setupAuctionTeam : setupTvtTeam;

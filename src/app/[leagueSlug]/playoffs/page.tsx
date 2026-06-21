@@ -5,8 +5,8 @@ import { ClassicPlayoffs } from "../_components/playoffs/ClassicPlayoffs";
 import { TripleCrownPlayoffs } from "../_components/playoffs/TripleCrownPlayoffs";
 
 export default function LeaguePlayoffsPage() {
-  useEnforceFormat(["tvt", "triple-crown"]);
+  useEnforceFormat(["tvt", "continental-championship"]);
   const { league } = useLeague();
-  if (league.format === "triple-crown") return <TripleCrownPlayoffs />;
+  if (league.format === "continental-championship") return <TripleCrownPlayoffs />;
   return <ClassicPlayoffs />;
 }

@@ -29,8 +29,8 @@ interface CupStandingsData {
   [key: string]: CupGroup;
 }
 
-export default function UEFAStandingsPage() {
-  useEnforceFormat(["triple-crown"]);
+export default function JplCupStandingsPage() {
+  useEnforceFormat(["continental-championship"]);
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
@@ -115,16 +115,16 @@ export default function UEFAStandingsPage() {
             {isLoggedIn ? "Dashboard" : "All Leagues"}
           </Link>
           <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
-            PL Standings
+            JPL Standings
           </Link>
           <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            PL Fixtures
+            JPL Fixtures
           </Link>
-          <Link href={`/${leagueSlug}/uefa-standings`} className="text-yellow-400 font-semibold transition">
-            UEFA Standings
+          <Link href={`/${leagueSlug}/jpl-cup-standings`} className="text-yellow-400 font-semibold transition">
+            JPL Cup Standings
           </Link>
-          <Link href={`/${leagueSlug}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">
-            UEFA Fixtures
+          <Link href={`/${leagueSlug}/jpl-cup-fixtures`} className="text-gray-300 hover:text-white transition">
+            JPL Cup Fixtures
           </Link>
           <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
             Playoffs
@@ -157,7 +157,7 @@ export default function UEFAStandingsPage() {
         {/* Hero */}
         <div className="text-center mb-8 sm:mb-10">
           <div className="inline-flex items-center gap-2 bg-[#0066cc]/20 border border-[#0066cc]/30 rounded-full px-4 py-1.5 mb-4">
-            <span className="text-[#4da6ff] text-xs font-semibold uppercase tracking-widest">UEFA · Triple Crown</span>
+            <span className="text-[#4da6ff] text-xs font-semibold uppercase tracking-widest">JPL Cup · Continental Championship</span>
           </div>
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-2">
             Group Stage Standings
@@ -177,11 +177,11 @@ export default function UEFAStandingsPage() {
         <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mb-6 sm:mb-8 text-xs sm:text-sm">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-blue-500"></span>
-            <span className="text-gray-400">UCL Knockouts (Top 2 per group)</span>
+            <span className="text-gray-400">JCL Knockouts (Top 2 per group)</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-orange-400"></span>
-            <span className="text-gray-400">Europa Knockouts (3rd–4th per group)</span>
+            <span className="text-gray-400">JEL Knockouts (3rd–4th per group)</span>
           </div>
         </div>
 
@@ -236,10 +236,10 @@ export default function UEFAStandingsPage() {
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="font-semibold text-white truncate">{team.teamName}</span>
                             {isUCL && (
-                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">UCL</span>
+                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">JCL</span>
                             )}
                             {isUEL && (
-                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">UEL</span>
+                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">JEL</span>
                             )}
                           </div>
                           <span className="w-6 text-center text-gray-400 text-xs">{played}</span>

@@ -1643,7 +1643,7 @@ async function getGroupStandings(leagueId?: string | null) {
       let wins = 0, draws = 0, pointsFor = 0, bonusPtsTotal = 0;
 
       for (const fixture of team.homeFixtures) {
-        if (fixture.result && !fixture.isPlayoff && (!fixture.competitionType || fixture.competitionType === "pl")) {
+        if (fixture.result && !fixture.isPlayoff && (!fixture.competitionType || fixture.competitionType === "jpl")) {
           pointsFor += fixture.result.homeScore;
           if (fixture.result.homeScore > fixture.result.awayScore) wins++;
           else if (fixture.result.homeScore === fixture.result.awayScore) draws++;
@@ -1652,7 +1652,7 @@ async function getGroupStandings(leagueId?: string | null) {
       }
 
       for (const fixture of team.awayFixtures) {
-        if (fixture.result && !fixture.isPlayoff && (!fixture.competitionType || fixture.competitionType === "pl")) {
+        if (fixture.result && !fixture.isPlayoff && (!fixture.competitionType || fixture.competitionType === "jpl")) {
           pointsFor += fixture.result.awayScore;
           if (fixture.result.awayScore > fixture.result.homeScore) wins++;
           else if (fixture.result.awayScore === fixture.result.homeScore) draws++;

@@ -9,7 +9,7 @@ export interface LeagueNavProps {
   leagueSlug: string;
   leagueName: string;
   currentPage: string;
-  format: "auction" | "triple-crown" | "tvt";
+  format: "auction" | "continental-championship" | "tvt";
   /** Optional: when provided, distinguishes TVT-8 / TVT-16 / TVT-32 in the format chip. */
   teamSize?: number | null;
   /** Auction-only: "primary" hides the Marketplace tab (trades disabled). Defaults to "complete". */
@@ -56,7 +56,7 @@ export function LeagueNav({
   onSignOut,
 }: LeagueNavProps) {
   const isAuction = format === "auction";
-  const isTripleCrown = format === "triple-crown";
+  const isTripleCrown = format === "continental-championship";
   const isPrimaryTier = isAuction && auctionTier === "primary";
   const palette = getFormatPalette(format, teamSize);
   const activeClass = palette.badgeText; // active link uses the palette accent color
@@ -123,10 +123,10 @@ export function LeagueNav({
           </>
         ) : isTripleCrown ? (
           <>
-            <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>PL Standings</NavLink>
-            <NavLink href={`/${leagueSlug}/fixtures`} activeClass={activeClass} active={currentPage ==="fixtures"}>PL Fixtures</NavLink>
-            <NavLink href={`/${leagueSlug}/uefa-standings`} activeClass={activeClass} active={currentPage ==="uefa-standings"}>UEFA Standings</NavLink>
-            <NavLink href={`/${leagueSlug}/uefa-fixtures`} activeClass={activeClass} active={currentPage ==="uefa-fixtures"}>UEFA Fixtures</NavLink>
+            <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>JPL Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/fixtures`} activeClass={activeClass} active={currentPage ==="fixtures"}>JPL Fixtures</NavLink>
+            <NavLink href={`/${leagueSlug}/jpl-cup-standings`} activeClass={activeClass} active={currentPage ==="jpl-cup-standings"}>JPL Cup Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/jpl-cup-fixtures`} activeClass={activeClass} active={currentPage ==="jpl-cup-fixtures"}>JPL Cup Fixtures</NavLink>
             <NavLink href={`/${leagueSlug}/playoffs`} activeClass={activeClass} active={currentPage ==="playoffs"}>Playoffs</NavLink>
             <NavLink href={`/${leagueSlug}/winners`} activeClass={activeClass} active={currentPage ==="winners"}>Winners</NavLink>
             <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>

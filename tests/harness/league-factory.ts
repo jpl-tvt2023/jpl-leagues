@@ -16,7 +16,7 @@ export interface LeagueRef {
   id: string;
   slug: string;
   name: string;
-  format: "tvt" | "triple-crown" | "auction";
+  format: "tvt" | "continental-championship" | "auction";
   teamSize: number;
   /** Only set for auction leagues. */
   auctionTier?: "primary" | "complete";
@@ -82,7 +82,7 @@ export async function createTripleCrownLeague(
     slug,
     name: opts.name ?? "Triple Crown 20",
     sport: "fpl",
-    format: "triple-crown",
+    format: "continental-championship",
     season: "2025-26",
   });
 }

@@ -7,7 +7,7 @@
  * 2. Extract UCL (ranks 1-2 from each group) and UEL (ranks 3-4)
  * 3. Seed QF matches with cross-group pairing
  * 4. Create playoffTies and fixtures for UCL/UEL QF (2-legged, GW27/GW29)
- * 5. competitionType="ucl-knockout" or "uel-knockout"
+ * 5. competitionType="jcl-knockout" or "jel-knockout"
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "League not found" }, { status: 404 });
     }
 
-    if (leagueRow[0].format !== "triple-crown") {
+    if (leagueRow[0].format !== "continental-championship") {
       return NextResponse.json({
         error: "Bracket generation only available for Triple Crown format",
       }, { status: 400 });
@@ -46,10 +46,10 @@ export async function POST(request: NextRequest) {
 
     // Check if UCL/UEL QF ties already exist
     const existingUcl = await db.select().from(playoffTies).where(
-      and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"))
+      and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"))
     );
     const existingUel = await db.select().from(playoffTies).where(
-      and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"))
+      and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"))
     );
 
     if (existingUcl.length > 0 || existingUel.length > 0) {
@@ -215,7 +215,7 @@ export async function POST(request: NextRequest) {
     }
 
     const plGroup = await db.select().from(groups).where(
-      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "pl"))
+      and(eq(groups.leagueId, leagueId), eq(groups.groupType, "jpl"))
     );
     // fixtures.groupId is `references(() => groups.id, { onDelete: "set null" })`
     // so null is a valid value — use it when there is no PL group instead of
@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
         tieId: match.tieId,
         leagueId,
         roundName: "UCL-QF",
-        roundType: "ucl-knockout",
+        roundType: "jcl-knockout",
         homeTeamId: match.home.teamId,
         awayTeamId: match.away.teamId,
         gw1: 27,
@@ -275,8 +275,8 @@ export async function POST(request: NextRequest) {
         roundName: "UCL-QF",
         leg: 1,
         tieId: match.tieId,
-        roundType: "ucl-knockout",
-        competitionType: "ucl-knockout",
+        roundType: "jcl-knockout",
+        competitionType: "jcl-knockout",
       });
       createdFixtures.push(leg1Id);
 
@@ -293,8 +293,8 @@ export async function POST(request: NextRequest) {
         roundName: "UCL-QF",
         leg: 2,
         tieId: match.tieId,
-        roundType: "ucl-knockout",
-        competitionType: "ucl-knockout",
+        roundType: "jcl-knockout",
+        competitionType: "jcl-knockout",
       });
       createdFixtures.push(leg2Id);
     }
@@ -310,7 +310,7 @@ export async function POST(request: NextRequest) {
         tieId: match.tieId,
         leagueId,
         roundName: "UEL-QF",
-        roundType: "uel-knockout",
+        roundType: "jel-knockout",
         homeTeamId: match.home.teamId,
         awayTeamId: match.away.teamId,
         gw1: 27,
@@ -332,8 +332,8 @@ export async function POST(request: NextRequest) {
         roundName: "UEL-QF",
         leg: 1,
         tieId: match.tieId,
-        roundType: "uel-knockout",
-        competitionType: "uel-knockout",
+        roundType: "jel-knockout",
+        competitionType: "jel-knockout",
       });
       createdFixtures.push(leg1Id);
 
@@ -350,8 +350,8 @@ export async function POST(request: NextRequest) {
         roundName: "UEL-QF",
         leg: 2,
         tieId: match.tieId,
-        roundType: "uel-knockout",
-        competitionType: "uel-knockout",
+        roundType: "jel-knockout",
+        competitionType: "jel-knockout",
       });
       createdFixtures.push(leg2Id);
     }
@@ -390,7 +390,7 @@ export async function DELETE(request: NextRequest) {
     const ties = await db.select({ tieId: playoffTies.tieId }).from(playoffTies).where(
       and(
         eq(playoffTies.leagueId, leagueId),
-        inArray(playoffTies.roundType, ["ucl-knockout", "uel-knockout"]),
+        inArray(playoffTies.roundType, ["jcl-knockout", "jel-knockout"]),
       ),
     );
     const tieIds = ties.map(t => t.tieId);
@@ -435,10 +435,10 @@ export async function GET(request: NextRequest) {
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const uclTies = await db.select().from(playoffTies).where(
-      and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"))
+      and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"))
     );
     const uelTies = await db.select().from(playoffTies).where(
-      and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"))
+      and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"))
     );
 
     return NextResponse.json({

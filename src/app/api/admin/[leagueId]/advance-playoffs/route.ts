@@ -42,7 +42,7 @@ async function createFixture(params: {
   // For TC knockouts, mirror roundType into competitionType so the TC processor's
   // Pass 3 filter (which historically expected competitionType) matches these rows
   // even when called via the advance helpers. Other formats leave it null.
-  const competitionType = params.roundType === "ucl-knockout" || params.roundType === "uel-knockout"
+  const competitionType = params.roundType === "jcl-knockout" || params.roundType === "jel-knockout"
     ? params.roundType
     : null;
 
@@ -376,7 +376,7 @@ export async function advancePlayoffsImpl(
 
   // For TC: use any cup group as the groupId for new fixtures (SF/Final)
   // For TVT: use the "Playoffs" group
-  const playoffsGroupId = format === "triple-crown"
+  const playoffsGroupId = format === "continental-championship"
     ? (await db.query.groups.findFirst({ where: and(eq(groups.groupType, "cup"), eq(groups.leagueId, leagueId)) }))?.id
     : await getPlayoffsGroupId(leagueId);
   if (!playoffsGroupId) {
@@ -418,7 +418,7 @@ export async function advancePlayoffsImpl(
   const actions: string[] = [];
 
   try {
-    if (format === "triple-crown") {
+    if (format === "continental-championship") {
       // ── TRIPLE CROWN FORMAT ──────────────────────────────────────
       // GW27: QF Leg 1 played (mark leg 1 done)
       // GW29: QF Leg 2 → Resolve QFs + Create SF ties (GW33+35)
@@ -430,7 +430,7 @@ export async function advancePlayoffsImpl(
         // QF Leg 1 has been played — mark leg 1 done for all QF ties
         const uclQfTies = await db.select({ tieId: playoffTies.tieId })
           .from(playoffTies)
-          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"), eq(playoffTies.roundName, "UCL-QF")));
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"), eq(playoffTies.roundName, "UCL-QF")));
         for (const tie of uclQfTies) {
           await markLeg1Done(tie.tieId);
           actions.push(`${tie.tieId}: QF leg 1 recorded`);
@@ -438,7 +438,7 @@ export async function advancePlayoffsImpl(
 
         const uelQfTies = await db.select({ tieId: playoffTies.tieId })
           .from(playoffTies)
-          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"), eq(playoffTies.roundName, "UEL-QF")));
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"), eq(playoffTies.roundName, "UEL-QF")));
         for (const tie of uelQfTies) {
           await markLeg1Done(tie.tieId);
           actions.push(`${tie.tieId}: QF leg 1 recorded`);
@@ -446,9 +446,9 @@ export async function advancePlayoffsImpl(
       } else if (gwNumber === 29) {
         // QF Leg 2 — Resolve all QF ties and create SF ties
         const uclQfTies = await db.select().from(playoffTies)
-          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"), eq(playoffTies.roundName, "UCL-QF")));
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"), eq(playoffTies.roundName, "UCL-QF")));
         const uelQfTies = await db.select().from(playoffTies)
-          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"), eq(playoffTies.roundName, "UEL-QF")));
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"), eq(playoffTies.roundName, "UEL-QF")));
 
         // Resolve UCL QFs
         const uclWinners: Array<{ winnerId: string; loserId: string }> = [];
@@ -481,7 +481,7 @@ export async function advancePlayoffsImpl(
               tieId: "UCL-SF-1",
               leagueId,
               roundName: "UCL-SF",
-              roundType: "ucl-knockout",
+              roundType: "jcl-knockout",
               homeTeamId: uclWinners[0].winnerId,
               awayTeamId: uclWinners[3].winnerId,
               gw1Id: gw33,
@@ -494,7 +494,7 @@ export async function advancePlayoffsImpl(
               tieId: "UCL-SF-2",
               leagueId,
               roundName: "UCL-SF",
-              roundType: "ucl-knockout",
+              roundType: "jcl-knockout",
               homeTeamId: uclWinners[1].winnerId,
               awayTeamId: uclWinners[2].winnerId,
               gw1Id: gw33,
@@ -514,7 +514,7 @@ export async function advancePlayoffsImpl(
               tieId: "UCL-SF-1",
               leagueId,
               roundName: "UCL-SF",
-              roundType: "ucl-knockout",
+              roundType: "jcl-knockout",
               homeTeamId: uclWinners[0].winnerId,
               awayTeamId: uclWinners[1].winnerId,
               gw1Id: gw33,
@@ -537,7 +537,7 @@ export async function advancePlayoffsImpl(
               tieId: "UEL-SF-1",
               leagueId,
               roundName: "UEL-SF",
-              roundType: "uel-knockout",
+              roundType: "jel-knockout",
               homeTeamId: uelWinners[0].winnerId,
               awayTeamId: uelWinners[3].winnerId,
               gw1Id: gw33,
@@ -550,7 +550,7 @@ export async function advancePlayoffsImpl(
               tieId: "UEL-SF-2",
               leagueId,
               roundName: "UEL-SF",
-              roundType: "uel-knockout",
+              roundType: "jel-knockout",
               homeTeamId: uelWinners[1].winnerId,
               awayTeamId: uelWinners[2].winnerId,
               gw1Id: gw33,
@@ -569,7 +569,7 @@ export async function advancePlayoffsImpl(
               tieId: "UEL-SF-1",
               leagueId,
               roundName: "UEL-SF",
-              roundType: "uel-knockout",
+              roundType: "jel-knockout",
               homeTeamId: uelWinners[0].winnerId,
               awayTeamId: uelWinners[1].winnerId,
               gw1Id: gw33,
@@ -585,7 +585,7 @@ export async function advancePlayoffsImpl(
         // SF Leg 1 played — mark leg 1 done for all SF ties
         const uclSfTies = await db.select({ tieId: playoffTies.tieId })
           .from(playoffTies)
-          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"), eq(playoffTies.roundName, "UCL-SF")));
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"), eq(playoffTies.roundName, "UCL-SF")));
         for (const tie of uclSfTies) {
           await markLeg1Done(tie.tieId);
           actions.push(`${tie.tieId}: SF leg 1 recorded`);
@@ -593,7 +593,7 @@ export async function advancePlayoffsImpl(
 
         const uelSfTies = await db.select({ tieId: playoffTies.tieId })
           .from(playoffTies)
-          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"), eq(playoffTies.roundName, "UEL-SF")));
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"), eq(playoffTies.roundName, "UEL-SF")));
         for (const tie of uelSfTies) {
           await markLeg1Done(tie.tieId);
           actions.push(`${tie.tieId}: SF leg 1 recorded`);
@@ -601,9 +601,9 @@ export async function advancePlayoffsImpl(
       } else if (gwNumber === 35) {
         // SF Leg 2 — Resolve all SF ties and create Finals
         const uclSfTies = await db.select().from(playoffTies)
-          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "ucl-knockout"), eq(playoffTies.roundName, "UCL-SF")));
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"), eq(playoffTies.roundName, "UCL-SF")));
         const uelSfTies = await db.select().from(playoffTies)
-          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "uel-knockout"), eq(playoffTies.roundName, "UEL-SF")));
+          .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"), eq(playoffTies.roundName, "UEL-SF")));
 
         // Resolve UCL SFs
         const uclSfWinners: Array<{ winnerId: string; loserId: string }> = [];
@@ -625,7 +625,7 @@ export async function advancePlayoffsImpl(
               tieId: "UCL-FINAL",
               leagueId,
               roundName: "UCL-FINAL",
-              roundType: "ucl-knockout",
+              roundType: "jcl-knockout",
               homeTeamId: uclSfWinners[0].winnerId,
               awayTeamId: uclSfWinners[1].winnerId,
               gw1Id: gw37,
@@ -658,7 +658,7 @@ export async function advancePlayoffsImpl(
               tieId: "UEL-FINAL",
               leagueId,
               roundName: "UEL-FINAL",
-              roundType: "uel-knockout",
+              roundType: "jel-knockout",
               homeTeamId: uelSfWinners[0].winnerId,
               awayTeamId: uelSfWinners[1].winnerId,
               gw1Id: gw37,

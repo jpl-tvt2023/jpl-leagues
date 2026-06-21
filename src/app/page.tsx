@@ -35,15 +35,15 @@ const STANDINGS_BTN: Record<string, string> = {
 
 // Format-specific overrides (applied on top of sport defaults)
 const FORMAT_GRADIENT: Record<string, string> = {
-  "triple-crown": "from-[#0d1a33]/90 via-[#061426]/80 to-slate-900/70",
+  "continental-championship": "from-[#0d1a33]/90 via-[#061426]/80 to-slate-900/70",
 };
 
 const FORMAT_GLOW: Record<string, string> = {
-  "triple-crown": "bg-[#0066cc]/15",
+  "continental-championship": "bg-[#0066cc]/15",
 };
 
 const FORMAT_PRIMARY_BTN: Record<string, string> = {
-  "triple-crown": "bg-[#00cc44] hover:bg-[#00ff55] text-slate-900 font-bold",
+  "continental-championship": "bg-[#00cc44] hover:bg-[#00ff55] text-slate-900 font-bold",
 };
 
 export default function Home() {
@@ -142,12 +142,12 @@ export default function Home() {
                     </div>
 
                     <div className="flex flex-wrap gap-3 mt-auto">
-                      {league.format === "triple-crown" ? (
+                      {league.format === "continental-championship" ? (
                         <>
-                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition ${standingsBtn}`}>PL Standings</Link>
-                          <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">PL Fixtures</Link>
-                          <Link href={`/${league.slug}/uefa-standings`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">UEFA Standings</Link>
-                          <Link href={`/${league.slug}/uefa-fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">UEFA Fixtures</Link>
+                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition ${standingsBtn}`}>JPL Standings</Link>
+                          <Link href={`/${league.slug}/fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">JPL Fixtures</Link>
+                          <Link href={`/${league.slug}/jpl-cup-standings`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">JPL Cup Standings</Link>
+                          <Link href={`/${league.slug}/jpl-cup-fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">JPL Cup Fixtures</Link>
                           <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
                         </>
                       ) : (

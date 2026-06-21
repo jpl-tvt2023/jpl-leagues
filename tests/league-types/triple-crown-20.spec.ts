@@ -33,14 +33,14 @@ test.describe.serial("Triple Crown 20 (admin + user)", () => {
     test.setTimeout(180_000); // 20 teams × setup
     await apiSignInSuperadmin(request);
     league = await createTripleCrownLeague(request);
-    teams = await setupAllTeams(request, league.slug, league.teamSize, "triple-crown");
+    teams = await setupAllTeams(request, league.slug, league.teamSize, "continental-championship");
     await apiSignInSuperadmin(request);
     await generateFixtures(request, league.slug);
     await ensureGameweeks(league.id);
   });
 
   test("admin: league created with 20 teams and triple-crown format", async () => {
-    expect(league.format).toBe("triple-crown");
+    expect(league.format).toBe("continental-championship");
     expect(league.teamSize).toBe(20);
   });
 
@@ -76,7 +76,7 @@ test.describe.serial("Triple Crown 20 (admin + user)", () => {
   test("user: UCL / UEL / Europa pages load", async ({ page }) => {
     await expectPageLoads(page, `/${league.slug}/ucl`);
     await expectPageLoads(page, `/${league.slug}/europa`);
-    await expectPageLoads(page, `/${league.slug}/uefa-standings`);
+    await expectPageLoads(page, `/${league.slug}/jpl-cup-standings`);
   });
 
   test("user: rules page renders Triple-Crown-specific content", async ({ page }) => {

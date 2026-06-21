@@ -357,7 +357,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .where(eq(leagues.id, leagueId))
       .limit(1);
 
-    if (leagueRow[0]?.format === "triple-crown") {
+    if (leagueRow[0]?.format === "continental-championship") {
       const result = await processTripleCrownGameweek(
         gameweek.id,
         gameweekNumber,

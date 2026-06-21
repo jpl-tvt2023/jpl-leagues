@@ -19,10 +19,10 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
 
   const generalFaqs: FaqEntry[] = [
     {
-      question: "What is Triple Crown format?",
+      question: "What is JPL Continental Championship format?",
       answer: (
         <p>
-          Triple Crown is a 20-team JPL format with <strong className="text-white">three parallel competitions</strong>: Premier League (38-GW H2H round-robin), Cup Groups (UEFA-style group stage on even GWs 6–24), and UCL/UEL Knockouts (bracket stage after groups). Each team consists of two FPL managers. The captain system is active every gameweek.
+          JPL Continental Championship is a 20-team format with <strong className="text-white">three parallel competitions</strong>: JPL (38-GW H2H round-robin), JPL Cup Groups (group stage on even GWs 6–24), and JCL/JEL Knockouts (bracket stage after groups). Each team consists of two FPL managers. The captain system is active every gameweek.
         </p>
       ),
     },
@@ -36,10 +36,10 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
       ),
     },
     {
-      question: "How does the PL (Premier League) competition work?",
+      question: "How does the JPL competition work?",
       answer: (
         <p>
-          All 20 teams play each other twice across 38 gameweeks (home &amp; away). <strong className="text-white">Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</strong> PL standings after GW5 determine cup group seeding — the higher you finish, the easier your cup group.
+          All 20 teams play each other twice across 38 gameweeks (home &amp; away). <strong className="text-white">Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</strong> JPL standings after GW5 determine cup group seeding — the higher you finish, the easier your cup group.
         </p>
       ),
     },
@@ -47,9 +47,9 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
       question: "What are Cup Groups?",
       answer: (
         <div className="space-y-2">
-          <p>After GW5, teams are <strong className="text-white">snake-seeded</strong> into 4 cup groups (A/B/C/D) of 5 human teams each, based on PL standings. Rank 1 gets the easiest group.</p>
+          <p>After GW5, teams are <strong className="text-white">snake-seeded</strong> into 4 cup groups (A/B/C/D) of 5 human teams each, based on JPL standings. Rank 1 gets the easiest group.</p>
           <p>Cup matches are played on <strong className="text-white">10 even GWs</strong> (6, 8, 10, 12, 14, 16, 18, 20, 22, 24). Each matchday, 4 teams play human-vs-human and 1 team plays the Ghost.</p>
-          <p>Cup group table uses football-style points: <strong className="text-white">Win = 3 pts, Draw = 1 pt, Loss = 0 pts.</strong></p>
+          <p>Cup group table points: <strong className="text-white">Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</strong></p>
         </div>
       ),
     },
@@ -63,27 +63,27 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
       ),
     },
     {
-      question: "How do UCL / UEL qualifications work?",
+      question: "How do JCL / JEL qualifications work?",
       answer: (
         <div className="space-y-2">
           <p>After all 10 cup group matchdays (GW24):</p>
           <ul className="list-disc list-inside space-y-1 ml-1">
-            <li><strong className="text-blue-400">UCL (Champions League):</strong> Top 2 from each cup group — 8 teams total.</li>
-            <li><strong className="text-orange-400">UEL (Europa League):</strong> Ranks 3–4 from each cup group — 8 teams total.</li>
+            <li><strong className="text-blue-400">JCL (JPL Champions League):</strong> Top 2 from each cup group — 8 teams total.</li>
+            <li><strong className="text-orange-400">JEL (JPL Europa League):</strong> Ranks 3–4 from each cup group — 8 teams total.</li>
           </ul>
           <p className="text-xs text-gray-400">The 5th-placed team in each group (rank 5) does not qualify for knockouts.</p>
         </div>
       ),
     },
     {
-      question: "What is the UCL/UEL knockout format?",
+      question: "What is the JCL/JEL knockout format?",
       answer: (
         <div className="space-y-2">
-          <p>Both UCL and UEL follow the same structure: <strong className="text-white">Quarter-Finals → Semi-Finals → Final</strong>. All ties are 2-legged (aggregate score decides).</p>
+          <p>Both JCL and JEL follow the same structure: <strong className="text-white">Quarter-Finals → Semi-Finals → Final</strong>. All ties are 2-legged (aggregate score decides).</p>
           <p><strong className="text-white">QF seeding</strong> is cross-group:</p>
           <ul className="list-disc list-inside space-y-1 ml-1 text-sm">
-            <li className="text-blue-400">UCL: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1</li>
-            <li className="text-orange-400">UEL: A3 vs C4, A4 vs C3, B3 vs D4, B4 vs D3</li>
+            <li className="text-blue-400">JCL: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1</li>
+            <li className="text-orange-400">JEL: A3 vs C4, A4 vs C3, B3 vs D4, B4 vs D3</li>
           </ul>
         </div>
       ),
@@ -116,14 +116,14 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
   const publicScenarios: ScenarioEntry[] = [
     {
       number: 1,
-      title: "Navigating a Triple Crown league",
+      title: "Navigating a JPL Continental Championship league",
       steps: [
         "Visit the home page and select your league.",
-        `"PL Standings" shows the 38-GW round-robin table.`,
-        `"PL Fixtures" shows all PL H2H matches by gameweek.`,
-        `"UEFA Standings" shows the 4 cup group tables.`,
-        `"UEFA Fixtures" shows cup group matches (even GWs 6–24), including Ghost fixtures.`,
-        `"Playoffs" shows the UCL and UEL knockout brackets.`,
+        `"JPL Standings" shows the 38-GW round-robin table.`,
+        `"JPL Fixtures" shows all JPL H2H matches by gameweek.`,
+        `"JPL Cup Standings" shows the 4 cup group tables.`,
+        `"JPL Cup Fixtures" shows cup group matches (even GWs 6–24), including Ghost fixtures.`,
+        `"Playoffs" shows the JCL and JEL knockout brackets.`,
       ],
     },
     {
@@ -131,16 +131,16 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
       title: "Reading a cup group table",
       steps: [
         "Each cup group has 5 human teams + 1 Ghost team.",
-        "Teams are ranked by cup points (W=3, D=1, L=0), then goal difference (points scored).",
-        "Green rows = top 2 (UCL qualification). Below that = ranks 3-4 (UEL). Rank 5 = no knockout.",
+        "Teams are ranked by cup points (W=2, D=1, L=0), then goal difference (points scored).",
+        "Green rows = top 2 (JCL qualification). Below that = ranks 3-4 (JEL). Rank 5 = no knockout.",
         "Ghost fixtures are shown in purple — the Ghost's score is the group average.",
       ],
     },
     {
       number: 3,
-      title: "Understanding UCL/UEL bracket progress",
+      title: "Understanding JCL/JEL bracket progress",
       steps: [
-        `Navigate to "Playoffs" and switch between the UCL and UEL tabs.`,
+        `Navigate to "Playoffs" and switch between the JCL and JEL tabs.`,
         "Each tie shows both legs with individual and aggregate scores.",
         "Click/expand any tie to see the player breakdown for each leg.",
         "Winners advance to the next round until the Final determines the champion.",
@@ -151,8 +151,8 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
       title: "Tracking champions on the Hall of Champions",
       steps: [
         `Click "Winners" in the nav to view the Hall of Champions.`,
-        "Three trophy cards are shown: PL Champion, UCL Champion, UEL Champion — each with its own colour identity.",
-        "Each card stays as a greyed 'TBD' placeholder until its competition concludes: UCL and UEL after their Finals (GW38), PL Champion after the league standings settle.",
+        "Three trophy cards are shown: JPL Champion, JCL Champion, JEL Champion — each with its own colour identity.",
+        "Each card stays as a greyed 'TBD' placeholder until its competition concludes: JCL and JEL after their Finals (GW38), JPL Champion after the league standings settle.",
         "The 'Tournament in Progress' banner at the top clears once all three are decided.",
       ],
     },
@@ -162,11 +162,11 @@ export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
     ? [
         {
           number: 5,
-          title: "Submitting your captain in Triple Crown",
+          title: "Submitting your captain in JPL Continental Championship",
           steps: [
             "Decide which player to nominate as captain for the upcoming GW.",
             "Open your dashboard's *Captain* section, pick the player, and click **Announce Captain** before the FPL deadline.",
-            "The same captain applies to PL, Cup Group, and any Knockout match that GW.",
+            "The same captain applies to JPL, JPL Cup Group, and any Knockout match that GW.",
             "After processing, your dashboard shows the captain's doubled contribution.",
           ],
         },

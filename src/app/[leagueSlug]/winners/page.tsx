@@ -8,7 +8,7 @@ import { LeagueNav } from "@/components/LeagueNav";
 interface Winner {
   position: number;
   label: string;
-  category: "championship" | "challenger" | "pl" | "ucl" | "uel" | "auction";
+  category: "championship" | "challenger" | "jpl" | "jcl" | "jel" | "auction";
   pending: boolean;
   placeholder?: string;
   teamId: string | null;
@@ -91,7 +91,7 @@ export default function LeagueWinnersPage() {
         leagueSlug={leagueSlug}
         leagueName={leagueName}
         currentPage="winners"
-        format={leagueFormat === "auction" ? "auction" : leagueFormat === "triple-crown" ? "triple-crown" : "tvt"}
+        format={leagueFormat === "auction" ? "auction" : leagueFormat === "continental-championship" ? "continental-championship" : "tvt"}
         teamSize={teamSize}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
@@ -118,7 +118,7 @@ export default function LeagueWinnersPage() {
         )}
 
         {/* Format dispatcher */}
-        {leagueFormat === "triple-crown" ? (
+        {leagueFormat === "continental-championship" ? (
           <TripleCrownTrophies winners={winners} />
         ) : leagueFormat === "auction" ? (
           <AuctionTrophy winners={winners} />
@@ -135,8 +135,8 @@ export default function LeagueWinnersPage() {
 /* ──────────────────────────────────────────────────────────────────────────── */
 
 function TripleCrownTrophies({ winners }: { winners: Winner[] }) {
-  // Sort to canonical PL / UCL / UEL order regardless of API order.
-  const order: Winner["category"][] = ["pl", "ucl", "uel"];
+  // Sort to canonical JPL / JCL / JEL order regardless of API order.
+  const order: Winner["category"][] = ["jpl", "jcl", "jel"];
   const sorted = [...winners].sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
 
   return (
@@ -148,11 +148,12 @@ function TripleCrownTrophies({ winners }: { winners: Winner[] }) {
 
 function TripleCrownCard({ winner }: { winner: Winner }) {
   const colourMap: Record<string, { card: string; badge: string }> = {
-    pl:  { card: "from-blue-700/40 to-blue-900/20 border-blue-500/40",  badge: "bg-blue-500/20 text-blue-200" },
-    ucl: { card: "from-sky-600/40 to-sky-900/20 border-sky-500/40",     badge: "bg-sky-500/20 text-sky-200" },
-    uel: { card: "from-amber-600/40 to-amber-900/20 border-amber-500/40", badge: "bg-amber-500/20 text-amber-200" },
+    jpl: { card: "from-blue-700/40 to-blue-900/20 border-blue-500/40",  badge: "bg-blue-500/20 text-blue-200" },
+    jcl: { card: "from-sky-600/40 to-sky-900/20 border-sky-500/40",     badge: "bg-sky-500/20 text-sky-200" },
+    jel: { card: "from-amber-600/40 to-amber-900/20 border-amber-500/40", badge: "bg-amber-500/20 text-amber-200" },
   };
-  const c = colourMap[winner.category] ?? colourMap.pl;
+  const badgeLabel: Record<string, string> = { jpl: "JPL", jcl: "JCL", jel: "JEL" };
+  const c = colourMap[winner.category] ?? colourMap.jpl;
   const pendingCls = winner.pending ? "opacity-60 grayscale" : "";
 
   return (
@@ -160,7 +161,7 @@ function TripleCrownCard({ winner }: { winner: Winner }) {
       <div className="flex items-center justify-between mb-3">
         <span className="text-3xl sm:text-4xl">🏆</span>
         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${c.badge}`}>
-          {winner.category.toUpperCase()}
+          {badgeLabel[winner.category] ?? winner.category.toUpperCase()}
         </span>
       </div>
       <div className="text-white font-bold text-lg sm:text-xl mb-1">{winner.label}</div>

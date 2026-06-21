@@ -88,7 +88,7 @@ const SPORT_OPTIONS = [
 const FORMAT_OPTIONS: Record<string, { value: string; label: string; description: string; comingSoon?: boolean }[]> = {
   fpl: [
     { value: "tvt", label: "TVT", description: "Head-to-head, chips, captaincy, playoffs" },
-    { value: "triple-crown", label: "JPL Triple Crown", description: "PL + UCL + UEL — 20 teams, Double Header scoring" },
+    { value: "continental-championship", label: "JPL Continental Championship", description: "JPL + JCL + JEL — 20 teams, Double Header scoring" },
     { value: "auction", label: "JPL Auction", description: "14-player squads, live auctions, economy system — total points league" },
     { value: "classic", label: "Classic", description: "Round-robin / points-based", comingSoon: true },
   ],
@@ -1213,7 +1213,7 @@ export default function SuperAdminDashboard() {
                           disabled={opt.comingSoon}
                           onClick={() => {
                             if (!opt.comingSoon) {
-                              if (opt.value === "triple-crown") {
+                              if (opt.value === "continental-championship") {
                                 // Triple Crown: hardcoded values
                                 setLeagueForm({
                                   ...leagueForm,

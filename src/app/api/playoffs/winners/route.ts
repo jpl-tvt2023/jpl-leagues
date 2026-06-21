@@ -16,7 +16,7 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 interface Winner {
   position: number;
   label: string;
-  category: "championship" | "challenger" | "pl" | "ucl" | "uel" | "auction";
+  category: "championship" | "challenger" | "jpl" | "jcl" | "jel" | "auction";
   pending: boolean;
   placeholder?: string;     // human-readable hint when pending (e.g. "Winner of 16T-FINAL")
   teamId: string | null;
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<WinnersRespons
     const format = league.format;
 
     let winnersData: Winner[];
-    if (format === "triple-crown") {
+    if (format === "continental-championship") {
       winnersData = await buildTripleCrownWinners(leagueId);
     } else if (format === "auction") {
       winnersData = await buildAuctionWinner(leagueId);
@@ -160,7 +160,7 @@ async function buildTripleCrownWinners(leagueId: string): Promise<Winner[]> {
       .limit(1);
     const teamData = topTeam.length > 0 ? await getTeamData(topTeam[0].id) : null;
     if (teamData) {
-      winners.push({ position: 1, label: "PL Champion", category: "pl", pending: false, ...teamData });
+      winners.push({ position: 1, label: "JPL Champion", category: "jpl", pending: false, ...teamData });
     } else {
       winners.push(plPendingTC());
     }
@@ -168,14 +168,14 @@ async function buildTripleCrownWinners(leagueId: string): Promise<Winner[]> {
     winners.push(plPendingTC());
   }
 
-  // 2) UCL Champion
+  // 2) JCL Champion
   winners.push(...await resolveTiePositions(leagueId, [
-    { id: "UCL-FINAL", pos: 2, label: "UCL Champion", category: "ucl", winnerSide: true },
+    { id: "UCL-FINAL", pos: 2, label: "JCL Champion", category: "jcl", winnerSide: true },
   ]));
 
-  // 3) UEL Champion
+  // 3) JEL Champion
   winners.push(...await resolveTiePositions(leagueId, [
-    { id: "UEL-FINAL", pos: 3, label: "UEL Champion", category: "uel", winnerSide: true },
+    { id: "UEL-FINAL", pos: 3, label: "JEL Champion", category: "jel", winnerSide: true },
   ]));
 
   return winners;
@@ -183,7 +183,7 @@ async function buildTripleCrownWinners(leagueId: string): Promise<Winner[]> {
 
 function plPendingTC(): Winner {
   return {
-    position: 1, label: "PL Champion", category: "pl",
+    position: 1, label: "JPL Champion", category: "jpl",
     pending: true, placeholder: "Top points after GW38",
     teamId: null, teamName: null, players: [],
   };

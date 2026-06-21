@@ -663,8 +663,8 @@ export default function AdminDashboard() {
         const data = await res.json();
         setPlayoffsGenerated(data.generated === true);
       }
-      // For Triple Crown, also fetch cup group + UCL/UEL bracket status in parallel
-      if (leagueConfig.format === "triple-crown") {
+      // For Triple Crown, also fetch cup group + JCL/JEL bracket status in parallel
+      if (leagueConfig.format === "continental-championship") {
         const [cupRes, bracketsRes] = await Promise.all([
           fetch(`/api/admin/${leagueId}/generate-cup-groups`),
           fetch(`/api/admin/${leagueId}/generate-brackets`),
@@ -799,7 +799,7 @@ export default function AdminDashboard() {
   };
 
   const generateBrackets = async () => {
-    if (!window.confirm("Generate UCL/UEL brackets from GW24 standings? This will create knockout ties for QF round.")) return;
+    if (!window.confirm("Generate JCL/JEL brackets from GW24 standings? This will create knockout ties for QF round.")) return;
     setBracketsLoading(true);
     setMessage(null);
     try {
@@ -819,7 +819,7 @@ export default function AdminDashboard() {
   };
 
   const regenerateBrackets = async () => {
-    if (!window.confirm("Delete existing UCL/UEL brackets and regenerate from GW24 standings? All knockout ties, fixtures, and results will be removed.")) return;
+    if (!window.confirm("Delete existing JCL/JEL brackets and regenerate from GW24 standings? All knockout ties, fixtures, and results will be removed.")) return;
     setBracketsLoading(true);
     setMessage(null);
     try {
@@ -1755,7 +1755,7 @@ export default function AdminDashboard() {
     const endpoint =
       format === "auction" ? "restore-auction"
       : format === "tvt" ? "restore-tvt"
-      : format === "triple-crown" ? "restore-triple-crown"
+      : format === "continental-championship" ? "restore-triple-crown"
       : null;
     if (!endpoint) {
       setMessage({ type: "error", text: `Restore is not supported for ${format || "this"} league format.` });
@@ -2181,19 +2181,19 @@ export default function AdminDashboard() {
           <Link href="/admin" className="text-yellow-400 font-semibold transition">
             ← Leagues
           </Link>
-          {leagueConfig.format === "triple-crown" ? (
+          {leagueConfig.format === "continental-championship" ? (
             <>
               <Link href={`/${leagueId}/standings`} className="text-gray-300 hover:text-white transition">
-                PL Standings
+                JPL Standings
               </Link>
               <Link href={`/${leagueId}/fixtures`} className="text-gray-300 hover:text-white transition">
-                PL Fixtures
+                JPL Fixtures
               </Link>
-              <Link href={`/${leagueId}/uefa-standings`} className="text-gray-300 hover:text-white transition">
-                UEFA Standings
+              <Link href={`/${leagueId}/jpl-cup-standings`} className="text-gray-300 hover:text-white transition">
+                JPL Cup Standings
               </Link>
-              <Link href={`/${leagueId}/uefa-fixtures`} className="text-gray-300 hover:text-white transition">
-                UEFA Fixtures
+              <Link href={`/${leagueId}/jpl-cup-fixtures`} className="text-gray-300 hover:text-white transition">
+                JPL Cup Fixtures
               </Link>
               <Link href={`/${leagueId}/playoffs`} className="text-gray-300 hover:text-white transition">
                 Playoffs
@@ -3610,7 +3610,7 @@ export default function AdminDashboard() {
         {/* Playoffs Management Tab */}
         {activeTab === "playoffs" && (
           <div className="space-y-6">
-            {leagueConfig.format === "triple-crown" ? (
+            {leagueConfig.format === "continental-championship" ? (
               <>
                 {/* Triple Crown: Cup Groups */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
@@ -3645,34 +3645,34 @@ export default function AdminDashboard() {
 
                 {/* Triple Crown: Brackets */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                  <h3 className="text-lg font-bold text-white mb-4">UCL/UEL Brackets (GW27–38)</h3>
+                  <h3 className="text-lg font-bold text-white mb-4">JCL/JEL Brackets (GW27–38)</h3>
                   {bracketsLoading ? (
                     <p className="text-gray-400 text-sm">Loading…</p>
                   ) : !bracketsGenerated ? (
                     <div>
                       <p className="text-gray-400 text-sm mb-4">
-                        Generate UCL/UEL knockout brackets from GW24 cup group standings. Creates QF ties.
+                        Generate JCL/JEL knockout brackets from GW24 cup group standings. Creates QF ties.
                       </p>
                       <button
                         onClick={generateBrackets}
                         disabled={!cupGroupsGenerated}
                         className="px-6 py-3 rounded-lg bg-gradient-to-r from-purple-400 to-pink-500 text-white font-bold hover:from-purple-300 hover:to-pink-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
                       >
-                        {!cupGroupsGenerated ? "Seed Cup Groups First" : "Generate UCL/UEL Brackets"}
+                        {!cupGroupsGenerated ? "Seed Cup Groups First" : "Generate JCL/JEL Brackets"}
                       </button>
                     </div>
                   ) : (
                     <div>
-                      <p className="text-green-400 text-sm mb-4">✓ Brackets generated. UCL/UEL quarterfinals ready for GW27 & GW29.</p>
+                      <p className="text-green-400 text-sm mb-4">✓ Brackets generated. JCL/JEL quarterfinals ready for GW27 & GW29.</p>
                       <button
                         onClick={regenerateBrackets}
                         disabled={bracketsLoading}
                         className="px-6 py-3 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold hover:from-red-400 hover:to-orange-400 disabled:opacity-50 transition"
                       >
-                        {bracketsLoading ? "Regenerating…" : "Delete & Regenerate UCL/UEL Brackets"}
+                        {bracketsLoading ? "Regenerating…" : "Delete & Regenerate JCL/JEL Brackets"}
                       </button>
                       <p className="text-gray-500 text-xs mt-2">
-                        Deletes all existing UCL/UEL ties, fixtures, and results, then reseeds from GW24 cup group standings.
+                        Deletes all existing JCL/JEL ties, fixtures, and results, then reseeds from GW24 cup group standings.
                       </p>
                     </div>
                   )}
@@ -3683,7 +3683,7 @@ export default function AdminDashboard() {
                   <h3 className="text-lg font-bold text-white mb-4">Advance Knockouts</h3>
                   {bracketsGenerated && (
                     <div>
-                      <p className="text-gray-400 text-sm mb-4">Advance UCL/UEL knockout rounds after each gameweek is scored.</p>
+                      <p className="text-gray-400 text-sm mb-4">Advance JCL/JEL knockout rounds after each gameweek is scored.</p>
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {[27, 29, 33, 35, 37, 38].map((gw) => (
                           <button
@@ -4624,7 +4624,7 @@ export default function AdminDashboard() {
                     </button>
                   </div>
 
-                  {leagueConfig.format !== "triple-crown" && (
+                  {leagueConfig.format !== "continental-championship" && (
                   <div className="flex items-center justify-between p-4 rounded-xl bg-white/5">
                     <div>
                       <div className="font-semibold text-white">Chip Announcements</div>
