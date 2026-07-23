@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups, fixtures, results, gameweeks, gameweekCaptains, gameweekChips, settings, leagues } from "@/lib/db";
 import { eq, and, gt, asc, desc, or, inArray } from "drizzle-orm";
 import { fetchBootstrapData } from "@/lib/fpl";
-import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
+import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
@@ -575,9 +575,18 @@ export async function GET(request: NextRequest) {
     const ccUsed = chipSet === 1 ? team.challengeChipSet1Used : chipSet === 2 ? team.challengeChipSet2Used : false;
     const wwUsed = chipSet === 1 ? team.winWinSet1Used : chipSet === 2 ? team.winWinSet2Used : false;
 
+    // Challenge Chip's "top 2 from opposite group" target is just as
+    // position-dependent as Double Pointer's rank check — block it in GW1
+    // for the same reason (see CHIP_GW1_POSITION_REASON).
+    const ccGw1Blocked = submissionGw?.number === 1;
+
     const chipEligibility = {
       D: { used: !!dpUsed, eligible: dpEligible, reason: dpReason },
-      C: { used: !!ccUsed, eligible: !ccUsed, reason: buildUsedReason(!!ccUsed, chipSet) },
+      C: {
+        used: !!ccUsed,
+        eligible: !ccUsed && !ccGw1Blocked,
+        reason: ccUsed ? buildUsedReason(true, chipSet) : ccGw1Blocked ? CHIP_GW1_POSITION_REASON : null,
+      },
       W: { used: !!wwUsed, eligible: !wwUsed, reason: buildUsedReason(!!wwUsed, chipSet) },
     };
 

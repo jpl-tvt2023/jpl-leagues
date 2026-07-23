@@ -62,6 +62,17 @@ export function validateEnabledChipsArray(
   return { ok: true, chips: value as string[] };
 }
 
+/**
+ * Double Pointer and Challenge Chip are both rank-based (see
+ * getDoublePointerEligibility / the Challenge Chip opposite-group-top-2
+ * rule). In GW1 there are no prior results, so getGroupRankingsBeforeGW
+ * ties every team at 0 points — the resulting "rank" is arbitrary, not a
+ * real league position. Shared here so the dashboard eligibility display
+ * and the POST rejection can never say different things.
+ */
+export const CHIP_GW1_POSITION_REASON =
+  "Both Double Pointer and Challenge Chip depend on your league position, which isn't established yet — unavailable in GW1.";
+
 export interface TeamRanking {
   teamId: string;
   groupId: string;

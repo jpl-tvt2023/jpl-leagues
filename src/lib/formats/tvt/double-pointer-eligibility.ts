@@ -9,7 +9,7 @@
  */
 
 import { canUseDoublePointer } from "./scoring";
-import { getGroupRankingsBeforeGW } from "./chip-validation";
+import { getGroupRankingsBeforeGW, CHIP_GW1_POSITION_REASON } from "./chip-validation";
 
 export interface DoublePointerEligibility {
   eligible: boolean;
@@ -25,6 +25,12 @@ export async function getDoublePointerEligibility(
   gameweekNumber: number,
   playoffStartGw: number
 ): Promise<DoublePointerEligibility> {
+  // GW1 has no prior results, so group rankings would just be an arbitrary
+  // tie-break rather than a real position — block before touching the DB.
+  if (gameweekNumber === 1) {
+    return { eligible: false, teamRank: null, opponentRank: null, reason: CHIP_GW1_POSITION_REASON };
+  }
+
   // Playoffs have no rank restriction — matches canUseDoublePointer's own
   // bypass, no need to touch the DB for rankings.
   if (gameweekNumber >= playoffStartGw) {
