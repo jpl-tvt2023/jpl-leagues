@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CaptainAnnouncementRules,
   ChipsSection,
   HitsAndBonusSection,
   type LeagueConfig,
@@ -43,6 +44,7 @@ function Tvt32({ config }: { config: LeagueConfig }) {
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Negative hits reduce the score directly.</RuleItem>
           <RuleItem><strong>Captain:</strong> One player is nominated as captain per GW. Their net score (FPL score minus hits) is <strong>doubled</strong>.</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> Each player has {captaincyLimit} captain chips. Once used up, they cannot be captain again until the Play-offs.</RuleItem>
+          <CaptainAnnouncementRules />
         </ul>
       </section>
 
@@ -136,6 +138,7 @@ function Tvt16({ config }: { config: LeagueConfig }) {
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is <strong>doubled</strong>.</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> {captaincyLimit} captain chips per player. Exhausted players cannot captain again until the Play-offs.</RuleItem>
+          <CaptainAnnouncementRules />
         </ul>
       </section>
 
@@ -227,6 +230,7 @@ function Tvt8({ config }: { config: LeagueConfig }) {
           <RuleItem><strong>Match Points:</strong> Win = 2 pts, Draw = 1 pt, Loss = 0 pts.</RuleItem>
           <RuleItem><strong>Team Score:</strong> Combined FPL score of both players minus transfer hits. Captain&apos;s net score is <strong>doubled</strong>.</RuleItem>
           <RuleItem><strong>Captaincy Limit (League Stage):</strong> {captaincyLimit} captain chips per player. Once exhausted, that player cannot captain again until Play-offs.</RuleItem>
+          <CaptainAnnouncementRules />
         </ul>
       </section>
 

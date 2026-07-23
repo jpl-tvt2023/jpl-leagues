@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, gameweeks, players, gameweekCaptains, auditLogs, teams, settings, leagues } from "@/lib/db";
-import { canBeCaptain } from "@/lib/formats/tvt/scoring";
-import { eq, and } from "drizzle-orm";
+import { db, gameweeks, gameweekCaptains, teams, settings, leagues, auditLogs } from "@/lib/db";
+import { eq, and, asc } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
+import { resolveSubmissionWindow, formatLateness } from "@/lib/gameweek-window";
 
 /**
  * POST /api/team/captain
- * Announce captain for a gameweek (team-authenticated)
+ * Announce captain for a gameweek (team-authenticated).
+ * The requested GW must be the currently open submission window (deadline
+ * not yet passed, and past its own 30-minute post-deadline lock) — anything
+ * else is hard-rejected with a message proving how late/mistimed the
+ * request was, and recorded in the audit log.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -100,6 +104,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // The requested GW must be exactly the currently open submission window.
+    // Anything else (deadline already passed, still in its post-deadline
+    // lock, or not yet the open GW) is rejected with proof of timing.
+    const allLeagueGws = await db.query.gameweeks.findMany({
+      where: eq(gameweeks.leagueId, team.leagueId),
+      orderBy: asc(gameweeks.number),
+    });
+    const now = new Date();
+    const window = resolveSubmissionWindow(allLeagueGws, now);
+
+    if (window.state !== "open" || window.gw?.number !== gameweekNumber) {
+      const deadline = new Date(gw.deadline);
+      const isLate = deadline <= now;
+      const message = isLate
+        ? `GW${gameweekNumber}'s deadline (${deadline.toISOString()}) passed ${formatLateness(now.getTime() - deadline.getTime())} before your submission arrived at ${now.toISOString()} — rejected.`
+        : `GW${gameweekNumber} is not currently open for submissions.`;
+
+      await db.insert(auditLogs).values({
+        id: generateId(),
+        type: "LATE_ATTEMPT",
+        description: `Team ${team.name} attempted a captain submission for GW${gameweekNumber} at ${now.toISOString()} (deadline was ${deadline.toISOString()}).`,
+        teamId: team.id,
+        gameweekId: gw.id,
+        pointsAffected: 0,
+      });
+
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
     // Check if captain already announced for this gameweek by this team
     const existingCaptains = await db.query.gameweekCaptains.findMany({
       where: eq(gameweekCaptains.gameweekId, gw.id),
@@ -124,7 +157,7 @@ export async function POST(request: NextRequest) {
         where: eq(gameweekCaptains.playerId, playerId),
         with: { gameweek: true },
       });
-      // Exclude the current GW if this player was already captain for it (switching back)
+      // Exclude this GW if the player was already captain for it (switching back)
       const leagueStageCount = playerCaptainHistory.filter(
         c => c.gameweek.number <= captainCheckLimit && c.gameweek.id !== gw.id
       ).length;
@@ -137,18 +170,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check deadline (must be announced before FPL deadline)
-    const now = new Date();
-    const deadline = new Date(gw.deadline);
-    const isLate = now >= deadline;
-
+    // The window check above already proved this GW's deadline is still
+    // open, so manual announcements are always valid here. isValid: false
+    // is reserved for auto-assigned captains (see temp-captain.ts).
     if (isSwitching) {
       // Update existing captain record to the new player
       await db.update(gameweekCaptains)
         .set({
           playerId: player.id,
           announcedAt: now,
-          isValid: !isLate,
+          isValid: true,
           updatedAt: new Date(),
         })
         .where(eq(gameweekCaptains.id, existingCaptain.id));
@@ -160,19 +191,7 @@ export async function POST(request: NextRequest) {
         gameweekId: gw.id,
         playerId: player.id,
         announcedAt: now,
-        isValid: !isLate,
-      });
-    }
-
-    // Log late announcement as penalty
-    if (isLate) {
-      await db.insert(auditLogs).values({
-        id: generateId(),
-        type: "PENALTY",
-        description: `Late captain ${isSwitching ? "switch" : "announcement"} for GW${gameweekNumber}`,
-        teamId: teamId,
-        gameweekId: gw.id,
-        pointsAffected: 0,
+        isValid: true,
       });
     }
 
@@ -188,15 +207,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: isLate
-        ? `Captain ${isSwitching ? "switched" : "announced"} but marked as late (after deadline)`
-        : `Captain ${isSwitching ? "switched" : "announced"} successfully`,
+      message: `${player.name} ${isSwitching ? "switched to" : "submitted as"} captain for GW${gameweekNumber}`,
       captain: {
         playerName: player.name,
         teamName: team.name,
         gameweek: gameweekNumber,
         announcedAt: now.toISOString(),
-        isValid: !isLate,
+        isValid: true,
         captaincyChipsRemaining: chipsRemaining,
         wasSwitched: isSwitching,
       },

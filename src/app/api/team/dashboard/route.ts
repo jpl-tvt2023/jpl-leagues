@@ -10,6 +10,8 @@ import { calculatePurse, calculateRefund, calculateFMV } from "@/lib/formats/auc
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 import { buildTeamLedger } from "@/lib/formats/auction/finance";
 import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
+import { resolveSubmissionWindow } from "@/lib/gameweek-window";
+import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
@@ -148,6 +150,19 @@ export async function GET(request: NextRequest) {
     const nextGameweek = allGameweeks.find(gw => gw.number === latestCompletedGW + 1) || null;
     // For FPL links, still use the next GW number (if exists), else latestCompletedGW + 1
     const currentGwNumber = nextGameweek?.number || (latestCompletedGW + 1);
+
+    // ============================================
+    // SUBMISSION WINDOW (captain/chip forms)
+    // ============================================
+    // Deliberately separate from nextGameweek above: nextGameweek tracks
+    // results processing (can lag days behind a deadline), but the
+    // captain/chip submission form must open purely on the deadline clock —
+    // a team should be able to lock in next week's captain immediately once
+    // this week's deadline (plus its 30-min lock) has passed, not wait for
+    // this week's scores to be entered. Fixture/results display below keeps
+    // using nextGameweek, untouched.
+    const submissionWindow = resolveSubmissionWindow(allGameweeks, new Date());
+    const submissionGw = submissionWindow.gw;
 
     // ============================================
     // UPCOMING FIXTURE
@@ -418,8 +433,10 @@ export async function GET(request: NextRequest) {
     // ============================================
     // CHIP STATUS
     // ============================================
-    const chipSet = nextGameweek ? getChipSet(nextGameweek.number) : 1;
-    
+    // Tied to submissionGw (deadline-driven), not nextGameweek (results-driven)
+    // — this is what actually drives the chip picker's set boundaries.
+    const chipSet = submissionGw ? getChipSet(submissionGw.number, leaguePlayoffStartGw) : 1;
+
     const chipStatus = {
       currentSet: chipSet,
       set1: {
@@ -459,7 +476,12 @@ export async function GET(request: NextRequest) {
     ).length;
 
     const CAPTAIN_CAP = computeCaptainCap(leagueFormat, leaguePlayoffStartGw);
-    const isPlayoffPhase = leagueFormat === "continental-championship" ? false : (nextGameweek?.number || 0) > captainCheckLimit;
+    // Tied to submissionGw (deadline-driven) — this gates whether captaincy
+    // is "unlimited" for the GW the picker is actually submitting toward.
+    const isPlayoffPhase = leagueFormat === "continental-championship" ? false : (submissionGw?.number || 0) > captainCheckLimit;
+
+    const player1ChipsRemaining = isPlayoffPhase ? 999 : CAPTAIN_CAP - player1CaptainCount;
+    const player2ChipsRemaining = isPlayoffPhase ? 999 : CAPTAIN_CAP - player2CaptainCount;
 
     const captaincyStatus = {
       cap: CAPTAIN_CAP,
@@ -467,13 +489,19 @@ export async function GET(request: NextRequest) {
         id: team.players[0]?.id || "",
         name: team.players[0]?.name || "",
         chipsUsed: player1CaptainCount,
-        chipsRemaining: isPlayoffPhase ? 999 : CAPTAIN_CAP - player1CaptainCount,
+        chipsRemaining: player1ChipsRemaining,
+        reason: player1ChipsRemaining <= 0
+          ? `No captaincy chips remaining (${CAPTAIN_CAP}/${CAPTAIN_CAP} used this League Stage)`
+          : null,
       },
       player2: {
         id: team.players[1]?.id || "",
         name: team.players[1]?.name || "",
         chipsUsed: player2CaptainCount,
-        chipsRemaining: isPlayoffPhase ? 999 : CAPTAIN_CAP - player2CaptainCount,
+        chipsRemaining: player2ChipsRemaining,
+        reason: player2ChipsRemaining <= 0
+          ? `No captaincy chips remaining (${CAPTAIN_CAP}/${CAPTAIN_CAP} used this League Stage)`
+          : null,
       },
       recentCaptains: [...captainHistory]
         .sort((a, b) => b.gameweek.number - a.gameweek.number)
@@ -484,10 +512,11 @@ export async function GET(request: NextRequest) {
         })),
     };
 
-    // Check if captain is submitted for upcoming GW — return details for switching UI
+    // Check if captain is submitted for the open submission GW — return
+    // details for switching UI.
     let upcomingCaptain: { playerId: string; playerName: string } | null = null;
-    if (nextGameweek) {
-      const existingCaptain = captainHistory.find(c => c.gameweek.id === nextGameweek.id);
+    if (submissionGw) {
+      const existingCaptain = captainHistory.find(c => c.gameweek.id === submissionGw.id);
       if (existingCaptain) {
         upcomingCaptain = {
           playerId: existingCaptain.player.id,
@@ -495,25 +524,62 @@ export async function GET(request: NextRequest) {
         };
       }
     }
-    
-    // Get upcoming chip submission for this team
+
+    // Get upcoming chip submission for this team (for the open submission GW)
     let upcomingChip = null;
-    if (nextGameweek) {
+    if (submissionGw) {
       const upcomingChipSubmission = await db.query.gameweekChips.findFirst({
         where: and(
           eq(gameweekChips.teamId, teamId),
-          eq(gameweekChips.gameweekId, nextGameweek.id)
+          eq(gameweekChips.gameweekId, submissionGw.id)
         ),
       });
       if (upcomingChipSubmission) {
         upcomingChip = {
           type: upcomingChipSubmission.chipType,
-          chipName: upcomingChipSubmission.chipType === "D" ? "Double Pointer" 
-            : upcomingChipSubmission.chipType === "C" ? "Challenge Chip" 
+          chipName: upcomingChipSubmission.chipType === "D" ? "Double Pointer"
+            : upcomingChipSubmission.chipType === "C" ? "Challenge Chip"
             : "Win-Win",
         };
       }
     }
+
+    // ============================================
+    // CHIP ELIGIBILITY (for the always-shown, disable-if-unusable picker)
+    // ============================================
+    // Reuses the same used-flags chipStatus already reads (no re-query) and,
+    // for Double Pointer, the same rank-eligibility helper the chips POST
+    // route enforces server-side — so the UI and the enforcement can never
+    // drift apart.
+    const buildUsedReason = (used: boolean, set: 1 | 2 | "playoffs") =>
+      used && set !== "playoffs" ? `Already used in Set ${set}` : null;
+
+    let dpEligible = true;
+    let dpReason: string | null = null;
+    const dpUsed = chipSet === 1 ? team.doublePointerSet1Used : chipSet === 2 ? team.doublePointerSet2Used : false;
+    if (dpUsed) {
+      dpReason = buildUsedReason(true, chipSet);
+      dpEligible = false;
+    } else if (submissionGw && chipSet !== "playoffs" && team.groupId) {
+      const groupId = team.groupId;
+      const homeFixture = team.homeFixtures.find(f => f.gameweek.id === submissionGw.id);
+      const awayFixture = team.awayFixtures.find(f => f.gameweek.id === submissionGw.id);
+      const opponentTeamId = homeFixture?.awayTeam.id ?? awayFixture?.homeTeam.id ?? null;
+      const dp = await getDoublePointerEligibility(
+        teamId, groupId, opponentTeamId, submissionGw.number, leaguePlayoffStartGw
+      );
+      dpEligible = dp.eligible;
+      dpReason = dp.reason;
+    }
+
+    const ccUsed = chipSet === 1 ? team.challengeChipSet1Used : chipSet === 2 ? team.challengeChipSet2Used : false;
+    const wwUsed = chipSet === 1 ? team.winWinSet1Used : chipSet === 2 ? team.winWinSet2Used : false;
+
+    const chipEligibility = {
+      D: { used: !!dpUsed, eligible: dpEligible, reason: dpReason },
+      C: { used: !!ccUsed, eligible: !ccUsed, reason: buildUsedReason(!!ccUsed, chipSet) },
+      W: { used: !!wwUsed, eligible: !wwUsed, reason: buildUsedReason(!!wwUsed, chipSet) },
+    };
 
     // ============================================
     // LEAGUE POSITION
@@ -709,8 +775,10 @@ export async function GET(request: NextRequest) {
         ? await db.query.groups.findMany({ where: eq(groups.leagueId, teamLeagueId) })
         : await db.query.groups.findMany();
       const oppositeGroup = allGroups.find(g => g.id !== team.groupId);
-      if (oppositeGroup && currentGwNumber) {
-        const top2 = await getTop2FromGroup(oppositeGroup.id, currentGwNumber);
+      // Challenge Chip targeting follows the submission GW (deadline-driven),
+      // not currentGwNumber (results-driven, still used for FPL links above).
+      if (oppositeGroup && submissionGw) {
+        const top2 = await getTop2FromGroup(oppositeGroup.id, submissionGw.number);
         const top2Ids = top2.map(t => t.teamId);
         const top2Teams = top2Ids.length === 0 ? [] : await db.query.teams.findMany({
           where: inArray(teams.id, top2Ids),
@@ -1025,10 +1093,20 @@ export async function GET(request: NextRequest) {
         gameweek: nextGameweek?.number || 0,
         timestamp: nextGameweek?.deadline?.toISOString() || null,
       },
+      // Deadline-driven, decoupled from results processing — this is what
+      // the captain/chip forms actually submit against (see submissionGw
+      // above). `deadline` above stays results-driven for fixture display.
+      submission: {
+        gameweek: submissionGw?.number || 0,
+        timestamp: submissionGw?.deadline?.toISOString() || null,
+        state: submissionWindow.state,
+        opensAt: submissionWindow.opensAt,
+      },
       serverTime: new Date().toISOString(),
       upcomingFixture,
       upcomingCaptain,
       upcomingChip,
+      chipEligibility,
       leagueCaptains,
       lastGwResult,
       minCompletedGw,

@@ -9,6 +9,14 @@ import { TierChip } from "@/components/TierChip";
 import { HelpTip } from "@/components/HelpTip";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
+import { EligibilitySelect } from "@/app/dashboard/_components/EligibilitySelect";
+
+// Format an ISO timestamp as a short local clock time, e.g. "6:30 PM" — used
+// for "reopens at ..." messaging when the submission window is locked.
+function formatClockTime(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
 
 // Types
 interface DashboardData {
@@ -22,6 +30,15 @@ interface DashboardData {
   deadline: {
     gameweek: number;
     timestamp: string | null;
+  };
+  // Deadline-driven submission window for captain/chip forms — decoupled
+  // from `deadline` above, which stays tied to results processing for
+  // fixture-display purposes. Submissions must target `submission.gameweek`.
+  submission: {
+    gameweek: number;
+    timestamp: string | null;
+    state: "open" | "locked" | "closed";
+    opensAt: string | null;
   };
   serverTime: string;
   upcomingFixture: {
@@ -93,10 +110,15 @@ interface DashboardData {
       winWin: { used: boolean; name: string };
     };
   };
+  chipEligibility: {
+    D: { used: boolean; eligible: boolean; reason: string | null };
+    C: { used: boolean; eligible: boolean; reason: string | null };
+    W: { used: boolean; eligible: boolean; reason: string | null };
+  };
   captaincyStatus: {
     cap: number;
-    player1: { id: string; name: string; chipsUsed: number; chipsRemaining: number };
-    player2: { id: string; name: string; chipsUsed: number; chipsRemaining: number };
+    player1: { id: string; name: string; chipsUsed: number; chipsRemaining: number; reason: string | null };
+    player2: { id: string; name: string; chipsUsed: number; chipsRemaining: number; reason: string | null };
     recentCaptains: { gameweek: number; playerName: string; score: number }[];
   };
   upcomingFixtures: { gameweek: number; opponent: string; isHome: boolean; competitionType?: string; competitionLabel?: string }[];
@@ -948,6 +970,22 @@ export default function DashboardPage() {
     };
   }, [fetchDashboard]);
 
+  // When the submission window is locked, automatically refetch once the
+  // 30-minute lock lifts, so the newly-open GW's captain/chip data populates
+  // without a manual refresh. Server time (not local clock) drives this, via
+  // the same serverOffset pattern DeadlineTimer uses.
+  useEffect(() => {
+    if (data?.submission.state !== "locked" || !data.submission.opensAt) return;
+    const serverOffset = new Date(data.serverTime).getTime() - Date.now();
+    const msUntilOpen = new Date(data.submission.opensAt).getTime() - (Date.now() + serverOffset);
+    if (msUntilOpen <= 0) {
+      fetchDashboard();
+      return;
+    }
+    const timer = setTimeout(() => fetchDashboard(), msUntilOpen + 1000);
+    return () => clearTimeout(timer);
+  }, [data?.submission.state, data?.submission.opensAt, data?.serverTime, fetchDashboard]);
+
   // GW navigation handlers
   const handlePrevGw = () => {
     if (data && viewedGw && data.minCompletedGw && viewedGw > data.minCompletedGw) {
@@ -1037,7 +1075,7 @@ export default function DashboardPage() {
     try {
       const payload = {
         playerId: selectedCaptain,
-        gameweek: data.deadline.gameweek,
+        gameweek: data.submission.gameweek,
       };
 
       const response = await fetch("/api/team/captain", {
@@ -1058,8 +1096,7 @@ export default function DashboardPage() {
           : errorText;
         setSubmitMessage({ type: "error", text: displayError });
       } else {
-        const action = result.captain.wasSwitched ? "switched to" : "announced as";
-        setSubmitMessage({ type: "success", text: `${result.captain.playerName} ${action} captain for GW${data.deadline.gameweek}` });
+        setSubmitMessage({ type: "success", text: result.message });
         // Refresh dashboard data
         fetchDashboard();
       }
@@ -1090,7 +1127,7 @@ export default function DashboardPage() {
     try {
       const payload = {
         chipType: selectedChip,
-        gameweek: data.deadline.gameweek,
+        gameweek: data.submission.gameweek,
         ...(selectedChip === "C" && { challengedTeamId: selectedChallengedTeam }),
       };
 
@@ -1132,7 +1169,7 @@ export default function DashboardPage() {
 
     try {
       const payload = {
-        gameweek: data.deadline.gameweek,
+        gameweek: data.submission.gameweek,
       };
 
       const response = await fetch("/api/team/chips", {
@@ -1404,7 +1441,7 @@ export default function DashboardPage() {
             {/* TC: Merged Deadline + Captain card */}
             {leagueFormat === "continental-championship" && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                {data.deadline.gameweek === 0 ? (
+                {data.submission.gameweek === 0 ? (
                   <div className="text-center py-6">
                     <p className="text-gray-400 text-sm">Captain and chip submissions will be available once the admin generates fixtures.</p>
                   </div>
@@ -1413,9 +1450,14 @@ export default function DashboardPage() {
                     {/* Left: Deadline */}
                     <div>
                       <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                        <span className="text-yellow-400">⏱</span> GW{data.deadline.gameweek} Deadline
+                        <span className="text-yellow-400">⏱</span> GW{data.submission.gameweek} Deadline
                       </h2>
-                      <DeadlineTimer deadline={data.deadline.timestamp} gameweek={data.deadline.gameweek} serverTime={data.serverTime} />
+                      <DeadlineTimer deadline={data.submission.timestamp} gameweek={data.submission.gameweek} serverTime={data.serverTime} />
+                      {data.submission.state === "locked" && (
+                        <div className="text-xs text-orange-400 mt-2 text-center">
+                          Deadline passed — reopens at {formatClockTime(data.submission.opensAt)} for GW{data.submission.gameweek + 1}
+                        </div>
+                      )}
                     </div>
                     {/* Right: Captain */}
                     <div>
@@ -1440,27 +1482,31 @@ export default function DashboardPage() {
                               Not Submitted
                             </div>
                           )}
-                          <select
-                            value={selectedCaptain || data.upcomingCaptain?.playerId || ""}
-                            onChange={(e) => setSelectedCaptain(e.target.value)}
-                            className="w-full p-2 rounded-lg bg-slate-800 text-white border border-white/30 mb-3 focus:border-yellow-400 focus:outline-none"
-                            disabled={isSubmitting}
-                          >
-                            <option value="">Select captain...</option>
-                            {data.captaincyStatus.player1.chipsRemaining > 0 && (
-                              <option value={data.captaincyStatus.player1.id}>
-                                {data.captaincyStatus.player1.name} ({data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining} left`})
-                              </option>
-                            )}
-                            {data.captaincyStatus.player2.chipsRemaining > 0 && (
-                              <option value={data.captaincyStatus.player2.id}>
-                                {data.captaincyStatus.player2.name} ({data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining} left`})
-                              </option>
-                            )}
-                          </select>
+                          <div className="mb-3">
+                            <EligibilitySelect
+                              value={selectedCaptain || data.upcomingCaptain?.playerId || ""}
+                              onChange={setSelectedCaptain}
+                              disabled={isSubmitting || data.submission.state !== "open"}
+                              placeholder="Select captain..."
+                              options={[
+                                {
+                                  value: data.captaincyStatus.player1.id,
+                                  label: `${data.captaincyStatus.player1.name} (${data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining} left`})`,
+                                  disabled: data.captaincyStatus.player1.chipsRemaining <= 0,
+                                  reason: data.captaincyStatus.player1.reason,
+                                },
+                                {
+                                  value: data.captaincyStatus.player2.id,
+                                  label: `${data.captaincyStatus.player2.name} (${data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining} left`})`,
+                                  disabled: data.captaincyStatus.player2.chipsRemaining <= 0,
+                                  reason: data.captaincyStatus.player2.reason,
+                                },
+                              ]}
+                            />
+                          </div>
                           <button
                             onClick={handleCaptainSubmit}
-                            disabled={!selectedCaptain || isSubmitting || selectedCaptain === data.upcomingCaptain?.playerId}
+                            disabled={!selectedCaptain || isSubmitting || selectedCaptain === data.upcomingCaptain?.playerId || data.submission.state !== "open"}
                             className="w-full py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:from-yellow-300 hover:to-orange-400 transition"
                           >
                             {isSubmitting ? "Submitting..." : data.upcomingCaptain ? "Switch Captain" : "Announce Captain"}
@@ -1565,10 +1611,10 @@ export default function DashboardPage() {
             {/* TVT: Captain & Chip Submission */}
             {leagueFormat !== "continental-championship" && <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <span className="text-yellow-400">📋</span> GW{data.deadline.gameweek > 0 ? data.deadline.gameweek : "?"} Submissions
+                <span className="text-yellow-400">📋</span> GW{data.submission.gameweek > 0 ? data.submission.gameweek : "?"} Submissions
               </h2>
 
-              {data.deadline.gameweek === 0 ? (
+              {data.submission.gameweek === 0 ? (
                 <div className="text-center py-6">
                   <p className="text-gray-400 text-sm">Captain and chip submissions will be available once the admin generates fixtures.</p>
                 </div>
@@ -1580,7 +1626,18 @@ export default function DashboardPage() {
                   {submitMessage.text}
                 </div>
               )}
-              
+
+              {data.submission.state === "locked" && (
+                <div className="mb-4 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 text-sm">
+                  Deadline passed — submissions reopen at {formatClockTime(data.submission.opensAt)} for GW{data.submission.gameweek + 1}.
+                </div>
+              )}
+              {data.submission.state === "closed" && (
+                <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-gray-400 text-sm">
+                  No gameweek is currently open for submissions.
+                </div>
+              )}
+
               <div className="grid md:grid-cols-2 gap-6">
                 {/* Captain Submission */}
                 <div className="p-4 rounded-xl bg-white/5">
@@ -1603,27 +1660,31 @@ export default function DashboardPage() {
                           Not Submitted
                         </div>
                       )}
-                      <select
-                        value={selectedCaptain || data.upcomingCaptain?.playerId || ""}
-                        onChange={(e) => setSelectedCaptain(e.target.value)}
-                        className="w-full p-2 rounded-lg bg-slate-800 text-white border border-white/30 mb-3 focus:border-yellow-400 focus:outline-none"
-                        disabled={isSubmitting}
-                      >
-                        <option value="">Select captain...</option>
-                        {data.captaincyStatus.player1.chipsRemaining > 0 && (
-                          <option value={data.captaincyStatus.player1.id}>
-                            {data.captaincyStatus.player1.name} ({data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining} chips left`})
-                          </option>
-                        )}
-                        {data.captaincyStatus.player2.chipsRemaining > 0 && (
-                          <option value={data.captaincyStatus.player2.id}>
-                            {data.captaincyStatus.player2.name} ({data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining} chips left`})
-                          </option>
-                        )}
-                      </select>
+                      <div className="mb-3">
+                        <EligibilitySelect
+                          value={selectedCaptain || data.upcomingCaptain?.playerId || ""}
+                          onChange={setSelectedCaptain}
+                          disabled={isSubmitting || data.submission.state !== "open"}
+                          placeholder="Select captain..."
+                          options={[
+                            {
+                              value: data.captaincyStatus.player1.id,
+                              label: `${data.captaincyStatus.player1.name} (${data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining} chips left`})`,
+                              disabled: data.captaincyStatus.player1.chipsRemaining <= 0,
+                              reason: data.captaincyStatus.player1.reason,
+                            },
+                            {
+                              value: data.captaincyStatus.player2.id,
+                              label: `${data.captaincyStatus.player2.name} (${data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining} chips left`})`,
+                              disabled: data.captaincyStatus.player2.chipsRemaining <= 0,
+                              reason: data.captaincyStatus.player2.reason,
+                            },
+                          ]}
+                        />
+                      </div>
                       <button
                         onClick={handleCaptainSubmit}
-                        disabled={!selectedCaptain || isSubmitting || selectedCaptain === data.upcomingCaptain?.playerId}
+                        disabled={!selectedCaptain || isSubmitting || selectedCaptain === data.upcomingCaptain?.playerId || data.submission.state !== "open"}
                         className="w-full py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:from-yellow-300 hover:to-orange-400 transition"
                       >
                         {isSubmitting ? "Submitting..." : data.upcomingCaptain ? "Switch Captain" : "Announce Captain"}
@@ -1647,7 +1708,7 @@ export default function DashboardPage() {
                   <h3 className="font-semibold text-white mb-3">
                     TVT Chips (Set {data.chipStatus.currentSet === "playoffs" ? "Playoffs" : data.chipStatus.currentSet})
                   </h3>
-                  
+
                   {!data.announcementSettings.chipAnnouncementEnabled ? (
                     <div className="flex items-center gap-2 text-red-400 mb-3">
                       <span className="w-3 h-3 rounded-full bg-red-400"></span>
@@ -1666,23 +1727,35 @@ export default function DashboardPage() {
                           No chip selected
                         </div>
                       )}
-                      <select
-                        value={selectedChip ?? data.upcomingChip?.type ?? ""}
-                        onChange={(e) => { setSelectedChip(e.target.value); setSelectedChallengedTeam(""); }}
-                        className="w-full p-2 rounded-lg bg-slate-800 text-white border border-white/30 mb-3 focus:border-purple-400 focus:outline-none"
-                        disabled={isSubmitting}
-                      >
-                        <option value="">No Chip</option>
-                        {(!currentChipSet.doublePointer.used || data.upcomingChip?.type === "D") && (
-                          <option value="D">Double Pointer (DP)</option>
-                        )}
-                        {(!currentChipSet.challengeChip.used || data.upcomingChip?.type === "C") && (
-                          <option value="C">Challenge Chip (CC)</option>
-                        )}
-                        {(!currentChipSet.winWin.used || data.upcomingChip?.type === "W") && (
-                          <option value="W">Win-Win (WW)</option>
-                        )}
-                      </select>
+                      <div className="mb-3">
+                        <EligibilitySelect
+                          value={selectedChip ?? data.upcomingChip?.type ?? ""}
+                          onChange={(v) => { setSelectedChip(v); setSelectedChallengedTeam(""); }}
+                          disabled={isSubmitting || data.submission.state !== "open"}
+                          placeholder="No Chip"
+                          accentClass="focus:border-purple-400"
+                          options={[
+                            {
+                              value: "D",
+                              label: "Double Pointer (DP)",
+                              disabled: !data.chipEligibility.D.eligible && data.upcomingChip?.type !== "D",
+                              reason: data.chipEligibility.D.reason,
+                            },
+                            {
+                              value: "C",
+                              label: "Challenge Chip (CC)",
+                              disabled: !data.chipEligibility.C.eligible && data.upcomingChip?.type !== "C",
+                              reason: data.chipEligibility.C.reason,
+                            },
+                            {
+                              value: "W",
+                              label: "Win-Win (WW)",
+                              disabled: !data.chipEligibility.W.eligible && data.upcomingChip?.type !== "W",
+                              reason: data.chipEligibility.W.reason,
+                            },
+                          ]}
+                        />
+                      </div>
                       {(selectedChip ?? data.upcomingChip?.type) === "C" && (
                         <div className="mb-3">
                           <label className="block text-xs text-gray-400 mb-1">Challenge against (top 2 from opposite group)</label>
@@ -1705,7 +1778,8 @@ export default function DashboardPage() {
                           isSubmitting ||
                           selectedChip === null ||
                           selectedChip === (data.upcomingChip?.type ?? "") ||
-                          ((selectedChip ?? data.upcomingChip?.type) === "C" && !selectedChallengedTeam)
+                          ((selectedChip ?? data.upcomingChip?.type) === "C" && !selectedChallengedTeam) ||
+                          data.submission.state !== "open"
                         }
                         className="w-full py-2 rounded-lg bg-purple-500/20 text-purple-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-purple-500/30 transition"
                       >
@@ -1715,7 +1789,7 @@ export default function DashboardPage() {
                   ) : (
                     <div className="text-gray-400 text-sm">No chips available in playoffs</div>
                   )}
-                  
+
                   <div className="mt-3 space-y-2">
                     <ChipBadge used={currentChipSet.doublePointer.used} name="DP" />
                     <ChipBadge used={currentChipSet.challengeChip.used} name="CC" />

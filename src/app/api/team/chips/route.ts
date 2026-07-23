@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, gameweeks, gameweekChips, settings, leagues } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { db, teams, gameweeks, gameweekChips, settings, leagues, fixtures, auditLogs } from "@/lib/db";
+import { eq, and, asc } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
+import { resolveSubmissionWindow, formatLateness } from "@/lib/gameweek-window";
+import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
 
 const ALL_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"] as const;
 type ChipCode = typeof ALL_CHIP_CODES[number];
@@ -24,7 +26,11 @@ const CHIP_SET_COL: Record<ChipCode, [keyof typeof teams.$inferSelect, keyof typ
 
 /**
  * POST /api/team/chips
- * Submit a TVT chip for a gameweek
+ * Submit a TVT chip for a gameweek.
+ * The requested GW must be the currently open submission window (deadline
+ * not yet passed, and past its own 30-minute post-deadline lock) — anything
+ * else is hard-rejected with a message proving how late/mistimed the
+ * request was, and recorded in the audit log.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -118,13 +124,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check deadline
+    // The requested GW must be exactly the currently open submission window.
+    // Anything else (deadline already passed, still in its post-deadline
+    // lock, or not yet the open GW) is rejected with proof of timing.
+    const allLeagueGws = await db.query.gameweeks.findMany({
+      where: eq(gameweeks.leagueId, team.leagueId),
+      orderBy: asc(gameweeks.number),
+    });
     const now = new Date();
-    if (gw.deadline && gw.deadline < now) {
-      return NextResponse.json(
-        { error: "Deadline has passed for this gameweek" },
-        { status: 400 }
-      );
+    const window = resolveSubmissionWindow(allLeagueGws, now);
+
+    if (window.state !== "open" || window.gw?.number !== gameweekNumber) {
+      const deadline = new Date(gw.deadline);
+      const isLate = deadline <= now;
+      const message = isLate
+        ? `GW${gameweekNumber}'s deadline (${deadline.toISOString()}) passed ${formatLateness(now.getTime() - deadline.getTime())} before your submission arrived at ${now.toISOString()} — rejected.`
+        : `GW${gameweekNumber} is not currently open for submissions.`;
+
+      await db.insert(auditLogs).values({
+        id: generateId(),
+        type: "LATE_ATTEMPT",
+        description: `Team ${team.name} attempted a chip submission (${CHIP_NAMES[chipType as ChipCode] ?? chipType}) for GW${gameweekNumber} at ${now.toISOString()} (deadline was ${deadline.toISOString()}).`,
+        teamId: team.id,
+        gameweekId: gw.id,
+        pointsAffected: 0,
+      });
+
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
     // Check chip set (dynamic boundaries from league config)
@@ -155,6 +181,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Double Pointer has a rank-based restriction on top of set usage: Top-8
+    // teams may only Double-Point a Top-8 opponent, rank 9+ only a strictly
+    // higher-ranked opponent (no restriction in playoffs, handled inside the
+    // helper). Enforced here so a client can't bypass the UI's disabled state.
+    if (chipType === "D") {
+      const teamWithFixture = await db.query.teams.findFirst({
+        where: eq(teams.id, teamId),
+        with: {
+          homeFixtures: { where: eq(fixtures.gameweekId, gw.id) },
+          awayFixtures: { where: eq(fixtures.gameweekId, gw.id) },
+        },
+      });
+      const opponentTeamId =
+        teamWithFixture?.homeFixtures[0]?.awayTeamId ??
+        teamWithFixture?.awayFixtures[0]?.homeTeamId ??
+        null;
+
+      const eligibility = await getDoublePointerEligibility(
+        teamId, team.groupId!, opponentTeamId, gameweekNumber, playoffStartGw
+      );
+      if (!eligibility.eligible) {
+        return NextResponse.json({ error: eligibility.reason }, { status: 400 });
+      }
+    }
+
     // Check if team has already submitted a chip for this gameweek
     const existingChip = await db.query.gameweekChips.findFirst({
       where: and(
@@ -166,7 +217,7 @@ export async function POST(request: NextRequest) {
     // If switching to same chip type, no-op
     if (existingChip && existingChip.chipType === chipType) {
       return NextResponse.json(
-        { error: `${chipName} is already selected for this gameweek` },
+        { error: `${chipName} is already selected for GW${gameweekNumber}` },
         { status: 400 }
       );
     }

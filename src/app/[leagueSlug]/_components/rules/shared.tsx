@@ -22,7 +22,7 @@ export const CHIP_INFO: Record<string, { label: string; color: string; tagline: 
     color: "text-purple-400",
     tagline: "Double your match points",
     description:
-      "Doubles your TVT league points for that gameweek: Win = +4 pts, Draw = +2 pts, Loss = 0 pts. Best played in a week you are confident of winning.",
+      "Doubles your TVT league points for that gameweek: Win = +4 pts, Draw = +2 pts, Loss = 0 pts. Best played in a week you are confident of winning. Rank rule: Top-8 teams may only play it against a Top-8 opponent; rank 9+ may only play it against a strictly higher-ranked opponent (no restriction in the Play-offs) — the picker greys this out automatically when you're not eligible.",
   },
   C: {
     label: "Challenge Chip",
@@ -97,6 +97,34 @@ export function RuleItem({ children, accent = "yellow" }: { children: ReactNode;
       <span className={`shrink-0 ${dotColors[accent] ?? dotColors.yellow}`}>•</span>
       <span>{children}</span>
     </li>
+  );
+}
+
+/**
+ * Portal-era captain announcement rules, shared by all TVT variants.
+ * Replaces the old WhatsApp-group announcement rules (tampering and
+ * spamming penalties no longer apply — the portal only lets a team
+ * manage its own captain, and switching before the deadline is free).
+ */
+export function CaptainAnnouncementRules() {
+  return (
+    <>
+      <RuleItem>
+        <strong>Announcing:</strong> Captains are announced on the portal from your team login — you can only ever set your own team&apos;s captain. Switch freely until the GW&apos;s FPL deadline; only your final pick counts toward the captaincy limit.
+      </RuleItem>
+      <RuleItem>
+        <strong>Late announcements:</strong> Once the deadline passes, that GW&apos;s captain/chip is locked out — a late submission is rejected outright, showing both the deadline time and when your request arrived. Submissions stay locked for 30 minutes after every deadline; after that, the <strong>next gameweek&apos;s</strong> window opens automatically.
+      </RuleItem>
+      <RuleItem>
+        <strong>No announcement:</strong> If a team doesn&apos;t announce a captain, the portal auto-assigns the lower-scoring member for that GW (on a tie, the member who wasn&apos;t captain the previous GW).
+      </RuleItem>
+      <RuleItem>
+        <strong>Negatives double too:</strong> The captain&apos;s <em>net</em> score (FPL score minus transfer hits) is doubled — so any hits the captain takes are doubled as well.
+      </RuleItem>
+      <RuleItem>
+        <strong>Double Pointer rank rule:</strong> Top-8 teams can only Double-Point a Top-8 opponent; rank 9+ can only Double-Point a strictly higher-ranked opponent (no restriction in the Play-offs). The chip picker shows this directly — ineligible chips are disabled with the reason.
+      </RuleItem>
+    </>
   );
 }
 
