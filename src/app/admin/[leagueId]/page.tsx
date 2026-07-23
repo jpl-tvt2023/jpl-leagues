@@ -3440,20 +3440,16 @@ export default function AdminDashboard() {
               {scoringLoading ? (
                 <div className="text-center text-gray-400 py-8 text-sm">Loading gameweeks…</div>
               ) : gameweekStatuses.length === 0 ? (
-                isAuctionFormat ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-400 text-sm mb-3">No gameweeks found</p>
-                    <button
-                      onClick={createGameweeks}
-                      disabled={scoringLoading}
-                      className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-sm font-medium disabled:opacity-50 transition"
-                    >
-                      Create Gameweeks (GW 1–38)
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-center text-gray-400 py-8 text-sm">No gameweeks with fixtures found</div>
-                )
+                <div className="text-center py-8">
+                  <p className="text-gray-400 text-sm mb-3">No gameweeks found</p>
+                  <button
+                    onClick={createGameweeks}
+                    disabled={scoringLoading}
+                    className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-sm font-medium disabled:opacity-50 transition"
+                  >
+                    Create Gameweeks (GW 1–38)
+                  </button>
+                </div>
               ) : (
                 <>
                 {isAuctionFormat && (
