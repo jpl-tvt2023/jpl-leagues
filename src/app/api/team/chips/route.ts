@@ -5,6 +5,7 @@ import { generateId } from "@/lib/id";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { resolveSubmissionWindow, formatLateness } from "@/lib/gameweek-window";
 import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
+import { CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
 
 const ALL_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"] as const;
 type ChipCode = typeof ALL_CHIP_CODES[number];
@@ -204,6 +205,14 @@ export async function POST(request: NextRequest) {
       if (!eligibility.eligible) {
         return NextResponse.json({ error: eligibility.reason }, { status: 400 });
       }
+    }
+
+    // Challenge Chip's "top 2 from opposite group" target is just as
+    // position-dependent as Double Pointer's rank check (see
+    // CHIP_GW1_POSITION_REASON) — block it in GW1 server-side too, so the
+    // API can't be hit directly to bypass the dashboard's disabled state.
+    if (chipType === "C" && gameweekNumber === 1) {
+      return NextResponse.json({ error: CHIP_GW1_POSITION_REASON }, { status: 400 });
     }
 
     // Check if team has already submitted a chip for this gameweek
