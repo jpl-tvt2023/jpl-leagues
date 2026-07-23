@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups, fixtures, results, gameweeks, gameweekCaptains, gameweekChips, settings, leagues } from "@/lib/db";
 import { eq, and, gt, asc, desc, or, inArray } from "drizzle-orm";
 import { fetchBootstrapData } from "@/lib/fpl";
+import { shouldSyncDeadlines } from "@/lib/fpl-cache";
 import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
@@ -27,12 +28,14 @@ function getFplTeamUrl(fplId: string, gameweek?: number): string {
 }
 
 async function getAnnouncementSettings(leagueId: string) {
-  const captainSetting = await db.select().from(settings)
-    .where(and(eq(settings.key, "captainAnnouncementEnabled"), eq(settings.leagueId, leagueId)))
-    .limit(1);
-  const chipSetting = await db.select().from(settings)
-    .where(and(eq(settings.key, "chipAnnouncementEnabled"), eq(settings.leagueId, leagueId)))
-    .limit(1);
+  const [captainSetting, chipSetting] = await Promise.all([
+    db.select().from(settings)
+      .where(and(eq(settings.key, "captainAnnouncementEnabled"), eq(settings.leagueId, leagueId)))
+      .limit(1),
+    db.select().from(settings)
+      .where(and(eq(settings.key, "chipAnnouncementEnabled"), eq(settings.leagueId, leagueId)))
+      .limit(1),
+  ]);
   return {
     captainAnnouncementEnabled: captainSetting.length === 0 || captainSetting[0].value !== "false",
     chipAnnouncementEnabled: chipSetting.length === 0 || chipSetting[0].value !== "false",
@@ -70,13 +73,18 @@ export async function GET(request: NextRequest) {
 
     if (teamLeagueId) {
       try {
-        const fplData = await fetchBootstrapData();
-        if (fplData && Array.isArray(fplData.events)) {
-          for (const event of fplData.events) {
-            const deadline = event.deadline_time ? new Date(event.deadline_time) : new Date('2099-12-31T23:59:59Z');
-            await db.update(gameweeks)
-              .set({ deadline })
-              .where(and(eq(gameweeks.leagueId, teamLeagueId), eq(gameweeks.number, event.id)));
+        // Deadlines rarely change once FPL publishes them — only one request
+        // per league actually does this sync every 30 minutes; everyone else
+        // skips both the outbound FPL fetch and the DB writes below.
+        if (await shouldSyncDeadlines(teamLeagueId)) {
+          const fplData = await fetchBootstrapData();
+          if (fplData && Array.isArray(fplData.events)) {
+            await Promise.all(fplData.events.map((event: { deadline_time?: string; id: number }) => {
+              const deadline = event.deadline_time ? new Date(event.deadline_time) : new Date('2099-12-31T23:59:59Z');
+              return db.update(gameweeks)
+                .set({ deadline })
+                .where(and(eq(gameweeks.leagueId, teamLeagueId), eq(gameweeks.number, event.id)));
+            }));
           }
         }
       } catch (err) {
@@ -94,14 +102,14 @@ export async function GET(request: NextRequest) {
           with: {
             result: true,
             gameweek: true,
-            awayTeam: { with: { players: true } },
+            awayTeam: true,
           },
         },
         awayFixtures: {
           with: {
             result: true,
             gameweek: true,
-            homeTeam: { with: { players: true } },
+            homeTeam: true,
           },
         },
       },
@@ -171,13 +179,19 @@ export async function GET(request: NextRequest) {
     if (nextGameweek) {
       const homeFixture = team.homeFixtures.find(f => f.gameweek.id === nextGameweek.id);
       const awayFixture = team.awayFixtures.find(f => f.gameweek.id === nextGameweek.id);
-      if (homeFixture) {
+      // Opponent's roster is only ever needed for this one upcoming fixture, so
+      // it's fetched here rather than eagerly loaded on every fixture above.
+      const opponentTeam = homeFixture ? homeFixture.awayTeam : awayFixture ? awayFixture.homeTeam : null;
+      const opponentPlayers = opponentTeam
+        ? await db.query.players.findMany({ where: eq(players.teamId, opponentTeam.id) })
+        : [];
+      if (homeFixture && opponentTeam) {
         upcomingFixture = {
           isHome: true,
           opponent: {
-            id: homeFixture.awayTeam.id,
-            name: homeFixture.awayTeam.name,
-            players: homeFixture.awayTeam.players.map(p => ({
+            id: opponentTeam.id,
+            name: opponentTeam.name,
+            players: opponentPlayers.map(p => ({
               name: p.name,
               fplId: p.fplId,
               fplUrl: getFplTeamUrl(p.fplId, latestCompletedGW || undefined),
@@ -186,13 +200,13 @@ export async function GET(request: NextRequest) {
           gameweek: nextGameweek.number,
           lastCompletedGw: latestCompletedGW,
         };
-      } else if (awayFixture) {
+      } else if (awayFixture && opponentTeam) {
         upcomingFixture = {
           isHome: false,
           opponent: {
-            id: awayFixture.homeTeam.id,
-            name: awayFixture.homeTeam.name,
-            players: awayFixture.homeTeam.players.map(p => ({
+            id: opponentTeam.id,
+            name: opponentTeam.name,
+            players: opponentPlayers.map(p => ({
               name: p.name,
               fplId: p.fplId,
               fplUrl: getFplTeamUrl(p.fplId, latestCompletedGW || undefined),
@@ -252,10 +266,15 @@ export async function GET(request: NextRequest) {
       else result = "L";
       
       // Get opponent info
-      const opponentTeam = isHome 
+      const opponentTeam = isHome
         ? team.homeFixtures.find(f => f.id === lastF.id)?.awayTeam
         : team.awayFixtures.find(f => f.id === lastF.id)?.homeTeam;
-      
+      // Roster is only needed for this specific last-GW opponent (a targeted
+      // fetch instead of the removed eager-load on every fixture's opponent).
+      const opponentTeamPlayers = opponentTeam
+        ? await db.query.players.findMany({ where: eq(players.teamId, opponentTeam.id) })
+        : [];
+
       // Get captain info for this gameweek
       const lastGwCaptains = await db.query.gameweekCaptains.findMany({
         where: eq(gameweekCaptains.gameweekId, lastF.gameweek.id),
@@ -318,7 +337,7 @@ export async function GET(request: NextRequest) {
       
       if (oppCaptain && opponentTeam) {
         hasOppCaptainData = true;
-        oppPlayerScores = opponentTeam.players.map(p => {
+        oppPlayerScores = opponentTeamPlayers.map(p => {
           const isCaptain = oppCaptain.playerId === p.id;
           const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
           if (isCaptain) {
@@ -346,8 +365,8 @@ export async function GET(request: NextRequest) {
         });
       } else if (opponentTeam) {
         // No captain data - infer scores
-        oppPlayerScores = opponentTeam.players.map((p, i) => {
-          const inferred = inferScores(oppScore, opponentTeam.players)[i];
+        oppPlayerScores = opponentTeamPlayers.map((p, i) => {
+          const inferred = inferScores(oppScore, opponentTeamPlayers)[i];
           const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
           return {
             ...inferred,
@@ -1236,12 +1255,16 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     const allTeams = await db.select().from(teams).where(eq(teams.leagueId, leagueId));
 
     // Compute simple standings: total points per team from auctionScores
+    // (single query for all teams instead of one round trip per team)
     const teamPointsMap = new Map<string, number>();
-    for (const at of allTeams) {
-      const tScores = await db.select({ totalPoints: auctionScores.totalPoints })
+    for (const at of allTeams) teamPointsMap.set(at.id, 0);
+    if (allTeams.length > 0) {
+      const allScores = await db.select({ teamId: auctionScores.teamId, totalPoints: auctionScores.totalPoints })
         .from(auctionScores)
-        .where(and(eq(auctionScores.teamId, at.id), eq(auctionScores.leagueId, leagueId)));
-      teamPointsMap.set(at.id, tScores.reduce((sum, s) => sum + s.totalPoints, 0));
+        .where(and(inArray(auctionScores.teamId, allTeams.map(at => at.id)), eq(auctionScores.leagueId, leagueId)));
+      for (const s of allScores) {
+        teamPointsMap.set(s.teamId, (teamPointsMap.get(s.teamId) ?? 0) + s.totalPoints);
+      }
     }
 
     // Apply the PL Club Auction rename: any team that owns a club displays as the club's name.

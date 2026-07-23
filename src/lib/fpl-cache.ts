@@ -293,6 +293,35 @@ export async function setCachedBootstrap(data: CachedElementInfo[]): Promise<voi
 }
 
 // ============================================
+// Deadline Sync Gate (30-minute TTL)
+// FPL gameweek deadlines almost never change once published, but the
+// dashboard route used to re-fetch bootstrap-static and rewrite every
+// gameweek's deadline on every single request. This gate lets at most one
+// request per league claim the sync every 30 minutes; everyone else skips
+// it entirely.
+// ============================================
+
+const DEADLINE_SYNC_TTL = 60 * 30; // 30 minutes
+
+function getDeadlineSyncKey(leagueId: string): string {
+  return `fpl:deadline-sync:${leagueId}`;
+}
+
+/**
+ * Atomically claims the right to sync FPL deadlines for a league.
+ * Returns true only if no other request has claimed it in the last 30
+ * minutes (i.e. this call should proceed with the sync); false otherwise.
+ * If Redis isn't configured, falls back to true (today's always-sync
+ * behavior) rather than silently disabling the sync.
+ */
+export async function shouldSyncDeadlines(leagueId: string): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return true;
+  const claimed = await r.set(getDeadlineSyncKey(leagueId), "1", { ex: DEADLINE_SYNC_TTL, nx: true });
+  return claimed !== null;
+}
+
+// ============================================
 // Live Score Cache (10-minute TTL)
 // ============================================
 
