@@ -3,11 +3,19 @@
 
 const FPL_BASE_URL = "https://fantasy.premierleague.com/api";
 const FPL_TIMEOUT_MS = 10000;
+// FPL is friendlier to clients that identify themselves — requests without a
+// User-Agent from cloud/serverless IPs (Vercel etc.) intermittently get
+// rejected. Same header already used successfully in fpl-live/players-left.ts.
+const FPL_USER_AGENT = "Mozilla/5.0 (compatible; jpl-leagues/1.0; +https://jpl-leagues.vercel.app)";
 
 function fplFetch(url: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FPL_TIMEOUT_MS);
-  return fetch(url, { signal: controller.signal, cache: 'no-store' }).finally(() => clearTimeout(timer));
+  return fetch(url, {
+    signal: controller.signal,
+    cache: 'no-store',
+    headers: { "User-Agent": FPL_USER_AGENT },
+  }).finally(() => clearTimeout(timer));
 }
 
 export interface FPLPlayer {

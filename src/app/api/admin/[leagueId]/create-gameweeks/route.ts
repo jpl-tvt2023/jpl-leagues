@@ -3,6 +3,7 @@ import { db, gameweeks } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { fetchBootstrapData } from "@/lib/fpl";
 
 /**
  * POST /api/admin/[leagueId]/create-gameweeks
@@ -15,14 +16,13 @@ export async function POST(request: NextRequest) {
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // Fetch real FPL gameweek deadlines from bootstrap
-    const fplRes = await fetch("https://fantasy.premierleague.com/api/bootstrap-static/", {
-      cache: "no-store",
-    });
-    if (!fplRes.ok) {
+    let fplData: { events?: { id: number; deadline_time: string; is_playoffs?: boolean }[] };
+    try {
+      fplData = await fetchBootstrapData();
+    } catch {
       return NextResponse.json({ error: "Failed to fetch FPL gameweek data" }, { status: 502 });
     }
-    const fplData = await fplRes.json();
-    const events: { id: number; deadline_time: string; is_playoffs?: boolean }[] = fplData.events ?? [];
+    const events = fplData.events ?? [];
 
     if (events.length === 0) {
       return NextResponse.json({ error: "No FPL events found" }, { status: 502 });
