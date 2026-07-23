@@ -1271,9 +1271,9 @@ export default function DashboardPage() {
         }
         const orderedGroups = Array.from(byGroup.keys()).sort();
         return (
-          <div className="space-y-3">
+          <div className="flex gap-4 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0">
             {orderedGroups.map((groupName) => (
-              <div key={groupName}>
+              <div key={groupName} className="min-w-[220px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
                 <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Group {groupName}</div>
                 <ul className="divide-y divide-white/5">
                   {byGroup.get(groupName)!.map(renderRow)}
@@ -1329,7 +1329,7 @@ export default function DashboardPage() {
         </div>
       </nav>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
@@ -1373,8 +1373,8 @@ export default function DashboardPage() {
             {leagueFormat === "continental-championship" ? (
               <></>
             ) : (
-              /* TVT: Deadline + Captain Announcements + Upcoming Fixture side by side */
-              <div className={`grid gap-6 ${captainAnnouncementsCard ? "md:grid-cols-2 lg:grid-cols-3" : "md:grid-cols-2"}`}>
+              /* TVT: Deadline + Upcoming Fixture side by side (Captain Announcements now lives in the right sidebar) */
+              <div className="grid gap-6 md:grid-cols-2">
                 {/* Deadline Timer */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                   <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -1382,9 +1382,6 @@ export default function DashboardPage() {
                   </h2>
                   <DeadlineTimer deadline={data.deadline.timestamp} gameweek={data.deadline.gameweek} serverTime={data.serverTime} />
                 </div>
-
-                {/* Captain Announcements — middle column */}
-                {captainAnnouncementsCard}
 
                 {/* Upcoming Fixture */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
@@ -2204,7 +2201,13 @@ export default function DashboardPage() {
           </div>
 
           {/* Right Column */}
-          <div className="space-y-6">
+          {/* min-w-0 overrides the grid item's default min-width:auto — without it, the
+              Captains & Chips card's horizontal-scroll region below forces this whole
+              grid track (and the page) wider than the viewport instead of scrolling internally. */}
+          <div className="space-y-6 min-w-0">
+            {/* Captain Announcements — TVT only; Continental Championship places this full-width above the grid */}
+            {leagueFormat !== "continental-championship" && captainAnnouncementsCard}
+
             {/* Mini Table(s) */}
             {leagueFormat === "continental-championship" ? (
               <>
