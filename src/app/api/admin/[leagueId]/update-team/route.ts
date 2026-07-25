@@ -33,26 +33,35 @@ export async function PUT(request: NextRequest) {
     // Only mutate groupId when the client actually included a `group` key.
     const groupProvided = Object.prototype.hasOwnProperty.call(body, "group");
 
-    // Validate required fields (player fields, password, and group are optional)
-    if (!teamId || !teamLoginId || !teamName) {
+    // Only teamId (the target identifier) is required. Every other attribute —
+    // teamLoginId, teamName, password, group, player fields — is independently
+    // optional: whatever's provided gets validated and updated, whatever's left
+    // blank/omitted is left untouched.
+    if (!teamId) {
       return NextResponse.json(
-        { error: "Team ID, Login ID, and Name are required" },
+        { error: "Team ID is required" },
         { status: 400 }
       );
     }
 
-    // Validate teamLoginId format
-    if (!/^[A-Za-z0-9_-]{3,30}$/.test(teamLoginId)) {
-      return NextResponse.json(
-        { error: "Team ID must be 3–30 alphanumeric/underscore/hyphen characters" },
-        { status: 400 }
-      );
-    }
+    const teamLoginIdProvided = typeof teamLoginId === "string" && teamLoginId.trim() !== "";
+    const teamNameProvided = typeof teamName === "string" && teamName.trim() !== "";
 
     // Preserve the submitted casing for storage; the lowercased copy is used only
     // for the case-insensitive uniqueness check below. (Login is case-insensitive.)
-    const trimmedLoginId = String(teamLoginId).trim();
-    const normalizedLoginId = trimmedLoginId.toLowerCase();
+    let trimmedLoginId = "";
+    let normalizedLoginId = "";
+    if (teamLoginIdProvided) {
+      // Validate teamLoginId format
+      if (!/^[A-Za-z0-9_-]{3,30}$/.test(teamLoginId)) {
+        return NextResponse.json(
+          { error: "Team ID must be 3–30 alphanumeric/underscore/hyphen characters" },
+          { status: 400 }
+        );
+      }
+      trimmedLoginId = String(teamLoginId).trim();
+      normalizedLoginId = trimmedLoginId.toLowerCase();
+    }
 
     // Check league format — auction leagues don't use groups
     const leagueRow = await db.select({ format: leagues.format }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
@@ -90,25 +99,29 @@ export async function PUT(request: NextRequest) {
     }
 
     // Global uniqueness check on teamLoginId (case-insensitive; unless it's the same team's current login ID)
-    const conflictingLoginId = await db.select().from(teams).where(
-      sql`LOWER(${teams.teamLoginId}) = ${normalizedLoginId}`
-    );
-    if (conflictingLoginId.length > 0 && conflictingLoginId[0].id !== teamId) {
-      return NextResponse.json(
-        { error: "Team ID already exists globally" },
-        { status: 400 }
+    if (teamLoginIdProvided) {
+      const conflictingLoginId = await db.select().from(teams).where(
+        sql`LOWER(${teams.teamLoginId}) = ${normalizedLoginId}`
       );
+      if (conflictingLoginId.length > 0 && conflictingLoginId[0].id !== teamId) {
+        return NextResponse.json(
+          { error: "Team ID already exists globally" },
+          { status: 400 }
+        );
+      }
     }
 
     // Check if new team name conflicts with another team in this league (case-insensitive)
-    const conflictingTeam = await db.select().from(teams).where(
-      and(sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${teamName}, ' ', ''))`, eq(teams.leagueId, leagueId))
-    );
-    if (conflictingTeam.length > 0 && conflictingTeam[0].id !== teamId) {
-      return NextResponse.json(
-        { error: "Team name already exists in this league" },
-        { status: 400 }
+    if (teamNameProvided) {
+      const conflictingTeam = await db.select().from(teams).where(
+        and(sql`LOWER(REPLACE(${teams.name}, ' ', '')) = LOWER(REPLACE(${teamName}, ' ', ''))`, eq(teams.leagueId, leagueId))
       );
+      if (conflictingTeam.length > 0 && conflictingTeam[0].id !== teamId) {
+        return NextResponse.json(
+          { error: "Team name already exists in this league" },
+          { status: 400 }
+        );
+      }
     }
 
     // Resolve group (null if not provided or auction format)
@@ -127,11 +140,14 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Update team
-    const updateData: Record<string, unknown> = {
-      teamLoginId: trimmedLoginId,
-      name: teamName,
-    };
+    // Update team — only include attributes that were actually provided.
+    const updateData: Record<string, unknown> = {};
+    if (teamLoginIdProvided) {
+      updateData.teamLoginId = trimmedLoginId;
+    }
+    if (teamNameProvided) {
+      updateData.name = teamName;
+    }
 
     // Only mutate groupId when the client actually sent a `group` key and the
     // league uses groups at all. Otherwise preserve the existing groupId
@@ -153,7 +169,9 @@ export async function PUT(request: NextRequest) {
       updateData.mustChangePassword = true;
     }
 
-    await db.update(teams).set(updateData).where(eq(teams.id, teamId));
+    if (Object.keys(updateData).length > 0) {
+      await db.update(teams).set(updateData).where(eq(teams.id, teamId));
+    }
 
     // Update players (only if player data is provided)
     if (player1Name && player1FplId && player1Id) {

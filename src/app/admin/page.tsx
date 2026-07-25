@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { Logo } from "@/components/Logo";
 
 interface League {
   id: string;
@@ -72,9 +73,7 @@ export default function AdminLeaguePicker() {
       <nav className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-              TVT
-            </div>
+            <Logo />
             <span className="text-xl font-bold text-white hidden sm:inline">Admin</span>
           </div>
           {isSuperadmin && (

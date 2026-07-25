@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { FeedbackTab } from "../admin/[leagueId]/FeedbackTab";
+import { Logo } from "@/components/Logo";
 
 interface League {
   id: string;
@@ -1102,9 +1103,7 @@ export default function SuperAdminDashboard() {
       {/* Nav */}
       <nav className="flex items-center justify-between px-6 py-4 lg:px-12 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900">
-            JPL
-          </div>
+          <Logo />
           <div>
             <span className="text-xl font-bold text-white">Platform Admin</span>
             <span className="ml-2 text-xs bg-yellow-400/20 text-yellow-400 px-2 py-0.5 rounded-full">Superadmin</span>

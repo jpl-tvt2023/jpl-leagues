@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TierChip } from "@/components/TierChip";
 import { AuctionTimerRing } from "@/components/AuctionTimerRing";
+import { Logo } from "@/components/Logo";
 import { formatCurrency } from "@/lib/format/currency";
 import { FeedbackTab } from "./FeedbackTab";
 
@@ -2055,7 +2056,6 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">{isAuctionFormat ? "Manager Name" : "Team Name"}</label>
                   <input
                     type="text"
-                    required
                     value={editFormData.teamName}
                     onChange={(e) => setEditFormData({ ...editFormData, teamName: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
@@ -2098,7 +2098,6 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">Player 1 Name</label>
                   <input
                     type="text"
-                    required
                     value={editFormData.player1Name}
                     onChange={(e) => setEditFormData({ ...editFormData, player1Name: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
@@ -2108,7 +2107,6 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">Player 1 FPL ID</label>
                   <input
                     type="text"
-                    required
                     value={editFormData.player1FplId}
                     onChange={(e) => setEditFormData({ ...editFormData, player1FplId: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
@@ -2124,7 +2122,6 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">Player 2 Name</label>
                   <input
                     type="text"
-                    required
                     value={editFormData.player2Name}
                     onChange={(e) => setEditFormData({ ...editFormData, player2Name: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
@@ -2134,7 +2131,6 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">Player 2 FPL ID</label>
                   <input
                     type="text"
-                    required
                     value={editFormData.player2FplId}
                     onChange={(e) => setEditFormData({ ...editFormData, player2FplId: e.target.value })}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
@@ -2167,9 +2163,7 @@ export default function AdminDashboard() {
       {/* Navigation */}
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <Link href="/admin" className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            TVT
-          </div>
+          <Logo />
           <span className="text-xl font-bold text-white hidden sm:inline">Admin Dashboard</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { NotificationBell } from "@/components/NotificationBell";
 import { TierChip } from "@/components/TierChip";
+import { Logo } from "@/components/Logo";
 import { HelpTip } from "@/components/HelpTip";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
@@ -498,9 +499,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
       {/* Navigation */}
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            JPL
-          </div>
+          <Logo />
           <span className="text-xl font-bold text-white hidden sm:inline">{headerName}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
@@ -519,6 +518,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
           <Link href={`/${leagueSlug}/feedback`} className="text-gray-300 hover:text-white transition">Feedback</Link>
+          <Link href="/settings" className="text-gray-300 hover:text-white transition">Settings</Link>
           <NotificationBell />
           <button onClick={onSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
             Sign Out
@@ -1301,9 +1301,7 @@ export default function DashboardPage() {
       {/* Navigation */}
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            JPL
-          </div>
+          <Logo />
           <span className="text-xl font-bold text-white hidden sm:inline">{data?.team?.name || "Dashboard"}</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
@@ -1329,6 +1327,7 @@ export default function DashboardPage() {
           <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
           <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
           <Link href={`/${leagueSlug}/feedback`} className="text-gray-300 hover:text-white transition">Feedback</Link>
+          <Link href="/settings" className="text-gray-300 hover:text-white transition">Settings</Link>
           <NotificationBell />
           <button
             onClick={handleSignOut}

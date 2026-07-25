@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Logo } from "@/components/Logo";
 
 interface NotificationItem {
   id: string;
@@ -100,9 +101,7 @@ export default function NotificationsPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
         <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
-          <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-xs sm:text-base font-bold text-slate-900">
-            JPL
-          </div>
+          <Logo className="h-8 w-8 sm:h-10 sm:w-10" />
           <span className="text-base sm:text-xl font-bold text-white">Notifications</span>
         </Link>
         <div className="flex items-center gap-3">
