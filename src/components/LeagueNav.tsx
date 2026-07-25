@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { NotificationBell } from "./NotificationBell";
 import { getFormatPalette } from "@/lib/format-palette";
+import { Logo } from "./Logo";
 
 export interface LeagueNavProps {
   leagueSlug: string;
@@ -84,9 +85,7 @@ export function LeagueNav({
   return (
     <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
       <Link href="/" className="flex items-center gap-2 shrink-0">
-        <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-xs sm:text-base font-bold text-slate-900 shrink-0">
-          JPL
-        </div>
+        <Logo className="h-8 w-8 sm:h-10 sm:w-10" />
         <span className="text-base sm:text-xl font-bold text-white hidden sm:inline truncate max-w-[180px] lg:max-w-none">{leagueName || "League"}</span>
         <span
           className={`inline-block text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded ${palette.badgeBg} ${palette.badgeText}`}
@@ -147,6 +146,10 @@ export function LeagueNav({
               <NavLink href={`/${leagueSlug}/feedback`} activeClass={activeClass} active={currentPage ==="feedback"}>Feedback</NavLink>
             )}
           </>
+        )}
+
+        {isLoggedIn && (
+          <NavLink href="/settings" activeClass={activeClass} active={currentPage === "settings"}>Settings</NavLink>
         )}
 
         {/* Notifications */}

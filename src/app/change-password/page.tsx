@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Logo } from "@/components/Logo";
 
 export default function ChangePasswordPage() {
   const [formData, setFormData] = useState({
@@ -11,6 +12,11 @@ export default function ChangePasswordPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const passwordChecks = {
+    length: formData.newPassword.length >= 8,
+    numberOrSpecial: /[\d!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(formData.newPassword),
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,9 +74,7 @@ export default function ChangePasswordPage() {
       {/* Navigation */}
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <Link href="/" className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-            TVT
-          </div>
+          <Logo />
           <span className="text-xl font-bold text-white hidden sm:inline">Fantasy Super League</span>
         </Link>
       </nav>
@@ -127,6 +131,16 @@ export default function ChangePasswordPage() {
                   placeholder="Enter your new password"
                   className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
                 />
+                <ul className="mt-2 space-y-1">
+                  <li className={`text-xs flex items-center gap-1.5 ${passwordChecks.length ? "text-green-400" : "text-gray-500"}`}>
+                    <span>{passwordChecks.length ? "✓" : "○"}</span>
+                    At least 8 characters
+                  </li>
+                  <li className={`text-xs flex items-center gap-1.5 ${passwordChecks.numberOrSpecial ? "text-green-400" : "text-gray-500"}`}>
+                    <span>{passwordChecks.numberOrSpecial ? "✓" : "○"}</span>
+                    Contains a number or special character
+                  </li>
+                </ul>
               </div>
 
               <div>

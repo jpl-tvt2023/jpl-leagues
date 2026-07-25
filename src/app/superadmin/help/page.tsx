@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { Logo } from "@/components/Logo";
 
 type TabType = "faqs" | "scenarios";
 
@@ -295,9 +296,7 @@ export default function SuperadminHelpPage() {
       <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
         <div className="flex items-center gap-3">
           <Link href="/superadmin" className="flex items-center gap-2">
-            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center font-bold text-slate-900 shrink-0">
-              JPL
-            </div>
+            <Logo />
           </Link>
           <div>
             <span className="text-xl font-bold text-white">Platform Admin</span>
