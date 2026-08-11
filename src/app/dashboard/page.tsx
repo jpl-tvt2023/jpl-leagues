@@ -985,7 +985,7 @@ export default function DashboardPage() {
   // without a manual refresh. Server time (not local clock) drives this, via
   // the same serverOffset pattern DeadlineTimer uses.
   useEffect(() => {
-    if (data?.submission.state !== "locked" || !data.submission.opensAt) return;
+    if (data?.submission?.state !== "locked" || !data?.submission?.opensAt) return;
     const serverOffset = new Date(data.serverTime).getTime() - Date.now();
     const msUntilOpen = new Date(data.submission.opensAt).getTime() - (Date.now() + serverOffset);
     if (msUntilOpen <= 0) {
@@ -994,7 +994,7 @@ export default function DashboardPage() {
     }
     const timer = setTimeout(() => fetchDashboard(), msUntilOpen + 1000);
     return () => clearTimeout(timer);
-  }, [data?.submission.state, data?.submission.opensAt, data?.serverTime, fetchDashboard]);
+  }, [data?.submission?.state, data?.submission?.opensAt, data?.serverTime, fetchDashboard]);
 
   // GW navigation handlers
   const handlePrevGw = () => {
