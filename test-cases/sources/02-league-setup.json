@@ -9,7 +9,7 @@
   },
   "requirements": {
     "version": 4,
-    "businessContext": "League Setup covers the full lifecycle of a league as a top-level entity: the superadmin creates leagues of one of five variants (TVT-8, TVT-16, TVT-32, Triple Crown, Auction Primary/Complete), each with its own format-specific defaults, validation rules, and auto-provisioned placeholder team accounts. Once created, the league can be renamed, deactivated, reactivated, or hard-deleted by the superadmin, and its per-league reveal flags (captain/chip/groups) can be toggled by any assigned admin. A rate-limited 'reset season' action wipes scoring artifacts while preserving the team roster and groups. Team and fixture management are explicitly out of scope for this module.",
+    "businessContext": "League Setup covers the full lifecycle of a league as a top-level entity: the superadmin creates leagues of one of five variants (TVT-8, TVT-16, TVT-32, JPL Continental Championship, Auction Primary/Complete), each with its own format-specific defaults, validation rules, and auto-provisioned placeholder team accounts. Once created, the league can be renamed, deactivated, reactivated, or hard-deleted by the superadmin, and its per-league reveal flags (captain/chip/groups) can be toggled by any assigned admin. A rate-limited 'reset season' action wipes scoring artifacts while preserving the team roster and groups. Team and fixture management are explicitly out of scope for this module.",
     "userStories": [
       {
         "id": "US-LEAGUE-001",
@@ -24,7 +24,7 @@
       {
         "id": "US-LEAGUE-002",
         "asA": "superadmin",
-        "iWant": "to create a Triple Crown league with all settings hardcoded",
+        "iWant": "to create a JPL Continental Championship league with all settings hardcoded",
         "soThat": "the cup+league hybrid format is provisioned consistently every season without me re-entering the same values",
         "sourceRefs": [
           "src/app/api/superadmin/leagues/route.ts:84-89"
@@ -180,14 +180,14 @@
       },
       {
         "id": "BR-LEAGUE-004",
-        "rule": "Only the formats 'tvt', 'triple-crown', and 'auction' are accepted at creation time; any other value (including 'classic', 'grand-prix', or arbitrary strings) returns 400 'Format \"<format>\" is not supported'.",
+        "rule": "Only the formats 'tvt', 'continental-championship', and 'auction' are accepted at creation time; any other value (including 'classic', 'grand-prix', or arbitrary strings) returns 400 'Format \"<format>\" is not supported'.",
         "sourceRefs": [
           "src/app/api/superadmin/leagues/route.ts:84-122"
         ]
       },
       {
         "id": "BR-LEAGUE-005",
-        "rule": "For format='triple-crown', the server hardcodes teamSize=20, groupCount=4, playoffStartGw=27, enabledChips=[] and ignores any client-supplied values for those fields.",
+        "rule": "For format='continental-championship', the server hardcodes teamSize=20, groupCount=4, playoffStartGw=27, enabledChips=[] and ignores any client-supplied values for those fields.",
         "sourceRefs": [
           "src/app/api/superadmin/leagues/route.ts:84-89"
         ]
@@ -247,14 +247,14 @@
       },
       {
         "id": "BR-LEAGUE-013",
-        "rule": "isSimulated is honoured only for auction leagues (defaulting to false); for TVT and Triple Crown the column is hard-set to false regardless of input.",
+        "rule": "isSimulated is honoured only for auction leagues (defaulting to false); for TVT and JPL Continental Championship the column is hard-set to false regardless of input.",
         "sourceRefs": [
           "src/app/api/superadmin/leagues/route.ts:148"
         ]
       },
       {
         "id": "BR-LEAGUE-014",
-        "rule": "clubAuctionEnabled is honoured only for auction leagues (Boolean-coerced from input); for TVT and Triple Crown it is hard-set to false regardless of input.",
+        "rule": "clubAuctionEnabled is honoured only for auction leagues (Boolean-coerced from input); for TVT and JPL Continental Championship it is hard-set to false regardless of input.",
         "sourceRefs": [
           "src/app/api/superadmin/leagues/route.ts:149-150"
         ]
@@ -269,7 +269,7 @@
       },
       {
         "id": "BR-LEAGUE-016",
-        "rule": "For TVT leagues only, the create transaction pre-creates PL groups: groupCount=2 → groups named 'A' and 'B' with groupType='pl'; groupCount=1 → a single group 'A'. Triple Crown and Auction create no groups in this route.",
+        "rule": "For TVT leagues only, the create transaction pre-creates PL groups: groupCount=2 → groups named 'A' and 'B' with groupType='pl'; groupCount=1 → a single group 'A'. JPL Continental Championship and Auction create no groups in this route.",
         "sourceRefs": [
           "src/app/api/superadmin/leagues/route.ts:158-165"
         ]
@@ -346,7 +346,7 @@
       },
       {
         "id": "BR-LEAGUE-027",
-        "rule": "PATCH /api/superadmin/leagues/[id] applies the SAME enabledChips validation as POST when the request body includes enabledChips. The validation is encapsulated in validateEnabledChipsArray (src/lib/formats/tvt/chip-validation.ts) which enforces: array of exactly 3 unique entries from {W,D,C,SL,CB,UD}. PATCH also (a) refuses to update enabledChips on non-TVT leagues (returns 400 — Triple Crown + Auction hardcoded [] is preserved), (b) returns 404 if the league does not exist, (c) invalidates the league page cache after a successful update.",
+        "rule": "PATCH /api/superadmin/leagues/[id] applies the SAME enabledChips validation as POST when the request body includes enabledChips. The validation is encapsulated in validateEnabledChipsArray (src/lib/formats/tvt/chip-validation.ts) which enforces: array of exactly 3 unique entries from {W,D,C,SL,CB,UD}. PATCH also (a) refuses to update enabledChips on non-TVT leagues (returns 400 — JPL Continental Championship + Auction hardcoded [] is preserved), (b) returns 404 if the league does not exist, (c) invalidates the league page cache after a successful update.",
         "sourceRefs": [
           "src/app/api/superadmin/leagues/[id]/route.ts",
           "src/lib/formats/tvt/chip-validation.ts:33-67",
@@ -486,7 +486,7 @@
       },
       {
         "id": "BR-LEAGUE-046",
-        "rule": "Each format displays a distinct visual palette derived from (format, teamSize): TVT-8 indigo, TVT-16 violet, TVT-32 purple, Triple Crown amber, Auction emerald; unknown formats fall back to the TVT-32 default palette.",
+        "rule": "Each format displays a distinct visual palette derived from (format, teamSize): TVT-8 indigo, TVT-16 violet, TVT-32 purple, JPL Continental Championship amber, Auction emerald; unknown formats fall back to the TVT-32 default palette.",
         "sourceRefs": [
           "src/lib/format-palette.ts:33-103"
         ]
@@ -511,7 +511,7 @@
       },
       {
         "id": "BR-LEAGUE-049",
-        "rule": "Triple Crown creation always sets groupCount=4 but the create route's group-seeding loop runs only for format='tvt' — Triple Crown cup groups are NOT created by this endpoint and are populated by a separate module.",
+        "rule": "JPL Continental Championship creation always sets groupCount=4 but the create route's group-seeding loop runs only for format='tvt' — JPL Continental Championship cup groups are NOT created by this endpoint and are populated by a separate module.",
         "sourceRefs": [
           "src/app/api/superadmin/leagues/route.ts:84-89",
           "src/app/api/superadmin/leagues/route.ts:158-165"
@@ -599,14 +599,14 @@
       },
       {
         "id": "AC-LEAGUE-011",
-        "given": "a Triple Crown POST with client-supplied teamSize=99, groupCount=7, playoffStartGw=10",
+        "given": "a JPL Continental Championship POST with client-supplied teamSize=99, groupCount=7, playoffStartGw=10",
         "when": "the route resolves defaults",
         "then": "the inserted row stores teamSize=20, groupCount=4, playoffStartGw=27, enabledChips=[] regardless of client input",
         "linksTo": "BR-LEAGUE-005"
       },
       {
         "id": "AC-LEAGUE-012",
-        "given": "a Triple Crown league is created",
+        "given": "a JPL Continental Championship league is created",
         "when": "the create transaction completes",
         "then": "20 placeholder team rows exist with no group assignment (the group-seeding loop runs only for format='tvt')",
         "linksTo": "BR-LEAGUE-049"
@@ -893,7 +893,7 @@
       },
       {
         "id": "AC-LEAGUE-053",
-        "given": "format='auction' or 'triple-crown'",
+        "given": "format='auction' or 'continental-championship'",
         "when": "getFormatPalette is called",
         "then": "AUCTION_PALETTE (emerald) or TC_PALETTE (amber) is returned regardless of teamSize",
         "linksTo": "BR-LEAGUE-046"
@@ -1159,18 +1159,18 @@
     },
     {
       "id": "TC-LEAGUE-013",
-      "feature": "Create League - Triple Crown hardcodes",
-      "scenario": "Triple Crown POST ignores client-supplied teamSize/groupCount/playoffStartGw",
+      "feature": "Create League - JPL Continental Championship hardcodes",
+      "scenario": "JPL Continental Championship POST ignores client-supplied teamSize/groupCount/playoffStartGw",
       "type": "Positive",
       "priority": "P2",
       "preconditions": "Authenticated superadmin; slug 'tc-2025' free",
-      "testData": "POST body={slug:'tc-2025', name:'TC', sport:'fpl', format:'triple-crown', season:'2025-26', teamSize:99, groupCount:7, playoffStartGw:10}",
+      "testData": "POST body={slug:'tc-2025', name:'TC', sport:'fpl', format:'continental-championship', season:'2025-26', teamSize:99, groupCount:7, playoffStartGw:10}",
       "testSteps": [
         "1. POST",
         "2. Read inserted row"
       ],
       "expectedResult": "Row stores teamSize=20, groupCount=4, playoffStartGw=27, enabledChips=[] regardless of input",
-      "postconditions": "Triple Crown league exists with hardcoded values",
+      "postconditions": "JPL Continental Championship league exists with hardcoded values",
       "requirementId": "AC-LEAGUE-011",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -1179,19 +1179,19 @@
     },
     {
       "id": "TC-LEAGUE-014",
-      "feature": "Create League - Triple Crown teams without groups",
-      "scenario": "Triple Crown creation provisions 20 teams but no PL groups (groups loop is TVT-only)",
+      "feature": "Create League - JPL Continental Championship teams without groups",
+      "scenario": "JPL Continental Championship creation provisions 20 teams but no PL groups (groups loop is TVT-only)",
       "type": "Positive",
       "priority": "P2",
       "preconditions": "Authenticated superadmin",
-      "testData": "POST body with format='triple-crown', slug='tc-no-groups', season='2025-26'",
+      "testData": "POST body with format='continental-championship', slug='tc-no-groups', season='2025-26'",
       "testSteps": [
         "1. POST",
         "2. Query teams for this leagueId",
         "3. Query groups for this leagueId"
       ],
       "expectedResult": "20 placeholder teams exist; zero rows in groups table for this leagueId",
-      "postconditions": "Triple Crown league exists with no PL groups",
+      "postconditions": "JPL Continental Championship league exists with no PL groups",
       "requirementId": "AC-LEAGUE-012",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -2058,17 +2058,17 @@
     },
     {
       "id": "TC-LEAGUE-057",
-      "feature": "Format palette - Auction & Triple Crown",
-      "scenario": "Auction returns emerald, Triple Crown returns amber regardless of teamSize",
+      "feature": "Format palette - Auction & JPL Continental Championship",
+      "scenario": "Auction returns emerald, JPL Continental Championship returns amber regardless of teamSize",
       "type": "Positive",
       "priority": "P3",
       "preconditions": "Unit test",
-      "testData": "getFormatPalette('auction', any), getFormatPalette('triple-crown', any)",
+      "testData": "getFormatPalette('auction', any), getFormatPalette('continental-championship', any)",
       "testSteps": [
         "1. Call with format='auction', teamSize=10 and 999",
-        "2. Call with format='triple-crown', teamSize=20 and 1"
+        "2. Call with format='continental-championship', teamSize=20 and 1"
       ],
-      "expectedResult": "Auction calls return AUCTION_PALETTE (emerald); Triple Crown calls return TC_PALETTE (amber)",
+      "expectedResult": "Auction calls return AUCTION_PALETTE (emerald); JPL Continental Championship calls return TC_PALETTE (amber)",
       "postconditions": "Pure function",
       "requirementId": "AC-LEAGUE-053",
       "author": "qa-tester",
@@ -2188,7 +2188,7 @@
         "2. Read inserted row",
         "3. Inspect initial_budget"
       ],
-      "expectedResult": "For TVT and Triple Crown POST /api/superadmin/leagues calls, the insert payload omits initialBudget; the row ends up with initialBudget=100M via schema default. For auction POST, the route still writes initialBudget=(body.initialBudget ?? 100M). Behaviour is unchanged but code is clearer.",
+      "expectedResult": "For TVT and JPL Continental Championship POST /api/superadmin/leagues calls, the insert payload omits initialBudget; the row ends up with initialBudget=100M via schema default. For auction POST, the route still writes initialBudget=(body.initialBudget ?? 100M). Behaviour is unchanged but code is clearer.",
       "postconditions": "League exists with initialBudget=100M",
       "requirementId": "BR-LEAGUE-047",
       "author": "qa-tester",
@@ -2302,10 +2302,10 @@
     {
       "id": "TC-LEAGUE-069",
       "feature": "Update League - PATCH chip validation",
-      "scenario": "PATCH refuses to update enabledChips on a non-TVT (Triple Crown / Auction) league",
+      "scenario": "PATCH refuses to update enabledChips on a non-TVT (JPL Continental Championship / Auction) league",
       "type": "Negative",
       "priority": "P2",
-      "preconditions": "Authenticated superadmin; existing Triple Crown league (or Auction)",
+      "preconditions": "Authenticated superadmin; existing JPL Continental Championship league (or Auction)",
       "testData": "PATCH body={enabledChips:[\"W\",\"D\",\"C\"]} against a non-TVT league",
       "testSteps": [
         "1. PATCH non-TVT league with chips body",
@@ -2342,7 +2342,7 @@
       "raisedBy": "qa-tester",
       "raisedDate": "2026-05-23",
       "against": "BR-LEAGUE-047",
-      "issue": "On league creation, initialBudget is forced to 100_000_000 for non-auction formats even though the column has no functional effect for TVT/Triple Crown. Need product owner to confirm whether (a) the column should be left null for non-auction formats, (b) the schema default is sufficient and the explicit write should be removed, or (c) leave as-is for forward compatibility. TC-LEAGUE-063 pins current behaviour as a regression.",
+      "issue": "On league creation, initialBudget is forced to 100_000_000 for non-auction formats even though the column has no functional effect for TVT/JPL Continental Championship. Need product owner to confirm whether (a) the column should be left null for non-auction formats, (b) the schema default is sufficient and the explicit write should be removed, or (c) leave as-is for forward compatibility. TC-LEAGUE-063 pins current behaviour as a regression.",
       "resolution": null
     }
   ],
@@ -2406,8 +2406,8 @@
         "TC-LEAGUE-068",
         "TC-LEAGUE-069"
       ],
-      "notes": "Likely fix: extract the POST chip-array validation into a helper and reuse it in PATCH. Alternative is to document that PATCH is superadmin-trusted and only POST should be used by non-superadmin tooling — but PATCH is already superadmin-only, so consistency wins.\n[DEV] Self-verified 2026-05-26: tsc clean for all touched files (pre-existing tests/league-types/*.spec.ts errors are unrelated and predate this change). Manual diff review clean. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-LEAGUE-034 against the fix. Expected: PATCH with enabledChips=['W','D','C','SL'] now returns 400 with 'TVT enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)'. Also add coverage for: PATCH enabledChips=[] (empty), PATCH enabledChips=['W','W','C'] (duplicate), PATCH enabledChips=['W','D','X'] (invalid code), and PATCH enabledChips on a non-TVT (Triple Crown / Auction) league → expect 400 'enabledChips can only be updated on TVT leagues'. Happy-path PATCH with a valid 3-unique array should still succeed.\n[BA] BR-LEAGUE-027 and AC-LEAGUE-031 now describe the OLD (broken) behaviour — please update: BR-LEAGUE-027 should state PATCH re-validates enabledChips with the same rule as POST and additionally rejects updates to enabledChips on non-TVT leagues; AC-LEAGUE-031 should expect 400 (not silent acceptance) for the 4-entry array. Strike the 'CODE-CONFIRMED: may be a defect' note from BR-LEAGUE-027. [QA-VERIFIED]: 2026-05-26 — TC-LEAGUE-034 inverted; added TC-LEAGUE-066..069 for empty/duplicate/invalid/non-TVT negatives. [BA-UPDATED]: 2026-05-26 — BR-LEAGUE-027 + AC-LEAGUE-031 updated to reflect shared chip validation.",
-      "resolution": "Extracted the 3-unique-of-{W,D,C,SL,CB,UD} validator into a shared helper validateEnabledChipsArray in src/lib/formats/tvt/chip-validation.ts. The POST handler in src/app/api/superadmin/leagues/route.ts (lines ~103-110) now calls the helper, and the PATCH handler in src/app/api/superadmin/leagues/[id]/route.ts (lines ~28-50) now (a) only inspects enabledChips when the client actually supplied it, (b) looks up the target league's format and rejects enabledChips updates on non-TVT leagues with 400 (so the hardcoded [] used for Triple Crown and Auction can't be silently overwritten), and (c) runs the same shape validator before persisting. Behaviour for the other three whitelisted fields (name/season/isActive) is unchanged.",
+      "notes": "Likely fix: extract the POST chip-array validation into a helper and reuse it in PATCH. Alternative is to document that PATCH is superadmin-trusted and only POST should be used by non-superadmin tooling — but PATCH is already superadmin-only, so consistency wins.\n[DEV] Self-verified 2026-05-26: tsc clean for all touched files (pre-existing tests/league-types/*.spec.ts errors are unrelated and predate this change). Manual diff review clean. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-LEAGUE-034 against the fix. Expected: PATCH with enabledChips=['W','D','C','SL'] now returns 400 with 'TVT enabledChips must be an array of exactly 3 unique valid chip codes (W, D, C, SL, CB, UD)'. Also add coverage for: PATCH enabledChips=[] (empty), PATCH enabledChips=['W','W','C'] (duplicate), PATCH enabledChips=['W','D','X'] (invalid code), and PATCH enabledChips on a non-TVT (JPL Continental Championship / Auction) league → expect 400 'enabledChips can only be updated on TVT leagues'. Happy-path PATCH with a valid 3-unique array should still succeed.\n[BA] BR-LEAGUE-027 and AC-LEAGUE-031 now describe the OLD (broken) behaviour — please update: BR-LEAGUE-027 should state PATCH re-validates enabledChips with the same rule as POST and additionally rejects updates to enabledChips on non-TVT leagues; AC-LEAGUE-031 should expect 400 (not silent acceptance) for the 4-entry array. Strike the 'CODE-CONFIRMED: may be a defect' note from BR-LEAGUE-027. [QA-VERIFIED]: 2026-05-26 — TC-LEAGUE-034 inverted; added TC-LEAGUE-066..069 for empty/duplicate/invalid/non-TVT negatives. [BA-UPDATED]: 2026-05-26 — BR-LEAGUE-027 + AC-LEAGUE-031 updated to reflect shared chip validation.",
+      "resolution": "Extracted the 3-unique-of-{W,D,C,SL,CB,UD} validator into a shared helper validateEnabledChipsArray in src/lib/formats/tvt/chip-validation.ts. The POST handler in src/app/api/superadmin/leagues/route.ts (lines ~103-110) now calls the helper, and the PATCH handler in src/app/api/superadmin/leagues/[id]/route.ts (lines ~28-50) now (a) only inspects enabledChips when the client actually supplied it, (b) looks up the target league's format and rejects enabledChips updates on non-TVT leagues with 400 (so the hardcoded [] used for JPL Continental Championship and Auction can't be silently overwritten), and (c) runs the same shape validator before persisting. Behaviour for the other three whitelisted fields (name/season/isActive) is unchanged.",
       "resolutionDate": "2026-05-26"
     },
     {
@@ -2417,7 +2417,7 @@
       "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
-      "description": "On league creation the server forces initialBudget=100_000_000 for TVT and Triple Crown formats even though the column has no functional effect outside auction leagues. The value is harmless today but creates noise in admin tooling (the field shows up populated for non-auction leagues) and could mislead future readers into thinking it has meaning for TVT/TC.",
+      "description": "On league creation the server forces initialBudget=100_000_000 for TVT and JPL Continental Championship formats even though the column has no functional effect outside auction leagues. The value is harmless today but creates noise in admin tooling (the field shows up populated for non-auction leagues) and could mislead future readers into thinking it has meaning for TVT/TC.",
       "expectedBehaviour": "For non-auction formats, initialBudget should be left null (or set to 0) so it is obvious from a row inspection that the field is irrelevant.",
       "actualBehaviour": "Server resolves resolvedBudget = format === 'auction' ? (initialBudget ?? 100_000_000) : 100_000_000 — always writes 100M for non-auction.",
       "sourceRefs": [
@@ -2433,7 +2433,7 @@
         "TC-LEAGUE-063"
       ],
       "notes": "Cosmetic/cleanup only — no functional impact. Defer until a broader cleanup pass through the leagues table or document the column as 'auction-only; non-auction values are ignored'. [DEV] Self-verified: cleanup-only fix; no behaviour change. [QA-VERIFIED] Inverted pinning TC(s). [BA-UPDATED] BR/AC text refreshed.",
-      "resolution": "In src/app/api/superadmin/leagues/route.ts the initialBudget write is now gated on format === 'auction'. For TVT and Triple Crown the schema default (100M) still fires implicitly, but the route is self-documenting: any future reader can see that initialBudget is auction-only. No data migration; existing rows unchanged.",
+      "resolution": "In src/app/api/superadmin/leagues/route.ts the initialBudget write is now gated on format === 'auction'. For TVT and JPL Continental Championship the schema default (100M) still fires implicitly, but the route is self-documenting: any future reader can see that initialBudget is auction-only. No data migration; existing rows unchanged.",
       "resolutionDate": "2026-05-26"
     }
   ]

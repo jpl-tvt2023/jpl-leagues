@@ -1,5 +1,5 @@
 /**
- * Triple Crown Format: Gameweek Processing
+ * Continental Championship Format: Gameweek Processing
  * Two-pass processing: Pass 1 = PL H2H, Pass 2 = Cup group stage (Ghost opponent)
  *
  * Pass 1 (PL): Process all league-phase fixtures, update leaguePoints, award bonuses (75+ margin)
@@ -35,9 +35,9 @@ type FixtureWithRelations = Fixture & {
 };
 
 /**
- * Main entry point for Triple Crown GW processing
+ * Main entry point for Continental Championship GW processing
  */
-export async function processTripleCrownGameweek(
+export async function processContinentalChampionshipGameweek(
   gameweekId: string,
   gameweekNumber: number,
   leagueId: string,
@@ -272,7 +272,7 @@ export async function processTripleCrownGameweek(
         const awayCap = await resolveCaptainForSide(fixture.awayTeamId, fixture.awayTeam.name, fixture.awayTeam.players, awayScores);
 
         // Per-format docs: Team Score = sum(non-captain net) + (captain net × 2). Same captain
-        // applies to PL, cup, and knockout. See TripleCrownHelp.tsx → "Captain & Scoring".
+        // applies to PL, cup, and knockout. See ContinentalChampionshipHelp.tsx → "Captain & Scoring".
         const homeTeamScore = homeScores.reduce((sum, s, i) => {
           const net = s.points - s.transferHits;
           const isCap = fixture.homeTeam.players[i]?.id === homeCap.captainId;
@@ -488,7 +488,7 @@ export async function processTripleCrownGameweek(
     }
 
     // ============================================
-    // PASS 3: UCL / UEL KNOCKOUT FIXTURES
+    // PASS 3: JCL / JEL KNOCKOUT FIXTURES
     // ============================================
     // Pre-hydrate teamScoreCache + playerScoreCache from already-scored PL fixtures in
     // this GW. Pass 1 only adds entries for fixtures it just processed; PL fixtures that
@@ -642,7 +642,7 @@ export async function processTripleCrownGameweek(
       errors: errors.length > 0 ? errors : undefined,
     };
   } catch (error) {
-    console.error("Error in processTripleCrownGameweek:", error);
+    console.error("Error in processContinentalChampionshipGameweek:", error);
     return {
       success: false,
       message: error instanceof Error ? error.message : "Unknown error",

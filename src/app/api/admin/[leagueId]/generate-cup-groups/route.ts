@@ -1,6 +1,6 @@
 /**
  * POST /api/admin/[leagueId]/generate-cup-groups
- * Triple Crown: Seed 20 teams into 4 cup groups after GW5
+ * Continental Championship: Seed 20 teams into 4 cup groups after GW5
  *
  * Flow:
  * 1. Fetch PL standings at end of GW5 (leagueStageEnd=5)
@@ -20,7 +20,7 @@ import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getGroupStandings } from "@/lib/formats/tvt/playoffs";
-import { generateCupGroupFixtures, seedCupGroups } from "@/lib/formats/triple-crown/fixtures";
+import { generateCupGroupFixtures, seedCupGroups } from "@/lib/formats/continental-championship/fixtures";
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,13 +39,13 @@ export async function POST(request: NextRequest) {
 
     if (leagueRow[0].format !== "continental-championship") {
       return NextResponse.json({
-        error: "Cup group seeding only available for Triple Crown format",
+        error: "Cup group seeding only available for Continental Championship format",
       }, { status: 400 });
     }
 
     if (leagueRow[0].teamSize !== 20) {
       return NextResponse.json({
-        error: "Triple Crown must have exactly 20 teams",
+        error: "Continental Championship must have exactly 20 teams",
       }, { status: 400 });
     }
 

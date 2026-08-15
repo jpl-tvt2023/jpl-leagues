@@ -116,7 +116,7 @@ interface ScoringResult {
   gameweek: number;
   processed: number;
   failed: number;
-  // TVT/triple-crown return H2H matches; auction returns per-team point rows.
+  // TVT/continental-championship return H2H matches; auction returns per-team point rows.
   results: (H2HMatchResult | AuctionTeamResult)[];
   errors?: ({ homeTeam: string; awayTeam: string; error: string } | string)[];
 }
@@ -264,7 +264,7 @@ export default function AdminDashboard() {
   const [playoffsLoading, setPlayoffsLoading] = useState(false);
   const [advancingGW, setAdvancingGW] = useState<number | null>(null);
 
-  // Triple Crown State
+  // Continental Championship State
   const [cupGroupsGenerated, setCupGroupsGenerated] = useState(false);
   const [bracketsGenerated, setBracketsGenerated] = useState(false);
   const [cupGroupsLoading, setCupGroupsLoading] = useState(false);
@@ -664,7 +664,7 @@ export default function AdminDashboard() {
         const data = await res.json();
         setPlayoffsGenerated(data.generated === true);
       }
-      // For Triple Crown, also fetch cup group + JCL/JEL bracket status in parallel
+      // For Continental Championship, also fetch cup group + JCL/JEL bracket status in parallel
       if (leagueConfig.format === "continental-championship") {
         const [cupRes, bracketsRes] = await Promise.all([
           fetch(`/api/admin/${leagueId}/generate-cup-groups`),
@@ -1744,7 +1744,7 @@ export default function AdminDashboard() {
   // or a multipart file upload of the original .zip. Dispatch by league format:
   //   - auction: wipes auction state + rebuilds ownership/clubs; admin reprocesses GWs.
   //   - tvt: preserves teams, wipes+restores fixtures (captains/chips deferred).
-  //   - triple-crown: same as tvt; cup-fixtures/UEFA not in backup yet.
+  //   - continental-championship: same as tvt; cup-fixtures/JCL-JEL not in backup yet.
   // Cross-league + format guards enforced server-side (meta.json + leagueId match).
   const handleRestoreAuction = async () => {
     if (restoringAuction) return;
@@ -1756,7 +1756,7 @@ export default function AdminDashboard() {
     const endpoint =
       format === "auction" ? "restore-auction"
       : format === "tvt" ? "restore-tvt"
-      : format === "continental-championship" ? "restore-triple-crown"
+      : format === "continental-championship" ? "restore-continental-championship"
       : null;
     if (!endpoint) {
       setMessage({ type: "error", text: `Restore is not supported for ${format || "this"} league format.` });
@@ -1871,7 +1871,7 @@ export default function AdminDashboard() {
 
     try {
       // Only send `group` when the Group field is actually editable in the modal
-      // (groupCount === 2 → Group A/B selector renders). For TVT-32 / Triple Crown
+      // (groupCount === 2 → Group A/B selector renders). For TVT-32 / Continental Championship
       // the field is hidden and the team's existing group must not be overwritten
       // with the modal's unchanged value (which can be "Cup-A", "C", etc. and
       // would fail the server's A/B validator).
@@ -3602,7 +3602,7 @@ export default function AdminDashboard() {
           <div className="space-y-6">
             {leagueConfig.format === "continental-championship" ? (
               <>
-                {/* Triple Crown: Cup Groups */}
+                {/* Continental Championship: Cup Groups */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                   <h3 className="text-lg font-bold text-white mb-4">Cup Groups (GW6–24)</h3>
                   {cupGroupsLoading ? (
@@ -3633,7 +3633,7 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                {/* Triple Crown: Brackets */}
+                {/* Continental Championship: Brackets */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                   <h3 className="text-lg font-bold text-white mb-4">JCL/JEL Brackets (GW27–38)</h3>
                   {bracketsLoading ? (
@@ -3668,7 +3668,7 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                {/* Triple Crown: Advance Knockouts */}
+                {/* Continental Championship: Advance Knockouts */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
                   <h3 className="text-lg font-bold text-white mb-4">Advance Knockouts</h3>
                   {bracketsGenerated && (

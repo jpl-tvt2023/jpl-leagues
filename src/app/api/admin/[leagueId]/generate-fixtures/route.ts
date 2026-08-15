@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { teamSize, groupCount, playoffStartGw, format } = leagueRows[0];
-    const isTripleCrown = format === "continental-championship";
+    const isContinentalChampionship = format === "continental-championship";
     const teamsPerGroup = (teamSize ?? 32) / (groupCount ?? 2);
     const effectivePlayoffStart = playoffStartGw ?? 31;
 
@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // ── Triple Crown: PL fixtures span all 38 GWs, single group (or no groups), 2 reps (20 teams × 2 = 38) ──
-    if (isTripleCrown) {
+    // ── Continental Championship: PL fixtures span all 38 GWs, single group (or no groups), 2 reps (20 teams × 2 = 38) ──
+    if (isContinentalChampionship) {
       // Get teams from group A if it exists, otherwise fetch all league teams
       let plTeams: { id: string; name: string }[];
       let plGroupId: string | null = null;
@@ -87,19 +87,19 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Triple Crown PL fixture math is hardcoded for 20 teams × 2 reps = 38 GWs.
+      // Continental Championship PL fixture math is hardcoded for 20 teams × 2 reps = 38 GWs.
       // Any other team count breaks the season skeleton (10 teams × 2 reps = 18 GWs,
       // 22 × 2 = 42 GWs etc.). Refuse with HTTP 400 rather than silently producing
       // a malformed schedule. The downstream Berger-table generator (used elsewhere)
       // also asserts on this — failing early here gives a cleaner error response.
       if (plTeams.length !== 20) {
         return NextResponse.json(
-          { error: `Triple Crown requires exactly 20 PL teams; this league has ${plTeams.length}.` },
+          { error: `Continental Championship requires exactly 20 PL teams; this league has ${plTeams.length}.` },
           { status: 400 }
         );
       }
 
-      // Triple Crown requires all 38 gameweeks to exist with real FPL deadlines
+      // Continental Championship requires all 38 gameweeks to exist with real FPL deadlines
       // before fixtures can be generated. Refuse instead of silently creating
       // placeholder deadlines (`new Date()`), which would otherwise drift the
       // entire season schedule from the actual Premier League calendar.
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
       if (missingGws.length > 0) {
         return NextResponse.json(
           {
-            error: `Cannot generate Triple Crown fixtures — ${missingGws.length} gameweek(s) missing. Run POST /api/admin/[leagueId]/create-gameweeks first to populate real FPL deadlines for GW1-38.`,
+            error: `Cannot generate Continental Championship fixtures — ${missingGws.length} gameweek(s) missing. Run POST /api/admin/[leagueId]/create-gameweeks first to populate real FPL deadlines for GW1-38.`,
             missingGameweeks: missingGws,
           },
           { status: 400 }
@@ -142,9 +142,9 @@ export async function POST(request: NextRequest) {
       await invalidateLeaguePageCache(leagueId);
       return NextResponse.json({
         success: true,
-        message: "PL fixtures generated successfully for Triple Crown league",
+        message: "PL fixtures generated successfully for Continental Championship league",
         summary: {
-          format: "Triple Crown (20-team, 1 PL group)",
+          format: "Continental Championship (20-team, 1 PL group)",
           repetitions: tcRepetitions,
           leagueStageGws: 38,
           totalFixtures: fixtureData.length,

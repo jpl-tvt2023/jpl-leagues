@@ -9,7 +9,7 @@
   },
   "requirements": {
     "version": 13,
-    "businessContext": "The Captains & Chips module owns the SUBMISSION lifecycle for the two strategic levers a TVT/Triple-Crown team controls each gameweek: (1) declaring which player on their 2-man team is the captain (whose net score is doubled by the scoring engine), and (2) deciding whether to play a TVT chip (Win-Win, Double Pointer, Challenge Chip, Score Lock, Comeback or Underdog) in that GW. The module covers team-facing submission/switch/cancel endpoints, admin force-overrides, and bulk CSV/XLSX imports. It does not handle scoring/processing of those choices (module 05 owns that) nor the league-settings UI (module 02). The Auction format has NO captains/chips — those teams must not be exposed to these endpoints.",
+    "businessContext": "The Captains & Chips module owns the SUBMISSION lifecycle for the two strategic levers a TVT/Continental Championship team controls each gameweek: (1) declaring which player on their 2-man team is the captain (whose net score is doubled by the scoring engine), and (2) deciding whether to play a TVT chip (Win-Win, Double Pointer, Challenge Chip, Score Lock, Comeback or Underdog) in that GW. The module covers team-facing submission/switch/cancel endpoints, admin force-overrides, and bulk CSV/XLSX imports. It does not handle scoring/processing of those choices (module 05 owns that) nor the league-settings UI (module 02). The Auction format has NO captains/chips — those teams must not be exposed to these endpoints.",
     "userStories": [
       {
         "id": "US-CHIP-001",
@@ -185,7 +185,7 @@
       },
       {
         "id": "BR-CHIP-004",
-        "rule": "Per-player captaincy cap is `Math.ceil(nonPlayoffGws / 2)`, where `nonPlayoffGws = leagueFormat === 'triple-crown' ? 38 : (playoffStartGw - 1)`. captainCheckLimit (upper GW boundary of league stage) is the same nonPlayoffGws value. Below or at this limit the captaincy counts toward the cap; above it the captain is treated as a playoff captaincy with unlimited chips remaining. The cap is computed via `computeCaptainCap()` and the limit via `computeCaptainCheckLimit()` in `src/lib/captains.ts`; both consumed by `src/app/api/team/captain/route.ts`, `import-captains/route.ts`, and `team/dashboard/route.ts`.",
+        "rule": "Per-player captaincy cap is `Math.ceil(nonPlayoffGws / 2)`, where `nonPlayoffGws = leagueFormat === 'continental-championship' ? 38 : (playoffStartGw - 1)`. captainCheckLimit (upper GW boundary of league stage) is the same nonPlayoffGws value. Below or at this limit the captaincy counts toward the cap; above it the captain is treated as a playoff captaincy with unlimited chips remaining. The cap is computed via `computeCaptainCap()` and the limit via `computeCaptainCheckLimit()` in `src/lib/captains.ts`; both consumed by `src/app/api/team/captain/route.ts`, `import-captains/route.ts`, and `team/dashboard/route.ts`.",
         "sourceRefs": [
           "src/lib/captains.ts:1-9",
           "src/app/api/team/captain/route.ts:67-69",
@@ -569,7 +569,7 @@
       },
       {
         "id": "BR-CHIP-056",
-        "rule": "Triple-Crown captaincy uses captainCheckLimit=38, meaning the per-player 19-captaincy cap applies across all 38 gameweeks (no separate league-stage vs playoff distinction for TC captaincy).",
+        "rule": "Continental Championship captaincy uses captainCheckLimit=38, meaning the per-player 19-captaincy cap applies across all 38 gameweeks (no separate league-stage vs playoff distinction for TC captaincy).",
         "sourceRefs": [
           "src/app/api/team/captain/route.ts:52-53"
         ]
@@ -580,7 +580,7 @@
         "sourceRefs": [
           "src/lib/scoring/temp-captain.ts:1-90",
           "src/app/api/gameweeks/[gw]/route.ts:170-256",
-          "src/lib/formats/triple-crown/process-gameweek.ts:185-208"
+          "src/lib/formats/continental-championship/process-gameweek.ts:185-208"
         ]
       },
       {
@@ -629,7 +629,7 @@
       },
       {
         "id": "AC-CHIP-005",
-        "given": "A Triple Crown team (cap = `ceil(38/2) = 19`) announces captain in GW38",
+        "given": "A JPL Continental Championship team (cap = `ceil(38/2) = 19`) announces captain in GW38",
         "when": "The chosen player already has 19 captain entries across GW1..38 (excluding GW38)",
         "then": "Response is 400 '<playerName> has used all 19 captaincy chips for the League Stage'",
         "linksTo": "BR-CHIP-004"
@@ -687,7 +687,7 @@
         "id": "AC-CHIP-013",
         "given": "a TVT-8 team (league.playoffStartGw=36) with 0 captaincy chips used by player X",
         "when": "POST /api/team/captain with playerId=X across GW1..GW35, then GW36",
-        "then": "GW1..GW35 each count toward player X's 15-per-player cap; captaincyChipsRemaining decrements; at GW36 (playoffs) captaincyChipsRemaining is reported as \"unlimited\". TVT-16/32 (playoffStartGw=31) sees the cutover at GW30/GW31; Triple Crown sees the cutover at GW38.",
+        "then": "GW1..GW35 each count toward player X's 15-per-player cap; captaincyChipsRemaining decrements; at GW36 (playoffs) captaincyChipsRemaining is reported as \"unlimited\". TVT-16/32 (playoffStartGw=31) sees the cutover at GW30/GW31; JPL Continental Championship sees the cutover at GW38.",
         "linksTo": "BR-CHIP-012"
       },
       {
@@ -986,7 +986,7 @@
       },
       {
         "id": "AC-CHIP-056",
-        "given": "A Triple-Crown league with playoffStartGw=37",
+        "given": "A Continental Championship league with playoffStartGw=37",
         "when": "Team posts captain for GW31",
         "then": "Since gameweekNumber (31) <= captainCheckLimit (38), the 19-per-player cap check IS applied",
         "linksTo": "BR-CHIP-056"
@@ -1231,11 +1231,11 @@
     },
     {
       "id": "TC-CHIP-010",
-      "feature": "Captain Cap - Triple Crown",
+      "feature": "Captain Cap - JPL Continental Championship",
       "scenario": "TC 19-cap reached blocks 20th attempt at GW38",
       "type": "Boundary",
       "priority": "P1",
-      "preconditions": "Triple-Crown league, PlayerA already has 19 captain entries on GW1..37 (some subset), submitting GW38",
+      "preconditions": "Continental Championship league, PlayerA already has 19 captain entries on GW1..37 (some subset), submitting GW38",
       "testData": "{ playerId: 'PlayerA', gameweek: 38 }",
       "testSteps": [
         "1. Seed 19 captain entries on prior GWs",
@@ -1251,7 +1251,7 @@
     },
     {
       "id": "TC-CHIP-011",
-      "feature": "Captain Cap - Triple Crown",
+      "feature": "Captain Cap - JPL Continental Championship",
       "scenario": "TC 18th captaincy still permitted",
       "type": "Boundary",
       "priority": "P2",
@@ -2536,7 +2536,7 @@
     },
     {
       "id": "TC-CHIP-076",
-      "feature": "Triple Crown Captain Cap - Late Stage",
+      "feature": "JPL Continental Championship Captain Cap - Late Stage",
       "scenario": "TC league with playoffStartGw=37, GW31 captaincy still capped",
       "type": "Boundary",
       "priority": "P2",
@@ -2557,20 +2557,20 @@
     {
       "id": "TC-CHIP-077",
       "feature": "Captain Cap Formula - Dynamic",
-      "scenario": "Per-player captain cap is computed as ceil(nonPlayoffGws/2); TVT-8 (playoffStartGw=36) yields cap=18 across GW1-35, TVT-16/32 (playoffStartGw=31) yields cap=15 across GW1-30, Triple Crown yields cap=19 across GW1-38",
+      "scenario": "Per-player captain cap is computed as ceil(nonPlayoffGws/2); TVT-8 (playoffStartGw=36) yields cap=18 across GW1-35, TVT-16/32 (playoffStartGw=31) yields cap=15 across GW1-30, JPL Continental Championship yields cap=19 across GW1-38",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "Three leagues seeded: (a) TVT-8 league L8 with playoffStartGw=36; (b) TVT-16 league L16 with playoffStartGw=31; (c) Triple-Crown league LTC. Each has a team with PlayerA on roster; captaincyChipsUsed counters start at 0.",
+      "preconditions": "Three leagues seeded: (a) TVT-8 league L8 with playoffStartGw=36; (b) TVT-16 league L16 with playoffStartGw=31; (c) Continental Championship league LTC. Each has a team with PlayerA on roster; captaincyChipsUsed counters start at 0.",
       "testData": "Inspect computeCaptainCap(format, playoffStartGw) for each league: L8 -> 18; L16 -> 15; LTC -> 19. Also POST /api/team/captain for PlayerA in each league across boundary GWs (L8 GW35 vs GW36; L16 GW30 vs GW31; LTC GW38) and inspect response.captaincyChipsRemaining.",
       "testSteps": [
         "1. Read computeCaptainCap('tvt', 36) -> 18 (nonPlayoffGws=35, ceil(35/2)=18)",
         "2. Read computeCaptainCap('tvt', 31) -> 15 (nonPlayoffGws=30, ceil(30/2)=15)",
-        "3. Read computeCaptainCap('triple-crown', anything) -> 19 (nonPlayoffGws=38, ceil(38/2)=19)",
+        "3. Read computeCaptainCap('continental-championship', anything) -> 19 (nonPlayoffGws=38, ceil(38/2)=19)",
         "4. In L8: POST captain PlayerA at GW35 (within league stage) and inspect captaincyChipsRemaining is a finite number; then POST at GW36 and inspect captaincyChipsRemaining === 'unlimited'",
         "5. In L16: POST captain PlayerA at GW30 (finite remaining) and GW31 ('unlimited')",
         "6. In LTC: POST captain PlayerA at GW38 (finite remaining, since gameweekNumber <= captainCheckLimit=38)"
       ],
-      "expectedResult": "computeCaptainCap returns 18 for TVT-8, 15 for TVT-16/32, and 19 for Triple Crown — i.e. Math.ceil(nonPlayoffGws/2) where nonPlayoffGws = format==='triple-crown' ? 38 : (playoffStartGw-1). The /api/team/captain endpoint reports captaincyChipsRemaining as a finite number for GW <= captainCheckLimit and as the string 'unlimited' above it, and the boundary tracks playoffStartGw dynamically (no hardcoded 15 or 30).",
+      "expectedResult": "computeCaptainCap returns 18 for TVT-8, 15 for TVT-16/32, and 19 for JPL Continental Championship — i.e. Math.ceil(nonPlayoffGws/2) where nonPlayoffGws = format==='continental-championship' ? 38 : (playoffStartGw-1). The /api/team/captain endpoint reports captaincyChipsRemaining as a finite number for GW <= captainCheckLimit and as the string 'unlimited' above it, and the boundary tracks playoffStartGw dynamically (no hardcoded 15 or 30).",
       "postconditions": "Cap derived from formula across all three formats; no hardcoded boundary",
       "requirementId": "AC-CHIP-013",
       "author": "qa-tester",
@@ -2984,12 +2984,12 @@
     },
     {
       "id": "DEF-CHIP-007",
-      "title": "Captain captainCheckLimit hardcoded to 30 for non-Triple-Crown leagues, ignoring playoffStartGw",
+      "title": "Captain captainCheckLimit hardcoded to 30 for non-Continental Championship leagues, ignoring playoffStartGw",
       "severity": "Major",
       "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
-      "description": "src/app/api/team/captain/route.ts:53 sets captainCheckLimit = 30 for any league whose format is not 'triple-crown'. For an 8-team TVT league (playoffStartGw=36, league stage = GW1-35), captaincies in GW31-35 will be treated as playoff captaincies with 'unlimited' chips remaining, when they are actually still in the league stage and should count toward the 15-per-player cap.",
+      "description": "src/app/api/team/captain/route.ts:53 sets captainCheckLimit = 30 for any league whose format is not 'continental-championship'. For an 8-team TVT league (playoffStartGw=36, league stage = GW1-35), captaincies in GW31-35 will be treated as playoff captaincies with 'unlimited' chips remaining, when they are actually still in the league stage and should count toward the 15-per-player cap.",
       "expectedBehaviour": "Derive captainCheckLimit from league.playoffStartGw - 1 (so 30 for default, 35 for 8-team format).",
       "actualBehaviour": "TVT 8-team leagues (and any league with playoffStartGw != 31) compute captaincy chip remaining incorrectly during GW(playoffStartGw-1) down to GW31.",
       "sourceRefs": [

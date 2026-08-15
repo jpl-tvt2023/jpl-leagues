@@ -113,7 +113,7 @@
       },
       {
         "id": "BR-FB-010",
-        "rule": "The user-facing feedback page at /[leagueSlug]/feedback is gated by an authenticated team session; unauthenticated users are redirected to /signin. The page exposes a scope dropdown with two options — the current league (default) and \"Site (general)\" — plus an optional subject and required message textarea. A Feedback nav link appears in LeagueNav for logged-in users in all three formats (TVT, Triple Crown, Auction).",
+        "rule": "The user-facing feedback page at /[leagueSlug]/feedback is gated by an authenticated team session; unauthenticated users are redirected to /signin. The page exposes a scope dropdown with two options — the current league (default) and \"Site (general)\" — plus an optional subject and required message textarea. A Feedback nav link appears in LeagueNav for logged-in users in all three formats (TVT, JPL Continental Championship, Auction).",
         "sourceRefs": [
           "src/app/[leagueSlug]/feedback/page.tsx:1-200",
           "src/components/LeagueNav.tsx:100-145"

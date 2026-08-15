@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
       if (row.isGhost === true) {
-        skipped.push({ id, reason: "Cannot delete a ghost team (Triple Crown bye placeholder)" });
+        skipped.push({ id, reason: "Cannot delete a ghost team (Continental Championship bye placeholder)" });
         continue;
       }
       deletable.push(id);

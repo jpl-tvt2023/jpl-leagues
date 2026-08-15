@@ -863,7 +863,11 @@ export default function DashboardPage() {
   const [viewedGw, setViewedGw] = useState<number | null>(null);
   const [leagueSlug, setLeagueSlug] = useState<string>("");
   const [leagueFormat, setLeagueFormat] = useState<string>("tvt");
-  
+  // Shared JPL / Cup toggle for Continental Championship — governs both the Last Result
+  // card and the Standings card so switching "which competition am I looking at" is one
+  // consistent action instead of two separately-scrolled cards.
+  const [dashboardTab, setDashboardTab] = useState<"jpl" | "cup">("jpl");
+
   // Submission states
   const [selectedCaptain, setSelectedCaptain] = useState<string>("");
   const [selectedChip, setSelectedChip] = useState<string | null>(null);
@@ -1226,7 +1230,7 @@ export default function DashboardPage() {
 
   // Captain Announcements card — extracted so it can sit either in the TVT 3-col
   // top row (between Deadline and Fixture) or as a standalone full-width section
-  // for Triple Crown (where deadline+captain are merged into one card).
+  // for Continental Championship (where deadline+captain are merged into one card).
   const captainAnnouncementsCard = data.leagueCaptains && data.leagueCaptains.length > 0 ? (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
       <div className="flex items-center justify-between mb-3">
@@ -1254,7 +1258,7 @@ export default function DashboardPage() {
               <span className={`truncate ${c.captainPlayerName ? "" : "text-gray-500"}`}>
                 {c.captainPlayerName ?? "Not Announced"}
               </span>
-              {c.chipName && (
+              {leagueFormat !== "continental-championship" && c.chipName && (
                 <span
                   className="mt-1 text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-300 font-semibold uppercase tracking-wide truncate max-w-full"
                   title={c.chipName}
@@ -1367,20 +1371,106 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Captain Announcements — Triple Crown only (full-width, since TC has
-            merged deadline+captain card lower down). TVT places this card inside
-            its 3-col top row, below. */}
-        {leagueFormat === "continental-championship" && captainAnnouncementsCard && (
-          <div className="mb-6">{captainAnnouncementsCard}</div>
-        )}
-
         {/* Main Grid */}
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
-            {/* TC layout: merged Deadline+Captain, then Next Fixture */}
+            {/* Deadline + Fixture — 2-up for both formats; Continental Championship's Fixture
+                card spans full width instead when the GW is a Double Header (two fixtures). */}
             {leagueFormat === "continental-championship" ? (
-              <></>
+              (() => {
+                const isDoubleHeaderGw = DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && !!data.cupProgress?.upcomingCupFixture;
+                return (
+                  <div className={isDoubleHeaderGw ? "space-y-6" : "grid gap-6 md:grid-cols-2"}>
+                    {/* Deadline Timer */}
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                      <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                        <span className="text-yellow-400">⏱</span> GW{data.submission.gameweek} Deadline
+                      </h2>
+                      <DeadlineTimer deadline={data.submission.timestamp} gameweek={data.submission.gameweek} serverTime={data.serverTime} />
+                      {data.submission.state === "locked" && (
+                        <div className="text-xs text-orange-400 mt-2 text-center">
+                          Deadline passed — reopens at {formatClockTime(data.submission.opensAt)} for GW{data.submission.gameweek + 1}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Fixture(s) */}
+                    {data.upcomingFixture && (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                        <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                          <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} Fixture{isDoubleHeaderGw ? "s" : ""}
+                          {isDoubleHeaderGw && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-semibold">Double Header</span>
+                          )}
+                        </h2>
+                        <div className={isDoubleHeaderGw ? "grid md:grid-cols-2 gap-6 divide-x divide-white/10" : ""}>
+                          {/* JPL Fixture */}
+                          <div className={isDoubleHeaderGw ? "pr-6" : ""}>
+                            <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">JPL</div>
+                            <div className="flex items-center justify-center gap-4 mb-3">
+                              <div className="text-center">
+                                <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "HOME" : "AWAY"}</div>
+                                <div className="text-lg font-bold text-white">{data.team.name}</div>
+                              </div>
+                              <span className="text-gray-500 font-medium">VS</span>
+                              <div className="text-center">
+                                <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "AWAY" : "HOME"}</div>
+                                <button
+                                  onClick={() => setShowOpponentPlayers(!showOpponentPlayers)}
+                                  className="text-lg font-bold text-blue-400 hover:text-blue-300 underline decoration-dotted underline-offset-4 transition"
+                                >
+                                  {data.upcomingFixture.opponent.name}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="text-center text-xs text-gray-500 mb-2">
+                              Click opponent to {showOpponentPlayers ? "hide" : "view"} players
+                            </div>
+                            {showOpponentPlayers && (
+                              <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/10">
+                                <div className="text-xs text-gray-400 mb-2 font-semibold">{data.upcomingFixture.opponent.name} — Players</div>
+                                <div className="space-y-2">
+                                  {data.upcomingFixture.opponent.players.map((p, i) => (
+                                    <div key={i} className="flex items-center justify-between">
+                                      <span className="text-white text-sm">{p.name}</span>
+                                      <div className="flex gap-2">
+                                        <a href={p.fplUrl} target="_blank" rel="noopener noreferrer"
+                                          className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition">
+                                          GW{data.upcomingFixture?.lastCompletedGw ?? (data.deadline.gameweek - 1)} ↗
+                                        </a>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          {/* Cup Fixture (double header only) */}
+                          {isDoubleHeaderGw && data.cupProgress?.upcomingCupFixture && (
+                            <div className="pl-6">
+                              <div className="text-xs text-blue-400 font-semibold uppercase tracking-wider mb-2">
+                                {data.cupProgress.upcomingCupFixture.competitionLabel}
+                              </div>
+                              <div className="flex items-center justify-center gap-4 mb-3">
+                                <div className="text-center">
+                                  <div className="text-xs text-gray-400 mb-1">{data.cupProgress.upcomingCupFixture.isHome ? "HOME" : "AWAY"}</div>
+                                  <div className="text-lg font-bold text-white">{data.team.name}</div>
+                                </div>
+                                <span className="text-gray-500 font-medium">VS</span>
+                                <div className="text-center">
+                                  <div className="text-xs text-gray-400 mb-1">{data.cupProgress.upcomingCupFixture.isHome ? "AWAY" : "HOME"}</div>
+                                  <div className="text-lg font-bold text-blue-300">{data.cupProgress.upcomingCupFixture.opponent ?? "TBD"}</div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
             ) : (
               /* TVT: Deadline + Upcoming Fixture side by side (Captain Announcements now lives in the right sidebar) */
               <div className="grid gap-6 md:grid-cols-2">
@@ -1444,173 +1534,80 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* TC: Merged Deadline + Captain card */}
+            {/* Continental Championship: Captain Submission card (own card, no chips) */}
             {leagueFormat === "continental-championship" && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                  <span className="text-yellow-400">📋</span> GW{data.submission.gameweek > 0 ? data.submission.gameweek : "?"} Captain
+                </h2>
                 {data.submission.gameweek === 0 ? (
                   <div className="text-center py-6">
-                    <p className="text-gray-400 text-sm">Captain and chip submissions will be available once the admin generates fixtures.</p>
+                    <p className="text-gray-400 text-sm">Captain submissions will be available once the admin generates fixtures.</p>
+                  </div>
+                ) : !data.announcementSettings.captainAnnouncementEnabled ? (
+                  <div className="flex items-center gap-2 text-red-400 mb-3">
+                    <span className="w-3 h-3 rounded-full bg-red-400"></span>
+                    Captain announcements disabled
                   </div>
                 ) : (
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {/* Left: Deadline */}
-                    <div>
-                      <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                        <span className="text-yellow-400">⏱</span> GW{data.submission.gameweek} Deadline
-                      </h2>
-                      <DeadlineTimer deadline={data.submission.timestamp} gameweek={data.submission.gameweek} serverTime={data.serverTime} />
-                      {data.submission.state === "locked" && (
-                        <div className="text-xs text-orange-400 mt-2 text-center">
-                          Deadline passed — reopens at {formatClockTime(data.submission.opensAt)} for GW{data.submission.gameweek + 1}
-                        </div>
-                      )}
+                  <>
+                    {data.upcomingCaptain ? (
+                      <div className="flex items-center gap-2 text-green-400 mb-3">
+                        <span className="w-3 h-3 rounded-full bg-green-400"></span>
+                        {data.upcomingCaptain.playerName} selected
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-orange-400 mb-3">
+                        <span className="w-3 h-3 rounded-full bg-orange-400"></span>
+                        Not Submitted
+                      </div>
+                    )}
+                    <div className="mb-3 max-w-md">
+                      <EligibilitySelect
+                        value={selectedCaptain || data.upcomingCaptain?.playerId || ""}
+                        onChange={setSelectedCaptain}
+                        disabled={isSubmitting || data.submission.state !== "open"}
+                        placeholder="Select captain..."
+                        options={[
+                          {
+                            value: data.captaincyStatus.player1.id,
+                            label: `${data.captaincyStatus.player1.name} (${data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining} left`})`,
+                            disabled: data.captaincyStatus.player1.chipsRemaining <= 0,
+                            reason: data.captaincyStatus.player1.reason,
+                          },
+                          {
+                            value: data.captaincyStatus.player2.id,
+                            label: `${data.captaincyStatus.player2.name} (${data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining} left`})`,
+                            disabled: data.captaincyStatus.player2.chipsRemaining <= 0,
+                            reason: data.captaincyStatus.player2.reason,
+                          },
+                        ]}
+                      />
                     </div>
-                    {/* Right: Captain */}
-                    <div>
-                      <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                        <span className="text-yellow-400">📋</span> Captain
-                      </h3>
-                      {!data.announcementSettings.captainAnnouncementEnabled ? (
-                        <div className="flex items-center gap-2 text-red-400 mb-3">
-                          <span className="w-3 h-3 rounded-full bg-red-400"></span>
-                          Captain announcements disabled
-                        </div>
-                      ) : (
-                        <>
-                          {data.upcomingCaptain ? (
-                            <div className="flex items-center gap-2 text-green-400 mb-3">
-                              <span className="w-3 h-3 rounded-full bg-green-400"></span>
-                              {data.upcomingCaptain.playerName} selected
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2 text-orange-400 mb-3">
-                              <span className="w-3 h-3 rounded-full bg-orange-400"></span>
-                              Not Submitted
-                            </div>
-                          )}
-                          <div className="mb-3">
-                            <EligibilitySelect
-                              value={selectedCaptain || data.upcomingCaptain?.playerId || ""}
-                              onChange={setSelectedCaptain}
-                              disabled={isSubmitting || data.submission.state !== "open"}
-                              placeholder="Select captain..."
-                              options={[
-                                {
-                                  value: data.captaincyStatus.player1.id,
-                                  label: `${data.captaincyStatus.player1.name} (${data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining} left`})`,
-                                  disabled: data.captaincyStatus.player1.chipsRemaining <= 0,
-                                  reason: data.captaincyStatus.player1.reason,
-                                },
-                                {
-                                  value: data.captaincyStatus.player2.id,
-                                  label: `${data.captaincyStatus.player2.name} (${data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining} left`})`,
-                                  disabled: data.captaincyStatus.player2.chipsRemaining <= 0,
-                                  reason: data.captaincyStatus.player2.reason,
-                                },
-                              ]}
-                            />
-                          </div>
-                          <button
-                            onClick={handleCaptainSubmit}
-                            disabled={!selectedCaptain || isSubmitting || selectedCaptain === data.upcomingCaptain?.playerId || data.submission.state !== "open"}
-                            className="w-full py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:from-yellow-300 hover:to-orange-400 transition"
-                          >
-                            {isSubmitting ? "Submitting..." : data.upcomingCaptain ? "Switch Captain" : "Announce Captain"}
-                          </button>
-                        </>
-                      )}
-                      <div className="mt-3 text-sm text-gray-400">
-                        <div className="flex justify-between">
-                          <span>{data.captaincyStatus.player1.name}</span>
-                          <span>{data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining}/${data.captaincyStatus.cap} left`}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>{data.captaincyStatus.player2.name}</span>
-                          <span>{data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining}/${data.captaincyStatus.cap} left`}</span>
-                        </div>
+                    <button
+                      onClick={handleCaptainSubmit}
+                      disabled={!selectedCaptain || isSubmitting || selectedCaptain === data.upcomingCaptain?.playerId || data.submission.state !== "open"}
+                      className="w-full sm:w-auto px-6 py-2 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:from-yellow-300 hover:to-orange-400 transition"
+                    >
+                      {isSubmitting ? "Submitting..." : data.upcomingCaptain ? "Switch Captain" : "Announce Captain"}
+                    </button>
+                    <div className="mt-4 grid sm:grid-cols-2 gap-3 max-w-md text-sm text-gray-400">
+                      <div className="flex justify-between p-2 rounded-lg bg-white/5">
+                        <span>{data.captaincyStatus.player1.name}</span>
+                        <span>{data.captaincyStatus.player1.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player1.chipsRemaining}/${data.captaincyStatus.cap} left`}</span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded-lg bg-white/5">
+                        <span>{data.captaincyStatus.player2.name}</span>
+                        <span>{data.captaincyStatus.player2.chipsRemaining >= 999 ? "unlimited" : `${data.captaincyStatus.player2.chipsRemaining}/${data.captaincyStatus.cap} left`}</span>
                       </div>
                     </div>
-                  </div>
+                  </>
                 )}
                 {submitMessage && (
                   <div className={`mt-4 p-3 rounded-lg ${submitMessage.type === "success" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
                     {submitMessage.text}
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* TC: Next Fixture card — full width for single, half-half for double header */}
-            {leagueFormat === "continental-championship" && data.upcomingFixture && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                  <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} Fixture{DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture ? "s" : ""}
-                  {DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture && (
-                    <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-semibold">Double Header</span>
-                  )}
-                </h2>
-                <div className={DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture ? "grid md:grid-cols-2 gap-6 divide-x divide-white/10" : ""}>
-                  {/* PL Fixture */}
-                  <div className={DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture ? "pr-6" : ""}>
-                    <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">JPL</div>
-                    <div className="flex items-center justify-center gap-4 mb-3">
-                      <div className="text-center">
-                        <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "HOME" : "AWAY"}</div>
-                        <div className="text-lg font-bold text-white">{data.team.name}</div>
-                      </div>
-                      <span className="text-gray-500 font-medium">VS</span>
-                      <div className="text-center">
-                        <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "AWAY" : "HOME"}</div>
-                        <button
-                          onClick={() => setShowOpponentPlayers(!showOpponentPlayers)}
-                          className="text-lg font-bold text-blue-400 hover:text-blue-300 underline decoration-dotted underline-offset-4 transition"
-                        >
-                          {data.upcomingFixture.opponent.name}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="text-center text-xs text-gray-500 mb-2">
-                      Click opponent to {showOpponentPlayers ? "hide" : "view"} players
-                    </div>
-                    {showOpponentPlayers && (
-                      <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/10">
-                        <div className="text-xs text-gray-400 mb-2 font-semibold">{data.upcomingFixture.opponent.name} — Players</div>
-                        <div className="space-y-2">
-                          {data.upcomingFixture.opponent.players.map((p, i) => (
-                            <div key={i} className="flex items-center justify-between">
-                              <span className="text-white text-sm">{p.name}</span>
-                              <div className="flex gap-2">
-                                <a href={p.fplUrl} target="_blank" rel="noopener noreferrer"
-                                  className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition">
-                                  GW{data.upcomingFixture?.lastCompletedGw ?? (data.deadline.gameweek - 1)} ↗
-                                </a>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {/* Cup Fixture (double header only) */}
-                  {DOUBLE_HEADER_GWS.includes(data.deadline.gameweek) && data.cupProgress?.upcomingCupFixture && (
-                    <div className="pl-6">
-                      <div className="text-xs text-blue-400 font-semibold uppercase tracking-wider mb-2">
-                        {data.cupProgress.upcomingCupFixture.competitionLabel}
-                      </div>
-                      <div className="flex items-center justify-center gap-4 mb-3">
-                        <div className="text-center">
-                          <div className="text-xs text-gray-400 mb-1">{data.cupProgress.upcomingCupFixture.isHome ? "HOME" : "AWAY"}</div>
-                          <div className="text-lg font-bold text-white">{data.team.name}</div>
-                        </div>
-                        <span className="text-gray-500 font-medium">VS</span>
-                        <div className="text-center">
-                          <div className="text-xs text-gray-400 mb-1">{data.cupProgress.upcomingCupFixture.isHome ? "AWAY" : "HOME"}</div>
-                          <div className="text-lg font-bold text-blue-300">{data.cupProgress.upcomingCupFixture.opponent ?? "TBD"}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
 
@@ -1709,7 +1706,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* TVT Chips Submission — hidden for Triple Crown */}
+                {/* TVT Chips Submission — hidden for Continental Championship */}
                 {leagueFormat !== "continental-championship" && <div className="p-4 rounded-xl bg-white/5">
                   <h3 className="font-semibold text-white mb-3">
                     TVT Chips (Set {data.chipStatus.currentSet === "playoffs" ? "Playoffs" : data.chipStatus.currentSet})
@@ -1807,285 +1804,159 @@ export default function DashboardPage() {
               )}
             </div>}
 
-            {/* Last GW Result with navigation */}
-            {data.lastGwResult && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                <div className="flex items-center justify-between mb-4">
-                  <button
-                    onClick={handlePrevGw}
-                    disabled={!data.minCompletedGw || !viewedGw || viewedGw <= data.minCompletedGw}
-                    className="text-xl sm:text-3xl px-2 sm:px-3 py-1 rounded-full bg-purple-900/60 border border-purple-400 text-yellow-300 shadow-lg hover:bg-yellow-400 hover:text-purple-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
-                    aria-label="Previous GW"
-                  >
-                    &#8592;
-                  </button>
-                  <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                    <span className="text-yellow-400">📊</span>
-                    {data.lastGwResult.isPlayoff
-                      ? `${data.lastGwResult.tieId || data.lastGwResult.roundName || "Playoff"}${data.lastGwResult.leg ? ` Leg ${data.lastGwResult.leg}` : ""} (GW${data.lastGwResult.gameweek})`
-                      : leagueFormat === "continental-championship"
-                        ? `PL — GW${data.lastGwResult.gameweek}`
-                        : `Group Stage — GW${data.lastGwResult.gameweek}`}
-                    <button
-                      onClick={handleLiveRefresh}
-                      disabled={liveRefreshing}
-                      className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${liveRefreshing ? "animate-spin" : ""}`}
-                      title="Refresh live scores"
-                    >
-                      ⟳
-                    </button>
-                  </h2>
-                  <button
-                    onClick={handleNextGw}
-                    disabled={!data.maxCompletedGw || !viewedGw || viewedGw >= data.maxCompletedGw}
-                    className="text-xl sm:text-3xl px-2 sm:px-3 py-1 rounded-full bg-purple-900/60 border border-purple-400 text-yellow-300 shadow-lg hover:bg-yellow-400 hover:text-purple-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
-                    aria-label="Next GW"
-                  >
-                    &#8594;
-                  </button>
-                </div>
-                
-                {/* Score Header */}
-                <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-2 sm:gap-0">
-                  <div className="flex-1 text-center">
-                    <div className="text-xs text-gray-400 mb-1">{data.lastGwResult.isHome ? "HOME" : "AWAY"}</div>
-                    <div className="text-base sm:text-lg font-bold text-white">{data.lastGwResult.myTeamName}</div>
-                  </div>
-                  <div className="px-4 sm:px-6 text-center">
-                    {(() => {
-                      const myScore = liveScoreOverride?.myScore ?? data.lastGwResult.myScore;
-                      const oppScore = liveScoreOverride?.oppScore ?? data.lastGwResult.oppScore;
-                      const isLive = !!liveScoreOverride;
-                      const result = myScore > oppScore ? "W" : myScore < oppScore ? "L" : "D";
-                      return (
-                        <>
-                          <div className={`text-3xl sm:text-4xl font-bold ${
-                            isLive ? "text-green-400" :
-                            data.lastGwResult.result === "W" ? "text-green-400" :
-                            data.lastGwResult.result === "L" ? "text-red-400" : "text-gray-400"
-                          }`}>
-                            {myScore} - {oppScore}
-                            {isLive && <span className="ml-2 text-xs align-top text-green-400 animate-pulse">LIVE</span>}
-                          </div>
-                          <div className="flex items-center justify-center gap-2 mt-2">
-                            <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                              (isLive ? result : data.lastGwResult.result) === "W" ? "bg-green-500/20 text-green-400" :
-                              (isLive ? result : data.lastGwResult.result) === "L" ? "bg-red-500/20 text-red-400" : "bg-gray-500/20 text-gray-400"
-                            }`}>
-                              {data.lastGwResult.gameweek <= 30
-                                ? ((isLive ? result : data.lastGwResult.result) === "W" ? "WIN +2" : (isLive ? result : data.lastGwResult.result) === "D" ? "DRAW +1" : "LOSS +0")
-                                : ((isLive ? result : data.lastGwResult.result) === "W" ? "WIN" : (isLive ? result : data.lastGwResult.result) === "D" ? "DRAW" : "LOSS")}
-                            </span>
-                            {data.lastGwResult.gotBonus && !isLive && (
-                              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-yellow-500/20 text-yellow-400">
-                                BONUS +1
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                  <div className="flex-1 text-center">
-                    <div className="text-xs text-gray-400 mb-1">{data.lastGwResult.isHome ? "AWAY" : "HOME"}</div>
-                    <div className="text-base sm:text-lg font-bold text-white">{data.lastGwResult.opponent}</div>
-                  </div>
-                </div>
-                
-                {/* Player Scores */}
-                <div className="grid md:grid-cols-2 gap-4">
-                  {/* My Team Players */}
-                  <div className={`p-3 rounded-lg ${liveScoreOverride ? "bg-green-900/10 border border-green-500/20" : "bg-white/5"}`}>
-                    <div className="text-xs text-gray-400 mb-2 text-center">
-                      {data.lastGwResult.myTeamName} Players
-                      {!liveScoreOverride && !data.lastGwResult.hasMyCaptainData && (
-                        <span className="text-orange-400 ml-1">(estimated)</span>
-                      )}
-                      {liveScoreOverride && <span className="text-green-400 ml-1">(live)</span>}
-                    </div>
-                    {(liveScoreOverride?.myPlayerScores ?? data.lastGwResult.myPlayerScores).map((p, i) => (
-                      <div key={i} className="flex items-center justify-between py-1">
-                        <div className="flex items-center gap-2">
-                          {(('fplUrl' in p && p.fplUrl) || ('fplId' in p && p.fplId)) ? (
-                            <a
-                              href={'fplUrl' in p && p.fplUrl ? p.fplUrl : `https://fantasy.premierleague.com/entry/${'fplId' in p ? p.fplId : ''}/event/${data.lastGwResult!.gameweek}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-400 hover:text-blue-300 underline"
-                            >
-                              {p.name}
-                            </a>
-                          ) : (
-                            <span className="text-white">{p.name}</span>
-                          )}
-                          {p.isCaptain && (
-                            <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${'isInferred' in p && p.isInferred ? "bg-orange-500/20 text-orange-400" : "bg-yellow-500/20 text-yellow-400"}`}>
-                              C{'isInferred' in p && p.isInferred ? "?" : ""}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <PlayerScoreFormula
-                            fplScore={p.fplScore}
-                            transferHits={p.transferHits}
-                            finalScore={p.finalScore}
-                            isCaptain={p.isCaptain}
-                            captainColorClass={'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"}
-                            nonCaptainColorClass={liveScoreOverride ? "text-green-300" : "text-white"}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {/* Opponent Players */}
-                  <div className={`p-3 rounded-lg ${liveScoreOverride ? "bg-green-900/10 border border-green-500/20" : "bg-white/5"}`}>
-                    <div className="text-xs text-gray-400 mb-2 text-center">
-                      {data.lastGwResult.opponent} Players
-                      {!liveScoreOverride && !data.lastGwResult.hasOppCaptainData && (
-                        <span className="text-orange-400 ml-1">(estimated)</span>
-                      )}
-                      {liveScoreOverride && <span className="text-green-400 ml-1">(live)</span>}
-                    </div>
-                    {(liveScoreOverride?.oppPlayerScores ?? data.lastGwResult.oppPlayerScores).map((p, i) => (
-                      <div key={i} className="flex items-center justify-between py-1">
-                        <div className="flex items-center gap-2">
-                          {(('fplUrl' in p && p.fplUrl) || ('fplId' in p && p.fplId)) ? (
-                            <a
-                              href={'fplUrl' in p && p.fplUrl ? p.fplUrl : `https://fantasy.premierleague.com/entry/${'fplId' in p ? p.fplId : ''}/event/${data.lastGwResult!.gameweek}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-400 hover:text-blue-300 underline"
-                            >
-                              {p.name}
-                            </a>
-                          ) : (
-                            <span className="text-white">{p.name}</span>
-                          )}
-                          {p.isCaptain && (
-                            <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${'isInferred' in p && p.isInferred ? "bg-orange-500/20 text-orange-400" : "bg-yellow-500/20 text-yellow-400"}`}>
-                              C{'isInferred' in p && p.isInferred ? "?" : ""}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <PlayerScoreFormula
-                            fplScore={p.fplScore}
-                            transferHits={p.transferHits}
-                            finalScore={p.finalScore}
-                            isCaptain={p.isCaptain}
-                            captainColorClass={'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"}
-                            nonCaptainColorClass={liveScoreOverride ? "text-green-300" : "text-white"}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {leagueFormat !== "auction" && (() => {
-                  const lastGwPlayers = [
-                    ...((liveScoreOverride?.myPlayerScores ?? data.lastGwResult.myPlayerScores) ?? []),
-                    ...((liveScoreOverride?.oppPlayerScores ?? data.lastGwResult.oppPlayerScores) ?? []),
-                  ];
-                  return lastGwPlayers.some(p => 'isTempCaptain' in p && p.isTempCaptain) ? (
-                    <div className="text-[10px] text-amber-400/70 mt-2">
-                      C* = auto-assigned temp captain (lowest scorer)
-                    </div>
-                  ) : null;
-                })()}
-              </div>
-            )}
+            {/* Last Result — Continental Championship gets a JPL/Cup tab toggle sharing one
+                card; TVT always shows its single (untabbed) result. */}
+            {(() => {
+              const cupResult = leagueFormat === "continental-championship" ? (data.cupGwResult ?? data.cupProgress?.lastCupResult ?? null) : null;
+              const showCupTab = leagueFormat === "continental-championship" && !!cupResult;
+              const activeTab = showCupTab ? dashboardTab : "jpl";
+              const isCupView = activeTab === "cup" && showCupTab;
+              if (!data.lastGwResult && !cupResult) return null;
 
-            {/* TC Cup Last Result — independent navigation, always-visible breakdown */}
-            {leagueFormat === "continental-championship" && (() => {
-              const cupResult = data.cupGwResult ?? data.cupProgress?.lastCupResult ?? null;
-              if (!cupResult) return null;
-              const cupPlayerScores = cupResult.myPlayerScores ?? [];
-              const cupOppPlayerScores = cupResult.oppPlayerScores ?? [];
-              const myName = (cupResult as any).myTeamName ?? data.team.name;
-              const oppName = cupResult.opponent ?? "OPP";
-              const currentCupGw = cupViewedGw ?? cupResult.gameweek;
+              const cupPlayerScores = cupResult?.myPlayerScores ?? [];
+              const cupOppPlayerScores = cupResult?.oppPlayerScores ?? [];
+              const cupMyName = (cupResult as any)?.myTeamName ?? data.team.name;
+              const cupOppName = cupResult?.opponent ?? "OPP";
+              const currentCupGw = cupViewedGw ?? cupResult?.gameweek;
               const cupGws = data.cupProgress?.completedCupGws ?? [];
-              const currentCupIdx = cupGws.indexOf(currentCupGw);
+              const currentCupIdx = currentCupGw !== undefined ? cupGws.indexOf(currentCupGw) : -1;
               const prevCupGw = currentCupIdx > 0 ? cupGws[currentCupIdx - 1] : null;
               const nextCupGw = currentCupIdx >= 0 && currentCupIdx < cupGws.length - 1 ? cupGws[currentCupIdx + 1] : null;
+
               return (
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 sm:p-6 backdrop-blur">
-                  {/* Header with independent nav arrows */}
-                  <div className="flex items-center justify-between mb-4">
-                    <button
-                      onClick={() => { if (prevCupGw !== null) fetchCupResult(prevCupGw); }}
-                      disabled={cupRefreshing || prevCupGw === null}
-                      className="text-xl sm:text-3xl px-2 sm:px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400 text-blue-300 hover:bg-blue-400 hover:text-blue-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
-                    >
-                      &#8592;
-                    </button>
-                    <h2 className="text-base sm:text-lg font-bold text-blue-300 flex items-center gap-2">
-                      <span>🏆</span>
-                      {cupResult.competitionLabel} — GW{cupResult.gameweek}
+                <div className={`rounded-2xl border p-4 sm:p-6 backdrop-blur ${isCupView ? "border-blue-500/20 bg-blue-500/5" : "border-white/10 bg-white/5"}`}>
+                  {showCupTab && (
+                    <div className="flex gap-2 mb-4">
                       <button
-                        onClick={() => fetchCupResult(currentCupGw)}
-                        disabled={cupRefreshing}
-                        className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${cupRefreshing ? "animate-spin" : ""}`}
-                        title="Refresh cup result"
+                        type="button"
+                        onClick={() => setDashboardTab("jpl")}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${activeTab === "jpl" ? "bg-yellow-400 text-slate-900" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
                       >
-                        ⟳
+                        JPL
                       </button>
-                    </h2>
-                    <button
-                      onClick={() => { if (nextCupGw !== null) fetchCupResult(nextCupGw); }}
-                      disabled={cupRefreshing || nextCupGw === null}
-                      className="text-xl sm:text-3xl px-2 sm:px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400 text-blue-300 hover:bg-blue-400 hover:text-blue-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
-                    >
-                      &#8594;
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => setDashboardTab("cup")}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${activeTab === "cup" ? "bg-blue-400 text-slate-900" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                      >
+                        JPL Cup
+                      </button>
+                    </div>
+                  )}
 
-                  {/* Score */}
-                  <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-2">
-                    <div className="flex-1 text-center">
-                      <div className="text-xs text-gray-400 mb-1">{cupResult.isHome ? "HOME" : "AWAY"}</div>
-                      <div className="text-base sm:text-lg font-bold text-white truncate">{myName}</div>
-                    </div>
-                    <div className="px-4 sm:px-6 text-center">
-                      <div className={`text-3xl sm:text-4xl font-bold ${cupResult.result === "W" ? "text-green-400" : "text-red-400"}`}>
-                        {cupResult.myScore} - {cupResult.oppScore}
+                  {!isCupView && data.lastGwResult && (
+                    <>
+                      <div className="flex items-center justify-between mb-4">
+                        <button
+                          onClick={handlePrevGw}
+                          disabled={!data.minCompletedGw || !viewedGw || viewedGw <= data.minCompletedGw}
+                          className="text-xl sm:text-3xl px-2 sm:px-3 py-1 rounded-full bg-purple-900/60 border border-purple-400 text-yellow-300 shadow-lg hover:bg-yellow-400 hover:text-purple-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
+                          aria-label="Previous GW"
+                        >
+                          &#8592;
+                        </button>
+                        <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                          <span className="text-yellow-400">📊</span>
+                          {data.lastGwResult.isPlayoff
+                            ? `${data.lastGwResult.tieId || data.lastGwResult.roundName || "Playoff"}${data.lastGwResult.leg ? ` Leg ${data.lastGwResult.leg}` : ""} (GW${data.lastGwResult.gameweek})`
+                            : leagueFormat === "continental-championship"
+                              ? `PL — GW${data.lastGwResult.gameweek}`
+                              : `Group Stage — GW${data.lastGwResult.gameweek}`}
+                          <button
+                            onClick={handleLiveRefresh}
+                            disabled={liveRefreshing}
+                            className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${liveRefreshing ? "animate-spin" : ""}`}
+                            title="Refresh live scores"
+                          >
+                            ⟳
+                          </button>
+                        </h2>
+                        <button
+                          onClick={handleNextGw}
+                          disabled={!data.maxCompletedGw || !viewedGw || viewedGw >= data.maxCompletedGw}
+                          className="text-xl sm:text-3xl px-2 sm:px-3 py-1 rounded-full bg-purple-900/60 border border-purple-400 text-yellow-300 shadow-lg hover:bg-yellow-400 hover:text-purple-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
+                          aria-label="Next GW"
+                        >
+                          &#8594;
+                        </button>
                       </div>
-                      <div className="flex items-center justify-center gap-2 mt-2">
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${cupResult.result === "W" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
-                          {cupResult.result === "W" ? "WIN" : "LOSS"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex-1 text-center">
-                      <div className="text-xs text-gray-400 mb-1">{cupResult.isHome ? "AWAY" : "HOME"}</div>
-                      <div className="text-base sm:text-lg font-bold text-white">{cupResult.opponent ?? "TBD"}</div>
-                    </div>
-                  </div>
 
-                  {/* Player breakdown — always visible */}
-                  {cupPlayerScores.length > 0 && (
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {[
-                        { scores: cupPlayerScores, label: myName, hasCaptainData: !!(cupResult as any).hasMyCaptainData },
-                        { scores: cupOppPlayerScores, label: oppName, hasCaptainData: !!(cupResult as any).hasOppCaptainData },
-                      ].map(({ scores, label, hasCaptainData }) => (
-                        <div key={label} className="p-3 rounded-lg bg-blue-900/10 border border-blue-500/20">
+                      {/* Score Header */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-2 sm:gap-0">
+                        <div className="flex-1 text-center">
+                          <div className="text-xs text-gray-400 mb-1">{data.lastGwResult.isHome ? "HOME" : "AWAY"}</div>
+                          <div className="text-base sm:text-lg font-bold text-white">{data.lastGwResult.myTeamName}</div>
+                        </div>
+                        <div className="px-4 sm:px-6 text-center">
+                          {(() => {
+                            const myScore = liveScoreOverride?.myScore ?? data.lastGwResult.myScore;
+                            const oppScore = liveScoreOverride?.oppScore ?? data.lastGwResult.oppScore;
+                            const isLive = !!liveScoreOverride;
+                            const result = myScore > oppScore ? "W" : myScore < oppScore ? "L" : "D";
+                            return (
+                              <>
+                                <div className={`text-3xl sm:text-4xl font-bold ${
+                                  isLive ? "text-green-400" :
+                                  data.lastGwResult.result === "W" ? "text-green-400" :
+                                  data.lastGwResult.result === "L" ? "text-red-400" : "text-gray-400"
+                                }`}>
+                                  {myScore} - {oppScore}
+                                  {isLive && <span className="ml-2 text-xs align-top text-green-400 animate-pulse">LIVE</span>}
+                                </div>
+                                <div className="flex items-center justify-center gap-2 mt-2">
+                                  <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                    (isLive ? result : data.lastGwResult.result) === "W" ? "bg-green-500/20 text-green-400" :
+                                    (isLive ? result : data.lastGwResult.result) === "L" ? "bg-red-500/20 text-red-400" : "bg-gray-500/20 text-gray-400"
+                                  }`}>
+                                    {data.lastGwResult.gameweek <= 30
+                                      ? ((isLive ? result : data.lastGwResult.result) === "W" ? "WIN +2" : (isLive ? result : data.lastGwResult.result) === "D" ? "DRAW +1" : "LOSS +0")
+                                      : ((isLive ? result : data.lastGwResult.result) === "W" ? "WIN" : (isLive ? result : data.lastGwResult.result) === "D" ? "DRAW" : "LOSS")}
+                                  </span>
+                                  {data.lastGwResult.gotBonus && !isLive && (
+                                    <span className="px-2 py-0.5 rounded text-xs font-semibold bg-yellow-500/20 text-yellow-400">
+                                      BONUS +1
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                        <div className="flex-1 text-center">
+                          <div className="text-xs text-gray-400 mb-1">{data.lastGwResult.isHome ? "AWAY" : "HOME"}</div>
+                          <div className="text-base sm:text-lg font-bold text-white">{data.lastGwResult.opponent}</div>
+                        </div>
+                      </div>
+
+                      {/* Player Scores */}
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {/* My Team Players */}
+                        <div className={`p-3 rounded-lg ${liveScoreOverride ? "bg-green-900/10 border border-green-500/20" : "bg-white/5"}`}>
                           <div className="text-xs text-gray-400 mb-2 text-center">
-                            {label} Players
-                            {!hasCaptainData && <span className="text-orange-400 ml-1">(estimated)</span>}
+                            {data.lastGwResult.myTeamName} Players
+                            {!liveScoreOverride && !data.lastGwResult.hasMyCaptainData && (
+                              <span className="text-orange-400 ml-1">(estimated)</span>
+                            )}
+                            {liveScoreOverride && <span className="text-green-400 ml-1">(live)</span>}
                           </div>
-                          {scores.map((p: any, i: number) => (
+                          {(liveScoreOverride?.myPlayerScores ?? data.lastGwResult.myPlayerScores).map((p, i) => (
                             <div key={i} className="flex items-center justify-between py-1">
                               <div className="flex items-center gap-2">
-                                {p.fplUrl ? (
-                                  <a href={p.fplUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">{p.name}</a>
+                                {(('fplUrl' in p && p.fplUrl) || ('fplId' in p && p.fplId)) ? (
+                                  <a
+                                    href={'fplUrl' in p && p.fplUrl ? p.fplUrl : `https://fantasy.premierleague.com/entry/${'fplId' in p ? p.fplId : ''}/event/${data.lastGwResult!.gameweek}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-400 hover:text-blue-300 underline"
+                                  >
+                                    {p.name}
+                                  </a>
                                 ) : (
                                   <span className="text-white">{p.name}</span>
                                 )}
                                 {p.isCaptain && (
-                                  <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${p.isInferred ? "bg-orange-500/20 text-orange-400" : "bg-yellow-500/20 text-yellow-400"}`}>
-                                    C{p.isInferred ? "?" : ""}
+                                  <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${'isInferred' in p && p.isInferred ? "bg-orange-500/20 text-orange-400" : "bg-yellow-500/20 text-yellow-400"}`}>
+                                    C{'isInferred' in p && p.isInferred ? "?" : ""}
                                   </span>
                                 )}
                               </div>
@@ -2095,19 +1966,173 @@ export default function DashboardPage() {
                                   transferHits={p.transferHits}
                                   finalScore={p.finalScore}
                                   isCaptain={p.isCaptain}
-                                  captainColorClass={p.isInferred ? "text-orange-400" : "text-yellow-400"}
+                                  captainColorClass={'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"}
+                                  nonCaptainColorClass={liveScoreOverride ? "text-green-300" : "text-white"}
                                 />
                               </div>
                             </div>
                           ))}
                         </div>
-                      ))}
-                    </div>
+
+                        {/* Opponent Players */}
+                        <div className={`p-3 rounded-lg ${liveScoreOverride ? "bg-green-900/10 border border-green-500/20" : "bg-white/5"}`}>
+                          <div className="text-xs text-gray-400 mb-2 text-center">
+                            {data.lastGwResult.opponent} Players
+                            {!liveScoreOverride && !data.lastGwResult.hasOppCaptainData && (
+                              <span className="text-orange-400 ml-1">(estimated)</span>
+                            )}
+                            {liveScoreOverride && <span className="text-green-400 ml-1">(live)</span>}
+                          </div>
+                          {(liveScoreOverride?.oppPlayerScores ?? data.lastGwResult.oppPlayerScores).map((p, i) => (
+                            <div key={i} className="flex items-center justify-between py-1">
+                              <div className="flex items-center gap-2">
+                                {(('fplUrl' in p && p.fplUrl) || ('fplId' in p && p.fplId)) ? (
+                                  <a
+                                    href={'fplUrl' in p && p.fplUrl ? p.fplUrl : `https://fantasy.premierleague.com/entry/${'fplId' in p ? p.fplId : ''}/event/${data.lastGwResult!.gameweek}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-400 hover:text-blue-300 underline"
+                                  >
+                                    {p.name}
+                                  </a>
+                                ) : (
+                                  <span className="text-white">{p.name}</span>
+                                )}
+                                {p.isCaptain && (
+                                  <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${'isInferred' in p && p.isInferred ? "bg-orange-500/20 text-orange-400" : "bg-yellow-500/20 text-yellow-400"}`}>
+                                    C{'isInferred' in p && p.isInferred ? "?" : ""}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <PlayerScoreFormula
+                                  fplScore={p.fplScore}
+                                  transferHits={p.transferHits}
+                                  finalScore={p.finalScore}
+                                  isCaptain={p.isCaptain}
+                                  captainColorClass={'isInferred' in p && p.isInferred ? "text-orange-400" : "text-yellow-400"}
+                                  nonCaptainColorClass={liveScoreOverride ? "text-green-300" : "text-white"}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {leagueFormat !== "auction" && (() => {
+                        const lastGwPlayers = [
+                          ...((liveScoreOverride?.myPlayerScores ?? data.lastGwResult.myPlayerScores) ?? []),
+                          ...((liveScoreOverride?.oppPlayerScores ?? data.lastGwResult.oppPlayerScores) ?? []),
+                        ];
+                        return lastGwPlayers.some(p => 'isTempCaptain' in p && p.isTempCaptain) ? (
+                          <div className="text-[10px] text-amber-400/70 mt-2">
+                            C* = auto-assigned temp captain (lowest scorer)
+                          </div>
+                        ) : null;
+                      })()}
+                    </>
                   )}
-                  {[...cupPlayerScores, ...cupOppPlayerScores].some(p => 'isTempCaptain' in p && p.isTempCaptain) && (
-                    <div className="text-[10px] text-amber-400/70 mt-2">
-                      C* = auto-assigned temp captain (lowest scorer)
-                    </div>
+
+                  {isCupView && cupResult && (
+                    <>
+                      {/* Header with independent nav arrows */}
+                      <div className="flex items-center justify-between mb-4">
+                        <button
+                          onClick={() => { if (prevCupGw !== null) fetchCupResult(prevCupGw); }}
+                          disabled={cupRefreshing || prevCupGw === null}
+                          className="text-xl sm:text-3xl px-2 sm:px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400 text-blue-300 hover:bg-blue-400 hover:text-blue-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
+                        >
+                          &#8592;
+                        </button>
+                        <h2 className="text-base sm:text-lg font-bold text-blue-300 flex items-center gap-2">
+                          <span>🏆</span>
+                          {cupResult.competitionLabel} — GW{cupResult.gameweek}
+                          <button
+                            onClick={() => currentCupGw !== undefined && fetchCupResult(currentCupGw)}
+                            disabled={cupRefreshing}
+                            className={`text-green-400 hover:text-green-300 disabled:opacity-50 transition-all text-sm ${cupRefreshing ? "animate-spin" : ""}`}
+                            title="Refresh cup result"
+                          >
+                            ⟳
+                          </button>
+                        </h2>
+                        <button
+                          onClick={() => { if (nextCupGw !== null) fetchCupResult(nextCupGw); }}
+                          disabled={cupRefreshing || nextCupGw === null}
+                          className="text-xl sm:text-3xl px-2 sm:px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400 text-blue-300 hover:bg-blue-400 hover:text-blue-900 transition disabled:opacity-30 disabled:bg-gray-700 disabled:text-gray-400"
+                        >
+                          &#8594;
+                        </button>
+                      </div>
+
+                      {/* Score */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-2">
+                        <div className="flex-1 text-center">
+                          <div className="text-xs text-gray-400 mb-1">{cupResult.isHome ? "HOME" : "AWAY"}</div>
+                          <div className="text-base sm:text-lg font-bold text-white truncate">{cupMyName}</div>
+                        </div>
+                        <div className="px-4 sm:px-6 text-center">
+                          <div className={`text-3xl sm:text-4xl font-bold ${cupResult.result === "W" ? "text-green-400" : "text-red-400"}`}>
+                            {cupResult.myScore} - {cupResult.oppScore}
+                          </div>
+                          <div className="flex items-center justify-center gap-2 mt-2">
+                            <span className={`px-2 py-0.5 rounded text-xs font-semibold ${cupResult.result === "W" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+                              {cupResult.result === "W" ? "WIN" : "LOSS"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex-1 text-center">
+                          <div className="text-xs text-gray-400 mb-1">{cupResult.isHome ? "AWAY" : "HOME"}</div>
+                          <div className="text-base sm:text-lg font-bold text-white">{cupResult.opponent ?? "TBD"}</div>
+                        </div>
+                      </div>
+
+                      {/* Player breakdown — always visible */}
+                      {cupPlayerScores.length > 0 && (
+                        <div className="grid md:grid-cols-2 gap-4">
+                          {[
+                            { scores: cupPlayerScores, label: cupMyName, hasCaptainData: !!(cupResult as any).hasMyCaptainData },
+                            { scores: cupOppPlayerScores, label: cupOppName, hasCaptainData: !!(cupResult as any).hasOppCaptainData },
+                          ].map(({ scores, label, hasCaptainData }) => (
+                            <div key={label} className="p-3 rounded-lg bg-blue-900/10 border border-blue-500/20">
+                              <div className="text-xs text-gray-400 mb-2 text-center">
+                                {label} Players
+                                {!hasCaptainData && <span className="text-orange-400 ml-1">(estimated)</span>}
+                              </div>
+                              {scores.map((p: any, i: number) => (
+                                <div key={i} className="flex items-center justify-between py-1">
+                                  <div className="flex items-center gap-2">
+                                    {p.fplUrl ? (
+                                      <a href={p.fplUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">{p.name}</a>
+                                    ) : (
+                                      <span className="text-white">{p.name}</span>
+                                    )}
+                                    {p.isCaptain && (
+                                      <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${p.isInferred ? "bg-orange-500/20 text-orange-400" : "bg-yellow-500/20 text-yellow-400"}`}>
+                                        C{p.isInferred ? "?" : ""}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-right">
+                                    <PlayerScoreFormula
+                                      fplScore={p.fplScore}
+                                      transferHits={p.transferHits}
+                                      finalScore={p.finalScore}
+                                      isCaptain={p.isCaptain}
+                                      captainColorClass={p.isInferred ? "text-orange-400" : "text-yellow-400"}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {[...cupPlayerScores, ...cupOppPlayerScores].some(p => 'isTempCaptain' in p && p.isTempCaptain) && (
+                        <div className="text-[10px] text-amber-400/70 mt-2">
+                          C* = auto-assigned temp captain (lowest scorer)
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               );
@@ -2163,10 +2188,17 @@ export default function DashboardPage() {
                     <span>Bonus Points</span>
                     <span className="text-yellow-400">+{data.seasonStats.bonusPointsEarned}</span>
                   </div>
-                  <div className="flex justify-between text-gray-400">
-                    <span>Chip Points</span>
-                    <span className="text-purple-400">+{data.seasonStats.chipPointsEarned}</span>
-                  </div>
+                  {leagueFormat === "continental-championship" ? (
+                    <div className="flex justify-between text-gray-400">
+                      <span>Cup Points</span>
+                      <span className="text-blue-400">{data.cupProgress?.miniTable.find(t => t.isCurrentTeam)?.cupGroupPoints ?? 0}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-gray-400">
+                      <span>Chip Points</span>
+                      <span className="text-purple-400">+{data.seasonStats.chipPointsEarned}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-gray-400">
                     <span>Points To Top</span>
                     <span className="text-white">-{data.leaguePosition.pointsToTop}</span>
@@ -2214,188 +2246,8 @@ export default function DashboardPage() {
               Captains & Chips card's horizontal-scroll region below forces this whole
               grid track (and the page) wider than the viewport instead of scrolling internally. */}
           <div className="space-y-6 min-w-0">
-            {/* Captain Announcements — TVT only; Continental Championship places this full-width above the grid */}
-            {leagueFormat !== "continental-championship" && captainAnnouncementsCard}
-
-            {/* Mini Table(s) */}
-            {leagueFormat === "continental-championship" ? (
-              <>
-                {/* PL Mini Table */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-white">JPL Table</h2>
-                    {data.plPosition && (
-                      <span className="text-sm font-bold text-yellow-400">
-                        #{data.plPosition.rank} / {data.plPosition.totalTeams}
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    {data.leaguePosition.miniTable.map((t) => (
-                      <div
-                        key={t.rank}
-                        className={`flex items-center justify-between p-3 rounded-lg ${
-                          t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${
-                            t.rank <= 4 ? "bg-green-500/20 text-green-400" :
-                            t.rank <= 8 ? "bg-blue-500/20 text-blue-400" :
-                            t.rank <= 14 ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
-                          }`}>
-                            {t.rank}
-                          </span>
-                          <span className={t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}>
-                            {t.name}
-                          </span>
-                        </div>
-                        <span className="text-white font-bold">{t.points}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <Link
-                    href={`/${leagueSlug}/standings`}
-                    className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
-                  >
-                    View Full JPL Table →
-                  </Link>
-
-                  {/* My PL Stats */}
-                  <div className="mt-4 pt-4 border-t border-white/10">
-                    <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">My PL Stats</div>
-                    <div className="flex justify-around text-center">
-                      <div>
-                        <div className="text-xl font-bold text-green-400">{data.seasonStats.wins}</div>
-                        <div className="text-xs text-gray-500">W</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold text-gray-400">{data.seasonStats.draws}</div>
-                        <div className="text-xs text-gray-500">D</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold text-red-400">{data.seasonStats.losses}</div>
-                        <div className="text-xs text-gray-500">L</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold text-white">{data.team.leaguePoints}</div>
-                        <div className="text-xs text-gray-500">Pts</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Cup Group Mini Table */}
-                {data.cupProgress && (
-                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 sm:p-6 backdrop-blur">
-                    <h2 className="text-lg font-bold text-white mb-1">
-                      JPL Cup Group {data.cupProgress.groupName}
-                    </h2>
-                    <p className="text-xs text-gray-400 mb-4">
-                      Top 2 → JCL · Bottom 2 → JEL
-                    </p>
-                    <div className="space-y-2">
-                      {data.cupProgress.miniTable.map((t) => (
-                        <div
-                          key={t.rank}
-                          className={`flex items-center justify-between p-3 rounded-lg ${
-                            t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${
-                              t.rank <= 2 ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400"
-                            }`}>
-                              {t.rank}
-                            </span>
-                            <span className={t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}>
-                              {t.name}
-                            </span>
-                          </div>
-                          <span className="text-white font-bold">{t.cupGroupPoints} pts</span>
-                        </div>
-                      ))}
-                    </div>
-                    <Link
-                      href={`/${leagueSlug}/jpl-cup-standings`}
-                      className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
-                    >
-                      View Full JPL Cup Standings →
-                    </Link>
-
-                    {/* Cup Stats */}
-                    {(() => {
-                      const myStat = data.cupProgress!.miniTable.find(t => t.isCurrentTeam);
-                      if (!myStat) return null;
-                      return (
-                        <div className="mt-4 pt-4 border-t border-blue-500/20">
-                          <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">My Cup Stats</div>
-                          <div className="flex justify-around text-center">
-                            <div>
-                              <div className="text-xl font-bold text-green-400">{myStat.wins}</div>
-                              <div className="text-xs text-gray-500">W</div>
-                            </div>
-                            <div>
-                              <div className="text-xl font-bold text-red-400">{myStat.losses}</div>
-                              <div className="text-xs text-gray-500">L</div>
-                            </div>
-                            <div>
-                              <div className="text-xl font-bold text-white">{myStat.cupGroupPoints}</div>
-                              <div className="text-xs text-gray-500">Pts</div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {/* TC: Upcoming Fixtures in right column */}
-                {data.upcomingFixtures.length > 0 && (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                    <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
-                    <div className="space-y-3">
-                      {(() => {
-                        const byGw = new Map<number, typeof data.upcomingFixtures>();
-                        for (const f of data.upcomingFixtures) {
-                          if (!byGw.has(f.gameweek)) byGw.set(f.gameweek, []);
-                          byGw.get(f.gameweek)!.push(f);
-                        }
-                        return Array.from(byGw.entries()).map(([gw, gwFixtures]) => {
-                          const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "jpl");
-                          const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "jpl");
-                          const isDouble = !!plFix && !!cupFix;
-                          return (
-                            <div key={gw} className="rounded-xl border border-white/10 overflow-hidden">
-                              <div className="px-3 py-1.5 bg-white/5 border-b border-white/10 flex items-center gap-2">
-                                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">GW{gw}</span>
-                                {isDouble && <span className="text-xs text-yellow-400 font-semibold">⚡ Double Header</span>}
-                              </div>
-                              <div className={isDouble ? "grid grid-cols-2 divide-x divide-white/10" : ""}>
-                                {plFix && (
-                                  <div className="flex items-center gap-2 px-3 py-2.5">
-                                    <span className={`text-xs px-2 py-0.5 rounded font-semibold ${plFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>{plFix.isHome ? "H" : "A"}</span>
-                                    <span className="text-white text-sm truncate">{plFix.opponent}</span>
-                                    <span className="text-xs text-gray-500 ml-auto shrink-0">JPL</span>
-                                  </div>
-                                )}
-                                {cupFix && (
-                                  <div className="flex items-center gap-2 px-3 py-2.5">
-                                    <span className={`text-xs px-2 py-0.5 rounded font-semibold ${cupFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>{cupFix.isHome ? "H" : "A"}</span>
-                                    <span className="text-blue-200 text-sm truncate">{cupFix.opponent}</span>
-                                    <span className="text-xs text-blue-400/70 ml-auto shrink-0">{cupFix.competitionLabel ?? "JPL Cup"}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : null}
+            {/* Captain Announcements — league-wide list, same right-column slot for every format */}
+            {captainAnnouncementsCard}
 
             {/* Highs & Lows */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
@@ -2432,8 +2284,93 @@ export default function DashboardPage() {
             (moved out of the 2/3-width Left Column, which was capping them; Right Column has already
             ended above this point so there's nothing to reserve the remaining 1/3 for). */}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mt-6">
-          {/* Group Table — TVT only; Continental Championship's own PL/Cup tables live in the Right Column */}
-          {leagueFormat !== "continental-championship" && (
+          {/* Standings — TVT's single Group Table, or Continental Championship's JPL/Cup tabbed table */}
+          {leagueFormat === "continental-championship" ? (
+            (() => {
+              const isCupView = dashboardTab === "cup" && !!data.cupProgress;
+              const cupMyStat = data.cupProgress?.miniTable.find(t => t.isCurrentTeam);
+              return (
+                <div className={`rounded-2xl border p-4 sm:p-6 backdrop-blur ${isCupView ? "border-blue-500/20 bg-blue-500/5" : "border-white/10 bg-white/5"}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <h2 className="text-lg font-bold text-white">{isCupView ? `JPL Cup Group ${data.cupProgress?.groupName}` : "JPL Table"}</h2>
+                    {!isCupView && data.plPosition && (
+                      <span className="text-sm font-bold text-yellow-400">#{data.plPosition.rank} / {data.plPosition.totalTeams}</span>
+                    )}
+                  </div>
+                  {isCupView && <p className="text-xs text-gray-400 mb-3">Top 2 → JCL · Bottom 2 → JEL</p>}
+                  {data.cupProgress && (
+                    <div className="flex gap-2 mb-4 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setDashboardTab("jpl")}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${!isCupView ? "bg-yellow-400 text-slate-900" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                      >
+                        JPL
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDashboardTab("cup")}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${isCupView ? "bg-blue-400 text-slate-900" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}
+                      >
+                        JPL Cup
+                      </button>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    {(isCupView ? data.cupProgress?.miniTable ?? [] : data.leaguePosition.miniTable).map((t) => (
+                      <div
+                        key={t.rank}
+                        className={`flex items-center justify-between p-3 rounded-lg ${
+                          t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${
+                            isCupView
+                              ? (t.rank <= 2 ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400")
+                              : (t.rank <= 4 ? "bg-green-500/20 text-green-400" :
+                                 t.rank <= 8 ? "bg-blue-500/20 text-blue-400" :
+                                 t.rank <= 14 ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400")
+                          }`}>
+                            {t.rank}
+                          </span>
+                          <span className={t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}>
+                            {t.name}
+                          </span>
+                        </div>
+                        <span className="text-white font-bold">{isCupView && "cupGroupPoints" in t ? `${t.cupGroupPoints} pts` : "points" in t ? t.points : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Link
+                    href={isCupView ? `/${leagueSlug}/jpl-cup-standings` : `/${leagueSlug}/standings`}
+                    className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
+                  >
+                    {isCupView ? "View Full JPL Cup Standings →" : "View Full JPL Table →"}
+                  </Link>
+
+                  {/* My Stats */}
+                  <div className={`mt-4 pt-4 border-t ${isCupView ? "border-blue-500/20" : "border-white/10"}`}>
+                    <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">{isCupView ? "My Cup Stats" : "My PL Stats"}</div>
+                    {isCupView ? (
+                      <div className="flex justify-around text-center">
+                        <div><div className="text-xl font-bold text-green-400">{cupMyStat?.wins ?? 0}</div><div className="text-xs text-gray-500">W</div></div>
+                        <div><div className="text-xl font-bold text-red-400">{cupMyStat?.losses ?? 0}</div><div className="text-xs text-gray-500">L</div></div>
+                        <div><div className="text-xl font-bold text-white">{cupMyStat?.cupGroupPoints ?? 0}</div><div className="text-xs text-gray-500">Pts</div></div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-around text-center">
+                        <div><div className="text-xl font-bold text-green-400">{data.seasonStats.wins}</div><div className="text-xs text-gray-500">W</div></div>
+                        <div><div className="text-xl font-bold text-gray-400">{data.seasonStats.draws}</div><div className="text-xs text-gray-500">D</div></div>
+                        <div><div className="text-xl font-bold text-red-400">{data.seasonStats.losses}</div><div className="text-xs text-gray-500">L</div></div>
+                        <div><div className="text-xl font-bold text-white">{data.team.leaguePoints}</div><div className="text-xs text-gray-500">Pts</div></div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Group {data.team.group} Table</h2>
               <div className="space-y-2">
@@ -2468,7 +2405,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Upcoming Fixtures — TVT only; Continental Championship has its own copy in the Right Column */}
+          {/* Upcoming Fixtures — shared slot; Continental Championship's version splits PL/Cup fixtures per GW */}
           {leagueFormat !== "continental-championship" && (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
@@ -2523,6 +2460,51 @@ export default function DashboardPage() {
                   })()}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Upcoming Fixtures — Continental Championship, splits PL/Cup fixtures per GW */}
+          {leagueFormat === "continental-championship" && data.upcomingFixtures.length > 0 && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
+              <div className="space-y-3">
+                {(() => {
+                  const byGw = new Map<number, typeof data.upcomingFixtures>();
+                  for (const f of data.upcomingFixtures) {
+                    if (!byGw.has(f.gameweek)) byGw.set(f.gameweek, []);
+                    byGw.get(f.gameweek)!.push(f);
+                  }
+                  return Array.from(byGw.entries()).map(([gw, gwFixtures]) => {
+                    const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "jpl");
+                    const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "jpl");
+                    const isDouble = !!plFix && !!cupFix;
+                    return (
+                      <div key={gw} className="rounded-xl border border-white/10 overflow-hidden">
+                        <div className="px-3 py-1.5 bg-white/5 border-b border-white/10 flex items-center gap-2">
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">GW{gw}</span>
+                          {isDouble && <span className="text-xs text-yellow-400 font-semibold">⚡ Double Header</span>}
+                        </div>
+                        <div className={isDouble ? "grid grid-cols-2 divide-x divide-white/10" : ""}>
+                          {plFix && (
+                            <div className="flex items-center gap-2 px-3 py-2.5">
+                              <span className={`text-xs px-2 py-0.5 rounded font-semibold ${plFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>{plFix.isHome ? "H" : "A"}</span>
+                              <span className="text-white text-sm truncate">{plFix.opponent}</span>
+                              <span className="text-xs text-gray-500 ml-auto shrink-0">JPL</span>
+                            </div>
+                          )}
+                          {cupFix && (
+                            <div className="flex items-center gap-2 px-3 py-2.5">
+                              <span className={`text-xs px-2 py-0.5 rounded font-semibold ${cupFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>{cupFix.isHome ? "H" : "A"}</span>
+                              <span className="text-blue-200 text-sm truncate">{cupFix.opponent}</span>
+                              <span className="text-xs text-blue-400/70 ml-auto shrink-0">{cupFix.competitionLabel ?? "JPL Cup"}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
             </div>
           )}
 

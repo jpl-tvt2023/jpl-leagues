@@ -73,14 +73,14 @@ export async function createTvtLeague(
   });
 }
 
-export async function createTripleCrownLeague(
+export async function createContinentalChampionshipLeague(
   request: APIRequestContext,
   opts: { slug?: string; name?: string } = {},
 ): Promise<LeagueRef> {
   const slug = opts.slug ?? uniqueSlug("tc");
   return createLeague(request, {
     slug,
-    name: opts.name ?? "Triple Crown 20",
+    name: opts.name ?? "Continental Championship 20",
     sport: "fpl",
     format: "continental-championship",
     season: "2025-26",

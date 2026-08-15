@@ -195,7 +195,7 @@ export default function LeagueFixturesPage() {
         if (!response.ok) throw new Error("Failed to fetch fixtures");
         const data = await response.json();
         const fixturesData = data.fixtures || {};
-        // For Triple Crown, show all 38 GWs; for TVT, show up to playoffStartGw - 1
+        // For Continental Championship, show all 38 GWs; for TVT, show up to playoffStartGw - 1
         const leaguePhaseEnd: number = leagueFormat === "continental-championship" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : league.playoffStartGw - 1);
         setFixtures(fixturesData);
 
@@ -231,16 +231,16 @@ export default function LeagueFixturesPage() {
   }, [leagueSlug, leagueFormat, league.playoffStartGw]);
 
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
-  const isTripleCrown = leagueFormat === "continental-championship";
+  const isContinentalChampionship = leagueFormat === "continental-championship";
 
-  // Triple Crown: only show PL fixtures on this page (cup/knockout live on UCL/Europa pages)
-  const displayFixtures = isTripleCrown
+  // Continental Championship: only show JPL fixtures on this page (cup/knockout live on JCL/JEL pages)
+  const displayFixtures = isContinentalChampionship
     ? selectedFixtures.filter((f: Fixture) => !f.competitionType || f.competitionType === "jpl")
     : selectedFixtures;
 
   const groupAFixtures = displayFixtures.filter((f: Fixture) => !f.group?.name || f.group.name === "A");
   const groupBFixtures = displayFixtures.filter((f: Fixture) => f.group?.name === "B");
-  const hasGroupB = !isTripleCrown && Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
+  const hasGroupB = !isContinentalChampionship && Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
 
   const hasResults = selectedFixtures.some((f: Fixture) => f.result);
   const deadline = selectedFixtures[0]?.gameweek?.deadline;
@@ -258,7 +258,7 @@ export default function LeagueFixturesPage() {
   };
 
   return (
-    <div className={`min-h-screen bg-gradient-to-b ${isTripleCrown ? "from-[#37003c] via-[#1a0021] to-[#0d001a]" : "from-slate-900 via-purple-900 to-slate-900"}`}>
+    <div className={`min-h-screen bg-gradient-to-b ${isContinentalChampionship ? "from-[#37003c] via-[#1a0021] to-[#0d001a]" : "from-slate-900 via-purple-900 to-slate-900"}`}>
       <LeagueNav
         leagueSlug={leagueSlug}
         leagueName={leagueName}
@@ -307,7 +307,7 @@ export default function LeagueFixturesPage() {
               <select
                 value={selectedGW || ""}
                 onChange={(e) => setSelectedGW(Number(e.target.value))}
-                className={`border rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base font-semibold min-w-[140px] sm:min-w-[180px] text-center appearance-none cursor-pointer transition ${isTripleCrown ? "bg-[#00ff85]/10 border-[#00ff85]/30 text-[#00ff85] hover:bg-[#00ff85]/20" : "bg-white/10 border-white/20 text-white hover:bg-white/20"}`}
+                className={`border rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base font-semibold min-w-[140px] sm:min-w-[180px] text-center appearance-none cursor-pointer transition ${isContinentalChampionship ? "bg-[#00ff85]/10 border-[#00ff85]/30 text-[#00ff85] hover:bg-[#00ff85]/20" : "bg-white/10 border-white/20 text-white hover:bg-white/20"}`}
               >
                 {availableGWs.map((gw) => (
                   <option key={gw} value={gw} className="bg-slate-800 text-white">

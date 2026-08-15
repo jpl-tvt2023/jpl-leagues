@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // TVT / Triple Crown: require 2 FPL player IDs
+    // TVT / Continental Championship: require 2 FPL player IDs
 
     // Player 1: name and FPL ID
     if (!player1Name || typeof player1Name !== "string" || !player1Name.trim()) {

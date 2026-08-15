@@ -62,7 +62,7 @@ export function ClassicStandings() {
   }, [leagueSlug]);
 
   const totalTeams = groupA.length + groupB.length;
-  const isTripleCrown = leagueFormat === "continental-championship";
+  const isContinentalChampionship = leagueFormat === "continental-championship";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -70,7 +70,7 @@ export function ClassicStandings() {
         leagueSlug={leagueSlug}
         leagueName={leagueName}
         currentPage="standings"
-        format={isTripleCrown ? "continental-championship" : "tvt"}
+        format={isContinentalChampionship ? "continental-championship" : "tvt"}
         teamSize={teamSize}
         isLoggedIn={isLoggedIn}
         dashboardHref={dashboardHref}
@@ -84,14 +84,14 @@ export function ClassicStandings() {
           <>
             <div className="text-center mb-8 sm:mb-12">
               <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">
-                {isTripleCrown ? leagueName || "League" : "League Standings"}
+                {isContinentalChampionship ? leagueName || "League" : "League Standings"}
               </h1>
-              {isTripleCrown && (
+              {isContinentalChampionship && (
                 <p className="text-[#00ff85] text-sm font-semibold uppercase tracking-widest mb-2">
                   JPL · 2025/26 Season
                 </p>
               )}
-              {!isTripleCrown && (
+              {!isContinentalChampionship && (
                 <p className="text-gray-400">
                   {latestGameweek > 0
                     ? `After Gameweek ${latestGameweek} · League Stage`
@@ -106,7 +106,7 @@ export function ClassicStandings() {
               )}
             </div>
 
-            {!isTripleCrown && (
+            {!isContinentalChampionship && (
               <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mb-6 sm:mb-8 text-xs sm:text-sm">
                 <div className="flex items-center gap-2">
                   <span className="h-3 w-3 rounded-full bg-green-500"></span>
@@ -152,17 +152,17 @@ export function ClassicStandings() {
                   <p className="text-yellow-300 text-sm font-semibold">Groups have not been revealed yet</p>
                   <p className="text-yellow-400/70 text-xs mt-1">Group assignments will be announced by the admin before the season starts.</p>
                 </div>
-                <StandingsTable teams={[...groupA, ...groupB]} group={undefined} isTripleCrown={isTripleCrown} />
+                <StandingsTable teams={[...groupA, ...groupB]} group={undefined} isContinentalChampionship={isContinentalChampionship} />
               </div>
             ) : (
               <div className={`grid gap-6 sm:gap-8 ${groupB.length > 0 ? "lg:grid-cols-2" : "max-w-2xl mx-auto"}`}>
-                <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} isTripleCrown={isTripleCrown} />
-                {groupB.length > 0 && <StandingsTable teams={groupB} group="B" isTripleCrown={isTripleCrown} />}
+                <StandingsTable teams={groupA} group={groupB.length > 0 ? "A" : undefined} isContinentalChampionship={isContinentalChampionship} />
+                {groupB.length > 0 && <StandingsTable teams={groupB} group="B" isContinentalChampionship={isContinentalChampionship} />}
               </div>
             )}
 
             <div className="mt-6 sm:mt-8 text-center text-xs sm:text-sm text-gray-500 px-2">
-              MP = Matches Played · W = Won · D = Drawn · L = Lost{!isTripleCrown && " · CP/BP = Chips & Bonus Points"} · Pts = League Points · Scores = Total FPL Score
+              MP = Matches Played · W = Won · D = Drawn · L = Lost{!isContinentalChampionship && " · CP/BP = Chips & Bonus Points"} · Pts = League Points · Scores = Total FPL Score
             </div>
           </>
         )}

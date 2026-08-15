@@ -9,7 +9,7 @@
   },
   "requirements": {
     "version": 6,
-    "businessContext": "Module 07 exposes the public standings READ endpoint (`GET /api/standings`) and the standings-shaping logic that aggregates already-persisted GW results into ranked tables. It covers three computation paths — TVT league-stage standings, Triple Crown PL standings (38 GWs, no bonus margin, leaguePoints stored authoritatively by the GW processor), and JPL Auction standings (pure cumulative-points race with payout history and squad-value tie-breakers). It also serves the rank-change indicator, the CBP tooltip (chips / bonus points / hit penalty), the qualification-zone legend used by the standings UI, and the Redis-backed page cache that fronts the response. The WRITE side (computing match points, bonus, payouts during GW processing) lives in module 05; UI rendering is module 17; playoffs are module 08; cup-group standings detail is deferred to module 09.",
+    "businessContext": "Module 07 exposes the public standings READ endpoint (`GET /api/standings`) and the standings-shaping logic that aggregates already-persisted GW results into ranked tables. It covers three computation paths — TVT league-stage standings, JPL Continental Championship PL standings (38 GWs, no bonus margin, leaguePoints stored authoritatively by the GW processor), and JPL Auction standings (pure cumulative-points race with payout history and squad-value tie-breakers). It also serves the rank-change indicator, the CBP tooltip (chips / bonus points / hit penalty), the qualification-zone legend used by the standings UI, and the Redis-backed page cache that fronts the response. The WRITE side (computing match points, bonus, payouts during GW processing) lives in module 05; UI rendering is module 17; playoffs are module 08; cup-group standings detail is deferred to module 09.",
     "userStories": [
       {
         "id": "US-STAND-001",
@@ -50,17 +50,17 @@
       },
       {
         "id": "US-STAND-005",
-        "asA": "team in a Triple Crown league",
+        "asA": "team in a JPL Continental Championship league",
         "iWant": "PL standings to use the stored `leaguePoints` (already including hit penalty) rather than re-deriving from W/D",
         "soThat": "the table matches the authoritative GW-processor values across all 38 GWs",
         "sourceRefs": [
           "jpl-leagues/src/app/api/standings/route.ts:539-543",
-          "jpl-leagues/src/lib/formats/triple-crown/process-gameweek.ts:333-346"
+          "jpl-leagues/src/lib/formats/continental-championship/process-gameweek.ts:333-346"
         ]
       },
       {
         "id": "US-STAND-006",
-        "asA": "team in a Triple Crown league",
+        "asA": "team in a JPL Continental Championship league",
         "iWant": "Ghost teams (cup-group phantoms) excluded from the PL standings table",
         "soThat": "I only see real opponents in the public ladder",
         "sourceRefs": [
@@ -145,7 +145,7 @@
       },
       {
         "id": "BR-STAND-003",
-        "rule": "League stage end is `38` for Triple Crown leagues and `playoffStartGw - 1` for all other formats; fixtures with `gameweek.number > leagueStageEnd` are excluded from W/D/L, points-for, bonus, and chip aggregation.",
+        "rule": "League stage end is `38` for JPL Continental Championship leagues and `playoffStartGw - 1` for all other formats; fixtures with `gameweek.number > leagueStageEnd` are excluded from W/D/L, points-for, bonus, and chip aggregation.",
         "sourceRefs": [
           "jpl-leagues/src/app/api/standings/route.ts:87-93",
           "jpl-leagues/src/app/api/standings/route.ts:478-481",
@@ -154,7 +154,7 @@
       },
       {
         "id": "BR-STAND-004",
-        "rule": "Only fixtures with `competitionType === 'pl'` or NULL `competitionType` count toward PL standings; cup-group, UCL-knockout and UEL-knockout fixtures are skipped.",
+        "rule": "Only fixtures with `competitionType === 'pl'` or NULL `competitionType` count toward PL standings; cup-group, JCL-knockout and JEL-knockout fixtures are skipped.",
         "sourceRefs": [
           "jpl-leagues/src/app/api/standings/route.ts:480-481",
           "jpl-leagues/src/app/api/standings/route.ts:501-502",
@@ -178,10 +178,10 @@
       },
       {
         "id": "BR-STAND-007",
-        "rule": "Triple Crown `leaguePoints` is read directly from `teams.leaguePoints` (stored authoritatively by `processTripleCrownGameweek`); the standings route does NOT recompute it.",
+        "rule": "JPL Continental Championship `leaguePoints` is read directly from `teams.leaguePoints` (stored authoritatively by `processContinentalChampionshipGameweek`); the standings route does NOT recompute it.",
         "sourceRefs": [
           "jpl-leagues/src/app/api/standings/route.ts:541-543",
-          "jpl-leagues/src/lib/formats/triple-crown/process-gameweek.ts:333-346"
+          "jpl-leagues/src/lib/formats/continental-championship/process-gameweek.ts:333-346"
         ]
       },
       {
@@ -223,7 +223,7 @@
       },
       {
         "id": "BR-STAND-013",
-        "rule": "Triple Crown leagues SKIP the FPL hit-penalty fetch entirely because hit penalties are already baked into the stored `leaguePoints`.",
+        "rule": "JPL Continental Championship leagues SKIP the FPL hit-penalty fetch entirely because hit penalties are already baked into the stored `leaguePoints`.",
         "sourceRefs": [
           "jpl-leagues/src/app/api/standings/route.ts:263-264"
         ]
@@ -440,7 +440,7 @@
         "id": "BR-STAND-042",
         "rule": "Cup-group standings tie-break (computed by `computeCupGroupStandings`): `cupGroupPoints DESC`, then goal-difference (GF − GA) DESC, then `goalFor` DESC. (Detailed cup-group rules deferred to module 09.)",
         "sourceRefs": [
-          "jpl-leagues/src/lib/formats/triple-crown/standings.ts:91-99"
+          "jpl-leagues/src/lib/formats/continental-championship/standings.ts:91-99"
         ]
       }
     ],
@@ -468,7 +468,7 @@
       },
       {
         "id": "AC-STAND-004",
-        "given": "a Triple Crown league with results stored in GWs 1–38",
+        "given": "a JPL Continental Championship league with results stored in GWs 1–38",
         "when": "standings are computed",
         "then": "`leagueStageEnd` resolves to 38 and all 38 PL fixtures are considered",
         "linksTo": "BR-STAND-003"
@@ -476,13 +476,13 @@
       {
         "id": "AC-STAND-005",
         "given": "a cup-group fixture with `competitionType='cup-group'` and a result",
-        "when": "TVT/Triple Crown PL standings are computed",
+        "when": "TVT/JPL Continental Championship PL standings are computed",
         "then": "the fixture contributes nothing to `pointsFor`/`pointsAgainst`/W-D-L for either team",
         "linksTo": "BR-STAND-004"
       },
       {
         "id": "AC-STAND-006",
-        "given": "a Triple Crown league with a ghost team in a cup group",
+        "given": "a JPL Continental Championship league with a ghost team in a cup group",
         "when": "the client requests PL standings",
         "then": "the ghost team does NOT appear in `groupA`/`groupB` rows",
         "linksTo": "BR-STAND-005"
@@ -496,7 +496,7 @@
       },
       {
         "id": "AC-STAND-008",
-        "given": "a Triple Crown team whose stored `teams.leaguePoints` is 42",
+        "given": "a JPL Continental Championship team whose stored `teams.leaguePoints` is 42",
         "when": "standings are computed",
         "then": "the response carries `leaguePoints: 42` even if `(wins*2 + draws)` would yield a different value",
         "linksTo": "BR-STAND-007"
@@ -531,7 +531,7 @@
       },
       {
         "id": "AC-STAND-013",
-        "given": "a Triple Crown league with 38 GWs of results",
+        "given": "a JPL Continental Championship league with 38 GWs of results",
         "when": "standings are computed",
         "then": "no per-player FPL hit-penalty API calls are issued (the entire hit-penalty block is skipped)",
         "linksTo": "BR-STAND-013"
@@ -802,7 +802,7 @@
       "discoveredDate": "2026-05-23",
       "description": "The standings response always emits `legend: { top8: 'TVT Title Play-offs', rank9to14: 'Challenger Series', rank15to16: 'Eliminated' }` (src/app/api/standings/route.ts:667-671). For a `teamSize=8` league, ranks 9–14 and 15–16 do not exist and the actual cutoff for playoffs is top-4 (per `getQualificationZone` at line 697-705), so the legend is misleading.",
       "expectedBehaviour": "Legend should be derived from `teamSize` and `getQualificationZone` (e.g. `{ top4: 'Playoffs', rank5to8: 'Eliminated' }` for 8-team leagues) or omitted in favour of UI-side computation.",
-      "actualBehaviour": "All leagues — including 8-team and Triple Crown — receive the 32-team legend, so UI components that key off these strings render incorrect bands.",
+      "actualBehaviour": "All leagues — including 8-team and JPL Continental Championship — receive the 32-team legend, so UI components that key off these strings render incorrect bands.",
       "sourceRefs": [
         "jpl-leagues/src/app/api/standings/route.ts:667-671",
         "jpl-leagues/src/app/api/standings/route.ts:697-705"
@@ -1030,11 +1030,11 @@
     },
     {
       "id": "TC-STAND-007",
-      "feature": "Triple Crown stage length",
-      "scenario": "Triple Crown league uses leagueStageEnd=38 covering all PL GWs",
+      "feature": "JPL Continental Championship stage length",
+      "scenario": "JPL Continental Championship league uses leagueStageEnd=38 covering all PL GWs",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "Triple Crown league `tc-2026` with results in GWs 1-38",
+      "preconditions": "JPL Continental Championship league `tc-2026` with results in GWs 1-38",
       "testData": "leagueSlug=tc-2026",
       "testSteps": [
         "1. GET /api/standings?leagueSlug=tc-2026",
@@ -1054,7 +1054,7 @@
       "scenario": "Cup-group fixture excluded from PL standings",
       "type": "Negative",
       "priority": "P1",
-      "preconditions": "Triple Crown league has a fixture with `competitionType='cup-group'` and a stored result home 60-40 away",
+      "preconditions": "JPL Continental Championship league has a fixture with `competitionType='cup-group'` and a stored result home 60-40 away",
       "testData": "leagueSlug=tc-2026",
       "testSteps": [
         "1. GET /api/standings?leagueSlug=tc-2026",
@@ -1094,7 +1094,7 @@
       "scenario": "Ghost teams in cup-group fixtures absent from PL standings tables",
       "type": "Negative",
       "priority": "P1",
-      "preconditions": "Triple Crown league has 2 ghost teams (`isGhost=true`) in cup groups",
+      "preconditions": "JPL Continental Championship league has 2 ghost teams (`isGhost=true`) in cup groups",
       "testData": "leagueSlug=tc-2026",
       "testSteps": [
         "1. GET /api/standings?leagueSlug=tc-2026",
@@ -1150,11 +1150,11 @@
     },
     {
       "id": "TC-STAND-013",
-      "feature": "Triple Crown leaguePoints",
-      "scenario": "Triple Crown returns stored leaguePoints verbatim",
+      "feature": "JPL Continental Championship leaguePoints",
+      "scenario": "JPL Continental Championship returns stored leaguePoints verbatim",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "Triple Crown team Bravo has `teams.leaguePoints=42` stored by processor; W*2+D would yield e.g. 30 if recomputed",
+      "preconditions": "JPL Continental Championship team Bravo has `teams.leaguePoints=42` stored by processor; W*2+D would yield e.g. 30 if recomputed",
       "testData": "leagueSlug=tc-2026, team=bravo",
       "testSteps": [
         "1. GET /api/standings?leagueSlug=tc-2026",
@@ -1313,11 +1313,11 @@
     },
     {
       "id": "TC-STAND-021",
-      "feature": "Triple Crown skip hit-penalty fetch",
-      "scenario": "Triple Crown standings issue zero FPL hit-penalty requests",
+      "feature": "JPL Continental Championship skip hit-penalty fetch",
+      "scenario": "JPL Continental Championship standings issue zero FPL hit-penalty requests",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "Triple Crown league with 38 GWs; FPL outbound spy enabled",
+      "preconditions": "JPL Continental Championship league with 38 GWs; FPL outbound spy enabled",
       "testData": "leagueSlug=tc-2026",
       "testSteps": [
         "1. Reset FPL outbound call counter",
@@ -2148,7 +2148,7 @@
       "scenario": "Cup-group ordering applies GD then GF after cupGroupPoints",
       "type": "Positive",
       "priority": "P3",
-      "preconditions": "Triple Crown cup group with teams: A (6pts, GD+5, GF 12), B (6pts, GD+5, GF 10), C (6pts, GD+3)",
+      "preconditions": "JPL Continental Championship cup group with teams: A (6pts, GD+5, GF 12), B (6pts, GD+5, GF 10), C (6pts, GD+3)",
       "testData": "leagueSlug=tc-2026, group=cup-X (computed by computeCupGroupStandings)",
       "testSteps": [
         "1. Invoke computeCupGroupStandings for the cup group",
@@ -2168,7 +2168,7 @@
       "scenario": "Group named 'cup-quarterfinals' is filtered out of groupA/groupB",
       "type": "Negative",
       "priority": "P2",
-      "preconditions": "Triple Crown league has a group with `name='cup-quarterfinals'`",
+      "preconditions": "JPL Continental Championship league has a group with `name='cup-quarterfinals'`",
       "testData": "leagueSlug=tc-2026",
       "testSteps": [
         "1. GET /api/standings?leagueSlug=tc-2026",
@@ -2369,23 +2369,23 @@
     },
     {
       "id": "TC-STAND-073",
-      "feature": "UCL/UEL knockout exclusion",
-      "scenario": "UCL knockout fixture result not counted in PL standings",
+      "feature": "JCL/JEL knockout exclusion",
+      "scenario": "JCL knockout fixture result not counted in PL standings",
       "type": "Negative",
       "priority": "P2",
-      "preconditions": "Triple Crown fixture with `competitionType='ucl-knockout'` has result 60-50",
+      "preconditions": "JPL Continental Championship fixture with `competitionType='jcl-knockout'` has result 60-50",
       "testData": "leagueSlug=tc-2026",
       "testSteps": [
         "1. GET /api/standings?leagueSlug=tc-2026",
-        "2. Verify neither team received a W/D/L credit or pointsFor delta from the UCL fixture"
+        "2. Verify neither team received a W/D/L credit or pointsFor delta from the JCL fixture"
       ],
-      "expectedResult": "PL standings unaffected by UCL knockout result",
+      "expectedResult": "PL standings unaffected by JCL knockout result",
       "postconditions": "",
       "requirementId": "AC-STAND-005",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "BR-STAND-004 UCL guard"
+      "notes": "BR-STAND-004 JCL guard"
     },
     {
       "id": "TC-STAND-074",
@@ -2413,7 +2413,7 @@
       "scenario": "Smoke - standings endpoint loads for each format type",
       "type": "Smoke",
       "priority": "P2",
-      "preconditions": "One league of each format exists: TVT (tvt-2026), Triple Crown (tc-2026), Auction (auction-2026)",
+      "preconditions": "One league of each format exists: TVT (tvt-2026), JPL Continental Championship (tc-2026), Auction (auction-2026)",
       "testData": "all three slugs",
       "testSteps": [
         "1. GET /api/standings?leagueSlug=tvt-2026",

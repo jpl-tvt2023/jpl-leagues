@@ -1,4 +1,4 @@
-// POST /api/admin/[leagueId]/restore-triple-crown
+// POST /api/admin/[leagueId]/restore-continental-championship
 //
 // Triple-crown restore from a backup .zip or saved snapshot. Same shape as restore-tvt:
 // preserves teams, wipes+restores fixtures. Triple-crown's cup-fixtures and UEFA knockouts are
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     .limit(1);
   if (!league) return NextResponse.json({ error: "League not found" }, { status: 404 });
   if (league.format !== "continental-championship") {
-    return NextResponse.json({ error: "Restore is for triple-crown leagues only" }, { status: 400 });
+    return NextResponse.json({ error: "Restore is for continental-championship leagues only" }, { status: 400 });
   }
 
   const contentType = request.headers.get("content-type") ?? "";
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       }
       if (parsed.meta && parsed.meta.format && parsed.meta.format !== "continental-championship") {
         return NextResponse.json(
-          { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is triple-crown.` },
+          { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is continental-championship.` },
           { status: 400 }
         );
       }
@@ -73,14 +73,14 @@ export async function POST(request: NextRequest) {
       // Cross-format guard for the saved-snapshot path — mirror the multipart guard.
       if (parsed.meta && parsed.meta.format && parsed.meta.format !== "continental-championship") {
         return NextResponse.json(
-          { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is triple-crown.` },
+          { error: `Format mismatch — this backup is for a ${parsed.meta.format} league but the target is continental-championship.` },
           { status: 400 }
         );
       }
       payload = parsed;
     }
   } catch (err) {
-    console.error("[restore-triple-crown] parse failed:", err);
+    console.error("[restore-continental-championship] parse failed:", err);
     return NextResponse.json(
       { error: "Failed to parse backup", message: err instanceof Error ? err.message : "unknown" },
       { status: 400 }
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     if (err instanceof RestoreGuardError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
-    console.error("[restore-triple-crown] apply failed:", err);
+    console.error("[restore-continental-championship] apply failed:", err);
     return NextResponse.json(
       { error: "Restore failed", message: err instanceof Error ? err.message : "unknown" },
       { status: 500 }

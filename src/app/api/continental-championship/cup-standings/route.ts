@@ -1,6 +1,6 @@
 /**
- * GET /api/triple-crown/cup-standings?leagueId=...
- * Fetch cup group standings for Triple Crown format
+ * GET /api/continental-championship/cup-standings?leagueId=...
+ * Fetch cup group standings for Continental Championship format
  *
  * Returns standings for each cup group (A/B/C/D):
  * - W/D/L records
@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, fixtures, groups, results, gameweeks } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
-import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
+import { computeCupGroupStandings } from "@/lib/formats/continental-championship/standings";
 
 export async function GET(request: NextRequest) {
   try {
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
           awayMatchPoints: f.result!.awayMatchPoints,
         }));
 
-      // Compute standings using Triple Crown logic
+      // Compute standings using Continental Championship logic
       const standings = computeCupGroupStandings(
         groupTeams.map(t => ({
           id: t.id,

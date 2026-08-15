@@ -4,7 +4,7 @@
  * Use the slug (not the UUID) in the URL — getAuthorizedLeagueId resolves
  * both. The endpoint expects the caller to already hold an admin session
  * cookie (superadmin works), and it handles TVT (1 or 2 groups, repetition
- * derived from teamSize + playoffStartGw) and Triple Crown (single PL group,
+ * derived from teamSize + playoffStartGw) and Continental Championship (single PL group,
  * 38 GWs) without further input.
  */
 

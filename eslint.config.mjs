@@ -35,7 +35,7 @@ const eslintConfig = defineConfig([
     // Lock the Phase 5 consolidation: fixture page files must import shared
     // types, not redeclare them. Other layers (lib/fpl-cache, playoffs shared)
     // intentionally own their own variants of these shapes.
-    files: ["src/app/**/fixtures/page.tsx", "src/app/**/uefa-fixtures/page.tsx"],
+    files: ["src/app/**/fixtures/page.tsx", "src/app/**/jpl-cup-fixtures/page.tsx"],
     rules: {
       "no-restricted-syntax": ["error", ...RESTRICTED_FIXTURE_TYPES],
     },

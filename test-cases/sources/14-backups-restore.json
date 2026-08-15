@@ -9,7 +9,7 @@
   },
   "requirements": {
     "version": 8,
-    "businessContext": "Backups & Restore covers the snapshot lifecycle for a league: an on-demand .zip download of current state, persisted JSON snapshots in the `backups` table (manual, gw1-lock, auction-complete triggers), per-format restore endpoints (TVT, triple-crown, auction) that wipe-then-reinsert fixtures or auction state from a parsed .zip or stored snapshot, and the idempotent auto-snapshot helper invoked from session-completion and the cron's per-GW pipeline. Restore is destructive and operates per-format with strict cross-league + cross-format guards on the multipart upload path; saved-snapshot path enforces league ownership via the SELECT's WHERE clause.",
+    "businessContext": "Backups & Restore covers the snapshot lifecycle for a league: an on-demand .zip download of current state, persisted JSON snapshots in the `backups` table (manual, gw1-lock, auction-complete triggers), per-format restore endpoints (TVT, continental-championship, auction) that wipe-then-reinsert fixtures or auction state from a parsed .zip or stored snapshot, and the idempotent auto-snapshot helper invoked from session-completion and the cron's per-GW pipeline. Restore is destructive and operates per-format with strict cross-league + cross-format guards on the multipart upload path; saved-snapshot path enforces league ownership via the SELECT's WHERE clause.",
     "userStories": [
       {
         "id": "US-BACKUP-001",
@@ -69,11 +69,11 @@
       },
       {
         "id": "US-BACKUP-007",
-        "asA": "admin of a triple-crown league",
+        "asA": "admin of a continental-championship league",
         "iWant": "to restore PL fixtures from an uploaded backup .zip or stored snapshot",
-        "soThat": "I can recover the league-format portion (cup + UEFA knockouts deferred)",
+        "soThat": "I can recover the league-format portion (cup + JCL/JEL knockouts deferred)",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:20-97"
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:20-97"
         ]
       },
       {
@@ -112,7 +112,7 @@
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/restore-auction/route.ts:288-307",
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:46-66",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:43-62"
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:43-62"
         ]
       }
     ],
@@ -127,7 +127,7 @@
           "src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:24-25",
           "src/app/api/admin/[leagueId]/restore-auction/route.ts:264-265",
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:24-25",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:21-22"
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:21-22"
         ]
       },
       {
@@ -326,18 +326,18 @@
       },
       {
         "id": "BR-BACKUP-027",
-        "rule": "Both restore-tvt and restore-triple-crown enforce a cross-format guard on BOTH the multipart-upload branch AND the saved-snapshot ({backupId}) branch. For the saved-snapshot path the format is inferred from which JSON columns are populated in the backups row (loadRestoreSnapshot — see DEF-BACKUP-008's inferredOriginalFormat heuristic). Cross-format restores return HTTP 400 before any destructive operation runs.",
+        "rule": "Both restore-tvt and restore-continental-championship enforce a cross-format guard on BOTH the multipart-upload branch AND the saved-snapshot ({backupId}) branch. For the saved-snapshot path the format is inferred from which JSON columns are populated in the backups row (loadRestoreSnapshot — see DEF-BACKUP-008's inferredOriginalFormat heuristic). Cross-format restores return HTTP 400 before any destructive operation runs.",
         "sourceRefs": [
           "src/lib/backup/restore-tvt.ts:91-112",
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:71-85",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:67-79"
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:67-79"
         ]
       },
       {
         "id": "BR-BACKUP-028",
-        "rule": "POST /restore-triple-crown rejects with 400 when `league.format !== \"triple-crown\"`.",
+        "rule": "POST /restore-continental-championship rejects with 400 when `league.format !== \"continental-championship\"`.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:30-32"
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:30-32"
         ]
       },
       {
@@ -352,7 +352,7 @@
         "rule": "Restore endpoints accept either `multipart/form-data` with a `file` Blob or JSON `{ backupId: string }`; missing/invalid input returns 400 with the helpful message `\"Provide either a multipart `file` upload or JSON `{ backupId }`\"`.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:37-77",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:34-73",
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:34-73",
           "src/app/api/admin/[leagueId]/restore-auction/route.ts:278-318"
         ]
       },
@@ -361,7 +361,7 @@
         "rule": "Multipart restore path rejects with 400 if the uploaded .zip is missing `meta.json` (\"please re-export from this league via Download Backup\").",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:50-54",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:45-49",
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:45-49",
           "src/app/api/admin/[leagueId]/restore-auction/route.ts:290-295"
         ]
       },
@@ -370,7 +370,7 @@
         "rule": "Multipart restore path rejects with 400 if `meta.leagueId` is present and does not equal the target league (cross-league restore blocked before any destructive op).",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:55-60",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:51-56",
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:51-56",
           "src/app/api/admin/[leagueId]/restore-auction/route.ts:296-301"
         ]
       },
@@ -379,7 +379,7 @@
         "rule": "Multipart restore path rejects with 400 if `meta.format` is present and does not equal the target league's format.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:61-66",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:57-62",
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:57-62",
           "src/app/api/admin/[leagueId]/restore-auction/route.ts:302-307"
         ]
       },
@@ -393,7 +393,7 @@
       },
       {
         "id": "BR-BACKUP-035",
-        "rule": "Saved-snapshot restore path for TVT/triple-crown does NOT check the backup's original format — `loadRestoreSnapshot` synthesises `meta: { leagueId: row.leagueId }` only (no `format`), so a triple-crown snapshot restored via /restore-tvt skips the format guard. // CODE-CONFIRMED: may be a defect — format guard only fires on multipart path.",
+        "rule": "Saved-snapshot restore path for TVT/continental-championship does NOT check the backup's original format — `loadRestoreSnapshot` synthesises `meta: { leagueId: row.leagueId }` only (no `format`), so a continental-championship snapshot restored via /restore-tvt skips the format guard. // CODE-CONFIRMED: may be a defect — format guard only fires on multipart path.",
         "sourceRefs": [
           "src/lib/backup/restore-tvt.ts:80-97",
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:61-66"
@@ -401,12 +401,12 @@
       },
       {
         "id": "BR-BACKUP-036",
-        "rule": "`restoreFixtures` refuses to wipe when `payload.fixtures` is missing or has length 0 — it throws a `RestoreGuardError` before any DB read or delete. Both `/restore-tvt` and `/restore-triple-crown` route handlers catch `RestoreGuardError` and return 400 with the guardrail message; league fixtures + cascaded results are provably untouched on the empty-payload path.",
+        "rule": "`restoreFixtures` refuses to wipe when `payload.fixtures` is missing or has length 0 — it throws a `RestoreGuardError` before any DB read or delete. Both `/restore-tvt` and `/restore-continental-championship` route handlers catch `RestoreGuardError` and return 400 with the guardrail message; league fixtures + cascaded results are provably untouched on the empty-payload path.",
         "sourceRefs": [
           "src/lib/backup/restore-tvt.ts:41-49",
           "src/lib/backup/restore-tvt.ts:113-124",
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:95-97",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:92-94"
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:92-94"
         ]
       },
       {
@@ -454,10 +454,10 @@
       },
       {
         "id": "BR-BACKUP-043",
-        "rule": "Restore-triple-crown reuses `restoreFixtures` from restore-tvt; cup fixtures + UCL/UEL knockouts are NOT in the backup payload today (tracked follow-up — see DEF-TC-003). Only PL fixtures are restored.",
+        "rule": "Restore-continental-championship reuses `restoreFixtures` from restore-tvt; cup fixtures + JCL/JEL knockouts are NOT in the backup payload today (tracked follow-up — see DEF-TC-003). Only PL fixtures are restored.",
         "sourceRefs": [
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:5-6",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:82-89"
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:5-6",
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:82-89"
         ]
       },
       {
@@ -567,7 +567,7 @@
           "src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:13",
           "src/app/api/admin/[leagueId]/restore-auction/route.ts:25",
           "src/app/api/admin/[leagueId]/restore-tvt/route.ts:21",
-          "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:18"
+          "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:18"
         ]
       },
       {
@@ -610,7 +610,7 @@
       },
       {
         "id": "AC-BACKUP-005",
-        "given": "a league with format=\"triple-crown\"",
+        "given": "a league with format=\"continental-championship\"",
         "when": "GET /backup is called",
         "then": "the zip contains teams.xlsx, captains.xlsx, fixtures.xlsx, gameweeks.xlsx, meta.json — NO chips.xlsx and NO auction_*.xlsx",
         "linksTo": "BR-BACKUP-006"
@@ -737,7 +737,7 @@
       {
         "id": "AC-BACKUP-023",
         "given": "an admin of a TVT league",
-        "when": "they POST /restore-tvt against a triple-crown league",
+        "when": "they POST /restore-tvt against a continental-championship league",
         "then": "the response is 400 \"Restore is for TVT-format leagues only\"",
         "linksTo": "BR-BACKUP-027"
       },
@@ -745,7 +745,7 @@
         "id": "AC-BACKUP-024",
         "given": "an admin POSTs /api/admin/[leagueId]/restore-tvt with body {backupId} pointing at a backup whose auctionSquadsJson is populated (inferred format='auction')",
         "when": "the handler runs the saved-snapshot path",
-        "then": "HTTP 400 with body containing 'Format mismatch — this backup is for a auction league but the target is TVT'; no destructive operation runs. Same guard fires for restore-triple-crown when the backup's inferred format isn't 'triple-crown'.",
+        "then": "HTTP 400 with body containing 'Format mismatch — this backup is for a auction league but the target is TVT'; no destructive operation runs. Same guard fires for restore-continental-championship when the backup's inferred format isn't 'continental-championship'.",
         "linksTo": "BR-BACKUP-028"
       },
       {
@@ -778,9 +778,9 @@
       },
       {
         "id": "AC-BACKUP-029",
-        "given": "an admin uploads a TVT backup zip into a triple-crown league",
-        "when": "/restore-triple-crown parses the zip",
-        "then": "the response is 400 \"Format mismatch — this backup is for a tvt league but the target is triple-crown.\"",
+        "given": "an admin uploads a TVT backup zip into a continental-championship league",
+        "when": "/restore-continental-championship parses the zip",
+        "then": "the response is 400 \"Format mismatch — this backup is for a tvt league but the target is continental-championship.\"",
         "linksTo": "BR-BACKUP-033"
       },
       {
@@ -792,14 +792,14 @@
       },
       {
         "id": "AC-BACKUP-031",
-        "given": "league X is TVT and league Y is triple-crown; an admin for X holds a backupId from a triple-crown snapshot taken in X back when X was triple-crown",
+        "given": "league X is TVT and league Y is continental-championship; an admin for X holds a backupId from a continental-championship snapshot taken in X back when X was continental-championship",
         "when": "the admin POSTs /restore-tvt with `{ backupId }` for that snapshot",
         "then": "the route accepts it (no format check on saved-snapshot path) and wipes/restores PL fixtures — the format guard only fires on the multipart upload path",
         "linksTo": "BR-BACKUP-035"
       },
       {
         "id": "AC-BACKUP-032",
-        "given": "a TVT or triple-crown restore payload whose `fixtures` array is empty (either an uploaded zip with empty `fixtures.xlsx` or a saved snapshot whose `fixturesJson` is `\"[]\"`)",
+        "given": "a TVT or continental-championship restore payload whose `fixtures` array is empty (either an uploaded zip with empty `fixtures.xlsx` or a saved snapshot whose `fixturesJson` is `\"[]\"`)",
         "when": "`restoreFixtures` runs",
         "then": "the function throws `RestoreGuardError` before any DB read or delete; the route catches it and returns 400 with the message `\"Refusing to restore: backup payload contains 0 fixtures — wipe aborted to prevent silent data loss. Re-upload a backup with a non-empty fixtures sheet.\"` and the league's fixtures + results tables are untouched",
         "linksTo": "BR-BACKUP-036"
@@ -855,9 +855,9 @@
       },
       {
         "id": "AC-BACKUP-040",
-        "given": "a triple-crown league with cup fixtures + UCL/UEL knockouts before restore",
-        "when": "restore-triple-crown succeeds with a PL-only payload",
-        "then": "cup + UEFA knockout state is NOT in the backup payload and is not restored (cross-module DEF-TC-003); the success message warns that those need separate handling",
+        "given": "a continental-championship league with cup fixtures + JCL/JEL knockouts before restore",
+        "when": "restore-continental-championship succeeds with a PL-only payload",
+        "then": "cup + JCL/JEL knockout state is NOT in the backup payload and is not restored (cross-module DEF-TC-003); the success message warns that those need separate handling",
         "linksTo": "BR-BACKUP-043"
       },
       {
@@ -1058,11 +1058,11 @@
     {
       "id": "TC-BACKUP-005",
       "feature": "Format-conditional sheets",
-      "scenario": "Triple-crown backup omits chips.xlsx and auction sheets",
+      "scenario": "Continental Championship backup omits chips.xlsx and auction sheets",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "League X format=triple-crown with teams, captains, fixtures",
-      "testData": "leagueId=X (triple-crown)",
+      "preconditions": "League X format=continental-championship with teams, captains, fixtures",
+      "testData": "leagueId=X (continental-championship)",
       "testSteps": [
         "1. GET /api/admin/X/backup",
         "2. List zip entries"
@@ -1387,8 +1387,8 @@
       "scenario": "backup fetch exposes inferredOriginalFormat for drift detection",
       "type": "Positive",
       "priority": "P3",
-      "preconditions": "Backup row B was taken when league X format=tvt; league X has since been changed to format=triple-crown",
-      "testData": "leagueId=X (now triple-crown), backupId=B (taken when tvt)",
+      "preconditions": "Backup row B was taken when league X format=tvt; league X has since been changed to format=continental-championship",
+      "testData": "leagueId=X (now continental-championship), backupId=B (taken when tvt)",
       "testSteps": [
         "1. GET /api/admin/X/backups/B",
         "2. Open downloaded zip",
@@ -1430,8 +1430,8 @@
       "scenario": "POST /restore-tvt against a non-TVT league returns 400",
       "type": "Negative",
       "priority": "P1",
-      "preconditions": "League X format=triple-crown; admin authorized for X",
-      "testData": "leagueId=X (triple-crown), POST /restore-tvt with any payload",
+      "preconditions": "League X format=continental-championship; admin authorized for X",
+      "testData": "leagueId=X (continental-championship), POST /restore-tvt with any payload",
       "testSteps": [
         "1. POST /api/admin/X/restore-tvt"
       ],
@@ -1445,16 +1445,16 @@
     },
     {
       "id": "TC-BACKUP-024",
-      "feature": "Restore-triple-crown format guard",
-      "scenario": "POST /restore-triple-crown against a TVT league returns 400",
+      "feature": "Restore-continental-championship format guard",
+      "scenario": "POST /restore-continental-championship against a TVT league returns 400",
       "type": "Negative",
       "priority": "P1",
       "preconditions": "League X format=tvt; admin authorized for X",
       "testData": "leagueId=X (tvt)",
       "testSteps": [
-        "1. POST /api/admin/X/restore-triple-crown"
+        "1. POST /api/admin/X/restore-continental-championship"
       ],
-      "expectedResult": "400 'Restore is for triple-crown leagues only'",
+      "expectedResult": "400 'Restore is for continental-championship leagues only'",
       "postconditions": "No state change",
       "requirementId": "AC-BACKUP-024",
       "author": "qa-tester",
@@ -1543,15 +1543,15 @@
     {
       "id": "TC-BACKUP-029",
       "feature": "Cross-format multipart restore blocked",
-      "scenario": "Restore-triple-crown with TVT backup zip returns 400",
+      "scenario": "Restore-continental-championship with TVT backup zip returns 400",
       "type": "Negative",
       "priority": "P1",
-      "preconditions": "League X format=triple-crown; uploaded zip meta.format='tvt'",
+      "preconditions": "League X format=continental-championship; uploaded zip meta.format='tvt'",
       "testData": "Multipart upload of zip with meta.format=tvt",
       "testSteps": [
-        "1. POST /api/admin/X/restore-triple-crown with multipart file"
+        "1. POST /api/admin/X/restore-continental-championship with multipart file"
       ],
-      "expectedResult": "400 'Format mismatch — this backup is for a tvt league but the target is triple-crown.'",
+      "expectedResult": "400 'Format mismatch — this backup is for a tvt league but the target is continental-championship.'",
       "postconditions": "X's fixtures intact",
       "requirementId": "AC-BACKUP-029",
       "author": "qa-tester",
@@ -1585,15 +1585,15 @@
       "scenario": "Saved-snapshot restore via backupId enforces cross-format guard",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "League X currently format=tvt; backup row B was taken when X was format=triple-crown (B.leagueId=X, no format stored)",
+      "preconditions": "League X currently format=tvt; backup row B was taken when X was format=continental-championship (B.leagueId=X, no format stored)",
       "testData": "POST /api/admin/X/restore-tvt body={backupId: B}",
       "testSteps": [
         "1. POST with { backupId: B }",
         "2. Inspect response",
         "3. Inspect fixtures table"
       ],
-      "expectedResult": "POST /api/admin/[leagueId]/restore-tvt with body {backupId} pointing at a backup whose auctionSquadsJson is non-null (inferred format='auction') returns HTTP 400 'Format mismatch — this backup is for a auction league but the target is TVT.' Same guard for restore-triple-crown. The data is NOT wiped/restored.",
-      "postconditions": "X's fixtures replaced from triple-crown snapshot — invalid cross-format state",
+      "expectedResult": "POST /api/admin/[leagueId]/restore-tvt with body {backupId} pointing at a backup whose auctionSquadsJson is non-null (inferred format='auction') returns HTTP 400 'Format mismatch — this backup is for a auction league but the target is TVT.' Same guard for restore-continental-championship. The data is NOT wiped/restored.",
+      "postconditions": "X's fixtures replaced from continental-championship snapshot — invalid cross-format state",
       "requirementId": "AC-BACKUP-031",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -1619,7 +1619,7 @@
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-BACKUP-003.\n[QA-VERIFY] Updated post-DEF-BACKUP-003 fix on 2026-05-25. Re-tagged Regression -> Positive; expectedResult inverted to assert the new guardrail behaviour. RestoreGuardError raised at src/lib/backup/restore-tvt.ts:113-121 before any DB read/delete; routes at restore-tvt/route.ts:95-97 and restore-triple-crown/route.ts:92-94 catch and map to 400. Confirms BR-BACKUP-036 + AC-BACKUP-032 now describe guardrail behaviour."
+      "notes": "Pins DEF-BACKUP-003.\n[QA-VERIFY] Updated post-DEF-BACKUP-003 fix on 2026-05-25. Re-tagged Regression -> Positive; expectedResult inverted to assert the new guardrail behaviour. RestoreGuardError raised at src/lib/backup/restore-tvt.ts:113-121 before any DB read/delete; routes at restore-tvt/route.ts:95-97 and restore-continental-championship/route.ts:92-94 catch and map to 400. Confirms BR-BACKUP-036 + AC-BACKUP-032 now describe guardrail behaviour."
     },
     {
       "id": "TC-BACKUP-033",
@@ -1763,19 +1763,19 @@
     },
     {
       "id": "TC-BACKUP-040",
-      "feature": "Triple-crown restore covers PL only",
-      "scenario": "Cup + UCL/UEL knockout state is not restored (cross-module DEF-TC-003)",
+      "feature": "Continental Championship restore covers PL only",
+      "scenario": "Cup + JCL/JEL knockout state is not restored (cross-module DEF-TC-003)",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple-crown league X has cup fixtures and UCL/UEL knockouts seeded",
+      "preconditions": "Continental Championship league X has cup fixtures and JCL/JEL knockouts seeded",
       "testData": "Restore payload with PL fixtures only",
       "testSteps": [
-        "1. POST /restore-triple-crown",
-        "2. Query cup_fixtures and uefa_knockout tables",
+        "1. POST /restore-continental-championship",
+        "2. Query cup_fixtures and jcl_jel_knockout tables",
         "3. Inspect response.message"
       ],
-      "expectedResult": "PL fixtures restored; cup + UEFA knockout tables NOT touched by this endpoint; response message warns those need separate handling",
-      "postconditions": "PL restored; cup/UEFA untouched",
+      "expectedResult": "PL fixtures restored; cup + JCL/JEL knockout tables NOT touched by this endpoint; response message warns those need separate handling",
+      "postconditions": "PL restored; cup/JCL-JEL untouched",
       "requirementId": "AC-BACKUP-040",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -2237,18 +2237,18 @@
     },
     {
       "id": "DEF-BACKUP-002",
-      "title": "Saved-snapshot restore path skips cross-format guard for TVT/triple-crown",
+      "title": "Saved-snapshot restore path skips cross-format guard for TVT/continental-championship",
       "severity": "Major",
       "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
-      "description": "loadRestoreSnapshot (src/lib/backup/restore-tvt.ts:80-97) builds `meta: { leagueId: row.leagueId }` with NO `format` field. The route's format guard `if (parsed.meta.format && parsed.meta.format !== \"tvt\")` short-circuits as falsy because `parsed.meta.format` is undefined. A triple-crown snapshot of league X can therefore be restored into the same league (after re-format) via /restore-tvt without the format mismatch check ever firing.",
+      "description": "loadRestoreSnapshot (src/lib/backup/restore-tvt.ts:80-97) builds `meta: { leagueId: row.leagueId }` with NO `format` field. The route's format guard `if (parsed.meta.format && parsed.meta.format !== \"tvt\")` short-circuits as falsy because `parsed.meta.format` is undefined. A continental-championship snapshot of league X can therefore be restored into the same league (after re-format) via /restore-tvt without the format mismatch check ever firing.",
       "expectedBehaviour": "Saved-snapshot path should either (a) persist `format` in the backups row and validate it on restore, or (b) re-derive the snapshot's format from its payload shape (e.g., presence of chips array → tvt) and compare against target.",
       "actualBehaviour": "Format guard is silently bypassed on the `{ backupId }` path; only the multipart-upload path enforces format. Cross-format restore via saved snapshot is therefore not blocked.",
       "sourceRefs": [
         "src/lib/backup/restore-tvt.ts:80-97",
         "src/app/api/admin/[leagueId]/restore-tvt/route.ts:61-66",
-        "src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:57-62"
+        "src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:57-62"
       ],
       "linkedBusinessRules": [
         "BR-BACKUP-035"
@@ -2261,7 +2261,7 @@
         "TC-BACKUP-031"
       ],
       "notes": "Easiest fix: add a `format` text column to `backups` (defaulting to NULL for legacy rows) and populate from `league.format` on insert; loadRestoreSnapshot returns it; route guard checks it. Risk: cross-format restore is destructive (BR-BACKUP-036) and silently produces an invalid state. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
-      "resolution": "loadRestoreSnapshot (src/lib/backup/restore-tvt.ts:91-112) now derives an inferredFormat from which JSON columns are populated (auctionSquadsJson -> 'auction'; chipsJson -> 'tvt'; otherwise 'triple-crown') and sets meta.format on the returned RestorePayload. Both restore routes (src/app/api/admin/[leagueId]/restore-tvt/route.ts:78 and restore-triple-crown/route.ts:74) now enforce the same format guard on the backupId branch that the multipart branch already had — refusing the restore with HTTP 400 when the inferred original format differs from the target league's current format.",
+      "resolution": "loadRestoreSnapshot (src/lib/backup/restore-tvt.ts:91-112) now derives an inferredFormat from which JSON columns are populated (auctionSquadsJson -> 'auction'; chipsJson -> 'tvt'; otherwise 'continental-championship') and sets meta.format on the returned RestorePayload. Both restore routes (src/app/api/admin/[leagueId]/restore-tvt/route.ts:78 and restore-continental-championship/route.ts:74) now enforce the same format guard on the backupId branch that the multipart branch already had — refusing the restore with HTTP 400 when the inferred original format differs from the target league's current format.",
       "resolutionDate": "2026-05-27"
     },
     {
@@ -2289,8 +2289,8 @@
       "pinningTestCases": [
         "TC-BACKUP-032"
       ],
-      "notes": "Quick fix: `if (payload.fixtures.length === 0) return { inserted: 0, warnings: [\"Refusing to restore: payload has 0 fixtures — wipe aborted.\"] };` before the delete call. Better: wrap the whole restore in a drizzle transaction. Risk: data loss — most common when admin uploads a malformed zip or hits restore on a fresh league with no fixtures.\n[DEV] Self-verified: tsc passes for touched files (pre-existing failures only in unrelated tests/league-types/tvt-*.spec.ts), manual diff review clean. The guard fires BEFORE any DB read or delete, so the league state is provably untouched on the empty-payload path. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-BACKUP-032 against the fix. Expected behaviour now: POST /restore-tvt (and /restore-triple-crown) with a payload whose fixtures array is empty returns 400 with the message `\"Refusing to restore: backup payload contains 0 fixtures — wipe aborted to prevent silent data loss. Re-upload a backup with a non-empty fixtures sheet.\"` and the league's fixtures + results tables are untouched. Cover both code paths: (a) multipart upload of a zip whose fixtures.xlsx is empty, (b) JSON {backupId} where the stored backups.fixturesJson is `\"[]\"`. Also re-confirm the happy path TC-BACKUP-031 (positive restore with non-empty fixtures) still works.\n[BA] BR-BACKUP-036 + AC-BACKUP-032 now describe the OLD behaviour. Update BR-BACKUP-036 to: `restoreFixtures refuses to wipe when payload.fixtures is missing or empty; throws RestoreGuardError, callers map to 400.` Update AC-BACKUP-032 expected: `the route returns 400 with the guardrail message and NO fixtures are deleted.`\n[QA-VERIFIED]: 2026-05-25 — TC-BACKUP-032 inverted; empty-payload guardrail confirmed.\n[BA-UPDATED]: 2026-05-25 — BR-BACKUP-036 + AC-BACKUP-032 updated.",
-      "resolution": "Added a `RestoreGuardError` class and a guardrail at the top of `restoreFixtures` (src/lib/backup/restore-tvt.ts:41-49, 113-121) that throws this error before any DB read or delete when `payload.fixtures` is missing or has length 0. Both route handlers (src/app/api/admin/[leagueId]/restore-tvt/route.ts:95-97 and src/app/api/admin/[leagueId]/restore-triple-crown/route.ts:84-86) now catch `RestoreGuardError` and return 400 with the error message instead of a 500. League fixtures + cascaded results are provably untouched on the empty-payload path.",
+      "notes": "Quick fix: `if (payload.fixtures.length === 0) return { inserted: 0, warnings: [\"Refusing to restore: payload has 0 fixtures — wipe aborted.\"] };` before the delete call. Better: wrap the whole restore in a drizzle transaction. Risk: data loss — most common when admin uploads a malformed zip or hits restore on a fresh league with no fixtures.\n[DEV] Self-verified: tsc passes for touched files (pre-existing failures only in unrelated tests/league-types/tvt-*.spec.ts), manual diff review clean. The guard fires BEFORE any DB read or delete, so the league state is provably untouched on the empty-payload path. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-BACKUP-032 against the fix. Expected behaviour now: POST /restore-tvt (and /restore-continental-championship) with a payload whose fixtures array is empty returns 400 with the message `\"Refusing to restore: backup payload contains 0 fixtures — wipe aborted to prevent silent data loss. Re-upload a backup with a non-empty fixtures sheet.\"` and the league's fixtures + results tables are untouched. Cover both code paths: (a) multipart upload of a zip whose fixtures.xlsx is empty, (b) JSON {backupId} where the stored backups.fixturesJson is `\"[]\"`. Also re-confirm the happy path TC-BACKUP-031 (positive restore with non-empty fixtures) still works.\n[BA] BR-BACKUP-036 + AC-BACKUP-032 now describe the OLD behaviour. Update BR-BACKUP-036 to: `restoreFixtures refuses to wipe when payload.fixtures is missing or empty; throws RestoreGuardError, callers map to 400.` Update AC-BACKUP-032 expected: `the route returns 400 with the guardrail message and NO fixtures are deleted.`\n[QA-VERIFIED]: 2026-05-25 — TC-BACKUP-032 inverted; empty-payload guardrail confirmed.\n[BA-UPDATED]: 2026-05-25 — BR-BACKUP-036 + AC-BACKUP-032 updated.",
+      "resolution": "Added a `RestoreGuardError` class and a guardrail at the top of `restoreFixtures` (src/lib/backup/restore-tvt.ts:41-49, 113-121) that throws this error before any DB read or delete when `payload.fixtures` is missing or has length 0. Both route handlers (src/app/api/admin/[leagueId]/restore-tvt/route.ts:95-97 and src/app/api/admin/[leagueId]/restore-continental-championship/route.ts:84-86) now catch `RestoreGuardError` and return 400 with the error message instead of a 500. League fixtures + cascaded results are provably untouched on the empty-payload path.",
       "resolutionDate": "2026-05-25"
     },
     {
@@ -2412,7 +2412,7 @@
       "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
-      "description": "src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:47-56 builds the rebuilt zip's meta.json from the CURRENT leagues row (slug/name/format/season), not from any meta stored in the backup row. If the league has since been re-formatted (e.g., tvt → triple-crown) or renamed, the downloaded zip's meta.json reports the new identity, not the snapshot-time identity. Admins relying on the zip's meta to know what the snapshot represented will be misled.",
+      "description": "src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:47-56 builds the rebuilt zip's meta.json from the CURRENT leagues row (slug/name/format/season), not from any meta stored in the backup row. If the league has since been re-formatted (e.g., tvt → continental-championship) or renamed, the downloaded zip's meta.json reports the new identity, not the snapshot-time identity. Admins relying on the zip's meta to know what the snapshot represented will be misled.",
       "expectedBehaviour": "Persist a `metaJson` column on the backups row at insert time (it's already generated by generateBackupRows) and emit that on download; fall back to synthesised meta only for legacy rows with no metaJson.",
       "actualBehaviour": "Meta in the rebuilt zip reflects current state, not snapshot state. Format/slug/name changes silently rewrite history.",
       "sourceRefs": [
@@ -2429,7 +2429,7 @@
         "TC-BACKUP-021"
       ],
       "notes": "Adds one column to backups; populated at insert time in both POST /backups and writeAutoSnapshot. Low risk, additive. Currently most leagues don't change format mid-season so user-visible impact is small, but the snapshot integrity guarantee is broken. [DEV] Self-verified: tsc clean. [QA-VERIFIED] Pinning TC(s) inverted. [BA-UPDATED] BR/AC text refreshed.",
-      "resolution": "Added inferredOriginalFormat to the backup-fetch meta (src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:43-64). Derived from which JSON columns are populated: auctionSquadsJson != null → 'auction'; chipsJson != null → 'tvt'; otherwise the current format (with auction/tvt fallback to 'triple-crown'). When inferredOriginalFormat !== format the league was re-formatted after this snapshot — restore tooling can refuse with a meaningful error. Also extended the BackupMeta type with the optional field.",
+      "resolution": "Added inferredOriginalFormat to the backup-fetch meta (src/app/api/admin/[leagueId]/backups/[backupId]/route.ts:43-64). Derived from which JSON columns are populated: auctionSquadsJson != null → 'auction'; chipsJson != null → 'tvt'; otherwise the current format (with auction/tvt fallback to 'continental-championship'). When inferredOriginalFormat !== format the league was re-formatted after this snapshot — restore tooling can refuse with a meaningful error. Also extended the BackupMeta type with the optional field.",
       "resolutionDate": "2026-05-26"
     }
   ]

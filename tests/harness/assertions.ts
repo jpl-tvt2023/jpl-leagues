@@ -32,3 +32,18 @@ export async function expectPageLoads(page: Page, path: string): Promise<void> {
   const res = await page.goto(path);
   expect(res?.status() ?? 0).toBeLessThan(400);
 }
+
+/**
+ * Visit a page and assert it doesn't throw an uncaught client-side exception
+ * during hydration/render. A 200 response alone doesn't catch this — Next.js
+ * SSRs the shell fine and the crash only happens once client JS runs, so
+ * `expectPageLoads` would pass even when the page is broken.
+ */
+export async function expectPageLoadsWithoutError(page: Page, path: string): Promise<void> {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const res = await page.goto(path);
+  expect(res?.status() ?? 0).toBeLessThan(400);
+  await page.waitForLoadState("networkidle");
+  expect(errors).toEqual([]);
+}

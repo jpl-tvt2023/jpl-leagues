@@ -13,7 +13,7 @@ import {
   type UserRole,
 } from "./shared";
 
-export function TripleCrownHelp({ userRole }: { userRole: UserRole }) {
+export function ContinentalChampionshipHelp({ userRole }: { userRole: UserRole }) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("faqs");
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 

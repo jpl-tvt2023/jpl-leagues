@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
   let resolvedEnabledChips: string[];
 
   if (format === "continental-championship") {
-    // Triple Crown: hardcoded values
+    // Continental Championship: hardcoded values
     resolvedTeamSize = 20;
     resolvedGroupCount = 4; // 1 PL group + 4 cup groups (managed separately)
     resolvedPlayoffStartGw = 27;
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
         enabledChips: JSON.stringify(resolvedEnabledChips),
         // initialBudget is auction-only. For non-auction formats let the schema
         // default fire so the explicit write here can't confuse readers into
-        // thinking the column means something for TVT/Triple Crown.
+        // thinking the column means something for TVT/Continental Championship.
         ...(format === "auction" ? { initialBudget: initialBudget ?? 100_000_000 } : {}),
         isSimulated: format === "auction" ? (isSimulated ?? false) : false,
         // PL Club Auction toggle — only meaningful on auction leagues; force false elsewhere

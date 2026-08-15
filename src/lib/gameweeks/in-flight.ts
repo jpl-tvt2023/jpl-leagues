@@ -9,7 +9,7 @@ import { and, desc, eq, inArray, lte } from "drizzle-orm";
  * For the auction format: in flight = highest GW where deadline ≤ now and no
  * auctionScores rows exist for it yet.
  *
- * For TVT / triple-crown: in flight = highest GW where deadline ≤ now and at
+ * For TVT / continental-championship: in flight = highest GW where deadline ≤ now and at
  * least one fixture for that GW lacks a result.
  *
  * Returns null if the latest deadline-passed GW has been fully processed (or
@@ -53,7 +53,7 @@ export async function getInFlightGameweekNumber(leagueId: string): Promise<numbe
     return null;
   }
 
-  // TVT / triple-crown: a GW is "in flight" if any of its fixtures has no
+  // TVT / continental-championship: a GW is "in flight" if any of its fixtures has no
   // result row yet. We check the newest passed-deadline GW first.
   for (const gw of passed) {
     const gwFixtures = await db

@@ -37,7 +37,7 @@ a single Excel workbook.
 | 6 | Captains & Chips (TVT) | [06-captains-chips.json](sources/06-captains-chips.json) | Captains & Chips | qa-signed-off |
 | 7 | Standings & Results | [07-standings-results.json](sources/07-standings-results.json) | Standings | qa-signed-off |
 | 8 | TVT Playoffs (8/16/32 + Challenger Cup) | [08-tvt-playoffs.json](sources/08-tvt-playoffs.json) | TVT Playoffs | qa-signed-off |
-| 9 | Triple Crown (cup groups, UCL/UEL/Europa) | [09-triple-crown.json](sources/09-triple-crown.json) | Triple Crown | qa-signed-off |
+| 9 | JPL Continental Championship (cup groups, JCL/JEL/Europa) | [09-continental-championship.json](sources/09-continental-championship.json) | JPL Continental Championship | qa-signed-off |
 | 10 | Auction Core (sessions, bidding, wishlist) | [10-auction-core.json](sources/10-auction-core.json) | Auction Core | qa-signed-off |
 | 11 | Auction Economy (purse, payouts, synergy) | [11-auction-economy.json](sources/11-auction-economy.json) | Auction Economy | qa-signed-off |
 | 12 | Auction Marketplace (trades — Complete tier) | [12-auction-marketplace.json](sources/12-auction-marketplace.json) | Marketplace | qa-signed-off |

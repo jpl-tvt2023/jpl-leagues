@@ -369,7 +369,7 @@
       },
       {
         "id": "BR-TEAM-031",
-        "rule": "Bulk-upload preserves ghost teams (`isGhost=true`) — they are never deleted by the wipe step. (Ghost teams exist only in Triple Crown for bye fixtures.)",
+        "rule": "Bulk-upload preserves ghost teams (`isGhost=true`) — they are never deleted by the wipe step. (Ghost teams exist only in JPL Continental Championship for bye fixtures.)",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/bulk-upload-teams/route.ts:139-146",
           "src/lib/db/schema.ts:99-100"
@@ -449,7 +449,7 @@
       },
       {
         "id": "BR-TEAM-042",
-        "rule": "Delete-team refuses (HTTP 400) to delete a team whose `isGhost===true` with the exact error message `\"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\"`; non-ghost team deletions proceed normally through the existing transactional cascade. The guard runs immediately after the league-ownership 404 check and before any rows are touched, so the ghost team row and its bye fixtures remain intact.",
+        "rule": "Delete-team refuses (HTTP 400) to delete a team whose `isGhost===true` with the exact error message `\"Cannot delete a ghost team (Continental Championship bye placeholder). Ghost teams are managed automatically by cup group generation.\"`; non-ghost team deletions proceed normally through the existing transactional cascade. The guard runs immediately after the league-ownership 404 check and before any rows are touched, so the ghost team row and its bye fixtures remain intact.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/delete-team/route.ts:35-40",
           "src/app/api/admin/[leagueId]/delete-team/route.ts:11-88",
@@ -487,7 +487,7 @@
       },
       {
         "id": "BR-TEAM-047",
-        "rule": "Cup-typed groups (`groupType=\"cup\"`, used by Triple Crown) are not touched by any module-3 endpoint — assign-groups, create-team, update-team and bulk-upload only create/use groups with `groupType=\"pl\"`.",
+        "rule": "Cup-typed groups (`groupType=\"cup\"`, used by JPL Continental Championship) are not touched by any module-3 endpoint — assign-groups, create-team, update-team and bulk-upload only create/use groups with `groupType=\"pl\"`.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/create-team/route.ts:89",
           "src/app/api/admin/[leagueId]/update-team/route.ts:102",
@@ -850,23 +850,23 @@
       },
       {
         "id": "AC-TEAM-049",
-        "given": "a TVT or Triple Crown league with the bulk-upload-teams endpoint still wired up but no UI tab exposing it",
+        "given": "a TVT or JPL Continental Championship league with the bulk-upload-teams endpoint still wired up but no UI tab exposing it",
         "when": "an external script POSTs to /api/admin/[leagueId]/bulk-upload-teams",
         "then": "the endpoint still functions per BR-TEAM-020..32 (kept for backwards compatibility)",
         "linksTo": "BR-TEAM-041"
       },
       {
         "id": "AC-TEAM-050",
-        "given": "a Triple Crown league with one ghost team `ghost-bye-1` (isGhost=true) and its associated bye fixtures",
+        "given": "a JPL Continental Championship league with one ghost team `ghost-bye-1` (isGhost=true) and its associated bye fixtures",
         "when": "the admin calls DELETE /api/admin/[leagueId]/delete-team with that ghost team's id",
-        "then": "the endpoint returns HTTP 400 with body `{ error: \"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`, no transaction runs, and the ghost team row plus its bye fixtures remain intact",
+        "then": "the endpoint returns HTTP 400 with body `{ error: \"Cannot delete a ghost team (Continental Championship bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`, no transaction runs, and the ghost team row plus its bye fixtures remain intact",
         "linksTo": "BR-TEAM-042"
       },
       {
         "id": "AC-TEAM-051",
-        "given": "an admin attempts to update a Triple Crown ghost team (isGhost=true)",
+        "given": "an admin attempts to update a JPL Continental Championship ghost team (isGhost=true)",
         "when": "POST /api/admin/[leagueId]/update-team is called with that team's id",
-        "then": "HTTP 400 with body containing 'Cannot edit a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.' The ghost row is unchanged; bye fixtures preserved.",
+        "then": "HTTP 400 with body containing 'Cannot edit a ghost team (Continental Championship bye placeholder). Ghost teams are managed automatically by cup group generation.' The ghost row is unchanged; bye fixtures preserved.",
         "linksTo": "BR-TEAM-043"
       },
       {
@@ -892,7 +892,7 @@
       },
       {
         "id": "AC-TEAM-055",
-        "given": "a Triple Crown league with cup-typed groups (`groupType=\"cup\"`) carrying the names `\"UCL\"`, `\"UEL\"`, `\"Europa\"`",
+        "given": "a JPL Continental Championship league with cup-typed groups (`groupType=\"cup\"`) carrying the names `\"JCL\"`, `\"JEL\"`, `\"Europa\"`",
         "when": "an admin calls /assign-groups or /create-team with `group: \"A\"`",
         "then": "only `pl`-typed group A is created/used; cup groups remain untouched",
         "linksTo": "BR-TEAM-047"
@@ -985,13 +985,13 @@
     },
     {
       "id": "DEF-TEAM-003",
-      "title": "delete-team has no guard against deleting ghost teams (Triple Crown bye placeholders)",
+      "title": "delete-team has no guard against deleting ghost teams (JPL Continental Championship bye placeholders)",
       "severity": "Major",
       "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
-      "description": "src/app/api/admin/[leagueId]/delete-team/route.ts:11-81 looks up the team by id+leagueId only and proceeds to delete it transactionally regardless of `isGhost`. Ghost teams exist only in Triple Crown to represent the bye opponent in odd-team rounds (src/lib/db/schema.ts:99-100). Deleting a ghost cascade-removes its bye fixtures from the schedule.",
-      "expectedBehaviour": "delete-team should refuse to operate on a row where `isGhost=true` and return a 400 with a message like `\"Cannot delete a ghost team. Use the Triple Crown regeneration flow.\"` so admins do not accidentally break the bye schedule.",
+      "description": "src/app/api/admin/[leagueId]/delete-team/route.ts:11-81 looks up the team by id+leagueId only and proceeds to delete it transactionally regardless of `isGhost`. Ghost teams exist only in JPL Continental Championship to represent the bye opponent in odd-team rounds (src/lib/db/schema.ts:99-100). Deleting a ghost cascade-removes its bye fixtures from the schedule.",
+      "expectedBehaviour": "delete-team should refuse to operate on a row where `isGhost=true` and return a 400 with a message like `\"Cannot delete a ghost team. Use the Continental Championship regeneration flow.\"` so admins do not accidentally break the bye schedule.",
       "actualBehaviour": "An admin who knows a ghost team's id (visible in some internal admin UIs) can delete it, leaving the TC fixture list with a broken/missing bye opponent until cup groups are regenerated.",
       "sourceRefs": [
         "src/app/api/admin/[leagueId]/delete-team/route.ts:11-81",
@@ -1007,8 +1007,8 @@
       "pinningTestCases": [
         "TC-TEAM-077"
       ],
-      "notes": "Fix is a one-line guard: after the existing 404 check, if `existingTeam[0].isGhost` return 400. Same guard should be added to update-team (see DEF-TEAM-004). Risk: low — ghost teams are not normally surfaced in the dashboard UI.\n[DEV] Self-verified: tsc passes for touched files (the only remaining tsc errors are pre-existing and live in tests/league-types/*.spec.ts, unrelated to delete-team), manual diff review clean. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-TEAM-077 against the fix. Expected behaviour now matches the original \"expectedBehaviour\" field: DELETE /api/admin/[leagueId]/delete-team with a ghost team's id returns HTTP 400 with body `{ error: \"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`, and no rows are removed (ghost team and its bye fixtures both preserved).\n[BA] BR-TEAM-042 and AC-TEAM-050 now describe the OLD (buggy) behaviour — update BR-TEAM-042 to state that delete-team rejects ghost-team deletions with 400 and the listed error message, and flip AC-TEAM-050's `then` clause from \"the endpoint deletes it (no isGhost guard)\" to \"the endpoint returns 400 with the ghost-team error and the ghost team plus its bye fixtures remain intact\".\n[QA-VERIFIED]: 2026-05-25 — TC-TEAM-077 inverted; ghost-team delete guard confirmed.\n[BA-UPDATED]: 2026-05-25 — BR-TEAM-042 + AC-TEAM-050 updated.",
-      "resolution": "Added a ghost-team guard in src/app/api/admin/[leagueId]/delete-team/route.ts immediately after the existing leagueId-ownership 404 check (new lines 35-40): when `existingTeam[0].isGhost === true` the endpoint short-circuits with HTTP 400 and the message `\"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\"`. This prevents admins from cascade-removing bye fixtures and breaking the Triple Crown cup schedule. DEF-TEAM-004 (same guard needed on update-team) is intentionally left for its own fix entry.",
+      "notes": "Fix is a one-line guard: after the existing 404 check, if `existingTeam[0].isGhost` return 400. Same guard should be added to update-team (see DEF-TEAM-004). Risk: low — ghost teams are not normally surfaced in the dashboard UI.\n[DEV] Self-verified: tsc passes for touched files (the only remaining tsc errors are pre-existing and live in tests/league-types/*.spec.ts, unrelated to delete-team), manual diff review clean. Awaiting QA re-run of pinningTestCases.\n[QA] Re-run TC-TEAM-077 against the fix. Expected behaviour now matches the original \"expectedBehaviour\" field: DELETE /api/admin/[leagueId]/delete-team with a ghost team's id returns HTTP 400 with body `{ error: \"Cannot delete a ghost team (Continental Championship bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`, and no rows are removed (ghost team and its bye fixtures both preserved).\n[BA] BR-TEAM-042 and AC-TEAM-050 now describe the OLD (buggy) behaviour — update BR-TEAM-042 to state that delete-team rejects ghost-team deletions with 400 and the listed error message, and flip AC-TEAM-050's `then` clause from \"the endpoint deletes it (no isGhost guard)\" to \"the endpoint returns 400 with the ghost-team error and the ghost team plus its bye fixtures remain intact\".\n[QA-VERIFIED]: 2026-05-25 — TC-TEAM-077 inverted; ghost-team delete guard confirmed.\n[BA-UPDATED]: 2026-05-25 — BR-TEAM-042 + AC-TEAM-050 updated.",
+      "resolution": "Added a ghost-team guard in src/app/api/admin/[leagueId]/delete-team/route.ts immediately after the existing leagueId-ownership 404 check (new lines 35-40): when `existingTeam[0].isGhost === true` the endpoint short-circuits with HTTP 400 and the message `\"Cannot delete a ghost team (Continental Championship bye placeholder). Ghost teams are managed automatically by cup group generation.\"`. This prevents admins from cascade-removing bye fixtures and breaking the JPL Continental Championship cup schedule. DEF-TEAM-004 (same guard needed on update-team) is intentionally left for its own fix entry.",
       "resolutionDate": "2026-05-25"
     },
     {
@@ -1019,7 +1019,7 @@
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
       "description": "src/app/api/admin/[leagueId]/update-team/route.ts:13-154 does not inspect `existingTeam[0].isGhost` before allowing edits. An admin could rename a ghost team, give it a real teamLoginId, or set a password on it.",
-      "expectedBehaviour": "update-team should treat ghost teams as immutable from the admin UI (or restrict updates to a narrow set of fields) since ghosts are placeholders managed by the Triple Crown regeneration flow.",
+      "expectedBehaviour": "update-team should treat ghost teams as immutable from the admin UI (or restrict updates to a narrow set of fields) since ghosts are placeholders managed by the JPL Continental Championship regeneration flow.",
       "actualBehaviour": "An admin can mutate ghost team fields, potentially turning a placeholder row into a (broken) login account with a hashed password, or breaking the ghost detection used by other modules.",
       "sourceRefs": [
         "src/app/api/admin/[leagueId]/update-team/route.ts:13-154",
@@ -2068,11 +2068,11 @@
     },
     {
       "id": "TC-TEAM-049",
-      "feature": "Bulk Upload - Preserves Ghost Teams (Triple Crown)",
+      "feature": "Bulk Upload - Preserves Ghost Teams (JPL Continental Championship)",
       "scenario": "TC league with 12 normal + 3 ghost teams; wipe keeps the 3 ghosts",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "Triple Crown league with 12 isGhost=false and 3 isGhost=true teams",
+      "preconditions": "JPL Continental Championship league with 12 isGhost=false and 3 isGhost=true teams",
       "testData": "Valid payload of 8 new rows",
       "testSteps": [
         "1. POST /bulk-upload-teams",
@@ -2314,7 +2314,7 @@
       "scenario": "Ghost teams are filtered from /assign-groups list",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple Crown league with 8 non-ghost + 2 ghost teams",
+      "preconditions": "JPL Continental Championship league with 8 non-ghost + 2 ghost teams",
       "testData": "GET /assign-groups",
       "testSteps": [
         "1. GET",
@@ -2334,7 +2334,7 @@
       "scenario": "External script can still POST to /bulk-upload-teams even though no UI tab exposes it",
       "type": "Positive",
       "priority": "P3",
-      "preconditions": "TVT or Triple Crown league; valid payload",
+      "preconditions": "TVT or JPL Continental Championship league; valid payload",
       "testData": "POST /api/admin/<league>/bulk-upload-teams with 3 valid rows",
       "testSteps": [
         "1. POST as admin",
@@ -2374,13 +2374,13 @@
       "scenario": "TC league with cup groups - module-3 endpoints only touch pl-typed groups",
       "type": "Edge",
       "priority": "P2",
-      "preconditions": "Triple Crown league with cup groups: UCL,UEL,Europa (groupType='cup')",
+      "preconditions": "JPL Continental Championship league with cup groups: JCL,JEL,Europa (groupType='cup')",
       "testData": "POST /assign-groups assignments=[{T.id,'A'}]",
       "testSteps": [
         "1. POST",
         "2. Query groups for league"
       ],
-      "expectedResult": "New 'A' (groupType='pl') created; cup-typed UCL/UEL/Europa untouched; T.groupId references the new pl-A",
+      "expectedResult": "New 'A' (groupType='pl') created; cup-typed JCL/JEL/Europa untouched; T.groupId references the new pl-A",
       "postconditions": "Cup groups preserved",
       "requirementId": "AC-TEAM-055",
       "author": "qa-tester",
@@ -2635,22 +2635,22 @@
     {
       "id": "TC-TEAM-077",
       "feature": "Regression - DEF-TEAM-003 - delete-team kills ghost team",
-      "scenario": "Triple Crown ghost team delete is rejected by isGhost guard (locks in DEF-TEAM-003 fix)",
+      "scenario": "JPL Continental Championship ghost team delete is rejected by isGhost guard (locks in DEF-TEAM-003 fix)",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "Triple Crown league with ghost team G (isGhost=true) that has bye fixtures wired up",
+      "preconditions": "JPL Continental Championship league with ghost team G (isGhost=true) that has bye fixtures wired up",
       "testData": "DELETE /delete-team body={teamId:G.id}",
       "testSteps": [
         "1. DELETE G",
         "2. Query teams + fixtures"
       ],
-      "expectedResult": "HTTP 400 with body `{ error: \"Cannot delete a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`; ghost team G row remains intact; G's bye fixtures remain intact (no cascade delete).",
+      "expectedResult": "HTTP 400 with body `{ error: \"Cannot delete a ghost team (Continental Championship bye placeholder). Ghost teams are managed automatically by cup group generation.\" }`; ghost team G row remains intact; G's bye fixtures remain intact (no cascade delete).",
       "postconditions": "TC schedule unchanged; ghost team and bye fixtures preserved",
       "requirementId": "AC-TEAM-050",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-TEAM-003. After fix, expected result becomes HTTP 400 with `\"Cannot delete a ghost team. Use the Triple Crown regeneration flow.\"`\n[QA-VERIFY] Updated post-DEF-TEAM-003 fix on 2026-05-25. Inverted from Regression (asserting buggy 200 + cascade delete) to Positive (asserting fixed 400 + intact ghost row and bye fixtures). Guard confirmed at src/app/api/admin/[leagueId]/delete-team/route.ts:35-40."
+      "notes": "Pins DEF-TEAM-003. After fix, expected result becomes HTTP 400 with `\"Cannot delete a ghost team. Use the Continental Championship regeneration flow.\"`\n[QA-VERIFY] Updated post-DEF-TEAM-003 fix on 2026-05-25. Inverted from Regression (asserting buggy 200 + cascade delete) to Positive (asserting fixed 400 + intact ghost row and bye fixtures). Guard confirmed at src/app/api/admin/[leagueId]/delete-team/route.ts:35-40."
     },
     {
       "id": "TC-TEAM-078",

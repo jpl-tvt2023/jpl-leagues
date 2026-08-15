@@ -23,6 +23,7 @@ import {
   createAndRunInitialAuction,
   countSquad,
   expectPageLoads,
+  expectPageLoadsWithoutError,
   testDb,
   schema,
   type LeagueRef,
@@ -94,6 +95,15 @@ test.describe.serial("Auction Primary 10 (admin + user)", () => {
   test("user: squad page loads after the simulated draft", async ({ page, request }) => {
     await apiSignInTeam(request, league.slug, 1);
     await expectPageLoads(page, `/${league.slug}/squad`);
+    await apiSignOut(request);
+  });
+
+  test("user: dashboard page loads without a client-side error", async ({ page, request }) => {
+    // Regression test: the auction dashboard API response has no `submission`
+    // field, which used to crash page.tsx's locked-window refetch effect
+    // (`data?.submission.state` — the `?.` didn't guard `.submission` itself).
+    await apiSignInTeam(request, league.slug, 1);
+    await expectPageLoadsWithoutError(page, "/dashboard");
     await apiSignOut(request);
   });
 

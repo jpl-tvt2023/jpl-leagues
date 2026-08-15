@@ -46,7 +46,7 @@
       },
       {
         "id": "US-04-004",
-        "asA": "team in a TVT or Triple-Crown league",
+        "asA": "team in a TVT or Continental Championship league",
         "iWant": "to register both of my real-life FPL players (name + numeric FPL Team ID) on steps 2 and 3 of the wizard",
         "soThat": "the system can fetch our weekly FPL points and combine them into my team's score",
         "sourceRefs": [
@@ -99,7 +99,7 @@
       },
       {
         "id": "US-04-009",
-        "asA": "team (TVT/Triple-Crown)",
+        "asA": "team (TVT/Continental Championship)",
         "iWant": "a dashboard that shows my last GW result, recent 5-game form, season W/D/L, points for/against, bonus and chip points, plus my highest/lowest GW",
         "soThat": "I can see my overall trajectory at a glance",
         "sourceRefs": [
@@ -129,8 +129,8 @@
       },
       {
         "id": "US-04-012",
-        "asA": "team in a Triple-Crown league",
-        "iWant": "the dashboard to additionally show my PL-wide rank (out of all 20 non-ghost teams) and my cup-group progress (rank, UCL/UEL zone, last cup result, next cup fixture, double-header flag)",
+        "asA": "team in a Continental Championship league",
+        "iWant": "the dashboard to additionally show my PL-wide rank (out of all 20 non-ghost teams) and my cup-group progress (rank, JCL/JEL zone, last cup result, next cup fixture, double-header flag)",
         "soThat": "I can track all three competitions in one place",
         "sourceRefs": [
           "src/app/api/team/dashboard/route.ts:725-937",
@@ -150,7 +150,7 @@
       },
       {
         "id": "US-04-014",
-        "asA": "team in a Triple-Crown league",
+        "asA": "team in a Continental Championship league",
         "iWant": "to navigate cup gameweeks independently of PL gameweeks",
         "soThat": "I can drill into cup-only history when the cup calendar diverges from PL",
         "sourceRefs": [
@@ -257,7 +257,7 @@
       },
       {
         "id": "BR-04-011",
-        "rule": "For non-auction leagues (TVT, Triple Crown), POST /api/team/setup requires player1Name + numeric player1FplId and player2Name + numeric player2FplId; non-numeric FPL IDs return 400.",
+        "rule": "For non-auction leagues (TVT, JPL Continental Championship), POST /api/team/setup requires player1Name + numeric player1FplId and player2Name + numeric player2FplId; non-numeric FPL IDs return 400.",
         "sourceRefs": [
           "src/app/api/team/setup/route.ts:185-229",
           "src/app/setup/page.tsx:162-194"
@@ -349,7 +349,7 @@
       },
       {
         "id": "BR-04-023",
-        "rule": "latestCompletedGW is computed from PL fixtures only (competitionType === 'pl' OR null) in Triple-Crown leagues; cup fixtures never advance the PL clock.",
+        "rule": "latestCompletedGW is computed from PL fixtures only (competitionType === 'pl' OR null) in Continental Championship leagues; cup fixtures never advance the PL clock.",
         "sourceRefs": [
           "src/app/api/team/dashboard/route.ts:125-143"
         ]
@@ -410,7 +410,7 @@
       },
       {
         "id": "BR-04-031",
-        "rule": "For Triple-Crown leagues, miniTable is overridden to use ALL non-ghost teams in the league (sorted by leaguePoints DESC), and plPosition.rank reflects PL-wide rank out of plPosition.totalTeams.",
+        "rule": "For Continental Championship leagues, miniTable is overridden to use ALL non-ghost teams in the league (sorted by leaguePoints DESC), and plPosition.rank reflects PL-wide rank out of plPosition.totalTeams.",
         "sourceRefs": [
           "src/app/api/team/dashboard/route.ts:725-753"
         ]
@@ -424,7 +424,7 @@
       },
       {
         "id": "BR-04-033",
-        "rule": "Captain history is filtered by gameweek.number <= captainCheckLimit (38 for triple-crown, 30 otherwise); CAPTAIN_CAP is 19 for triple-crown and 15 otherwise; in TVT playoff phase (nextGameweek.number > 30) chipsRemaining returns 999 instead of the cap-based value.",
+        "rule": "Captain history is filtered by gameweek.number <= captainCheckLimit (38 for continental-championship, 30 otherwise); CAPTAIN_CAP is 19 for continental-championship and 15 otherwise; in TVT playoff phase (nextGameweek.number > 30) chipsRemaining returns 999 instead of the cap-based value.",
         "sourceRefs": [
           "src/app/api/team/dashboard/route.ts:438-482"
         ]
@@ -445,7 +445,7 @@
       },
       {
         "id": "BR-04-036",
-        "rule": "upcomingFixtures returns up to 5 unplayed PL fixtures sorted by gameweek ASC; for Triple-Crown the list is merged with cup fixtures so each PL fixture is immediately followed by the same-GW cup fixture, and standalone cup-only GWs are appended.",
+        "rule": "upcomingFixtures returns up to 5 unplayed PL fixtures sorted by gameweek ASC; for Continental Championship the list is merged with cup fixtures so each PL fixture is immediately followed by the same-GW cup fixture, and standalone cup-only GWs are appended.",
         "sourceRefs": [
           "src/app/api/team/dashboard/route.ts:574-642"
         ]
@@ -459,7 +459,7 @@
       },
       {
         "id": "BR-04-038",
-        "rule": "For Triple-Crown, cupProgress includes groupName, rank within the human (non-ghost) cup-group standings, cupZone ('ucl' for rank ≤2 else 'uel'), and a mini-table of all human teams in the cup group with cumulative wins/losses/cupGroupPoints.",
+        "rule": "For Continental Championship, cupProgress includes groupName, rank within the human (non-ghost) cup-group standings, cupZone ('jcl' for rank ≤2 else 'jel'), and a mini-table of all human teams in the cup group with cumulative wins/losses/cupGroupPoints.",
         "sourceRefs": [
           "src/app/api/team/dashboard/route.ts:791-903"
         ]
@@ -496,7 +496,7 @@
       },
       {
         "id": "BR-04-043",
-        "rule": "When called with cupGw the response shape is { cupGwResult, minCompletedCupGw, maxCompletedCupGw, completedCupGws }; when called with gw the response also includes lastGwResult and, for triple-crown leagues, a paired cupGwResult for the same GW number (double-header).",
+        "rule": "When called with cupGw the response shape is { cupGwResult, minCompletedCupGw, maxCompletedCupGw, completedCupGws }; when called with gw the response also includes lastGwResult and, for continental-championship leagues, a paired cupGwResult for the same GW number (double-header).",
         "sourceRefs": [
           "src/app/api/team/dashboard/gw-result/route.ts:104-173",
           "src/app/api/team/dashboard/gw-result/route.ts:296-380"
@@ -742,7 +742,7 @@
       },
       {
         "id": "AC-04-018",
-        "given": "the team belongs to a Triple-Crown league",
+        "given": "the team belongs to a Continental Championship league",
         "when": "they submit POST /api/team/setup with player2Name='' (blank)",
         "then": "the response is 400 with body { error: 'Player 2 name is required' }",
         "linksTo": "BR-04-011"
@@ -882,7 +882,7 @@
       },
       {
         "id": "AC-04-038",
-        "given": "a Triple-Crown team",
+        "given": "a Continental Championship team",
         "when": "the dashboard runs",
         "then": "miniTable contains 5 entries centered on the team within ALL 20 non-ghost league teams (not the cup-group subset), and plPosition.rank/totalTeams are populated",
         "linksTo": "BR-04-031"
@@ -917,7 +917,7 @@
       },
       {
         "id": "AC-04-043",
-        "given": "a Triple-Crown team has upcoming PL fixtures in GW 3,4,5 and a cup fixture in GW 4",
+        "given": "a Continental Championship team has upcoming PL fixtures in GW 3,4,5 and a cup fixture in GW 4",
         "when": "upcomingFixtures is built",
         "then": "the merged list interleaves: GW3 PL, GW4 PL, GW4 Cup, GW5 PL",
         "linksTo": "BR-04-036"
@@ -933,7 +933,7 @@
         "id": "AC-04-045",
         "given": "a TC team finishes 2nd in its cup group standings",
         "when": "cupProgress is built",
-        "then": "cupProgress.rank === 2 and cupProgress.cupZone === 'ucl'",
+        "then": "cupProgress.rank === 2 and cupProgress.cupZone === 'jcl'",
         "linksTo": "BR-04-038"
       },
       {
@@ -1756,7 +1756,7 @@
     {
       "id": "TC-04-030",
       "feature": "Player Name Validation",
-      "scenario": "Empty player2Name returns 400 in Triple-Crown league",
+      "scenario": "Empty player2Name returns 400 in Continental Championship league",
       "type": "Negative",
       "priority": "P2",
       "preconditions": "TC league",
@@ -2258,7 +2258,7 @@
       "scenario": "TC dashboard miniTable spans all 20 non-ghost league teams (not the group subset)",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple-Crown league with 20 non-ghost teams; caller is at PL-rank 10",
+      "preconditions": "Continental Championship league with 20 non-ghost teams; caller is at PL-rank 10",
       "testData": "GET dashboard",
       "testSteps": [
         "1. Seed 20-team league",
@@ -2485,7 +2485,7 @@
     {
       "id": "TC-04-065",
       "feature": "Cup Progress",
-      "scenario": "TC team in 2nd in cup group: rank=2, cupZone='ucl'",
+      "scenario": "TC team in 2nd in cup group: rank=2, cupZone='jcl'",
       "type": "Positive",
       "priority": "P2",
       "preconditions": "TC team is 2nd among non-ghost teams in its cup group",
@@ -2495,7 +2495,7 @@
         "2. GET dashboard",
         "3. Inspect cupProgress"
       ],
-      "expectedResult": "cupProgress.rank===2; cupProgress.cupZone==='ucl'",
+      "expectedResult": "cupProgress.rank===2; cupProgress.cupZone==='jcl'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-045",
       "author": "qa-tester",
@@ -2506,7 +2506,7 @@
     {
       "id": "TC-04-066",
       "feature": "Cup Progress",
-      "scenario": "TC team in 3rd in cup group: cupZone='uel'",
+      "scenario": "TC team in 3rd in cup group: cupZone='jel'",
       "type": "Boundary",
       "priority": "P3",
       "preconditions": "TC team ranked 3rd among non-ghost cup-group teams",
@@ -2515,7 +2515,7 @@
         "1. Seed",
         "2. GET dashboard"
       ],
-      "expectedResult": "cupProgress.rank===3; cupProgress.cupZone==='uel'",
+      "expectedResult": "cupProgress.rank===3; cupProgress.cupZone==='jel'",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-045",
       "author": "qa-tester",

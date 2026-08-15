@@ -9,7 +9,7 @@
   },
   "requirements": {
     "version": 4,
-    "businessContext": "The Public Pages module is the visitor-facing surface of JPL-Leagues. The marketing landing page (/), the format-aware league pages under /[leagueSlug]/* (rules, standings, fixtures, gw-results, teams, players, winners, playoffs), and the global LeagueNav present league state to anyone — signed in or not — and route logged-in users back into their dashboard. Middleware whitelists the read APIs that back these pages (GET /api/leagues, /api/standings, /api/fixtures, /api/playoffs/bracket, /api/playoffs/winners, /api/triple-crown/cup-standings, GET /api/gameweeks/[gw]) so anonymous browsers can render every public page without a session.",
+    "businessContext": "The Public Pages module is the visitor-facing surface of JPL-Leagues. The marketing landing page (/), the format-aware league pages under /[leagueSlug]/* (rules, standings, fixtures, gw-results, teams, players, winners, playoffs), and the global LeagueNav present league state to anyone — signed in or not — and route logged-in users back into their dashboard. Middleware whitelists the read APIs that back these pages (GET /api/leagues, /api/standings, /api/fixtures, /api/playoffs/bracket, /api/playoffs/winners, /api/continental-championship/cup-standings, GET /api/gameweeks/[gw]) so anonymous browsers can render every public page without a session.",
     "userStories": [
       {
         "id": "US-PUB-001",
@@ -24,7 +24,7 @@
       {
         "id": "US-PUB-002",
         "asA": "public visitor",
-        "iWant": "the landing page to label each league as Live or Coming Soon, with format-specific quick links (TVT shows Standings/Fixtures/Playoffs; Triple Crown adds PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs; Auction omits Playoffs)",
+        "iWant": "the landing page to label each league as Live or Coming Soon, with format-specific quick links (TVT shows Standings/Fixtures/Playoffs; JPL Continental Championship adds PL Standings, PL Fixtures, JPL Cup Standings, JPL Cup Fixtures, Playoffs; Auction omits Playoffs)",
         "soThat": "I open the right tabs for that league's format without guessing",
         "sourceRefs": [
           "src/app/page.tsx:124-161",
@@ -34,7 +34,7 @@
       {
         "id": "US-PUB-003",
         "asA": "public visitor",
-        "iWant": "to open /[leagueSlug]/standings and read the league standings (TVT/Triple Crown classic table or Auction standings) without authenticating",
+        "iWant": "to open /[leagueSlug]/standings and read the league standings (TVT/JPL Continental Championship classic table or Auction standings) without authenticating",
         "soThat": "I can follow my friends' league without an account",
         "sourceRefs": [
           "src/app/[leagueSlug]/standings/page.tsx:1-12",
@@ -76,7 +76,7 @@
       {
         "id": "US-PUB-007",
         "asA": "public visitor",
-        "iWant": "the league chrome (LeagueNav + LeagueLayout) to be format-aware — TVT shows Standings/Fixtures/Playoffs/Winners/Rules/Help; Triple Crown shows PL+UEFA standings, PL+UEFA fixtures, Playoffs, Winners, Rules, Help; Auction shows Standings/GW Results/Teams/Auction/Squad/Players/Marketplace/Finance/Rules/Help",
+        "iWant": "the league chrome (LeagueNav + LeagueLayout) to be format-aware — TVT shows Standings/Fixtures/Playoffs/Winners/Rules/Help; JPL Continental Championship shows PL+jpl-cup standings, PL+jpl-cup fixtures, Playoffs, Winners, Rules, Help; Auction shows Standings/GW Results/Teams/Auction/Squad/Players/Marketplace/Finance/Rules/Help",
         "soThat": "I only see tabs that apply to this league's format",
         "sourceRefs": [
           "src/components/LeagueNav.tsx:84-164",
@@ -117,19 +117,19 @@
       {
         "id": "US-PUB-011",
         "asA": "public visitor",
-        "iWant": "to open /[leagueSlug]/rules and read format-specific rules (TVT-8/16/32, Triple Crown, or Auction) including the league's chip set and team size",
+        "iWant": "to open /[leagueSlug]/rules and read format-specific rules (TVT-8/16/32, JPL Continental Championship, or Auction) including the league's chip set and team size",
         "soThat": "I can understand how the format works before committing to play",
         "sourceRefs": [
           "src/app/[leagueSlug]/rules/page.tsx:12-83",
           "src/app/[leagueSlug]/_components/rules/TvtRules.tsx",
-          "src/app/[leagueSlug]/_components/rules/TripleCrownRules.tsx",
+          "src/app/[leagueSlug]/_components/rules/ContinentalChampionshipRules.tsx",
           "src/app/[leagueSlug]/_components/rules/AuctionRules.tsx"
         ]
       },
       {
         "id": "US-PUB-012",
         "asA": "public visitor",
-        "iWant": "the Hall of Champions for Triple Crown to show three independent trophy cards (PL / UCL / UEL) in canonical order rather than a ranked table",
+        "iWant": "the Hall of Champions for JPL Continental Championship to show three independent trophy cards (PL / JCL / JEL) in canonical order rather than a ranked table",
         "soThat": "I see three distinct trophies, not a leaderboard, because they're won independently",
         "sourceRefs": [
           "src/app/[leagueSlug]/winners/page.tsx:137-189",
@@ -169,8 +169,8 @@
       },
       {
         "id": "US-PUB-016",
-        "asA": "public visitor of a Triple Crown league",
-        "iWant": "the /fixtures page to filter out cup/knockout fixtures so only PL (league-stage) fixtures show, with knockouts living on /ucl and /europa",
+        "asA": "public visitor of a JPL Continental Championship league",
+        "iWant": "the /fixtures page to filter out cup/knockout fixtures so only PL (league-stage) fixtures show, with knockouts living on /jcl and /jel",
         "soThat": "each tab has a clear role and I don't see duplicate rows",
         "sourceRefs": [
           "src/app/[leagueSlug]/fixtures/page.tsx:236-239"
@@ -188,7 +188,7 @@
       {
         "id": "US-PUB-018",
         "asA": "public visitor",
-        "iWant": "auction-only routes (/teams, /players, /gw-results, /squad, /auction, /finance, /marketplace) to 404 on TVT and Triple Crown leagues",
+        "iWant": "auction-only routes (/teams, /players, /gw-results, /squad, /auction, /finance, /marketplace) to 404 on TVT and JPL Continental Championship leagues",
         "soThat": "format-irrelevant URLs don't silently render a half-broken page",
         "sourceRefs": [
           "src/lib/league-context.tsx:64-69",
@@ -224,7 +224,7 @@
     "businessRules": [
       {
         "id": "BR-PUB-001",
-        "rule": "GET /api/leagues, /api/standings, /api/fixtures, /api/playoffs/bracket, /api/playoffs/winners, /api/triple-crown/cup-standings, and GET /api/gameweeks/[gw] are public (no session required). All other API routes require a session via the middleware.",
+        "rule": "GET /api/leagues, /api/standings, /api/fixtures, /api/playoffs/bracket, /api/playoffs/winners, /api/continental-championship/cup-standings, and GET /api/gameweeks/[gw] are public (no session required). All other API routes require a session via the middleware.",
         "sourceRefs": [
           "src/middleware.ts:47-71",
           "src/middleware.ts:153-156"
@@ -246,7 +246,7 @@
       },
       {
         "id": "BR-PUB-004",
-        "rule": "Each league card on the landing page picks an icon from SPORT_ICONS (fpl ⚽, cricket 🏏, fallback 🏆) and a gradient/glow first from FORMAT_* overrides (triple-crown) then from SPORT_* defaults.",
+        "rule": "Each league card on the landing page picks an icon from SPORT_ICONS (fpl ⚽, cricket 🏏, fallback 🏆) and a gradient/glow first from FORMAT_* overrides (continental-championship) then from SPORT_* defaults.",
         "sourceRefs": [
           "src/app/page.tsx:16-47",
           "src/app/page.tsx:107-110"
@@ -254,7 +254,7 @@
       },
       {
         "id": "BR-PUB-005",
-        "rule": "League card quick links by format: triple-crown renders PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs; auction renders Standings + Fixtures (no Playoffs); other formats render Standings, Fixtures, Playoffs.",
+        "rule": "League card quick links by format: continental-championship renders PL Standings, PL Fixtures, JPL Cup Standings, JPL Cup Fixtures, Playoffs; auction renders Standings + Fixtures (no Playoffs); other formats render Standings, Fixtures, Playoffs.",
         "sourceRefs": [
           "src/app/page.tsx:145-161"
         ]
@@ -297,7 +297,7 @@
       },
       {
         "id": "BR-PUB-011",
-        "rule": "Auction-only pages (teams, players, gw-results, squad, auction, finance, marketplace) call useEnforceFormat(['auction']) → 404 on tvt/triple-crown leagues.",
+        "rule": "Auction-only pages (teams, players, gw-results, squad, auction, finance, marketplace) call useEnforceFormat(['auction']) → 404 on tvt/continental-championship leagues.",
         "sourceRefs": [
           "src/app/[leagueSlug]/teams/page.tsx:122",
           "src/app/[leagueSlug]/players/page.tsx:86",
@@ -310,21 +310,21 @@
       },
       {
         "id": "BR-PUB-012",
-        "rule": "/[leagueSlug]/playoffs calls useEnforceFormat(['tvt','triple-crown']) → 404 on auction leagues; dispatches to TripleCrownPlayoffs for triple-crown, ClassicPlayoffs otherwise.",
+        "rule": "/[leagueSlug]/playoffs calls useEnforceFormat(['tvt','continental-championship']) → 404 on auction leagues; dispatches to ContinentalChampionshipPlayoffs for continental-championship, ClassicPlayoffs otherwise.",
         "sourceRefs": [
           "src/app/[leagueSlug]/playoffs/page.tsx:7-12"
         ]
       },
       {
         "id": "BR-PUB-013",
-        "rule": "/[leagueSlug]/standings dispatches: auction → AuctionStandings; otherwise ClassicStandings (covers tvt + triple-crown).",
+        "rule": "/[leagueSlug]/standings dispatches: auction → AuctionStandings; otherwise ClassicStandings (covers tvt + continental-championship).",
         "sourceRefs": [
           "src/app/[leagueSlug]/standings/page.tsx:7-11"
         ]
       },
       {
         "id": "BR-PUB-014",
-        "rule": "Rules page picks title + variant chip from league.format and league.teamSize: Auction = 'Auction League Rules & Regulations' / 'Auction Format'; Triple Crown = 'Triple Crown Rules & Regulations' / 'Triple Crown (20 Teams)'; TVT = 'TVT Rules & Regulations' with chip '8-Team' / '16-Team' / '32-Team Format' from teamSize.",
+        "rule": "Rules page picks title + variant chip from league.format and league.teamSize: Auction = 'Auction League Rules & Regulations' / 'Auction Format'; JPL Continental Championship = 'JPL Continental Championship Rules & Regulations' / 'JPL Continental Championship (20 Teams)'; TVT = 'TVT Rules & Regulations' with chip '8-Team' / '16-Team' / '32-Team Format' from teamSize.",
         "sourceRefs": [
           "src/app/[leagueSlug]/rules/page.tsx:35-52"
         ]
@@ -353,21 +353,21 @@
       },
       {
         "id": "BR-PUB-018",
-        "rule": "Fixtures page determines available GWs by intersecting the API response keys with leaguePhaseEnd (Triple Crown = 38, TVT = playoffStartGw - 1) and defaults selectedGW to the latest GW that is at least partially scored, falling back to GW1 when nothing is scored yet.",
+        "rule": "Fixtures page determines available GWs by intersecting the API response keys with leaguePhaseEnd (JPL Continental Championship = 38, TVT = playoffStartGw - 1) and defaults selectedGW to the latest GW that is at least partially scored, falling back to GW1 when nothing is scored yet.",
         "sourceRefs": [
           "src/app/[leagueSlug]/fixtures/page.tsx:198-222"
         ]
       },
       {
         "id": "BR-PUB-019",
-        "rule": "Fixtures page in Triple Crown filters displayed fixtures to competitionType absent or === 'pl' (cup/knockout fixtures live on /ucl /europa /uefa-fixtures).",
+        "rule": "Fixtures page in JPL Continental Championship filters displayed fixtures to competitionType absent or === 'pl' (cup/knockout fixtures live on /jcl /jel /jpl-cup-fixtures).",
         "sourceRefs": [
           "src/app/[leagueSlug]/fixtures/page.tsx:236-239"
         ]
       },
       {
         "id": "BR-PUB-020",
-        "rule": "Fixtures page renders Group A and Group B in a two-column layout when any fixture in any GW has group.name === 'B' and the league is not Triple Crown; otherwise a single centred column.",
+        "rule": "Fixtures page renders Group A and Group B in a two-column layout when any fixture in any GW has group.name === 'B' and the league is not JPL Continental Championship; otherwise a single centred column.",
         "sourceRefs": [
           "src/app/[leagueSlug]/fixtures/page.tsx:241-243",
           "src/app/[leagueSlug]/fixtures/page.tsx:378-439"
@@ -398,7 +398,7 @@
       },
       {
         "id": "BR-PUB-024",
-        "rule": "/api/playoffs/winners requires leagueSlug query param (400 if missing, 404 if no matching league) and dispatches to per-format builder: triple-crown → buildTripleCrownWinners; auction → buildAuctionWinner; teamSize 8/16/32 → build8/16/32TeamWinners.",
+        "rule": "/api/playoffs/winners requires leagueSlug query param (400 if missing, 404 if no matching league) and dispatches to per-format builder: continental-championship → buildContinentalChampionshipWinners; auction → buildAuctionWinner; teamSize 8/16/32 → build8/16/32TeamWinners.",
         "sourceRefs": [
           "src/app/api/playoffs/winners/route.ts:32-67"
         ]
@@ -420,7 +420,7 @@
       },
       {
         "id": "BR-PUB-027",
-        "rule": "Triple Crown PL Champion (winners) is gated on GW38 being fully scored (every GW38 fixture has a result row); until then it's pending with placeholder 'Top points after GW38'.",
+        "rule": "JPL Continental Championship PL Champion (winners) is gated on GW38 being fully scored (every GW38 fixture has a result row); until then it's pending with placeholder 'Top points after GW38'.",
         "sourceRefs": [
           "src/app/api/playoffs/winners/route.ts:129-143",
           "src/app/api/playoffs/winners/route.ts:149-190"
@@ -435,7 +435,7 @@
       },
       {
         "id": "BR-PUB-029",
-        "rule": "Triple Crown winners always render in canonical PL → UCL → UEL order regardless of API ordering. Each card uses a category-coloured gradient (PL blue, UCL sky, UEL amber) and dims to opacity-60 grayscale when pending.",
+        "rule": "JPL Continental Championship winners always render in canonical PL → JCL → JEL order regardless of API ordering. Each card uses a category-coloured gradient (PL blue, JCL sky, JEL amber) and dims to opacity-60 grayscale when pending.",
         "sourceRefs": [
           "src/app/[leagueSlug]/winners/page.tsx:137-189"
         ]
@@ -479,7 +479,7 @@
       },
       {
         "id": "BR-PUB-035",
-        "rule": "LeagueNav format tabs by format — auction: Standings, GW Results, Teams, Auction, Squad, Players, Marketplace (only when not auctionLive AND auctionTier !== 'primary'), Finance, Rules, Help. triple-crown: PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs, Winners, Rules, Help. tvt (default): Standings, Fixtures, Playoffs, Winners, Rules, Help.",
+        "rule": "LeagueNav format tabs by format — auction: Standings, GW Results, Teams, Auction, Squad, Players, Marketplace (only when not auctionLive AND auctionTier !== 'primary'), Finance, Rules, Help. continental-championship: PL Standings, PL Fixtures, JPL Cup Standings, JPL Cup Fixtures, Playoffs, Winners, Rules, Help. tvt (default): Standings, Fixtures, Playoffs, Winners, Rules, Help.",
         "sourceRefs": [
           "src/components/LeagueNav.tsx:105-141"
         ]
@@ -501,7 +501,7 @@
       },
       {
         "id": "BR-PUB-038",
-        "rule": "LeagueNav format badge uses palette.label, palette.badgeBg, palette.badgeText derived from (format, teamSize) — so TVT-8 / TVT-16 / TVT-32 / Triple Crown / Auction each get their own colour identity.",
+        "rule": "LeagueNav format badge uses palette.label, palette.badgeBg, palette.badgeText derived from (format, teamSize) — so TVT-8 / TVT-16 / TVT-32 / JPL Continental Championship / Auction each get their own colour identity.",
         "sourceRefs": [
           "src/components/LeagueNav.tsx:61-97",
           "src/lib/format-palette.ts"
@@ -586,9 +586,9 @@
       },
       {
         "id": "AC-PUB-003",
-        "given": "A Triple Crown league card on the landing page",
+        "given": "A JPL Continental Championship league card on the landing page",
         "when": "the visitor inspects the card",
-        "then": "they see five quick links: PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs",
+        "then": "they see five quick links: PL Standings, PL Fixtures, JPL Cup Standings, JPL Cup Fixtures, Playoffs",
         "linksTo": "BR-PUB-005"
       },
       {
@@ -621,14 +621,14 @@
       },
       {
         "id": "AC-PUB-008",
-        "given": "An anonymous visitor on a Triple Crown league /fixtures page",
+        "given": "An anonymous visitor on a JPL Continental Championship league /fixtures page",
         "when": "they pick any GW",
         "then": "only PL (league-stage) fixtures are listed; cup-group and knockout fixtures are filtered out",
         "linksTo": "BR-PUB-019"
       },
       {
         "id": "AC-PUB-009",
-        "given": "A league with both Group A and Group B fixtures somewhere in the season (non-Triple Crown)",
+        "given": "A league with both Group A and Group B fixtures somewhere in the season (non-JPL Continental Championship)",
         "when": "the visitor opens /fixtures",
         "then": "the layout splits into two columns labelled Group A (blue dot) and Group B (purple dot)",
         "linksTo": "BR-PUB-020"
@@ -656,14 +656,14 @@
       },
       {
         "id": "AC-PUB-013",
-        "given": "A Triple Crown league at any point in the season",
+        "given": "A JPL Continental Championship league at any point in the season",
         "when": "the visitor loads /winners",
-        "then": "three independent trophy cards render in canonical order PL → UCL → UEL; each uses a category-coloured gradient and grays out when pending",
+        "then": "three independent trophy cards render in canonical order PL → JCL → JEL; each uses a category-coloured gradient and grays out when pending",
         "linksTo": "US-PUB-012"
       },
       {
         "id": "AC-PUB-014",
-        "given": "A Triple Crown league where GW38 still has unscored fixtures",
+        "given": "A JPL Continental Championship league where GW38 still has unscored fixtures",
         "when": "the visitor loads /winners",
         "then": "the PL Champion card stays pending with placeholder 'Top points after GW38' regardless of current leaderboard",
         "linksTo": "BR-PUB-027"
@@ -693,7 +693,7 @@
         "id": "AC-PUB-018",
         "given": "An anonymous visitor on an auction league",
         "when": "they GET /jpl-auction/playoffs",
-        "then": "useEnforceFormat(['tvt','triple-crown']) calls notFound() and the standard 404 page renders",
+        "then": "useEnforceFormat(['tvt','continental-championship']) calls notFound() and the standard 404 page renders",
         "linksTo": "US-PUB-019"
       },
       {
@@ -714,7 +714,7 @@
         "id": "AC-PUB-021",
         "given": "An anonymous visitor on any league",
         "when": "they GET /[leagueSlug]/rules",
-        "then": "the page renders the format-appropriate rules content (TvtRules / TripleCrownRules / AuctionRules) with title and variant chip; no redirect to /signin occurs; LeagueNav shows 'All Leagues' link and a Sign In pill",
+        "then": "the page renders the format-appropriate rules content (TvtRules / ContinentalChampionshipRules / AuctionRules) with title and variant chip; no redirect to /signin occurs; LeagueNav shows 'All Leagues' link and a Sign In pill",
         "linksTo": "BR-PUB-016"
       },
       {
@@ -726,9 +726,9 @@
       },
       {
         "id": "AC-PUB-023",
-        "given": "An authenticated viewer on a Triple Crown league",
+        "given": "An authenticated viewer on a JPL Continental Championship league",
         "when": "they load /rules",
-        "then": "the page title reads 'Triple Crown Rules & Regulations' and variant chip 'Triple Crown (20 Teams)'; TripleCrownRules component renders",
+        "then": "the page title reads 'JPL Continental Championship Rules & Regulations' and variant chip 'JPL Continental Championship (20 Teams)'; ContinentalChampionshipRules component renders",
         "linksTo": "US-PUB-011"
       },
       {
@@ -861,19 +861,19 @@
         "id": "AC-PUB-042",
         "given": "An anonymous visitor",
         "when": "they navigate to /[leagueSlug]/standings on an auction league",
-        "then": "the standings route dispatcher returns <AuctionStandings/>; on tvt/triple-crown leagues it returns <ClassicStandings/>",
+        "then": "the standings route dispatcher returns <AuctionStandings/>; on tvt/continental-championship leagues it returns <ClassicStandings/>",
         "linksTo": "BR-PUB-013"
       },
       {
         "id": "AC-PUB-043",
-        "given": "A Triple Crown league /[leagueSlug]/playoffs",
+        "given": "A JPL Continental Championship league /[leagueSlug]/playoffs",
         "when": "any visitor loads the page",
-        "then": "useEnforceFormat allows it and <TripleCrownPlayoffs/> renders; <ClassicPlayoffs/> renders for tvt leagues",
+        "then": "useEnforceFormat allows it and <ContinentalChampionshipPlayoffs/> renders; <ClassicPlayoffs/> renders for tvt leagues",
         "linksTo": "BR-PUB-012"
       },
       {
         "id": "AC-PUB-044",
-        "given": "A landing page click on a non-Triple-Crown card's Playoffs link",
+        "given": "A landing page click on a non-Continental Championship card's Playoffs link",
         "when": "the league.format === 'auction'",
         "then": "no Playoffs link is rendered (card omits it); only Standings + Fixtures appear",
         "linksTo": "BR-PUB-005"
@@ -908,7 +908,7 @@
       },
       {
         "id": "AC-PUB-049",
-        "given": "An anonymous visitor on a triple-crown league's /fixtures during a live PL GW",
+        "given": "An anonymous visitor on a continental-championship league's /fixtures during a live PL GW",
         "when": "the page mounts",
         "then": "the live-scores poller fires every 10 minutes (fetchLiveScores) and the LIVE badge appears on in-progress fixtures",
         "linksTo": "BR-PUB-021"
@@ -931,7 +931,7 @@
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-24",
       "description": "src/app/[leagueSlug]/rules/page.tsx:19-22 wraps a useEffect that calls router.push('/signin') whenever viewer.authenticated is false. The middleware (src/middleware.ts:47-71) only gates /api/* routes — the /rules page itself is reachable, but the client-side effect kicks anonymous visitors out before they can read the rules.",
-      "expectedBehaviour": "Rules pages (TVT/Triple Crown/Auction variants) are part of the marketing/educational surface and should render for everyone, signed in or not, like /standings, /fixtures, and /winners do.",
+      "expectedBehaviour": "Rules pages (TVT/JPL Continental Championship/Auction variants) are part of the marketing/educational surface and should render for everyone, signed in or not, like /standings, /fixtures, and /winners do.",
       "actualBehaviour": "An anonymous visitor hitting /[leagueSlug]/rules is immediately redirected to /signin — they never see the rules they came to read.",
       "sourceRefs": [
         "src/app/[leagueSlug]/rules/page.tsx:19-22"
@@ -1100,18 +1100,18 @@
     },
     {
       "id": "TC-PUB-005",
-      "feature": "Landing Page — Triple Crown Card",
-      "scenario": "Triple Crown card renders five quick links in canonical order",
+      "feature": "Landing Page — JPL Continental Championship Card",
+      "scenario": "JPL Continental Championship card renders five quick links in canonical order",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Active Triple Crown league seeded (format='triple-crown')",
-      "testData": "league.format=triple-crown, slug=jpl-tc",
+      "preconditions": "Active JPL Continental Championship league seeded (format='continental-championship')",
+      "testData": "league.format=continental-championship, slug=jpl-tc",
       "testSteps": [
         "1. GET /",
-        "2. Locate the Triple Crown card",
+        "2. Locate the JPL Continental Championship card",
         "3. Enumerate quick-link anchors"
       ],
-      "expectedResult": "Card shows exactly five links: PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs (each href targets /jpl-tc/*)",
+      "expectedResult": "Card shows exactly five links: PL Standings, PL Fixtures, JPL Cup Standings, JPL Cup Fixtures, Playoffs (each href targets /jpl-tc/*)",
       "postconditions": "—",
       "requirementId": "AC-PUB-003",
       "author": "qa-tester",
@@ -1212,7 +1212,7 @@
         "1. GET /",
         "2. Inspect card icon and gradient classes"
       ],
-      "expectedResult": "Card icon is ⚽, gradient is the FPL default unless format override (e.g., triple-crown) applies",
+      "expectedResult": "Card icon is ⚽, gradient is the FPL default unless format override (e.g., continental-championship) applies",
       "postconditions": "—",
       "requirementId": "BR-PUB-004",
       "author": "qa-tester",
@@ -1285,10 +1285,10 @@
     {
       "id": "TC-PUB-014",
       "feature": "Standings — Format Dispatch",
-      "scenario": "TVT and Triple Crown both render ClassicStandings",
+      "scenario": "TVT and JPL Continental Championship both render ClassicStandings",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Active TVT-16 jpl-tvt-16 and triple-crown jpl-tc seeded",
+      "preconditions": "Active TVT-16 jpl-tvt-16 and continental-championship jpl-tc seeded",
       "testData": "URLs=/jpl-tvt-16/standings, /jpl-tc/standings",
       "testSteps": [
         "1. GET each URL",
@@ -1326,18 +1326,18 @@
     },
     {
       "id": "TC-PUB-016",
-      "feature": "Fixtures — Triple Crown Filter",
-      "scenario": "Triple Crown /fixtures shows only PL (competitionType absent or 'pl') fixtures",
+      "feature": "Fixtures — JPL Continental Championship Filter",
+      "scenario": "JPL Continental Championship /fixtures shows only PL (competitionType absent or 'pl') fixtures",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple Crown league jpl-tc with mixed competitionType ('pl', 'ucl', 'uel') fixtures in GW10",
+      "preconditions": "JPL Continental Championship league jpl-tc with mixed competitionType ('pl', 'jcl', 'jel') fixtures in GW10",
       "testData": "URL=/jpl-tc/fixtures, selectedGW=10",
       "testSteps": [
         "1. GET /jpl-tc/fixtures",
         "2. Select GW10",
         "3. Enumerate rendered fixture rows"
       ],
-      "expectedResult": "Only PL-typed (or competitionType missing) fixtures appear; UCL/UEL fixtures are filtered out",
+      "expectedResult": "Only PL-typed (or competitionType missing) fixtures appear; JCL/JEL fixtures are filtered out",
       "postconditions": "—",
       "requirementId": "AC-PUB-008",
       "author": "qa-tester",
@@ -1347,17 +1347,17 @@
     },
     {
       "id": "TC-PUB-017",
-      "feature": "Fixtures — Triple Crown Filter",
+      "feature": "Fixtures — JPL Continental Championship Filter",
       "scenario": "Negative — TC /fixtures must NOT show a cup/knockout fixture",
       "type": "Negative",
       "priority": "P2",
-      "preconditions": "Triple Crown league with at least one UCL fixture in GW10",
+      "preconditions": "JPL Continental Championship league with at least one JCL fixture in GW10",
       "testData": "URL=/jpl-tc/fixtures, selectedGW=10",
       "testSteps": [
         "1. GET /jpl-tc/fixtures",
-        "2. Search rendered DOM for the UCL fixture id"
+        "2. Search rendered DOM for the JCL fixture id"
       ],
-      "expectedResult": "UCL fixture is absent from the rendered list",
+      "expectedResult": "JCL fixture is absent from the rendered list",
       "postconditions": "—",
       "requirementId": "BR-PUB-019",
       "author": "qa-tester",
@@ -1608,17 +1608,17 @@
     },
     {
       "id": "TC-PUB-030",
-      "feature": "Winners — Triple Crown",
-      "scenario": "TC /winners renders PL → UCL → UEL cards in canonical order",
+      "feature": "Winners — JPL Continental Championship",
+      "scenario": "TC /winners renders PL → JCL → JEL cards in canonical order",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple Crown league; API returns winners in arbitrary (e.g., UEL first) order",
+      "preconditions": "JPL Continental Championship league; API returns winners in arbitrary (e.g., JEL first) order",
       "testData": "URL=/jpl-tc/winners",
       "testSteps": [
         "1. GET page",
         "2. Read trophy card ordering"
       ],
-      "expectedResult": "Cards render PL → UCL → UEL regardless of API order; each card uses category-coloured gradient (PL blue, UCL sky, UEL amber); pending cards opacity-60 grayscale",
+      "expectedResult": "Cards render PL → JCL → JEL regardless of API order; each card uses category-coloured gradient (PL blue, JCL sky, JEL amber); pending cards opacity-60 grayscale",
       "postconditions": "—",
       "requirementId": "AC-PUB-013",
       "author": "qa-tester",
@@ -1628,7 +1628,7 @@
     },
     {
       "id": "TC-PUB-031",
-      "feature": "Winners — Triple Crown PL Gate",
+      "feature": "Winners — JPL Continental Championship PL Gate",
       "scenario": "TC PL Champion stays pending when GW38 has any unscored fixture",
       "type": "Negative",
       "priority": "P2",
@@ -1814,7 +1814,7 @@
       "testSteps": [
         "1. GET /jpl-auction/playoffs"
       ],
-      "expectedResult": "useEnforceFormat(['tvt','triple-crown']) calls notFound(); standard 404 page renders; no bracket request fires",
+      "expectedResult": "useEnforceFormat(['tvt','continental-championship']) calls notFound(); standard 404 page renders; no bracket request fires",
       "postconditions": "—",
       "requirementId": "AC-PUB-018",
       "author": "qa-tester",
@@ -1825,7 +1825,7 @@
     {
       "id": "TC-PUB-041",
       "feature": "Playoffs — Format Dispatch",
-      "scenario": "Triple Crown /playoffs renders TripleCrownPlayoffs",
+      "scenario": "JPL Continental Championship /playoffs renders ContinentalChampionshipPlayoffs",
       "type": "Positive",
       "priority": "P2",
       "preconditions": "TC league seeded",
@@ -1834,7 +1834,7 @@
         "1. GET page",
         "2. Inspect rendered component"
       ],
-      "expectedResult": "useEnforceFormat allows; <TripleCrownPlayoffs/> renders (not ClassicPlayoffs)",
+      "expectedResult": "useEnforceFormat allows; <ContinentalChampionshipPlayoffs/> renders (not ClassicPlayoffs)",
       "postconditions": "—",
       "requirementId": "AC-PUB-043",
       "author": "qa-tester",
@@ -1904,7 +1904,7 @@
     {
       "id": "TC-PUB-045",
       "feature": "Format Guard — Auction-Only Pages",
-      "scenario": "Triple Crown /teams also 404s",
+      "scenario": "JPL Continental Championship /teams also 404s",
       "type": "Negative",
       "priority": "P2",
       "preconditions": "Active TC league jpl-tc",
@@ -1973,7 +1973,7 @@
         "2. GET /jpl-tvt-32/rules",
         "3. Observe network + final URL + rendered DOM"
       ],
-      "expectedResult": "Page mounts and stays on /jpl-tvt-32/rules (no router.push to /signin); rules content renders fully (title, variant chip, TvtRules/TripleCrownRules/AuctionRules body); LeagueNav shows 'All Leagues' link + Sign In pill (NotificationBell hidden because viewer.authenticated=false).",
+      "expectedResult": "Page mounts and stays on /jpl-tvt-32/rules (no router.push to /signin); rules content renders fully (title, variant chip, TvtRules/ContinentalChampionshipRules/AuctionRules body); LeagueNav shows 'All Leagues' link + Sign In pill (NotificationBell hidden because viewer.authenticated=false).",
       "postconditions": "—",
       "requirementId": "AC-PUB-021",
       "author": "qa-tester",
@@ -2043,7 +2043,7 @@
     },
     {
       "id": "TC-PUB-052",
-      "feature": "Rules — Triple Crown",
+      "feature": "Rules — JPL Continental Championship",
       "scenario": "Authenticated viewer on TC /rules sees TC title + chip",
       "type": "Positive",
       "priority": "P2",
@@ -2052,7 +2052,7 @@
       "testSteps": [
         "1. GET page"
       ],
-      "expectedResult": "Title 'Triple Crown Rules & Regulations'; chip 'Triple Crown (20 Teams)'; TripleCrownRules component renders",
+      "expectedResult": "Title 'JPL Continental Championship Rules & Regulations'; chip 'JPL Continental Championship (20 Teams)'; ContinentalChampionshipRules component renders",
       "postconditions": "—",
       "requirementId": "AC-PUB-023",
       "author": "qa-tester",
@@ -2337,8 +2337,8 @@
     },
     {
       "id": "TC-PUB-067",
-      "feature": "LeagueNav — Format Tabs (Triple Crown)",
-      "scenario": "TC nav exposes PL/UEFA standings+fixtures plus Playoffs/Winners/Rules/Help",
+      "feature": "LeagueNav — Format Tabs (JPL Continental Championship)",
+      "scenario": "TC nav exposes PL/jpl-cup standings+fixtures plus Playoffs/Winners/Rules/Help",
       "type": "Positive",
       "priority": "P2",
       "preconditions": "TC league",
@@ -2347,7 +2347,7 @@
         "1. GET page",
         "2. Enumerate nav tabs"
       ],
-      "expectedResult": "Tabs: PL Standings, PL Fixtures, UEFA Standings, UEFA Fixtures, Playoffs, Winners, Rules, Help",
+      "expectedResult": "Tabs: PL Standings, PL Fixtures, JPL Cup Standings, JPL Cup Fixtures, Playoffs, Winners, Rules, Help",
       "postconditions": "—",
       "requirementId": "BR-PUB-035",
       "author": "qa-tester",
@@ -2439,7 +2439,7 @@
       "type": "Smoke",
       "priority": "P1",
       "preconditions": "Cookies cleared; valid leagueSlug=jpl-tvt-32 and GW=10",
-      "testData": "GET /api/leagues, /api/standings?leagueSlug=..., /api/fixtures?leagueSlug=..., /api/playoffs/bracket?leagueSlug=..., /api/playoffs/winners?leagueSlug=..., /api/triple-crown/cup-standings?leagueSlug=..., /api/gameweeks/10",
+      "testData": "GET /api/leagues, /api/standings?leagueSlug=..., /api/fixtures?leagueSlug=..., /api/playoffs/bracket?leagueSlug=..., /api/playoffs/winners?leagueSlug=..., /api/continental-championship/cup-standings?leagueSlug=..., /api/gameweeks/10",
       "testSteps": [
         "1. curl each endpoint with no cookie"
       ],
@@ -2658,7 +2658,7 @@
         "1. GET page",
         "2. Monitor network for /api/playoffs/bracket"
       ],
-      "expectedResult": "useEnforceFormat(['tvt','triple-crown']) calls notFound() before any bracket fetch; standard 404 renders",
+      "expectedResult": "useEnforceFormat(['tvt','continental-championship']) calls notFound() before any bracket fetch; standard 404 renders",
       "postconditions": "—",
       "requirementId": "BR-PUB-012",
       "author": "qa-tester",
@@ -2718,7 +2718,7 @@
         "1. GET /",
         "2. Enumerate TVT card links"
       ],
-      "expectedResult": "Card shows exactly three quick links: Standings, Fixtures, Playoffs (no PL/UEFA, no GW Results)",
+      "expectedResult": "Card shows exactly three quick links: Standings, Fixtures, Playoffs (no PL/jpl-cup, no GW Results)",
       "postconditions": "—",
       "requirementId": "US-PUB-002",
       "author": "qa-tester",

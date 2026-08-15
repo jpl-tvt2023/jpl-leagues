@@ -67,7 +67,7 @@
   },
   "DEF-BACKUP-002": {
     "title": "Saved-snapshot restore skipped the format-mismatch check",
-    "summary": "Restoring a backup from a multipart upload correctly refused if the backup was for a different format (e.g., trying to restore a TVT backup into a Triple Crown league). But the same restore, when triggered by selecting a saved snapshot, silently skipped that check.",
+    "summary": "Restoring a backup from a multipart upload correctly refused if the backup was for a different format (e.g., trying to restore a TVT backup into a JPL Continental Championship league). But the same restore, when triggered by selecting a saved snapshot, silently skipped that check.",
     "fix": "The saved-snapshot path now also enforces the format check by inferring the original format from the snapshot's contents, so cross-format restores are blocked on both routes.",
     "example": "Before: selecting an old TVT snapshot for a now-auction league restored it and corrupted the league. After: the same selection is refused with a clear format-mismatch error."
   },
@@ -110,7 +110,7 @@
   "DEF-CHIP-007": {
     "title": "Captain chip cap was a flat 15 even when the league had more than 30 league-stage weeks",
     "summary": "The number of times each player can wear the captain armband over the season was hard-coded at 15, regardless of how long the league actually runs before its playoffs. For shorter formats like TVT-8 — which keep playing league games right up to GW35 — that meant captaincies in the last few weeks effectively had no cap.",
-    "fix": "The cap is now calculated from the league itself: half the number of non-playoff gameweeks, rounded up. So a regular 30-week TVT league still has a cap of 15, but a TVT-8 league (35 non-playoff weeks) now has a cap of 18, and Triple Crown stays at 19. One shared piece of code now serves the captain announce, the admin CSV import, and the dashboard display.",
+    "fix": "The cap is now calculated from the league itself: half the number of non-playoff gameweeks, rounded up. So a regular 30-week TVT league still has a cap of 15, but a TVT-8 league (35 non-playoff weeks) now has a cap of 18, and JPL Continental Championship stays at 19. One shared piece of code now serves the captain announce, the admin CSV import, and the dashboard display.",
     "example": "Before: in a TVT-8 league a player could be captained in any of weeks 31-35 without it counting against any limit. After: those weeks count toward an 18-per-player cap, so heavy-hitters can no longer be captained every single week of the season."
   },
   "DEF-ECON-001": {
@@ -126,10 +126,10 @@
     "example": "Before: typing synergyBonus = 6.5 produced 'Provide at least one of synergyBonus or clubResultBonus'. After: the same value saves cleanly."
   },
   "DEF-GWFIX-001": {
-    "title": "Triple Crown fixture generation didn't enforce the 20-team rule",
-    "summary": "Triple Crown leagues are designed around exactly 20 teams playing twice — for a 38-gameweek season. If an admin tried to generate fixtures with any other team count, the system silently produced a malformed schedule (too many or too few gameweeks) rather than refusing.",
+    "title": "JPL Continental Championship fixture generation didn't enforce the 20-team rule",
+    "summary": "JPL Continental Championship leagues are designed around exactly 20 teams playing twice — for a 38-gameweek season. If an admin tried to generate fixtures with any other team count, the system silently produced a malformed schedule (too many or too few gameweeks) rather than refusing.",
     "fix": "Fixture generation now hard-checks that the league has exactly 20 teams and returns a clear error if not.",
-    "example": "Before: a 10-team Triple Crown league produced 18 gameweeks of fixtures with no warning. After: the admin gets a 400 error explaining that Triple Crown requires 20 teams."
+    "example": "Before: a 10-team JPL Continental Championship league produced 18 gameweeks of fixtures with no warning. After: the admin gets a 400 error explaining that JPL Continental Championship requires 20 teams."
   },
   "DEF-GWFIX-002": {
     "title": "Fixture generation could set every gameweek's deadline to right now",
@@ -240,20 +240,20 @@
     "example": "Before: two different superadmins making different adjustments produced indistinguishable audit rows. After: each row clearly identifies who made the change."
   },
   "DEF-TC-001": {
-    "title": "Deleting Triple Crown cup groups could leave the league in a torn state",
+    "title": "Deleting JPL Continental Championship cup groups could leave the league in a torn state",
     "summary": "The 'delete cup groups' operation ran several deletes and updates in sequence with no safety net. If the run aborted partway through (e.g., a transient database error), the league could be left with ghost teams gone but cup fixtures still around, or vice versa — requiring manual database cleanup.",
     "fix": "The whole operation now runs as one atomic transaction. Either the cup-group state is fully cleared, or the league is left exactly as it was.",
     "example": null
   },
   "DEF-TC-002": {
     "title": "Bracket generation could use a fake group ID when no group existed",
-    "summary": "When generating UCL/UEL knockout brackets for a Triple Crown league that didn't have a PL group set up, the code invented a fresh ID and attached it to all 16 knockout fixtures — pointing at a group row that didn't exist anywhere.",
+    "summary": "When generating JCL/JEL knockout brackets for a JPL Continental Championship league that didn't have a PL group set up, the code invented a fresh ID and attached it to all 16 knockout fixtures — pointing at a group row that didn't exist anywhere.",
     "fix": "The code now uses a real null reference (which the database schema supports) when no PL group exists, so the bracket fixtures are inserted cleanly without orphan references.",
     "example": null
   },
   "DEF-TC-003": {
-    "title": "Triple Crown restore lost the cup competitions",
-    "summary": "Restoring a Triple Crown backup only brought back the Premier League fixtures. Cup-group fixtures, ghost-team setup, and UCL/UEL knockout fixtures were not restored — the admin had to manually reseed cup groups and regenerate brackets, losing any partial cup standings.",
+    "title": "JPL Continental Championship restore lost the cup competitions",
+    "summary": "Restoring a JPL Continental Championship backup only brought back the Premier League fixtures. Cup-group fixtures, ghost-team setup, and JCL/JEL knockout fixtures were not restored — the admin had to manually reseed cup groups and regenerate brackets, losing any partial cup standings.",
     "fix": "The restore now also wipes the league's cup-stage state cleanly so the admin lands on a fresh pre-cup-groups state and can re-run cup-group generation without conflicts. (Note: fully re-inserting cup fixtures from the backup payload is a separate backup-writer enhancement still tracked.)",
     "example": "Before: after a restore the admin found ghost teams from the previous season still attached to cup groups. After: ghosts are cleaned up and cup-group generation can be run fresh."
   },
@@ -270,8 +270,8 @@
     "example": "Before: 19 teams in a league were imported via CSV and went straight to dashboard, but Team 20 was added via the single-team form and had to fill out the wizard on first login. After: all 20 teams behave the same way."
   },
   "DEF-TEAM-003": {
-    "title": "Ghost teams in Triple Crown could be deleted accidentally",
-    "summary": "Triple Crown leagues use 'ghost' teams as placeholders to represent bye opponents in cup groups with an odd number of real teams. The delete-team endpoint didn't refuse ghost deletions — an admin who clicked Delete on a ghost row could permanently break the bye schedule.",
+    "title": "Ghost teams in JPL Continental Championship could be deleted accidentally",
+    "summary": "JPL Continental Championship leagues use 'ghost' teams as placeholders to represent bye opponents in cup groups with an odd number of real teams. The delete-team endpoint didn't refuse ghost deletions — an admin who clicked Delete on a ghost row could permanently break the bye schedule.",
     "fix": "Delete-team now refuses to remove ghost teams with a clear error message pointing the admin to the cup-group regeneration flow instead.",
     "example": null
   },
@@ -427,7 +427,7 @@
   },
   "DEF-TC-004": {
     "title": "Cup-group scoring documentation said draws were impossible but the code allowed them",
-    "summary": "A comment at the top of the Triple Crown scoring file said 'no draws possible' for cup-group fixtures. But the actual code awarded a 1-1 draw when two real teams tied in the same cup group. Future maintainers and QA writing edge-case tests were getting conflicting signals.",
+    "summary": "A comment at the top of the JPL Continental Championship scoring file said 'no draws possible' for cup-group fixtures. But the actual code awarded a 1-1 draw when two real teams tied in the same cup group. Future maintainers and QA writing edge-case tests were getting conflicting signals.",
     "fix": "Comments now correctly describe both branches: human-vs-human cup fixtures can draw (1 point each), and human-vs-ghost outcomes can technically draw too when integer scores happen to tie.",
     "example": null
   },
@@ -444,8 +444,8 @@
     "example": null
   },
   "DEF-TEAM-004": {
-    "title": "Admin could edit Triple Crown ghost teams via the edit form",
-    "summary": "The delete-team form correctly refused to remove ghost teams (the bye placeholders used by Triple Crown cup groups). But the edit-team form had no such check — an admin could rename a ghost, give it a login ID, or set a password on it, partially turning a placeholder into a broken real account.",
+    "title": "Admin could edit JPL Continental Championship ghost teams via the edit form",
+    "summary": "The delete-team form correctly refused to remove ghost teams (the bye placeholders used by JPL Continental Championship cup groups). But the edit-team form had no such check — an admin could rename a ghost, give it a login ID, or set a password on it, partially turning a placeholder into a broken real account.",
     "fix": "The edit form now refuses ghost-team edits with the same clear message the delete form uses.",
     "example": null
   },

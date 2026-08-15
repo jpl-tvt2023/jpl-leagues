@@ -1,4 +1,4 @@
-// Shared restore logic for non-auction formats (TVT + triple-crown).
+// Shared restore logic for non-auction formats (TVT + continental-championship).
 //
 // Scope this session: parses a backup .zip / saved-snapshot payload and restores **fixtures**.
 // Teams are preserved (no wipe — same semantics as auction restore). Captains and chips restore
@@ -102,7 +102,7 @@ export async function loadRestoreSnapshot(backupId: string, leagueId: string): P
   // /backups/[backupId] download route uses, see DEF-BACKUP-008). When this
   // differs from the target league's current format the calling route must
   // refuse the restore — otherwise a TVT-era backup could be restored into a
-  // league that was later re-formatted to triple-crown (or vice versa).
+  // league that was later re-formatted to continental-championship (or vice versa).
   const inferredFormat: string =
     row.auctionSquadsJson != null ? "auction"
     : row.chipsJson != null ? "tvt"
@@ -194,7 +194,7 @@ export async function restoreFixtures(leagueId: string, payload: RestorePayload)
       .set({ cupGroupPoints: 0 })
       .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, false)));
 
-    // Ghost teams only exist for triple-crown and only as cup-group fillers; remove them.
+    // Ghost teams only exist for continental-championship and only as cup-group fillers; remove them.
     await db
       .delete(teams)
       .where(and(eq(teams.leagueId, leagueId), eq(teams.isGhost, true)));

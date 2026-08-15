@@ -42,7 +42,7 @@ export interface TempCaptainResult {
 }
 
 export interface TempCaptainCapContext {
-  /** Per-player League-Stage cap (e.g. 19 for triple-crown, 15 otherwise). */
+  /** Per-player League-Stage cap (e.g. 19 for continental-championship, 15 otherwise). */
   cap: number;
   /** False for playoff GWs (cap doesn't apply); true for League-Stage GWs. */
   gwCountsTowardCap: boolean;

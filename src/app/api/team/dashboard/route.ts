@@ -5,7 +5,7 @@ import { fetchBootstrapData } from "@/lib/fpl";
 import { shouldSyncDeadlines } from "@/lib/fpl-cache";
 import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
-import { computeCupGroupStandings } from "@/lib/formats/triple-crown/standings";
+import { computeCupGroupStandings } from "@/lib/formats/continental-championship/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
 import { calculatePurse, calculateRefund, calculateFMV } from "@/lib/formats/auction/economy";
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
@@ -1037,7 +1037,7 @@ export async function GET(request: NextRequest) {
 
     // League-wide captain + chip announcements for the upcoming GW — shown in
     // the dashboard's top widget. Immediately visible to every team on
-    // announcement; no deadline gate. Chips are TVT-only — for Triple Crown the
+    // announcement; no deadline gate. Chips are TVT-only — for Continental Championship the
     // chip mapping stays null. Queries bounded by team count (≤32 per league).
     const CHIP_NAMES_TVT: Record<string, string> = {
       W: "Win-Win",

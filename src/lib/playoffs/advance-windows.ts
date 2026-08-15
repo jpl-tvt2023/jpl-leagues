@@ -5,7 +5,7 @@
  *
  * Format/teamSize → playoff window:
  *  - Auction:        no knockout playoffs → empty set.
- *  - Triple Crown:   non-contiguous   [27, 29, 33, 35, 38]
+ *  - Continental Championship:   non-contiguous   [27, 29, 33, 35, 38]
  *  - TVT 8-team:     [playoffStartGw, +1, +2]            (3 GWs)
  *  - TVT 16-team:    [playoffStartGw … +7]               (8 GWs)
  *  - TVT 32-team:    [31..38]                            (8 GWs)
@@ -32,7 +32,7 @@ export function getPlayoffAdvanceGws(
  *  - TVT 8-team   (playoffStartGw = 36): trigger GW35 → /generate-playoffs (creates SF ties).
  *  - TVT 16-team  (playoffStartGw = 31): trigger GW30 → /generate-playoffs (creates Group Stage GW31-33).
  *  - TVT 32-team  (playoffStartGw = 31): trigger GW30 → /generate-playoffs (creates RO16 + C-31).
- *  - Triple Crown                       : trigger GW24 → /generate-brackets   (seeds UCL/UEL QFs).
+ *  - Continental Championship            : trigger GW24 → /generate-brackets   (seeds JCL/JEL QFs).
  *  - Auction                            : no knockout playoffs.
  *
  * Returns null when the format has no auto-generation step, or when the GW

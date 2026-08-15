@@ -1,6 +1,6 @@
 /**
- * Triple Crown Format Scoring Logic
- * Handles PL (H2H all season), Cup Group Stage (Ghost opponents), and UCL/UEL knockouts
+ * Continental Championship Format Scoring Logic
+ * Handles JPL (H2H all season), Cup Group Stage (Ghost opponents), and JCL/JEL knockouts
  */
 
 /**
