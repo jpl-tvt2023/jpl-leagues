@@ -37,6 +37,7 @@ export default function JplCupStandingsPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueSeason, setLeagueSeason] = useState<string>("");
   const [leagueId, setLeagueId] = useState<string | null>(null);
   const [cupStandings, setCupStandings] = useState<CupStandingsData>({});
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -64,6 +65,7 @@ export default function JplCupStandingsPage() {
         const league = (data.leagues || []).find((l: { slug: string; name: string; id: string }) => l.slug === leagueSlug);
         if (league) {
           setLeagueName(league.name);
+          setLeagueSeason((league as { season?: string }).season ?? "");
           setLeagueId(league.id);
         } else {
           // League not found — stop loading so page renders (shows unseeded banner)
@@ -161,7 +163,7 @@ export default function JplCupStandingsPage() {
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-2">
             Group Stage Standings
           </h1>
-          <p className="text-sm sm:text-base text-gray-400">Cup group stage · 2025/26 Season</p>
+          <p className="text-sm sm:text-base text-gray-400">Cup group stage{leagueSeason ? ` · ${leagueSeason} Season` : ""}</p>
         </div>
 
         {/* Unseeded banner */}

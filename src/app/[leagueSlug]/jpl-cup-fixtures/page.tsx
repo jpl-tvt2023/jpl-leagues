@@ -20,6 +20,7 @@ export default function JplCupFixturesPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueSeason, setLeagueSeason] = useState<string>("");
   const [fixtures, setFixtures] = useState<GameweekFixtures>({});
   const [availableGWs, setAvailableGWs] = useState<number[]>([]);
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
@@ -98,7 +99,10 @@ export default function JplCupFixturesPage() {
       .then((r) => r.json())
       .then((data) => {
         const league = (data.leagues || []).find((l: { slug: string; name: string }) => l.slug === leagueSlug);
-        if (league) setLeagueName(league.name);
+        if (league) {
+          setLeagueName(league.name);
+          setLeagueSeason((league as { season?: string }).season ?? "");
+        }
       })
       .catch(() => {});
 
@@ -227,7 +231,7 @@ export default function JplCupFixturesPage() {
             <span className="text-[#4da6ff] text-xs font-semibold uppercase tracking-widest">JPL Cup · Continental Championship</span>
           </div>
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-2">Group Stage Fixtures</h1>
-          <p className="text-sm sm:text-base text-gray-400">Cup group stage · 2025/26 Season</p>
+          <p className="text-sm sm:text-base text-gray-400">Cup group stage{leagueSeason ? ` · ${leagueSeason} Season` : ""}</p>
         </div>
 
         {availableGWs.length === 0 ? (

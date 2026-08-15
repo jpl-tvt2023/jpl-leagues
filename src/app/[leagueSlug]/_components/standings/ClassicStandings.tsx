@@ -88,7 +88,7 @@ export function ClassicStandings() {
               </h1>
               {isContinentalChampionship && (
                 <p className="text-[#00ff85] text-sm font-semibold uppercase tracking-widest mb-2">
-                  JPL · 2025/26 Season
+                  JPL · {league.season} Season
                 </p>
               )}
               {!isContinentalChampionship && (
