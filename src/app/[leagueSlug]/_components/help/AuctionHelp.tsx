@@ -85,9 +85,9 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
             Every GW your owned club wins or draws a real-PL fixture, you earn a per-fixture bonus based on the club&apos;s tier:
           </p>
           <ul className="ml-5 list-disc space-y-1">
-            <li><strong className="text-yellow-300">Top 8</strong> (last season&apos;s 1-8) — Win +2 / Draw +1 per fixture.</li>
-            <li><strong className="text-blue-300">Mid</strong> (last season&apos;s 9-17) — Win +3 / Draw +1.</li>
-            <li><strong className="text-emerald-300">Promoted</strong> (3 newly-promoted clubs) — Win +4 / Draw +2.</li>
+            <li><strong className="text-yellow-300">Top 8</strong> (last season&apos;s 1-8) — Win +4 / Draw +2 per fixture.</li>
+            <li><strong className="text-blue-300">Mid</strong> (last season&apos;s 9-17) — Win +6 / Draw +3.</li>
+            <li><strong className="text-emerald-300">Promoted</strong> (3 newly-promoted clubs) — Win +8 / Draw +4.</li>
           </ul>
           <p>Double Gameweek = bonus paid per fixture (so 2× in a DGW). Blank Gameweek = no fixture, no bonus.</p>
         </div>
