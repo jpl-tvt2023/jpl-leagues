@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { useLeague, useEnforceFormat } from "@/lib/league-context";
-import { TripleCrownHelp } from "../_components/help/TripleCrownHelp";
+import { ContinentalChampionshipHelp } from "../_components/help/ContinentalChampionshipHelp";
 import { TvtHelp } from "../_components/help/TvtHelp";
 import { AuctionHelp } from "../_components/help/AuctionHelp";
 import type { UserRole } from "../_components/help/shared";
@@ -35,11 +35,11 @@ export default function LeagueHelpPage() {
       ? "team"
       : "public";
 
-  const isTripleCrown = league.format === "continental-championship";
+  const isContinentalChampionship = league.format === "continental-championship";
   const isAuction = league.format === "auction";
   const variantLabel = isAuction
     ? "Auction"
-    : isTripleCrown
+    : isContinentalChampionship
     ? "JPL Continental Championship"
     : league.teamSize === 8
     ? "8-Team"
@@ -53,7 +53,7 @@ export default function LeagueHelpPage() {
         leagueSlug={leagueSlug}
         leagueName={league.name}
         currentPage="help"
-        format={isAuction ? "auction" : isTripleCrown ? "continental-championship" : "tvt"}
+        format={isAuction ? "auction" : isContinentalChampionship ? "continental-championship" : "tvt"}
         teamSize={league.teamSize}
         auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={viewer.authenticated}
@@ -79,8 +79,8 @@ export default function LeagueHelpPage() {
 
         {isAuction ? (
           <AuctionHelp userRole={userRole} leagueSlug={leagueSlug} />
-        ) : isTripleCrown ? (
-          <TripleCrownHelp userRole={userRole} />
+        ) : isContinentalChampionship ? (
+          <ContinentalChampionshipHelp userRole={userRole} />
         ) : (
           <TvtHelp
             userRole={userRole}

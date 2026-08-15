@@ -47,7 +47,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<WinnersRespons
 
     let winnersData: Winner[];
     if (format === "continental-championship") {
-      winnersData = await buildTripleCrownWinners(leagueId);
+      winnersData = await buildContinentalChampionshipWinners(leagueId);
     } else if (format === "auction") {
       winnersData = await buildAuctionWinner(leagueId);
     } else if (teamSize === 8) {
@@ -146,7 +146,7 @@ async function isGw38Settled(leagueId: string): Promise<boolean> {
 /*  Per-format builders                                                       */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-async function buildTripleCrownWinners(leagueId: string): Promise<Winner[]> {
+async function buildContinentalChampionshipWinners(leagueId: string): Promise<Winner[]> {
   const winners: Winner[] = [];
 
   // 1) PL Champion — top leaguePoints. Gated on GW38 being fully scored so we
@@ -170,12 +170,12 @@ async function buildTripleCrownWinners(leagueId: string): Promise<Winner[]> {
 
   // 2) JCL Champion
   winners.push(...await resolveTiePositions(leagueId, [
-    { id: "UCL-FINAL", pos: 2, label: "JCL Champion", category: "jcl", winnerSide: true },
+    { id: "JCL-FINAL", pos: 2, label: "JCL Champion", category: "jcl", winnerSide: true },
   ]));
 
   // 3) JEL Champion
   winners.push(...await resolveTiePositions(leagueId, [
-    { id: "UEL-FINAL", pos: 3, label: "JEL Champion", category: "jel", winnerSide: true },
+    { id: "JEL-FINAL", pos: 3, label: "JEL Champion", category: "jel", winnerSide: true },
   ]));
 
   return winners;

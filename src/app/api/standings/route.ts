@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
     const leagueFormat = league[0].format ?? "tvt";
     let leagueEnabledChips: string[] = ["D", "W", "C"];
     try { leagueEnabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
-    // Triple Crown runs PL all 38 GWs; TVT league stage ends at playoffStartGw - 1
+    // Continental Championship runs PL all 38 GWs; TVT league stage ends at playoffStartGw - 1
     const leagueStageEnd = leagueFormat === "continental-championship" ? 38 : playoffStartGw - 1;
 
     // Check if groups have been revealed to teams
@@ -271,8 +271,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine which league-stage GWs have been processed (have at least one result)
-    // For Triple Crown: skip FPL hit-penalty computation — leaguePoints is stored directly
-    // by processTripleCrownGameweek and is authoritative. Computing it here via FPL API
+    // For Continental Championship: skip FPL hit-penalty computation — leaguePoints is stored directly
+    // by processContinentalChampionshipGameweek and is authoritative. Computing it here via FPL API
     // calls would be extremely slow (38 GWs × 40 players = 1500+ sequential requests).
     const processedGws = new Set<number>();
     if (leagueFormat !== "continental-championship") {
@@ -447,8 +447,8 @@ export async function GET(request: NextRequest) {
             }
           }
         }
-        // Same formula as the current pass below for both TVT and triple-crown
-        // (display purposes — triple-crown's stored leaguePoints is for current
+        // Same formula as the current pass below for both TVT and continental-championship
+        // (display purposes — continental-championship's stored leaguePoints is for current
         // values only and equivalently derives from W/D minus hits).
         const pLeaguePoints = (pWins * 2) + (pDraws * 1) + pCbpPts - pHitPenaltyTotal;
         prevSortKeysByTeam.set(team.id, {
@@ -559,7 +559,7 @@ export async function GET(request: NextRequest) {
       hitPenaltyGws.sort((a, b) => a.gameweek - b.gameweek);
       const hitPenaltyTotal = hitPenaltyGws.length;
 
-      // For Triple Crown: use the stored leaguePoints (computed by processTripleCrownGameweek)
+      // For Continental Championship: use the stored leaguePoints (computed by processContinentalChampionshipGameweek)
       // which already includes hit penalties baked in. For TVT: compute from W/D/L + chips - hits.
       const leaguePoints = leagueFormat === "continental-championship"
         ? team.leaguePoints
@@ -665,7 +665,7 @@ export async function GET(request: NextRequest) {
 
     type RankedStanding = ResponseTeam & { rank: number; zone: string };
 
-    // Group standings by group name (exclude cup group names for Triple Crown)
+    // Group standings by group name (exclude cup group names for Continental Championship)
     const groupNames = [...new Set(standings.map(t => t.group).filter((g): g is string => g !== null && !g.toLowerCase().startsWith("cup-")))].sort();
     const groupMap: Record<string, RankedStanding[]> = {};
     for (const gName of groupNames) {
@@ -684,7 +684,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // For groupless leagues (8-team, 16-team, Triple Crown), all teams go into groupA
+    // For groupless leagues (8-team, 16-team, Continental Championship), all teams go into groupA
     if (groupNames.length === 0 && standings.length > 0) {
       groupMap["A"] = standings.map((team, index) => {
         const groupRank = index + 1;

@@ -68,7 +68,7 @@ export async function PUT(request: NextRequest) {
     const isAuction = leagueRow[0]?.format === "auction";
 
     // Validate group: only when the client actually sent a `group` key AND the
-    // league uses the A/B PL grouping (TVT-16 / similar). Triple Crown, TVT-32,
+    // league uses the A/B PL grouping (TVT-16 / similar). Continental Championship, TVT-32,
     // and auction leagues use different group concepts (cup groups, multi-letter
     // groups, or none) — for those, the team's groupId is preserved as-is and
     // the validator is skipped entirely.
@@ -88,12 +88,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Block edits to Triple Crown ghost-team placeholders. Ghosts are managed
+    // Block edits to Continental Championship ghost-team placeholders. Ghosts are managed
     // automatically by cup-group generation; renaming or assigning a login ID
     // to one would break the bye-week schedule. Mirrors the delete-team guard.
     if (existingTeam[0].isGhost) {
       return NextResponse.json(
-        { error: "Cannot edit a ghost team (Triple Crown bye placeholder). Ghost teams are managed automatically by cup group generation." },
+        { error: "Cannot edit a ghost team (Continental Championship bye placeholder). Ghost teams are managed automatically by cup group generation." },
         { status: 400 }
       );
     }

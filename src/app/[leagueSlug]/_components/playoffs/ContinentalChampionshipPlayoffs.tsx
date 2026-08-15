@@ -7,7 +7,7 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { useLeague } from "@/lib/league-context";
 import { RoundColumn, usePlayoffsBracket } from "./shared";
 
-export function TripleCrownPlayoffs() {
+export function ContinentalChampionshipPlayoffs() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
@@ -118,16 +118,16 @@ export function TripleCrownPlayoffs() {
               </div>
             </div>
             {(() => {
-              const uelQF = data.challenger.c31 ?? data.challenger.c34 ?? [];
-              const uelSF = data.challenger.c35 ?? data.challenger.c37 ?? [];
-              const uelFinal = data.challenger.c36 ?? data.challenger.c38 ?? [];
-              const hasData = uelQF.length > 0 || uelSF.length > 0 || uelFinal.length > 0;
+              const jelQF = data.challenger.c31 ?? data.challenger.c34 ?? [];
+              const jelSF = data.challenger.c35 ?? data.challenger.c37 ?? [];
+              const jelFinal = data.challenger.c36 ?? data.challenger.c38 ?? [];
+              const hasData = jelQF.length > 0 || jelSF.length > 0 || jelFinal.length > 0;
               return hasData ? (
                 <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
-                    <RoundColumn title="Quarter-Finals" ties={uelQF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
-                    <RoundColumn title="Semi-Finals" ties={uelSF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
-                    <RoundColumn title="JEL Final 🏆" ties={uelFinal}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />
+                    <RoundColumn title="Quarter-Finals" ties={jelQF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
+                    <RoundColumn title="Semi-Finals" ties={jelSF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
+                    <RoundColumn title="JEL Final 🏆" ties={jelFinal}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />
                   </div>
                 </div>
               ) : (

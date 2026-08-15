@@ -7,7 +7,7 @@ import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { leagues, challengerSurvivalEntries } from "@/lib/db/schema";
-import { processTripleCrownGameweek } from "@/lib/formats/triple-crown/process-gameweek";
+import { processContinentalChampionshipGameweek } from "@/lib/formats/continental-championship/process-gameweek";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
@@ -358,7 +358,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .limit(1);
 
     if (leagueRow[0]?.format === "continental-championship") {
-      const result = await processTripleCrownGameweek(
+      const result = await processContinentalChampionshipGameweek(
         gameweek.id,
         gameweekNumber,
         leagueId,

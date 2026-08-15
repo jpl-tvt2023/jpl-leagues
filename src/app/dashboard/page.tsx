@@ -1226,7 +1226,7 @@ export default function DashboardPage() {
 
   // Captain Announcements card — extracted so it can sit either in the TVT 3-col
   // top row (between Deadline and Fixture) or as a standalone full-width section
-  // for Triple Crown (where deadline+captain are merged into one card).
+  // for Continental Championship (where deadline+captain are merged into one card).
   const captainAnnouncementsCard = data.leagueCaptains && data.leagueCaptains.length > 0 ? (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
       <div className="flex items-center justify-between mb-3">
@@ -1367,7 +1367,7 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Captain Announcements — Triple Crown only (full-width, since TC has
+        {/* Captain Announcements — Continental Championship only (full-width, since TC has
             merged deadline+captain card lower down). TVT places this card inside
             its 3-col top row, below. */}
         {leagueFormat === "continental-championship" && captainAnnouncementsCard && (
@@ -1709,7 +1709,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* TVT Chips Submission — hidden for Triple Crown */}
+                {/* TVT Chips Submission — hidden for Continental Championship */}
                 {leagueFormat !== "continental-championship" && <div className="p-4 rounded-xl bg-white/5">
                   <h3 className="font-semibold text-white mb-3">
                     TVT Chips (Set {data.chipStatus.currentSet === "playoffs" ? "Playoffs" : data.chipStatus.currentSet})

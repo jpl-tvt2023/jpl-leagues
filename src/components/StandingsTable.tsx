@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { TeamStanding } from "@/types/standings";
 
-export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamStanding[]; group?: string; isTripleCrown?: boolean }) {
+export function StandingsTable({ teams, group, isContinentalChampionship }: { teams: TeamStanding[]; group?: string; isContinentalChampionship?: boolean }) {
   const [tooltip, setTooltip] = useState<{
     team: TeamStanding;
     x: number;
@@ -123,7 +123,7 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
                 <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">W</th>
                 <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">D</th>
                 <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">L</th>
-                {!isTripleCrown && <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-12" title="Chips and Bonus Points">CP/BP</th>}
+                {!isContinentalChampionship && <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-12" title="Chips and Bonus Points">CP/BP</th>}
                 <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-14">Pts</th>
                 <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-16">Scores</th>
               </tr>
@@ -131,7 +131,7 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
             <tbody>
               {teams.length === 0 ? (
                 <tr>
-                  <td colSpan={isTripleCrown ? 8 : 9} className="px-3 py-8 text-center text-gray-500">
+                  <td colSpan={isContinentalChampionship ? 8 : 9} className="px-3 py-8 text-center text-gray-500">
                     No teams in this group yet
                   </td>
                 </tr>
@@ -140,7 +140,7 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
                   <tr
                     key={team.teamId}
                     className={`border-b border-white/5 transition hover:bg-white/5 ${
-                      isTripleCrown
+                      isContinentalChampionship
                         ? team.groupRank <= 4 ? "bg-green-500/5" : "bg-white/2"
                         : team.zone === "playoffs"
                           ? "bg-green-500/5"
@@ -153,7 +153,7 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
                       <div className="inline-flex items-center gap-1.5">
                         <span
                           className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] sm:text-xs font-bold ${
-                            isTripleCrown
+                            isContinentalChampionship
                               ? team.groupRank <= 4 ? "bg-green-500/20 text-green-400" : "bg-white/10 text-gray-400"
                               : team.zone === "playoffs"
                                 ? "bg-green-500/20 text-green-400"
@@ -181,7 +181,7 @@ export function StandingsTable({ teams, group, isTripleCrown }: { teams: TeamSta
                     <td className="px-1.5 py-2 sm:px-2 text-center text-green-400">{team.wins}</td>
                     <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.draws}</td>
                     <td className="px-1.5 py-2 sm:px-2 text-center text-red-400">{team.losses}</td>
-                    {!isTripleCrown && (
+                    {!isContinentalChampionship && (
                       <td
                         className="px-1.5 py-2 sm:px-2 text-center text-purple-400"
                         onMouseEnter={(e) => handleMouseEnter(e, team)}

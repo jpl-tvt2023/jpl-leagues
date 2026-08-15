@@ -119,7 +119,7 @@ export default function LeagueWinnersPage() {
 
         {/* Format dispatcher */}
         {leagueFormat === "continental-championship" ? (
-          <TripleCrownTrophies winners={winners} />
+          <ContinentalChampionshipTrophies winners={winners} />
         ) : leagueFormat === "auction" ? (
           <AuctionTrophy winners={winners} />
         ) : (
@@ -131,22 +131,22 @@ export default function LeagueWinnersPage() {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────── */
-/*  Triple Crown — 3 independent trophy cards (NOT a ranked table)              */
+/*  Continental Championship — 3 independent trophy cards (NOT a ranked table)              */
 /* ──────────────────────────────────────────────────────────────────────────── */
 
-function TripleCrownTrophies({ winners }: { winners: Winner[] }) {
+function ContinentalChampionshipTrophies({ winners }: { winners: Winner[] }) {
   // Sort to canonical JPL / JCL / JEL order regardless of API order.
   const order: Winner["category"][] = ["jpl", "jcl", "jel"];
   const sorted = [...winners].sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-      {sorted.map(w => <TripleCrownCard key={w.position} winner={w} />)}
+      {sorted.map(w => <ContinentalChampionshipCard key={w.position} winner={w} />)}
     </div>
   );
 }
 
-function TripleCrownCard({ winner }: { winner: Winner }) {
+function ContinentalChampionshipCard({ winner }: { winner: Winner }) {
   const colourMap: Record<string, { card: string; badge: string }> = {
     jpl: { card: "from-blue-700/40 to-blue-900/20 border-blue-500/40",  badge: "bg-blue-500/20 text-blue-200" },
     jcl: { card: "from-sky-600/40 to-sky-900/20 border-sky-500/40",     badge: "bg-sky-500/20 text-sky-200" },

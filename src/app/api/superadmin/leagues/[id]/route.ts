@@ -30,7 +30,7 @@ export async function PATCH(
   // enabledChips is only meaningful for TVT leagues and must match the same
   // shape rule the POST handler enforces (3 unique entries from
   // {W,D,C,SL,CB,UD}). Reject any attempt to set it on non-TVT leagues so the
-  // hardcoded [] used for Triple Crown / Auction cannot be silently overwritten.
+  // hardcoded [] used for Continental Championship / Auction cannot be silently overwritten.
   if (body.enabledChips !== undefined) {
     const leagueRow = await db
       .select({ format: leagues.format })

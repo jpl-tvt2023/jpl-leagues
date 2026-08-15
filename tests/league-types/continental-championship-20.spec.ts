@@ -1,11 +1,11 @@
 /**
- * Triple Crown 20-team coverage spec.
+ * JPL Continental Championship 20-team coverage spec.
  *
  * Format: 20 teams, PL all-play-all 2× ⇒ 38 GWs. 4 cup groups (each is 5
  * humans + 1 Ghost), cup matchdays land on even GWs (6, 8, …, 24). Captaincy
  * cap is 19 chips per player (vs. 15 in TVT).
  *
- * Run with: npm run test:e2e -- tests/league-types/triple-crown-20.spec.ts
+ * Run with: npm run test:e2e -- tests/league-types/continental-championship-20.spec.ts
  */
 
 import { test, expect } from "@playwright/test";
@@ -13,7 +13,7 @@ import {
   apiSignInSuperadmin,
   apiSignInTeam,
   apiSignOut,
-  createTripleCrownLeague,
+  createContinentalChampionshipLeague,
   generateFixtures,
   getFixtureStatus,
   setupAllTeams,
@@ -28,18 +28,18 @@ import {
 let league: LeagueRef;
 let teams: TeamHandle[];
 
-test.describe.serial("Triple Crown 20 (admin + user)", () => {
+test.describe.serial("Continental Championship 20 (admin + user)", () => {
   test.beforeAll(async ({ request }) => {
     test.setTimeout(180_000); // 20 teams × setup
     await apiSignInSuperadmin(request);
-    league = await createTripleCrownLeague(request);
+    league = await createContinentalChampionshipLeague(request);
     teams = await setupAllTeams(request, league.slug, league.teamSize, "continental-championship");
     await apiSignInSuperadmin(request);
     await generateFixtures(request, league.slug);
     await ensureGameweeks(league.id);
   });
 
-  test("admin: league created with 20 teams and triple-crown format", async () => {
+  test("admin: league created with 20 teams and continental-championship format", async () => {
     expect(league.format).toBe("continental-championship");
     expect(league.teamSize).toBe(20);
   });
@@ -64,7 +64,7 @@ test.describe.serial("Triple Crown 20 (admin + user)", () => {
   });
 
   test("user: cup-standings endpoint returns JSON", async ({ request }) => {
-    const res = await request.get(`/api/triple-crown/cup-standings?leagueId=${league.id}`);
+    const res = await request.get(`/api/continental-championship/cup-standings?leagueId=${league.id}`);
     expect([200, 400, 404]).toContain(res.status()); // tolerant: cup-groups may not exist yet
   });
 
@@ -73,18 +73,18 @@ test.describe.serial("Triple Crown 20 (admin + user)", () => {
     await expectFixturesPageRenders(page, league.slug);
   });
 
-  test("user: UCL / UEL / Europa pages load", async ({ page }) => {
-    await expectPageLoads(page, `/${league.slug}/ucl`);
-    await expectPageLoads(page, `/${league.slug}/europa`);
+  test("user: JCL / JEL / cup standings pages load", async ({ page }) => {
+    await expectPageLoads(page, `/${league.slug}/jcl`);
+    await expectPageLoads(page, `/${league.slug}/jel`);
     await expectPageLoads(page, `/${league.slug}/jpl-cup-standings`);
   });
 
-  test("user: rules page renders Triple-Crown-specific content", async ({ page }) => {
+  test("user: rules page renders Continental-Championship-specific content", async ({ page }) => {
     await page.goto(`/${league.slug}/rules`);
-    await expect(page.locator("body")).toContainText(/cup|triple crown|playoff/i, { timeout: 10_000 });
+    await expect(page.locator("body")).toContainText(/cup|continental championship|playoff/i, { timeout: 10_000 });
   });
 
-  test("user: captain submission honours the TC-specific 19-chip cap", async ({ request }) => {
+  test("user: captain submission honours the Continental-Championship-specific 19-chip cap", async ({ request }) => {
     await apiSignInTeam(request, league.slug, 1);
     const dash = await request.get("/api/team/dashboard").then((r) => r.json());
     const players = dash?.team?.players ?? dash?.players ?? [];

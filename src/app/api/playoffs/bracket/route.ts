@@ -641,7 +641,7 @@ function placeholder(label: string): { teamId: null; name: string; leg1Score: nu
  * seed text. The frontend only renders seedLabel when teamId is also present.
  */
 /**
- * Projected cup-group seeds for Triple Crown tentative bracket. Returns
+ * Projected cup-group seeds for Continental Championship tentative bracket. Returns
  * { groupName: { rank: { teamId, name } } } based on currently-recorded
  * cup-group fixture results. Empty object when leagueId is missing, no cup
  * groups exist, or no results have been entered yet.
@@ -651,7 +651,7 @@ async function getCupGroupProjectedSeeds(
 ): Promise<Record<string, Record<number, { teamId: string; name: string }>>> {
   if (!leagueId) return {};
   try {
-    const { computeCupGroupStandings } = await import("@/lib/formats/triple-crown/standings");
+    const { computeCupGroupStandings } = await import("@/lib/formats/continental-championship/standings");
     const cupGroups = await db.select().from(groups).where(
       and(eq(groups.leagueId, leagueId), eq(groups.groupType, "cup")),
     );
@@ -900,9 +900,9 @@ function buildTentative16Team(
 }
 
 async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null) {
-  // TC seeding: UCL = rank 1-2 per cup group, UEL = rank 3-4 per cup group
-  // Cross-group QF pairing: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1 (UCL)
-  //                          A3 vs C4, A4 vs C3, B3 vs D4, B4 vs D3 (UEL)
+  // TC seeding: JCL = rank 1-2 per cup group, JEL = rank 3-4 per cup group
+  // Cross-group QF pairing: A1 vs C2, A2 vs C1, B1 vs D2, B2 vs D1 (JCL)
+  //                          A3 vs C4, A4 vs C3, B3 vs D4, B4 vs D3 (JEL)
   const rankLabel = (rank: number) => rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : "4th";
 
   // Project current cup-group seeds from any completed cup-group fixtures so the
@@ -916,44 +916,44 @@ async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "
   const tcSeed = (group: string, rank: number) =>
     seededSide(projectedSeed(group, rank), `${rankLabel(rank)} Cup-${group}`);
 
-  const uclQF: TieDisplay[] = [
-    { tieId: "UCL-QF-1", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 1), away: tcSeed("C", 2), winnerId: null, loserId: null },
-    { tieId: "UCL-QF-2", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 2), away: tcSeed("C", 1), winnerId: null, loserId: null },
-    { tieId: "UCL-QF-3", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 1), away: tcSeed("D", 2), winnerId: null, loserId: null },
-    { tieId: "UCL-QF-4", roundName: "UCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 2), away: tcSeed("D", 1), winnerId: null, loserId: null },
+  const jclQF: TieDisplay[] = [
+    { tieId: "JCL-QF-1", roundName: "JCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 1), away: tcSeed("C", 2), winnerId: null, loserId: null },
+    { tieId: "JCL-QF-2", roundName: "JCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 2), away: tcSeed("C", 1), winnerId: null, loserId: null },
+    { tieId: "JCL-QF-3", roundName: "JCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 1), away: tcSeed("D", 2), winnerId: null, loserId: null },
+    { tieId: "JCL-QF-4", roundName: "JCL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 2), away: tcSeed("D", 1), winnerId: null, loserId: null },
   ];
 
-  const uclSF: TieDisplay[] = [
-    { tieId: "UCL-SF-1", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UCL-QF-1"), away: placeholder("Winner of UCL-QF-3"), winnerId: null, loserId: null },
-    { tieId: "UCL-SF-2", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UCL-QF-2"), away: placeholder("Winner of UCL-QF-4"), winnerId: null, loserId: null },
+  const jclSF: TieDisplay[] = [
+    { tieId: "JCL-SF-1", roundName: "JCL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of JCL-QF-1"), away: placeholder("Winner of JCL-QF-3"), winnerId: null, loserId: null },
+    { tieId: "JCL-SF-2", roundName: "JCL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of JCL-QF-2"), away: placeholder("Winner of JCL-QF-4"), winnerId: null, loserId: null },
   ];
 
-  const uclFinal: TieDisplay[] = [
-    { tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 37, gw2: 38, home: placeholder("Winner of UCL-SF-1"), away: placeholder("Winner of UCL-SF-2"), winnerId: null, loserId: null },
+  const jclFinal: TieDisplay[] = [
+    { tieId: "JCL-FINAL", roundName: "JCL-FINAL", status: "projected", gw1: 37, gw2: 38, home: placeholder("Winner of JCL-SF-1"), away: placeholder("Winner of JCL-SF-2"), winnerId: null, loserId: null },
   ];
 
-  const uelQF: TieDisplay[] = [
-    { tieId: "UEL-QF-1", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 3), away: tcSeed("C", 4), winnerId: null, loserId: null },
-    { tieId: "UEL-QF-2", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 4), away: tcSeed("C", 3), winnerId: null, loserId: null },
-    { tieId: "UEL-QF-3", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 3), away: tcSeed("D", 4), winnerId: null, loserId: null },
-    { tieId: "UEL-QF-4", roundName: "UEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 4), away: tcSeed("D", 3), winnerId: null, loserId: null },
+  const jelQF: TieDisplay[] = [
+    { tieId: "JEL-QF-1", roundName: "JEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 3), away: tcSeed("C", 4), winnerId: null, loserId: null },
+    { tieId: "JEL-QF-2", roundName: "JEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("A", 4), away: tcSeed("C", 3), winnerId: null, loserId: null },
+    { tieId: "JEL-QF-3", roundName: "JEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 3), away: tcSeed("D", 4), winnerId: null, loserId: null },
+    { tieId: "JEL-QF-4", roundName: "JEL-QF", status: "projected", gw1: 27, gw2: 29, home: tcSeed("B", 4), away: tcSeed("D", 3), winnerId: null, loserId: null },
   ];
 
-  const uelSF: TieDisplay[] = [
-    { tieId: "UEL-SF-1", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UEL-QF-1"), away: placeholder("Winner of UEL-QF-3"), winnerId: null, loserId: null },
-    { tieId: "UEL-SF-2", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of UEL-QF-2"), away: placeholder("Winner of UEL-QF-4"), winnerId: null, loserId: null },
+  const jelSF: TieDisplay[] = [
+    { tieId: "JEL-SF-1", roundName: "JEL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of JEL-QF-1"), away: placeholder("Winner of JEL-QF-3"), winnerId: null, loserId: null },
+    { tieId: "JEL-SF-2", roundName: "JEL-SF", status: "projected", gw1: 33, gw2: 35, home: placeholder("Winner of JEL-QF-2"), away: placeholder("Winner of JEL-QF-4"), winnerId: null, loserId: null },
   ];
 
-  const uelFinal: TieDisplay[] = [
-    { tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 37, gw2: 38, home: placeholder("Winner of UEL-SF-1"), away: placeholder("Winner of UEL-SF-2"), winnerId: null, loserId: null },
+  const jelFinal: TieDisplay[] = [
+    { tieId: "JEL-FINAL", roundName: "JEL-FINAL", status: "projected", gw1: 37, gw2: 38, home: placeholder("Winner of JEL-SF-1"), away: placeholder("Winner of JEL-SF-2"), winnerId: null, loserId: null },
   ];
 
   return {
     mode,
     latestCompletedGw,
     teamSize: 20,
-    tvt: { qf: uclQF, sf: uclSF, final: uclFinal },
-    challenger: { c31: uelQF, c35: uelSF, c38: uelFinal },
+    tvt: { qf: jclQF, sf: jclSF, final: jclFinal },
+    challenger: { c31: jelQF, c35: jelSF, c38: jelFinal },
   };
 }
 
@@ -1206,43 +1206,43 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
         : placeholder(`W ${srcTieId}`);
     };
 
-    // UCL: QF (GW27+29) → SF (GW33+35) → Final (GW37+38, 2-leg)
-    const uclQf = tiesByRound("UCL-QF");
-    const uclSfFromDb = tiesByRound("UCL-SF");
-    const uclSf = uclSfFromDb.length > 0 ? uclSfFromDb : [{
-      tieId: "UCL-SF-1", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35,
-      home: resolveWinnerTC("UCL-QF-1"), away: resolveWinnerTC("UCL-QF-2"),
+    // JCL: QF (GW27+29) → SF (GW33+35) → Final (GW37+38, 2-leg)
+    const jclQf = tiesByRound("JCL-QF");
+    const jclSfFromDb = tiesByRound("JCL-SF");
+    const jclSf = jclSfFromDb.length > 0 ? jclSfFromDb : [{
+      tieId: "JCL-SF-1", roundName: "JCL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("JCL-QF-1"), away: resolveWinnerTC("JCL-QF-2"),
       winnerId: null, loserId: null,
     } as TieDisplay, {
-      tieId: "UCL-SF-2", roundName: "UCL-SF", status: "projected", gw1: 33, gw2: 35,
-      home: resolveWinnerTC("UCL-QF-3"), away: resolveWinnerTC("UCL-QF-4"),
+      tieId: "JCL-SF-2", roundName: "JCL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("JCL-QF-3"), away: resolveWinnerTC("JCL-QF-4"),
       winnerId: null, loserId: null,
     } as TieDisplay];
 
-    const uclFinalFromDb = tiesByRound("UCL-FINAL");
-    const uclFinal = uclFinalFromDb.length > 0 ? uclFinalFromDb : [{
-      tieId: "UCL-FINAL", roundName: "UCL-FINAL", status: "projected", gw1: 37, gw2: 38,
-      home: resolveWinnerTC("UCL-SF-1"), away: resolveWinnerTC("UCL-SF-2"),
+    const jclFinalFromDb = tiesByRound("JCL-FINAL");
+    const jclFinal = jclFinalFromDb.length > 0 ? jclFinalFromDb : [{
+      tieId: "JCL-FINAL", roundName: "JCL-FINAL", status: "projected", gw1: 37, gw2: 38,
+      home: resolveWinnerTC("JCL-SF-1"), away: resolveWinnerTC("JCL-SF-2"),
       winnerId: null, loserId: null,
     } as TieDisplay];
 
-    // UEL: QF (GW27+29) → SF (GW33+35) → Final (GW37+38, 2-leg)
-    const uelQf = tiesByRound("UEL-QF");
-    const uelSfFromDb = tiesByRound("UEL-SF");
-    const uelSf = uelSfFromDb.length > 0 ? uelSfFromDb : [{
-      tieId: "UEL-SF-1", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35,
-      home: resolveWinnerTC("UEL-QF-1"), away: resolveWinnerTC("UEL-QF-2"),
+    // JEL: QF (GW27+29) → SF (GW33+35) → Final (GW37+38, 2-leg)
+    const jelQf = tiesByRound("JEL-QF");
+    const jelSfFromDb = tiesByRound("JEL-SF");
+    const jelSf = jelSfFromDb.length > 0 ? jelSfFromDb : [{
+      tieId: "JEL-SF-1", roundName: "JEL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("JEL-QF-1"), away: resolveWinnerTC("JEL-QF-2"),
       winnerId: null, loserId: null,
     } as TieDisplay, {
-      tieId: "UEL-SF-2", roundName: "UEL-SF", status: "projected", gw1: 33, gw2: 35,
-      home: resolveWinnerTC("UEL-QF-3"), away: resolveWinnerTC("UEL-QF-4"),
+      tieId: "JEL-SF-2", roundName: "JEL-SF", status: "projected", gw1: 33, gw2: 35,
+      home: resolveWinnerTC("JEL-QF-3"), away: resolveWinnerTC("JEL-QF-4"),
       winnerId: null, loserId: null,
     } as TieDisplay];
 
-    const uelFinalFromDb = tiesByRound("UEL-FINAL");
-    const uelFinal = uelFinalFromDb.length > 0 ? uelFinalFromDb : [{
-      tieId: "UEL-FINAL", roundName: "UEL-FINAL", status: "projected", gw1: 37, gw2: 38,
-      home: resolveWinnerTC("UEL-SF-1"), away: resolveWinnerTC("UEL-SF-2"),
+    const jelFinalFromDb = tiesByRound("JEL-FINAL");
+    const jelFinal = jelFinalFromDb.length > 0 ? jelFinalFromDb : [{
+      tieId: "JEL-FINAL", roundName: "JEL-FINAL", status: "projected", gw1: 37, gw2: 38,
+      home: resolveWinnerTC("JEL-SF-1"), away: resolveWinnerTC("JEL-SF-2"),
       winnerId: null, loserId: null,
     } as TieDisplay];
 
@@ -1251,14 +1251,14 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
       latestCompletedGw,
       teamSize: 20,
       tvt: {
-        qf: uclQf,
-        sf: uclSf,
-        final: uclFinal,
+        qf: jclQf,
+        sf: jclSf,
+        final: jclFinal,
       },
       challenger: {
-        c31: uelQf,
-        c35: uelSf,
-        c38: uelFinal,
+        c31: jelQf,
+        c35: jelSf,
+        c38: jelFinal,
       },
     };
   }

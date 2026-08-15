@@ -1,12 +1,12 @@
 /**
  * POST /api/admin/[leagueId]/generate-brackets
- * Triple Crown: Generate UCL/UEL bracket seeds after GW24
+ * Continental Championship: Generate JCL/JEL bracket seeds after GW24
  *
  * Flow:
  * 1. Fetch cup group standings at end of GW24
- * 2. Extract UCL (ranks 1-2 from each group) and UEL (ranks 3-4)
+ * 2. Extract JCL (ranks 1-2 from each group) and JEL (ranks 3-4)
  * 3. Seed QF matches with cross-group pairing
- * 4. Create playoffTies and fixtures for UCL/UEL QF (2-legged, GW27/GW29)
+ * 4. Create playoffTies and fixtures for JCL/JEL QF (2-legged, GW27/GW29)
  * 5. competitionType="jcl-knockout" or "jel-knockout"
  */
 
@@ -40,21 +40,21 @@ export async function POST(request: NextRequest) {
 
     if (leagueRow[0].format !== "continental-championship") {
       return NextResponse.json({
-        error: "Bracket generation only available for Triple Crown format",
+        error: "Bracket generation only available for Continental Championship format",
       }, { status: 400 });
     }
 
-    // Check if UCL/UEL QF ties already exist
-    const existingUcl = await db.select().from(playoffTies).where(
+    // Check if JCL/JEL QF ties already exist
+    const existingJcl = await db.select().from(playoffTies).where(
       and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"))
     );
-    const existingUel = await db.select().from(playoffTies).where(
+    const existingJel = await db.select().from(playoffTies).where(
       and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"))
     );
 
-    if (existingUcl.length > 0 || existingUel.length > 0) {
+    if (existingJcl.length > 0 || existingJel.length > 0) {
       return NextResponse.json({
-        error: "UCL/UEL brackets already exist. Delete them first to reseed.",
+        error: "JCL/JEL brackets already exist. Delete them first to reseed.",
       }, { status: 400 });
     }
 
@@ -155,13 +155,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Extract UCL (ranks 1-2) and UEL (ranks 3-4)
-    const uclTeams = allGroupStandings.flatMap((g, idx) => g.standings.slice(0, 2));
-    const uelTeams = allGroupStandings.flatMap((g, idx) => g.standings.slice(2, 4));
+    // Extract JCL (ranks 1-2) and JEL (ranks 3-4)
+    const jclTeams = allGroupStandings.flatMap((g, idx) => g.standings.slice(0, 2));
+    const jelTeams = allGroupStandings.flatMap((g, idx) => g.standings.slice(2, 4));
 
-    if (uclTeams.length < 8 || uelTeams.length < 8) {
+    if (jclTeams.length < 8 || jelTeams.length < 8) {
       return NextResponse.json({
-        error: `Invalid team counts for brackets: UCL=${uclTeams.length}, UEL=${uelTeams.length}`,
+        error: `Invalid team counts for brackets: JCL=${jclTeams.length}, JEL=${jelTeams.length}`,
       }, { status: 400 });
     }
 
@@ -223,27 +223,27 @@ export async function POST(request: NextRequest) {
     // or orphan reference if the constraint is somehow bypassed).
     const plGroupId: string | null = plGroup[0]?.id ?? null;
 
-    // Create UCL QF ties (cross-group pairing)
-    const uclQfMatches = [
-      { tieId: "UCL-QF-1", home: uclTeams[0], away: uclTeams[5] },
-      { tieId: "UCL-QF-2", home: uclTeams[1], away: uclTeams[4] },
-      { tieId: "UCL-QF-3", home: uclTeams[2], away: uclTeams[7] },
-      { tieId: "UCL-QF-4", home: uclTeams[3], away: uclTeams[6] },
+    // Create JCL QF ties (cross-group pairing)
+    const jclQfMatches = [
+      { tieId: "JCL-QF-1", home: jclTeams[0], away: jclTeams[5] },
+      { tieId: "JCL-QF-2", home: jclTeams[1], away: jclTeams[4] },
+      { tieId: "JCL-QF-3", home: jclTeams[2], away: jclTeams[7] },
+      { tieId: "JCL-QF-4", home: jclTeams[3], away: jclTeams[6] },
     ];
 
-    // Create UEL QF ties (cross-group pairing)
-    const uelQfMatches = [
-      { tieId: "UEL-QF-1", home: uelTeams[0], away: uelTeams[5] },
-      { tieId: "UEL-QF-2", home: uelTeams[1], away: uelTeams[4] },
-      { tieId: "UEL-QF-3", home: uelTeams[2], away: uelTeams[7] },
-      { tieId: "UEL-QF-4", home: uelTeams[3], away: uelTeams[6] },
+    // Create JEL QF ties (cross-group pairing)
+    const jelQfMatches = [
+      { tieId: "JEL-QF-1", home: jelTeams[0], away: jelTeams[5] },
+      { tieId: "JEL-QF-2", home: jelTeams[1], away: jelTeams[4] },
+      { tieId: "JEL-QF-3", home: jelTeams[2], away: jelTeams[7] },
+      { tieId: "JEL-QF-4", home: jelTeams[3], away: jelTeams[6] },
     ];
 
     const createdTies: string[] = [];
     const createdFixtures: string[] = [];
 
-    // Create UCL QF ties and fixtures
-    for (const match of uclQfMatches) {
+    // Create JCL QF ties and fixtures
+    for (const match of jclQfMatches) {
       const homeTeam = await db.select().from(teams).where(eq(teams.id, match.home.teamId));
       const awayTeam = await db.select().from(teams).where(eq(teams.id, match.away.teamId));
 
@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
       await db.insert(playoffTies).values({
         tieId: match.tieId,
         leagueId,
-        roundName: "UCL-QF",
+        roundName: "JCL-QF",
         roundType: "jcl-knockout",
         homeTeamId: match.home.teamId,
         awayTeamId: match.away.teamId,
@@ -272,7 +272,7 @@ export async function POST(request: NextRequest) {
         groupId: plGroupId,
         isChallenge: false,
         isPlayoff: true,
-        roundName: "UCL-QF",
+        roundName: "JCL-QF",
         leg: 1,
         tieId: match.tieId,
         roundType: "jcl-knockout",
@@ -290,7 +290,7 @@ export async function POST(request: NextRequest) {
         groupId: plGroupId,
         isChallenge: false,
         isPlayoff: true,
-        roundName: "UCL-QF",
+        roundName: "JCL-QF",
         leg: 2,
         tieId: match.tieId,
         roundType: "jcl-knockout",
@@ -299,8 +299,8 @@ export async function POST(request: NextRequest) {
       createdFixtures.push(leg2Id);
     }
 
-    // Create UEL QF ties and fixtures
-    for (const match of uelQfMatches) {
+    // Create JEL QF ties and fixtures
+    for (const match of jelQfMatches) {
       const homeTeam = await db.select().from(teams).where(eq(teams.id, match.home.teamId));
       const awayTeam = await db.select().from(teams).where(eq(teams.id, match.away.teamId));
 
@@ -309,7 +309,7 @@ export async function POST(request: NextRequest) {
       await db.insert(playoffTies).values({
         tieId: match.tieId,
         leagueId,
-        roundName: "UEL-QF",
+        roundName: "JEL-QF",
         roundType: "jel-knockout",
         homeTeamId: match.home.teamId,
         awayTeamId: match.away.teamId,
@@ -329,7 +329,7 @@ export async function POST(request: NextRequest) {
         groupId: plGroupId,
         isChallenge: false,
         isPlayoff: true,
-        roundName: "UEL-QF",
+        roundName: "JEL-QF",
         leg: 1,
         tieId: match.tieId,
         roundType: "jel-knockout",
@@ -347,7 +347,7 @@ export async function POST(request: NextRequest) {
         groupId: plGroupId,
         isChallenge: false,
         isPlayoff: true,
-        roundName: "UEL-QF",
+        roundName: "JEL-QF",
         leg: 2,
         tieId: match.tieId,
         roundType: "jel-knockout",
@@ -360,10 +360,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Generated UCL/UEL brackets with ${createdTies.length} ties and ${createdFixtures.length} fixtures`,
+      message: `Generated JCL/JEL brackets with ${createdTies.length} ties and ${createdFixtures.length} fixtures`,
       summary: {
-        uclQfTies: 4,
-        uelQfTies: 4,
+        jclQfTies: 4,
+        jelQfTies: 4,
         totalFixtures: createdFixtures.length,
         qfGWs: [27, 29],
       },
@@ -379,8 +379,8 @@ export async function POST(request: NextRequest) {
 
 /**
  * DELETE /api/admin/[leagueId]/generate-brackets
- * Delete all UCL/UEL knockout ties + their fixtures + results so brackets can be reseeded.
- * Used by the "Delete & Regenerate UCL/UEL Brackets" admin button.
+ * Delete all JCL/JEL knockout ties + their fixtures + results so brackets can be reseeded.
+ * Used by the "Delete & Regenerate JCL/JEL Brackets" admin button.
  */
 export async function DELETE(request: NextRequest) {
   try {
@@ -420,7 +420,7 @@ export async function DELETE(request: NextRequest) {
       deletedFixtures: fixtureIds.length,
     });
   } catch (error) {
-    console.error("Error deleting UCL/UEL brackets:", error);
+    console.error("Error deleting JCL/JEL brackets:", error);
     return NextResponse.json({ error: "Failed to delete brackets" }, { status: 500 });
   }
 }
@@ -434,17 +434,17 @@ export async function GET(request: NextRequest) {
     const leagueId = await getAuthorizedLeagueId(request);
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const uclTies = await db.select().from(playoffTies).where(
+    const jclTies = await db.select().from(playoffTies).where(
       and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"))
     );
-    const uelTies = await db.select().from(playoffTies).where(
+    const jelTies = await db.select().from(playoffTies).where(
       and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"))
     );
 
     return NextResponse.json({
-      bracketsGenerated: uclTies.length > 0 && uelTies.length > 0,
-      uclQfTies: uclTies.length,
-      uelQfTies: uelTies.length,
+      bracketsGenerated: jclTies.length > 0 && jelTies.length > 0,
+      jclQfTies: jclTies.length,
+      jelQfTies: jelTies.length,
     });
   } catch (error) {
     console.error("Error checking bracket status:", error);

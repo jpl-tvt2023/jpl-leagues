@@ -2,11 +2,11 @@
 
 import { useLeague, useEnforceFormat } from "@/lib/league-context";
 import { ClassicPlayoffs } from "../_components/playoffs/ClassicPlayoffs";
-import { TripleCrownPlayoffs } from "../_components/playoffs/TripleCrownPlayoffs";
+import { ContinentalChampionshipPlayoffs } from "../_components/playoffs/ContinentalChampionshipPlayoffs";
 
 export default function LeaguePlayoffsPage() {
   useEnforceFormat(["tvt", "continental-championship"]);
   const { league } = useLeague();
-  if (league.format === "continental-championship") return <TripleCrownPlayoffs />;
+  if (league.format === "continental-championship") return <ContinentalChampionshipPlayoffs />;
   return <ClassicPlayoffs />;
 }

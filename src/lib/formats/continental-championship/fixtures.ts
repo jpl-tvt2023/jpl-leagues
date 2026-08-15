@@ -1,10 +1,10 @@
 /**
- * Triple Crown Format Fixture Generation
+ * Continental Championship Format Fixture Generation
  * Handles PL (all-season H2H) and Cup group stage fixtures
  */
 
 /**
- * Generate PL (Premier League) fixtures for Triple Crown
+ * Generate PL (Premier League) fixtures for Continental Championship
  * All 20 teams play each other twice (2 repetitions) across all 38 GWs
  *
  * @param teams - Array of 20 teams {id, name}
@@ -59,7 +59,7 @@ export function generatePLFixtures(teams: Array<{ id: string; name: string }>) {
 }
 
 /**
- * Generate cup group stage fixtures for Triple Crown
+ * Generate cup group stage fixtures for Continental Championship
  * Each cup group: 5 human teams + 1 Ghost team (6 total)
  * Round-robin with 2 repetitions = 10 matchdays
  * Each human team plays: 8 human matches + 2 Ghost matches = 10 total

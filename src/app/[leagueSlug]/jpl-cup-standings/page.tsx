@@ -77,7 +77,7 @@ export default function JplCupStandingsPage() {
   // the cold-load path; this effect just needs to flip it false on completion via .finally().
   useEffect(() => {
     if (!leagueId) return;
-    fetch(`/api/triple-crown/cup-standings?leagueId=${leagueId}`)
+    fetch(`/api/continental-championship/cup-standings?leagueId=${leagueId}`)
       .then((r) => {
         if (!r.ok) return {};
         return r.json();
@@ -217,11 +217,11 @@ export default function JplCupStandingsPage() {
                 {group && group.standings.length > 0 ? (
                   <div>
                     {group.standings.map((team, idx) => {
-                      const isUCL = idx < 2;
-                      const isUEL = idx >= 2 && idx < 4;
-                      const rowBg = isUCL
+                      const isJCL = idx < 2;
+                      const isJEL = idx >= 2 && idx < 4;
+                      const rowBg = isJCL
                         ? "bg-blue-500/10 border-l-4 border-blue-400"
-                        : isUEL
+                        : isJEL
                         ? "bg-orange-500/8 border-l-4 border-orange-400/50"
                         : "";
                       const played = team.wins + team.draws + team.losses;
@@ -234,10 +234,10 @@ export default function JplCupStandingsPage() {
                           <span className="w-5 text-center font-bold text-gray-400 text-xs">{idx + 1}</span>
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="font-semibold text-white truncate">{team.teamName}</span>
-                            {isUCL && (
+                            {isJCL && (
                               <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">JCL</span>
                             )}
-                            {isUEL && (
+                            {isJEL && (
                               <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">JEL</span>
                             )}
                           </div>

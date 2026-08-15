@@ -1,7 +1,7 @@
 /**
  * Per-format visual palette tokens.
  *
- * The 5 league variants (TVT-8, TVT-16, TVT-32, Triple Crown, Auction) each get
+ * The 5 league variants (TVT-8, TVT-16, TVT-32, Continental Championship, Auction) each get
  * their own palette so users immediately see which kind of league they're in
  * without reading the slug. TVT variants share a purple→indigo→violet hue
  * family with subtle size-shift; TC and Auction get distinct hues.
@@ -12,7 +12,7 @@
  */
 
 /**
- * Canonical stored value of the JPL Continental Championship format (formerly Triple Crown).
+ * Canonical stored value of the JPL Continental Championship format.
  * Imported wherever the format is compared so the token lives in one place.
  */
 export const CONTINENTAL_FORMAT = "continental-championship";

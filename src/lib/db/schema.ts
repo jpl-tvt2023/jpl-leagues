@@ -69,12 +69,12 @@ export const leagueAdmins = sqliteTable("league_admins", {
   leagueUserUnique: uniqueIndex("league_admins_league_user_unique").on(table.leagueId, table.userId),
 }));
 
-// Group (A or B for TVT; Cup-A/B/C/D for Triple Crown)
+// Group (A or B for TVT; Cup-A/B/C/D for Continental Championship)
 export const groups = sqliteTable("groups", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
-  groupType: text("group_type").default("jpl"), // "pl" | "cup" (Triple Crown uses "cup" for cup groups)
+  groupType: text("group_type").default("jpl"), // "jpl" | "cup" (Continental Championship uses "cup" for cup groups)
 }, (table) => ({
   leagueNameUnique: uniqueIndex("groups_league_name_unique").on(table.leagueId, table.name),
 }));
@@ -93,10 +93,10 @@ export const teams = sqliteTable("teams", {
   leaguePoints: integer("league_points").notNull().default(0),
   bonusPoints: integer("bonus_points").notNull().default(0),
 
-  // Triple Crown: Cup group points (separate from PL leaguePoints)
+  // Continental Championship: Cup group points (separate from PL leaguePoints)
   cupGroupPoints: integer("cup_group_points").notNull().default(0),
 
-  // Triple Crown: Ghost team marker
+  // Continental Championship: Ghost team marker
   isGhost: integer("is_ghost", { mode: "boolean" }).notNull().default(false),
 
   // JPL Auction: Economy tracking
@@ -180,7 +180,7 @@ export const fixtures = sqliteTable("fixtures", {
   // Fixture type
   isChallenge: integer("is_challenge", { mode: "boolean" }).notNull().default(false), // Challenge Chip fixture
   isPlayoff: integer("is_playoff", { mode: "boolean" }).notNull().default(false), // Playoff fixture
-  competitionType: text("competition_type"), // "pl" | "cup-group" | "jcl-knockout" | "jel-knockout" (Triple Crown)
+  competitionType: text("competition_type"), // "jpl" | "cup-group" | "jcl-knockout" | "jel-knockout" (Continental Championship)
   
   // Playoff-specific fields (null for league-phase fixtures)
   roundName: text("round_name"), // "RO16", "QF", "SF", "Final", "C-31", etc.
@@ -339,7 +339,7 @@ export const backups = sqliteTable("backups", {
   captainsJson: text("captains_json"), // null when format === "auction"
   chipsJson: text("chips_json"),       // null when format !== "tvt"
   // Auction format: per-team economy + squad + club snapshots. Populated only for auction leagues;
-  // null for TVT/triple-crown. Restore reads these to rebuild ownership state then admins reprocess GWs.
+  // null for TVT/continental-championship. Restore reads these to rebuild ownership state then admins reprocess GWs.
   auctionTeamsStateJson: text("auction_teams_state_json"),
   auctionSquadsJson: text("auction_squads_json"),
   auctionClubsJson: text("auction_clubs_json"),

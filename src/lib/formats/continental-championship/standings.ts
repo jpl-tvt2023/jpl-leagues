@@ -1,5 +1,5 @@
 /**
- * Triple Crown Format Standings Computation
+ * Continental Championship Format Standings Computation
  * Handles PL standings (all season) and Cup group standings (GW6-24)
  */
 

@@ -57,7 +57,7 @@ export function LeagueNav({
   onSignOut,
 }: LeagueNavProps) {
   const isAuction = format === "auction";
-  const isTripleCrown = format === "continental-championship";
+  const isContinentalChampionship = format === "continental-championship";
   const isPrimaryTier = isAuction && auctionTier === "primary";
   const palette = getFormatPalette(format, teamSize);
   const activeClass = palette.badgeText; // active link uses the palette accent color
@@ -120,7 +120,7 @@ export function LeagueNav({
               <NavLink href={`/${leagueSlug}/feedback`} activeClass={activeClass} active={currentPage ==="feedback"}>Feedback</NavLink>
             )}
           </>
-        ) : isTripleCrown ? (
+        ) : isContinentalChampionship ? (
           <>
             <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>JPL Standings</NavLink>
             <NavLink href={`/${leagueSlug}/fixtures`} activeClass={activeClass} active={currentPage ==="fixtures"}>JPL Fixtures</NavLink>

@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { useLeague } from "@/lib/league-context";
 import { AuctionRules } from "../_components/rules/AuctionRules";
-import { TripleCrownRules } from "../_components/rules/TripleCrownRules";
+import { ContinentalChampionshipRules } from "../_components/rules/ContinentalChampionshipRules";
 import { TvtRules } from "../_components/rules/TvtRules";
 import type { LeagueConfig } from "../_components/rules/shared";
 
@@ -26,12 +26,12 @@ export default function LeagueRulesPage() {
     enabledChips: league.enabledChips.length ? league.enabledChips : ["D", "W", "C"],
   };
 
-  const isTripleCrown = league.format === "continental-championship";
+  const isContinentalChampionship = league.format === "continental-championship";
   const isAuction = league.format === "auction";
 
   const variantLabel = isAuction
     ? "Auction Format"
-    : isTripleCrown
+    : isContinentalChampionship
     ? "JPL Continental Championship (20 Teams)"
     : config.teamSize === 8
     ? "8-Team Format"
@@ -41,7 +41,7 @@ export default function LeagueRulesPage() {
 
   const title = isAuction
     ? "Auction League Rules & Regulations"
-    : isTripleCrown
+    : isContinentalChampionship
     ? "JPL Continental Championship Rules & Regulations"
     : "TVT Rules & Regulations";
 
@@ -51,7 +51,7 @@ export default function LeagueRulesPage() {
         leagueSlug={leagueSlug}
         leagueName={league.name}
         currentPage="rules"
-        format={isAuction ? "auction" : isTripleCrown ? "continental-championship" : "tvt"}
+        format={isAuction ? "auction" : isContinentalChampionship ? "continental-championship" : "tvt"}
         teamSize={league.teamSize}
         auctionTier={league.auctionTier ?? "complete"}
         isLoggedIn={viewer.authenticated}
@@ -70,7 +70,7 @@ export default function LeagueRulesPage() {
           </div>
         </div>
 
-        {isAuction ? <AuctionRules tier={league.auctionTier ?? "complete"} /> : isTripleCrown ? <TripleCrownRules /> : <TvtRules config={config} />}
+        {isAuction ? <AuctionRules tier={league.auctionTier ?? "complete"} /> : isContinentalChampionship ? <ContinentalChampionshipRules /> : <TvtRules config={config} />}
       </div>
     </div>
   );

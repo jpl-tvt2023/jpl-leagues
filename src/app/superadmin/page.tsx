@@ -1213,7 +1213,7 @@ export default function SuperAdminDashboard() {
                           onClick={() => {
                             if (!opt.comingSoon) {
                               if (opt.value === "continental-championship") {
-                                // Triple Crown: hardcoded values
+                                // Continental Championship: hardcoded values
                                 setLeagueForm({
                                   ...leagueForm,
                                   format: opt.value,
@@ -1239,7 +1239,7 @@ export default function SuperAdminDashboard() {
                               } else {
                                 setLeagueForm({ ...leagueForm, format: opt.value });
                               }
-                              // TVT has team-size variants; Triple Crown and Auction go straight to details
+                              // TVT has team-size variants; Continental Championship and Auction go straight to details
                               setWizardStep(opt.value === "tvt" ? "team_size" : "details");
                             }
                           }}

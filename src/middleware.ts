@@ -53,7 +53,7 @@ const PUBLIC_ROUTES = [
   "/api/playoffs/bracket",
   "/api/playoffs/winners",
   "/api/leagues",
-  "/api/triple-crown/cup-standings",
+  "/api/continental-championship/cup-standings",
   // FPL passthrough endpoints — the underlying FPL bootstrap is already
   // publicly cached by the Premier League, and no league-private data is
   // exposed. Whitelisting matches their "passthrough" framing and prevents

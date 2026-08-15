@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         cupGwResult: {
           gameweek: cupF.gameweek.number, competitionType: compType,
-          competitionLabel: compType === "jcl-knockout" ? "UCL" : compType === "jel-knockout" ? "Europa" : "Cup Group",
+          competitionLabel: compType === "jcl-knockout" ? "JCL" : compType === "jel-knockout" ? "JEL" : "JPL Cup",
           result: cupMyPoints === 2 ? "W" : "L",
           myScore: cupMyScore, oppScore: cupOppScore, isHome: cupIsHome,
           myTeamName: team.name,
@@ -362,7 +362,7 @@ export async function GET(request: NextRequest) {
         cupGwResult = {
           gameweek: cupF.gameweek.number,
           competitionType: compType,
-          competitionLabel: compType === "jcl-knockout" ? "UCL" : compType === "jel-knockout" ? "Europa" : "Cup Group",
+          competitionLabel: compType === "jcl-knockout" ? "JCL" : compType === "jel-knockout" ? "JEL" : "JPL Cup",
           result: cupResult,
           myScore: cupMyScore,
           oppScore: cupOppScore,

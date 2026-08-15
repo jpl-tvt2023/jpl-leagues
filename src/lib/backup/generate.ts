@@ -225,7 +225,7 @@ export type BackupRows = {
   fixtures: FixtureRow[];
   captains: CaptainRow[] | null;
   chips: ChipRow[] | null;
-  // Auction-only sheets — null for TVT / triple-crown.
+  // Auction-only sheets — null for TVT / continental-championship.
   auctionTeamsState: AuctionTeamStateRow[] | null;
   auctionSquads: AuctionSquadRow[] | null;
   auctionClubs: AuctionClubRow[] | null;

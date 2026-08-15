@@ -20,7 +20,7 @@ export interface TeamHandle {
 }
 
 /**
- * For a TVT or Triple Crown team: change the password and complete the
+ * For a TVT or Continental Championship team: change the password and complete the
  * /setup wizard with deterministic FPL IDs.
  *
  * `fplBase` is the starting FPL element ID; team i gets (fplBase + 2i, fplBase + 2i + 1)
