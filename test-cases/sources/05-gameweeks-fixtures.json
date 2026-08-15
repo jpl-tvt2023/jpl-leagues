@@ -9,7 +9,7 @@
   },
   "requirements": {
     "version": 6,
-    "businessContext": "The Gameweeks & Fixtures module owns the lifecycle of the 38-GW season skeleton and the round-robin fixture pipeline that pairs teams for every league-stage GW. Admins seed GW1-38 from live FPL bootstrap deadlines, generate fixtures sized to their format (TVT 8/16/32-team using `(playoffStartGw-1)/(teamsPerGroup-1)` repetitions; Triple Crown PL = 20 teams x 2 reps = 38 GWs), optionally override fixtures via CSV/XLSX bulk upload, and then run per-GW processing that calculates TVT match scores, chips, and bonus points. A superadmin process-all orchestrator (plan -> per-league-GW -> finish) catches up scoring across every active league with FPL-finalized gameweeks, while public visitors can read fixture lists and live scores.",
+    "businessContext": "The Gameweeks & Fixtures module owns the lifecycle of the 38-GW season skeleton and the round-robin fixture pipeline that pairs teams for every league-stage GW. Admins seed GW1-38 from live FPL bootstrap deadlines, generate fixtures sized to their format (TVT 8/16/32-team using `(playoffStartGw-1)/(teamsPerGroup-1)` repetitions; JPL Continental Championship PL = 20 teams x 2 reps = 38 GWs), optionally override fixtures via CSV/XLSX bulk upload, and then run per-GW processing that calculates TVT match scores, chips, and bonus points. A superadmin process-all orchestrator (plan -> per-league-GW -> finish) catches up scoring across every active league with FPL-finalized gameweeks, while public visitors can read fixture lists and live scores.",
     "userStories": [
       {
         "id": "US-GWFIX-001",
@@ -24,7 +24,7 @@
         "id": "US-GWFIX-002",
         "asA": "admin",
         "iWant": "to generate league-stage fixtures with one click sized to my team count and group config",
-        "soThat": "an 8-team league gets 35 GWs (5 reps), 16/32-team gets 30 GWs (2 reps), and Triple Crown gets 38 GWs (2 reps) without manual entry",
+        "soThat": "an 8-team league gets 35 GWs (5 reps), 16/32-team gets 30 GWs (2 reps), and JPL Continental Championship gets 38 GWs (2 reps) without manual entry",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:17-293",
           "src/lib/formats/tvt/fixtures.ts:25-94"
@@ -212,35 +212,35 @@
       },
       {
         "id": "BR-GWFIX-009",
-        "rule": "League format dispatch: `format === 'triple-crown'` runs the Triple Crown PL path (38 GWs, 2 reps, single PL group); all other formats use the TVT path.",
+        "rule": "League format dispatch: `format === 'continental-championship'` runs the JPL Continental Championship PL path (38 GWs, 2 reps, single PL group); all other formats use the TVT path.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:39-138"
         ]
       },
       {
         "id": "BR-GWFIX-010",
-        "rule": "Triple Crown PL path uses Group A teams when Group A exists and has >=2 teams; otherwise it falls back to fetching every team in the league (groupless leagues supported).",
+        "rule": "JPL Continental Championship PL path uses Group A teams when Group A exists and has >=2 teams; otherwise it falls back to fetching every team in the league (groupless leagues supported).",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:67-88"
         ]
       },
       {
         "id": "BR-GWFIX-011",
-        "rule": "Triple Crown POST /api/admin/[leagueId]/generate-fixtures asserts plTeams.length === 20 before generating fixtures. Any other count returns HTTP 400 with body { error: 'Triple Crown requires exactly 20 PL teams; this league has N.' } and no insert runs. The 2-repetition math (20 teams × 2 = 38 GWs) only holds for exactly 20 teams.",
+        "rule": "JPL Continental Championship POST /api/admin/[leagueId]/generate-fixtures asserts plTeams.length === 20 before generating fixtures. Any other count returns HTTP 400 with body { error: 'Continental Championship requires exactly 20 PL teams; this league has N.' } and no insert runs. The 2-repetition math (20 teams × 2 = 38 GWs) only holds for exactly 20 teams.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:90-99"
         ]
       },
       {
         "id": "BR-GWFIX-012",
-        "rule": "Triple Crown path inserts any missing GW 1-38 with `isPlayoffs: false` and `deadline: new Date()` (current time) when not previously created via FPL bootstrap.",
+        "rule": "JPL Continental Championship path inserts any missing GW 1-38 with `isPlayoffs: false` and `deadline: new Date()` (current time) when not previously created via FPL bootstrap.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:91-103"
         ]
       },
       {
         "id": "BR-GWFIX-013",
-        "rule": "Triple Crown fixtures are tagged with `competitionType: 'pl'` and inherit the Group A `groupId` when present; null otherwise.",
+        "rule": "JPL Continental Championship fixtures are tagged with `competitionType: 'pl'` and inherit the Group A `groupId` when present; null otherwise.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:112-119"
         ]
@@ -269,7 +269,7 @@
       },
       {
         "id": "BR-GWFIX-017",
-        "rule": "POST /api/admin/[leagueId]/generate-fixtures requires real FPL gameweek deadlines to exist before fixtures are generated. The TVT branch refuses with HTTP 400 if no league-stage gameweeks exist; the Triple Crown branch refuses if any of GW1..38 is missing (with the missingGameweeks list in the response). Placeholder `new Date()` deadlines are no longer created — admins must call POST /api/admin/[leagueId]/create-gameweeks first (which fetches real deadlines from the FPL bootstrap).",
+        "rule": "POST /api/admin/[leagueId]/generate-fixtures requires real FPL gameweek deadlines to exist before fixtures are generated. The TVT branch refuses with HTTP 400 if no league-stage gameweeks exist; the JPL Continental Championship branch refuses if any of GW1..38 is missing (with the missingGameweeks list in the response). Placeholder `new Date()` deadlines are no longer created — admins must call POST /api/admin/[leagueId]/create-gameweeks first (which fetches real deadlines from the FPL bootstrap).",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:90-108",
           "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:230-243",
@@ -429,14 +429,14 @@
       },
       {
         "id": "BR-GWFIX-039",
-        "rule": "POST /api/gameweeks/[gw] dispatches by league format: `triple-crown` -> processTripleCrownGameweek, `auction` -> processAuctionGameweek, anything else -> in-route TVT scoring. The format dispatcher reads `leagues.format` for the resolved leagueId.",
+        "rule": "POST /api/gameweeks/[gw] dispatches by league format: `continental-championship` -> processContinentalChampionshipGameweek, `auction` -> processAuctionGameweek, anything else -> in-route TVT scoring. The format dispatcher reads `leagues.format` for the resolved leagueId.",
         "sourceRefs": [
           "src/app/api/gameweeks/[gw]/route.ts:296-343"
         ]
       },
       {
         "id": "BR-GWFIX-040",
-        "rule": "POST /api/gameweeks/[gw] REQUIRES a `leagueId` query parameter (accepts either a UUID or a league slug). Missing leagueId returns HTTP 400 `leagueId query parameter is required`; an unresolvable slug returns HTTP 404 `League not found`. The gameweek lookup is always scoped by both `gameweeks.number` and `gameweeks.leagueId`, and the format dispatcher reads `leagues.format` for the validated leagueId — eliminating nondeterministic cross-league GW selection and TVT-fallthrough for triple-crown/auction leagues.",
+        "rule": "POST /api/gameweeks/[gw] REQUIRES a `leagueId` query parameter (accepts either a UUID or a league slug). Missing leagueId returns HTTP 400 `leagueId query parameter is required`; an unresolvable slug returns HTTP 404 `League not found`. The gameweek lookup is always scoped by both `gameweeks.number` and `gameweeks.leagueId`, and the format dispatcher reads `leagues.format` for the validated leagueId — eliminating nondeterministic cross-league GW selection and TVT-fallthrough for continental-championship/auction leagues.",
         "sourceRefs": [
           "src/app/api/gameweeks/[gw]/route.ts:256-275",
           "src/app/api/gameweeks/[gw]/route.ts:276-313"
@@ -682,9 +682,9 @@
       },
       {
         "id": "AC-GWFIX-009",
-        "given": "an admin posts /api/admin/[leagueId]/generate-fixtures against a triple-crown league with 10 teams",
+        "given": "an admin posts /api/admin/[leagueId]/generate-fixtures against a continental-championship league with 10 teams",
         "when": "the handler validates",
-        "then": "HTTP 400 with body containing 'Triple Crown requires exactly 20 PL teams; this league has 10'; no fixtures or gameweeks are written. With 20 teams the call proceeds normally and produces 38 GWs of PL fixtures.",
+        "then": "HTTP 400 with body containing 'Continental Championship requires exactly 20 PL teams; this league has 10'; no fixtures or gameweeks are written. With 20 teams the call proceeds normally and produces 38 GWs of PL fixtures.",
         "linksTo": "BR-GWFIX-009"
       },
       {
@@ -829,9 +829,9 @@
       },
       {
         "id": "AC-GWFIX-030",
-        "given": "a Triple Crown league's GW12",
+        "given": "a JPL Continental Championship league's GW12",
         "when": "POST /api/gameweeks/12?leagueId=<tc-league> is called",
-        "then": "processing is delegated to `processTripleCrownGameweek`, the response is normalized into `{ success, gameweek, processed, failed, results: [], errors, message }`, and TVT in-route scoring is skipped",
+        "then": "processing is delegated to `processContinentalChampionshipGameweek`, the response is normalized into `{ success, gameweek, processed, failed, results: [], errors, message }`, and TVT in-route scoring is skipped",
         "linksTo": "BR-GWFIX-039"
       },
       {
@@ -979,17 +979,17 @@
   "defects": [
     {
       "id": "DEF-GWFIX-001",
-      "title": "Triple Crown fixture generation hardcodes 2 repetitions and assumes exactly 20 teams",
+      "title": "JPL Continental Championship fixture generation hardcodes 2 repetitions and assumes exactly 20 teams",
       "severity": "Major",
       "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
-      "description": "The Triple Crown path in generate-fixtures uses `const tcRepetitions = 2;` and only validates `plTeams.length >= 2`. The summary message states '20-team, 1 PL group' but the code never enforces 20. With any team count other than 20, the resulting fixtures do not span exactly 38 GWs (e.g., 10 teams x 2 reps = 18 GWs, 22 teams x 2 reps = 42 GWs which exceeds the 38 inserted gameweeks).",
-      "expectedBehaviour": "Either (a) hard-error if Triple Crown team count != 20 (the Triple Crown `generatePLFixtures` helper in lib/formats/triple-crown/fixtures.ts asserts exactly 20), or (b) scale repetitions to keep the total GWs at 38.",
+      "description": "The JPL Continental Championship path in generate-fixtures uses `const tcRepetitions = 2;` and only validates `plTeams.length >= 2`. The summary message states '20-team, 1 PL group' but the code never enforces 20. With any team count other than 20, the resulting fixtures do not span exactly 38 GWs (e.g., 10 teams x 2 reps = 18 GWs, 22 teams x 2 reps = 42 GWs which exceeds the 38 inserted gameweeks).",
+      "expectedBehaviour": "Either (a) hard-error if JPL Continental Championship team count != 20 (the JPL Continental Championship `generatePLFixtures` helper in lib/formats/continental-championship/fixtures.ts asserts exactly 20), or (b) scale repetitions to keep the total GWs at 38.",
       "actualBehaviour": "Any team count >= 2 produces fixtures, with the GW span scaling unpredictably; fixtures referencing `gameweekMap.get(f.gameweekNumber)` beyond 38 are filtered out with no error, silently losing fixtures.",
       "sourceRefs": [
         "src/app/api/admin/[leagueId]/generate-fixtures/route.ts:65-137",
-        "src/lib/formats/triple-crown/fixtures.ts:13-59"
+        "src/lib/formats/continental-championship/fixtures.ts:13-59"
       ],
       "linkedBusinessRules": [
         "BR-GWFIX-011"
@@ -1001,8 +1001,8 @@
         "TC-GWFIX-076",
         "TC-GWFIX-077"
       ],
-      "notes": "Fix option A (preferred): import `generatePLFixtures` from `lib/formats/triple-crown/fixtures.ts` which has the 20-team assert, and let it throw a 400. Fix option B: compute `tcRepetitions = 38 / (teamCount - 1)` and validate exact divisibility. Either path also requires aligning the summary string with reality. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
-      "resolution": "Triple Crown generate-fixtures now refuses with HTTP 400 when plTeams.length !== 20 (src/app/api/admin/[leagueId]/generate-fixtures/route.ts:90-99). The hardcoded 2-repetition math only produces 38 GWs when there are exactly 20 teams; any other count silently generates a malformed schedule. Failing early gives a clean error response.",
+      "notes": "Fix option A (preferred): import `generatePLFixtures` from `lib/formats/continental-championship/fixtures.ts` which has the 20-team assert, and let it throw a 400. Fix option B: compute `tcRepetitions = 38 / (teamCount - 1)` and validate exact divisibility. Either path also requires aligning the summary string with reality. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "JPL Continental Championship generate-fixtures now refuses with HTTP 400 when plTeams.length !== 20 (src/app/api/admin/[leagueId]/generate-fixtures/route.ts:90-99). The hardcoded 2-repetition math only produces 38 GWs when there are exactly 20 teams; any other count silently generates a malformed schedule. Failing early gives a clean error response.",
       "resolutionDate": "2026-05-27"
     },
     {
@@ -1028,8 +1028,8 @@
       "pinningTestCases": [
         "TC-GWFIX-078"
       ],
-      "notes": "Same issue exists in the Triple Crown branch (line 91-103). Could fix once at a helper level: refuse to create GW rows here, or share the FPL-fetch logic from create-gameweeks. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
-      "resolution": "generate-fixtures now refuses with HTTP 400 when no league-stage gameweeks exist (TVT branch) or any of GW1..38 is missing (Triple Crown branch). Both branches previously silently created GW rows with `deadline: new Date()` placeholders, which drifted the season from the real Premier League calendar. Admins are now redirected to run /api/admin/[leagueId]/create-gameweeks first (which fetches real FPL deadlines).",
+      "notes": "Same issue exists in the JPL Continental Championship branch (line 91-103). Could fix once at a helper level: refuse to create GW rows here, or share the FPL-fetch logic from create-gameweeks. [DEV] Self-verified: tsc clean. [QA-VERIFIED]: 2026-05-27 — pinning TC(s) inverted. [BA-UPDATED]: 2026-05-27 — BR/AC text refreshed.",
+      "resolution": "generate-fixtures now refuses with HTTP 400 when no league-stage gameweeks exist (TVT branch) or any of GW1..38 is missing (JPL Continental Championship branch). Both branches previously silently created GW rows with `deadline: new Date()` placeholders, which drifted the season from the real Premier League calendar. Admins are now redirected to run /api/admin/[leagueId]/create-gameweeks first (which fetches real FPL deadlines).",
       "resolutionDate": "2026-05-27"
     },
     {
@@ -1095,7 +1095,7 @@
       "status": "Fixed",
       "discoveredBy": "business-analyst",
       "discoveredDate": "2026-05-23",
-      "description": "When the POST handler receives no `leagueId` query param, the format lookup runs `eq(leagues.id, leagueId || '')` which never matches a real row; `leagueRow[0]?.format` becomes undefined and the route falls through to the TVT path. Meanwhile the gameweek lookup uses `eq(gameweeks.number, gameweekNumber)` (no league filter) and `gwList[0]` picks whichever league's GW happens to be first. The net effect: an unscoped POST can score the wrong league's TVT GW (or run TVT scoring against a triple-crown/auction league's data).",
+      "description": "When the POST handler receives no `leagueId` query param, the format lookup runs `eq(leagues.id, leagueId || '')` which never matches a real row; `leagueRow[0]?.format` becomes undefined and the route falls through to the TVT path. Meanwhile the gameweek lookup uses `eq(gameweeks.number, gameweekNumber)` (no league filter) and `gwList[0]` picks whichever league's GW happens to be first. The net effect: an unscoped POST can score the wrong league's TVT GW (or run TVT scoring against a continental-championship/auction league's data).",
       "expectedBehaviour": "Either require a `leagueId` query param (return HTTP 400 if missing) or read the leagueId off the gameweek row found and re-dispatch by that league's format.",
       "actualBehaviour": "Unscoped calls bypass format dispatch and process a nondeterministic league's GW.",
       "sourceRefs": [
@@ -1113,7 +1113,7 @@
         "TC-GWFIX-083"
       ],
       "notes": "Process-all orchestrator always passes leagueId, so the in-prod path is safe. Risk is direct admin POSTs or future tooling that forgets the query. The GET handler has the same nondeterminism (BR-GWFIX-035) but is read-only so the impact is lower. [DEV] Self-verified: tsc passes (no errors in src/app/api/gameweeks/[gw]/route.ts; pre-existing tests/ errors unrelated), manual diff review clean. Awaiting QA re-run of pinningTestCases. [DEV] Verified all internal callers (src/app/admin/[leagueId]/page.tsx:499,562-563 and src/lib/cron/process-all.ts:350) already pass leagueId — no caller updates required. [QA] Re-run TC-GWFIX-082 and TC-GWFIX-083 against the fix: both should now return HTTP 400 `leagueId query parameter is required` instead of the nondeterministic-league behaviour they pinned. Update pinning test expectedResult to reflect the fixed behaviour. [BA] Update BR-GWFIX-040 text to describe the corrected contract: POST /api/gameweeks/[gw] now REQUIRES `leagueId` query param (UUID or slug); missing leagueId returns HTTP 400 `leagueId query parameter is required`, unknown slug returns HTTP 404 `League not found`. Remove the `// CODE-CONFIRMED: may be a defect` marker. [QA-VERIFIED]: 2026-05-25 — TC-GWFIX-082 + TC-GWFIX-083 inverted; required leagueId confirmed. [BA-UPDATED]: 2026-05-25 — BR-GWFIX-040 + AC-GWFIX-025 updated.",
-      "resolution": "Made `leagueId` a required query parameter for POST /api/gameweeks/[gw] in src/app/api/gameweeks/[gw]/route.ts:256-275: missing leagueId returns HTTP 400 `leagueId query parameter is required`; unresolved slug returns HTTP 404 `League not found`. The gameweek `where` clause now always filters by both `gameweeks.number` and `gameweeks.leagueId`, and the format dispatcher uses the validated leagueId directly (removed the `leagueId || ''` fallbacks that masked the bug). This eliminates the nondeterministic `gwList[0]` selection and the format-fallthrough to TVT for triple-crown/auction leagues.",
+      "resolution": "Made `leagueId` a required query parameter for POST /api/gameweeks/[gw] in src/app/api/gameweeks/[gw]/route.ts:256-275: missing leagueId returns HTTP 400 `leagueId query parameter is required`; unresolved slug returns HTTP 404 `League not found`. The gameweek `where` clause now always filters by both `gameweeks.number` and `gameweeks.leagueId`, and the format dispatcher uses the validated leagueId directly (removed the `leagueId || ''` fallbacks that masked the bug). This eliminates the nondeterministic `gwList[0]` selection and the format-fallthrough to TVT for continental-championship/auction leagues.",
       "resolutionDate": "2026-05-25"
     }
   ],
@@ -1353,19 +1353,19 @@
     },
     {
       "id": "TC-GWFIX-012",
-      "feature": "Generate Fixtures (Triple Crown)",
-      "scenario": "Triple Crown 20-team Group A generates 38 GWs",
+      "feature": "Generate Fixtures (JPL Continental Championship)",
+      "scenario": "JPL Continental Championship 20-team Group A generates 38 GWs",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple Crown league with exactly 20 teams in Group A; no fixtures; format='triple-crown'.",
+      "preconditions": "JPL Continental Championship league with exactly 20 teams in Group A; no fixtures; format='continental-championship'.",
       "testData": "POST generate-fixtures",
       "testSteps": [
-        "1. POST generate-fixtures on triple-crown league",
+        "1. POST generate-fixtures on continental-championship league",
         "2. Inspect response",
         "3. Verify GW1..38 inserted and fixtures tagged competitionType='pl'"
       ],
-      "expectedResult": "HTTP 200 `format: 'Triple Crown (20-team, 1 PL group)', repetitions: 2, leagueStageGws: 38`; 38 non-playoff GWs exist.",
-      "postconditions": "Triple Crown PL fixtures persisted.",
+      "expectedResult": "HTTP 200 `format: 'Continental Championship (20-team, 1 PL group)', repetitions: 2, leagueStageGws: 38`; 38 non-playoff GWs exist.",
+      "postconditions": "JPL Continental Championship PL fixtures persisted.",
       "requirementId": "AC-GWFIX-009",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -2049,18 +2049,18 @@
     },
     {
       "id": "TC-GWFIX-046",
-      "feature": "Process Gameweek (Triple Crown)",
-      "scenario": "Triple Crown league delegates to processTripleCrownGameweek",
+      "feature": "Process Gameweek (JPL Continental Championship)",
+      "scenario": "JPL Continental Championship league delegates to processContinentalChampionshipGameweek",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple Crown league with GW12 fixtures unscored; admin session.",
+      "preconditions": "JPL Continental Championship league with GW12 fixtures unscored; admin session.",
       "testData": "POST /api/gameweeks/12?leagueId=<tc-league>",
       "testSteps": [
         "1. POST endpoint",
         "2. Inspect normalized response",
         "3. Confirm TVT in-route scoring did NOT run (no TVT result rows for non-TC fixtures)"
       ],
-      "expectedResult": "HTTP 200; response normalized to `{ success, gameweek, processed, failed, results: [], errors, message }`; TripleCrown handler ran.",
+      "expectedResult": "HTTP 200; response normalized to `{ success, gameweek, processed, failed, results: [], errors, message }`; ContinentalChampionship handler ran.",
       "postconditions": "TC-style scoring persisted.",
       "requirementId": "AC-GWFIX-030",
       "author": "qa-tester",
@@ -2663,18 +2663,18 @@
     },
     {
       "id": "TC-GWFIX-076",
-      "feature": "Triple Crown Fixtures (Defect Pin)",
-      "scenario": "Triple Crown generate-fixtures with !=20 teams returns HTTP 400 before any insert",
+      "feature": "JPL Continental Championship Fixtures (Defect Pin)",
+      "scenario": "JPL Continental Championship generate-fixtures with !=20 teams returns HTTP 400 before any insert",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple Crown league configured with only 10 teams in Group A; no fixtures exist.",
+      "preconditions": "JPL Continental Championship league configured with only 10 teams in Group A; no fixtures exist.",
       "testData": "POST /api/admin/<leagueId>/generate-fixtures",
       "testSteps": [
         "1. POST generate-fixtures",
         "2. Inspect response and inserted fixtures",
         "3. Count distinct gameweek numbers used"
       ],
-      "expectedResult": "POST /api/admin/[leagueId]/generate-fixtures on a triple-crown league with 10 or 22 teams returns HTTP 400 'Triple Crown requires exactly 20 PL teams; this league has N.' No fixtures or gameweeks are inserted. With exactly 20 teams the call proceeds as before and produces 38 GWs of PL fixtures.",
+      "expectedResult": "POST /api/admin/[leagueId]/generate-fixtures on a continental-championship league with 10 or 22 teams returns HTTP 400 'Continental Championship requires exactly 20 PL teams; this league has N.' No fixtures or gameweeks are inserted. With exactly 20 teams the call proceeds as before and produces 38 GWs of PL fixtures.",
       "postconditions": "Fixtures partially span <38 GWs.",
       "requirementId": "BR-GWFIX-011",
       "author": "qa-tester",
@@ -2684,11 +2684,11 @@
     },
     {
       "id": "TC-GWFIX-077",
-      "feature": "Triple Crown Fixtures (Defect Pin)",
-      "scenario": "Triple Crown error message reports the actual team count for diagnosis",
+      "feature": "JPL Continental Championship Fixtures (Defect Pin)",
+      "scenario": "JPL Continental Championship error message reports the actual team count for diagnosis",
       "type": "Positive",
       "priority": "P2",
-      "preconditions": "Triple Crown league with 22 teams; no fixtures.",
+      "preconditions": "JPL Continental Championship league with 22 teams; no fixtures.",
       "testData": "POST generate-fixtures",
       "testSteps": [
         "1. POST generate-fixtures",
@@ -2717,7 +2717,7 @@
         "3. POST generate-fixtures",
         "4. Query gameweek rows for the league and inspect each deadline"
       ],
-      "expectedResult": "POST /api/admin/[leagueId]/generate-fixtures on a league with no gameweek rows returns HTTP 400 with a message instructing the admin to run create-gameweeks first. The TVT branch responds 'Cannot generate TVT fixtures — no league-stage gameweeks exist for this league.' The Triple Crown branch responds with missingGameweeks listed. No fixture or gameweek rows are inserted with `new Date()` placeholders.",
+      "expectedResult": "POST /api/admin/[leagueId]/generate-fixtures on a league with no gameweek rows returns HTTP 400 with a message instructing the admin to run create-gameweeks first. The TVT branch responds 'Cannot generate TVT fixtures — no league-stage gameweeks exist for this league.' The JPL Continental Championship branch responds with missingGameweeks listed. No fixture or gameweek rows are inserted with `new Date()` placeholders.",
       "postconditions": "GWs persisted with synthetic deadlines.",
       "requirementId": "BR-GWFIX-017",
       "author": "qa-tester",
@@ -2813,24 +2813,24 @@
     {
       "id": "TC-GWFIX-083",
       "feature": "Process Gameweek (Defect Pin)",
-      "scenario": "POST /api/gameweeks/N without leagueId returns HTTP 400; with valid triple-crown leagueId it correctly dispatches to processTripleCrownGameweek (no TVT fallthrough)",
+      "scenario": "POST /api/gameweeks/N without leagueId returns HTTP 400; with valid continental-championship leagueId it correctly dispatches to processContinentalChampionshipGameweek (no TVT fallthrough)",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "Only league with GW8 unscored is a triple-crown league.",
+      "preconditions": "Only league with GW8 unscored is a continental-championship league.",
       "testData": "POST /api/gameweeks/8 — first call no leagueId, second call with leagueId=<tc-league-uuid>, third call with leagueId=unknown-slug",
       "testSteps": [
         "1. POST endpoint without leagueId — expect 400",
         "2. POST endpoint with leagueId=unknown-slug — expect 404",
         "3. POST endpoint with leagueId=<tc-league-uuid>",
-        "4. Inspect which handler executed and verify triple-crown scoring ran"
+        "4. Inspect which handler executed and verify continental-championship scoring ran"
       ],
-      "expectedResult": "Call 1 returns HTTP 400 `leagueId query parameter is required`. Call 2 returns HTTP 404 `League not found`. Call 3 returns HTTP 200 with response shape `{ success, gameweek, processed, failed, results: [], errors, message }` from processTripleCrownGameweek (NOT the in-route TVT path). Confirms DEF-GWFIX-005 format-misdispatch fix.",
-      "postconditions": "Correct format processor invoked; no TVT scoring against triple-crown data.",
+      "expectedResult": "Call 1 returns HTTP 400 `leagueId query parameter is required`. Call 2 returns HTTP 404 `League not found`. Call 3 returns HTTP 200 with response shape `{ success, gameweek, processed, failed, results: [], errors, message }` from processContinentalChampionshipGameweek (NOT the in-route TVT path). Confirms DEF-GWFIX-005 format-misdispatch fix.",
+      "postconditions": "Correct format processor invoked; no TVT scoring against continental-championship data.",
       "requirementId": "BR-GWFIX-040",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
       "status": "Not Executed",
-      "notes": "Pins DEF-GWFIX-005 format-fallthrough branch. [QA-VERIFY] Updated post-DEF-GWFIX-005 fix on 2026-05-25 — now asserts 400/404 guards and correct triple-crown dispatch."
+      "notes": "Pins DEF-GWFIX-005 format-fallthrough branch. [QA-VERIFY] Updated post-DEF-GWFIX-005 fix on 2026-05-25 — now asserts 400/404 guards and correct continental-championship dispatch."
     },
     {
       "id": "TC-GWFIX-084",
@@ -2959,11 +2959,11 @@
     },
     {
       "id": "TC-GWFIX-090",
-      "feature": "Generate Fixtures (Triple Crown groupless fallback)",
-      "scenario": "Triple Crown with no Group A record falls back to all league teams",
+      "feature": "Generate Fixtures (JPL Continental Championship groupless fallback)",
+      "scenario": "JPL Continental Championship with no Group A record falls back to all league teams",
       "type": "Edge",
       "priority": "P3",
-      "preconditions": "Triple Crown league with 20 teams but Group A row absent.",
+      "preconditions": "JPL Continental Championship league with 20 teams but Group A row absent.",
       "testData": "POST generate-fixtures",
       "testSteps": [
         "1. POST endpoint",

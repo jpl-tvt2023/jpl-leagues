@@ -416,7 +416,7 @@
       },
       {
         "id": "BR-PLAYOFF-039",
-        "rule": "Hall of Champions pending rows carry placeholder text 'Winner of <tieId>' or 'Loser of <tieId>' depending on which side the position is sourced from; auction and Triple Crown formats gate awards on isGw38Settled (all GW38 fixtures have results).",
+        "rule": "Hall of Champions pending rows carry placeholder text 'Winner of <tieId>' or 'Loser of <tieId>' depending on which side the position is sourced from; auction and JPL Continental Championship formats gate awards on isGw38Settled (all GW38 fixtures have results).",
         "sourceRefs": [
           "src/app/api/playoffs/winners/route.ts:87-111",
           "src/app/api/playoffs/winners/route.ts:129-218"
@@ -510,7 +510,7 @@
       },
       {
         "id": "BR-PLAYOFF-051",
-        "rule": "POST /api/admin/[leagueId]/generate-brackets and DELETE counterpart are Triple Crown ONLY: non-triple-crown formats receive 400 ('Bracket generation only available for Triple Crown format'). (TVT formats use /generate-playoffs instead.) This endpoint is therefore OUT OF SCOPE for TVT lifecycle but the format guard belongs to TVT-playoff coverage.",
+        "rule": "POST /api/admin/[leagueId]/generate-brackets and DELETE counterpart are JPL Continental Championship ONLY: non-continental-championship formats receive 400 ('Bracket generation only available for Continental Championship format'). (TVT formats use /generate-playoffs instead.) This endpoint is therefore OUT OF SCOPE for TVT lifecycle but the format guard belongs to TVT-playoff coverage.",
         "sourceRefs": [
           "src/app/api/admin/[leagueId]/generate-brackets/route.ts:42-46"
         ]
@@ -895,9 +895,9 @@
       },
       {
         "id": "AC-PLAYOFF-048",
-        "given": "an admin POSTs restore-tvt with meta.json.format='triple-crown' against a TVT league",
+        "given": "an admin POSTs restore-tvt with meta.json.format='continental-championship' against a TVT league",
         "when": "the request is processed",
-        "then": "the API returns 400 ('Format mismatch — this backup is for a triple-crown league but the target is TVT.')",
+        "then": "the API returns 400 ('Format mismatch — this backup is for a continental-championship league but the target is TVT.')",
         "linksTo": "BR-PLAYOFF-047"
       },
       {
@@ -909,7 +909,7 @@
       },
       {
         "id": "AC-PLAYOFF-050",
-        "given": "a non-TVT league (format='triple-crown') receiving POST /api/admin/<leagueId>/restore-tvt",
+        "given": "a non-TVT league (format='continental-championship') receiving POST /api/admin/<leagueId>/restore-tvt",
         "when": "the request is processed",
         "then": "the API returns 400 ('Restore is for TVT-format leagues only')",
         "linksTo": "BR-PLAYOFF-046"
@@ -932,7 +932,7 @@
         "id": "AC-PLAYOFF-053",
         "given": "any league requesting POST /api/admin/<leagueId>/generate-brackets where league.format='tvt'",
         "when": "the request is processed",
-        "then": "the API returns 400 ('Bracket generation only available for Triple Crown format')",
+        "then": "the API returns 400 ('Bracket generation only available for Continental Championship format')",
         "linksTo": "BR-PLAYOFF-051"
       },
       {
@@ -2043,15 +2043,15 @@
     {
       "id": "TC-PLAYOFF-056",
       "feature": "Restore Format Mismatch",
-      "scenario": "Multipart restore with meta.format='triple-crown' against a TVT league rejected",
+      "scenario": "Multipart restore with meta.format='continental-championship' against a TVT league rejected",
       "type": "Negative",
       "priority": "P1",
-      "preconditions": "Target league is TVT; backup zip carries meta.format='triple-crown'",
+      "preconditions": "Target league is TVT; backup zip carries meta.format='continental-championship'",
       "testData": "file=tc-backup.zip",
       "testSteps": [
         "1. POST /restore-tvt multipart"
       ],
-      "expectedResult": "HTTP 400 { error: 'Format mismatch — this backup is for a triple-crown league but the target is TVT.' }",
+      "expectedResult": "HTTP 400 { error: 'Format mismatch — this backup is for a continental-championship league but the target is TVT.' }",
       "postconditions": "No DB writes",
       "requirementId": "AC-PLAYOFF-048",
       "author": "qa-tester",
@@ -2084,7 +2084,7 @@
       "scenario": "Non-TVT league rejects /restore-tvt",
       "type": "Negative",
       "priority": "P1",
-      "preconditions": "League X with format='triple-crown'",
+      "preconditions": "League X with format='continental-championship'",
       "testData": "leagueId=X; any payload",
       "testSteps": [
         "1. POST /api/admin/X/restore-tvt"
@@ -2188,7 +2188,7 @@
       "testSteps": [
         "1. POST /api/admin/<leagueId>/generate-brackets"
       ],
-      "expectedResult": "HTTP 400 { error: 'Bracket generation only available for Triple Crown format' }",
+      "expectedResult": "HTTP 400 { error: 'Bracket generation only available for Continental Championship format' }",
       "postconditions": "No DB writes",
       "requirementId": "AC-PLAYOFF-053",
       "author": "qa-tester",

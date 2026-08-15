@@ -77,7 +77,7 @@ The multi-agent loop's most valuable moment: the senior-developer agent flagged 
 | Auth | 1 | change-password client/server validation aligned (8 chars + digit/special) |
 | Backups & Restore | 3 | DELETE handler added; saved-snapshot format guard; empty-payload wipe blocked |
 | Captains & Chips | 7 | DELETE chip resets set-used flag; override-chips uses dynamic setMidpoint; captain cap uses playoffStartGw; auction blocked at endpoint; import-captains cap-overflow; import-chips wasted-flag uniform; override-chips exposes all 6 chip slots |
-| Gameweeks & Fixtures | 5 | Triple Crown asserts 20 teams; placeholder deadlines refused; bulk-upload validates gameweek presence + playoffStartGw; clearExisting preserves playoff fixtures; POST /api/gameweeks/[gw] requires leagueId |
+| Gameweeks & Fixtures | 5 | JPL Continental Championship asserts 20 teams; placeholder deadlines refused; bulk-upload validates gameweek presence + playoffStartGw; clearExisting preserves playoff fixtures; POST /api/gameweeks/[gw] requires leagueId |
 | League Setup | 1 | PATCH applies same chip-array validation as POST (shared helper) |
 | Public Pages | 1 | /rules accessible to anonymous visitors |
 | Standings & Results | 4 | Canonical 4-tier tiebreaker (Points → Wins → H2H → Bonus); cache bypass on group filter; catch returns 500; legend format-aware |
@@ -85,7 +85,7 @@ The multi-agent loop's most valuable moment: the senior-developer agent flagged 
 | TVT Playoffs | 3 | C-31 seeding canonical (shared); DELETE cascades downstream rounds; TVT-16 tentative bracket fixed |
 | Team Management | 4 | Password min length uniform (4); `isProfileComplete=true` on create-team; ghost-team edit guard; bulk-delete transactional route |
 | Team Self-Service | 2 | Players SELECT deterministic orderBy; teamLoginId case-insensitive uniqueness |
-| Triple Crown | 3 | Cup-group DELETE transactional; generate-brackets uses null groupId (not phantom); restore-triple-crown wipes cup-stage state |
+| JPL Continental Championship | 3 | Cup-group DELETE transactional; generate-brackets uses null groupId (not phantom); restore-continental-championship wipes cup-stage state |
 
 ## Minor fixes by module
 
@@ -102,14 +102,14 @@ The multi-agent loop's most valuable moment: the senior-developer agent flagged 
 | Superadmin | 4 | 404 on unknown userId; 404 on no-op DELETE; bounded bonus integers; POST /admins input validation |
 | Team Management | 3 | Bulk-delete transactional; 400 on TOCTOU race; update-team ghost guard |
 | Team Self-Service | 1 | Player order deterministic |
-| Triple Crown | 4 | Sort comment matches code; dead extractBracketSeeds removed; H-vs-H draws documented; deadline anchored to season-start |
+| JPL Continental Championship | 4 | Sort comment matches code; dead extractBracketSeeds removed; H-vs-H draws documented; deadline anchored to season-start |
 | Public Pages | 2 | Bare league URL redirects; /api/fpl/* public |
 
 ## Cosmetic (1)
 
 | Defect | Module | Resolution |
 |---|---|---|
-| DEF-TC-006 | Triple Crown | Cup standings sort comment corrected (was "GA ASC", code uses GD then GF) |
+| DEF-TC-006 | JPL Continental Championship | Cup standings sort comment corrected (was "GA ASC", code uses GD then GF) |
 
 ## Process notes
 
