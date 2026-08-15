@@ -54,9 +54,9 @@ export const CLUB_AUCTION_SESSION_TYPE = "club-auction";
 
 // ── Tier scoring (per-fixture bonus). Used by Phase 4 scoring; exported here so both sides agree. ──
 export const CLUB_TIER_BONUS: Record<ClubTier, { win: number; draw: number }> = {
-  top8:     { win: 2, draw: 1 },
-  mid:      { win: 3, draw: 1 },
-  promoted: { win: 4, draw: 2 },
+  top8:     { win: 4, draw: 2 },
+  mid:      { win: 6, draw: 3 },
+  promoted: { win: 8, draw: 4 },
 };
 
 export function getClubBonusForTier(tier: ClubTier, isWin: boolean, isDraw: boolean): number {

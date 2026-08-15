@@ -130,7 +130,7 @@ export function AuctionRules({ tier = "complete" }: { tier?: "primary" | "comple
           <RuleItem>If no one bids on a nominated club, it goes <strong className="text-white">unsold</strong> and is re-nominated in a round-2 pass before the player auction begins.</RuleItem>
           <RuleItem><strong className="text-white">Synergy multiplier (×1.5):</strong> any owned player whose current PL club matches your owned club earns a <strong>+50% bonus</strong> on their raw GW points. Bonus follows the player&apos;s current PL club — transfers re-route the multiplier.</RuleItem>
           <RuleItem><strong className="text-white">Club result bonus</strong>: every GW your owned club wins or draws a real-PL fixture you earn points based on the club&apos;s tier (per-fixture; DGW = doubled, BGW = 0).</RuleItem>
-          <RuleItem>Tier bonuses — <strong className="text-yellow-300">Top 8</strong>: +2 win / +1 draw · <strong className="text-blue-300">Mid</strong>: +3 / +1 · <strong className="text-emerald-300">Promoted</strong>: +4 / +2.</RuleItem>
+          <RuleItem>Tier bonuses — <strong className="text-yellow-300">Top 8</strong>: +4 win / +2 draw · <strong className="text-blue-300">Mid</strong>: +6 / +3 · <strong className="text-emerald-300">Promoted</strong>: +8 / +4.</RuleItem>
           <RuleItem>Your team displays as the <strong className="text-white">owned club&apos;s name</strong> all season (e.g. &quot;Liverpool&quot;), with a tier-coloured chip beside it.</RuleItem>
           <RuleItem>Synergy bonuses <strong className="text-white">do not</strong> compound into FMV / squad value / trade economics — those stay on raw points only.</RuleItem>
         </ul>

@@ -2088,9 +2088,9 @@ export default function SuperAdminDashboard() {
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-gray-400">
                   <div className="font-semibold text-gray-300 mb-1">Per-fixture bonus (paid per real-PL fixture the owned club plays in a GW)</div>
                   <div className="grid grid-cols-3 gap-3 mt-2">
-                    <div><span className="text-yellow-200 font-semibold">Top 8</span> — Win 2 · Draw 1</div>
-                    <div><span className="text-blue-200 font-semibold">Mid</span> — Win 3 · Draw 1</div>
-                    <div><span className="text-emerald-200 font-semibold">Promoted</span> — Win 4 · Draw 2</div>
+                    <div><span className="text-yellow-200 font-semibold">Top 8</span> — Win 4 · Draw 2</div>
+                    <div><span className="text-blue-200 font-semibold">Mid</span> — Win 6 · Draw 3</div>
+                    <div><span className="text-emerald-200 font-semibold">Promoted</span> — Win 8 · Draw 4</div>
                   </div>
                 </div>
               </div>
