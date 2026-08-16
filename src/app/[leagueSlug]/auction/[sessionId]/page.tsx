@@ -641,14 +641,17 @@ export default function AuctionRoomPage() {
     }
   }, [refreshSessionState, refreshClubOwnership]);
 
-  // SSE subscription — only for a session that's actually on the clock. Pending sessions haven't
-  // started (nothing to stream) and completed sessions are done (the bid-history feed is final) —
-  // depends only on session id + status (primitives) so it doesn't tear down every time
-  // nominationDeadline or currentNominatorIndex ticks. Handlers read changing values via refs.
+  // SSE subscription — opens as soon as there's a session, including "pending" ones: the server
+  // stream emits a session-status event on every status change (see stream route), which is the
+  // only way a participant sitting on the "waiting for admin" screen learns the session went live.
+  // Completed sessions are done (the bid-history feed is final), so those are excluded. Bid/nomination
+  // events only ever fire server-side once the session is active — depends only on session id + status
+  // (primitives) so it doesn't tear down every time nominationDeadline or currentNominatorIndex ticks.
+  // Handlers read changing values via refs.
   const sessionId = session?.id ?? null;
   const sessionStatus = session?.status ?? null;
   useEffect(() => {
-    if (!sessionId || sessionStatus === "pending" || sessionStatus === "completed" || !sessionStatus) return;
+    if (!sessionId || sessionStatus === "completed" || !sessionStatus) return;
 
     const es = new EventSource(`/api/auction/session/stream?sessionId=${sessionId}`);
     eventSourceRef.current = es;
