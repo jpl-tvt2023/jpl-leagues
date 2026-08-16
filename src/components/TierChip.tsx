@@ -21,10 +21,11 @@ const TIER_STYLE: Record<ClubTier, string> = {
   promoted: "bg-emerald-500/20 text-emerald-200 border-emerald-500/40",
 };
 
+// Mirrors CLUB_TIER_BONUS in src/lib/formats/auction/club-auction.ts — the actual scoring values.
 const TIER_BONUS: Record<ClubTier, string> = {
-  top8:     "+2W/+1D per fixture",
-  mid:      "+3W/+1D per fixture",
-  promoted: "+4W/+2D per fixture",
+  top8:     "+4W/+2D per fixture",
+  mid:      "+6W/+3D per fixture",
+  promoted: "+8W/+4D per fixture",
 };
 
 export function TierChip({ tier, clubName, short, compact }: TierChipProps) {

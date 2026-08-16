@@ -170,6 +170,11 @@ export async function GET(request: NextRequest) {
       snakeOrder: JSON.parse(s.snakeOrder),
       currentNominatorIndex: s.currentNominatorIndex,
       scheduledAt: s.scheduledAt?.toISOString() ?? null,
+      // Timer config, needed by the admin room page for any session (not just the currently active
+      // one) — previously only exposed on `activeSession` below.
+      bidTimerSeconds: s.bidTimerSeconds ?? 20,
+      nominationTimeoutSeconds: s.nominationTimeoutSeconds ?? 60,
+      intermissionSeconds: s.intermissionSeconds ?? 5,
       createdAt: s.createdAt,
     })),
     activeSession: activeSession
