@@ -4145,7 +4145,7 @@ export default function AdminDashboard() {
                               <option value="">Select team...</option>
                               <option value="unowned">Remove (Refund)</option>
                               {teams.filter((t) => t.id !== player.teamId).map((t) => (
-                                <option key={t.id} value={t.id}>{t.name}</option>
+                                <option key={t.id} value={t.id}>{t.rawName ?? t.name}</option>
                               ))}
                             </select>
                             <button

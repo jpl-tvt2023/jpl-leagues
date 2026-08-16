@@ -12,6 +12,7 @@ import { HelpTip } from "@/components/HelpTip";
 import type { ClubTier } from "@/lib/db/schema";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { MAX_SQUAD_SIZE, effectiveMaxSquadSize } from "@/lib/formats/auction/squad-rules";
+import { useWishlist } from "@/hooks/useWishlist";
 
 const CLUB_AUCTION_TYPE = "club-auction";
 
@@ -34,13 +35,6 @@ interface AuctionSession {
   bidTimerSeconds?: number;
   nominationTimeoutSeconds?: number;
   intermissionSeconds?: number;
-}
-
-interface WishlistEntry {
-  id: string;
-  fplElementId: number;
-  playerName: string;
-  priority: number;
 }
 
 interface CurrentBid {
@@ -370,7 +364,6 @@ export default function AuctionRoomPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [positionFilter, setPositionFilter] = useState<number | null>(null);
   const [nominating, setNominating] = useState<number | null>(null);
-  const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
   const [wlSearchTerm, setWlSearchTerm] = useState("");
   const [wlTeamFilter, setWlTeamFilter] = useState<number | null>(null);
@@ -381,6 +374,15 @@ export default function AuctionRoomPage() {
   const [unsoldSelections, setUnsoldSelections] = useState<Set<number>>(new Set());
   const [bulkAddingWishlist, setBulkAddingWishlist] = useState(false);
   const [nominationDeadlineSec, setNominationDeadlineSec] = useState<number>(0);
+  const {
+    wishlist,
+    refresh: refreshWishlist,
+    add: handleAddToWishlist,
+    addMany: addManyToWishlist,
+    remove: handleRemoveFromWishlist,
+    reorder: handleReorderWishlist,
+    toggle: handleToggleWishlist,
+  } = useWishlist(myTeamId, leagueId, ownedElementIds);
   const eventSourceRef = useRef<EventSource | null>(null);
   const teamMapRef = useRef<Map<string, StandingEntry>>(new Map());
   const leagueIdRef = useRef<string | null>(null);
@@ -456,12 +458,11 @@ export default function AuctionRoomPage() {
         setPlTeams(tMap);
       }
 
-      const [sessRes, standingsRes, ownedRes, economyRes, wishlistRes, squadRes, clubTiersRes] = await Promise.all([
+      const [sessRes, standingsRes, ownedRes, economyRes, squadRes, clubTiersRes] = await Promise.all([
         fetch(`/api/auction/session?leagueId=${league.id}`),
         fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`),
         fetch(`/api/auction/league-owned?leagueId=${league.id}`),
         fetch(`/api/auction/economy?teamId=${me.team.id}`),
-        fetch(`/api/auction/wishlist?teamId=${me.team.id}`),
         // Pull my squad's slot status so we can render <SlotStatus> with redeem/unlock costs.
         fetch(`/api/auction/squad?teamId=${me.team.id}`),
         // Tier per PL club — only meaningfully used when this is a club auction, but cheap to fetch once.
@@ -516,11 +517,6 @@ export default function AuctionRoomPage() {
       if (economyRes.ok) {
         const econ = await economyRes.json();
         setMyPurse(econ.computedPurse ?? 0);
-      }
-
-      if (wishlistRes.ok) {
-        const wl = await wishlistRes.json();
-        setWishlist(wl.wishlist ?? []);
       }
 
       if (squadRes.ok) {
@@ -631,7 +627,7 @@ export default function AuctionRoomPage() {
     if (sessionTypeRef.current === CLUB_AUCTION_TYPE) refreshClubOwnership();
     if (mtid) {
       fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); }).catch(() => {});
-      fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setWishlist(d.wishlist ?? []); }).catch(() => {});
+      refreshWishlist().catch(() => {});
       fetch(`/api/auction/squad?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMySlotStatus(d.slotStatus ?? null); }).catch(() => {});
     }
     if (sid && opts?.feed !== false) {
@@ -639,7 +635,7 @@ export default function AuctionRoomPage() {
         if (d) setBidFeed(buildFeedFromHistory(d, (id) => displayTeamName(teamMapRef.current.get(id)) ?? "Unknown"));
       }).catch(() => {});
     }
-  }, [refreshSessionState, refreshClubOwnership]);
+  }, [refreshSessionState, refreshClubOwnership, refreshWishlist]);
 
   // SSE subscription — opens as soon as there's a session, including "pending" ones: the server
   // stream emits a session-status event on every status change (see stream route), which is the
@@ -706,7 +702,7 @@ export default function AuctionRoomPage() {
       if (mtid) {
         fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => r.json()).then((d) => setMyPurse(d.computedPurse ?? 0));
         // Refresh wishlist — sold player was removed server-side
-        fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => r.json()).then((d) => setWishlist(d.wishlist ?? []));
+        refreshWishlist().catch(() => {});
       }
     });
     es.addEventListener("unsold", (e) => {
@@ -773,7 +769,7 @@ export default function AuctionRoomPage() {
       eventSourceRef.current = null;
       setSseConnected(false);
     };
-  }, [sessionId, sessionStatus, addFeed, refreshSessionState, resyncAuctionScreen, sseReconnectTick]);
+  }, [sessionId, sessionStatus, addFeed, refreshSessionState, resyncAuctionScreen, sseReconnectTick, refreshWishlist]);
 
   // Heartbeat watchdog: if no event (heartbeat or otherwise) lands for >25s while the session is
   // active, the SSE connection is presumed dead — bump the reconnect tick to tear down + reopen the
@@ -916,6 +912,8 @@ export default function AuctionRoomPage() {
 
   const isWlFiltered = wlPositionFilter !== null || wlTeamFilter !== null;
 
+  const activeWishlist = useMemo(() => wishlist.filter((w) => !ownedElementIds.has(w.fplElementId)), [wishlist, ownedElementIds]);
+
   // Bid/nominate can fail with a transient, stale-state error if the user acted a beat out of sync
   // (e.g. the lot just resolved, the intermission just opened, or their turn just passed). Rather
   // than showing a scary persistent "Auction session is not active" toast, quietly resync the screen
@@ -1037,15 +1035,6 @@ export default function AuctionRoomPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [plTeams, teamMap, clubSearchTerm]);
 
-  const refreshWishlist = useCallback(async () => {
-    if (!myTeamId) return;
-    const res = await fetch(`/api/auction/wishlist?teamId=${myTeamId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setWishlist(data.wishlist ?? []);
-    }
-  }, [myTeamId]);
-
   // Fetch the league's unsold players for the most-recent auction session — populates the Unsold
   // tab in the wishlist panel. Lazy-loaded when the user switches tabs.
   const refreshUnsold = useCallback(async () => {
@@ -1064,15 +1053,8 @@ export default function AuctionRoomPage() {
       const players = unsoldPlayers
         .filter((p) => unsoldSelections.has(p.fplElementId))
         .map((p) => ({ fplElementId: p.fplElementId, playerName: p.playerName }));
-      const res = await fetch("/api/auction/wishlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leagueId, teamId: myTeamId, players }),
-      });
-      if (res.ok) {
-        setUnsoldSelections(new Set());
-        await refreshWishlist();
-      }
+      const ok = await addManyToWishlist(players);
+      if (ok) setUnsoldSelections(new Set());
     } finally {
       setBulkAddingWishlist(false);
     }
@@ -1090,49 +1072,6 @@ export default function AuctionRoomPage() {
       if (data.teamSummaries) setTeamSummaries(data.teamSummaries);
     }
   }, [leagueId]);
-
-  const handleAddToWishlist = async (elementId: number, playerName: string) => {
-    if (!leagueId || !myTeamId) return;
-    const res = await fetch("/api/auction/wishlist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leagueId, teamId: myTeamId, fplElementId: elementId, playerName }),
-    });
-    if (res.ok) await refreshWishlist();
-  };
-
-  const handleRemoveFromWishlist = async (id: string) => {
-    if (!myTeamId) return;
-    const res = await fetch("/api/auction/wishlist", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, teamId: myTeamId }),
-    });
-    if (res.ok) await refreshWishlist();
-  };
-
-  // Add or remove a player from the shortlist by element id — used by the on-block star toggle and
-  // the searchable wishlist panel so users can shortlist without opening the nominate modal.
-  const handleToggleWishlist = async (elementId: number, playerName: string) => {
-    const entry = wishlist.find((w) => w.fplElementId === elementId);
-    if (entry) await handleRemoveFromWishlist(entry.id);
-    else await handleAddToWishlist(elementId, playerName);
-  };
-
-  const handleReorderWishlist = async (fromIdx: number, toIdx: number) => {
-    if (!myTeamId || toIdx < 0 || toIdx >= wishlist.length) return;
-    const next = [...wishlist];
-    const [moved] = next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, moved);
-    // Optimistic update
-    setWishlist(next.map((e, i) => ({ ...e, priority: i + 1 })));
-    const items = next.map((e, i) => ({ id: e.id, priority: i + 1 }));
-    await fetch("/api/auction/wishlist", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId: myTeamId, items }),
-    });
-  };
 
   const wishlistElementIds = useMemo(() => new Set(wishlist.map((w) => w.fplElementId)), [wishlist]);
 
@@ -1787,21 +1726,26 @@ export default function AuctionRoomPage() {
                       <div className="space-y-0.5 max-h-52 overflow-y-auto">
                         {filteredWishlist.map((entry) => {
                           const el = elementById.get(entry.fplElementId);
-                          const realIdx = wishlist.findIndex((w) => w.id === entry.id);
+                          const owned = ownedElementIds.has(entry.fplElementId);
+                          const activeIdx = activeWishlist.findIndex((w) => w.id === entry.id);
                           return (
                             <div
                               key={entry.id}
-                              className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5"
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5 ${owned ? "opacity-50" : ""}`}
                             >
                               <span className="w-4 text-right text-[10px] text-gray-500">{entry.priority}.</span>
                               {el && <span className="text-[9px] text-gray-500 w-6">{POSITION_LABELS[el.element_type] ?? ""}</span>}
-                              <span className="flex-1 truncate text-white">{entry.playerName}</span>
+                              <span className={`flex-1 truncate ${owned ? "text-gray-400 line-through" : "text-white"}`}>{entry.playerName}</span>
                               {el && <span className="text-[9px] text-gray-500">{plTeams.get(el.team)?.short_name ?? ""}</span>}
-                              {!isWlFiltered && (
-                                <>
-                                  <button onClick={() => handleReorderWishlist(realIdx, realIdx - 1)} disabled={realIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
-                                  <button onClick={() => handleReorderWishlist(realIdx, realIdx + 1)} disabled={realIdx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
-                                </>
+                              {owned ? (
+                                <span className="text-[9px] text-gray-500 uppercase tracking-wide px-1">Owned</span>
+                              ) : (
+                                !isWlFiltered && (
+                                  <>
+                                    <button onClick={() => handleReorderWishlist(activeIdx, activeIdx - 1)} disabled={activeIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
+                                    <button onClick={() => handleReorderWishlist(activeIdx, activeIdx + 1)} disabled={activeIdx === activeWishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
+                                  </>
+                                )
                               )}
                               <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
                             </div>

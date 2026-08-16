@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { executeTrade } from "@/lib/formats/auction/trade";
 import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
 import { createNotification, type NotificationType } from "@/lib/notifications";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 async function notifyBothParties(
   proposal: { leagueId: string; proposerTeamId: string; targetTeamId: string },
@@ -145,6 +146,10 @@ export async function POST(request: NextRequest) {
       requestedPlayerIds: proposal.requestedPlayerIds,
       cashOffered: proposal.cashOffered,
     });
+
+    await invalidateLeaguePageCache(proposal.leagueId).catch((err) =>
+      console.error("[trade/admin] standings cache invalidation failed:", err)
+    );
 
     await notifyBothParties(
       proposal,

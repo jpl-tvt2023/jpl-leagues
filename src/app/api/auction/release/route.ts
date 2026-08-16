@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { isAuctionLive } from "@/lib/formats/auction/live-session";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 /**
  * POST /api/auction/release
@@ -101,6 +102,10 @@ export async function POST(request: NextRequest) {
     })
     .where(eq(auctionOwnership.id, ownershipId));
 
+  await invalidateLeaguePageCache(ownership.leagueId).catch((err) =>
+    console.error("[auction/release] standings cache invalidation failed:", err)
+  );
+
   return NextResponse.json({
     success: true,
     status: "pending_release",
@@ -177,6 +182,10 @@ export async function DELETE(request: NextRequest) {
       updatedAt: new Date(),
     })
     .where(eq(auctionOwnership.id, ownershipId));
+
+  await invalidateLeaguePageCache(ownership.leagueId).catch((err) =>
+    console.error("[auction/release] standings cache invalidation failed:", err)
+  );
 
   return NextResponse.json({
     success: true,

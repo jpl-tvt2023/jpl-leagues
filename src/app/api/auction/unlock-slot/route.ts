@@ -10,6 +10,7 @@ import {
 } from "@/lib/formats/auction/squad-rules";
 import { createNotification } from "@/lib/notifications";
 import { generateId } from "@/lib/id";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 /**
  * POST /api/auction/unlock-slot
@@ -137,6 +138,10 @@ export async function POST(request: NextRequest) {
       unlockedAt,
     });
   });
+
+  await invalidateLeaguePageCache(league.id).catch((err) =>
+    console.error("[unlock-slot] standings cache invalidation failed:", err)
+  );
 
   const newBonusSlots = currentBonusSlots + 1;
   const newCap = MAX_SQUAD_SIZE + newBonusSlots;

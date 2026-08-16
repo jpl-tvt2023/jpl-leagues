@@ -6,6 +6,7 @@ import { calculatePurse } from "@/lib/formats/auction/economy";
 import { createNotification } from "@/lib/notifications";
 import { setNominationDeadline } from "@/lib/formats/auction/resolve-bid";
 import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 // Pricing rules: £2.5M while still inside the cycle that issued the penalty;
 // £5M once that cycle has ended (i.e. before/during a later mini-auction).
@@ -198,6 +199,10 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(teams.id, teamId));
   });
+
+  await invalidateLeaguePageCache(leagueId).catch((err) =>
+    console.error("[redeem-slot] standings cache invalidation failed:", err)
+  );
 
   const remainingPenaltySlots = (team.penaltySlots ?? 0) - 1;
 
