@@ -1087,6 +1087,9 @@ export default function AdminDashboard() {
         setMessage({ type: "success", text: data.message });
         setShowAuctionResetConfirm(false);
         fetchAuctionData();
+        // Reset clears club/player ownership — refresh the team list too, otherwise names/club
+        // badges keep showing whatever this admin's browser last fetched before the reset.
+        fetchTeams();
       } else {
         setMessage({ type: "error", text: data.error });
       }
@@ -3578,10 +3581,9 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Auction Management Tab — breaks out of the shared max-w-7xl wrapper for more working room */}
+        {/* Auction Management Tab */}
         {activeTab === "auction" && isAuctionFormat && (
-          <div className="w-screen relative left-1/2 -ml-[50vw] px-4 sm:px-8 lg:px-12">
-          <div className="max-w-[1800px] mx-auto space-y-6">
+          <div className="space-y-6">
 
             {/* Live Auction Monitor moved to the dedicated per-session Auction Room page —
                 see "View Room" links on each session card below. */}
@@ -4243,7 +4245,6 @@ export default function AdminDashboard() {
               </div>
             )}
 
-          </div>
           </div>
         )}
 
