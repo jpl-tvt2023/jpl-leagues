@@ -47,6 +47,7 @@ import type { ClubTier } from "@/lib/db/schema";
 import { createNotification } from "@/lib/notifications";
 import { getPlTeamFullName } from "@/lib/data/pl-team-full-names";
 import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 const CLUB_FLOOR_BID = 500_000; // Same floor as player auction
 
@@ -528,6 +529,13 @@ export async function resolveClubBid(bid: BidRow): Promise<"sold" | "already-res
         totalSpent: sql`${teams.totalSpent} + ${fresh.currentHighBid}`,
       })
       .where(eq(teams.id, fresh.currentHighBidderId));
+
+    // Bust the standings page cache (up to 25h TTL) — without this, /api/standings keeps serving
+    // pre-sale ownership/team-name data to every consumer (Nominate-a-Club list, Live Feed winner
+    // names, the Standings page itself) until the cache naturally expires.
+    await invalidateLeaguePageCache(bid.leagueId).catch((err) =>
+      console.error("[club-auction] standings cache invalidation failed:", err)
+    );
 
     // Notify the winner
     try {
