@@ -139,10 +139,16 @@ export async function GET(request: NextRequest) {
   }
 
   // For a club auction, signal when every team owns a club so the UI can show a "complete — awaiting
-  // admin" conclusion (the session idles rather than auto-completing).
+  // admin" conclusion (the session idles rather than auto-completing). Also derive the caller's own
+  // club-ownership eligibility from the same authoritative list — piggybacking on this endpoint's
+  // already-frequent refresh cadence (SSE-driven `refreshSessionState`) so the bid buttons never lag
+  // behind what the server would actually accept, independent of the separate `/api/standings` cache.
   let allClubsAllocated = false;
+  let myOwnsClub = false;
   if (activeSession && activeSession.type === CLUB_AUCTION_SESSION_TYPE) {
-    allClubsAllocated = (await getClubLessTeamIds(leagueId)).length === 0;
+    const clublessIds = await getClubLessTeamIds(leagueId);
+    allClubsAllocated = clublessIds.length === 0;
+    if (session.type === "team") myOwnsClub = !clublessIds.includes(session.id);
   }
 
   // For a player auction (initial / mini), signal when every squad is full so the UI shows a
@@ -180,6 +186,7 @@ export async function GET(request: NextRequest) {
           intermissionSeconds: activeSession.intermissionSeconds ?? 5,
           intermissionUntil: activeSession.intermissionUntil?.toISOString() ?? null,
           allClubsAllocated,
+          myOwnsClub,
           nominationsComplete,
           currentBid,
         }

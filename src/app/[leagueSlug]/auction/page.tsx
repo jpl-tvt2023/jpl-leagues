@@ -331,6 +331,10 @@ export default function AuctionRoomPage() {
   const [intermissionUntil, setIntermissionUntil] = useState<string | null>(null);
   // Club auction only: true once every team owns a club (the session idles awaiting admin Complete).
   const [allClubsAllocated, setAllClubsAllocated] = useState(false);
+  // Server-computed, authoritative "does my team already own a club" — sourced from the same
+  // getClubLessTeamIds check the server uses to accept/reject bids, refreshed on every
+  // refreshSessionState() call (i.e. nearly every SSE event), independent of the /api/standings cache.
+  const [myOwnsClubFromServer, setMyOwnsClubFromServer] = useState(false);
   const [nominationsComplete, setNominationsComplete] = useState(false);
   const [intermissionSec, setIntermissionSec] = useState<number>(0);
   const [currentBid, setCurrentBid] = useState<CurrentBid | null>(null);
@@ -491,6 +495,7 @@ export default function AuctionRoomPage() {
           setNominationDeadline(active.nominationDeadline ?? null);
           setIntermissionUntil(active.intermissionUntil ?? null);
           setAllClubsAllocated(!!active.allClubsAllocated);
+          setMyOwnsClubFromServer(!!active.myOwnsClub);
           setNominationsComplete(!!active.nominationsComplete);
           if (active.currentBid) setCurrentBid(active.currentBid);
         } else {
@@ -593,6 +598,7 @@ export default function AuctionRoomPage() {
     setNominationDeadline((prev) => (prev === (a.nominationDeadline ?? null) ? prev : (a.nominationDeadline ?? null)));
     setIntermissionUntil((prev) => (prev === (a.intermissionUntil ?? null) ? prev : (a.intermissionUntil ?? null)));
     setAllClubsAllocated((prev) => (prev === !!a.allClubsAllocated ? prev : !!a.allClubsAllocated));
+    setMyOwnsClubFromServer((prev) => (prev === !!a.myOwnsClub ? prev : !!a.myOwnsClub));
     setNominationsComplete((prev) => (prev === !!a.nominationsComplete ? prev : !!a.nominationsComplete));
 
     if (a.currentBid) {
@@ -863,9 +869,12 @@ export default function AuctionRoomPage() {
 
   const isMyTurn = currentNominatorId === myTeamId;
   const isHighBidder = currentBid?.currentHighBidderId === myTeamId;
-  // Club-auction eligibility: only club-less teams may bid. Mirrors the server check in
-  // bid/route.ts so the buttons disable proactively instead of failing after a click.
-  const myOwnsClub = session?.type === CLUB_AUCTION_TYPE && !!teamMap.get(myTeamId ?? "")?.ownedClub;
+  // Club-auction eligibility: only club-less teams may bid. Sourced from the server's own
+  // getClubLessTeamIds check (via myOwnsClubFromServer, refreshed on nearly every SSE event) rather
+  // than the /api/standings-backed teamMap, so this can't lag behind what the server would actually
+  // accept — mirrors the server check in bid/route.ts so the buttons disable proactively instead of
+  // failing after a click.
+  const myOwnsClub = session?.type === CLUB_AUCTION_TYPE && myOwnsClubFromServer;
 
   // For the "Nominate a Player" CTA: gate the button on squad-full / purse so
   // the user gets the same answer the server would give (avoids click → 400).
