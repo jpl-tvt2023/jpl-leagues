@@ -438,5 +438,8 @@ export async function setCachedPlayoffBracket(leagueId: string, data: unknown): 
 export async function invalidateLeaguePageCache(leagueId: string): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.del(`standings:${leagueId}`, `fixtures:${leagueId}`, `playoffs:${leagueId}`);
+  // Must match the versioned key getCachedStandings/setCachedStandings actually use — an earlier,
+  // unversioned `standings:{leagueId}` here silently deleted a key nothing reads or writes, leaving
+  // every caller's invalidation a no-op for the standings cache.
+  await r.del(standingsKey(leagueId), `fixtures:${leagueId}`, `playoffs:${leagueId}`);
 }
