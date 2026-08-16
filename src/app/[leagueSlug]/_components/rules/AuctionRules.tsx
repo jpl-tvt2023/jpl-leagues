@@ -125,9 +125,9 @@ export function AuctionRules({ tier = "complete" }: { tier?: "primary" | "comple
         <SectionHeader letter="G" color="green" title="PL Club Ownership (opt-in)" />
         <p className="text-xs text-gray-500 mb-3">Only applies to leagues with the PL Club Auction enabled.</p>
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
-          <RuleItem>Before the player auction, each team buys <strong className="text-white">one PL club</strong> in a random-nomination, single-bid auction.</RuleItem>
+          <RuleItem>Before the player auction, each club-less team takes a turn <strong className="text-white">nominating one PL club</strong> it chooses, in a randomized turn order.</RuleItem>
           <RuleItem>The club auction shares the same purse as the player auction. <strong className="text-white">One club per team, one owner per club, season-long, non-tradeable.</strong></RuleItem>
-          <RuleItem>If no one bids on a nominated club, it goes <strong className="text-white">unsold</strong> and is re-nominated in a round-2 pass before the player auction begins.</RuleItem>
+          <RuleItem>The nominating team opens as the bidder; a nominated club <strong className="text-white">always sells</strong> — to the nominator or a higher bid from another club-less team. If a team's nomination timer expires, the system auto-picks an available club on their behalf.</RuleItem>
           <RuleItem><strong className="text-white">Synergy multiplier (×1.5):</strong> any owned player whose current PL club matches your owned club earns a <strong>+50% bonus</strong> on their raw GW points. Bonus follows the player&apos;s current PL club — transfers re-route the multiplier.</RuleItem>
           <RuleItem><strong className="text-white">Club result bonus</strong>: every GW your owned club wins or draws a real-PL fixture you earn points based on the club&apos;s tier (per-fixture; DGW = doubled, BGW = 0).</RuleItem>
           <RuleItem>Tier bonuses — <strong className="text-yellow-300">Top 8</strong>: +4 win / +2 draw · <strong className="text-blue-300">Mid</strong>: +6 / +3 · <strong className="text-emerald-300">Promoted</strong>: +8 / +4.</RuleItem>

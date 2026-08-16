@@ -8,8 +8,8 @@
     "qa": "qa-tester agent"
   },
   "requirements": {
-    "version": 5,
-    "businessContext": "This module owns three squad-shape mechanics that sit outside the player-bidding flow: (1) bonus-slot purchases that raise the 15-player squad cap up to a hard ceiling of 18 (slots 16/17/18 cost £10M/£20M/£30M respectively, Complete tier only, only after the initial player auction has completed); (2) penalty-slot redemption, which buys back a squad slot lost via a missed nomination, with redemption priced by whether the penalty was incurred in the current auction cycle (£2.5M) or a previous one (£5M); and (3) the optional PL Club Auction — a separate auction session (type='club-auction') that runs BEFORE the initial player auction when the league has clubAuctionEnabled=true, allocates one PL club per fantasy team (and one fantasy team per PL club) at a £500K floor over a two-round randomised queue, and snapshots the club's tier (top8/mid/promoted) for downstream synergy and result-bonus scoring (scoring math itself is owned by module 11).",
+    "version": 6,
+    "businessContext": "This module owns three squad-shape mechanics that sit outside the player-bidding flow: (1) bonus-slot purchases that raise the 15-player squad cap up to a hard ceiling of 18 (slots 16/17/18 cost £10M/£20M/£30M respectively, Complete tier only, only after the initial player auction has completed); (2) penalty-slot redemption, which buys back a squad slot lost via a missed nomination, with redemption priced by whether the penalty was incurred in the current auction cycle (£2.5M) or a previous one (£5M); and (3) the optional PL Club Auction — a separate auction session (type='club-auction') that runs BEFORE the initial player auction when the league has clubAuctionEnabled=true, allocates one PL club per fantasy team (and one fantasy team per PL club) at a £500K floor via team-driven turn-based nomination (each club-less team takes a turn nominating a specific club it chooses and becomes its floor bidder, with a random auto-pick fallback if a team's nomination timer lapses), and snapshots the club's tier (top8/mid/promoted) for downstream synergy and result-bonus scoring (scoring math itself is owned by module 11).",
     "userStories": [
       {
         "id": "US-SLOTS-001",
@@ -61,11 +61,11 @@
       },
       {
         "id": "US-SLOTS-006",
-        "asA": "league admin running a live club auction",
-        "iWant": "the system to auto-nominate the next PL club from a randomised queue when no bid is open",
-        "soThat": "the club auction progresses without each team having to take a turn",
+        "asA": "team owner in a live club auction",
+        "iWant": "to take a turn nominating a specific PL club I choose, becoming its opening bidder",
+        "soThat": "I get the first shot at a club I want before other club-less teams can outbid me",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:273-398"
+          "src/lib/formats/auction/club-auction.ts:291-402"
         ]
       },
       {
@@ -89,19 +89,19 @@
       },
       {
         "id": "US-SLOTS-009",
-        "asA": "team owner who lost a club bid",
-        "iWant": "unsold clubs from round 1 to be re-queued randomly for a second-pass round",
-        "soThat": "every PL club gets at least two chances to be sold before the club auction completes",
+        "asA": "team owner who lets their nomination timer lapse",
+        "iWant": "the system to auto-pick a random available club on my behalf, with me as its floor bidder",
+        "soThat": "the club auction keeps moving without me losing my chance to end up with a club",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:319-345",
+          "src/lib/formats/auction/club-auction.ts:408-428",
           "src/lib/formats/auction/club-auction.ts:241-248"
         ]
       },
       {
         "id": "US-SLOTS-010",
         "asA": "team that already owns a PL club",
-        "iWant": "to be excluded from bidding on further clubs",
-        "soThat": "the one-club-per-team rule is enforced and round-2 bidding is reserved for club-less teams",
+        "iWant": "to be excluded from bidding on further clubs and skipped by the nomination turn order",
+        "soThat": "the one-club-per-team rule is enforced and only club-less teams can nominate or bid",
         "sourceRefs": [
           "src/lib/formats/auction/club-auction.ts:224-235",
           "src/lib/db/schema.ts:434-435"
@@ -110,11 +110,11 @@
       {
         "id": "US-SLOTS-011",
         "asA": "league admin",
-        "iWant": "the club auction session to mark itself completed once all teams own a club or round 2 has exhausted unsold clubs",
-        "soThat": "the initial player auction is unblocked and a completion snapshot is taken",
+        "iWant": "the club auction session to go idle once every team owns a club, and to be able to mark it completed myself",
+        "soThat": "the initial player auction is unblocked and a completion snapshot is taken once I confirm the club auction is done",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:300-345",
-          "src/lib/formats/auction/club-auction.ts:521-536"
+          "src/lib/formats/auction/club-auction.ts:260-283",
+          "src/app/api/auction/session/route.ts:427-433"
         ]
       },
       {
@@ -364,10 +364,9 @@
       },
       {
         "id": "BR-SLOTS-032",
-        "rule": "buildInitialClubQueue produces a randomly shuffled copy of the PL team IDs; the resulting array is stored in auctionSessions.snakeOrder as JSON, cycleNumber=1, currentNominatorIndex=0, status='pending'.",
+        "rule": "Club-auction creation produces a randomly shuffled copy of the league's non-ghost fantasy team IDs (not PL club IDs); the resulting array is stored in auctionSessions.snakeOrder as JSON, currentNominatorIndex=0, status='pending'. This is the nomination turn order teams take when nominating a club.",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:202-216",
-          "src/app/api/auction/session/route.ts:207-222"
+          "src/app/api/auction/session/route.ts:287-313"
         ]
       },
       {
@@ -379,9 +378,9 @@
       },
       {
         "id": "BR-SLOTS-034",
-        "rule": "autoNominateNextClub is a no-op (returns null) unless the session is type='club-auction' AND status='active' AND has no open bid for the session.",
+        "rule": "nominateClub(sessionId, teamId, plTeamId) rejects with 409 'A club is already on the block' if the session already has an open auctionBids row; it also validates the session is type='club-auction' AND status='active', the nominating team is still club-less, and the chosen plTeamId is still unowned.",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:273-289"
+          "src/lib/formats/auction/club-auction.ts:338-367"
         ]
       },
       {
@@ -394,23 +393,24 @@
       },
       {
         "id": "BR-SLOTS-036",
-        "rule": "Queue exhaustion: when cursor exceeds queue.length on cycleNumber=1, the unsold-clubs list (PL IDs without an auctionClubOwnership row) is re-shuffled and stored as a new snakeOrder with currentNominatorIndex=0 and cycleNumber=2. When exhausted on cycle 2 (or no unsold clubs remain), the session status flips to 'completed' and writeAuctionCompleteSnapshot is invoked.",
+        "rule": "Advancing the club-less nominator scans the fixed team snakeOrder ring from the current index (wrapping modulo its length), skipping any team that already owns a club, and arms the first club-less team found. When no club-less team remains, the session goes idle (nominationDeadline cleared) but is NOT auto-completed — status stays as-is until an admin explicitly completes it (see BR-SLOTS-043).",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:319-345"
+          "src/lib/formats/auction/club-auction.ts:260-283",
+          "src/lib/formats/auction/club-auction.ts:291-319"
         ]
       },
       {
         "id": "BR-SLOTS-037",
-        "rule": "Each club nomination creates an auctionBids row with currentHighBid=minBid=£500K (CLUB_FLOOR_BID), fplElementId set to the PL team id, playerName set to the PL team name, status='open', and expiresAt=now+bidTimerSeconds. nominatorTeamId/currentHighBidderId are a sentinel (the first non-ghost team in the league), and a 'nomination' auctionBidLog row is inserted.",
+        "rule": "Each club nomination creates an auctionBids row with currentHighBid=minBid=£500K (CLUB_FLOOR_BID), fplElementId set to the PL team id, playerName set to the PL team name, status='open', and expiresAt=now+bidTimerSeconds. nominatorTeamId/currentHighBidderId are the actual nominating team (the club-less team whose turn it is, or who was auto-picked on timeout) — never a sentinel — and a 'nomination' auctionBidLog row is inserted.",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:362-389"
+          "src/lib/formats/auction/club-auction.ts:373-393"
         ]
       },
       {
         "id": "BR-SLOTS-038",
-        "rule": "Club-bid resolution is idempotent and inspects auctionBidLogs.type='bid' rows: ≥1 real bid → 'sold' to currentHighBidderId, 0 real bids → 'unsold'. Status is flipped from 'open' atomically; an already-resolved bid returns 'already-resolved'.",
+        "rule": "Club-bid resolution is idempotent and unconditionally sells to currentHighBidderId — the nominator is always the opening floor bidder, so there is no 'unsold' outcome for club bids. Status is flipped from 'open' to 'sold' atomically (via a conditional UPDATE ... WHERE status='open'); an already-resolved bid returns 'already-resolved'.",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:421-515"
+          "src/lib/formats/auction/club-auction.ts:451-546"
         ]
       },
       {
@@ -436,16 +436,17 @@
       },
       {
         "id": "BR-SLOTS-042",
-        "rule": "On UNSOLD: update bid status='unsold' (atomic claim) and append an 'unsold' auctionBidLog with amount=0 and teamId=nominator (sentinel). No ownership row, no purse change.",
+        "rule": "There is no UNSOLD outcome for club bids in the current design — every resolved club bid is either 'sold' (ownership row written, purse deducted) or 'already-resolved' (a no-op on a bid another caller already resolved). BR-SLOTS-038 is authoritative; this rule id is retained only to avoid renumbering downstream references.",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:498-514"
+          "src/lib/formats/auction/club-auction.ts:451-546"
         ]
       },
       {
         "id": "BR-SLOTS-043",
-        "rule": "advanceClubQueue advances currentNominatorIndex by 1 then calls autoNominateNextClub, which either nominates the next club or marks the session 'completed' (and writes a backup snapshot) when no more nominations are possible.",
+        "rule": "advanceClubNominator re-scans the snakeOrder ring for the next club-less team (arming their nomination deadline) after a club bid resolves. It does not auto-nominate a club itself and does not mark the session 'completed' — completion only happens when an admin calls POST /api/auction/session with action='complete', which sets status='completed' and invokes writeAuctionCompleteSnapshot.",
         "sourceRefs": [
-          "src/lib/formats/auction/club-auction.ts:521-536"
+          "src/lib/formats/auction/club-auction.ts:326-331",
+          "src/app/api/auction/session/route.ts:427-433,547"
         ]
       },
       {
@@ -692,44 +693,44 @@
       },
       {
         "id": "AC-SLOTS-031",
-        "given": "a successful club-auction creation with 20 PL clubs returned",
+        "given": "a successful club-auction creation for a league with N non-ghost teams",
         "when": "the session row is persisted",
-        "then": "snakeOrder is a JSON array of 20 unique PL team IDs in randomised order, cycleNumber=1, currentNominatorIndex=0, status='pending', and the response is { success:true, id, queueLength:20 }",
+        "then": "snakeOrder is a JSON array of N unique fantasy team IDs in randomised order, currentNominatorIndex=0, status='pending', and the response is { success:true, id, teamCount:N }",
         "linksTo": "BR-SLOTS-032"
       },
       {
         "id": "AC-SLOTS-032",
-        "given": "an active club-auction session with no open bid and the next queue entry maps to a known PL club",
-        "when": "autoNominateNextClub(sessionId) runs",
-        "then": "it inserts an auctionBids row (status='open', minBid=£500K, currentHighBid=£500K, expiresAt=now+bidTimerSeconds), an auctionBidLogs 'nomination' row, and returns the bidId",
+        "given": "an active club-auction session with no open bid, caller is the current nominator (or admin), and plTeamId is a still-available club",
+        "when": "nominateClub(sessionId, teamId, plTeamId) runs",
+        "then": "it inserts an auctionBids row (status='open', minBid=£500K, currentHighBid=£500K, nominatorTeamId=currentHighBidderId=teamId, expiresAt=now+bidTimerSeconds), an auctionBidLogs 'nomination' row, and returns the bidId",
         "linksTo": "BR-SLOTS-037"
       },
       {
         "id": "AC-SLOTS-033",
         "given": "the session already has an 'open' auctionBids row",
-        "when": "autoNominateNextClub is called",
-        "then": "it returns null and inserts nothing",
+        "when": "nominateClub is called by anyone",
+        "then": "it returns { error: 'A club is already on the block', status: 409 } and inserts nothing",
         "linksTo": "BR-SLOTS-034"
       },
       {
         "id": "AC-SLOTS-034",
-        "given": "cursor reaches the end of the queue on cycleNumber=1 and at least one club is unsold",
-        "when": "autoNominateNextClub runs",
-        "then": "a re-shuffled queue of unsold PL clubs is written back to snakeOrder, currentNominatorIndex=0, cycleNumber=2, and nomination proceeds from the new cursor",
+        "given": "a club-less team's nomination deadline has lapsed with no manual nomination",
+        "when": "autoNominateClubForTeam(sessionId, teamId) runs (via handleNominationTimeout)",
+        "then": "it picks a random still-available club and calls nominateClub with that same team as nominator/floor bidder, returning 'auto-nominated'; if that call errors (e.g. the team just won a club elsewhere), it re-arms the next club-less nominator and returns 'noop' instead",
         "linksTo": "BR-SLOTS-036"
       },
       {
         "id": "AC-SLOTS-035",
-        "given": "cursor reaches the end of the queue on cycleNumber=2",
-        "when": "autoNominateNextClub runs",
-        "then": "the session status is updated to 'completed', writeAuctionCompleteSnapshot is invoked, and the function returns null",
+        "given": "a club bid resolves and advanceClubNominator scans the ring but finds no club-less team remaining",
+        "when": "the scan completes",
+        "then": "the session's nominationDeadline is cleared (idle) and status is left unchanged (NOT auto-set to 'completed') — an admin must call action='complete' to finish the session and trigger writeAuctionCompleteSnapshot",
         "linksTo": "BR-SLOTS-036"
       },
       {
         "id": "AC-SLOTS-036",
-        "given": "all teams in the league already own a club",
-        "when": "autoNominateNextClub runs",
-        "then": "the session status is updated to 'completed' immediately and no further nomination is created",
+        "given": "all teams in the league already own a club when the club-less-nominator scan runs",
+        "when": "armClubNominator/advanceClubNominator runs",
+        "then": "the session goes idle (same as AC-SLOTS-035) rather than being marked 'completed' automatically",
         "linksTo": "BR-SLOTS-035"
       },
       {
@@ -741,10 +742,10 @@
       },
       {
         "id": "AC-SLOTS-038",
-        "given": "an open club bid whose timer has expired with zero auctionBidLogs.type='bid' rows",
+        "given": "an open club bid whose timer has expired with zero counter-bids beyond the nominator's own floor bid",
         "when": "resolveClubBid runs",
-        "then": "auctionBids.status flips to 'unsold', an auctionBidLogs 'unsold' row with amount=0 is appended, no auctionClubOwnership row is created, and no purse is deducted",
-        "linksTo": "BR-SLOTS-042"
+        "then": "auctionBids.status flips to 'sold' to the nominator (currentHighBidderId) at the floor price — there is no 'unsold' path for club bids, confirming BR-SLOTS-038",
+        "linksTo": "BR-SLOTS-038"
       },
       {
         "id": "AC-SLOTS-039",
@@ -1669,17 +1670,17 @@
     {
       "id": "TC-SLOTS-044",
       "feature": "Club Auction Snake Order",
-      "scenario": "Successful creation persists 20 unique randomised PL IDs",
+      "scenario": "Successful creation persists a randomised fantasy-team turn order",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "League clubAuctionEnabled=true; no existing sessions; FPL bootstrap returns 20 valid clubs",
+      "preconditions": "League clubAuctionEnabled=true; no existing sessions; FPL bootstrap returns 20 valid clubs; league has N non-ghost teams",
       "testData": "POST body={ action:'create', type:'club-auction' }",
       "testSteps": [
         "1. POST /api/auction/session",
         "2. Inspect response body",
         "3. Query auctionSessions row and parse snakeOrder"
       ],
-      "expectedResult": "Response { success:true, id, queueLength:20 }; auctionSessions row has type='club-auction', cycleNumber=1, currentNominatorIndex=0, status='pending', snakeOrder is a 20-element JSON array of unique PL team IDs (not lexicographically sorted — randomised)",
+      "expectedResult": "Response { success:true, id, teamCount:N }; auctionSessions row has type='club-auction', currentNominatorIndex=0, status='pending', snakeOrder is an N-element JSON array of unique fantasy team IDs (not lexicographically sorted — randomised)",
       "postconditions": "Session persisted",
       "requirementId": "AC-SLOTS-031",
       "author": "qa-tester",
@@ -1689,17 +1690,17 @@
     },
     {
       "id": "TC-SLOTS-045",
-      "feature": "Auto Nominate (Open Bid Exists)",
-      "scenario": "autoNominateNextClub no-op when an open bid is present",
+      "feature": "Nominate Club (Open Bid Exists)",
+      "scenario": "nominateClub rejects when an open bid is already present",
       "type": "Negative",
       "priority": "P2",
       "preconditions": "club-auction session.status='active' with an auctionBids row status='open'",
-      "testData": "sessionId of that session",
+      "testData": "sessionId of that session; a second club-less team attempts to nominate a different club",
       "testSteps": [
-        "1. Call autoNominateNextClub(sessionId)",
+        "1. Call nominateClub(sessionId, teamId, plTeamId)",
         "2. Count auctionBids rows before and after"
       ],
-      "expectedResult": "Returns null; no new auctionBids or auctionBidLogs rows inserted",
+      "expectedResult": "Returns { error: 'A club is already on the block', status: 409 }; no new auctionBids or auctionBidLogs rows inserted",
       "postconditions": "Open bid remains the only one",
       "requirementId": "AC-SLOTS-033",
       "author": "qa-tester",
@@ -1709,17 +1710,17 @@
     },
     {
       "id": "TC-SLOTS-046",
-      "feature": "Auto Nominate Nomination",
-      "scenario": "autoNominateNextClub creates floor bid + nomination log",
+      "feature": "Nominate Club (Manual)",
+      "scenario": "nominateClub creates floor bid + nomination log for the acting team's chosen club",
       "type": "Positive",
       "priority": "P1",
-      "preconditions": "club-auction session.status='active'; no open bid; queue cursor points to a known PL club id",
-      "testData": "sessionId; bidTimerSeconds=60",
+      "preconditions": "club-auction session.status='active'; no open bid; caller is the current club-less nominator (per snakeOrder/currentNominatorIndex); plTeamId is a still-available club",
+      "testData": "sessionId; teamId=current nominator; plTeamId=chosen club; bidTimerSeconds=60",
       "testSteps": [
-        "1. Call autoNominateNextClub(sessionId)",
+        "1. Call nominateClub(sessionId, teamId, plTeamId)",
         "2. Query auctionBids and auctionBidLogs"
       ],
-      "expectedResult": "Returns the new bidId; auctionBids row inserted with status='open', minBid=500_000, currentHighBid=500_000, fplElementId=plTeamId, playerName=PL club name, expiresAt≈now+60s; auctionBidLogs row type='nomination' inserted",
+      "expectedResult": "Returns { bidId }; auctionBids row inserted with status='open', minBid=500_000, currentHighBid=500_000, nominatorTeamId=currentHighBidderId=teamId, fplElementId=plTeamId, playerName=PL club name, expiresAt≈now+60s; auctionBidLogs row type='nomination' inserted; session.nominationDeadline cleared",
       "postconditions": "Open bid exists",
       "requirementId": "AC-SLOTS-032",
       "author": "qa-tester",
@@ -1729,18 +1730,18 @@
     },
     {
       "id": "TC-SLOTS-047",
-      "feature": "Queue Re-Shuffle",
-      "scenario": "End of cycle 1 triggers cycle 2 re-shuffle of unsold clubs",
+      "feature": "Nomination Timeout Auto-Pick",
+      "scenario": "Lapsed nomination timer auto-picks a random club for the same team",
       "type": "Boundary",
       "priority": "P2",
-      "preconditions": "Cycle 1 queue exhausted; some PL clubs have no auctionClubOwnership row",
-      "testData": "sessionId at cursor end of cycle 1",
+      "preconditions": "Active club-auction session; current nominator's nominationDeadline has passed with no manual nomination; ≥1 club still available",
+      "testData": "sessionId; nominatorTeamId=current nominator",
       "testSteps": [
-        "1. Call autoNominateNextClub at end-of-queue",
-        "2. Re-read auctionSessions row"
+        "1. Call handleNominationTimeout(sessionId, nominatorTeamId, leagueId), which delegates to autoNominateClubForTeam",
+        "2. Re-read auctionBids and the returned outcome"
       ],
-      "expectedResult": "snakeOrder replaced with re-shuffled list of unsold PL ids; currentNominatorIndex=0; cycleNumber=2; new nomination begins from the new queue",
-      "postconditions": "Cycle advanced",
+      "expectedResult": "Returns 'auto-nominated'; a new open auctionBids row exists for a random available club with nominatorTeamId=currentHighBidderId=nominatorTeamId (the same team that timed out, not a different one)",
+      "postconditions": "Turn keeps moving without penalty",
       "requirementId": "AC-SLOTS-034",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -1749,18 +1750,18 @@
     },
     {
       "id": "TC-SLOTS-048",
-      "feature": "Club Auction Completion",
-      "scenario": "End of cycle 2 marks session completed",
+      "feature": "Club Auction Idle State",
+      "scenario": "Last club sale leaves the session idle, not auto-completed",
       "type": "Boundary",
       "priority": "P2",
-      "preconditions": "cycleNumber=2 and cursor reaches end of queue",
-      "testData": "sessionId at end-of-queue cycle 2",
+      "preconditions": "Every team but one already owns a club; the last club-less team's bid resolves 'sold'",
+      "testData": "sessionId after the final club bid resolves",
       "testSteps": [
-        "1. Call autoNominateNextClub",
-        "2. Inspect session.status and snapshot writer invocation"
+        "1. Resolve the final open club bid",
+        "2. Inspect session.nominationDeadline and session.status"
       ],
-      "expectedResult": "Returns null; session.status='completed'; writeAuctionCompleteSnapshot invoked once",
-      "postconditions": "Auction complete; initial auction unblocked",
+      "expectedResult": "session.nominationDeadline is null (idle); session.status remains 'active' — NOT auto-set to 'completed'; no snapshot is written until an admin explicitly completes the session",
+      "postconditions": "Session idle, awaiting admin action",
       "requirementId": "AC-SLOTS-035",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -1769,18 +1770,18 @@
     },
     {
       "id": "TC-SLOTS-049",
-      "feature": "Club Auction Completion (No Club-less)",
-      "scenario": "Session completes immediately if every team already owns a club",
+      "feature": "Club Auction Idle State (No Club-less)",
+      "scenario": "Session goes idle, not completed, if every team already owns a club when armed",
       "type": "Edge",
       "priority": "P2",
       "preconditions": "All non-ghost teams already have an auctionClubOwnership row",
       "testData": "active club-auction sessionId",
       "testSteps": [
-        "1. Call autoNominateNextClub",
-        "2. Inspect session status and auctionBids"
+        "1. Call setClubNominationDeadline(sessionId) (or trigger via advanceClubNominator)",
+        "2. Inspect session.nominationDeadline, session.status and auctionBids"
       ],
-      "expectedResult": "session.status='completed' immediately; no new nomination is created",
-      "postconditions": "Auction complete",
+      "expectedResult": "session.nominationDeadline is cleared (idle); session.status is unchanged (still whatever it was, e.g. 'active') — not auto-flipped to 'completed'; no new nomination is created",
+      "postconditions": "Session idle, awaiting admin completion",
       "requirementId": "AC-SLOTS-036",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -1809,18 +1810,18 @@
     },
     {
       "id": "TC-SLOTS-051",
-      "feature": "Club Bid Resolution UNSOLD",
-      "scenario": "No real bids → status flips to unsold",
-      "type": "Negative",
+      "feature": "Club Bid Resolution (No Counter-Bids)",
+      "scenario": "No counter-bids → club still sells to the nominator at floor price",
+      "type": "Positive",
       "priority": "P2",
-      "preconditions": "Open club bid with zero auctionBidLogs.type='bid' rows; expired timer",
+      "preconditions": "Open club bid with zero auctionBidLogs.type='bid' rows beyond the nominator's own opening floor bid; expired timer",
       "testData": "bidId",
       "testSteps": [
         "1. Call resolveClubBid(bidId)",
         "2. Query auctionBids, auctionClubOwnership, auctionBidLogs, teams"
       ],
-      "expectedResult": "auctionBids.status='unsold'; auctionBidLogs 'unsold' row appended with amount=0 and teamId=nominator sentinel; no auctionClubOwnership row; no purse deduction",
-      "postconditions": "Club remains unsold",
+      "expectedResult": "auctionBids.status='sold'; auctionClubOwnership row inserted for the nominator at the £500K floor price; a 'sold' auctionBidLog row appended; nominator's purse decreases by £500K — there is no 'unsold' status for club bids",
+      "postconditions": "Club owned by the nominator",
       "requirementId": "AC-SLOTS-038",
       "author": "qa-tester",
       "createdDate": "2026-05-23",
@@ -2054,18 +2055,18 @@
     },
     {
       "id": "TC-SLOTS-063",
-      "feature": "Advance Queue",
-      "scenario": "advanceClubQueue increments cursor then nominates",
+      "feature": "Advance Nominator",
+      "scenario": "advanceClubNominator re-scans the ring and arms the next club-less team",
       "type": "Positive",
       "priority": "P3",
-      "preconditions": "Active club-auction session; no open bid; currentNominatorIndex=2 mid-queue",
+      "preconditions": "Active club-auction session; no open bid; currentNominatorIndex=2; the team at index 3 already owns a club, the team at index 4 does not",
       "testData": "sessionId",
       "testSteps": [
-        "1. Call advanceClubQueue(sessionId)",
-        "2. Read session row and any new auctionBids"
+        "1. Call advanceClubNominator(sessionId)",
+        "2. Read session row (currentNominatorIndex, nominationDeadline)"
       ],
-      "expectedResult": "currentNominatorIndex increments to 3; autoNominateNextClub is invoked and creates the next open bid",
-      "postconditions": "Queue progressed",
+      "expectedResult": "currentNominatorIndex is set to 4 (index 3 skipped because that team already owns a club); a fresh nominationDeadline is armed for the team at index 4. No auctionBids row is created by this call — nomination itself still requires that team to call nominateClub (or their own timeout to trigger autoNominateClubForTeam)",
+      "postconditions": "Next club-less nominator armed",
       "requirementId": "BR-SLOTS-043",
       "author": "qa-tester",
       "createdDate": "2026-05-23",

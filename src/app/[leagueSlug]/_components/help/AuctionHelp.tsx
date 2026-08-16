@@ -53,7 +53,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
       answer: (
         <div className="space-y-2">
           <p>
-            Before the player auction begins, each fantasy team buys <strong className="text-white">one Premier League club</strong> in a separate auction. The system <strong className="text-white">randomly nominates</strong> clubs one at a time; bidders place bids; the highest bidder wins. If nobody bids on a nominated club, it goes unsold and is re-nominated in a round-2 pass (only club-less teams can bid in round 2).
+            Before the player auction begins, each fantasy team buys <strong className="text-white">one Premier League club</strong> in a separate auction. Club-less teams take turns <strong className="text-white">nominating a club they choose</strong>, in a randomized turn order — the nominator opens as the bidder, and other club-less teams can outbid them. A nominated club always sells. If a team lets its nomination timer expire, the system auto-picks an available club for them so the turn keeps moving.
           </p>
           <p>
             Clubs are <strong className="text-white">non-tradeable</strong> — you own that club for the entire season. Your team displays as the owned club&apos;s name everywhere (e.g. &quot;Team 5&quot; → &quot;Arsenal&quot;), with a tier-coloured chip beside it.
@@ -261,13 +261,13 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
     },
     {
       number: 2,
-      title: "The PL Club auction — from random nomination to final ownership",
+      title: "The PL Club auction — from team nomination to final ownership",
       steps: [
         "Admin schedules a separate club-auction session, typically 1 hour or 1 day before the initial player auction.",
-        "When the session starts, the system randomly orders all 20 PL clubs and auto-nominates the first one.",
-        "Any team that doesn't yet own a club may bid. Same purse, same bid timer rules as the player auction.",
-        "Highest bidder wins the club at their final bid. No bids → club goes unsold and re-nominates in round 2.",
-        "Round 2 re-shuffles the unsold clubs; only club-less teams can bid. Repeat until every team has a club.",
+        "When the session starts, club-less teams are put in a randomized turn order. The first team in that order nominates a club it wants.",
+        "The nominating team opens as the bidder on that club. Any other team that doesn't yet own a club may outbid them, from the same purse, with the same bid timer rules as the player auction.",
+        "A nominated club always sells — either to the nominator, or to whoever outbids them. If a team lets its nomination timer expire, the system auto-picks an available club for them instead, keeping them as the opening bidder.",
+        "The turn order keeps cycling through whichever teams still don't own a club until every team has exactly one.",
         "After the session, every team's display name flips to their owned club (e.g. 'Team 5' → 'Arsenal') with a tier chip.",
       ],
     },

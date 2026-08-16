@@ -1469,7 +1469,7 @@ export default function SuperAdminDashboard() {
                               />
                               <div>
                                 <p className="text-white text-sm font-medium">PL Club Auction</p>
-                                <p className="text-gray-500 text-xs">Before the player auction, each team buys 1 PL club (random nomination, single round). Owned-club players earn ×1.5 synergy, plus a per-GW result bonus by tier (Top 8 / Mid / Promoted).</p>
+                                <p className="text-gray-500 text-xs">Before the player auction, each team buys 1 PL club (team-nominated, turn order). Owned-club players earn ×1.5 synergy, plus a per-GW result bonus by tier (Top 8 / Mid / Promoted).</p>
                               </div>
                             </label>
                           </div>

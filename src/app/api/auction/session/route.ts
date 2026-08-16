@@ -236,8 +236,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Club auction: the "queue" stored in snakeOrder is a randomised list of PL team IDs,
-    // not fantasy team IDs. Only one club-auction session may exist per league.
+    // Club auction: snakeOrder stores a randomised list of fantasy team IDs (each club-less team
+    // takes a turn nominating a PL club). Only one club-auction session may exist per league.
     // Session-ordering guard: allowed creation order is club-auction → initial → mini-auction.
     // Schedule is free-form (each session's `scheduledAt` can be any date) — only creation order is
     // enforced. Read the existing sessions once for the rest of the create branch.
