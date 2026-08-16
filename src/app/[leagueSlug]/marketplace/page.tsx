@@ -87,6 +87,7 @@ export default function MarketplacePage() {
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [leagueId, setLeagueId] = useState<string | null>(null);
   const [auctionLive, setAuctionLive] = useState(false);
+  const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
   const [proposals, setProposals] = useState<TradeProposal[]>([]);
   const [liveOffers, setLiveOffers] = useState<TradeProposal[]>([]);
   const [teamList, setTeamList] = useState<StandingEntry[]>([]);
@@ -133,6 +134,7 @@ export default function MarketplacePage() {
         if (liveRes.ok) {
           const liveJson = await liveRes.json();
           setAuctionLive(!!liveJson.live);
+          setLiveSessionId(liveJson.sessionId ?? null);
         }
       } catch {
         // ignore
@@ -439,7 +441,7 @@ export default function MarketplacePage() {
               All previously pending trades were cancelled when the auction started.
             </p>
             <Link
-              href={`/${leagueSlug}/auction`}
+              href={liveSessionId ? `/${leagueSlug}/auction/${liveSessionId}` : `/${leagueSlug}/auction`}
               className="mt-6 inline-block rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
             >
               Go to Auction
