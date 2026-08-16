@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -8,9 +8,12 @@ import { Logo } from "@/components/Logo";
 import { TierChip } from "@/components/TierChip";
 import { AuctionTimerRing } from "@/components/AuctionTimerRing";
 import { formatCurrency } from "@/lib/format/currency";
+import { effectiveMaxSquadSize } from "@/lib/formats/auction/squad-rules";
 import type { ClubTier } from "@/lib/db/schema";
 
 const CLUB_AUCTION_TYPE = "club-auction";
+const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+const MIN_QUOTA: Record<"GKP" | "DEF" | "MID" | "FWD", number> = { GKP: 1, DEF: 3, MID: 3, FWD: 1 };
 
 interface SessionRow {
   id: string;
@@ -55,6 +58,11 @@ interface CurrentBid {
   nominatorTeamId: string;
   expiresAt: string;
   tier?: ClubTier | null;
+}
+
+interface BootstrapElement {
+  id: number;
+  element_type: number;
 }
 
 interface FeedItem {
@@ -155,6 +163,7 @@ export default function AdminAuctionRoomPage() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [teams, setTeams] = useState<Map<string, TeamInfo>>(new Map());
   const [teamSummaries, setTeamSummaries] = useState<Record<string, TeamSummary>>({});
+  const [elements, setElements] = useState<BootstrapElement[]>([]);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [currentBid, setCurrentBid] = useState<CurrentBid | null>(null);
   const [nominationDeadline, setNominationDeadline] = useState<string | null>(null);
@@ -172,6 +181,12 @@ export default function AdminAuctionRoomPage() {
   useEffect(() => { teamsRef.current = teams; }, [teams]);
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
+
+  const elementById = useMemo(() => {
+    const m = new Map<number, BootstrapElement>();
+    for (const el of elements) m.set(el.id, el);
+    return m;
+  }, [elements]);
 
   const refreshTeamsAndSquads = useCallback(async () => {
     const lid = leagueDbIdRef.current;
@@ -229,11 +244,12 @@ export default function AdminAuctionRoomPage() {
       setLeagueDbId(league.id);
       leagueDbIdRef.current = league.id;
 
-      const [sessRes, teamsRes, ownedRes, histRes] = await Promise.all([
+      const [sessRes, teamsRes, ownedRes, histRes, bootstrapRes] = await Promise.all([
         fetch(`/api/auction/session?leagueId=${league.id}`),
         fetch(`/api/admin/${leagueSlug}/create-team`),
         fetch(`/api/auction/league-owned?leagueId=${league.id}`),
         fetch(`/api/auction/bid-history?sessionId=${sessionId}`),
+        fetch("/api/fpl/bootstrap"),
       ]);
 
       let teamMap = new Map<string, TeamInfo>();
@@ -267,6 +283,10 @@ export default function AdminAuctionRoomPage() {
       if (histRes.ok) {
         const d = await histRes.json();
         setFeed(buildFeed(d.bids ?? [], d.penalties ?? [], teamMap));
+      }
+      if (bootstrapRes.ok) {
+        const d = await bootstrapRes.json();
+        setElements(d.elements ?? []);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load auction room");
@@ -329,6 +349,17 @@ export default function AdminAuctionRoomPage() {
     });
     return () => es.close();
   }, [sessionId, sessionStatus, refreshSessions, refreshTeamsAndSquads, refreshFeed]);
+
+  // Fallback poll — the SSE "sold"/"unsold"/"auto-nominated"/"penalised" events are singlecast to
+  // whichever of the N connected clients' poll cycle wins the DB claim race (see stream route); the
+  // admin tab usually loses that race against the many participant tabs, so without this poll the
+  // feed/undo-list/nomination-purse panels can go stale indefinitely. Mirrors the participant room's
+  // fallback poll (src/app/[leagueSlug]/auction/[sessionId]/page.tsx).
+  useEffect(() => {
+    if (!sessionId || sessionStatus === "pending" || sessionStatus === "completed" || !sessionStatus) return;
+    const t = setInterval(() => { refreshFeed(); refreshTeamsAndSquads(); }, 3000);
+    return () => clearInterval(t);
+  }, [sessionId, sessionStatus, refreshFeed, refreshTeamsAndSquads]);
 
   // Countdown ticks
   useEffect(() => {
@@ -540,21 +571,66 @@ export default function AdminAuctionRoomPage() {
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Nomination Order</h3>
-              <div className="space-y-1 max-h-96 overflow-y-auto text-sm">
-                {session.snakeOrder.map((tid, idx) => {
-                  const isCurrent = idx === session.currentNominatorIndex && session.status !== "completed";
-                  const team = teams.get(tid);
-                  const summary = teamSummaries[tid];
-                  return (
-                    <div key={tid} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${isCurrent ? "bg-yellow-500/15 text-yellow-300 font-semibold" : "text-gray-300"}`}>
-                      <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}</span>
-                      <span className="flex-1 truncate">{teamLabel(team, tid)}</span>
-                      {isClubAuction && team?.ownedClub && <TierChip tier={team.ownedClub.tier} clubName={team.ownedClub.plTeamName} short={team.ownedClub.plTeamShort} compact />}
-                      {summary && <span className="text-[10px] font-mono text-green-300">{formatCurrency(summary.purse)}</span>}
-                      {isCurrent && <span className="text-yellow-400 text-[10px]">◄</span>}
-                    </div>
-                  );
-                })}
+              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-slate-900/95 z-10">
+                    <tr className="text-gray-400 uppercase tracking-wider border-b border-white/10">
+                      <th className="text-left py-2 px-2 w-8">#</th>
+                      <th className="text-left py-2 px-2">Team</th>
+                      <th className="text-right py-2 px-2">Purse</th>
+                      <th className="text-center py-2 px-1">GKP</th>
+                      <th className="text-center py-2 px-1">DEF</th>
+                      <th className="text-center py-2 px-1">MID</th>
+                      <th className="text-center py-2 px-1">FWD</th>
+                      <th className="text-center py-2 px-1">Tot</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {session.snakeOrder.map((tid, idx) => {
+                      const isCurrent = idx === session.currentNominatorIndex && session.status !== "completed";
+                      const team = teams.get(tid);
+                      const summary = teamSummaries[tid];
+                      const players = summary?.players ?? [];
+
+                      const counts = { GKP: 0, DEF: 0, MID: 0, FWD: 0 };
+                      for (const p of players) {
+                        const el = elementById.get(p.fplElementId);
+                        if (el) {
+                          const pos = POSITION_LABELS[el.element_type];
+                          if (pos && pos in counts) counts[pos as keyof typeof counts]++;
+                        }
+                      }
+                      const cellClass = (pos: keyof typeof counts) =>
+                        counts[pos] >= MIN_QUOTA[pos] ? "text-green-400" : "text-red-400";
+
+                      return (
+                        <tr key={tid} className={`border-b border-white/5 ${isCurrent ? "bg-yellow-500/15" : ""}`}>
+                          <td className="py-1.5 px-2 text-gray-500">
+                            {isCurrent ? <span className="text-yellow-400 font-bold">►</span> : <span>{idx + 1}</span>}
+                          </td>
+                          <td className={`py-1.5 px-2 font-semibold ${isCurrent ? "text-yellow-300" : "text-white"}`}>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="truncate">{teamLabel(team, tid)}</span>
+                              {isClubAuction && team?.ownedClub && (
+                                <TierChip tier={team.ownedClub.tier} clubName={team.ownedClub.plTeamName} short={team.ownedClub.plTeamShort} compact />
+                              )}
+                            </span>
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-green-300">
+                            {summary ? formatCurrency(summary.purse) : "—"}
+                          </td>
+                          <td className={`py-1.5 px-1 text-center font-mono ${cellClass("GKP")}`}>{counts.GKP}<span className="text-gray-500">/{MIN_QUOTA.GKP}</span></td>
+                          <td className={`py-1.5 px-1 text-center font-mono ${cellClass("DEF")}`}>{counts.DEF}<span className="text-gray-500">/{MIN_QUOTA.DEF}</span></td>
+                          <td className={`py-1.5 px-1 text-center font-mono ${cellClass("MID")}`}>{counts.MID}<span className="text-gray-500">/{MIN_QUOTA.MID}</span></td>
+                          <td className={`py-1.5 px-1 text-center font-mono ${cellClass("FWD")}`}>{counts.FWD}<span className="text-gray-500">/{MIN_QUOTA.FWD}</span></td>
+                          <td className="py-1.5 px-1 text-center text-white font-semibold">
+                            {players.length}<span className="text-gray-500">/{effectiveMaxSquadSize(summary?.penaltySlots ?? 0, summary?.bonusSlots ?? 0)}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
