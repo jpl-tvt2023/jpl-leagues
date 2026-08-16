@@ -184,6 +184,9 @@ export async function GET(request: NextRequest) {
       const renamedStandings = standings.map((s) => ({
         ...s,
         teamName: clubByTeamId[s.teamId]?.plTeamName ?? s.teamName,
+        // Literal team name, unaffected by the club-auction display rename above — consumers that
+        // need to identify the actual team (not its "displays as" club name) read this instead.
+        rawTeamName: s.teamName,
         teamLoginId: loginByTeam.get(s.teamId) ?? null,
         gwHistory: s.gwHistory.map((h) => ({
           ...h,
