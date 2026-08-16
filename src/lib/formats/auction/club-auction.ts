@@ -227,8 +227,8 @@ export async function getClubLessTeamIds(leagueId: string): Promise<string[]> {
 }
 
 /**
- * Returns the PL team IDs that are unsold this cycle — i.e. that don't yet have a
- * `auctionClubOwnership` row for this league. Used to rebuild the round-2 queue.
+ * Returns the PL team IDs that are still unowned — i.e. that don't yet have a
+ * `auctionClubOwnership` row for this league. Used to compute which clubs are nominable.
  */
 export async function getUnsoldClubIds(leagueId: string, allClubIds: number[]): Promise<number[]> {
   const owned = await db
@@ -427,7 +427,7 @@ export async function autoNominateClubForTeam(
   return "auto-nominated";
 }
 
-// ── Resolve a club-auction bid (sold or unsold) ──
+// ── Resolve a club-auction bid (always sold) ──
 
 interface BidRow {
   id: string;
@@ -442,9 +442,8 @@ interface BidRow {
 }
 
 /**
- * Resolve an expired club-auction bid.
- *   - At least one real bid (auctionBidLogs.type='bid') → SOLD to currentHighBidderId.
- *   - No real bids → UNSOLD.
+ * Resolve an expired club-auction bid. The nominator is always the opening floor bidder, so the
+ * club is always sold — to a higher counter-bid, or back to the nominator at floor.
  *
  * Idempotent: only proceeds if the bid is still "open".
  */

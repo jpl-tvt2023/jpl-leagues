@@ -174,26 +174,17 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
 }
 
 /**
- * Resolve an expired bid as "unsold": just mark the status.
- */
-export async function resolveBidToUnsold(bid: BidRow): Promise<void> {
-  await db
-    .update(auctionBids)
-    .set({ status: "unsold", updatedAt: new Date() })
-    .where(eq(auctionBids.id, bid.id));
-}
-
-/**
  * Resolve an expired bid. Branches on session type:
  *   - For the **player auction**, the nominator is always the floor bidder, so the player is
  *     always sold (to the high counter-bidder, or back to the nominator at floor).
- *   - For the **club auction**, "no real bids" → unsold; ≥1 real bid → sold to high bidder.
+ *   - For the **club auction**, the nominator is likewise always the floor bidder, so the club is
+ *     always sold (to a higher counter-bid, or back to the nominator).
  *
- * Returns "sold" / "unsold" / "already-resolved". "unsold" is only possible for club bids.
+ * Returns "sold" / "already-resolved".
  */
 export async function resolveExpiredBid(
   bid: BidRow
-): Promise<"sold" | "unsold" | "already-resolved"> {
+): Promise<"sold" | "already-resolved"> {
   // Look up session type cheaply
   const sess = await db
     .select({ type: auctionSessions.type })
@@ -236,8 +227,8 @@ async function isNominatorEligible(leagueId: string, teamId: string): Promise<bo
 
 /**
  * Advance to the next nominator. For a **player auction** this rolls the snake-order cursor and sets
- * a fresh nomination deadline for the next team. For a **club auction** this advances the queue cursor
- * and immediately auto-nominates the next PL club (no human in the loop).
+ * a fresh nomination deadline for the next team. For a **club auction** this rolls the same kind of
+ * turn order to the next club-less team and arms their nomination deadline — a human still nominates.
  *
  * Proactively skips squad-full teams: after incrementing the cursor, we check whether the new
  * nominator has any open slot left. If not, we keep incrementing. If every team in the order is
@@ -427,8 +418,8 @@ export async function allSquadsFull(leagueId: string, teamIds: string[]): Promis
 
 /**
  * Set the nomination deadline for the current nominator (e.g. on session start, or whenever the SSE
- * stream notices no deadline). For a **club auction** this triggers auto-nomination of the next club
- * instead — there is no per-team nomination turn in club auctions.
+ * stream notices no deadline). For a **club auction** this arms the current club-less team's
+ * nomination deadline the same way — each team gets its own turn to nominate a club.
  *
  * If the current nominator is already squad-full (mini-auction starting where someone hit cap last
  * cycle, or initial auction starting after a prior session left squad state), delegate to

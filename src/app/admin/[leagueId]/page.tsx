@@ -4015,7 +4015,7 @@ export default function AdminDashboard() {
                             </div>
                             <div className="text-xs text-gray-400 mt-2 flex items-center gap-3">
                               {session.type === "club-auction" ? (
-                                <span>🏟️ {session.snakeOrder.length} clubs queued</span>
+                                <span>🏟️ {session.snakeOrder.length} teams</span>
                               ) : (
                                 <span>👥 {session.snakeOrder.length} teams</span>
                               )}
@@ -4104,9 +4104,9 @@ export default function AdminDashboard() {
                     <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-[11px] text-yellow-200/90">
                       <p className="font-semibold mb-1">How the PL Club auction works</p>
                       <ul className="list-disc list-inside space-y-0.5 text-yellow-200/80">
-                        <li>System auto-nominates one PL club at a time in random order — teams don&apos;t nominate.</li>
-                        <li>Each team bids from the same shared purse; only teams without a club can bid.</li>
-                        <li>If no one bids, the club rejoins the round-2 queue.</li>
+                        <li>Club-less teams take turns nominating a PL club they choose, in a randomized turn order.</li>
+                        <li>The nominating team opens as the bidder; other club-less teams can outbid them from the same shared purse. A nominated club always sells.</li>
+                        <li>If a team lets its nomination timer expire, the system auto-picks an available club for them so the turn keeps moving.</li>
                         <li>Must complete before you can create the initial player auction.</li>
                       </ul>
                     </div>
