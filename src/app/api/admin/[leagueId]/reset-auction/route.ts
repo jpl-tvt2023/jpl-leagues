@@ -16,6 +16,7 @@ import {
 } from "@/lib/db";
 import { eq, and, inArray, ne, sql } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 /**
  * POST /api/admin/[leagueId]/reset-auction
@@ -88,6 +89,8 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(teams.leagueId, leagueId));
 
+    await invalidateLeaguePageCache(leagueId);
+
     return NextResponse.json({
       success: true,
       message: "Auction fully reset to initial state (club auction wiped)",
@@ -151,6 +154,8 @@ export async function POST(request: NextRequest) {
         })
         .where(eq(teams.id, team.id));
     }
+
+    await invalidateLeaguePageCache(leagueId);
 
     return NextResponse.json({
       success: true,
@@ -248,6 +253,8 @@ export async function POST(request: NextRequest) {
       .set({ totalSpent, penaltySlots: 0 })
       .where(eq(teams.id, team.id));
   }
+
+  await invalidateLeaguePageCache(leagueId);
 
   return NextResponse.json({
     success: true,
