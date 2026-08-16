@@ -3749,7 +3749,7 @@ export default function AdminDashboard() {
                             </Link>
                             {(session.status === "pending" || session.status === "paused") && (
                               <button
-                                onClick={() => updateAuctionSession(session.id, "start")}
+                                onClick={() => updateAuctionSession(session.id, session.status === "paused" ? "resume" : "start")}
                                 disabled={auctionSessionAction !== null}
                                 className="px-3 py-1.5 rounded-lg bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/30 text-xs font-medium disabled:opacity-50 transition"
                               >

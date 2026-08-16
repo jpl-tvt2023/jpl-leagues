@@ -112,8 +112,11 @@ export async function GET(request: NextRequest) {
 
   let currentBid: (typeof auctionBids.$inferSelect & { tier?: string | null }) | null = null;
   if (activeSession) {
-    // Auto-resolve any expired open bids (safety net if SSE wasn't running)
-    await resolveExpiredBids(activeSession.id);
+    // Auto-resolve any expired open bids (safety net if SSE wasn't running) — only while actually
+    // live. A paused session must not have its timers silently resolved by a passive GET poll.
+    if (activeSession.status === "active") {
+      await resolveExpiredBids(activeSession.id);
+    }
 
     const openBids = await db
       .select()
@@ -424,7 +427,7 @@ export async function POST(request: NextRequest) {
   }
 
   const validTransitions: Record<string, string[]> = {
-    start: ["pending", "paused"],
+    start: ["pending"],
     pause: ["active"],
     resume: ["paused"],
     complete: ["active", "paused"],
@@ -502,9 +505,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Pause/resume must preserve remaining time on deadlines. We record `pausedAt` on pause and on
-  // resume shift every active deadline (nomination + open bids) forward by the elapsed pause
-  // duration. Otherwise a 60s window paused for 50s would either expire instantly (no shift) or
-  // reset to a fresh 60s (incorrectly favorable). See plan Section E.5.
+  // resume shift every active deadline (nomination + intermission + open bids) forward by the
+  // elapsed pause duration. Otherwise a 60s window paused for 50s would either expire instantly (no
+  // shift) or reset to a fresh 60s (incorrectly favorable). See plan Section E.5.
   const now = new Date();
   if (action === "pause") {
     await db
@@ -515,19 +518,18 @@ export async function POST(request: NextRequest) {
     const pausedAt = sessionRow[0].pausedAt;
     if (pausedAt) {
       const elapsedMs = now.getTime() - new Date(pausedAt).getTime();
-      // Shift nomination deadline forward if set
+      // Shift nomination deadline and post-sale intermission forward if set
+      const updates: Partial<typeof auctionSessions.$inferInsert> = { status: newStatus, pausedAt: null };
       if (sessionRow[0].nominationDeadline) {
-        const newDeadline = new Date(new Date(sessionRow[0].nominationDeadline).getTime() + elapsedMs);
-        await db
-          .update(auctionSessions)
-          .set({ status: newStatus, pausedAt: null, nominationDeadline: newDeadline })
-          .where(eq(auctionSessions.id, sessionId));
-      } else {
-        await db
-          .update(auctionSessions)
-          .set({ status: newStatus, pausedAt: null })
-          .where(eq(auctionSessions.id, sessionId));
+        updates.nominationDeadline = new Date(new Date(sessionRow[0].nominationDeadline).getTime() + elapsedMs);
       }
+      if (sessionRow[0].intermissionUntil) {
+        updates.intermissionUntil = new Date(new Date(sessionRow[0].intermissionUntil).getTime() + elapsedMs);
+      }
+      await db
+        .update(auctionSessions)
+        .set(updates)
+        .where(eq(auctionSessions.id, sessionId));
       // Shift open bid expiries by the same elapsed amount
       const openBids = await db
         .select({ id: auctionBids.id, expiresAt: auctionBids.expiresAt })
