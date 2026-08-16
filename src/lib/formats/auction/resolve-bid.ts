@@ -34,6 +34,7 @@ import {
   setClubNominationDeadline,
   autoNominateClubForTeam,
 } from "./club-auction";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 const DEFAULT_MIN_BID = 500_000;
 
@@ -151,15 +152,9 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
     type: "sold",
   });
 
-  // Remove player from every team's wishlist in the league (they're no longer available)
-  await db
-    .delete(auctionWishlists)
-    .where(
-      and(
-        eq(auctionWishlists.leagueId, bid.leagueId),
-        eq(auctionWishlists.fplElementId, fresh.fplElementId)
-      )
-    );
+  // Note: wishlist rows for this player are intentionally left in place — "sold" is derived
+  // client/server-side from live ownership (see ownerOfPlayer below, and ownedElementIds in the
+  // UI), not tracked as a stored flag here. See useWishlist.ts for why.
 
   // Atomically deduct from winner's purse (no read-then-write race)
   await db
@@ -169,6 +164,12 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
       totalSpent: sql`${teams.totalSpent} + ${winAmount}`,
     })
     .where(eq(teams.id, winnerId));
+
+  // Bust the standings page cache — without this, /api/standings keeps serving pre-sale
+  // ownership/purse data until the cache naturally expires (mirrors club-auction.ts).
+  await invalidateLeaguePageCache(bid.leagueId).catch((err) =>
+    console.error("[resolve-bid] standings cache invalidation failed:", err)
+  );
 
   return true;
 }

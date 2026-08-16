@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -9,6 +9,7 @@ import { SlotStatus, type SlotStatusData } from "@/components/SlotStatus";
 import { HelpTip } from "@/components/HelpTip";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { MAX_SQUAD_SIZE } from "@/lib/formats/auction/squad-rules";
+import { useWishlist } from "@/hooks/useWishlist";
 
 interface SquadPlayer {
   ownershipId: string;
@@ -104,13 +105,6 @@ interface AuctionSession {
   status: "pending" | "active" | "paused" | "completed";
 }
 
-interface WishlistEntry {
-  id: string;
-  fplElementId: number;
-  playerName: string;
-  priority: number;
-}
-
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 const POSITION_COLORS: Record<number, string> = {
   1: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
@@ -146,11 +140,15 @@ export default function SquadPage() {
   const [releaseError, setReleaseError] = useState<string | null>(null);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"squad" | "wishlist">("squad");
-  const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [wlSearch, setWlSearch] = useState("");
   const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
   const [wishlistSelections, setWishlistSelections] = useState<Set<number>>(new Set());
+
+  const teamId = squadData?.teamId ?? null;
+  const leagueId = squadData?.leagueId ?? null;
+  const { wishlist, add: addWishlist, addMany: addManyToWishlist, remove: removeWishlist, reorder: reorderWishlist } = useWishlist(teamId, leagueId, ownedElementIds);
+  const activeWishlist = useMemo(() => wishlist.filter((w) => !ownedElementIds.has(w.fplElementId)), [wishlist, ownedElementIds]);
 
   // Deep-link support for "?tab=wishlist" (e.g. the Dashboard wishlist card's "Manage full
   // wishlist" link) — read via window.location rather than useSearchParams() to avoid requiring
@@ -211,13 +209,6 @@ export default function SquadPage() {
           (s: AuctionSession) => s.status === "active" || s.status === "paused"
         );
         setSession(active ?? null);
-      }
-
-      // Load wishlist
-      const wlRes = await fetch(`/api/auction/wishlist?teamId=${teamId}`);
-      if (wlRes.ok) {
-        const wlJson = await wlRes.json();
-        setWishlist(wlJson.wishlist ?? []);
       }
 
       // Load owned players in league to filter search
@@ -290,8 +281,6 @@ export default function SquadPage() {
   const oldSquadValue = squadData?.squad.reduce((sum, p) => sum + p.purchasePrice, 0) ?? 0;
 
   const wishlistElementIds = new Set(wishlist.map((w) => w.fplElementId));
-  const teamId = squadData?.teamId;
-  const leagueId = squadData?.leagueId;
 
   const searchResults = elementsList
     .filter((el) => {
@@ -305,63 +294,14 @@ export default function SquadPage() {
     .sort((a, b) => b.total_points - a.total_points)
     .slice(0, 30);
 
-  const refreshWishlist = async () => {
-    if (!teamId) return;
-    const res = await fetch(`/api/auction/wishlist?teamId=${teamId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setWishlist(data.wishlist ?? []);
-    }
-  };
-
-  const handleAddWishlist = async (elementId: number, playerName: string) => {
-    if (!leagueId || !teamId) return;
-    const res = await fetch("/api/auction/wishlist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leagueId, teamId, fplElementId: elementId, playerName }),
-    });
-    if (res.ok) await refreshWishlist();
-  };
-
-  const handleRemoveWishlist = async (id: string) => {
-    if (!teamId) return;
-    const res = await fetch("/api/auction/wishlist", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, teamId }),
-    });
-    if (res.ok) await refreshWishlist();
-  };
-
-  const handleReorderWishlist = async (fromIdx: number, toIdx: number) => {
-    if (!teamId || toIdx < 0 || toIdx >= wishlist.length) return;
-    const next = [...wishlist];
-    const [moved] = next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, moved);
-    setWishlist(next.map((e, i) => ({ ...e, priority: i + 1 })));
-    const items = next.map((e, i) => ({ id: e.id, priority: i + 1 }));
-    await fetch("/api/auction/wishlist", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId, items }),
-    });
-  };
-
   const handleBulkAddToWishlist = async () => {
-    if (!leagueId || !teamId || wishlistSelections.size === 0) return;
-    await Promise.all(
-      [...wishlistSelections].map((elementId) => {
-        const playerName = elementsList.find((e) => e.id === elementId)?.web_name ?? "";
-        return fetch("/api/auction/wishlist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ leagueId, teamId, fplElementId: elementId, playerName }),
-        });
-      })
-    );
-    setWishlistSelections(new Set());
-    await refreshWishlist();
+    if (wishlistSelections.size === 0) return;
+    const players = [...wishlistSelections].map((elementId) => ({
+      fplElementId: elementId,
+      playerName: elementsList.find((e) => e.id === elementId)?.web_name ?? "",
+    }));
+    const ok = await addManyToWishlist(players);
+    if (ok) setWishlistSelections(new Set());
   };
 
   return (
@@ -465,18 +405,23 @@ export default function SquadPage() {
                         const positionColor = el ? POSITION_COLORS[el.element_type] : "bg-white/10 text-gray-300 border-white/20";
                         const team = el ? teamsMap.get(el.team) : null;
                         const owned = ownedElementIds.has(entry.fplElementId);
+                        const activeIdx = activeWishlist.findIndex((w) => w.id === entry.id);
                         return (
                           <div key={entry.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${owned ? "border-red-500/30 bg-red-500/5 opacity-60" : "border-white/10 bg-white/5"}`}>
                             <span className="w-6 text-center text-xs font-bold text-gray-400">{idx + 1}</span>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${positionColor}`}>{position}</span>
                             <div className="flex-1 min-w-0">
-                              <div className="text-white font-semibold truncate">{entry.playerName}</div>
+                              <div className={`font-semibold truncate ${owned ? "text-gray-400 line-through" : "text-white"}`}>{entry.playerName}</div>
                               <div className="text-xs text-gray-400">{team?.short_name ?? "—"}{owned && " • OWNED"}</div>
                             </div>
                             <div className="flex items-center gap-1">
-                              <button onClick={() => handleReorderWishlist(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 px-1" title="Up">▲</button>
-                              <button onClick={() => handleReorderWishlist(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 px-1" title="Down">▼</button>
-                              <button onClick={() => handleRemoveWishlist(entry.id)} className="text-red-400 hover:text-red-300 px-1" title="Remove">✕</button>
+                              {!owned && (
+                                <>
+                                  <button onClick={() => reorderWishlist(activeIdx, activeIdx - 1)} disabled={activeIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 px-1" title="Up">▲</button>
+                                  <button onClick={() => reorderWishlist(activeIdx, activeIdx + 1)} disabled={activeIdx === activeWishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 px-1" title="Down">▼</button>
+                                </>
+                              )}
+                              <button onClick={() => removeWishlist(entry.id)} className="text-red-400 hover:text-red-300 px-1" title="Remove">✕</button>
                             </div>
                           </div>
                         );
@@ -575,7 +520,7 @@ export default function SquadPage() {
                             <div className="flex items-center gap-3">
                               <div className="text-sm font-mono text-[#00ff85]">{el.total_points} pts</div>
                               <button
-                                onClick={() => handleAddWishlist(el.id, el.web_name)}
+                                onClick={() => addWishlist(el.id, el.web_name)}
                                 className="text-yellow-400 font-bold text-lg hover:text-yellow-300 transition"
                                 title="Add to wishlist"
                               >

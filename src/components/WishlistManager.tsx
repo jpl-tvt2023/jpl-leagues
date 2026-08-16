@@ -1,14 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-
-interface WishlistEntry {
-  id: string;
-  fplElementId: number;
-  playerName: string;
-  priority: number;
-}
+import { useWishlist } from "@/hooks/useWishlist";
 
 interface BootstrapElement {
   id: number;
@@ -35,20 +29,13 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [leagueId, setLeagueId] = useState<string | null>(null);
-  const [wishlist, setWishlist] = useState<WishlistEntry[]>([]);
   const [elements, setElements] = useState<BootstrapElement[]>([]);
   const [plTeams, setPlTeams] = useState<Map<number, BootstrapTeam>>(new Map());
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [positionFilter, setPositionFilter] = useState<number | null>(null);
 
-  const refreshWishlist = useCallback(async () => {
-    const res = await fetch(`/api/auction/wishlist?teamId=${teamId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setWishlist(data.wishlist ?? []);
-    }
-  }, [teamId]);
+  const { wishlist, add, remove, reorder } = useWishlist(teamId, leagueId, ownedElementIds);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,10 +50,9 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
         if (cancelled) return;
         setLeagueId(league.id);
 
-        const [bootRes, ownedRes, wlRes] = await Promise.all([
+        const [bootRes, ownedRes] = await Promise.all([
           fetch("/api/fpl/bootstrap"),
           fetch(`/api/auction/league-owned?leagueId=${league.id}`),
-          fetch(`/api/auction/wishlist?teamId=${teamId}`),
         ]);
         if (cancelled) return;
         if (bootRes.ok) {
@@ -79,10 +65,6 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
         if (ownedRes.ok) {
           const owned = await ownedRes.json();
           setOwnedElementIds(new Set(owned.ownedElementIds ?? []));
-        }
-        if (wlRes.ok) {
-          const wl = await wlRes.json();
-          setWishlist(wl.wishlist ?? []);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load wishlist");
@@ -112,38 +94,7 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
     return m;
   }, [elements]);
 
-  const handleAdd = async (elementId: number, playerName: string) => {
-    if (!leagueId) return;
-    const res = await fetch("/api/auction/wishlist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leagueId, teamId, fplElementId: elementId, playerName }),
-    });
-    if (res.ok) await refreshWishlist();
-  };
-
-  const handleRemove = async (id: string) => {
-    const res = await fetch("/api/auction/wishlist", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, teamId }),
-    });
-    if (res.ok) await refreshWishlist();
-  };
-
-  const handleReorder = async (fromIdx: number, toIdx: number) => {
-    if (toIdx < 0 || toIdx >= wishlist.length) return;
-    const next = [...wishlist];
-    const [moved] = next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, moved);
-    setWishlist(next.map((e, i) => ({ ...e, priority: i + 1 })));
-    const items = next.map((e, i) => ({ id: e.id, priority: i + 1 }));
-    await fetch("/api/auction/wishlist", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId, items }),
-    });
-  };
+  const activeWishlist = useMemo(() => wishlist.filter((w) => !ownedElementIds.has(w.fplElementId)), [wishlist, ownedElementIds]);
 
   if (isLoading) {
     return (
@@ -214,7 +165,7 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
                       <div className="text-[10px] text-gray-500">{POSITION_LABELS[el.element_type]} · {plTeams.get(el.team)?.short_name ?? "—"} · {el.total_points} pts</div>
                     </div>
                     <button
-                      onClick={() => (inWl ? undefined : handleAdd(el.id, el.web_name))}
+                      onClick={() => (inWl ? undefined : add(el.id, el.web_name))}
                       disabled={inWl}
                       className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-full text-xs transition ${
                         inWl ? "bg-yellow-400/20 text-yellow-400 cursor-default" : "bg-white/10 text-gray-300 hover:bg-purple-500/30 hover:text-purple-300"
@@ -238,17 +189,24 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
       ) : (
         <div className="space-y-1">
           {wishlist.slice(0, 5).map((entry) => {
-            const idx = wishlist.findIndex((w) => w.id === entry.id);
+            const owned = ownedElementIds.has(entry.fplElementId);
+            const activeIdx = activeWishlist.findIndex((w) => w.id === entry.id);
             const el = elementById.get(entry.fplElementId);
             return (
-              <div key={entry.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm bg-white/5">
+              <div key={entry.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm bg-white/5 ${owned ? "opacity-50" : ""}`}>
                 <span className="w-5 text-right text-[11px] text-gray-500">{entry.priority}.</span>
                 {el && <span className="text-[10px] text-gray-500 w-8">{POSITION_LABELS[el.element_type] ?? ""}</span>}
-                <span className="flex-1 truncate text-white">{entry.playerName}</span>
+                <span className={`flex-1 truncate ${owned ? "text-gray-400 line-through" : "text-white"}`}>{entry.playerName}</span>
                 {el && <span className="text-[10px] text-gray-500">{plTeams.get(el.team)?.short_name ?? ""}</span>}
-                <button onClick={() => handleReorder(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[11px]" title="Move up">▲</button>
-                <button onClick={() => handleReorder(idx, idx + 1)} disabled={idx === wishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[11px]" title="Move down">▼</button>
-                <button onClick={() => handleRemove(entry.id)} className="text-red-400 hover:text-red-300 text-[11px]" title="Remove">✕</button>
+                {owned ? (
+                  <span className="text-[9px] text-gray-500 uppercase tracking-wide px-1">Owned</span>
+                ) : (
+                  <>
+                    <button onClick={() => reorder(activeIdx, activeIdx - 1)} disabled={activeIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[11px]" title="Move up">▲</button>
+                    <button onClick={() => reorder(activeIdx, activeIdx + 1)} disabled={activeIdx === activeWishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[11px]" title="Move down">▼</button>
+                  </>
+                )}
+                <button onClick={() => remove(entry.id)} className="text-red-400 hover:text-red-300 text-[11px]" title="Remove">✕</button>
               </div>
             );
           })}

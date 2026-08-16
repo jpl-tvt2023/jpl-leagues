@@ -2,7 +2,7 @@
   "moduleId": "SLOTS",
   "moduleName": "Auction Slots & Club Auction",
   "sheetName": "Slots & Club",
-  "status": "qa-signed-off",
+  "status": "qa-writing",
   "owners": {
     "ba": "business-analyst agent",
     "qa": "qa-tester agent"

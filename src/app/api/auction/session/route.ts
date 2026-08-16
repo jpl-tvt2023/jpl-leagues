@@ -16,6 +16,7 @@ import {
 import { simulateAuction } from "@/lib/formats/auction/simulate";
 import { finalizePendingReleasesNow } from "@/lib/formats/auction/process-gameweek";
 import { purgePendingTrades } from "@/lib/formats/auction/live-session";
+import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import {
   CLUB_AUCTION_SESSION_TYPE,
   fetchAllPLClubsWithTiers,
@@ -565,6 +566,9 @@ export async function POST(request: NextRequest) {
   if (newStatus === "active" && action === "start" && sessionRow[0].type === "mini-auction") {
     const gwNumber = sessionRow[0].cycleNumber ?? 0;
     await finalizePendingReleasesNow(leagueId, gwNumber);
+    await invalidateLeaguePageCache(leagueId).catch((err) =>
+      console.error("[auction/session] standings cache invalidation failed:", err)
+    );
   }
 
   // When starting an auction (first-time only, not resume — resume already restored the shifted

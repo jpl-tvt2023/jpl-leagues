@@ -18,7 +18,7 @@ import { gameweekCaptains, playoffTies } from "@/lib/db/schema";
 import { asc, eq, and, isNull, ne, or } from "drizzle-orm";
 import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { syncGameweekDeadlines } from "@/lib/gameweeks/sync-deadlines";
-import { clearLiveCache, setLiveCachedScores } from "@/lib/fpl-cache";
+import { clearLiveCache, setLiveCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
@@ -317,6 +317,9 @@ export async function processOneLeagueOneGw(
         .limit(1);
       if (gwRow.length > 0) {
         await processAuctionGameweek(gwRow[0].id, gw, league.id, false);
+        await invalidateLeaguePageCache(league.id).catch((err) =>
+          console.error("[cron/process-all] standings cache invalidation failed:", err)
+        );
         result.scored = true;
       } else {
         result.scoreSkipped = true;
