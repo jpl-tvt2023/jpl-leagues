@@ -1315,7 +1315,7 @@ export default function AuctionRoomPage() {
             {/* Row 1: Bid card + Nomination Order table */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
               {session.status !== "pending" && session.status !== "completed" && (
-              <div className="lg:col-span-2">
+              <div className="lg:col-span-3">
                 {intermissionSec > 0 ? (
                   <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/10 to-slate-900/40 p-5 backdrop-blur text-center h-full flex flex-col items-center justify-center gap-3">
                     <div className="text-[10px] uppercase tracking-widest text-yellow-300/80">Lot sold — next up</div>
@@ -1538,7 +1538,7 @@ export default function AuctionRoomPage() {
 
               {/* Nomination Order Table — full width once the bid-card column is hidden
                   (pending/completed sessions have nothing live to show there). */}
-              <div className={session.status === "pending" || session.status === "completed" ? "lg:col-span-5" : "lg:col-span-3"}>
+              <div className={session.status === "pending" || session.status === "completed" ? "lg:col-span-5" : "lg:col-span-2"}>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Nomination Order</h3>
                   <div className="overflow-x-auto max-h-80 overflow-y-auto">

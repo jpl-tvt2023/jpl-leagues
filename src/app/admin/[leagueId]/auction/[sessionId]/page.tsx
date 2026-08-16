@@ -519,8 +519,8 @@ export default function AdminAuctionRoomPage() {
             <div className="text-sm text-gray-400">Click &quot;Start Session&quot; above to open bidding.</div>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-4 mb-6">
-            <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+          <div className="grid lg:grid-cols-5 gap-4 mb-6">
+            <div className="lg:col-span-3 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
               {session.status === "completed" ? (
                 <div className="text-center py-8">
                   <div className="text-3xl mb-2">🏁</div>
@@ -569,7 +569,7 @@ export default function AdminAuctionRoomPage() {
               )}
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Nomination Order</h3>
               <div className="overflow-x-auto max-h-96 overflow-y-auto">
                 <table className="w-full text-xs">
