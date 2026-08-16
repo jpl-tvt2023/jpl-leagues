@@ -1,12 +1,11 @@
 "use client";
 
-import { Fragment, useState, useEffect, useRef, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TierChip } from "@/components/TierChip";
-import { AuctionTimerRing } from "@/components/AuctionTimerRing";
 import { Logo } from "@/components/Logo";
 import { formatCurrency } from "@/lib/format/currency";
 import { FeedbackTab } from "./FeedbackTab";
@@ -296,32 +295,12 @@ export default function AdminDashboard() {
   const [newSessionBidTimer, setNewSessionBidTimer] = useState("20");
   const [newSessionNominationTimer, setNewSessionNominationTimer] = useState("60");
 
-  // Live Auction Monitor State
-  const [liveCurrentBid, setLiveCurrentBid] = useState<{
-    bidId: string; fplElementId: number; playerName: string;
-    currentHighBid: number; currentHighBidderId: string;
-    nominatorTeamId: string; minBid: number; expiresAt: string; status: string;
-  } | null>(null);
-  const [liveFeed, setLiveFeed] = useState<{ id: string; text: string; kind: string; ts: number }[]>([]);
-  const [liveTimerSec, setLiveTimerSec] = useState(0);
-  const [liveNominationDeadline, setLiveNominationDeadline] = useState<string | null>(null);
-  const [liveIntermissionUntil, setLiveIntermissionUntil] = useState<string | null>(null);
-  const liveEsRef = useRef<EventSource | null>(null);
-  const lastLiveBidIdRef = useRef<string | null>(null);
-  const liveCurrentBidRef = useRef<typeof liveCurrentBid>(null);
-  useEffect(() => { liveCurrentBidRef.current = liveCurrentBid; }, [liveCurrentBid]);
-  // Holds the latest fetchSoldBids so SSE handlers (defined before fetchSoldBids) can refresh the
-  // Corrections / Undo-Sale list when a lot resolves, without re-subscribing the stream.
-  const fetchSoldBidsRef = useRef<(() => void) | null>(null);
-
   // Auction Reset State
   const [auctionResetting, setAuctionResetting] = useState(false);
   const [showAuctionResetConfirm, setShowAuctionResetConfirm] = useState(false);
   const [auctionResetTarget, setAuctionResetTarget] = useState("initial");
 
-  // Auction Corrections State
-  const [undoingBid, setUndoingBid] = useState<string | null>(null);
-  const [soldBids, setSoldBids] = useState<{ id: string; playerName: string; currentHighBid: number; currentHighBidderId: string; fplElementId: number }[]>([]);
+  // Auction Corrections State (Manual Transfer only — Undo Sale lives on the per-session Auction Room page)
   const [transferOwnershipId, setTransferOwnershipId] = useState<string | null>(null);
   const [transferToTeamId, setTransferToTeamId] = useState("");
   const [transferring, setTransferring] = useState(false);
@@ -1051,185 +1030,24 @@ export default function AdminDashboard() {
     }
   };
 
-  // ---- Live Auction Monitor helpers ----
-
   const formatAuctionCurrency = formatCurrency;
 
-  const addLiveFeed = useCallback((text: string, kind: string) => {
-    setLiveFeed((prev) => [{ id: Math.random().toString(36).slice(2), text, kind, ts: Date.now() }, ...prev]);
-  }, []);
-
-  const teamNameById = useCallback((id: string) => {
-    return teams.find((t) => t.id === id)?.name ?? id;
-  }, [teams]);
-
-  // Heartbeat watchdog ref — tracks last "heartbeat" event timestamp so we can detect a silently
-  // dropped SSE connection (e.g. Vercel edge timeout, browser tab suspension) and force a reconnect.
-  // Without this, the admin live monitor would freeze on a stale timer until manual refresh.
-  const lastHeartbeatRef = useRef<number>(Date.now());
-  const reconnectTickRef = useRef<number>(0);
-
-  // SSE connection for live monitor
+  // Keep Squad Overview / the session list live without a manual refresh — the detailed live
+  // bid/feed monitor now lives on the per-session Auction Room page (its own SSE subscription).
   useEffect(() => {
-    if (!isAuctionFormat || !auctionActiveSession || auctionActiveSession.status !== "active") {
-      if (liveEsRef.current) { liveEsRef.current.close(); liveEsRef.current = null; }
-      return;
-    }
-
-    lastHeartbeatRef.current = Date.now();
+    if (!isAuctionFormat || !auctionActiveSession || auctionActiveSession.status !== "active") return;
     const es = new EventSource(`/api/auction/session/stream?sessionId=${auctionActiveSession.id}`);
-    liveEsRef.current = es;
-
-    // The stream emits "heartbeat" every 15s. Track it so we can detect connection death.
-    es.addEventListener("heartbeat", () => {
-      lastHeartbeatRef.current = Date.now();
-    });
-
-    es.addEventListener("auction-state", (e) => {
-      lastHeartbeatRef.current = Date.now();
-      const data = JSON.parse((e as MessageEvent).data);
-      setLiveCurrentBid(data);
-      if (data.bidId && data.bidId !== lastLiveBidIdRef.current) {
-        lastLiveBidIdRef.current = data.bidId;
-        const nominatorName = teams.find((t) => t.id === data.nominatorTeamId)?.name ?? "Unknown";
-        addLiveFeed(`${nominatorName} nominated ${data.playerName} — base ${formatAuctionCurrency(data.minBid)}`, "info");
-      }
-    });
-    es.addEventListener("bid-placed", (e) => {
-      const data = JSON.parse((e as MessageEvent).data);
-      setLiveCurrentBid(data);
-      const bidderName = teams.find((t) => t.id === data.currentHighBidderId)?.name ?? "Unknown";
-      addLiveFeed(`${bidderName} bid ${formatAuctionCurrency(data.currentHighBid)} on ${data.playerName}`, "bid");
-    });
-    es.addEventListener("sold", (e) => {
-      const data = JSON.parse((e as MessageEvent).data);
-      const winnerName = data.winnerId ? teams.find((t) => t.id === data.winnerId)?.name ?? "Unknown" : "—";
-      addLiveFeed(`SOLD: ${data.playerName} → ${winnerName} for ${formatAuctionCurrency(data.finalBid)}`, "sold");
-      setLiveCurrentBid(null);
-      fetchAuctionData();
-      // Refresh the Corrections / Undo-Sale list so newly-sold lots (incl. club auctions) appear live.
-      fetchSoldBidsRef.current?.();
-    });
-    es.addEventListener("unsold", (e) => {
-      const data = JSON.parse((e as MessageEvent).data);
-      addLiveFeed(`UNSOLD: ${data.playerName}`, "unsold");
-      setLiveCurrentBid(null);
-      fetchSoldBidsRef.current?.();
-    });
-    es.addEventListener("auto-nominated", (e) => {
-      const data = JSON.parse((e as MessageEvent).data);
-      const tName = teams.find((t) => t.id === data.teamId)?.name ?? "Team";
-      addLiveFeed(`${tName} auto-nominated from wishlist`, "info");
-    });
-    es.addEventListener("penalised", (e) => {
-      const data = JSON.parse((e as MessageEvent).data);
-      const tName = teams.find((t) => t.id === data.teamId)?.name ?? "Team";
-      addLiveFeed(`${tName} penalised — missed nomination`, "unsold");
-    });
+    es.addEventListener("sold", () => fetchAuctionData());
+    es.addEventListener("session-complete", () => fetchAuctionData());
     es.addEventListener("session-status", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
       setAuctionActiveSession((prev) => prev ? { ...prev, status: data.status, currentNominatorIndex: data.currentNominatorIndex, snakeOrder: data.snakeOrder } : prev);
-      setLiveNominationDeadline(data.nominationDeadline ?? null);
     });
-    es.addEventListener("session-complete", () => {
-      addLiveFeed("Auction session completed", "info");
-      setLiveCurrentBid(null);
-      fetchAuctionData();
-      fetchSoldBidsRef.current?.();
-    });
-    es.addEventListener("waiting", (e) => {
-      const data = JSON.parse((e as MessageEvent).data);
-      if (liveCurrentBidRef.current !== null) setLiveCurrentBid(null);
-      setLiveNominationDeadline(data.nominationDeadline ?? null);
-      setLiveIntermissionUntil(null);
-    });
-    es.addEventListener("intermission", (e) => {
-      const data = JSON.parse((e as MessageEvent).data);
-      if (liveCurrentBidRef.current !== null) setLiveCurrentBid(null);
-      setLiveIntermissionUntil(data.intermissionUntil ?? null);
-    });
-    es.addEventListener("auction-state", () => { setLiveIntermissionUntil(null); });
-
-    return () => { es.close(); liveEsRef.current = null; };
+    return () => es.close();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuctionFormat, auctionActiveSession?.id, auctionActiveSession?.status]);
 
-  // Timer countdown for live monitor
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (liveCurrentBid?.expiresAt) {
-        const diff = Math.max(0, Math.ceil((new Date(liveCurrentBid.expiresAt).getTime() - Date.now()) / 1000));
-        setLiveTimerSec(diff);
-      } else {
-        setLiveTimerSec(0);
-      }
-    }, 200);
-    return () => clearInterval(interval);
-  }, [liveCurrentBid?.expiresAt]);
-
-  // SSE heartbeat watchdog. If no event (heartbeat or otherwise) lands for > 25s while the session
-  // is supposed to be active, the connection is presumed dead — force-reopen by bumping a tick
-  // counter the SSE-setup effect depends on. Server emits a heartbeat every 15s so 25s is a safe
-  // bound. Bumping the tick triggers cleanup + reconnect via the existing useEffect dependency.
-  useEffect(() => {
-    if (!isAuctionFormat || !auctionActiveSession || auctionActiveSession.status !== "active") return;
-    const watchdog = setInterval(() => {
-      if (Date.now() - lastHeartbeatRef.current > 25_000) {
-        console.warn("[admin SSE] no heartbeat in 25s — reconnecting");
-        if (liveEsRef.current) { liveEsRef.current.close(); liveEsRef.current = null; }
-        reconnectTickRef.current += 1;
-        lastHeartbeatRef.current = Date.now();
-        // Trigger reconnect by re-running the SSE setup effect via a fetch (cheap, also re-syncs
-        // the auctionActiveSession state if the session closed during the silent period).
-        fetchAuctionData();
-      }
-    }, 5000);
-    return () => clearInterval(watchdog);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuctionFormat, auctionActiveSession?.id, auctionActiveSession?.status]);
-
   // ---- Auction Corrections helpers ----
-
-  const fetchSoldBids = useCallback(async () => {
-    if (!auctionActiveSession) return;
-    try {
-      const res = await fetch(`/api/auction/bid-history?sessionId=${auctionActiveSession.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSoldBids((data.bids ?? []).filter((b: { status: string }) => b.status === "sold"));
-      }
-    } catch { /* ignore */ }
-  }, [auctionActiveSession]);
-
-  useEffect(() => { fetchSoldBidsRef.current = fetchSoldBids; }, [fetchSoldBids]);
-
-  useEffect(() => {
-    if (isAuctionFormat && auctionActiveSession) fetchSoldBids();
-  }, [isAuctionFormat, auctionActiveSession, fetchSoldBids]);
-
-  const handleUndoSale = async (bidId: string) => {
-    if (!confirm("Are you sure you want to undo this sale? The player will become available for re-nomination.")) return;
-    setUndoingBid(bidId);
-    try {
-      const res = await fetch(`/api/admin/${params.leagueId}/auction-corrections`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "undo-sale", bidId }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setMessage({ type: "success", text: data.message });
-        fetchAuctionData();
-        fetchSoldBids();
-      } else {
-        setMessage({ type: "error", text: data.error });
-      }
-    } catch {
-      setMessage({ type: "error", text: "Network error" });
-    } finally {
-      setUndoingBid(null);
-    }
-  };
 
   const handleManualTransfer = async (ownershipId: string, toTeamId: string) => {
     if (!confirm("Are you sure you want to transfer this player?")) return;
@@ -1269,7 +1087,6 @@ export default function AdminDashboard() {
         setMessage({ type: "success", text: data.message });
         setShowAuctionResetConfirm(false);
         fetchAuctionData();
-        fetchSoldBids();
       } else {
         setMessage({ type: "error", text: data.error });
       }
@@ -3761,138 +3578,13 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Auction Management Tab */}
+        {/* Auction Management Tab — breaks out of the shared max-w-7xl wrapper for more working room */}
         {activeTab === "auction" && isAuctionFormat && (
-          <div className="space-y-6">
+          <div className="w-screen relative left-1/2 -ml-[50vw] px-4 sm:px-8 lg:px-12">
+          <div className="max-w-[1800px] mx-auto space-y-6">
 
-            {/* Live Auction Monitor — only when session is active */}
-            {auctionActiveSession && auctionActiveSession.status === "active" && (
-              <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-6 backdrop-blur">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                    <h2 className="text-xl font-bold text-white">Live Auction Monitor</h2>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => updateAuctionSession(auctionActiveSession.id, "pause")}
-                      disabled={auctionSessionAction !== null}
-                      className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-xs font-medium disabled:opacity-50 transition"
-                    >
-                      Pause
-                    </button>
-                    <button
-                      onClick={() => updateAuctionSession(auctionActiveSession.id, "complete")}
-                      disabled={auctionSessionAction !== null}
-                      className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-xs font-medium disabled:opacity-50 transition"
-                    >
-                      Complete
-                    </button>
-                  </div>
-                </div>
-
-                {auctionActiveSession.allClubsAllocated && (
-                  <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200">
-                    🏁 All clubs allocated — every team has its club. Click <strong>Complete</strong> when ready to finalize the club auction.
-                  </div>
-                )}
-
-                <div className="grid md:grid-cols-3 gap-4">
-                  {/* Current Bid Card */}
-                  <div className="md:col-span-2 rounded-xl border border-white/10 bg-white/5 p-4">
-                    {liveCurrentBid ? (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-lg font-bold text-white">{liveCurrentBid.playerName}</div>
-                            <div className="text-xs text-gray-400">
-                              Nominated by {teamNameById(liveCurrentBid.nominatorTeamId)} — Base {formatAuctionCurrency(liveCurrentBid.minBid)}
-                            </div>
-                          </div>
-                          <AuctionTimerRing seconds={liveTimerSec} max={auctionActiveSession.bidTimerSeconds ?? 20} size={96} stroke={9} />
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-white/5 px-4 py-2">
-                          <div>
-                            <div className="text-xs text-gray-400">High Bid</div>
-                            <div className="text-xl font-bold text-yellow-400">{formatAuctionCurrency(liveCurrentBid.currentHighBid)}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs text-gray-400">By</div>
-                            <div className="text-sm font-semibold text-white">{teamNameById(liveCurrentBid.currentHighBidderId)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : liveIntermissionUntil && new Date(liveIntermissionUntil).getTime() > Date.now() ? (
-                      <div className="flex flex-col items-center justify-center py-4 gap-2">
-                        <div className="text-[10px] uppercase tracking-widest text-yellow-300/80">Lot sold — next up</div>
-                        <AuctionTimerRing
-                          seconds={Math.max(0, Math.ceil((new Date(liveIntermissionUntil).getTime() - Date.now()) / 1000))}
-                          max={5}
-                          size={88}
-                          stroke={8}
-                          label="next nom"
-                        />
-                        <div className="text-xs text-gray-400">Next nomination coming up</div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-6">
-                        <div className="text-sm text-gray-400">Waiting for nomination</div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Current turn: {auctionActiveSession.snakeOrder[auctionActiveSession.currentNominatorIndex]
-                            ? teamNameById(auctionActiveSession.snakeOrder[auctionActiveSession.currentNominatorIndex])
-                            : "—"}
-                        </div>
-                        {liveNominationDeadline && (
-                          <div className="text-xs text-yellow-400 font-mono mt-2">
-                            Auto-nom in {Math.max(0, Math.ceil((new Date(liveNominationDeadline).getTime() - Date.now()) / 1000))}s
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Nomination Order */}
-                  <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Nomination Order</h3>
-                    <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
-                      {auctionActiveSession.snakeOrder.map((tid, idx) => {
-                        const isCurrent = idx === auctionActiveSession.currentNominatorIndex;
-                        return (
-                          <div key={tid} className={`flex items-center gap-2 px-2 py-1 rounded ${isCurrent ? "bg-yellow-500/20 text-yellow-300 font-semibold" : "text-gray-400"}`}>
-                            <span className="w-4 text-right text-[10px] text-gray-500">{idx + 1}</span>
-                            <span>{teamNameById(tid)}</span>
-                            {isCurrent && <span className="text-yellow-400 text-[10px]">◄</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Live Feed */}
-                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Live Feed</h3>
-                  <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
-                    {liveFeed.length === 0 ? (
-                      <div className="text-gray-500 py-2 text-center">No activity yet</div>
-                    ) : (
-                      liveFeed.map((item) => (
-                        <div key={item.id} className={`flex items-start gap-2 px-2 py-1 rounded ${
-                          item.kind === "sold" ? "text-green-300 font-semibold bg-green-500/5" :
-                          item.kind === "unsold" ? "text-yellow-300 bg-yellow-500/5" :
-                          item.kind === "bid" ? "text-white" : "text-gray-400"
-                        }`}>
-                          <span className="text-[10px] text-gray-500 font-mono whitespace-nowrap mt-0.5">
-                            {new Date(item.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                          </span>
-                          <span>{item.text}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Live Auction Monitor moved to the dedicated per-session Auction Room page —
+                see "View Room" links on each session card below. */}
 
             {/* Session Controls */}
             <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-6 backdrop-blur shadow-lg">
@@ -4047,6 +3739,12 @@ export default function AdminDashboard() {
                             )}
                           </div>
                           <div className="flex gap-2">
+                            <Link
+                              href={`/admin/${leagueId}/auction/${session.id}`}
+                              className="px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 border border-white/20 text-xs font-medium transition"
+                            >
+                              View Room →
+                            </Link>
                             {(session.status === "pending" || session.status === "paused") && (
                               <button
                                 onClick={() => updateAuctionSession(session.id, "start")}
@@ -4415,34 +4113,7 @@ export default function AdminDashboard() {
             {/* Auction Corrections */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="text-2xl font-bold text-white mb-4">Corrections</h2>
-
-              {/* Undo Sales */}
-              <div className="mb-6">
-                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Undo Sale</h3>
-                {soldBids.length === 0 ? (
-                  <p className="text-xs text-gray-500">No sold bids to undo</p>
-                ) : (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {soldBids.map((bid) => (
-                      <div key={bid.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                        <div>
-                          <span className="text-sm text-white font-medium">{bid.playerName}</span>
-                          <span className="text-xs text-gray-400 ml-2">
-                            → {teamNameById(bid.currentHighBidderId)} for {formatAuctionCurrency(bid.currentHighBid)}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleUndoSale(bid.id)}
-                          disabled={undoingBid === bid.id}
-                          className="px-3 py-1 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-xs font-medium disabled:opacity-50 transition"
-                        >
-                          {undoingBid === bid.id ? "Undoing..." : "Undo"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <p className="text-xs text-gray-500 mb-4">Undoing a sale is session-specific — open that session&apos;s <strong>View Room</strong> (below) to undo one of its sales.</p>
 
               {/* Manual Transfer */}
               <div>
@@ -4572,6 +4243,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
+          </div>
           </div>
         )}
 
