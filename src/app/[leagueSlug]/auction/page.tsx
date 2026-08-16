@@ -74,6 +74,11 @@ interface BootstrapTeam {
 interface StandingEntry {
   teamId: string;
   teamName: string;
+  // Literal team name, unaffected by the "displays as owned club" rename applied to `teamName`
+  // above. Used everywhere on this page that identifies a team, so club vs. team identity never
+  // gets conflated (e.g. Live Feed "SOLD: Chelsea -> Brighton and Hove Albion" reading like one
+  // club bought another).
+  rawTeamName?: string;
   teamLoginId?: string | null;
   ownedClub?: {
     plTeamId: number;
@@ -81,6 +86,12 @@ interface StandingEntry {
     plTeamShort: string;
     tier: "top8" | "mid" | "promoted";
   } | null;
+}
+
+// Always resolve to the real team identity, never the "displays as owned club" name — keeps
+// Live Feed / nomination text from reading like one PL club bought another.
+function displayTeamName(entry: StandingEntry | undefined | null): string | undefined {
+  return entry?.rawTeamName ?? entry?.teamName;
 }
 
 interface BidFeedItem {
@@ -532,7 +543,7 @@ export default function AuctionRoomPage() {
         const histRes = await fetch(`/api/auction/bid-history?sessionId=${activeSessionId}`);
         if (histRes.ok) {
           const histJson: BidHistoryResponse = await histRes.json();
-          setBidFeed(buildFeedFromHistory(histJson, (id) => standingsMap.get(id)?.teamName ?? "Unknown"));
+          setBidFeed(buildFeedFromHistory(histJson, (id) => displayTeamName(standingsMap.get(id)) ?? "Unknown"));
         }
       }
     } catch (err) {
@@ -635,7 +646,7 @@ export default function AuctionRoomPage() {
     }
     if (sid && opts?.feed !== false) {
       fetch(`/api/auction/bid-history?sessionId=${sid}`).then((r) => (r.ok ? r.json() : null)).then((d: BidHistoryResponse | null) => {
-        if (d) setBidFeed(buildFeedFromHistory(d, (id) => teamMapRef.current.get(id)?.teamName ?? "Unknown"));
+        if (d) setBidFeed(buildFeedFromHistory(d, (id) => displayTeamName(teamMapRef.current.get(id)) ?? "Unknown"));
       }).catch(() => {});
     }
   }, [refreshSessionState, refreshClubOwnership]);
@@ -669,7 +680,7 @@ export default function AuctionRoomPage() {
       // New nomination detected — bidId changed
       if (data.bidId && data.bidId !== lastBidIdRef.current) {
         lastBidIdRef.current = data.bidId;
-        const nominatorName = teamMapRef.current.get(data.nominatorTeamId)?.teamName ?? "Unknown";
+        const nominatorName = displayTeamName(teamMapRef.current.get(data.nominatorTeamId)) ?? "Unknown";
         addFeed(`${nominatorName} nominated ${data.playerName}${playerTag(data.fplElementId)} — base ${formatCurrency(data.minBid)}`, "info", data.bidId);
       }
     });
@@ -677,12 +688,12 @@ export default function AuctionRoomPage() {
       const data = JSON.parse((e as MessageEvent).data);
       setCurrentBid(data);
       setBidError(null);
-      const bidderName = teamMapRef.current.get(data.currentHighBidderId)?.teamName ?? "Unknown";
+      const bidderName = displayTeamName(teamMapRef.current.get(data.currentHighBidderId)) ?? "Unknown";
       addFeed(`${bidderName} bid ${formatCurrency(data.currentHighBid)} on ${data.playerName}${playerTag(data.fplElementId)}`, "bid", data.bidId);
     });
     es.addEventListener("sold", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      const winnerName = data.winnerId ? teamMapRef.current.get(data.winnerId)?.teamName ?? "Unknown" : "—";
+      const winnerName = data.winnerId ? displayTeamName(teamMapRef.current.get(data.winnerId)) ?? "Unknown" : "—";
       addFeed(`SOLD: ${data.playerName}${playerTag(data.fplElementId)} → ${winnerName} for ${formatCurrency(data.finalBid)}`, "sold", data.bidId);
       setCurrentBid(null);
       // Immediately sync session (advanceNominator already ran server-side before this event)
@@ -742,12 +753,12 @@ export default function AuctionRoomPage() {
     });
     es.addEventListener("auto-nominated", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
+      const teamName = displayTeamName(teamMapRef.current.get(data.teamId)) ?? "Team";
       addFeed(`${teamName} auto-nominated from wishlist`, "info");
     });
     es.addEventListener("penalised", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
+      const teamName = displayTeamName(teamMapRef.current.get(data.teamId)) ?? "Team";
       addFeed(`${teamName} penalised — missed nomination (wishlist empty)`, "unsold");
       // If I'm the penalised team, refetch my slot status so the −1 (lost slot) shows immediately.
       const mtid = myTeamIdRef.current;
@@ -758,7 +769,7 @@ export default function AuctionRoomPage() {
     });
     es.addEventListener("skipped-full", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
-      const teamName = teamMapRef.current.get(data.teamId)?.teamName ?? "Team";
+      const teamName = displayTeamName(teamMapRef.current.get(data.teamId)) ?? "Team";
       addFeed(`${teamName} skipped — squad full`, "info");
     });
 
@@ -1183,7 +1194,7 @@ export default function AuctionRoomPage() {
                 <div>
                   <div className="text-xs text-gray-400 uppercase">Nominator</div>
                   <div className={`font-semibold ${isMyTurn ? "text-yellow-400" : "text-white"}`}>
-                    {currentNominatorId ? teamMap.get(currentNominatorId)?.teamName ?? "—" : "—"}
+                    {currentNominatorId ? displayTeamName(teamMap.get(currentNominatorId)) ?? "—" : "—"}
                     {isMyTurn && " (YOU)"}
                   </div>
                 </div>
@@ -1317,7 +1328,7 @@ export default function AuctionRoomPage() {
                               {plTeam && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">{plTeam.short_name}</span>}
                             </div>
                             <div className="text-xs text-gray-400">
-                              Nominated by {teamMap.get(currentBid.nominatorTeamId)?.teamName ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
+                              Nominated by {displayTeamName(teamMap.get(currentBid.nominatorTeamId)) ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
                             </div>
                           </div>
                         );
@@ -1334,7 +1345,7 @@ export default function AuctionRoomPage() {
                             {plTeam && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">{plTeam.short_name}</span>}
                           </div>
                           <div className="text-xs text-gray-400">
-                            Nominated by {teamMap.get(currentBid.nominatorTeamId)?.teamName ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
+                            Nominated by {displayTeamName(teamMap.get(currentBid.nominatorTeamId)) ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
                           </div>
                           {myTeamId && (
                             <button
@@ -1360,7 +1371,7 @@ export default function AuctionRoomPage() {
                       <div>
                         <div className="text-[10px] uppercase text-gray-400"><HelpTip tip="The team currently holding the top bid. If the timer hits zero, they win.">Leader</HelpTip></div>
                         <div className={`text-sm font-bold ${isHighBidder ? "text-yellow-400" : "text-white"}`}>
-                          {teamMap.get(currentBid.currentHighBidderId)?.teamName ?? "—"}
+                          {displayTeamName(teamMap.get(currentBid.currentHighBidderId)) ?? "—"}
                           {isHighBidder && " (YOU)"}
                         </div>
                       </div>
@@ -1441,7 +1452,7 @@ export default function AuctionRoomPage() {
                     ) : (
                       <>
                         <p className="text-gray-400 text-sm">
-                          {currentNominatorId ? `Waiting for ${teamMap.get(currentNominatorId)?.teamName ?? "nominator"} to nominate a club...` : "Waiting for the next club nomination..."}
+                          {currentNominatorId ? `Waiting for ${displayTeamName(teamMap.get(currentNominatorId)) ?? "nominator"} to nominate a club...` : "Waiting for the next club nomination..."}
                         </p>
                         {nominationDeadlineSec > 0 && (
                           <div className="mt-1 text-xs font-mono text-gray-500">Auto-pick in {nominationDeadlineSec}s</div>
@@ -1487,7 +1498,7 @@ export default function AuctionRoomPage() {
                     ) : (
                       <>
                         <p className="text-gray-400 text-sm">
-                          {currentNominatorId ? `Waiting for ${teamMap.get(currentNominatorId)?.teamName ?? "nominator"}...` : "Waiting for next nomination..."}
+                          {currentNominatorId ? `Waiting for ${displayTeamName(teamMap.get(currentNominatorId)) ?? "nominator"}...` : "Waiting for next nomination..."}
                         </p>
                         {nominationDeadlineSec > 0 && (
                           <div className="mt-1 text-xs font-mono text-gray-500">
@@ -1553,7 +1564,7 @@ export default function AuctionRoomPage() {
                                 </td>
                                 <td className={`py-1.5 px-2 font-semibold ${isCurrent ? "text-yellow-300" : isMe ? "text-purple-300" : "text-white"}`}>
                                   <span className="inline-flex items-center gap-1.5">
-                                    <span title={team?.teamLoginId ? `Manager: ${team.teamLoginId}` : undefined}>{team?.teamName ?? tid}</span>
+                                    <span title={team?.teamLoginId ? `Manager: ${team.teamLoginId}` : undefined}>{displayTeamName(team) ?? tid}</span>
                                     {team?.ownedClub && (
                                       <span
                                         title={`${team.ownedClub.plTeamName} · ${CLUB_TIER_DISPLAY[team.ownedClub.tier].label} tier — +${CLUB_TIER_DISPLAY[team.ownedClub.tier].win} pts on a win, +${CLUB_TIER_DISPLAY[team.ownedClub.tier].draw} on a draw`}
@@ -1563,7 +1574,7 @@ export default function AuctionRoomPage() {
                                           : "bg-emerald-500/20 text-emerald-200 border-emerald-500/40"
                                         }`}
                                       >
-                                        {CLUB_TIER_DISPLAY[team.ownedClub.tier].label}
+                                        {team.ownedClub.plTeamShort} · {CLUB_TIER_DISPLAY[team.ownedClub.tier].label}
                                       </span>
                                     )}
                                     {isMe && <span className="text-[10px] text-purple-400">(you)</span>}
