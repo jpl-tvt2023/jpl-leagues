@@ -601,6 +601,24 @@ export default function AuctionRoomPage() {
     }
   }, [refreshSessionState]);
 
+  // Re-fetch per-team PL club ownership. `/api/standings` (and thus `teamMap.ownedClub`) is only
+  // populated on initial load otherwise, so this keeps club-eligibility checks (bid buttons) and
+  // the "Nominate a Club" available-clubs list correct as clubs sell during a live session.
+  const refreshClubOwnership = useCallback(async () => {
+    const res = await fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const rows: StandingEntry[] = data.standings ?? [];
+    const clubByTeamId: Record<string, StandingEntry["ownedClub"]> = data.clubByTeamId ?? {};
+    setTeamMap((prev) => {
+      const next = new Map(prev);
+      for (const r of rows) {
+        next.set(r.teamId, { ...r, ownedClub: clubByTeamId[r.teamId] ?? null });
+      }
+      return next;
+    });
+  }, [leagueSlug]);
+
   // SSE subscription — depends only on session id + status (primitives) so it
   // doesn't tear down every time nominationDeadline or currentNominatorIndex
   // ticks. Handlers read changing values via refs.
@@ -657,6 +675,8 @@ export default function AuctionRoomPage() {
           setTeamSummaries(d.teamSummaries ?? {});
         });
       }
+      // Keep club-ownership data (bid-button eligibility, Nominate-a-Club list) live for club auctions
+      if (sessionTypeRef.current === CLUB_AUCTION_TYPE) refreshClubOwnership();
       if (mtid) {
         fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => r.json()).then((d) => setMyPurse(d.computedPurse ?? 0));
         // Refresh wishlist — sold player was removed server-side
@@ -811,6 +831,9 @@ export default function AuctionRoomPage() {
 
   const isMyTurn = currentNominatorId === myTeamId;
   const isHighBidder = currentBid?.currentHighBidderId === myTeamId;
+  // Club-auction eligibility: only club-less teams may bid. Mirrors the server check in
+  // bid/route.ts so the buttons disable proactively instead of failing after a click.
+  const myOwnsClub = session?.type === CLUB_AUCTION_TYPE && !!teamMap.get(myTeamId ?? "")?.ownedClub;
 
   // For the "Nominate a Player" CTA: gate the button on squad-full / purse so
   // the user gets the same answer the server would give (avoids click → 400).
@@ -1336,8 +1359,14 @@ export default function AuctionRoomPage() {
                             <button
                               key={amount}
                               onClick={() => handlePlaceBid(amount)}
-                              disabled={placing || amount > myPurse}
-                              title={amount > myPurse ? "More than your available purse" : `Place a bid of ${formatCurrency(amount)}`}
+                              disabled={placing || amount > myPurse || myOwnsClub}
+                              title={
+                                myOwnsClub
+                                  ? "You already own a PL club — only club-less teams may bid"
+                                  : amount > myPurse
+                                  ? "More than your available purse"
+                                  : `Place a bid of ${formatCurrency(amount)}`
+                              }
                               className={`flex-1 min-w-[80px] rounded-lg px-2 py-2.5 font-bold transition disabled:opacity-50 ${
                                 i === 0
                                   ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 hover:from-yellow-300 hover:to-orange-400"
@@ -1349,6 +1378,11 @@ export default function AuctionRoomPage() {
                             </button>
                           ))}
                         </div>
+                        {myOwnsClub && (
+                          <div className="mt-2 text-xs text-gray-400 text-center">
+                            You already own a PL club — only club-less teams may bid.
+                          </div>
+                        )}
                       </div>
                     ) : null}
                     {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
@@ -1377,7 +1411,7 @@ export default function AuctionRoomPage() {
                           </div>
                         )}
                         <button
-                          onClick={() => setShowNominateClub(true)}
+                          onClick={() => { refreshClubOwnership(); setShowNominateClub(true); }}
                           className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm"
                         >
                           Nominate a Club
@@ -1457,6 +1491,7 @@ export default function AuctionRoomPage() {
                           <th className="text-left py-2 px-2 w-8">#</th>
                           <th className="text-left py-2 px-2">Team</th>
                           <th className="text-right py-2 px-2">Purse</th>
+                          {session.type === CLUB_AUCTION_TYPE && <th className="text-left py-2 px-2">Club</th>}
                           <th className="text-center py-2 px-1">GKP</th>
                           <th className="text-center py-2 px-1">DEF</th>
                           <th className="text-center py-2 px-1">MID</th>
@@ -1499,7 +1534,7 @@ export default function AuctionRoomPage() {
                                 <td className={`py-1.5 px-2 font-semibold ${isCurrent ? "text-yellow-300" : isMe ? "text-purple-300" : "text-white"}`}>
                                   <span className="inline-flex items-center gap-1.5">
                                     <span title={team?.teamLoginId ? `Manager: ${team.teamLoginId}` : undefined}>{team?.teamName ?? tid}</span>
-                                    {team?.ownedClub && (
+                                    {team?.ownedClub && session.type !== CLUB_AUCTION_TYPE && (
                                       <span
                                         title={`${team.ownedClub.plTeamName} · ${team.ownedClub.tier}`}
                                         className={`text-[9px] font-bold px-1 py-0.5 rounded border ${
@@ -1525,6 +1560,24 @@ export default function AuctionRoomPage() {
                                 <td className="py-1.5 px-2 text-right font-mono text-green-300">
                                   {summary ? formatCurrency(summary.purse) : "—"}
                                 </td>
+                                {session.type === CLUB_AUCTION_TYPE && (
+                                  <td className="py-1.5 px-2">
+                                    {team?.ownedClub ? (
+                                      <span
+                                        title={`${team.ownedClub.plTeamName} · ${team.ownedClub.tier}`}
+                                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                                          team.ownedClub.tier === "top8" ? "bg-yellow-500/20 text-yellow-200 border-yellow-500/40"
+                                          : team.ownedClub.tier === "mid" ? "bg-blue-500/20 text-blue-200 border-blue-500/40"
+                                          : "bg-emerald-500/20 text-emerald-200 border-emerald-500/40"
+                                        }`}
+                                      >
+                                        {team.ownedClub.plTeamName}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-500 italic text-[10px]">Yet to buy</span>
+                                    )}
+                                  </td>
+                                )}
                                 <td className={`py-1.5 px-1 text-center font-mono ${cellClass("GKP")}`}>{counts.GKP}<span className="text-gray-500">/{MIN_QUOTA.GKP}</span></td>
                                 <td className={`py-1.5 px-1 text-center font-mono ${cellClass("DEF")}`}>{counts.DEF}<span className="text-gray-500">/{MIN_QUOTA.DEF}</span></td>
                                 <td className={`py-1.5 px-1 text-center font-mono ${cellClass("MID")}`}>{counts.MID}<span className="text-gray-500">/{MIN_QUOTA.MID}</span></td>
@@ -1594,7 +1647,8 @@ export default function AuctionRoomPage() {
 
             {/* Row 2: Wishlist + Live Feed — full width, side by side */}
             <div className="mt-4 grid grid-cols-1 lg:grid-cols-5 gap-4">
-              {/* Wishlist / Unsold tabs (2 cols) */}
+              {/* Wishlist / Unsold tabs (2 cols) — FPL-player concepts only, not applicable to the club auction */}
+              {session.type !== CLUB_AUCTION_TYPE && (
               <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
                 <div className="flex items-center gap-1 mb-3 border-b border-white/10">
                   <button
@@ -1783,9 +1837,11 @@ export default function AuctionRoomPage() {
                   </>
                 )}
               </div>
+              )}
 
-              {/* Live Feed (3 cols) — expandable sold/unsold entries */}
-              <div className="lg:col-span-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+              {/* Live Feed — expandable sold/unsold entries. Takes the full row when the club auction
+                  hides the wishlist/unsold panel (those are FPL-player-only concepts). */}
+              <div className={`${session.type === CLUB_AUCTION_TYPE ? "lg:col-span-5" : "lg:col-span-3"} rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur`}>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Live Feed</h3>
                 <div className="space-y-0.5 max-h-52 overflow-y-auto text-[11px]">
                   {bidFeed.length === 0 ? (
