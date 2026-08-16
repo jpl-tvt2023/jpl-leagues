@@ -255,13 +255,11 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
         </div>
       )}
 
-      {wishlist.length > 0 && (
-        <div className="mt-3 text-right">
-          <Link href={`/${leagueSlug}/squad?tab=wishlist`} className="text-xs text-yellow-400 hover:text-yellow-300 hover:underline">
-            Manage full wishlist →
-          </Link>
-        </div>
-      )}
+      <div className="mt-3 text-right">
+        <Link href={`/${leagueSlug}/squad?tab=wishlist`} className="text-xs text-yellow-400 hover:text-yellow-300 hover:underline">
+          Manage full wishlist →
+        </Link>
+      </div>
     </div>
   );
 }

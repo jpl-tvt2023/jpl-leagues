@@ -282,39 +282,12 @@ function DeadlineTimer({ deadline, gameweek, serverTime, label, expiredLabel }: 
 }
 
 // Next Deadline card content — auction-only.
-// Returns null when there's no live, paused, or scheduled auction so the card collapses.
-function NextDeadlineContent({ data, leagueSlug }: { data: AuctionDashboardData; leagueSlug: string }) {
-  // 1. Auction live
-  if (data.auctionSession?.status === "active") {
-    return (
-      <div className="text-center">
-        <div className="flex items-center justify-center gap-2 mb-3">
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-          </span>
-          <span className="text-red-300 font-bold text-lg">🔨 Auction Live</span>
-        </div>
-        <Link href={`/${leagueSlug}/auction/${data.auctionSession.id}`} className="inline-block px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 font-semibold transition text-sm">
-          Join Room
-        </Link>
-      </div>
-    );
-  }
-
-  // 2. Auction paused
-  if (data.auctionSession?.status === "paused") {
-    return (
-      <div className="text-center">
-        <div className="text-gray-300 font-bold text-lg mb-2">⏸ Auction Paused</div>
-        <Link href={`/${leagueSlug}/auction/${data.auctionSession.id}`} className="text-yellow-300 hover:text-yellow-200 text-sm underline">
-          View room
-        </Link>
-      </div>
-    );
-  }
-
-  // 3. Scheduled upcoming auction
+// A live/paused auction session is already surfaced by the "Active Auction Alert" banner above
+// (with its own "Enter Room" link), so this card only covers a genuinely different case — a
+// scheduled-but-not-yet-started auction's countdown — to avoid showing two links to the same room.
+// Returns null when there's no scheduled auction so the card collapses.
+function NextDeadlineContent({ data }: { data: AuctionDashboardData }) {
+  // Scheduled upcoming auction
   if (data.nextAuction) {
     const typeLabel =
       data.nextAuction.type === "initial"
@@ -331,7 +304,7 @@ function NextDeadlineContent({ data, leagueSlug }: { data: AuctionDashboardData;
     );
   }
 
-  // 4. No auction scheduled — collapse the card
+  // No auction scheduled — collapse the card
   return null;
 }
 
@@ -760,13 +733,14 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
 
           {/* Right column: Deadline + Standings */}
           <div className="space-y-6">
-            {/* Deadline — only render when there's an auction (live, paused, or scheduled) */}
-            {(data.auctionSession || data.nextAuction) && (
+            {/* Deadline — only render for a scheduled-but-not-started auction; a live/paused one is
+                already covered by the "Active Auction Alert" banner above. */}
+            {data.nextAuction && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                   <span className="text-yellow-400">⏱</span> Next Deadline
                 </h2>
-                <NextDeadlineContent data={data} leagueSlug={leagueSlug} />
+                <NextDeadlineContent data={data} />
               </div>
             )}
 
