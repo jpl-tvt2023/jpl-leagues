@@ -15,6 +15,14 @@ import { MAX_SQUAD_SIZE, effectiveMaxSquadSize } from "@/lib/formats/auction/squ
 
 const CLUB_AUCTION_TYPE = "club-auction";
 
+// Display-only mirror of CLUB_TIER_BONUS (jpl-leagues/src/lib/formats/auction/club-auction.ts:56-60).
+// Duplicated here (not imported) because that module is server-only (pulls in `db`, FPL fetchers).
+const CLUB_TIER_DISPLAY: Record<ClubTier, { label: string; win: number; draw: number }> = {
+  top8: { label: "Top 8", win: 4, draw: 2 },
+  mid: { label: "Mid", win: 6, draw: 3 },
+  promoted: { label: "Promoted", win: 8, draw: 4 },
+};
+
 interface AuctionSession {
   id: string;
   type: "initial" | "mini-auction" | "club-auction";
@@ -318,6 +326,9 @@ export default function AuctionRoomPage() {
   const [teamMap, setTeamMap] = useState<Map<string, StandingEntry>>(new Map());
   const [elements, setElements] = useState<BootstrapElement[]>([]);
   const [plTeams, setPlTeams] = useState<Map<number, BootstrapTeam>>(new Map());
+  // PL club id -> resolved tier, for the tier+perks badge in the Nominate-a-Club modal and
+  // Nomination Order table. Fetched once — tier only changes when a superadmin edits standings config.
+  const [clubTierById, setClubTierById] = useState<Map<number, ClubTier | null>>(new Map());
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
   const [mySlotStatus, setMySlotStatus] = useState<import("@/components/SlotStatus").SlotStatusData | null>(null);
   const [teamSummaries, setTeamSummaries] = useState<Record<string, {
@@ -427,7 +438,7 @@ export default function AuctionRoomPage() {
         setPlTeams(tMap);
       }
 
-      const [sessRes, standingsRes, ownedRes, economyRes, wishlistRes, squadRes] = await Promise.all([
+      const [sessRes, standingsRes, ownedRes, economyRes, wishlistRes, squadRes, clubTiersRes] = await Promise.all([
         fetch(`/api/auction/session?leagueId=${league.id}`),
         fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`),
         fetch(`/api/auction/league-owned?leagueId=${league.id}`),
@@ -435,7 +446,16 @@ export default function AuctionRoomPage() {
         fetch(`/api/auction/wishlist?teamId=${me.team.id}`),
         // Pull my squad's slot status so we can render <SlotStatus> with redeem/unlock costs.
         fetch(`/api/auction/squad?teamId=${me.team.id}`),
+        // Tier per PL club — only meaningfully used when this is a club auction, but cheap to fetch once.
+        fetch(`/api/auction/club-tiers?leagueId=${league.id}`),
       ]);
+
+      if (clubTiersRes.ok) {
+        const clubTiersJson = await clubTiersRes.json();
+        const tierMap = new Map<number, ClubTier | null>();
+        for (const c of clubTiersJson.clubs ?? []) tierMap.set(c.id, c.tier ?? null);
+        setClubTierById(tierMap);
+      }
 
       let activeSessionId: string | null = null;
       const standingsMap = new Map<string, StandingEntry>();
@@ -601,6 +621,24 @@ export default function AuctionRoomPage() {
     }
   }, [refreshSessionState]);
 
+  // Re-fetch per-team PL club ownership. `/api/standings` (and thus `teamMap.ownedClub`) is only
+  // populated on initial load otherwise, so this keeps club-eligibility checks (bid buttons) and
+  // the "Nominate a Club" available-clubs list correct as clubs sell during a live session.
+  const refreshClubOwnership = useCallback(async () => {
+    const res = await fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const rows: StandingEntry[] = data.standings ?? [];
+    const clubByTeamId: Record<string, StandingEntry["ownedClub"]> = data.clubByTeamId ?? {};
+    setTeamMap((prev) => {
+      const next = new Map(prev);
+      for (const r of rows) {
+        next.set(r.teamId, { ...r, ownedClub: clubByTeamId[r.teamId] ?? null });
+      }
+      return next;
+    });
+  }, [leagueSlug]);
+
   // SSE subscription — depends only on session id + status (primitives) so it
   // doesn't tear down every time nominationDeadline or currentNominatorIndex
   // ticks. Handlers read changing values via refs.
@@ -657,6 +695,8 @@ export default function AuctionRoomPage() {
           setTeamSummaries(d.teamSummaries ?? {});
         });
       }
+      // Keep club-ownership data (bid-button eligibility, Nominate-a-Club list) live for club auctions
+      if (sessionTypeRef.current === CLUB_AUCTION_TYPE) refreshClubOwnership();
       if (mtid) {
         fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => r.json()).then((d) => setMyPurse(d.computedPurse ?? 0));
         // Refresh wishlist — sold player was removed server-side
@@ -811,6 +851,9 @@ export default function AuctionRoomPage() {
 
   const isMyTurn = currentNominatorId === myTeamId;
   const isHighBidder = currentBid?.currentHighBidderId === myTeamId;
+  // Club-auction eligibility: only club-less teams may bid. Mirrors the server check in
+  // bid/route.ts so the buttons disable proactively instead of failing after a click.
+  const myOwnsClub = session?.type === CLUB_AUCTION_TYPE && !!teamMap.get(myTeamId ?? "")?.ownedClub;
 
   // For the "Nominate a Player" CTA: gate the button on squad-full / purse so
   // the user gets the same answer the server would give (avoids click → 400).
@@ -1336,8 +1379,14 @@ export default function AuctionRoomPage() {
                             <button
                               key={amount}
                               onClick={() => handlePlaceBid(amount)}
-                              disabled={placing || amount > myPurse}
-                              title={amount > myPurse ? "More than your available purse" : `Place a bid of ${formatCurrency(amount)}`}
+                              disabled={placing || amount > myPurse || myOwnsClub}
+                              title={
+                                myOwnsClub
+                                  ? "You already own a PL club — only club-less teams may bid"
+                                  : amount > myPurse
+                                  ? "More than your available purse"
+                                  : `Place a bid of ${formatCurrency(amount)}`
+                              }
                               className={`flex-1 min-w-[80px] rounded-lg px-2 py-2.5 font-bold transition disabled:opacity-50 ${
                                 i === 0
                                   ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 hover:from-yellow-300 hover:to-orange-400"
@@ -1349,6 +1398,11 @@ export default function AuctionRoomPage() {
                             </button>
                           ))}
                         </div>
+                        {myOwnsClub && (
+                          <div className="mt-2 text-xs text-gray-400 text-center">
+                            You already own a PL club — only club-less teams may bid.
+                          </div>
+                        )}
                       </div>
                     ) : null}
                     {bidError && <div className="mt-2 text-xs text-red-400">{bidError}</div>}
@@ -1377,7 +1431,7 @@ export default function AuctionRoomPage() {
                           </div>
                         )}
                         <button
-                          onClick={() => setShowNominateClub(true)}
+                          onClick={() => { refreshClubOwnership(); setShowNominateClub(true); }}
                           className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm"
                         >
                           Nominate a Club
@@ -1501,14 +1555,14 @@ export default function AuctionRoomPage() {
                                     <span title={team?.teamLoginId ? `Manager: ${team.teamLoginId}` : undefined}>{team?.teamName ?? tid}</span>
                                     {team?.ownedClub && (
                                       <span
-                                        title={`${team.ownedClub.plTeamName} · ${team.ownedClub.tier}`}
-                                        className={`text-[9px] font-bold px-1 py-0.5 rounded border ${
+                                        title={`${team.ownedClub.plTeamName} · ${CLUB_TIER_DISPLAY[team.ownedClub.tier].label} tier — +${CLUB_TIER_DISPLAY[team.ownedClub.tier].win} pts on a win, +${CLUB_TIER_DISPLAY[team.ownedClub.tier].draw} on a draw`}
+                                        className={`text-[9px] font-bold px-1 py-0.5 rounded border whitespace-nowrap ${
                                           team.ownedClub.tier === "top8" ? "bg-yellow-500/20 text-yellow-200 border-yellow-500/40"
                                           : team.ownedClub.tier === "mid" ? "bg-blue-500/20 text-blue-200 border-blue-500/40"
                                           : "bg-emerald-500/20 text-emerald-200 border-emerald-500/40"
                                         }`}
                                       >
-                                        {team.ownedClub.plTeamShort}
+                                        {CLUB_TIER_DISPLAY[team.ownedClub.tier].label}
                                       </span>
                                     )}
                                     {isMe && <span className="text-[10px] text-purple-400">(you)</span>}
@@ -1594,7 +1648,8 @@ export default function AuctionRoomPage() {
 
             {/* Row 2: Wishlist + Live Feed — full width, side by side */}
             <div className="mt-4 grid grid-cols-1 lg:grid-cols-5 gap-4">
-              {/* Wishlist / Unsold tabs (2 cols) */}
+              {/* Wishlist / Unsold tabs (2 cols) — FPL-player concepts only, not applicable to the club auction */}
+              {session.type !== CLUB_AUCTION_TYPE && (
               <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
                 <div className="flex items-center gap-1 mb-3 border-b border-white/10">
                   <button
@@ -1783,9 +1838,11 @@ export default function AuctionRoomPage() {
                   </>
                 )}
               </div>
+              )}
 
-              {/* Live Feed (3 cols) — expandable sold/unsold entries */}
-              <div className="lg:col-span-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+              {/* Live Feed — expandable sold/unsold entries. Takes the full row when the club auction
+                  hides the wishlist/unsold panel (those are FPL-player-only concepts). */}
+              <div className={`${session.type === CLUB_AUCTION_TYPE ? "lg:col-span-5" : "lg:col-span-3"} rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur`}>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Live Feed</h3>
                 <div className="space-y-0.5 max-h-52 overflow-y-auto text-[11px]">
                   {bidFeed.length === 0 ? (
@@ -1943,7 +2000,9 @@ export default function AuctionRoomPage() {
                     {availableClubs.length === 0 ? (
                       <div className="text-sm text-gray-500 py-6 text-center">No clubs available</div>
                     ) : (
-                      availableClubs.map((club) => (
+                      availableClubs.map((club) => {
+                        const tier = clubTierById.get(club.id) ?? null;
+                        return (
                         <button
                           key={club.id}
                           onClick={() => handleNominateClub(club.id)}
@@ -1955,10 +2014,23 @@ export default function AuctionRoomPage() {
                               {club.short_name}
                             </span>
                             <span className="text-white font-semibold">{club.name}</span>
+                            {tier && (
+                              <span
+                                title={`${CLUB_TIER_DISPLAY[tier].label} tier — +${CLUB_TIER_DISPLAY[tier].win} pts on a win, +${CLUB_TIER_DISPLAY[tier].draw} on a draw`}
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${
+                                  tier === "top8" ? "bg-yellow-500/20 text-yellow-200 border-yellow-500/40"
+                                  : tier === "mid" ? "bg-blue-500/20 text-blue-200 border-blue-500/40"
+                                  : "bg-emerald-500/20 text-emerald-200 border-emerald-500/40"
+                                }`}
+                              >
+                                {CLUB_TIER_DISPLAY[tier].label} +{CLUB_TIER_DISPLAY[tier].win}W/+{CLUB_TIER_DISPLAY[tier].draw}D
+                              </span>
+                            )}
                           </div>
                           {nominating === club.id && <span className="text-xs text-gray-400">Nominating...</span>}
                         </button>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
