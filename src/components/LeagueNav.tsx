@@ -107,6 +107,9 @@ export function LeagueNav({
             <NavLink href={`/${leagueSlug}/gw-results`} activeClass={activeClass} active={currentPage ==="gw-results"}>GW Results</NavLink>
             <NavLink href={`/${leagueSlug}/teams`} activeClass={activeClass} active={currentPage ==="teams"}>Teams</NavLink>
             <NavLink href={`/${leagueSlug}/auction`} activeClass={activeClass} active={currentPage ==="auction"}>Auction</NavLink>
+            {isLoggedIn && (
+              <NavLink href="/dashboard#wishlist" activeClass={activeClass} active={false}>Wishlist</NavLink>
+            )}
             <NavLink href={`/${leagueSlug}/squad`} activeClass={activeClass} active={currentPage ==="squad"}>Squad</NavLink>
             <NavLink href={`/${leagueSlug}/players`} activeClass={activeClass} active={currentPage ==="players"}>Players</NavLink>
             {/* Trades are gated by auctionLive (mid-auction freeze) AND by tier (Primary disables). */}

@@ -11,6 +11,7 @@ import { HelpTip } from "@/components/HelpTip";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
 import { EligibilitySelect } from "@/app/dashboard/_components/EligibilitySelect";
+import { WishlistManager } from "@/components/WishlistManager";
 
 // Format an ISO timestamp as a short local clock time, e.g. "6:30 PM" — used
 // for "reopens at ..." messaging when the submission window is locked.
@@ -294,7 +295,7 @@ function NextDeadlineContent({ data, leagueSlug }: { data: AuctionDashboardData;
           </span>
           <span className="text-red-300 font-bold text-lg">🔨 Auction Live</span>
         </div>
-        <Link href={`/${leagueSlug}/auction`} className="inline-block px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 font-semibold transition text-sm">
+        <Link href={`/${leagueSlug}/auction/${data.auctionSession.id}`} className="inline-block px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 font-semibold transition text-sm">
           Join Room
         </Link>
       </div>
@@ -306,7 +307,7 @@ function NextDeadlineContent({ data, leagueSlug }: { data: AuctionDashboardData;
     return (
       <div className="text-center">
         <div className="text-gray-300 font-bold text-lg mb-2">⏸ Auction Paused</div>
-        <Link href={`/${leagueSlug}/auction`} className="text-yellow-300 hover:text-yellow-200 text-sm underline">
+        <Link href={`/${leagueSlug}/auction/${data.auctionSession.id}`} className="text-yellow-300 hover:text-yellow-200 text-sm underline">
           View room
         </Link>
       </div>
@@ -508,6 +509,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <Link href={`/${leagueSlug}/gw-results`} className="text-gray-300 hover:text-white transition">GW Results</Link>
           <Link href={`/${leagueSlug}/teams`} className="text-gray-300 hover:text-white transition">Teams</Link>
           <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
+          <Link href="/dashboard#wishlist" className="text-gray-300 hover:text-white transition">Wishlist</Link>
           <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
           <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
           {/* Marketplace hidden in Primary tier (trades disabled) and during a live auction (trade freeze) — mirrors LeagueNav. */}
@@ -556,7 +558,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                 {data.auctionSession.type === "initial" ? "Initial Draft" : "Mini-Auction"} — Join the auction room to bid.
               </div>
             </div>
-            <Link href={`/${leagueSlug}/auction`} className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 font-semibold transition">
+            <Link href={`/${leagueSlug}/auction/${data.auctionSession.id}`} className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 font-semibold transition">
               Enter Room
             </Link>
           </div>
@@ -669,6 +671,11 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
             ) : undefined}
           />
         </div>
+
+        {/* Wishlist — standalone, not tied to a live auction session, so it's always here to prep with. */}
+        <section id="wishlist" className="mb-6 scroll-mt-24">
+          <WishlistManager leagueSlug={leagueSlug} teamId={data.team.id} />
+        </section>
 
         {/* Main Grid */}
         <div className="grid gap-6 lg:grid-cols-3">
