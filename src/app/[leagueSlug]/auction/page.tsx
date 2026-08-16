@@ -591,36 +591,6 @@ export default function AuctionRoomPage() {
     }
   }, []);
 
-  // One-stop authoritative resync of the whole auction screen — session/currentBid, league-owned,
-  // purse, wishlist, unsold, my slot status, and the live feed (rebuilt from bid-history, incl.
-  // missed-nomination penalties). Used as the per-lot intermission sync barrier, on SSE (re)connect,
-  // on the fallback poll, and after a transient bid/nominate error. `feed` is optional so the cheap
-  // fallback poll can skip the heavier feed rebuild on most ticks.
-  const resyncAuctionScreen = useCallback(async (opts?: { feed?: boolean }) => {
-    await refreshSessionState();
-    const lid = leagueIdRef.current;
-    const mtid = myTeamIdRef.current;
-    const sid = sessionIdRef.current;
-    if (lid) {
-      fetch(`/api/auction/league-owned?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
-        if (!d) return;
-        setOwnedElementIds(new Set(d.ownedElementIds ?? []));
-        setTeamSummaries(d.teamSummaries ?? {});
-      }).catch(() => {});
-      fetch(`/api/auction/unsold?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUnsoldPlayers(d.unsold ?? []); }).catch(() => {});
-    }
-    if (mtid) {
-      fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); }).catch(() => {});
-      fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setWishlist(d.wishlist ?? []); }).catch(() => {});
-      fetch(`/api/auction/squad?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMySlotStatus(d.slotStatus ?? null); }).catch(() => {});
-    }
-    if (sid && opts?.feed !== false) {
-      fetch(`/api/auction/bid-history?sessionId=${sid}`).then((r) => (r.ok ? r.json() : null)).then((d: BidHistoryResponse | null) => {
-        if (d) setBidFeed(buildFeedFromHistory(d, (id) => teamMapRef.current.get(id)?.teamName ?? "Unknown"));
-      }).catch(() => {});
-    }
-  }, [refreshSessionState]);
-
   // Re-fetch per-team PL club ownership. `/api/standings` (and thus `teamMap.ownedClub`) is only
   // populated on initial load otherwise, so this keeps club-eligibility checks (bid buttons) and
   // the "Nominate a Club" available-clubs list correct as clubs sell during a live session.
@@ -638,6 +608,37 @@ export default function AuctionRoomPage() {
       return next;
     });
   }, [leagueSlug]);
+
+  // One-stop authoritative resync of the whole auction screen — session/currentBid, league-owned,
+  // purse, wishlist, unsold, my slot status, club ownership, and the live feed (rebuilt from
+  // bid-history, incl. missed-nomination penalties). Used as the per-lot intermission sync barrier,
+  // on SSE (re)connect, on the fallback poll, and after a transient bid/nominate error. `feed` is
+  // optional so the cheap fallback poll can skip the heavier feed rebuild on most ticks.
+  const resyncAuctionScreen = useCallback(async (opts?: { feed?: boolean }) => {
+    await refreshSessionState();
+    const lid = leagueIdRef.current;
+    const mtid = myTeamIdRef.current;
+    const sid = sessionIdRef.current;
+    if (lid) {
+      fetch(`/api/auction/league-owned?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (!d) return;
+        setOwnedElementIds(new Set(d.ownedElementIds ?? []));
+        setTeamSummaries(d.teamSummaries ?? {});
+      }).catch(() => {});
+      fetch(`/api/auction/unsold?leagueId=${lid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUnsoldPlayers(d.unsold ?? []); }).catch(() => {});
+    }
+    if (sessionTypeRef.current === CLUB_AUCTION_TYPE) refreshClubOwnership();
+    if (mtid) {
+      fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); }).catch(() => {});
+      fetch(`/api/auction/wishlist?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setWishlist(d.wishlist ?? []); }).catch(() => {});
+      fetch(`/api/auction/squad?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMySlotStatus(d.slotStatus ?? null); }).catch(() => {});
+    }
+    if (sid && opts?.feed !== false) {
+      fetch(`/api/auction/bid-history?sessionId=${sid}`).then((r) => (r.ok ? r.json() : null)).then((d: BidHistoryResponse | null) => {
+        if (d) setBidFeed(buildFeedFromHistory(d, (id) => teamMapRef.current.get(id)?.teamName ?? "Unknown"));
+      }).catch(() => {});
+    }
+  }, [refreshSessionState, refreshClubOwnership]);
 
   // SSE subscription — depends only on session id + status (primitives) so it
   // doesn't tear down every time nominationDeadline or currentNominatorIndex
