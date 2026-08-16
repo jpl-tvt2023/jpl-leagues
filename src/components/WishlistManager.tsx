@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 interface WishlistEntry {
   id: string;
@@ -236,7 +237,8 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
         </div>
       ) : (
         <div className="space-y-1">
-          {wishlist.map((entry, idx) => {
+          {wishlist.slice(0, 5).map((entry) => {
+            const idx = wishlist.findIndex((w) => w.id === entry.id);
             const el = elementById.get(entry.fplElementId);
             return (
               <div key={entry.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm bg-white/5">
@@ -250,6 +252,14 @@ export function WishlistManager({ leagueSlug, teamId }: { leagueSlug: string; te
               </div>
             );
           })}
+        </div>
+      )}
+
+      {wishlist.length > 0 && (
+        <div className="mt-3 text-right">
+          <Link href={`/${leagueSlug}/squad?tab=wishlist`} className="text-xs text-yellow-400 hover:text-yellow-300 hover:underline">
+            Manage full wishlist →
+          </Link>
         </div>
       )}
     </div>

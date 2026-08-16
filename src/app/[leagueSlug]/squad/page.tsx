@@ -152,6 +152,15 @@ export default function SquadPage() {
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
   const [wishlistSelections, setWishlistSelections] = useState<Set<number>>(new Set());
 
+  // Deep-link support for "?tab=wishlist" (e.g. the Dashboard wishlist card's "Manage full
+  // wishlist" link) — read via window.location rather than useSearchParams() to avoid requiring
+  // a <Suspense> boundary around this already-fully-client page just for this one link.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "wishlist") {
+      setActiveTab("wishlist");
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setIsLoading(true);
     setError(null);
