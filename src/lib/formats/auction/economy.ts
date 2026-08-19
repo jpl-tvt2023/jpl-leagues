@@ -29,6 +29,47 @@ export function getPayoutForRank(rank: number): number {
 }
 
 /**
+ * Assign competition ranks and payouts to a GW-ordered list of teams.
+ *
+ * Teams level on GW points share the best rank in their block (1, 1, 3 — the next
+ * block skips the places the tie consumed) and split the payouts for every place
+ * the block occupies, averaged. Nobody wins £2.5M over an identically-scoring rival
+ * because of an arbitrary squad-value difference.
+ *
+ * `ordered` must already be sorted best-first; the caller's tiebreak still decides
+ * row order *within* a tied block, it just no longer decides the money.
+ *
+ * Centralised because two call sites assign payouts independently (the GW processor
+ * and the superadmin score-adjustments PATCH) — if they diverge, an adjustment
+ * silently overwrites averaged payouts with strict per-rank ones.
+ */
+export function assignRanksAndPayouts<T>(
+  ordered: T[],
+  pointsOf: (item: T) => number
+): { item: T; rank: number; payout: number }[] {
+  const out: { item: T; rank: number; payout: number }[] = [];
+
+  for (let i = 0; i < ordered.length; ) {
+    // Extend the block while the next entry is level on points.
+    let end = i + 1;
+    while (end < ordered.length && pointsOf(ordered[end]) === pointsOf(ordered[i])) end++;
+
+    const size = end - i;
+    const rank = i + 1;
+    // Places consumed by this block are rank .. rank + size - 1.
+    let pot = 0;
+    for (let place = rank; place < rank + size; place++) pot += getPayoutForRank(place);
+    // Floor keeps payouts integral and never over-pays the pot.
+    const payout = Math.floor(pot / size);
+
+    for (let j = i; j < end; j++) out.push({ item: ordered[j], rank, payout });
+    i = end;
+  }
+
+  return out;
+}
+
+/**
  * Calculate current purse from economic components.
  */
 export function calculatePurse(

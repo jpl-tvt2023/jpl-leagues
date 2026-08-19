@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { auctionScores, auctionOwnership, gameweeks, leagues, teams } from "@/lib/db/schema";
 import { and, eq, lte } from "drizzle-orm";
 import { calculateAuctionTeamScore } from "@/lib/formats/auction/scoring";
-import { getPayoutForRank } from "@/lib/formats/auction/economy";
+import { assignRanksAndPayouts } from "@/lib/formats/auction/economy";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
 import { getInFlightGameweekNumber } from "@/lib/gameweeks/in-flight";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
@@ -248,8 +248,14 @@ export async function GET(request: NextRequest) {
     const gwSorted = [...teamRows]
       .map((t) => ({ teamId: t.id, totalPoints: liveScoresByTeam.get(t.id)?.totalPoints ?? 0 }))
       .sort((a, b) => b.totalPoints - a.totalPoints);
+    // Same tie rule as a scored GW (see assignRanksAndPayouts): teams level on live points share
+    // a rank and split the pot, so this in-progress preview matches what processing will persist.
     const gwRankByTeam = new Map<string, number>();
-    gwSorted.forEach((row, idx) => gwRankByTeam.set(row.teamId, idx + 1));
+    const gwPayoutByTeam = new Map<string, number>();
+    for (const { item, rank, payout } of assignRanksAndPayouts(gwSorted, (r) => r.totalPoints)) {
+      gwRankByTeam.set(item.teamId, rank);
+      gwPayoutByTeam.set(item.teamId, payout);
+    }
 
     // League rank = baseline cumulative (through selectedGw − 1) + live current points.
     const liveCumulative = new Map<string, number>();
@@ -298,7 +304,7 @@ export async function GET(request: NextRequest) {
         synergyBonus: live?.synergyBonus ?? 0,
         clubResultBonus: live?.clubResultBonus ?? 0,
         clubResultSummary: live?.clubResultSummary ?? null,
-        payout: getPayoutForRank(gwRank),
+        payout: gwPayoutByTeam.get(t.id) ?? 0,
         gwRank,
         leagueRank,
         prevLeagueRank,

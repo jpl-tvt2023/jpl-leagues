@@ -4,7 +4,7 @@ import { auctionScores, gameweeks, leagues, teams, auditLogs } from "@/lib/db/sc
 import { eq, and, desc, asc } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
-import { getPayoutForRank } from "@/lib/formats/auction/economy";
+import { assignRanksAndPayouts } from "@/lib/formats/auction/economy";
 
 /**
  * GET /api/superadmin/score-adjustments?leagueId=...&gameweek=...
@@ -180,10 +180,13 @@ export async function PATCH(request: NextRequest) {
       return a.teamId.localeCompare(b.teamId);
     });
 
-    for (let i = 0; i < ordered.length; i++) {
-      const sr = ordered[i];
-      const newRank = i + 1;
-      const newPayout = getPayoutForRank(newRank);
+    // Same tie rule as the GW processor: teams level on points share a rank and split the pot.
+    // Must go through the shared helper, or an adjustment would overwrite averaged payouts with
+    // strict per-rank ones.
+    for (const { item: sr, rank: newRank, payout: newPayout } of assignRanksAndPayouts(
+      ordered,
+      (s) => s.totalPoints
+    )) {
       if (sr.rank === newRank && sr.payout === newPayout) continue;
 
       await tx
