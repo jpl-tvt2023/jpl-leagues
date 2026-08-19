@@ -40,9 +40,9 @@ export async function fetchClubOwnershipMap(leagueId: string): Promise<Map<strin
   for (const r of rows) {
     map.set(r.teamId, {
       plTeamId: r.plTeamId,
-      // Normalise legacy rows (stored as FPL short form) to the full PL name. New writes are already
-      // full names, but this read-side override means we don't need a one-off backfill.
-      plTeamName: getPlTeamFullName(r.plTeamId, r.plTeamName),
+      // Resolve the full PL name from the season-stable short code. Never trust the stored
+      // `plTeamName` alone — rows written before the 2026-27 ID-map fix hold the wrong club.
+      plTeamName: getPlTeamFullName(r.plTeamId, r.plTeamName, r.plTeamShort),
       plTeamShort: r.plTeamShort,
       tier: r.tier as ClubTier,
     });

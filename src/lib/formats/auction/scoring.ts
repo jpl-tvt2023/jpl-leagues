@@ -147,7 +147,7 @@ export async function calculateAuctionTeamScore(
       clubResultSummary = result.summary;
     } else {
       // FPL outage — caller logs; default to 0 for now.
-      clubResultSummary = `${getPlTeamFullName(clubRow[0].plTeamId, clubRow[0].plTeamName)}: result unavailable (FPL fixtures fetch failed)`;
+      clubResultSummary = `${getPlTeamFullName(clubRow[0].plTeamId, clubRow[0].plTeamName, clubRow[0].plTeamShort)}: result unavailable (FPL fixtures fetch failed)`;
     }
   }
 
