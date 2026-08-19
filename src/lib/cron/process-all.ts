@@ -18,7 +18,7 @@ import { gameweekCaptains, playoffTies } from "@/lib/db/schema";
 import { asc, eq, and, isNull, ne, or } from "drizzle-orm";
 import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { syncGameweekDeadlines } from "@/lib/gameweeks/sync-deadlines";
-import { clearLiveCache, setLiveCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
+import { clearLiveCache, setLiveCachedScores, invalidateLeaguePageCache, type FplEventStatus } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
@@ -124,7 +124,9 @@ interface FetchInput {
 /*  Helpers                                                                   */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-type FplEvent = { id: number; finished: boolean; data_checked: boolean };
+// Shared with the FPL cache layer, which keys element-points TTL off the same flags.
+// Note this module's own eligibility check below deliberately gates on `finished` alone.
+type FplEvent = FplEventStatus;
 type FinalizeStatus = { ok: true } | { ok: false; reason: string };
 
 /**

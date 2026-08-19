@@ -122,7 +122,10 @@ import {
   getCachedScore, setCachedScore,
   getCachedElementPoints, setCachedElementPoints,
   getCachedBootstrap, setCachedBootstrap,
+  getCachedEventStatus, setCachedEventStatus,
+  CACHE_TTL, LIVE_CACHE_TTL,
   type CachedElementInfo,
+  type FplEventStatus,
 } from "./fpl-cache";
 import { db, gameweeks, fixtures, results } from "./db";
 import { eq, and, isNull, asc, inArray } from "drizzle-orm";
@@ -298,9 +301,55 @@ export async function fetchElementGameweekPoints(
     pointsMap[element.id] = element.stats.total_points;
   }
 
-  // Cache the result
-  await setCachedElementPoints(gameweek, pointsMap);
+  // Cache the result. A finished GW's points never move, so it keeps the long TTL; an in-flight
+  // GW gets the short one so live scores actually refresh during matches.
+  const final = await isGameweekFinal(gameweek);
+  await setCachedElementPoints(gameweek, pointsMap, final ? CACHE_TTL : LIVE_CACHE_TTL);
   return pointsMap;
+}
+
+/**
+ * Fetch per-gameweek FPL event status (finished / data_checked).
+ * Uses its own 10-minute cache — these flags flip mid-weekend.
+ */
+export async function fetchEventStatus(): Promise<FplEventStatus[]> {
+  const cached = await getCachedEventStatus();
+  if (cached) return cached;
+
+  const bootstrap = await fetchBootstrapData();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawEvents = (bootstrap.events ?? []) as any[];
+  const events: FplEventStatus[] = rawEvents.map((e) => ({
+    id: e.id as number,
+    finished: (e.finished as boolean) ?? false,
+    data_checked: (e.data_checked as boolean) ?? false,
+  }));
+
+  await setCachedEventStatus(events);
+  return events;
+}
+
+/**
+ * True only once a gameweek's points are settled.
+ *
+ * `finished` means every match has kicked off and ended; `data_checked` means FPL has confirmed
+ * bonus points. Points still move between the two, so both are required before we cache a GW's
+ * points for a full day.
+ *
+ * Any failure resolves to `false`, which selects the SHORT cache TTL. Erring toward re-fetching
+ * too often is always recoverable; erring toward a 24h freeze is what this whole change exists
+ * to prevent.
+ */
+export async function isGameweekFinal(gameweek: number): Promise<boolean> {
+  try {
+    const events = await fetchEventStatus();
+    const event = events.find((e) => e.id === gameweek);
+    if (!event) return false;
+    return event.finished === true && event.data_checked === true;
+  } catch (error) {
+    console.warn(`[fpl] event status lookup failed for GW${gameweek}; treating as not final`, error);
+    return false;
+  }
 }
 
 /**

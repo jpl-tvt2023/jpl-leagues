@@ -31,7 +31,7 @@ import {
   leagues,
   plStandingsConfig,
 } from "@/lib/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { getFplFixturesForGw } from "@/lib/fpl-live/players-left";
@@ -257,7 +257,9 @@ export async function getAvailableClubIds(leagueId: string): Promise<number[]> {
   return getUnsoldClubIds(leagueId, allIds);
 }
 
-/** Find the first club-less team at or after `startIdx` (scanning the whole snake ring once). */
+/** Find the first club-less team at or after `startIdx` (scanning the whole snake ring once).
+ *  The scan wraps, so calling it with `currentIdx + 1` still reaches the current team last — a lone
+ *  remaining club-less nominator is re-armed rather than stranded. */
 async function findClublessFrom(
   leagueId: string,
   snakeOrder: string[],
@@ -287,9 +289,15 @@ async function idleClubSession(sessionId: string): Promise<void> {
  * Point the session at a club-less nominator and arm their nomination deadline.
  *   - `startOffset = 0` arms the current nominator (or the next club-less team if they already own one).
  *   - `startOffset = 1` advances to the next club-less team after the current index.
+ * With `opts.onlyIfUnarmed`, the write only lands while `nominationDeadline` is still null, so a
+ * duplicate advance no-ops instead of skipping a turn.
  * Completes the session when every team already owns a club. No-ops while a club is on the block.
  */
-async function armClubNominator(sessionId: string, startOffset: number): Promise<void> {
+async function armClubNominator(
+  sessionId: string,
+  startOffset: number,
+  opts: { onlyIfUnarmed?: boolean } = {}
+): Promise<void> {
   const sess = await db.select().from(auctionSessions).where(eq(auctionSessions.id, sessionId)).limit(1);
   if (!sess.length || sess[0].type !== CLUB_AUCTION_SESSION_TYPE || sess[0].status !== "active") return;
 
@@ -313,10 +321,12 @@ async function armClubNominator(sessionId: string, startOffset: number): Promise
   if (!found) { await idleClubSession(sessionId); return; }
 
   const nomTimeout = sess[0].nominationTimeoutSeconds ?? CLUB_NOMINATION_TIMEOUT_DEFAULT;
-  await db
+  const arm = db
     .update(auctionSessions)
-    .set({ currentNominatorIndex: found.index, nominationDeadline: new Date(Date.now() + nomTimeout * 1000) })
-    .where(eq(auctionSessions.id, sessionId));
+    .set({ currentNominatorIndex: found.index, nominationDeadline: new Date(Date.now() + nomTimeout * 1000) });
+  await (opts.onlyIfUnarmed
+    ? arm.where(and(eq(auctionSessions.id, sessionId), isNull(auctionSessions.nominationDeadline)))
+    : arm.where(eq(auctionSessions.id, sessionId)));
 }
 
 /** Arm the current club-less nominator (used on session start / SSE no-deadline poll). */
@@ -324,11 +334,14 @@ export async function setClubNominationDeadline(sessionId: string): Promise<void
   await armClubNominator(sessionId, 0);
 }
 
-/** Advance to the next club-less nominator after a club resolves. Offset 0 (not 1) so the scan
- *  starts at the current index and `findClublessFrom` skips club-owners — this is idempotent, so a
- *  double-trigger (SSE + REST safety-net) re-arms the same team instead of skipping one. */
+/** Advance to the next club-less nominator after a club resolves. Offset 1, so the turn genuinely
+ *  rotates: a nominator who was outbid is still club-less and must NOT be re-armed on the spot —
+ *  they rejoin the ring at the back (offset 0 here made one team hog every nomination until they
+ *  finally won a club). Idempotency comes from `onlyIfUnarmed`: every caller nulls
+ *  `nominationDeadline` before advancing, so the first advance lands and a double-trigger
+ *  (SSE + REST safety-net) no-ops instead of skipping a turn. */
 export async function advanceClubNominator(sessionId: string): Promise<void> {
-  await armClubNominator(sessionId, 0);
+  await armClubNominator(sessionId, 1, { onlyIfUnarmed: true });
 }
 
 /**

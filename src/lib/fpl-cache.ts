@@ -15,8 +15,8 @@ function getRedis(): Redis | null {
   return redis;
 }
 
-const CACHE_TTL = 60 * 60 * 24; // 24 hours
-const LIVE_CACHE_TTL = 60 * 10; // 10 minutes
+export const CACHE_TTL = 60 * 60 * 24; // 24 hours
+export const LIVE_CACHE_TTL = 60 * 10; // 10 minutes
 const PAGE_CACHE_TTL = 60 * 60 * 25; // 25 hours (slightly longer than daily cron interval)
 
 interface CachedScore {
@@ -248,10 +248,19 @@ export async function getCachedElementPoints(gameweek: number): Promise<Record<n
   return data || null;
 }
 
-export async function setCachedElementPoints(gameweek: number, data: Record<number, number>): Promise<void> {
+/**
+ * `ttlSeconds` defaults to the 24h CACHE_TTL so existing callers are unchanged. Callers that know
+ * the gameweek is still in progress pass LIVE_CACHE_TTL instead — a finished GW's points never
+ * move, an in-flight GW's change every few minutes.
+ */
+export async function setCachedElementPoints(
+  gameweek: number,
+  data: Record<number, number>,
+  ttlSeconds: number = CACHE_TTL
+): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getElementPointsKey(gameweek), data, { ex: CACHE_TTL });
+  await r.set(getElementPointsKey(gameweek), data, { ex: ttlSeconds });
 }
 
 export async function clearCachedElementPoints(gameweek: number): Promise<void> {
@@ -290,6 +299,38 @@ export async function setCachedBootstrap(data: CachedElementInfo[]): Promise<voi
   const r = getRedis();
   if (!r) return;
   await r.set(getBootstrapKey(), data, { ex: CACHE_TTL });
+}
+
+/**
+ * FPL event (gameweek) status — drives how long we may cache a GW's element points.
+ *
+ * Kept under its own short-lived key rather than folded into `fpl:bootstrap:latest`: that entry
+ * is typed `CachedElementInfo[]` and reshaping it would need a key-version bump plus churn across
+ * its callers. It also needs a much shorter TTL than the 24h bootstrap — the `finished` /
+ * `data_checked` flags flip mid-weekend and a day-stale copy would keep a finished GW on the
+ * short TTL far longer than necessary.
+ */
+export interface FplEventStatus {
+  id: number;
+  finished: boolean;
+  data_checked: boolean;
+}
+
+function getEventStatusKey(): string {
+  return "fpl:events:latest";
+}
+
+export async function getCachedEventStatus(): Promise<FplEventStatus[] | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<FplEventStatus[]>(getEventStatusKey());
+  return data || null;
+}
+
+export async function setCachedEventStatus(data: FplEventStatus[]): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(getEventStatusKey(), data, { ex: LIVE_CACHE_TTL });
 }
 
 // ============================================
