@@ -396,6 +396,29 @@ export default function AuctionRoomPage() {
   const sessionIdRef = useRef<string | null>(null);
   const lastHeartbeatRef = useRef<number>(Date.now());
 
+  // Client↔server clock offset, in ms: serverNow() = Date.now() + offset.
+  //
+  // Every deadline the server hands us (bid expiry, nomination deadline, intermission) is stamped
+  // with the SERVER's clock, but the countdowns used to compare them against the raw device clock.
+  // Phone clocks routinely drift several seconds, so a user whose clock ran slow saw time still on
+  // the timer, clicked Bid, and got "Auction timer has expired" — surfaced as the "Out of sync"
+  // toast. (A fast clock is worse but silent: the timer hits 0 early and they stop bidding.) The
+  // shorter the lot timer, the more often this bites.
+  const clockOffsetRef = useRef<number>(0);
+  const serverNow = useCallback(() => Date.now() + clockOffsetRef.current, []);
+
+  /**
+   * Fold a server timestamp into the offset, compensating for round-trip latency: the reading was
+   * taken roughly halfway through the request, so compare it against that midpoint rather than now.
+   * Ignore sub-second noise — the HTTP `Date` header only has 1s resolution and we only need to
+   * correct gross device-clock drift, not micro-jitter.
+   */
+  const noteServerTime = useCallback((serverMs: number, requestStartMs?: number) => {
+    const localMidpoint = requestStartMs != null ? (requestStartMs + Date.now()) / 2 : Date.now();
+    const offset = serverMs - localMidpoint;
+    if (Math.abs(offset - clockOffsetRef.current) > 1000) clockOffsetRef.current = offset;
+  }, []);
+
   useEffect(() => { teamMapRef.current = teamMap; }, [teamMap]);
   useEffect(() => { leagueIdRef.current = leagueId; }, [leagueId]);
   useEffect(() => { myTeamIdRef.current = myTeamId; }, [myTeamId]);
@@ -549,7 +572,17 @@ export default function AuctionRoomPage() {
   const refreshSessionState = useCallback(async () => {
     const lid = leagueIdRef.current;
     if (!lid) return;
+    const startedAt = Date.now();
     const res = await fetch(`/api/auction/session?leagueId=${lid}`);
+    // True up the clock offset from the response's `Date` header. This runs on the 3s fallback poll,
+    // so a freshly-opened tab is corrected almost immediately instead of waiting up to 15s for the
+    // first SSE heartbeat.
+    // +500ms centres the estimate: the `Date` header truncates DOWN to whole seconds, so taken raw
+    // it makes the client think it has up to a second more than it really does — the exact direction
+    // that causes late bids to be rejected. The SSE heartbeat carries full-precision ISO time and
+    // supersedes this within 15s.
+    const serverDate = Date.parse(res.headers.get("date") ?? "");
+    if (!Number.isNaN(serverDate)) noteServerTime(serverDate + 500, startedAt);
     if (!res.ok) return;
     const json = await res.json();
     if (!json.activeSession || json.activeSession.id !== sessionIdRef.current) return;
@@ -586,7 +619,7 @@ export default function AuctionRoomPage() {
     } else {
       setCurrentBid((prev) => (prev === null ? prev : null));
     }
-  }, []);
+  }, [noteServerTime]);
 
   // Re-fetch per-team PL club ownership. `/api/standings` (and thus `teamMap.ownedClub`) is only
   // populated on initial load otherwise, so this keeps club-eligibility checks (bid buttons) and
@@ -659,8 +692,15 @@ export default function AuctionRoomPage() {
     es.onopen = () => { setSseConnected(true); lastHeartbeatRef.current = Date.now(); };
     es.onerror = () => setSseConnected(false);
 
-    // Stamp liveness on the server's 15s heartbeat so the watchdog can detect a silently-dead stream.
-    es.addEventListener("heartbeat", () => { lastHeartbeatRef.current = Date.now(); });
+    // Stamp liveness on the server's 15s heartbeat so the watchdog can detect a silently-dead stream,
+    // and use its `time` payload to keep the client↔server clock offset trued up.
+    es.addEventListener("heartbeat", (e) => {
+      lastHeartbeatRef.current = Date.now();
+      try {
+        const t = Date.parse(JSON.parse((e as MessageEvent).data)?.time);
+        if (!Number.isNaN(t)) noteServerTime(t);
+      } catch { /* heartbeat is best-effort — liveness already stamped */ }
+    });
 
     es.addEventListener("auction-state", (e) => {
       const data = JSON.parse((e as MessageEvent).data);
@@ -769,7 +809,7 @@ export default function AuctionRoomPage() {
       eventSourceRef.current = null;
       setSseConnected(false);
     };
-  }, [sessionId, sessionStatus, addFeed, refreshSessionState, resyncAuctionScreen, sseReconnectTick, refreshWishlist]);
+  }, [sessionId, sessionStatus, addFeed, refreshSessionState, resyncAuctionScreen, sseReconnectTick, refreshWishlist, noteServerTime]);
 
   // Heartbeat watchdog: if no event (heartbeat or otherwise) lands for >25s while the session is
   // active, the SSE connection is presumed dead — bump the reconnect tick to tear down + reopen the
@@ -808,13 +848,13 @@ export default function AuctionRoomPage() {
       return;
     }
     const tick = () => {
-      const ms = new Date(currentBid.expiresAt).getTime() - Date.now();
+      const ms = new Date(currentBid.expiresAt).getTime() - serverNow();
       setTimerSec(Math.max(0, Math.ceil(ms / 1000)));
     };
     tick();
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
-  }, [currentBid]);
+  }, [currentBid, serverNow]);
 
   // Nomination deadline countdown (only when no currentBid)
   useEffect(() => {
@@ -823,13 +863,13 @@ export default function AuctionRoomPage() {
       return;
     }
     const tick = () => {
-      const ms = new Date(nominationDeadline).getTime() - Date.now();
+      const ms = new Date(nominationDeadline).getTime() - serverNow();
       setNominationDeadlineSec(Math.max(0, Math.ceil(ms / 1000)));
     };
     tick();
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
-  }, [currentBid, nominationDeadline]);
+  }, [currentBid, nominationDeadline, serverNow]);
 
   // Post-sale intermission countdown ("Next nomination in N").
   useEffect(() => {
@@ -838,7 +878,7 @@ export default function AuctionRoomPage() {
       return;
     }
     const tick = () => {
-      const ms = new Date(intermissionUntil).getTime() - Date.now();
+      const ms = new Date(intermissionUntil).getTime() - serverNow();
       const sec = Math.max(0, Math.ceil(ms / 1000));
       setIntermissionSec(sec);
       if (sec === 0) setIntermissionUntil(null); // window elapsed — fall back to normal waiting view
@@ -846,7 +886,7 @@ export default function AuctionRoomPage() {
     tick();
     const t = setInterval(tick, 250);
     return () => clearInterval(t);
-  }, [intermissionUntil]);
+  }, [intermissionUntil, serverNow]);
 
   const currentNominatorId = useMemo(() => {
     if (!session?.snakeOrder?.length) return null;

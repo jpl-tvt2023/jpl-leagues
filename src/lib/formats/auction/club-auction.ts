@@ -31,7 +31,7 @@ import {
   leagues,
   plStandingsConfig,
 } from "@/lib/db/schema";
-import { eq, and, sql, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, sql, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { getFplFixturesForGw } from "@/lib/fpl-live/players-left";
@@ -296,7 +296,7 @@ async function idleClubSession(sessionId: string): Promise<void> {
 async function armClubNominator(
   sessionId: string,
   startOffset: number,
-  opts: { onlyIfUnarmed?: boolean; clearIntermission?: boolean } = {}
+  opts: { onlyIfUnarmed?: boolean; claimIntermission?: Date | null } = {}
 ): Promise<void> {
   const sess = await db.select().from(auctionSessions).where(eq(auctionSessions.id, sessionId)).limit(1);
   if (!sess.length || sess[0].type !== CLUB_AUCTION_SESSION_TYPE || sess[0].status !== "active") return;
@@ -323,14 +323,17 @@ async function armClubNominator(
   const nomTimeout = sess[0].nominationTimeoutSeconds ?? CLUB_NOMINATION_TIMEOUT_DEFAULT;
   const conditions = [eq(auctionSessions.id, sessionId)];
   if (opts.onlyIfUnarmed) conditions.push(isNull(auctionSessions.nominationDeadline));
-  // Claim the post-sale intermission in the SAME write that moves the cursor — see the note on
-  // `advanceNominator` in resolve-bid.ts for why claiming separately drops or double-spends turns.
-  if (opts.clearIntermission) conditions.push(isNotNull(auctionSessions.intermissionUntil));
+  // Claim the post-sale intermission in the SAME write that moves the cursor, matching the caller's
+  // OBSERVED value — see the note on `advanceNominator` in resolve-bid.ts for why claiming
+  // separately, or matching any non-null value, drops or double-spends turns.
+  if (opts.claimIntermission != null) {
+    conditions.push(eq(auctionSessions.intermissionUntil, opts.claimIntermission));
+  }
 
   await db
     .update(auctionSessions)
     .set({
-      ...(opts.clearIntermission ? { intermissionUntil: null } : {}),
+      ...(opts.claimIntermission != null ? { intermissionUntil: null } : {}),
       currentNominatorIndex: found.index,
       nominationDeadline: new Date(Date.now() + nomTimeout * 1000),
     })
@@ -350,9 +353,9 @@ export async function setClubNominationDeadline(sessionId: string): Promise<void
  *  (SSE + REST safety-net) no-ops instead of skipping a turn. */
 export async function advanceClubNominator(
   sessionId: string,
-  opts: { clearIntermission?: boolean } = {},
+  opts: { claimIntermission?: Date | null } = {},
 ): Promise<void> {
-  await armClubNominator(sessionId, 1, { onlyIfUnarmed: true, clearIntermission: opts.clearIntermission });
+  await armClubNominator(sessionId, 1, { onlyIfUnarmed: true, claimIntermission: opts.claimIntermission });
 }
 
 /**

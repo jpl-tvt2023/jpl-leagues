@@ -69,7 +69,7 @@ async function resolveExpiredBids(sessionId: string) {
     if (sess.length && sess[0].status === "active" && sess[0].intermissionUntil && now >= sess[0].intermissionUntil) {
       // Claim + advance in one write — see advanceNominator. A separate claim could be spent
       // without the cursor moving, or leave a stale intermission to be claimed twice later.
-      await advanceNominator(sessionId, { clearIntermission: true });
+      await advanceNominator(sessionId, { claimIntermission: sess[0].intermissionUntil });
     }
   }
 }

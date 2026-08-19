@@ -70,14 +70,15 @@ async function main() {
   check("duplicate no-op", (await sess()).currentNominatorIndex, after);
 
   console.log("\n--- Intermission claim: advance only with a token, exactly once ---");
+  const token = new Date(Date.now() - 1000);
   await db.update(auctionSessions)
-    .set({ currentNominatorIndex: 0, nominationDeadline: null, intermissionUntil: new Date(Date.now() - 1000) })
+    .set({ currentNominatorIndex: 0, nominationDeadline: null, intermissionUntil: token })
     .where(eq(auctionSessions.id, SESSION_ID));
-  await advanceClubNominator(SESSION_ID, { clearIntermission: true });
+  await advanceClubNominator(SESSION_ID, { claimIntermission: token });
   check("advanced with token", (await sess()).currentNominatorIndex, 1);
   check("token consumed", (await sess()).intermissionUntil, null);
   await clearDeadline();
-  await advanceClubNominator(SESSION_ID, { clearIntermission: true });
+  await advanceClubNominator(SESSION_ID, { claimIntermission: token });
   check("no token -> no advance", (await sess()).currentNominatorIndex, 1);
 
   console.log("\n--- Club owners skipped; last club-less team re-armed; then idles ---");

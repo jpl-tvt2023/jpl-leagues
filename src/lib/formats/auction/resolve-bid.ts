@@ -20,7 +20,7 @@ import {
   teamPenalties,
   teams,
 } from "@/lib/db/schema";
-import { eq, and, asc, sql, lte, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, asc, sql, lte, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchElementInfo } from "@/lib/fpl";
 import { leagues } from "@/lib/db/schema";
@@ -237,7 +237,7 @@ async function isNominatorEligible(leagueId: string, teamId: string): Promise<bo
  */
 export async function advanceNominator(
   sessionId: string,
-  opts: { clearIntermission?: boolean } = {},
+  opts: { claimIntermission?: Date | null } = {},
 ): Promise<void> {
   const sessionRow = await db
     .select({
@@ -253,14 +253,21 @@ export async function advanceNominator(
   if (!sessionRow.length) return;
 
   // When advancing out of a post-sale intermission, the claim on `intermissionUntil` and the cursor
-  // move must be ONE write. Claiming separately (as callers used to) meant a request torn down
-  // between the two — routine for SSE on serverless — consumed the intermission without moving the
-  // cursor, and a leftover intermission from an earlier lot could later be claimed a second time
-  // and skip a team. Guarding on `isNotNull` keeps it single-winner across concurrent pollers.
-  const claimWhere = opts.clearIntermission
-    ? and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.intermissionUntil))
+  // move must be ONE write. Claiming separately meant a request torn down between the two — routine
+  // for SSE on serverless — consumed the intermission without moving the cursor.
+  //
+  // The claim matches the caller's OBSERVED `intermissionUntil`, not merely "some intermission
+  // exists": the caller read its value in an earlier snapshot, and a newer intermission may have
+  // been written since. Matching exactly means a stale caller affects 0 rows instead of spending a
+  // token that belongs to a later lot (which advanced the cursor twice and skipped a team).
+  const claiming = opts.claimIntermission != null;
+  const claimWhere = claiming
+    ? and(
+        eq(auctionSessions.id, sessionId),
+        eq(auctionSessions.intermissionUntil, opts.claimIntermission as Date),
+      )
     : eq(auctionSessions.id, sessionId);
-  const claimSet = opts.clearIntermission ? { intermissionUntil: null } : {};
+  const claimSet = claiming ? { intermissionUntil: null } : {};
 
   if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
     await advanceClubNominator(sessionId, opts);
