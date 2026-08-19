@@ -4,8 +4,7 @@
 import { db, teams, auctionScores, auctionOwnership, leagues } from "../../db";
 import { eq, and } from "drizzle-orm";
 import { calculateAuctionTeamScore } from "./scoring";
-import { getPayoutForRank, calculateRefund, calculateFMV } from "./economy";
-import { isPrimary } from "./tier";
+import { assignRanksAndPayouts, calculateRefund, calculateFMV } from "./economy";
 import { createNotification } from "../../notifications";
 import { randomUUID } from "crypto";
 
@@ -140,7 +139,10 @@ export async function processAuctionGameweek(
   }
   const purseByTeam = new Map(leagueTeams.map((t) => [t.id, t.purse]));
 
-  // Rank: GW points desc → squad value asc (lower wins) → purse desc (higher wins)
+  // Order: GW points desc → squad value asc (lower wins) → purse desc (higher wins).
+  // The squad-value/purse keys no longer decide money — teams level on points share a rank and
+  // split the pot (see assignRanksAndPayouts) — but they still give a deterministic row order
+  // within a tied block.
   teamScores.sort((a, b) => {
     if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
     const aSv = squadValueByTeam.get(a.teamId) ?? 0;
@@ -149,26 +151,21 @@ export async function processAuctionGameweek(
     return (purseByTeam.get(b.teamId) ?? 0) - (purseByTeam.get(a.teamId) ?? 0);
   });
 
-  // Primary-tier leagues have no GW payouts (trades are disabled, so extra purse is useless). Ranks
-  // are still assigned for standings; the payout is just recorded/credited as £0.
-  const leagueTierRow = await db
-    .select({ auctionTier: leagues.auctionTier })
-    .from(leagues)
-    .where(eq(leagues.id, leagueId))
-    .limit(1);
-  const noPayouts = isPrimary(leagueTierRow[0]?.auctionTier);
-
-  // Assign ranks and payouts
-  const rankedScores = teamScores.map((score, index) => {
-    const rank = index + 1;
-    const payout = noPayouts ? 0 : getPayoutForRank(rank);
-    return { ...score, rank, payout };
-  });
+  // Assign ranks and payouts. Applies to every auction tier — Primary earns GW payouts too
+  // (its purse sink is the mini-auction).
+  const rankedScores = assignRanksAndPayouts(teamScores, (s) => s.totalPoints).map(
+    ({ item, rank, payout }) => ({ ...item, rank, payout })
+  );
 
   // Notification fan-out happens after the transaction commits. Track refunds
   // per team here so the post-commit loop has the data it needs.
   const refundByTeam = new Map<string, number>();
   const releaseCountByTeam = new Map<string, number>();
+
+  // Payout already credited for this GW by an earlier run, per team. Populated only on
+  // forceReprocess (stays empty on a first pass). Purses are then moved by the delta rather
+  // than the raw payout, so reprocessing the same GW twice is a no-op instead of paying twice.
+  const priorPayoutByTeam = new Map<string, number>();
 
   // Atomically write scores and update purses.
   // Race-safety: re-check duplicate scores INSIDE the transaction. If a concurrent caller wrote
@@ -210,7 +207,7 @@ export async function processAuctionGameweek(
     if (forceReprocess) {
       // Delete one by one since Drizzle SQLite doesn't support compound where on delete easily
       const existingScores = await tx
-        .select({ id: auctionScores.id })
+        .select({ id: auctionScores.id, teamId: auctionScores.teamId, payout: auctionScores.payout })
         .from(auctionScores)
         .where(
           and(
@@ -219,6 +216,12 @@ export async function processAuctionGameweek(
           )
         );
       for (const existing of existingScores) {
+        // Record what the previous run paid before the row goes away — the purse update below
+        // needs it to reverse the old credit.
+        priorPayoutByTeam.set(
+          existing.teamId,
+          (priorPayoutByTeam.get(existing.teamId) ?? 0) + existing.payout
+        );
         await tx.delete(auctionScores).where(eq(auctionScores.id, existing.id));
       }
     }
@@ -242,18 +245,40 @@ export async function processAuctionGameweek(
         payout: score.payout,
       });
 
-      // Update team purse and income
+      // Update team purse and income by the DELTA against whatever a previous run of this GW
+      // already credited (0 on a first pass). `team.purse` is the pre-transaction snapshot and
+      // already includes the prior payout, so snapshot + new − prior lands on the right number.
       const team = leagueTeams.find((t) => t.id === score.teamId);
       if (team) {
-        await tx
-          .update(teams)
-          .set({
-            purse: team.purse + score.payout,
-            totalIncome: team.totalIncome + score.payout,
-            updatedAt: new Date(),
-          })
-          .where(eq(teams.id, score.teamId));
+        const delta = score.payout - (priorPayoutByTeam.get(score.teamId) ?? 0);
+        if (delta !== 0) {
+          await tx
+            .update(teams)
+            .set({
+              purse: team.purse + delta,
+              totalIncome: team.totalIncome + delta,
+              updatedAt: new Date(),
+            })
+            .where(eq(teams.id, score.teamId));
+        }
       }
+    }
+
+    // Any team that was paid for this GW previously but has no score row now (e.g. removed from
+    // the league between runs) would otherwise keep a stale credit — reverse it.
+    for (const [teamId, priorPayout] of priorPayoutByTeam) {
+      if (priorPayout === 0) continue;
+      if (rankedScores.some((s) => s.teamId === teamId)) continue;
+      const team = leagueTeams.find((t) => t.id === teamId);
+      if (!team) continue;
+      await tx
+        .update(teams)
+        .set({
+          purse: team.purse - priorPayout,
+          totalIncome: team.totalIncome - priorPayout,
+          updatedAt: new Date(),
+        })
+        .where(eq(teams.id, teamId));
     }
 
     // Finalize pending releases at cycle boundaries (GW 10, 20, 30)

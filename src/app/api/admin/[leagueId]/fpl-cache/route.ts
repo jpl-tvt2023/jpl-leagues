@@ -7,6 +7,7 @@ import {
   clearGameweekCacheForIds,
   getAllCachedScoresForIds,
   clearLiveCache,
+  clearCachedElementPoints,
 } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 
@@ -59,11 +60,15 @@ export async function DELETE(request: NextRequest) {
       }
       await clearGameweekCacheForIds(gw, fplIds, leagueId);
       await clearLiveCache(gw, leagueId);
+      // Element points are global, not league-scoped — must not be gated on `fplIds`, which is
+      // empty for auction leagues (they have no rows in the TvT `players` table).
+      await clearCachedElementPoints(gw);
       return NextResponse.json({ success: true, message: `Cache cleared for GW${gw}` });
     } else {
       for (let gw = 1; gw <= 38; gw++) {
         await clearGameweekCacheForIds(gw, fplIds, leagueId);
         await clearLiveCache(gw, leagueId);
+        await clearCachedElementPoints(gw);
       }
       return NextResponse.json({ success: true, message: "All cache cleared" });
     }
