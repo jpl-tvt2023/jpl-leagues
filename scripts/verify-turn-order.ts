@@ -1,19 +1,28 @@
 /**
- * Regression test for player-auction turn order: no team nominates twice, and no team is skipped.
+ * Regression tests for player-auction turn order.
  *
- * Guards the fix for the live incident where one team nominated two lots in a row and the next team
- * lost its turn entirely — caused by an unconsumed intermission being claimable a second time.
- * Check 6 is a control that reproduces the old behaviour, so a vacuous pass is visible.
+ * Covers two live incidents:
+ *   A. One team nominated two lots in a row and the next team lost its turn — an unconsumed
+ *      intermission was claimable a second time.
+ *   B. A team was penalised 2s after successfully nominating, while the *next* team's fresh 60s
+ *      window was silently consumed — the timeout claim matched "any non-null deadline" instead of
+ *      the specific window the poll had observed.
  *
- * Creates a throwaway league, drives the advance paths directly, then deletes it. Point it at a
- * scratch DB, never dev or prod:
+ * Checks 6 and 9 are CONTROLS that reproduce the old behaviour, so a vacuous pass is visible.
+ *
+ * The claim queries for B are re-expressed here rather than imported, because they live inline in
+ * the SSE route. That means these checks verify the claim *semantics* (including how drizzle
+ * compares `integer(mode:"timestamp")` columns), not the route wiring — the route uses the same
+ * predicates.
+ *
+ * Point it at a scratch DB, never dev or prod:
  *   DATABASE_URL="file:./scratch.db" npx drizzle-kit push --force
  *   DATABASE_URL="file:./scratch.db" npx tsx scripts/verify-turn-order.ts
  */
 import { db } from "@/lib/db";
 import { leagues, teams, auctionSessions, auctionBids, auctionOwnership } from "@/lib/db/schema";
 import { advanceNominator, beginIntermission } from "@/lib/formats/auction/resolve-bid";
-import { eq } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 
 const LEAGUE_ID = "zz-verify-turn";
 const SESSION_ID = "zz-verify-turn-sess";
@@ -32,6 +41,28 @@ async function sess() {
 }
 async function setState(patch: Record<string, unknown>) {
   await db.update(auctionSessions).set(patch).where(eq(auctionSessions.id, SESSION_ID));
+}
+
+/** The FIXED timeout claim: matches the exact deadline + cursor the poll observed. */
+async function claimTimeoutExact(snapshot: { nominationDeadline: Date; currentNominatorIndex: number }) {
+  const r = await db
+    .update(auctionSessions)
+    .set({ nominationDeadline: null })
+    .where(and(
+      eq(auctionSessions.id, SESSION_ID),
+      eq(auctionSessions.nominationDeadline, snapshot.nominationDeadline),
+      eq(auctionSessions.currentNominatorIndex, snapshot.currentNominatorIndex),
+    ));
+  return r.rowsAffected;
+}
+
+/** The OLD timeout claim: matches any non-null deadline. Used as a control. */
+async function claimTimeoutLoose() {
+  const r = await db
+    .update(auctionSessions)
+    .set({ nominationDeadline: null })
+    .where(and(eq(auctionSessions.id, SESSION_ID), isNotNull(auctionSessions.nominationDeadline)));
+  return r.rowsAffected;
 }
 
 async function setup() {
@@ -54,61 +85,93 @@ async function setup() {
 async function main() {
   await setup();
 
+  // ── A: intermission / advance ────────────────────────────────────────────────────────────────
   console.log("\n--- 1. Normal advance moves exactly one team ---");
-  await setState({ currentNominatorIndex: 0, intermissionUntil: new Date(Date.now() - 1000), nominationDeadline: null });
-  await advanceNominator(SESSION_ID, { clearIntermission: true });
+  const t1 = new Date(Date.now() - 1000);
+  await setState({ currentNominatorIndex: 0, intermissionUntil: t1, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { claimIntermission: t1 });
   check("index after advance", (await sess()).currentNominatorIndex, 1);
   check("intermission consumed", (await sess()).intermissionUntil, null);
 
-  console.log("\n--- 2. Double-trigger (two pollers) advances only once ---");
-  await setState({ currentNominatorIndex: 1, intermissionUntil: new Date(Date.now() - 1000), nominationDeadline: null });
-  await advanceNominator(SESSION_ID, { clearIntermission: true });
+  console.log("\n--- 2. Double-trigger (two pollers, same token) advances only once ---");
+  const t2 = new Date(Date.now() - 1000);
+  await setState({ currentNominatorIndex: 1, intermissionUntil: t2, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { claimIntermission: t2 });
   const afterFirst = (await sess()).currentNominatorIndex;
-  await advanceNominator(SESSION_ID, { clearIntermission: true }); // second poller, token already spent
+  await advanceNominator(SESSION_ID, { claimIntermission: t2 }); // second poller, token already spent
   check("first advance", afterFirst, 2);
   check("second advance is a no-op", (await sess()).currentNominatorIndex, 2);
 
-  console.log("\n--- 3. THE RAUNAK SKIP: a stale intermission must not advance a second time ---");
-  // Reproduces prod: a lot resolved while an older, unconsumed intermission was still sitting in
-  // the row. Both tokens fired and the team in between never got a turn.
+  console.log("\n--- 3. A stale token must not spend a NEWER intermission ---");
+  const stale = new Date(Date.now() - 250_000);
+  // Whole seconds: the column is integer(mode:"timestamp"), so sub-second precision is truncated on
+  // write. Values read back from the DB (which is what the route compares) are always whole seconds.
+  const fresh = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({ currentNominatorIndex: 0, intermissionUntil: fresh, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { claimIntermission: stale }); // poller holding an old snapshot
+  check("stale token does not advance", (await sess()).currentNominatorIndex, 0);
+  check("newer token survives", (await sess()).intermissionUntil?.getTime(), fresh.getTime());
+  await advanceNominator(SESSION_ID, { claimIntermission: fresh }); // the legitimate poller
+  check("legitimate token advances once", (await sess()).currentNominatorIndex, 1);
+
+  console.log("\n--- 4. Opening a lot scrubs a pending intermission ---");
   await setState({ currentNominatorIndex: 0, intermissionUntil: new Date(Date.now() - 250_000), nominationDeadline: null });
-  // A new lot opens — the nomination path must scrub the stale token.
   await db.insert(auctionBids).values({
     id: "zz-bid-1", leagueId: LEAGUE_ID, sessionId: SESSION_ID, nominatorTeamId: TEAM_IDS[0],
     fplElementId: 1, playerName: "Zed", currentHighBid: 500000, currentHighBidderId: TEAM_IDS[0],
-    minBid: 500000, status: "open", expiresAt: new Date(Date.now() + 45000),
+    minBid: 500000, status: "open", expiresAt: new Date(Date.now() + 30000),
   });
-  await setState({ nominationDeadline: null, intermissionUntil: null }); // what the nominate route now does
+  await setState({ nominationDeadline: null, intermissionUntil: null }); // what the nominate route does
   check("stale token scrubbed when lot opened", (await sess()).intermissionUntil, null);
-  // Lot sells -> one fresh intermission -> exactly one advance.
   await db.update(auctionBids).set({ status: "sold" }).where(eq(auctionBids.id, "zz-bid-1"));
   await beginIntermission(SESSION_ID);
-  await setState({ intermissionUntil: new Date(Date.now() - 1000) }); // fast-forward the cooldown
-  await advanceNominator(SESSION_ID, { clearIntermission: true });
+  const postSale = (await sess()).intermissionUntil!;
+  await setState({ intermissionUntil: new Date(Date.now() - 1000) });
+  const armed = (await sess()).intermissionUntil!;
+  void postSale;
+  await advanceNominator(SESSION_ID, { claimIntermission: armed });
   check("advanced exactly one team (0 -> 1, not 0 -> 2)", (await sess()).currentNominatorIndex, 1);
 
-  console.log("\n--- 4. Mid-advance crash leaves the token intact for a retry ---");
-  await setState({ currentNominatorIndex: 1, intermissionUntil: new Date(Date.now() - 1000), nominationDeadline: null });
-  // Simulate a torn-down request: the claim is never written because the whole advance is one write.
-  const before = (await sess()).currentNominatorIndex;
-  check("token still set before retry", (await sess()).intermissionUntil !== null, true);
-  await advanceNominator(SESSION_ID, { clearIntermission: true }); // the retry
-  check("retry advanced from the unchanged index", (await sess()).currentNominatorIndex, before + 1);
-
-  console.log("\n--- 5. Advance without a token does nothing when clearIntermission is set ---");
+  console.log("\n--- 5. Advance without a matching token does nothing ---");
   await setState({ currentNominatorIndex: 2, intermissionUntil: null, nominationDeadline: null });
-  await advanceNominator(SESSION_ID, { clearIntermission: true });
-  check("no intermission -> no advance", (await sess()).currentNominatorIndex, 2);
+  await advanceNominator(SESSION_ID, { claimIntermission: new Date(Date.now() - 1000) });
+  check("no token -> no advance", (await sess()).currentNominatorIndex, 2);
 
-  console.log("\n--- 6. CONTROL: the old unguarded path double-advances (this is the bug) ---");
-  // The pre-fix callers claimed the intermission separately and then called a plain advance, so
-  // nothing stopped a second advance. Reproduced here by advancing without the claim guard.
+  console.log("\n--- 6. CONTROL: unguarded advance double-advances (the old skip bug) ---");
   await setState({ currentNominatorIndex: 0, intermissionUntil: null, nominationDeadline: null });
-  await advanceNominator(SESSION_ID); // poller 1 (old style)
-  await advanceNominator(SESSION_ID); // poller 2 (old style) — nothing stops it
-  const unguarded = (await sess()).currentNominatorIndex;
-  check("unguarded double advance skips a team (0 -> 2)", unguarded, 2);
-  console.log("      ^ confirms the guard in checks 2-5 is what prevents the skip");
+  await advanceNominator(SESSION_ID); // poller 1, old style
+  await advanceNominator(SESSION_ID); // poller 2, old style — nothing stops it
+  check("unguarded double advance skips a team (0 -> 2)", (await sess()).currentNominatorIndex, 2);
+
+  // ── B: nomination-timeout claim ──────────────────────────────────────────────────────────────
+  console.log("\n--- 7. Timestamp equality actually matches (guards against a silent never-match) ---");
+  const dl = new Date(Math.floor((Date.now() - 5000) / 1000) * 1000); // whole seconds: column resolution
+  await setState({ currentNominatorIndex: 1, nominationDeadline: dl, intermissionUntil: null });
+  check("exact claim succeeds on an unchanged window", await claimTimeoutExact({ nominationDeadline: dl, currentNominatorIndex: 1 }), 1);
+  check("deadline cleared", (await sess()).nominationDeadline, null);
+
+  console.log("\n--- 8. Two pollers with the same snapshot: only one claims ---");
+  await setState({ currentNominatorIndex: 1, nominationDeadline: dl });
+  const first = await claimTimeoutExact({ nominationDeadline: dl, currentNominatorIndex: 1 });
+  const second = await claimTimeoutExact({ nominationDeadline: dl, currentNominatorIndex: 1 });
+  check("first poller claims", first, 1);
+  check("second poller gets nothing", second, 0);
+
+  console.log("\n--- 9. THE ANIKET BUG: a stale snapshot must not consume the next team's window ---");
+  // Poll snapshot: deadline expired, cursor on team 1. Meanwhile the cursor advanced to team 2 and
+  // team 2 was armed with a fresh 60s window.
+  const staleSnapshot = { nominationDeadline: dl, currentNominatorIndex: 1 };
+  const team2Window = new Date(Math.floor((Date.now() + 60_000) / 1000) * 1000);
+  await setState({ currentNominatorIndex: 2, nominationDeadline: team2Window });
+  check("stale snapshot claims nothing", await claimTimeoutExact(staleSnapshot), 0);
+  check("team 2's window survives", (await sess()).nominationDeadline?.getTime(), team2Window.getTime());
+  check("cursor did not move again", (await sess()).currentNominatorIndex, 2);
+
+  console.log("\n--- 10. CONTROL: the old loose claim eats team 2's window (the bug) ---");
+  await setState({ currentNominatorIndex: 2, nominationDeadline: team2Window });
+  check("loose claim wrongly succeeds", await claimTimeoutLoose(), 1);
+  check("team 2's window destroyed", (await sess()).nominationDeadline, null);
+  console.log("      ^ with the stale snapshot's teamId, this is what penalised the wrong team");
 
   await db.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, LEAGUE_ID));
   await db.delete(leagues).where(eq(leagues.id, LEAGUE_ID));

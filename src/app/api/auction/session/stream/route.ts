@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { db, auctionSessions, auctionBids } from "@/lib/db";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import {
   resolveExpiredBid,
   advanceNominator,
@@ -231,21 +231,30 @@ export async function GET(request: NextRequest) {
               // Cooldown elapsed — advance the nominator, clearing the intermission in the SAME
               // write so only one stream advances and the claim can never be spent without the
               // cursor moving. Next poll picks up the fresh nomination state.
-              await advanceNominator(sessionId, { clearIntermission: true });
+              await advanceNominator(sessionId, { claimIntermission: session.intermissionUntil });
               return;
             }
 
             if (session.nominationDeadline && now > session.nominationDeadline) {
-              // Atomically claim the timeout — only one SSE stream wins the race.
-              // Without this, N connected clients all call handleNominationTimeout
-              // and advanceNominator N times, skipping turns.
+              // Atomically claim THIS EXACT window — only one SSE stream wins the race.
+              //
+              // Matching on the observed deadline AND cursor (not merely "some deadline exists") is
+              // what makes the claim safe. `session` is a snapshot taken at the top of the poll; by
+              // the time we get here the cursor may already have advanced and armed the NEXT team's
+              // fresh 60s window. A bare `isNotNull` guard would happily consume that new window and
+              // then run the timeout against `currentNominatorId` from the stale snapshot — which
+              // penalised a team that had just nominated successfully, destroyed the next team's
+              // window before they ever saw it, and advanced the cursor a second time so a third
+              // team lost its turn too. Matching exactly means a stale poll affects 0 rows and does
+              // nothing; the next poll re-evaluates against fresh state.
               const claimed = await db
                 .update(auctionSessions)
                 .set({ nominationDeadline: null })
                 .where(
                   and(
                     eq(auctionSessions.id, sessionId),
-                    isNotNull(auctionSessions.nominationDeadline)
+                    eq(auctionSessions.nominationDeadline, session.nominationDeadline),
+                    eq(auctionSessions.currentNominatorIndex, session.currentNominatorIndex)
                   )
                 );
 
