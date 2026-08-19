@@ -6,35 +6,35 @@
 // FPL bootstrap team IDs are season-specific. At each new PL season, update this file with the new
 // IDs (or use the superadmin tab to edit live).
 //
-// Source for 2025-26 PL season:
-//   - Top 8: last season's (2024-25) final-ladder positions 1-8.
+// Source for 2026-27 PL season:
+//   - Top 8: last season's (2025-26) final-ladder positions 1-8.
 //   - Mid (9-17): last season's positions 9-17.
-//   - Promoted: the 3 clubs that came up from the Championship for 2025-26
-//     (Leeds, Burnley, Sunderland — listed alphabetically).
+//   - Promoted: the 3 clubs that came up from the Championship for 2026-27
+//     (Coventry, Hull, Ipswich — listed alphabetically).
 //
-// IDs below are the live 2025-26 FPL bootstrap team IDs (verified against
-// fantasy.premierleague.com/api/bootstrap-static/ on 2026-05-18). The bootstrap orders the 20 PL
-// clubs by an internal scheme that is NOT pure alphabetical — Burnley=3, Bournemouth=4,
-// Brentford=5, Brighton=6 in 2025-26.
+// IDs below are the live 2026-27 FPL bootstrap team IDs (verified against
+// fantasy.premierleague.com/api/bootstrap-static/ on 2026-08-19). The bootstrap's ordering scheme
+// changes between seasons — 2026-27 is pure alphabetical, 2025-26 was not — so these IDs must be
+// re-verified at every season rollover, alongside `PL_FULL_NAMES` in pl-team-full-names.ts.
 // If FPL re-numbers next season, the superadmin tab is the source of truth — re-save the lists there.
 
 import type { ClubTier } from "@/lib/db/schema";
 
 export const PL_STANDINGS_SEED_ID = "current";
-export const PL_STANDINGS_SEED_SEASON = "2025-26";
+export const PL_STANDINGS_SEED_SEASON = "2026-27";
 
-// Top 8 (2024-25 final positions 1-8):
-//   Liverpool(12), Arsenal(1), Man City(13), Chelsea(7), Newcastle(15), Aston Villa(2),
-//   Nott'm Forest(16), Brighton(6)
-export const PL_STANDINGS_SEED_TOP8: number[] = [12, 1, 13, 7, 15, 2, 16, 6];
+// Top 8 (2025-26 final positions 1-8):
+//   Arsenal(1), Man City(15), Man Utd(16), Aston Villa(2), Liverpool(14), Bournemouth(3),
+//   Sunderland(20), Brighton(5)
+export const PL_STANDINGS_SEED_TOP8: number[] = [1, 15, 16, 2, 14, 3, 20, 5];
 
-// Mid (2024-25 final positions 9-17):
-//   Bournemouth(4), Brentford(5), Fulham(10), Crystal Palace(8), Everton(9), West Ham(19),
-//   Man Utd(14), Wolves(20), Spurs(18)
-export const PL_STANDINGS_SEED_MID: number[] = [4, 5, 10, 8, 9, 19, 14, 20, 18];
+// Mid (2025-26 final positions 9-17):
+//   Brentford(4), Chelsea(6), Crystal Palace(8), Everton(9), Fulham(10), Newcastle(17),
+//   Nott'm Forest(18), Spurs(19), Leeds(13)
+export const PL_STANDINGS_SEED_MID: number[] = [4, 6, 8, 9, 10, 17, 18, 19, 13];
 
-// Promoted (newly up for 2025-26): Burnley(3), Leeds(11), Sunderland(17) — alphabetical.
-export const PL_STANDINGS_SEED_PROMOTED: number[] = [3, 11, 17];
+// Promoted (newly up for 2026-27): Coventry(7), Hull(11), Ipswich(12) — alphabetical.
+export const PL_STANDINGS_SEED_PROMOTED: number[] = [7, 11, 12];
 
 /**
  * Resolve a PL team ID to its tier using the standings config.

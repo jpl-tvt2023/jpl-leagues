@@ -144,9 +144,9 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
 
   // 1b. PL Club purchase (one-time, non-tradeable). Sorts by acquiredAt so it shows pre-player-auction.
   for (const c of clubOwnership) {
-    // Normalise legacy rows (stored as FPL short form) to the full PL name. Keeps the ledger
-    // description and metadata consistent with what the UI shows everywhere else.
-    const clubName = getPlTeamFullName(c.plTeamId, c.plTeamName);
+    // Resolve from the season-stable short code. Keeps the ledger description and metadata
+    // consistent with what the UI shows everywhere else.
+    const clubName = getPlTeamFullName(c.plTeamId, c.plTeamName, c.plTeamShort);
     entries.push({
       id: `club-${c.id}`,
       type: "club_purchase",

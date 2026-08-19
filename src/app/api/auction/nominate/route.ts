@@ -5,6 +5,7 @@ import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import {
   resolveExpiredBid,
+  beginIntermission,
 } from "@/lib/formats/auction/resolve-bid";
 import { calculatePurse } from "@/lib/formats/auction/economy";
 import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
@@ -103,10 +104,18 @@ export async function POST(request: NextRequest) {
     .where(and(eq(auctionBids.sessionId, sessionId), eq(auctionBids.status, "open")));
 
   const nowMs = Date.now();
+  let resolvedALot = false;
   for (const stale of staleOpenBids) {
     if (nowMs > stale.expiresAt.getTime() + 2000) {
       try {
-        await resolveExpiredBid(stale);
+        const outcome = await resolveExpiredBid(stale);
+        if (outcome === "sold") {
+          resolvedALot = true;
+          // Open the post-sale intermission here too. Previously this path resolved the lot but
+          // left no intermission, so the inter-lot gap was governed by whichever caller happened
+          // to notice — and the turn could be handed straight back to the team that just won.
+          await beginIntermission(sessionId);
+        }
         // Do NOT call advanceNominator — let SSE stream handle advancement
         // to avoid double-advancing when both SSE and this safety-net resolve the same bid
       } catch (err) {
@@ -114,6 +123,22 @@ export async function POST(request: NextRequest) {
         console.error("[nominate] Safety-net resolution failed for bid", stale.id, err);
       }
     }
+  }
+
+  // If this request just closed a lot, it is NOT a valid nomination window: `currentNominatorIndex`
+  // still points at the team that owned the lot we just resolved (advancement happens later, via
+  // the intermission), so continuing here would let the winner of a lot nominate the very next one
+  // — the "same team nominated twice" bug. Bounce the caller; the next window opens after the
+  // intermission and the turn will have moved on.
+  if (resolvedALot) {
+    console.info("[nominate] 409: caller's request resolved the open lot — nomination window not yet open", {
+      sessionId,
+      teamId: session?.id,
+    });
+    return NextResponse.json(
+      { error: "That lot just closed — the next nomination window is opening." },
+      { status: 409 }
+    );
   }
 
   // Re-fetch session after safety-net (nominatorIndex may have advanced)
@@ -214,9 +239,12 @@ export async function POST(request: NextRequest) {
   // nomination and the deadline-expiry penalty mutually exclusive: whoever flips `nominationDeadline`
   // to null first wins. If the SSE penalty path already claimed it (the team missed its window),
   // rowsAffected is 0 here and we reject — so a team can never be both penalised AND nominate.
+  // `intermissionUntil` is cleared here too: an intermission belongs to exactly one inter-lot gap,
+  // and once a lot is on the block it must not survive. A leftover intermission was claimable a
+  // second time after the next sale, which advanced the cursor twice and skipped a team's turn.
   const claimedDeadline = await db
     .update(auctionSessions)
-    .set({ nominationDeadline: null })
+    .set({ nominationDeadline: null, intermissionUntil: null })
     .where(and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.nominationDeadline)));
   if (claimedDeadline.rowsAffected === 0) {
     return NextResponse.json({ error: "Your nomination window has passed." }, { status: 409 });

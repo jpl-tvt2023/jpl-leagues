@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, leagues, auctionSessions, auctionBids, teams } from "@/lib/db";
-import { eq, and, desc, isNotNull } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { isSuperAdmin, verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { generateSnakeOrder } from "@/lib/formats/auction/mini-auction";
@@ -67,13 +67,9 @@ async function resolveExpiredBids(sessionId: string) {
       .where(eq(auctionSessions.id, sessionId))
       .limit(1);
     if (sess.length && sess[0].status === "active" && sess[0].intermissionUntil && now >= sess[0].intermissionUntil) {
-      const claimed = await db
-        .update(auctionSessions)
-        .set({ intermissionUntil: null })
-        .where(and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.intermissionUntil)));
-      if (claimed.rowsAffected > 0) {
-        await advanceNominator(sessionId);
-      }
+      // Claim + advance in one write — see advanceNominator. A separate claim could be spent
+      // without the cursor moving, or leave a stale intermission to be claimed twice later.
+      await advanceNominator(sessionId, { clearIntermission: true });
     }
   }
 }
@@ -391,7 +387,9 @@ export async function POST(request: NextRequest) {
       scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
       bidTimerSeconds: bidTimerSeconds ?? 20,
       nominationTimeoutSeconds: nominationTimeoutSeconds ?? 60,
-      intermissionSeconds: intermissionSeconds ?? 3,
+      // 5s to match the club-auction path and the schema default. 3s proved too tight in a live
+      // auction — it left barely any gap for clients to re-sync between lots.
+      intermissionSeconds: intermissionSeconds ?? 5,
     });
 
     return NextResponse.json({ success: true, id, snakeOrder });

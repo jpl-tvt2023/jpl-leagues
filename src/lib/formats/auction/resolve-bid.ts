@@ -20,7 +20,7 @@ import {
   teamPenalties,
   teams,
 } from "@/lib/db/schema";
-import { eq, and, asc, sql, lte, inArray } from "drizzle-orm";
+import { eq, and, asc, sql, lte, inArray, isNotNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchElementInfo } from "@/lib/fpl";
 import { leagues } from "@/lib/db/schema";
@@ -235,7 +235,10 @@ async function isNominatorEligible(leagueId: string, teamId: string): Promise<bo
  * nominator has any open slot left. If not, we keep incrementing. If every team in the order is
  * full, the session is marked `completed` — there's nothing left to auction.
  */
-export async function advanceNominator(sessionId: string): Promise<void> {
+export async function advanceNominator(
+  sessionId: string,
+  opts: { clearIntermission?: boolean } = {},
+): Promise<void> {
   const sessionRow = await db
     .select({
       leagueId: auctionSessions.leagueId,
@@ -249,8 +252,18 @@ export async function advanceNominator(sessionId: string): Promise<void> {
     .limit(1);
   if (!sessionRow.length) return;
 
+  // When advancing out of a post-sale intermission, the claim on `intermissionUntil` and the cursor
+  // move must be ONE write. Claiming separately (as callers used to) meant a request torn down
+  // between the two — routine for SSE on serverless — consumed the intermission without moving the
+  // cursor, and a leftover intermission from an earlier lot could later be claimed a second time
+  // and skip a team. Guarding on `isNotNull` keeps it single-winner across concurrent pollers.
+  const claimWhere = opts.clearIntermission
+    ? and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.intermissionUntil))
+    : eq(auctionSessions.id, sessionId);
+  const claimSet = opts.clearIntermission ? { intermissionUntil: null } : {};
+
   if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
-    await advanceClubNominator(sessionId);
+    await advanceClubNominator(sessionId, opts);
     return;
   }
 
@@ -271,8 +284,8 @@ export async function advanceNominator(sessionId: string): Promise<void> {
       const deadline = new Date(Date.now() + nomTimeout * 1000);
       await db
         .update(auctionSessions)
-        .set({ currentNominatorIndex: nextIndex, nominationDeadline: deadline })
-        .where(eq(auctionSessions.id, sessionId));
+        .set({ ...claimSet, currentNominatorIndex: nextIndex, nominationDeadline: deadline })
+        .where(claimWhere);
       return;
     }
   }
@@ -286,8 +299,8 @@ export async function advanceNominator(sessionId: string): Promise<void> {
   });
   await db
     .update(auctionSessions)
-    .set({ nominationDeadline: null })
-    .where(eq(auctionSessions.id, sessionId));
+    .set({ ...claimSet, nominationDeadline: null })
+    .where(claimWhere);
 }
 
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };

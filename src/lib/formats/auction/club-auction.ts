@@ -31,7 +31,7 @@ import {
   leagues,
   plStandingsConfig,
 } from "@/lib/db/schema";
-import { eq, and, sql, isNull } from "drizzle-orm";
+import { eq, and, sql, isNull, isNotNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { getFplFixturesForGw } from "@/lib/fpl-live/players-left";
@@ -296,7 +296,7 @@ async function idleClubSession(sessionId: string): Promise<void> {
 async function armClubNominator(
   sessionId: string,
   startOffset: number,
-  opts: { onlyIfUnarmed?: boolean } = {}
+  opts: { onlyIfUnarmed?: boolean; clearIntermission?: boolean } = {}
 ): Promise<void> {
   const sess = await db.select().from(auctionSessions).where(eq(auctionSessions.id, sessionId)).limit(1);
   if (!sess.length || sess[0].type !== CLUB_AUCTION_SESSION_TYPE || sess[0].status !== "active") return;
@@ -321,12 +321,20 @@ async function armClubNominator(
   if (!found) { await idleClubSession(sessionId); return; }
 
   const nomTimeout = sess[0].nominationTimeoutSeconds ?? CLUB_NOMINATION_TIMEOUT_DEFAULT;
-  const arm = db
+  const conditions = [eq(auctionSessions.id, sessionId)];
+  if (opts.onlyIfUnarmed) conditions.push(isNull(auctionSessions.nominationDeadline));
+  // Claim the post-sale intermission in the SAME write that moves the cursor — see the note on
+  // `advanceNominator` in resolve-bid.ts for why claiming separately drops or double-spends turns.
+  if (opts.clearIntermission) conditions.push(isNotNull(auctionSessions.intermissionUntil));
+
+  await db
     .update(auctionSessions)
-    .set({ currentNominatorIndex: found.index, nominationDeadline: new Date(Date.now() + nomTimeout * 1000) });
-  await (opts.onlyIfUnarmed
-    ? arm.where(and(eq(auctionSessions.id, sessionId), isNull(auctionSessions.nominationDeadline)))
-    : arm.where(eq(auctionSessions.id, sessionId)));
+    .set({
+      ...(opts.clearIntermission ? { intermissionUntil: null } : {}),
+      currentNominatorIndex: found.index,
+      nominationDeadline: new Date(Date.now() + nomTimeout * 1000),
+    })
+    .where(and(...conditions));
 }
 
 /** Arm the current club-less nominator (used on session start / SSE no-deadline poll). */
@@ -340,8 +348,11 @@ export async function setClubNominationDeadline(sessionId: string): Promise<void
  *  finally won a club). Idempotency comes from `onlyIfUnarmed`: every caller nulls
  *  `nominationDeadline` before advancing, so the first advance lands and a double-trigger
  *  (SSE + REST safety-net) no-ops instead of skipping a turn. */
-export async function advanceClubNominator(sessionId: string): Promise<void> {
-  await armClubNominator(sessionId, 1, { onlyIfUnarmed: true });
+export async function advanceClubNominator(
+  sessionId: string,
+  opts: { clearIntermission?: boolean } = {},
+): Promise<void> {
+  await armClubNominator(sessionId, 1, { onlyIfUnarmed: true, clearIntermission: opts.clearIntermission });
 }
 
 /**
@@ -406,10 +417,12 @@ export async function nominateClub(
     type: "nomination",
   });
 
-  // The bid timer now governs — clear the nomination deadline.
+  // The bid timer now governs — clear the nomination deadline. Also clear any pending intermission:
+  // it belongs to the gap before this lot, and leaving it set makes it claimable again after the
+  // next sale, which advances the cursor twice and skips a team.
   await db
     .update(auctionSessions)
-    .set({ nominationDeadline: null })
+    .set({ nominationDeadline: null, intermissionUntil: null })
     .where(eq(auctionSessions.id, sessionId));
 
   return { bidId };
@@ -518,7 +531,7 @@ export async function resolveClubBid(bid: BidRow): Promise<"sold" | "already-res
       leagueId: bid.leagueId,
       teamId: fresh.currentHighBidderId,
       plTeamId: fresh.fplElementId,
-      plTeamName: getPlTeamFullName(fresh.fplElementId, fresh.playerName),
+      plTeamName: getPlTeamFullName(fresh.fplElementId, fresh.playerName, plTeamShort),
       plTeamShort,
       tier,
       purchasePrice: fresh.currentHighBid,
@@ -590,9 +603,8 @@ export async function getClubOwnershipsByTeam(
   for (const r of rows) {
     result[r.teamId] = {
       plTeamId: r.plTeamId,
-      // Normalise legacy rows (stored as FPL short form) to the full PL name. New writes are already
-      // full names, but this read-side override means we don't need a one-off backfill.
-      plTeamName: getPlTeamFullName(r.plTeamId, r.plTeamName),
+      // Resolve from the season-stable short code — the stored name may predate the ID-map fix.
+      plTeamName: getPlTeamFullName(r.plTeamId, r.plTeamName, r.plTeamShort),
       plTeamShort: r.plTeamShort,
       tier: r.tier as ClubTier,
     };
@@ -665,7 +677,7 @@ export async function simulateClubAuction(
       leagueId,
       teamId: team.id,
       plTeamId: club.id,
-      plTeamName: getPlTeamFullName(club.id, club.name),
+      plTeamName: getPlTeamFullName(club.id, club.name, club.short),
       plTeamShort: club.short,
       tier: club.tier,
       purchasePrice: price,

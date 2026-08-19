@@ -228,15 +228,10 @@ export async function GET(request: NextRequest) {
                 }
                 return;
               }
-              // Cooldown elapsed — atomically claim it so only one stream advances, then arm the
-              // next nominator. Next poll picks up the fresh nomination state.
-              const claimedIntermission = await db
-                .update(auctionSessions)
-                .set({ intermissionUntil: null })
-                .where(and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.intermissionUntil)));
-              if (claimedIntermission.rowsAffected > 0) {
-                await advanceNominator(sessionId);
-              }
+              // Cooldown elapsed — advance the nominator, clearing the intermission in the SAME
+              // write so only one stream advances and the claim can never be spent without the
+              // cursor moving. Next poll picks up the fresh nomination state.
+              await advanceNominator(sessionId, { clearIntermission: true });
               return;
             }
 

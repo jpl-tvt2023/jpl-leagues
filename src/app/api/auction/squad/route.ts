@@ -136,8 +136,8 @@ export async function GET(request: NextRequest) {
   const ownedClub = clubRow[0]
     ? {
         plTeamId: clubRow[0].plTeamId,
-        // Normalise legacy rows to the full PL name; new writes are already full names.
-        plTeamName: getPlTeamFullName(clubRow[0].plTeamId, clubRow[0].plTeamName),
+        // Resolve from the season-stable short code — the stored name may predate the ID-map fix.
+        plTeamName: getPlTeamFullName(clubRow[0].plTeamId, clubRow[0].plTeamName, clubRow[0].plTeamShort),
         plTeamShort: clubRow[0].plTeamShort,
         tier: clubRow[0].tier as ClubTier,
       }
