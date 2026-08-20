@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, leagues, auctionSessions, auctionBids, teams } from "@/lib/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, count } from "drizzle-orm";
 import { isSuperAdmin, verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { generateSnakeOrder } from "@/lib/formats/auction/mini-auction";
@@ -16,15 +16,14 @@ import { simulateAuction } from "@/lib/formats/auction/simulate";
 import { finalizePendingReleasesNow } from "@/lib/formats/auction/process-gameweek";
 import { purgePendingTrades } from "@/lib/formats/auction/live-session";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
+import { buildLotMetaResolver } from "@/lib/formats/auction/lot-meta";
 import {
   CLUB_AUCTION_SESSION_TYPE,
   fetchAllPLClubsWithTiers,
   setClubNominationDeadline,
   simulateClubAuction,
-  loadStandingsConfig,
   getClubLessTeamIds,
 } from "@/lib/formats/auction/club-auction";
-import { resolveTier } from "@/lib/data/pl-standings-seed";
 import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
 
 /**
@@ -132,7 +131,14 @@ export async function GET(request: NextRequest) {
   // For the active/latest session, include current bid item
   const activeSession = sessions.find((s) => s.status === "active" || s.status === "paused");
 
-  let currentBid: (typeof auctionBids.$inferSelect & { tier?: string | null }) | null = null;
+  let currentBid:
+    | (typeof auctionBids.$inferSelect & {
+        tier?: string | null;
+        elementType?: number | null;
+        plTeamId?: number | null;
+        lotNumber?: number | null;
+      })
+    | null = null;
   if (activeSession) {
     // Auto-resolve any expired open bids (safety net if SSE wasn't running) — only while actually
     // live. A paused session must not have its timers silently resolved by a passive GET poll.
@@ -151,15 +157,27 @@ export async function GET(request: NextRequest) {
       )
       .limit(1);
     currentBid = openBids[0] ?? null;
-    // For club-auction sessions, attach tier so the UI can render a TierChip on first paint
-    // (before the SSE stream fills in subsequent updates).
-    if (currentBid && activeSession.type === CLUB_AUCTION_SESSION_TYPE) {
+    // Attach the lot's identity — position, real-life PL club and tier — plus its lot number, so the
+    // first paint matches what the SSE stream sends afterwards. This used to run for club auctions
+    // only, which is why a player lot arrived with no position or club anywhere in either room.
+    if (currentBid) {
       try {
-        const config = await loadStandingsConfig();
-        currentBid = { ...currentBid, tier: resolveTier(currentBid.fplElementId, config) };
+        const resolver = await buildLotMetaResolver(activeSession.type === CLUB_AUCTION_SESSION_TYPE);
+        const meta = resolver(currentBid.fplElementId);
+        const sold = await db
+          .select({ n: count() })
+          .from(auctionBids)
+          .where(and(eq(auctionBids.sessionId, activeSession.id), eq(auctionBids.status, "sold")));
+        currentBid = {
+          ...currentBid,
+          elementType: meta.elementType,
+          plTeamId: meta.plTeamId,
+          tier: meta.tier,
+          lotNumber: Number(sold[0]?.n ?? 0) + 1,
+        };
       } catch (e) {
-        console.warn("[session GET] loadStandingsConfig failed — tier will be null", e);
-        currentBid = { ...currentBid, tier: null };
+        console.warn("[session GET] lot metadata unavailable", e);
+        currentBid = { ...currentBid, elementType: null, plTeamId: null, tier: null, lotNumber: null };
       }
     }
   }
