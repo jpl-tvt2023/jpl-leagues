@@ -380,20 +380,22 @@ export default function AuctionRoomPage() {
   // Bumped by the heartbeat watchdog to force the SSE effect to tear down + reconnect when the
   // stream silently dies (mobile/tab-suspend/proxy) — otherwise feed/wishlist/unsold freeze.
   const [sseReconnectTick, setSseReconnectTick] = useState(0);
-  const [showNominate, setShowNominate] = useState(false);
-  const [showNominateClub, setShowNominateClub] = useState(false);
   const [clubSearchTerm, setClubSearchTerm] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [positionFilter, setPositionFilter] = useState<number | null>(null);
   const [nominating, setNominating] = useState<number | null>(null);
   const [wlSearchTerm, setWlSearchTerm] = useState("");
   // Tabbed panel: "wishlist" (existing list) vs "unsold" (players nominated this session but received
   // no bid). The Unsold tab supports multi-select + bulk add to wishlist.
-  const [wishlistTab, setWishlistTab] = useState<"wishlist" | "unsold" | "available">("wishlist");
-  // "Available" tab: everyone still unowned, filtered by position/club/name.
+  const [wishlistTab, setWishlistTab] = useState<"wishlist" | "unsold" | "nominate">("wishlist");
+  // "Nominate" tab: everyone still unowned, filtered by position/club/name.
   const [poolPositionFilter, setPoolPositionFilter] = useState<number | null>(null);
   const [poolClubFilter, setPoolClubFilter] = useState<number | null>(null);
   const [poolSearch, setPoolSearch] = useState("");
+  // Pre-selected nomination target. Persists across turns so a participant can line up their pick
+  // long before their window opens — only the Nominate button itself is turn-gated.
+  const [selectedNomineeId, setSelectedNomineeId] = useState<number | null>(null);
+  const [selectedClubId, setSelectedClubId] = useState<number | null>(null);
+  // Set when a pre-selection is invalidated by someone else buying the player/club.
+  const [selectionLostNote, setSelectionLostNote] = useState<string | null>(null);
   const [unsoldPlayers, setUnsoldPlayers] = useState<Array<{ bidId: string; fplElementId: number; playerName: string; nominatedAt: string }>>([]);
   const [unsoldSelections, setUnsoldSelections] = useState<Set<number>>(new Set());
   const [bulkAddingWishlist, setBulkAddingWishlist] = useState(false);
@@ -401,7 +403,6 @@ export default function AuctionRoomPage() {
   const {
     wishlist,
     refresh: refreshWishlist,
-    add: handleAddToWishlist,
     addMany: addManyToWishlist,
     remove: handleRemoveFromWishlist,
     reorder: handleReorderWishlist,
@@ -418,6 +419,8 @@ export default function AuctionRoomPage() {
   const lastBidIdRef = useRef<string | null>(null);
   const elementByIdRef = useRef<Map<number, BootstrapElement>>(new Map());
   const plTeamsRef = useRef<Map<number, BootstrapTeam>>(new Map());
+  // Target for the turn-prompt card's "Nominate" shortcut, which switches to the tab and scrolls to it.
+  const nominateTabRef = useRef<HTMLButtonElement | null>(null);
   // Track the current session type so feed handlers can branch their formatting without re-binding.
   const sessionTypeRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -1016,8 +1019,8 @@ export default function AuctionRoomPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Nomination failed");
-      setShowNominate(false);
-      setSearchTerm("");
+      setSelectedNomineeId(null);
+      setSelectionLostNote(null);
       // Immediately refresh to pick up the new bid (don't rely solely on SSE)
       await refreshSessionState();
     } catch (err) {
@@ -1038,7 +1041,8 @@ export default function AuctionRoomPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Nomination failed");
-      setShowNominateClub(false);
+      setSelectedClubId(null);
+      setSelectionLostNote(null);
       setClubSearchTerm("");
       await refreshSessionState();
     } catch (err) {
@@ -1053,21 +1057,7 @@ export default function AuctionRoomPage() {
     window.location.href = "/signin";
   };
 
-  const searchResults = useMemo(() => {
-    const lc = searchTerm.trim().toLowerCase();
-    const filtered = elements.filter((el) => {
-      if (ownedElementIds.has(el.id)) return false;
-      if (currentBidRef.current?.fplElementId === el.id) return false; // Currently being auctioned
-      if (positionFilter !== null && el.element_type !== positionFilter) return false;
-      if (lc && !el.web_name.toLowerCase().includes(lc)) return false;
-      return true;
-    });
-    return filtered
-      .sort((a, b) => b.total_points - a.total_points)
-      .slice(0, 30);
-  }, [elements, ownedElementIds, searchTerm, positionFilter]);
-
-  // "Available" tab pool: everyone not yet owned by a team. Unlike searchResults above, the lot on
+  // Nomination pool: everyone not yet owned by a team. The lot on
   // the block stays in the list (badged) — this view answers "who is left", so hiding it would make
   // the count wrong.
   const availablePlayers = useMemo(() => {
@@ -1110,6 +1100,100 @@ export default function AuctionRoomPage() {
       .filter((c) => !lc || c.name.toLowerCase().includes(lc) || (c.short_name ?? "").toLowerCase().includes(lc))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [plTeams, teamMap, clubSearchTerm]);
+
+  // Clubs already taken. Derived separately from `availableClubs` because that list is also narrowed
+  // by the search box — using it to validate a selection would "lose" the pick the moment you typed.
+  const ownedClubIds = useMemo(() => {
+    const s = new Set<number>();
+    for (const t of teamMap.values()) {
+      if (t.ownedClub?.plTeamId != null) s.add(t.ownedClub.plTeamId);
+    }
+    return s;
+  }, [teamMap]);
+
+  // A pre-selection can go stale while it waits — someone else buys the player/club. Clear it and say
+  // so; silently dropping someone's pick would be worse than the panic-select this replaces.
+  useEffect(() => {
+    if (selectedNomineeId == null || !ownedElementIds.has(selectedNomineeId)) return;
+    const name = elementByIdRef.current.get(selectedNomineeId)?.web_name ?? "Your pick";
+    setSelectedNomineeId(null);
+    setSelectionLostNote(`${name} was sold — pick another.`);
+  }, [ownedElementIds, selectedNomineeId]);
+
+  useEffect(() => {
+    if (selectedClubId == null || !ownedClubIds.has(selectedClubId)) return;
+    const name = plTeamsRef.current.get(selectedClubId)?.name ?? "Your pick";
+    setSelectedClubId(null);
+    setSelectionLostNote(`${name} was taken — pick another.`);
+  }, [ownedClubIds, selectedClubId]);
+
+  const isClubAuction = session?.type === CLUB_AUCTION_TYPE;
+  const selectedNominee = selectedNomineeId != null ? (elementById.get(selectedNomineeId) ?? null) : null;
+  const selectedClub = selectedClubId != null ? (plTeams.get(selectedClubId) ?? null) : null;
+  const selectionOnBlock = isClubAuction
+    ? selectedClubId != null && currentBid?.fplElementId === selectedClubId
+    : selectedNomineeId != null && currentBid?.fplElementId === selectedNomineeId;
+
+  /**
+   * Why the Nominate button is disabled, or `null` when it's ready to fire. Surfaced as text under the
+   * button — a disabled control with no stated reason is its own usability problem.
+   */
+  const nominateDisabledReason: string | null = (() => {
+    const hasPick = isClubAuction ? selectedClubId != null : selectedNomineeId != null;
+    if (!hasPick) return isClubAuction ? "Pick a club above" : "Pick a player above";
+    if (session?.status !== "active") return "Auction is not running";
+    if (!isMyTurn) {
+      const who = currentNominatorId ? displayTeamName(teamMap.get(currentNominatorId)) : null;
+      return who ? `Waiting for ${who} — you can nominate when it's your turn` : "Not your turn yet";
+    }
+    if (selectionOnBlock) {
+      return `${(isClubAuction ? selectedClub?.name : selectedNominee?.web_name) ?? "That pick"} is on the block right now`;
+    }
+    // Squad cap / purse only constrain player auctions; club auctions have their own rules.
+    if (!isClubAuction && nominateBlockedReason) return nominateBlockedReason;
+    if (nominating != null) return "Nominating…";
+    return null;
+  })();
+
+  /** Selection summary + the single turn-gated Nominate button. Shared by both list variants. */
+  const nominateFooter = (
+    <div className="mt-2 border-t border-white/10 pt-2">
+      {selectionLostNote && (
+        <div className="mb-1.5 text-[10px] text-orange-300">{selectionLostNote}</div>
+      )}
+      <div className="text-[10px] text-gray-400 mb-1.5 truncate">
+        {isClubAuction ? (
+          selectedClub ? (
+            <>Picked: <span className="text-white font-semibold">{selectedClub.name}</span></>
+          ) : "No club picked yet"
+        ) : selectedNominee ? (
+          <>
+            Picked: <span className="text-white font-semibold">{selectedNominee.web_name}</span>{" "}
+            <span className="text-gray-500">({plTeams.get(selectedNominee.team)?.short_name ?? "—"})</span>
+          </>
+        ) : "No player picked yet"}
+      </div>
+      <button
+        onClick={() => {
+          if (isClubAuction) {
+            if (selectedClubId != null) void handleNominateClub(selectedClubId);
+          } else if (selectedNomineeId != null && selectedNominee) {
+            void handleNominate(selectedNomineeId, selectedNominee.web_name);
+          }
+        }}
+        disabled={nominateDisabledReason !== null}
+        className="w-full rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-4 py-2 text-sm font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:cursor-not-allowed disabled:from-gray-600 disabled:to-gray-700 disabled:text-gray-400"
+      >
+        {nominating != null ? "Nominating…" : "Nominate"}
+      </button>
+      {nominateDisabledReason && (
+        <div className="mt-1 text-[10px] text-gray-400 text-center">{nominateDisabledReason}</div>
+      )}
+      {!isClubAuction && !nominateDisabledReason && (
+        <div className="mt-1 text-[9px] text-gray-500 text-center">Opening bid £500K</div>
+      )}
+    </div>
+  );
 
   // Fetch the league's unsold players for the most-recent auction session — populates the Unsold
   // tab in the wishlist panel. Lazy-loaded when the user switches tabs.
@@ -1162,11 +1246,17 @@ export default function AuctionRoomPage() {
       .slice(0, 20);
   }, [wlSearchTerm, elements, ownedElementIds]);
 
-  // Wishlist/Unsold only make sense for a live-or-paused player auction — nothing to shortlist for
-  // a club auction, and nothing to react to once a session hasn't started or has already ended.
+  // The panel now hosts the always-visible nomination list, so it renders for club auctions too.
+  // Wishlist/Unsold stay player-auction-only — neither concept exists for clubs.
   const showWishlistPanel = session
-    ? session.type !== CLUB_AUCTION_TYPE && (session.status === "active" || session.status === "paused")
+    ? session.status === "active" || session.status === "paused"
     : false;
+  const showPlayerOnlyTabs = showWishlistPanel && !isClubAuction;
+
+  // Club auctions have only the one tab; make sure we never land on a hidden one.
+  useEffect(() => {
+    if (isClubAuction) setWishlistTab("nominate");
+  }, [isClubAuction]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -1493,10 +1583,10 @@ export default function AuctionRoomPage() {
                           </div>
                         )}
                         <button
-                          onClick={() => { refreshClubOwnership(); setShowNominateClub(true); }}
+                          onClick={() => { refreshClubOwnership(); setWishlistTab("nominate"); nominateTabRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
                           className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm"
                         >
-                          Nominate a Club
+                          {selectedClub ? `Nominate ${selectedClub.name}` : "Pick a Club"}
                         </button>
                       </>
                     ) : (
@@ -1535,11 +1625,11 @@ export default function AuctionRoomPage() {
                           </div>
                         )}
                         <button
-                          onClick={() => { void refreshOwned(); setShowNominate(true); }}
+                          onClick={() => { void refreshOwned(); setWishlistTab("nominate"); nominateTabRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
                           disabled={!!nominateBlockedReason}
                           className="rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2.5 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Nominate a Player
+                          {selectedNominee ? `Nominate ${selectedNominee.web_name}` : "Pick a Player"}
                         </button>
                         {nominateBlockedReason && (
                           <div className="mt-2 text-[11px] text-red-400">{nominateBlockedReason} — you can&apos;t nominate</div>
@@ -1717,6 +1807,7 @@ export default function AuctionRoomPage() {
               {showWishlistPanel && (
               <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
                 <div className="flex items-center gap-1 mb-3 border-b border-white/10">
+                  {showPlayerOnlyTabs && (
                   <button
                     onClick={() => setWishlistTab("wishlist")}
                     title="Your priority shortlist — the top unowned player is auto-nominated if your turn's timer runs out."
@@ -1726,6 +1817,8 @@ export default function AuctionRoomPage() {
                   >
                     Wishlist <span className="text-[10px] text-gray-500 ml-1">({wishlist.length})</span>
                   </button>
+                  )}
+                  {showPlayerOnlyTabs && (
                   <button
                     onClick={() => { setWishlistTab("unsold"); void refreshUnsold(); }}
                     title="Players that went unsold in the latest session — quickly add them to your shortlist."
@@ -1735,14 +1828,19 @@ export default function AuctionRoomPage() {
                   >
                     Unsold <span className="text-[10px] text-gray-500 ml-1">({unsoldPlayers.length})</span>
                   </button>
+                  )}
                   <button
-                    onClick={() => setWishlistTab("available")}
-                    title="Every player still unowned — filter by position or club to see who is left."
+                    ref={nominateTabRef}
+                    onClick={() => setWishlistTab("nominate")}
+                    title="Everything still unowned. Line up your pick early — the Nominate button unlocks on your turn."
                     className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px transition ${
-                      wishlistTab === "available" ? "border-yellow-400 text-yellow-300" : "border-transparent text-gray-400 hover:text-white"
+                      wishlistTab === "nominate" ? "border-yellow-400 text-yellow-300" : "border-transparent text-gray-400 hover:text-white"
                     }`}
                   >
-                    Available <span className="text-[10px] text-gray-500 ml-1">({totalAvailable})</span>
+                    Nominate{" "}
+                    <span className="text-[10px] text-gray-500 ml-1">
+                      ({isClubAuction ? availableClubs.length : totalAvailable})
+                    </span>
                   </button>
                 </div>
 
@@ -1867,6 +1965,53 @@ export default function AuctionRoomPage() {
                       </>
                     )}
                   </>
+                ) : isClubAuction ? (
+                  <>
+                    <input
+                      type="text"
+                      placeholder="Search clubs…"
+                      value={clubSearchTerm}
+                      onChange={(e) => setClubSearchTerm(e.target.value)}
+                      className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none mb-2"
+                    />
+                    <div className="space-y-0.5 max-h-52 overflow-y-auto">
+                      {availableClubs.length === 0 ? (
+                        <div className="text-[10px] text-gray-500 py-2 text-center">No clubs available.</div>
+                      ) : (
+                        availableClubs.map((club) => {
+                          const picked = selectedClubId === club.id;
+                          return (
+                            <button
+                              key={club.id}
+                              onClick={() => { setSelectedClubId(picked ? null : club.id); setSelectionLostNote(null); }}
+                              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition ${
+                                picked ? "bg-yellow-400/20 ring-1 ring-yellow-400/50" : "bg-white/5 hover:bg-white/10"
+                              }`}
+                            >
+                              <span className="text-[9px] text-gray-500 w-8 shrink-0">{club.short_name}</span>
+                              <span className="flex-1 truncate text-white">{club.name}</span>
+                              {(() => {
+                                // Tier drives the per-result bonus, so it's the key number when picking.
+                                const tier = clubTierById.get(club.id);
+                                if (!tier) return null;
+                                const d = CLUB_TIER_DISPLAY[tier];
+                                return (
+                                  <span
+                                    className="text-[9px] px-1.5 py-0.5 rounded border border-white/15 bg-white/5 text-gray-300 shrink-0"
+                                    title={`${d.label} tier — +${d.win} pts on a win, +${d.draw} on a draw`}
+                                  >
+                                    +{d.win}W/+{d.draw}D
+                                  </span>
+                                );
+                              })()}
+                              {picked && <span className="text-yellow-300 text-[10px] font-bold shrink-0">PICKED</span>}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                    {nominateFooter}
+                  </>
                 ) : (
                   <>
                     {/* Filters — position pills + club select + name search */}
@@ -1934,20 +2079,29 @@ export default function AuctionRoomPage() {
                         availablePlayers.slice(0, POOL_RENDER_CAP).map((el) => {
                           const inWl = wishlistElementIds.has(el.id);
                           const onBlock = currentBid?.fplElementId === el.id;
+                          const picked = selectedNomineeId === el.id;
                           return (
                             <div
                               key={el.id}
-                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs ${onBlock ? "bg-yellow-400/10" : "bg-white/5"}`}
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs ${
+                                picked ? "bg-yellow-400/20 ring-1 ring-yellow-400/50" : onBlock ? "bg-yellow-400/10" : "bg-white/5"
+                              }`}
                             >
-                              <span className="text-[9px] text-gray-500 w-6 shrink-0">{POSITION_LABELS[el.element_type] ?? ""}</span>
-                              <span className="flex-1 truncate text-white">{el.web_name}</span>
-                              {onBlock && (
-                                <span className="text-[9px] text-yellow-300 font-bold uppercase shrink-0" title="Currently on the block">
-                                  On block
-                                </span>
-                              )}
-                              <span className="text-[9px] text-gray-500 shrink-0">{plTeams.get(el.team)?.short_name ?? ""}</span>
-                              <span className="text-[9px] text-gray-500 w-8 text-right shrink-0">{el.total_points}</span>
+                              <button
+                                onClick={() => { setSelectedNomineeId(picked ? null : el.id); setSelectionLostNote(null); }}
+                                className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+                                title={picked ? "Unpick" : "Pick for nomination"}
+                              >
+                                <span className="text-[9px] text-gray-500 w-6 shrink-0">{POSITION_LABELS[el.element_type] ?? ""}</span>
+                                <span className="flex-1 truncate text-white">{el.web_name}</span>
+                                {onBlock && (
+                                  <span className="text-[9px] text-yellow-300 font-bold uppercase shrink-0" title="Currently on the block">
+                                    On block
+                                  </span>
+                                )}
+                                <span className="text-[9px] text-gray-500 shrink-0">{plTeams.get(el.team)?.short_name ?? ""}</span>
+                                <span className="text-[9px] text-gray-500 w-8 text-right shrink-0">{el.total_points}</span>
+                              </button>
                               <button
                                 onClick={() => handleToggleWishlist(el.id, el.web_name)}
                                 className={`h-5 w-5 shrink-0 flex items-center justify-center rounded-full text-[10px] transition ${
@@ -1968,6 +2122,7 @@ export default function AuctionRoomPage() {
                         Showing top {POOL_RENDER_CAP} by points — filter to narrow.
                       </div>
                     )}
+                    {nominateFooter}
                   </>
                 )}
               </div>
@@ -2021,156 +2176,6 @@ export default function AuctionRoomPage() {
               </div>
             </div>
 
-            {/* Nomination Modal */}
-            {showNominate && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowNominate(false)}>
-                <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold text-white">Nominate a Player</h3>
-                    <button onClick={() => setShowNominate(false)} className="text-gray-400 hover:text-white">✕</button>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Search player name..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    autoFocus
-                    className="w-full rounded-lg bg-white/10 border border-white/20 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none mb-3"
-                  />
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                    {([
-                      [null, "ALL"],
-                      [1, "GKP"],
-                      [2, "DEF"],
-                      [3, "MID"],
-                      [4, "FWD"],
-                    ] as [number | null, string][]).map(([pos, label]) => (
-                      <button
-                        key={label}
-                        onClick={() => setPositionFilter(pos)}
-                        className={`px-3 py-1 rounded-full text-xs font-bold uppercase border transition ${
-                          positionFilter === pos
-                            ? "bg-yellow-400 text-slate-900 border-yellow-400"
-                            : "bg-white/5 text-gray-300 border-white/20 hover:bg-white/10"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mb-3">
-                    <span className="text-xs text-gray-500">Opening bid: £500K (fixed) • Showing top {searchResults.length} by points • Owned players excluded (refreshed live)</span>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto space-y-1">
-                    {searchResults.length === 0 ? (
-                      <div className="text-sm text-gray-500 py-6 text-center">No matches</div>
-                    ) : (
-                      searchResults.map((el) => {
-                        const team = plTeams.get(el.team);
-                        const inWishlist = wishlistElementIds.has(el.id);
-                        return (
-                          <div
-                            key={el.id}
-                            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition"
-                          >
-                            <button
-                              onClick={() => handleNominate(el.id, el.web_name)}
-                              disabled={nominating === el.id}
-                              className="flex items-center gap-3 flex-1 text-left disabled:opacity-50"
-                            >
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-white/20 bg-white/10 text-gray-300">
-                                {POSITION_LABELS[el.element_type]}
-                              </span>
-                              <div>
-                                <div className="text-white font-semibold">{el.web_name}</div>
-                                <div className="text-xs text-gray-400">{team?.short_name ?? "—"}</div>
-                              </div>
-                            </button>
-                            <div className="flex items-center gap-3">
-                              <div className="text-right">
-                                <div className="text-sm font-mono text-[#00ff85]">{el.total_points} pts</div>
-                                {nominating === el.id && <div className="text-xs text-gray-400">Nominating...</div>}
-                              </div>
-                              {inWishlist ? (
-                                <span className="h-7 w-7 flex items-center justify-center rounded-full text-xs bg-yellow-400/20 text-yellow-400" title="In wishlist">★</span>
-                              ) : (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleAddToWishlist(el.id, el.web_name); }}
-                                  className="h-7 w-7 flex items-center justify-center rounded-full text-xs bg-white/10 text-gray-300 hover:bg-purple-500/30 hover:text-purple-300 transition"
-                                  title="Add to wishlist"
-                                >
-                                  +
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Club Nomination Modal */}
-            {showNominateClub && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowNominateClub(false)}>
-                <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold text-white">Nominate a Club</h3>
-                    <button onClick={() => setShowNominateClub(false)} className="text-gray-400 hover:text-white">✕</button>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Search club name..."
-                    value={clubSearchTerm}
-                    onChange={(e) => setClubSearchTerm(e.target.value)}
-                    autoFocus
-                    className="w-full rounded-lg bg-white/10 border border-white/20 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none mb-3"
-                  />
-                  <div className="mb-3">
-                    <span className="text-xs text-gray-500">Opening bid: £500K (you open as the high bidder) • {availableClubs.length} club(s) available</span>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto space-y-1">
-                    {availableClubs.length === 0 ? (
-                      <div className="text-sm text-gray-500 py-6 text-center">No clubs available</div>
-                    ) : (
-                      availableClubs.map((club) => {
-                        const tier = clubTierById.get(club.id) ?? null;
-                        return (
-                        <button
-                          key={club.id}
-                          onClick={() => handleNominateClub(club.id)}
-                          disabled={nominating === club.id}
-                          className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition text-left disabled:opacity-50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-white/20 bg-white/10 text-gray-300">
-                              {club.short_name}
-                            </span>
-                            <span className="text-white font-semibold">{club.name}</span>
-                            {tier && (
-                              <span
-                                title={`${CLUB_TIER_DISPLAY[tier].label} tier — +${CLUB_TIER_DISPLAY[tier].win} pts on a win, +${CLUB_TIER_DISPLAY[tier].draw} on a draw`}
-                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${
-                                  tier === "top8" ? "bg-yellow-500/20 text-yellow-200 border-yellow-500/40"
-                                  : tier === "mid" ? "bg-blue-500/20 text-blue-200 border-blue-500/40"
-                                  : "bg-emerald-500/20 text-emerald-200 border-emerald-500/40"
-                                }`}
-                              >
-                                {CLUB_TIER_DISPLAY[tier].label} +{CLUB_TIER_DISPLAY[tier].win}W/+{CLUB_TIER_DISPLAY[tier].draw}D
-                              </span>
-                            )}
-                          </div>
-                          {nominating === club.id && <span className="text-xs text-gray-400">Nominating...</span>}
-                        </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
