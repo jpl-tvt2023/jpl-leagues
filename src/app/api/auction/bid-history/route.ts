@@ -18,6 +18,10 @@ export async function GET(request: NextRequest) {
   const bids = await db
     .select({
       id: auctionBids.id,
+      // Needed so both rooms can resolve position / PL club / tier for a historical row. Without it
+      // the participant feed lost its [GKP·ARS] tags on every resync (the live SSE path had the id,
+      // the rebuilt-from-history path did not), and the admin feed could not show them at all.
+      fplElementId: auctionBids.fplElementId,
       playerName: auctionBids.playerName,
       currentHighBid: auctionBids.currentHighBid,
       currentHighBidderId: auctionBids.currentHighBidderId,
@@ -25,6 +29,7 @@ export async function GET(request: NextRequest) {
       minBid: auctionBids.minBid,
       status: auctionBids.status,
       updatedAt: auctionBids.updatedAt,
+      createdAt: auctionBids.createdAt,
     })
     .from(auctionBids)
     .where(eq(auctionBids.sessionId, sessionId))
@@ -63,8 +68,18 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Lot numbers count SOLD players only, in the order they were put on the block. Assigned here so
+  // every consumer agrees; `resolved` is newest-first, so number the chronological order instead.
+  const lotNumberByBidId = new Map<string, number>();
+  const soldChronological = resolved
+    .filter((b) => b.status === "sold")
+    .slice()
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  soldChronological.forEach((b, i) => lotNumberByBidId.set(b.id, i + 1));
+
   const bidsWithLogs = resolved.map((b) => ({
     ...b,
+    lotNumber: lotNumberByBidId.get(b.id) ?? null,
     logs: logsByBidId[b.id] ?? [],
   }));
 

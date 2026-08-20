@@ -10,9 +10,10 @@ import { AuctionTimerRing } from "@/components/AuctionTimerRing";
 import { formatCurrency } from "@/lib/format/currency";
 import { effectiveMaxSquadSize } from "@/lib/formats/auction/squad-rules";
 import type { ClubTier } from "@/lib/db/schema";
+import { POSITION_LABELS } from "@/lib/fpl/positions";
+import { getPlTeamFullName } from "@/lib/data/pl-team-full-names";
 
 const CLUB_AUCTION_TYPE = "club-auction";
-const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 const MIN_QUOTA: Record<"GKP" | "DEF" | "MID" | "FWD", number> = { GKP: 1, DEF: 3, MID: 3, FWD: 1 };
 
 interface SessionRow {
@@ -79,11 +80,24 @@ interface CurrentBid {
   nominatorTeamId: string;
   expiresAt: string;
   tier?: ClubTier | null;
+  elementType?: number | null;
+  plTeamId?: number | null;
+  /** Nth player SOLD this session, including this lot. */
+  lotNumber?: number | null;
 }
 
 interface BootstrapElement {
   id: number;
   element_type: number;
+  // The player's real-life PL club. Already on the wire from /api/fpl/bootstrap — this interface
+  // simply narrowed it away, which is why the admin room could show no club or tier for a player.
+  team: number;
+}
+
+interface BootstrapTeam {
+  id: number;
+  name: string;
+  short_name: string;
 }
 
 interface FeedItem {
@@ -95,6 +109,8 @@ interface FeedItem {
 
 interface BidHistoryBid {
   id: string;
+  fplElementId?: number;
+  lotNumber?: number | null;
   playerName: string;
   currentHighBid: number;
   currentHighBidderId: string;
@@ -109,10 +125,65 @@ function teamLabel(team: TeamInfo | undefined, id: string): string {
   return team?.rawName ?? id;
 }
 
+/**
+ * Position pill + real-life PL club + tier chip for whatever is on the block.
+ *
+ * The server resolves this (see `lot-meta.ts`), because `fplElementId` means different things in a
+ * player auction (a player) and a club auction (a PL club) — but we fall back to the local bootstrap
+ * map so the card still renders against a payload from before that change.
+ */
+function LotIdentity({
+  bid,
+  elementById,
+  plTeams,
+  isClubAuction,
+}: {
+  bid: CurrentBid;
+  elementById: Map<number, BootstrapElement>;
+  plTeams: Map<number, BootstrapTeam>;
+  isClubAuction: boolean;
+}) {
+  const el = elementById.get(bid.fplElementId);
+  const elementType = bid.elementType ?? el?.element_type ?? null;
+  const pos = elementType ? POSITION_LABELS[elementType] : null;
+  // In a club auction the lot IS the club, so its name is already the heading — only the tier adds
+  // anything there.
+  const plTeamId = bid.plTeamId ?? (isClubAuction ? bid.fplElementId : el?.team) ?? null;
+  const plTeam = plTeamId != null ? plTeams.get(plTeamId) : undefined;
+  const clubName =
+    plTeamId != null ? getPlTeamFullName(plTeamId, plTeam?.name ?? "", plTeam?.short_name) : null;
+
+  return (
+    <>
+      {pos && (
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-white/20 text-gray-300">
+          {pos}
+        </span>
+      )}
+      {!isClubAuction && clubName && (
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">
+          {clubName}
+        </span>
+      )}
+      {bid.tier && (
+        <TierChip
+          tier={bid.tier}
+          clubName={clubName ?? bid.playerName}
+          short={plTeam?.short_name}
+          variant={isClubAuction ? "owner" : "player"}
+          compact={isClubAuction}
+        />
+      )}
+    </>
+  );
+}
+
 function buildFeed(
   bids: BidHistoryBid[],
   penalties: Array<{ id: string; teamId: string; createdAt: string }>,
-  teams: Map<string, TeamInfo>
+  teams: Map<string, TeamInfo>,
+  /** Renders a POS-CLUB suffix; supplied once the bootstrap maps have loaded. */
+  tag: (fplElementId: number | undefined | null) => string = () => ""
 ): FeedItem[] {
   const name = (id: string) => teamLabel(teams.get(id), id);
   const groups: { ts: number; items: FeedItem[] }[] = [];
@@ -123,8 +194,8 @@ function buildFeed(
         id: b.id,
         text:
           b.status === "sold"
-            ? `SOLD: ${b.playerName} → ${name(b.currentHighBidderId)} for ${formatCurrency(b.currentHighBid)}`
-            : `UNSOLD: ${b.playerName}`,
+            ? `${b.lotNumber != null ? `#${b.lotNumber} ` : ""}SOLD: ${b.playerName}${tag(b.fplElementId)} → ${name(b.currentHighBidderId)} for ${formatCurrency(b.currentHighBid)}`
+            : `UNSOLD: ${b.playerName}${tag(b.fplElementId)}`,
         kind: b.status === "sold" ? "sold" : "unsold",
         ts: soldTs,
       },
@@ -136,7 +207,7 @@ function buildFeed(
           id: log.id,
           text:
             log.type === "nomination"
-              ? `${name(log.teamId)} nominated ${b.playerName} — base ${formatCurrency(log.amount)}`
+              ? `${name(log.teamId)} nominated ${b.playerName}${tag(b.fplElementId)} — base ${formatCurrency(log.amount)}`
               : `${name(log.teamId)} bid ${formatCurrency(log.amount)} on ${b.playerName}`,
           kind: log.type === "nomination" ? "info" : "bid",
           ts: new Date(log.createdAt).getTime(),
@@ -145,7 +216,7 @@ function buildFeed(
     } else {
       items.push({
         id: `${b.id}-nom`,
-        text: `${name(b.nominatorTeamId)} nominated ${b.playerName} — base ${formatCurrency(b.minBid)}`,
+        text: `${name(b.nominatorTeamId)} nominated ${b.playerName}${tag(b.fplElementId)} — base ${formatCurrency(b.minBid)}`,
         kind: "info",
         ts: soldTs - 1,
       });
@@ -185,6 +256,7 @@ export default function AdminAuctionRoomPage() {
   const [teams, setTeams] = useState<Map<string, TeamInfo>>(new Map());
   const [teamSummaries, setTeamSummaries] = useState<Record<string, TeamSummary>>({});
   const [elements, setElements] = useState<BootstrapElement[]>([]);
+  const [plTeams, setPlTeams] = useState<Map<number, BootstrapTeam>>(new Map());
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [currentBid, setCurrentBid] = useState<CurrentBid | null>(null);
   const [nominationDeadline, setNominationDeadline] = useState<string | null>(null);
@@ -207,13 +279,32 @@ export default function AdminAuctionRoomPage() {
   useEffect(() => { leagueDbIdRef.current = leagueDbId; }, [leagueDbId]);
   useEffect(() => { teamsRef.current = teams; }, [teams]);
 
+  // Mirrored into refs so the feed builder — called from callbacks and SSE handlers registered once
+  // — always reads the latest maps without re-registering.
+  const elementByIdRef = useRef<Map<number, BootstrapElement>>(new Map());
+  const plTeamsRef = useRef<Map<number, BootstrapTeam>>(new Map());
+  const sessionTypeRef = useRef<string | null>(null);
+
   const session = sessions.find((s) => s.id === sessionId) ?? null;
+  useEffect(() => { sessionTypeRef.current = session?.type ?? null; }, [session?.type]);
+
+  /** ` [MID-ARS]` suffix for a feed line. Empty for club auctions, where the lot IS the club. */
+  const playerTag = useCallback((fplElementId: number | undefined | null): string => {
+    if (!fplElementId) return "";
+    if (sessionTypeRef.current === CLUB_AUCTION_TYPE) return "";
+    const el = elementByIdRef.current.get(fplElementId);
+    if (!el) return "";
+    const parts = [POSITION_LABELS[el.element_type], plTeamsRef.current.get(el.team)?.short_name].filter(Boolean);
+    return parts.length ? ` [${parts.join("-")}]` : "";
+  }, []);
 
   const elementById = useMemo(() => {
     const m = new Map<number, BootstrapElement>();
     for (const el of elements) m.set(el.id, el);
     return m;
   }, [elements]);
+  useEffect(() => { elementByIdRef.current = elementById; }, [elementById]);
+  useEffect(() => { plTeamsRef.current = plTeams; }, [plTeams]);
 
   const refreshTeamsAndSquads = useCallback(async () => {
     const lid = leagueDbIdRef.current;
@@ -239,8 +330,8 @@ export default function AdminAuctionRoomPage() {
     const res = await fetch(`/api/auction/bid-history?sessionId=${sessionId}`);
     if (!res.ok) return;
     const d = await res.json();
-    setFeed(buildFeed(d.bids ?? [], d.penalties ?? [], teamsRef.current));
-  }, [sessionId]);
+    setFeed(buildFeed(d.bids ?? [], d.penalties ?? [], teamsRef.current, playerTag));
+  }, [sessionId, playerTag]);
 
   const refreshSessions = useCallback(async () => {
     const lid = leagueDbIdRef.current;
@@ -309,18 +400,23 @@ export default function AdminAuctionRoomPage() {
       }
       if (histRes.ok) {
         const d = await histRes.json();
-        setFeed(buildFeed(d.bids ?? [], d.penalties ?? [], teamMap));
+        setFeed(buildFeed(d.bids ?? [], d.penalties ?? [], teamMap, playerTag));
       }
       if (bootstrapRes.ok) {
         const d = await bootstrapRes.json();
         setElements(d.elements ?? []);
+        // The teams map was already in this response and was being thrown away, so keeping it costs
+        // nothing on the wire.
+        const tMap = new Map<number, BootstrapTeam>();
+        for (const t of d.teams ?? []) tMap.set(t.id, t);
+        setPlTeams(tMap);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load auction room");
     } finally {
       setIsLoading(false);
     }
-  }, [leagueSlug, sessionId]);
+  }, [leagueSlug, sessionId, playerTag]);
 
   useEffect(() => { loadInitial(); }, [loadInitial]);
 
@@ -636,7 +732,11 @@ export default function AdminAuctionRoomPage() {
                     <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1.5">On the block</div>
                     {currentBid ? (
                       <>
-                        <div className="text-sm text-white font-semibold">{currentBid.playerName}</div>
+                        <div className="text-sm text-white font-semibold flex items-center gap-1.5 flex-wrap">
+                          {currentBid.lotNumber != null && <span className="text-yellow-400/80">#{currentBid.lotNumber}</span>}
+                          {currentBid.playerName}
+                          <LotIdentity bid={currentBid} elementById={elementById} plTeams={plTeams} isClubAuction={isClubAuction} />
+                        </div>
                         <div className="text-xs text-gray-400 mt-0.5">
                           Nominated by {teamLabel(teams.get(currentBid.nominatorTeamId), currentBid.nominatorTeamId)} · high bid{" "}
                           {formatCurrency(currentBid.currentHighBid)} from{" "}
@@ -812,10 +912,13 @@ export default function AdminAuctionRoomPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">On the Block</div>
-                      <div className="text-lg font-bold text-white flex items-center gap-2">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">
+                        On the Block
+                        {currentBid.lotNumber != null && <span className="ml-1 text-yellow-400/80">#{currentBid.lotNumber}</span>}
+                      </div>
+                      <div className="text-lg font-bold text-white flex items-center gap-2 flex-wrap">
                         {currentBid.playerName}
-                        {isClubAuction && currentBid.tier && <TierChip tier={currentBid.tier} clubName={currentBid.playerName} compact />}
+                        <LotIdentity bid={currentBid} elementById={elementById} plTeams={plTeams} isClubAuction={isClubAuction} />
                       </div>
                       <div className="text-xs text-gray-400 mt-1">
                         Nominated by {teamLabel(teams.get(currentBid.nominatorTeamId), currentBid.nominatorTeamId)} · Base {formatCurrency(currentBid.minBid)}

@@ -8,8 +8,9 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { SlotStatus, type SlotStatusData } from "@/components/SlotStatus";
 import { HelpTip } from "@/components/HelpTip";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
-import { MAX_SQUAD_SIZE } from "@/lib/formats/auction/squad-rules";
+import { MAX_SQUAD_SIZE, type SquadCounts } from "@/lib/formats/auction/squad-rules";
 import { useWishlist } from "@/hooks/useWishlist";
+import { WishlistList } from "@/components/WishlistList";
 
 interface SquadPlayer {
   ownershipId: string;
@@ -89,6 +90,7 @@ interface BootstrapElement {
   web_name: string;
   team: number;
   element_type: number;
+  now_cost: number;
   total_points: number;
   status: string;
 }
@@ -141,14 +143,24 @@ export default function SquadPage() {
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"squad" | "wishlist">("squad");
   const [wlSearch, setWlSearch] = useState("");
+  const [wlDebouncedSearch, setWlDebouncedSearch] = useState("");
   const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
+  const [wlClubFilter, setWlClubFilter] = useState<number | null>(null);
   const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
   const [wishlistSelections, setWishlistSelections] = useState<Set<number>>(new Set());
 
   const teamId = squadData?.teamId ?? null;
   const leagueId = squadData?.leagueId ?? null;
-  const { wishlist, add: addWishlist, addMany: addManyToWishlist, remove: removeWishlist, reorder: reorderWishlist } = useWishlist(teamId, leagueId, ownedElementIds);
-  const activeWishlist = useMemo(() => wishlist.filter((w) => !ownedElementIds.has(w.fplElementId)), [wishlist, ownedElementIds]);
+  const {
+    wishlist,
+    add: addWishlist,
+    addMany: addManyToWishlist,
+    remove: removeWishlist,
+    reorder: reorderWishlist,
+    moveToTop: wishlistMoveToTop,
+    moveToPosition: wishlistMoveToPosition,
+    nudge: wishlistNudge,
+  } = useWishlist(teamId, leagueId, ownedElementIds);
 
   // Deep-link support for "?tab=wishlist" (e.g. the Dashboard wishlist card's "Manage full
   // wishlist" link) — read via window.location rather than useSearchParams() to avoid requiring
@@ -158,6 +170,12 @@ export default function SquadPage() {
       setActiveTab("wishlist");
     }
   }, []);
+
+  // Debounce the add-search — it scans and sorts the full ~700-element list.
+  useEffect(() => {
+    const t = setTimeout(() => setWlDebouncedSearch(wlSearch), 250);
+    return () => clearTimeout(t);
+  }, [wlSearch]);
 
   const loadAll = useCallback(async () => {
     setIsLoading(true);
@@ -280,19 +298,43 @@ export default function SquadPage() {
   const fmvSquadValue = squadData?.squad.reduce((sum, p) => sum + p.fmv, 0) ?? 0;
   const oldSquadValue = squadData?.squad.reduce((sum, p) => sum + p.purchasePrice, 0) ?? 0;
 
-  const wishlistElementIds = new Set(wishlist.map((w) => w.fplElementId));
+  const wishlistElementIds = useMemo(() => new Set(wishlist.map((w) => w.fplElementId)), [wishlist]);
 
-  const searchResults = elementsList
-    .filter((el) => {
-      if (ownedElementIds.has(el.id)) return false;
-      if (wishlistElementIds.has(el.id)) return false;
-      if (wlPositionFilter !== null && el.element_type !== wlPositionFilter) return false;
-      const lc = wlSearch.trim().toLowerCase();
-      if (lc && !el.web_name.toLowerCase().includes(lc)) return false;
-      return true;
-    })
-    .sort((a, b) => b.total_points - a.total_points)
-    .slice(0, 30);
+  // Memoised and debounced. This scans ~700 elements and sorts them; unmemoised it re-ran on every
+  // render of the page, including every single reorder click.
+  const searchResults = useMemo(
+    () =>
+      elementsList
+        .filter((el) => {
+          if (ownedElementIds.has(el.id)) return false;
+          if (wishlistElementIds.has(el.id)) return false;
+          if (wlPositionFilter !== null && el.element_type !== wlPositionFilter) return false;
+          if (wlClubFilter !== null && el.team !== wlClubFilter) return false;
+          const lc = wlDebouncedSearch.trim().toLowerCase();
+          if (lc && !el.web_name.toLowerCase().includes(lc)) return false;
+          return true;
+        })
+        .sort((a, b) => b.total_points - a.total_points)
+        .slice(0, 30),
+    [elementsList, ownedElementIds, wishlistElementIds, wlPositionFilter, wlClubFilter, wlDebouncedSearch]
+  );
+
+  const wlClubOptions = useMemo(
+    () => [...teamsMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    [teamsMap]
+  );
+
+  /** Squad composition, for the wishlist's position-coverage banner. */
+  const wlSquadCounts = useMemo<SquadCounts | null>(() => {
+    if (!squadData) return null;
+    const counts: SquadCounts = { 1: 0, 2: 0, 3: 0, 4: 0, total: 0 };
+    for (const p of squadData.squad) {
+      const el = elements.get(p.fplElementId);
+      if (el && el.element_type >= 1 && el.element_type <= 4) counts[el.element_type as 1 | 2 | 3 | 4]++;
+      counts.total++;
+    }
+    return counts;
+  }, [squadData, elements]);
 
   const handleBulkAddToWishlist = async () => {
     if (wishlistSelections.size === 0) return;
@@ -395,39 +437,23 @@ export default function SquadPage() {
                   <p className="text-xs text-gray-400 mb-4">
                     When your nomination turn comes and the 60s timer expires, the top unowned entry is auto-nominated. If the list is empty, you lose a squad slot.
                   </p>
-                  {wishlist.length === 0 ? (
-                    <div className="text-sm text-gray-500 py-8 text-center">Empty — add players from the right.</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {wishlist.map((entry, idx) => {
-                        const el = elements.get(entry.fplElementId);
-                        const position = el ? POSITION_LABELS[el.element_type] : "—";
-                        const positionColor = el ? POSITION_COLORS[el.element_type] : "bg-white/10 text-gray-300 border-white/20";
-                        const team = el ? teamsMap.get(el.team) : null;
-                        const owned = ownedElementIds.has(entry.fplElementId);
-                        const activeIdx = activeWishlist.findIndex((w) => w.id === entry.id);
-                        return (
-                          <div key={entry.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${owned ? "border-red-500/30 bg-red-500/5 opacity-60" : "border-white/10 bg-white/5"}`}>
-                            <span className="w-6 text-center text-xs font-bold text-gray-400">{idx + 1}</span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${positionColor}`}>{position}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className={`font-semibold truncate ${owned ? "text-gray-400 line-through" : "text-white"}`}>{entry.playerName}</div>
-                              <div className="text-xs text-gray-400">{team?.short_name ?? "—"}{owned && " • OWNED"}</div>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              {!owned && (
-                                <>
-                                  <button onClick={() => reorderWishlist(activeIdx, activeIdx - 1)} disabled={activeIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 px-1" title="Up">▲</button>
-                                  <button onClick={() => reorderWishlist(activeIdx, activeIdx + 1)} disabled={activeIdx === activeWishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 px-1" title="Down">▼</button>
-                                </>
-                              )}
-                              <button onClick={() => removeWishlist(entry.id)} className="text-red-400 hover:text-red-300 px-1" title="Remove">✕</button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <WishlistList
+                    wishlist={wishlist}
+                    elementById={elements}
+                    plTeams={teamsMap}
+                    ownedElementIds={ownedElementIds}
+                    onReorder={reorderWishlist}
+                    onMoveToTop={wishlistMoveToTop}
+                    onMoveToPosition={wishlistMoveToPosition}
+                    onNudge={wishlistNudge}
+                    onRemove={removeWishlist}
+                    purse={economy?.computedPurse ?? null}
+                    squadCounts={wlSquadCounts}
+                    maxSquadSize={squadData?.slotStatus?.effectiveMax ?? null}
+                    penaltySlots={squadData?.slotStatus?.penaltySlots ?? 0}
+                    bonusSlots={squadData?.slotStatus?.bonusSlots ?? 0}
+                    emptyMessage="Empty — add players from the right."
+                  />
                 </div>
 
                 {/* Add players */}
@@ -461,6 +487,17 @@ export default function SquadPage() {
                         {label}
                       </button>
                     ))}
+                    <select
+                      value={wlClubFilter ?? ""}
+                      onChange={(e) => setWlClubFilter(e.target.value === "" ? null : Number(e.target.value))}
+                      title="Filter the search by real-life Premier League club"
+                      className="rounded-full border border-white/20 bg-slate-800 px-3 py-1 text-xs text-gray-200"
+                    >
+                      <option value="">All clubs</option>
+                      {wlClubOptions.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
                   </div>
                   {searchResults.length > 0 && (
                     <div className="flex items-center justify-between mb-2">

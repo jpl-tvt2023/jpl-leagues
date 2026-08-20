@@ -13,6 +13,8 @@ import type { ClubTier } from "@/lib/db/schema";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { MAX_SQUAD_SIZE, effectiveMaxSquadSize } from "@/lib/formats/auction/squad-rules";
 import { useWishlist } from "@/hooks/useWishlist";
+import { WishlistList } from "@/components/WishlistList";
+import { getPlTeamFullName } from "@/lib/data/pl-team-full-names";
 
 const CLUB_AUCTION_TYPE = "club-auction";
 
@@ -47,7 +49,13 @@ interface CurrentBid {
   minBid: number;
   expiresAt: string;
   status: string;
-  tier?: ClubTier | null;      // Populated by server for club-auction sessions only.
+  // Lot identity, resolved server-side so this room and the admin room always agree. For a club
+  // auction `plTeamId` is the club itself; for a player auction it is the player's real-life club.
+  tier?: ClubTier | null;
+  elementType?: number | null;
+  plTeamId?: number | null;
+  /** Nth player SOLD this session, including this lot. */
+  lotNumber?: number | null;
 }
 
 interface BootstrapElement {
@@ -109,6 +117,8 @@ function formatCurrency(amount: number): string {
 interface BidHistoryResponse {
   bids?: Array<{
     id: string;
+    fplElementId?: number;
+    lotNumber?: number | null;
     playerName: string;
     currentHighBid: number;
     currentHighBidderId: string;
@@ -129,15 +139,24 @@ interface BidHistoryResponse {
  * feed (incl. penalties) survives reconnects, intermissions, and reloads — and is the sole source of
  * the feed for a completed session (no SSE runs there).
  */
-function buildFeedFromHistory(hist: BidHistoryResponse, teamName: (id: string) => string): BidFeedItem[] {
+function buildFeedFromHistory(
+  hist: BidHistoryResponse,
+  teamName: (id: string) => string,
+  /**
+   * Renders the ` [GKP·ARS]` suffix. Passed in because the live SSE path already had it and the
+   * rebuilt-from-history path did not — so the tags silently vanished on every resync, reload and
+   * intermission. `bid-history` now returns `fplElementId`, which is what makes this possible.
+   */
+  tag: (fplElementId: number | undefined | null) => string = () => ""
+): BidFeedItem[] {
   const groups: { ts: number; items: BidFeedItem[] }[] = [];
   for (const b of hist.bids ?? []) {
     const soldTs = new Date(b.updatedAt).getTime();
     const items: BidFeedItem[] = [{
       id: b.id,
       text: b.status === "sold"
-        ? `SOLD: ${b.playerName} → ${teamName(b.currentHighBidderId)} for ${formatCurrency(b.currentHighBid)}`
-        : `UNSOLD: ${b.playerName}`,
+        ? `${b.lotNumber != null ? `#${b.lotNumber} ` : ""}SOLD: ${b.playerName}${tag(b.fplElementId)} → ${teamName(b.currentHighBidderId)} for ${formatCurrency(b.currentHighBid)}`
+        : `UNSOLD: ${b.playerName}${tag(b.fplElementId)}`,
       kind: b.status === "sold" ? "sold" : "unsold",
       ts: soldTs,
       bidId: b.id,
@@ -148,7 +167,7 @@ function buildFeedFromHistory(hist: BidHistoryResponse, teamName: (id: string) =
         items.push({
           id: log.id,
           text: log.type === "nomination"
-            ? `${teamName(log.teamId)} nominated ${b.playerName} — base ${formatCurrency(log.amount)}`
+            ? `${teamName(log.teamId)} nominated ${b.playerName}${tag(b.fplElementId)} — base ${formatCurrency(log.amount)}`
             : `${teamName(log.teamId)} bid ${formatCurrency(log.amount)} on ${b.playerName}`,
           kind: log.type === "nomination" ? "info" : "bid",
           ts: new Date(log.createdAt).getTime(),
@@ -158,7 +177,7 @@ function buildFeedFromHistory(hist: BidHistoryResponse, teamName: (id: string) =
     } else {
       items.push({
         id: `${b.id}-nom`,
-        text: `${teamName(b.nominatorTeamId)} nominated ${b.playerName} — base ${formatCurrency(b.minBid)}`,
+        text: `${teamName(b.nominatorTeamId)} nominated ${b.playerName}${tag(b.fplElementId)} — base ${formatCurrency(b.minBid)}`,
         kind: "info",
         ts: soldTs - 1,
         bidId: b.id,
@@ -364,9 +383,7 @@ export default function AuctionRoomPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [positionFilter, setPositionFilter] = useState<number | null>(null);
   const [nominating, setNominating] = useState<number | null>(null);
-  const [wlPositionFilter, setWlPositionFilter] = useState<number | null>(null);
   const [wlSearchTerm, setWlSearchTerm] = useState("");
-  const [wlTeamFilter, setWlTeamFilter] = useState<number | null>(null);
   // Tabbed panel: "wishlist" (existing list) vs "unsold" (players nominated this session but received
   // no bid). The Unsold tab supports multi-select + bulk add to wishlist.
   const [wishlistTab, setWishlistTab] = useState<"wishlist" | "unsold">("wishlist");
@@ -381,6 +398,9 @@ export default function AuctionRoomPage() {
     addMany: addManyToWishlist,
     remove: handleRemoveFromWishlist,
     reorder: handleReorderWishlist,
+    moveToTop: wishlistMoveToTop,
+    moveToPosition: wishlistMoveToPosition,
+    nudge: wishlistNudge,
     toggle: handleToggleWishlist,
   } = useWishlist(myTeamId, leagueId, ownedElementIds);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -552,7 +572,7 @@ export default function AuctionRoomPage() {
       const histRes = await fetch(`/api/auction/bid-history?sessionId=${routeSessionId}`);
       if (histRes.ok) {
         const histJson: BidHistoryResponse = await histRes.json();
-        setBidFeed(buildFeedFromHistory(histJson, (id) => displayTeamName(standingsMap.get(id)) ?? "Unknown"));
+        setBidFeed(buildFeedFromHistory(histJson, (id) => displayTeamName(standingsMap.get(id)) ?? "Unknown", playerTag));
       }
     } catch (err) {
       console.error(err);
@@ -560,7 +580,7 @@ export default function AuctionRoomPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [leagueSlug, routeSessionId, router]);
+  }, [leagueSlug, routeSessionId, router, playerTag]);
 
   useEffect(() => {
     loadInitial();
@@ -660,15 +680,17 @@ export default function AuctionRoomPage() {
     if (sessionTypeRef.current === CLUB_AUCTION_TYPE) refreshClubOwnership();
     if (mtid) {
       fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMyPurse(d.computedPurse ?? 0); }).catch(() => {});
-      refreshWishlist().catch(() => {});
+      // `background` so this 3s resync yields to an in-flight (or just-committed) local reorder.
+      // Without it, dragging a row while the poll was mid-flight made it visibly snap back.
+      refreshWishlist({ background: true }).catch(() => {});
       fetch(`/api/auction/squad?teamId=${mtid}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMySlotStatus(d.slotStatus ?? null); }).catch(() => {});
     }
     if (sid && opts?.feed !== false) {
       fetch(`/api/auction/bid-history?sessionId=${sid}`).then((r) => (r.ok ? r.json() : null)).then((d: BidHistoryResponse | null) => {
-        if (d) setBidFeed(buildFeedFromHistory(d, (id) => displayTeamName(teamMapRef.current.get(id)) ?? "Unknown"));
+        if (d) setBidFeed(buildFeedFromHistory(d, (id) => displayTeamName(teamMapRef.current.get(id)) ?? "Unknown", playerTag));
       }).catch(() => {});
     }
-  }, [refreshSessionState, refreshClubOwnership, refreshWishlist]);
+  }, [refreshSessionState, refreshClubOwnership, refreshWishlist, playerTag]);
 
   // SSE subscription — opens as soon as there's a session, including "pending" ones: the server
   // stream emits a session-status event on every status change (see stream route), which is the
@@ -741,8 +763,9 @@ export default function AuctionRoomPage() {
       if (sessionTypeRef.current === CLUB_AUCTION_TYPE) refreshClubOwnership();
       if (mtid) {
         fetch(`/api/auction/economy?teamId=${mtid}`).then((r) => r.json()).then((d) => setMyPurse(d.computedPurse ?? 0));
-        // Refresh wishlist — sold player was removed server-side
-        refreshWishlist().catch(() => {});
+        // Refresh so the sold player is struck through. Background: a sale never edits the list
+        // itself, so it must not stomp a reorder the user is making at that moment.
+        refreshWishlist({ background: true }).catch(() => {});
       }
     });
     es.addEventListener("unsold", (e) => {
@@ -809,7 +832,7 @@ export default function AuctionRoomPage() {
       eventSourceRef.current = null;
       setSseConnected(false);
     };
-  }, [sessionId, sessionStatus, addFeed, refreshSessionState, resyncAuctionScreen, sseReconnectTick, refreshWishlist, noteServerTime]);
+  }, [sessionId, sessionStatus, addFeed, refreshSessionState, resyncAuctionScreen, sseReconnectTick, refreshWishlist, noteServerTime, playerTag]);
 
   // Heartbeat watchdog: if no event (heartbeat or otherwise) lands for >25s while the session is
   // active, the SSE connection is presumed dead — bump the reconnect tick to tear down + reopen the
@@ -929,30 +952,8 @@ export default function AuctionRoomPage() {
   useEffect(() => { elementByIdRef.current = elementById; }, [elementById]);
   useEffect(() => { plTeamsRef.current = plTeams; }, [plTeams]);
 
-  const filteredWishlist = useMemo(() => {
-    return wishlist.filter((entry) => {
-      const el = elementById.get(entry.fplElementId);
-      if (!el) return true; // show if element data missing
-      if (wlPositionFilter !== null && el.element_type !== wlPositionFilter) return false;
-      if (wlTeamFilter !== null && el.team !== wlTeamFilter) return false;
-      return true;
-    });
-  }, [wishlist, wlPositionFilter, wlTeamFilter, elementById]);
-
-  const wlTeamOptions = useMemo(() => {
-    const teamIds = new Set<number>();
-    for (const entry of wishlist) {
-      const el = elementById.get(entry.fplElementId);
-      if (el) teamIds.add(el.team);
-    }
-    return Array.from(teamIds)
-      .map((id) => ({ id, name: plTeams.get(id)?.short_name ?? `Team ${id}` }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [wishlist, elementById, plTeams]);
-
-  const isWlFiltered = wlPositionFilter !== null || wlTeamFilter !== null;
-
-  const activeWishlist = useMemo(() => wishlist.filter((w) => !ownedElementIds.has(w.fplElementId)), [wishlist, ownedElementIds]);
+  // Wishlist filtering, ordering and reorder affordances all live in <WishlistList> now — it is the
+  // same component the dashboard and squad page render, so the three can no longer drift apart.
 
   // Bid/nominate can fail with a transient, stale-state error if the user acted a beat out of sync
   // (e.g. the lot just resolved, the intermission just opened, or their turn just passed). Rather
@@ -1336,15 +1337,27 @@ export default function AuctionRoomPage() {
                         );
                       }
                       const el = elementById.get(currentBid.fplElementId);
-                      const pos = el ? POSITION_LABELS[el.element_type] : null;
-                      const plTeam = el ? plTeams.get(el.team) : null;
+                      // Prefer the server-resolved values; fall back to the local bootstrap map so
+                      // the card still renders if the payload predates this deploy.
+                      const elementType = currentBid.elementType ?? el?.element_type ?? null;
+                      const pos = elementType ? POSITION_LABELS[elementType] : null;
+                      const plTeamId = currentBid.plTeamId ?? el?.team ?? null;
+                      const plTeam = plTeamId != null ? plTeams.get(plTeamId) : undefined;
+                      const clubName = plTeamId != null
+                        ? getPlTeamFullName(plTeamId, plTeam?.name ?? "", plTeam?.short_name)
+                        : null;
                       return (
                         <div className="text-center mb-4">
-                          <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">On the Block</div>
+                          <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">
+                            On the Block{currentBid.lotNumber != null && <span className="ml-1 text-yellow-400/80">#{currentBid.lotNumber}</span>}
+                          </div>
                           <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 break-words">{currentBid.playerName}</h2>
-                          <div className="flex items-center justify-center gap-1.5 mb-1">
+                          <div className="flex flex-wrap items-center justify-center gap-1.5 mb-1">
                             {pos && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-white/20 text-gray-300">{pos}</span>}
-                            {plTeam && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">{plTeam.short_name}</span>}
+                            {clubName && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-gray-300">{clubName}</span>}
+                            {currentBid.tier && plTeam && (
+                              <TierChip tier={currentBid.tier} clubName={clubName ?? plTeam.name} short={plTeam.short_name} variant="player" compact />
+                            )}
                           </div>
                           <div className="text-xs text-gray-400">
                             Nominated by {displayTeamName(teamMap.get(currentBid.nominatorTeamId)) ?? "Unknown"} · Base {formatCurrency(currentBid.minBid)}
@@ -1729,70 +1742,22 @@ export default function AuctionRoomPage() {
                         </div>
                       )}
                     </div>
-                    {wishlist.length > 0 && (
-                      <div className="flex gap-1.5 mb-2">
-                        <select
-                          value={wlPositionFilter ?? ""}
-                          onChange={(e) => setWlPositionFilter(e.target.value ? Number(e.target.value) : null)}
-                          className="flex-1 bg-white/10 border border-white/20 text-white text-[10px] rounded px-1.5 py-1 outline-none"
-                        >
-                          <option value="">All Positions</option>
-                          <option value="1">GKP</option>
-                          <option value="2">DEF</option>
-                          <option value="3">MID</option>
-                          <option value="4">FWD</option>
-                        </select>
-                        <select
-                          value={wlTeamFilter ?? ""}
-                          onChange={(e) => setWlTeamFilter(e.target.value ? Number(e.target.value) : null)}
-                          className="flex-1 bg-white/10 border border-white/20 text-white text-[10px] rounded px-1.5 py-1 outline-none"
-                        >
-                          <option value="">All Teams</option>
-                          {wlTeamOptions.map((t) => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                    {wishlist.length === 0 ? (
-                      <div className="text-[10px] text-gray-500 py-2 text-center">
-                        Empty — search above, or add players from the nomination modal or the Unsold tab.
-                      </div>
-                    ) : filteredWishlist.length === 0 ? (
-                      <div className="text-[10px] text-gray-500 py-2 text-center">
-                        No players match filters.
-                      </div>
-                    ) : (
-                      <div className="space-y-0.5 max-h-52 overflow-y-auto">
-                        {filteredWishlist.map((entry) => {
-                          const el = elementById.get(entry.fplElementId);
-                          const owned = ownedElementIds.has(entry.fplElementId);
-                          const activeIdx = activeWishlist.findIndex((w) => w.id === entry.id);
-                          return (
-                            <div
-                              key={entry.id}
-                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-white/5 ${owned ? "opacity-50" : ""}`}
-                            >
-                              <span className="w-4 text-right text-[10px] text-gray-500">{entry.priority}.</span>
-                              {el && <span className="text-[9px] text-gray-500 w-6">{POSITION_LABELS[el.element_type] ?? ""}</span>}
-                              <span className={`flex-1 truncate ${owned ? "text-gray-400 line-through" : "text-white"}`}>{entry.playerName}</span>
-                              {el && <span className="text-[9px] text-gray-500">{plTeams.get(el.team)?.short_name ?? ""}</span>}
-                              {owned ? (
-                                <span className="text-[9px] text-gray-500 uppercase tracking-wide px-1">Owned</span>
-                              ) : (
-                                !isWlFiltered && (
-                                  <>
-                                    <button onClick={() => handleReorderWishlist(activeIdx, activeIdx - 1)} disabled={activeIdx === 0} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move up">▲</button>
-                                    <button onClick={() => handleReorderWishlist(activeIdx, activeIdx + 1)} disabled={activeIdx === activeWishlist.length - 1} className="text-gray-400 hover:text-white disabled:opacity-30 text-[10px]" title="Move down">▼</button>
-                                  </>
-                                )
-                              )}
-                              <button onClick={() => handleRemoveFromWishlist(entry.id)} className="text-red-400 hover:text-red-300 text-[10px]" title="Remove">✕</button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    <div className="max-h-72 overflow-y-auto">
+                      <WishlistList
+                        wishlist={wishlist}
+                        elementById={elementById}
+                        plTeams={plTeams}
+                        ownedElementIds={ownedElementIds}
+                        onReorder={handleReorderWishlist}
+                        onMoveToTop={wishlistMoveToTop}
+                        onMoveToPosition={wishlistMoveToPosition}
+                        onNudge={wishlistNudge}
+                        onRemove={handleRemoveFromWishlist}
+                        compact
+                        purse={myPurse}
+                        emptyMessage="Empty — search above, or add players from the nomination modal or the Unsold tab."
+                      />
+                    </div>
                   </>
                 ) : (
                   <>

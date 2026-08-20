@@ -1,18 +1,14 @@
 import { NextRequest } from "next/server";
 import { db, auctionSessions, auctionBids } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, count } from "drizzle-orm";
 import {
   resolveExpiredBid,
   advanceNominator,
   setNominationDeadline,
   handleNominationTimeout,
 } from "@/lib/formats/auction/resolve-bid";
-import {
-  CLUB_AUCTION_SESSION_TYPE,
-  loadStandingsConfig,
-} from "@/lib/formats/auction/club-auction";
-import { resolveTier } from "@/lib/data/pl-standings-seed";
-import type { ClubTier } from "@/lib/db/schema";
+import { CLUB_AUCTION_SESSION_TYPE } from "@/lib/formats/auction/club-auction";
+import { buildLotMetaResolver, EMPTY_LOT_META, type LotMeta } from "@/lib/formats/auction/lot-meta";
 
 // Force dynamic so Vercel doesn't buffer/cache the SSE response
 export const dynamic = "force-dynamic";
@@ -63,11 +59,12 @@ export async function GET(request: NextRequest) {
       let lastHighBidderId: string | null = null;
       let lastHighBid: number | null = null;
 
-      // Lazy-loaded standings config — populated on first poll once we know the session type.
-      // For club-auction sessions we need it to derive tier per bid; for player sessions we never load it.
-      let standingsConfig: { top8: number[]; mid: number[]; promoted: number[] } | null = null;
-      const tierForPlTeamId = (plTeamId: number): ClubTier | null =>
-        standingsConfig ? resolveTier(plTeamId, standingsConfig) : null;
+      // Lazily-built resolver for the identity of whatever is on the block: position, real-life PL
+      // club, and club tier. Previously only club auctions resolved a tier and player auctions sent
+      // `tier: null`, so a player lot carried no position or club at all and each room had to
+      // reinvent it (the admin room could not, having discarded the bootstrap teams map).
+      // Both lookups behind the resolver are cached, so this is cheap on the 2s poll.
+      let lotMeta: ((fplElementId: number) => LotMeta) | null = null;
 
       const poll = async () => {
         if (isClosed) return;
@@ -124,17 +121,24 @@ export async function GET(request: NextRequest) {
             )
             .limit(1);
 
-          // For club-auction sessions, lazy-load the standings config once so we can attach `tier`
-          // (top8 / mid / promoted) to every bid payload — drives the tier-chip render on the client.
           const isClubAuction = session.type === CLUB_AUCTION_SESSION_TYPE;
-          if (isClubAuction && !standingsConfig) {
+          if (!lotMeta) {
             try {
-              const { top8, mid, promoted } = await loadStandingsConfig();
-              standingsConfig = { top8, mid, promoted };
+              lotMeta = await buildLotMetaResolver(isClubAuction);
             } catch (e) {
-              console.warn("[sse] loadStandingsConfig failed — tier will be null", e);
+              console.warn("[sse] lot metadata unavailable", e);
             }
           }
+          const metaFor = (id: number): LotMeta => lotMeta?.(id) ?? EMPTY_LOT_META;
+
+          /** Lot number = how many players have SOLD in this session, plus this one. */
+          const soldCount = async (): Promise<number> => {
+            const r = await db
+              .select({ n: count() })
+              .from(auctionBids)
+              .where(and(eq(auctionBids.sessionId, sessionId), eq(auctionBids.status, "sold")));
+            return Number(r[0]?.n ?? 0);
+          };
 
           if (openBids.length > 0) {
             lastWaitingSnapshot = null;
@@ -145,6 +149,7 @@ export async function GET(request: NextRequest) {
             if (updatedAtStr !== lastBidUpdatedAt) {
               lastBidUpdatedAt = updatedAtStr;
 
+              const meta = metaFor(bid.fplElementId);
               const auctionPayload = {
                 bidId: bid.id,
                 fplElementId: bid.fplElementId,
@@ -155,9 +160,13 @@ export async function GET(request: NextRequest) {
                 minBid: bid.minBid,
                 expiresAt: bid.expiresAt.toISOString(),
                 status: bid.status,
-                // For club-auction sessions, `fplElementId` is repurposed as a PL team ID — surface
-                // the tier so the UI can render a tier chip without doing its own standings lookup.
-                tier: isClubAuction ? tierForPlTeamId(bid.fplElementId) : null,
+                // Identity of the lot. For a club auction `fplElementId` IS the PL team id; for a
+                // player auction it is resolved through the player's club. Sent from the server so
+                // both rooms render the same thing.
+                elementType: meta.elementType,
+                plTeamId: meta.plTeamId,
+                tier: meta.tier,
+                lotNumber: (await soldCount()) + 1,
               };
 
               send("auction-state", auctionPayload);
@@ -197,13 +206,18 @@ export async function GET(request: NextRequest) {
                   .limit(1);
                 const final = resolved[0] ?? bid;
 
+                const soldMeta = metaFor(final.fplElementId);
                 send("sold", {
                   bidId: final.id,
                   fplElementId: final.fplElementId,
                   playerName: final.playerName,
                   finalBid: final.currentHighBid,
                   winnerId: final.currentHighBidderId,
-                  tier: isClubAuction ? tierForPlTeamId(final.fplElementId) : null,
+                  elementType: soldMeta.elementType,
+                  plTeamId: soldMeta.plTeamId,
+                  tier: soldMeta.tier,
+                  // Already counted — this lot is now `sold`, so it IS the current total.
+                  lotNumber: await soldCount(),
                 });
               }
               // else: already-resolved by another caller — skip

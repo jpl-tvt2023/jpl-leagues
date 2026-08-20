@@ -13,6 +13,13 @@ interface TierChipProps {
   short?: string;
   // If true, render an extra-compact pill (no name, just short code). Used in dense table cells.
   compact?: boolean;
+  /**
+   * Who the chip is describing.
+   *  - "owner" (default): a team that OWNS this club — the original use, next to a team name.
+   *  - "player": a player who PLAYS for this club — used on the auction block, where the owner
+   *    wording ("Owns Arsenal…") would be plainly wrong.
+   */
+  variant?: "owner" | "player";
 }
 
 const TIER_STYLE: Record<ClubTier, string> = {
@@ -28,11 +35,15 @@ const TIER_BONUS: Record<ClubTier, string> = {
   promoted: "+8W/+4D per fixture",
 };
 
-export function TierChip({ tier, clubName, short, compact }: TierChipProps) {
+export function TierChip({ tier, clubName, short, compact, variant = "owner" }: TierChipProps) {
   const label = compact ? (short ?? "") : TIER_LABEL[tier];
+  const title =
+    variant === "player"
+      ? `Plays for ${clubName} — ${TIER_LABEL[tier]} tier. Worth Synergy ×1.5 to whoever owns ${clubName}; club-result bonus ${TIER_BONUS[tier]}.`
+      : `Owns ${clubName} — ${TIER_LABEL[tier]} tier. Synergy ×1.5 on owned ${clubName} players; club-result bonus ${TIER_BONUS[tier]}.`;
   return (
     <span
-      title={`Owns ${clubName} — ${TIER_LABEL[tier]} tier. Synergy ×1.5 on owned ${clubName} players; club-result bonus ${TIER_BONUS[tier]}.`}
+      title={title}
       className={`inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full border ${TIER_STYLE[tier]}`}
     >
       {label}

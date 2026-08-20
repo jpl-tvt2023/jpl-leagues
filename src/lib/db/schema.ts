@@ -498,7 +498,14 @@ export const auctionWishlists = sqliteTable("auction_wishlists", {
   playerName: text("player_name").notNull(),
   priority: integer("priority").notNull(), // 1 = highest priority
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  // Every read and every reorder is scoped to one team and ordered by priority; without this the
+  // whole table was scanned (largest wishlist here is 327 rows, ~1.6k rows overall).
+  teamPriority: index("auction_wishlists_team_priority").on(table.teamId, table.priority),
+  // Makes duplicate entries impossible at the source. The GET handler previously deduplicated by
+  // DELETING rows inline on every request — on a poll that runs every 3s per connected client.
+  teamElementUnique: uniqueIndex("auction_wishlists_team_element").on(table.teamId, table.fplElementId),
+}));
 
 // Auction bids — live auction item state per nomination
 export const auctionBids = sqliteTable("auction_bids", {
