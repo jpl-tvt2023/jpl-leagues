@@ -6,7 +6,6 @@ import {
   advanceNominator,
   setNominationDeadline,
   handleNominationTimeout,
-  beginIntermission,
 } from "@/lib/formats/auction/resolve-bid";
 import {
   CLUB_AUCTION_SESSION_TYPE,
@@ -182,7 +181,12 @@ export async function GET(request: NextRequest) {
               if (outcome === "sold") {
                 // Begin a post-sale intermission (sync beat + pacing) instead of advancing
                 // immediately. The nominator is armed once the cooldown elapses (handled below).
-                await beginIntermission(sessionId);
+                // The post-sale intermission is opened inside the resolution transaction itself
+                // (see `resolveBidToSold`), so there is deliberately no `beginIntermission` here.
+                // Calling it from out here is not merely redundant: resolution does several more
+                // round trips after that commit, and another poller can consume the beat and advance
+                // the cursor before this line runs — opening a SECOND beat, which advances the cursor
+                // again and skips a team.
 
                 // Re-read the bid to get the freshest winner/amount (counter-bids
                 // may have arrived after the initial read)
@@ -231,7 +235,11 @@ export async function GET(request: NextRequest) {
               // Cooldown elapsed — advance the nominator, clearing the intermission in the SAME
               // write so only one stream advances and the claim can never be spent without the
               // cursor moving. Next poll picks up the fresh nomination state.
-              await advanceNominator(sessionId, { claimIntermission: session.intermissionUntil });
+              await advanceNominator(sessionId, {
+                claimIntermission: session.intermissionUntil,
+                expectIndex: session.currentNominatorIndex,
+                actor: "sse",
+              });
               return;
             }
 
@@ -276,8 +284,18 @@ export async function GET(request: NextRequest) {
                 });
               }
             } else if (!session.nominationDeadline) {
-              // No deadline set yet (e.g. session just started) — set one
-              await setNominationDeadline(sessionId);
+              // No deadline set yet (e.g. session just started) — set one.
+              //
+              // `session` is a snapshot from the top of this tick and every connected browser runs
+              // this same fallback on its own 2s loop, so pin the cursor we observed. Selling a lot
+              // takes two writes (mark sold, then open the intermission); a tick landing between
+              // them sees no bid, no intermission and no deadline, and unguarded this armed a fresh
+              // full window for the team that had just sold — handing them a second consecutive
+              // nomination and costing the next team its turn. See `setNominationDeadline`.
+              await setNominationDeadline(sessionId, {
+                expectIndex: session.currentNominatorIndex,
+                actor: "sse",
+              });
             }
 
             // Emit waiting state with deadline info — deduped via snapshot

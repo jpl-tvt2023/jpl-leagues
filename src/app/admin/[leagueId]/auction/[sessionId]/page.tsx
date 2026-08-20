@@ -29,6 +29,27 @@ interface SessionRow {
   intermissionSeconds: number;
 }
 
+interface TurnEvent {
+  id: string;
+  teamId: string | null;
+  nominatorIndex: number | null;
+  event: string;
+  actor: string;
+  detail: string | null;
+  createdAt: string;
+}
+
+/** Parse a JSON id-array coming back from the API. */
+function safeIds(raw: unknown): string[] {
+  if (typeof raw !== "string") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 interface TeamInfo {
   id: string;
   teamLoginId?: string;
@@ -174,6 +195,12 @@ export default function AdminAuctionRoomPage() {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [undoingBidId, setUndoingBidId] = useState<string | null>(null);
+  const [showCorrectPanel, setShowCorrectPanel] = useState(false);
+  const [turnActionLoading, setTurnActionLoading] = useState<string | null>(null);
+  const [turnEvents, setTurnEvents] = useState<TurnEvent[]>([]);
+  const [makeupQueue, setMakeupQueue] = useState<string[]>([]);
+  const [ringReturnIndex, setRingReturnIndex] = useState<number | null>(null);
+  const [grantTeamId, setGrantTeamId] = useState<string>("");
 
   const leagueDbIdRef = useRef<string | null>(null);
   const teamsRef = useRef<Map<string, TeamInfo>>(new Map());
@@ -400,6 +427,55 @@ export default function AdminAuctionRoomPage() {
     }
   };
 
+  // ---- Turn rectification ----
+  //
+  // All of these require a paused session (the API enforces it too). Pausing freezes every SSE poll
+  // loop and the mutating REST safety net, which is what makes a correction atomic instead of a race
+  // against ~20 concurrent writers.
+  const turnAction = async (
+    action: "cancel-nomination" | "grant-turn" | "dequeue-makeup" | "set-nominator",
+    payload: Record<string, unknown> = {},
+    confirmMsg?: string,
+  ) => {
+    if (!session) return;
+    if (confirmMsg && !confirm(confirmMsg)) return;
+    setTurnActionLoading(action);
+    try {
+      const res = await fetch(`/api/admin/${leagueSlug}/auction-corrections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, sessionId: session.id, ...payload }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: data.message ?? "Turn order updated" });
+        refreshSessions();
+        refreshTurnState();
+        refreshFeed();
+      } else {
+        setMessage({ type: "error", text: data.error ?? "Correction failed" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setTurnActionLoading(null);
+    }
+  };
+
+  const refreshTurnState = useCallback(async () => {
+    if (!session) return;
+    try {
+      const res = await fetch(`/api/auction/turn-events?sessionId=${session.id}&limit=40`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setTurnEvents(data.events ?? []);
+      setMakeupQueue(safeIds(data.turnState?.makeupQueue));
+      setRingReturnIndex(data.turnState?.ringReturnIndex ?? null);
+    } catch {
+      /* diagnostic panel only — never surface a failure here */
+    }
+  }, [session]);
+
   const undoSale = async (bidId: string) => {
     if (!confirm("Undo this sale? The player/club will become available for re-nomination.")) return;
     setUndoingBidId(bidId);
@@ -511,6 +587,211 @@ export default function AdminAuctionRoomPage() {
             <span>{session.snakeOrder.length} teams</span>
           </div>
         </div>
+
+        {/* Turn rectification — corrects a skipped or mis-fired nomination turn. */}
+        {session.status !== "pending" && session.status !== "completed" && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur mb-6">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Correct turn</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Give back a skipped nomination, or void the lot on the block. Requires the auction to be paused.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {session.status === "active" && (
+                  <button
+                    onClick={() => doSessionAction("pause")}
+                    disabled={actionLoading !== null}
+                    className="rounded-lg bg-amber-500/20 border border-amber-400/30 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/30 disabled:opacity-50"
+                  >
+                    Pause &amp; correct
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShowCorrectPanel((v) => !v);
+                    if (!showCorrectPanel) refreshTurnState();
+                  }}
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:bg-white/10"
+                >
+                  {showCorrectPanel ? "Hide" : "Show"} controls
+                </button>
+              </div>
+            </div>
+
+            {showCorrectPanel && (
+              <div className="mt-4 grid lg:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  {session.status !== "paused" && (
+                    <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                      Pause the auction to enable these controls. Pausing stops every client&apos;s poll loop, so the
+                      correction lands atomically instead of racing them.
+                    </div>
+                  )}
+
+                  {/* Void the current lot. Nothing has been paid yet — ownership and purse are only
+                      written when a bid expires — so this is just a status flip. */}
+                  <div className="rounded-lg bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1.5">On the block</div>
+                    {currentBid ? (
+                      <>
+                        <div className="text-sm text-white font-semibold">{currentBid.playerName}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          Nominated by {teamLabel(teams.get(currentBid.nominatorTeamId), currentBid.nominatorTeamId)} · high bid{" "}
+                          {formatCurrency(currentBid.currentHighBid)} from{" "}
+                          {teamLabel(teams.get(currentBid.currentHighBidderId), currentBid.currentHighBidderId)}
+                        </div>
+                        <button
+                          onClick={() =>
+                            turnAction(
+                              "cancel-nomination",
+                              { restoreNominator: true },
+                              `Void ${currentBid.playerName}? No purse moves — the lot has not been paid for. The nominator gets their turn back.`,
+                            )
+                          }
+                          disabled={session.status !== "paused" || turnActionLoading !== null}
+                          className="mt-2 rounded-lg bg-red-500/20 border border-red-400/30 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-500/30 disabled:opacity-40"
+                        >
+                          Void this nomination
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-xs text-gray-500">Nothing on the block.</div>
+                    )}
+                  </div>
+
+                  {/* Owe a team a make-up turn. Does NOT move the ring cursor. */}
+                  <div className="rounded-lg bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1.5">Owe a make-up turn</div>
+                    <div className="flex gap-2 flex-wrap">
+                      <select
+                        value={grantTeamId}
+                        onChange={(e) => setGrantTeamId(e.target.value)}
+                        className="flex-1 min-w-[10rem] rounded-lg border border-white/15 bg-slate-800 px-2 py-1.5 text-xs text-white"
+                      >
+                        <option value="">Select team…</option>
+                        {session.snakeOrder.map((tid) => (
+                          <option key={tid} value={tid}>
+                            {teamLabel(teams.get(tid), tid)}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => turnAction("grant-turn", { teamId: grantTeamId, position: "front" })}
+                        disabled={!grantTeamId || session.status !== "paused" || turnActionLoading !== null}
+                        className="rounded-lg bg-emerald-500/20 border border-emerald-400/30 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                      <button
+                        onClick={() => turnAction("grant-turn", { teamId: grantTeamId, position: "back" })}
+                        disabled={!grantTeamId || session.status !== "paused" || turnActionLoading !== null}
+                        className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:bg-white/10 disabled:opacity-40"
+                      >
+                        Queue
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[11px] text-gray-500">
+                      A make-up turn is inserted, not swapped in — the nomination order carries on from exactly where
+                      it stopped once the queue drains.
+                    </p>
+                    {makeupQueue.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {makeupQueue.map((tid, i) => (
+                          <div key={`${tid}-${i}`} className="flex items-center justify-between rounded bg-white/5 px-2 py-1">
+                            <span className="text-xs text-emerald-200">
+                              {i + 1}. {teamLabel(teams.get(tid), tid)}
+                            </span>
+                            <button
+                              onClick={() => turnAction("dequeue-makeup", { teamId: tid })}
+                              disabled={session.status !== "paused" || turnActionLoading !== null}
+                              className="text-[11px] text-gray-400 hover:text-red-300 disabled:opacity-40"
+                            >
+                              remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Hard cursor move — for when the ring itself is wrong. */}
+                  <div className="rounded-lg bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1.5">Move the order itself</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() =>
+                          turnAction("set-nominator", { direction: "back" }, "Move the nomination order back one team?")
+                        }
+                        disabled={session.status !== "paused" || turnActionLoading !== null}
+                        className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:bg-white/10 disabled:opacity-40"
+                      >
+                        ← Back one
+                      </button>
+                      <button
+                        onClick={() =>
+                          turnAction("set-nominator", { direction: "forward" }, "Move the nomination order forward one team?")
+                        }
+                        disabled={session.status !== "paused" || turnActionLoading !== null}
+                        className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:bg-white/10 disabled:opacity-40"
+                      >
+                        Forward one →
+                      </button>
+                      <span className="text-xs text-gray-400">
+                        Now: {teamLabel(teams.get(session.snakeOrder[session.currentNominatorIndex]), session.snakeOrder[session.currentNominatorIndex])}
+                      </span>
+                    </div>
+                    {ringReturnIndex != null && (
+                      <p className="mt-2 text-[11px] text-yellow-300/80">
+                        Mid make-up sequence — the ring resumes at{" "}
+                        {teamLabel(teams.get(session.snakeOrder[ringReturnIndex]), session.snakeOrder[ringReturnIndex])}.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Turn event log — the audit trail that did not exist when turns went missing. */}
+                <div className="rounded-lg bg-black/20 p-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-400">Turn log</div>
+                    <button onClick={refreshTurnState} className="text-[11px] text-gray-400 hover:text-white">
+                      refresh
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto space-y-1">
+                    {turnEvents.length === 0 ? (
+                      <div className="text-xs text-gray-500">No turn events recorded yet.</div>
+                    ) : (
+                      turnEvents.map((ev) => (
+                        <div key={ev.id} className="flex items-baseline gap-2 text-[11px] border-b border-white/5 pb-1">
+                          <span className="font-mono text-gray-500 shrink-0">
+                            {new Date(ev.createdAt).toLocaleTimeString([], { hour12: false })}
+                          </span>
+                          <span
+                            className={
+                              ev.event === "penalised" || ev.event === "nomination-cancelled"
+                                ? "text-red-300"
+                                : ev.event.startsWith("makeup") || ev.event === "admin-rewind"
+                                  ? "text-emerald-300"
+                                  : "text-gray-300"
+                            }
+                          >
+                            {ev.event}
+                          </span>
+                          <span className="text-gray-400 truncate">
+                            {ev.teamId ? teamLabel(teams.get(ev.teamId), ev.teamId) : "—"}
+                          </span>
+                          <span className="ml-auto text-gray-600 shrink-0">{ev.actor}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {session.status === "pending" ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur text-center mb-6">

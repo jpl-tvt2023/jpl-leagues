@@ -17,10 +17,11 @@ import {
   auctionSessions,
   auctionWishlists,
   auditLogs,
+  auctionTurnEvents,
   teamPenalties,
   teams,
 } from "@/lib/db/schema";
-import { eq, and, asc, sql, lte, inArray } from "drizzle-orm";
+import { eq, and, asc, sql, lte, inArray, isNull } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { fetchElementInfo } from "@/lib/fpl";
 import { leagues } from "@/lib/db/schema";
@@ -67,20 +68,54 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
   const now = new Date();
   const cutoff = new Date(Date.now() - 2000); // 2s grace period
 
-  // Atomically mark bid as sold ONLY if still open AND timer genuinely expired.
+  // Read the intermission length up front so the claim below can open the beat in its own commit.
+  const cfg = await db
+    .select({ intermissionSeconds: auctionSessions.intermissionSeconds })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, bid.sessionId))
+    .limit(1);
+  const intermissionSecs = cfg[0]?.intermissionSeconds ?? 5;
+
+  // Atomically mark bid as sold ONLY if still open AND timer genuinely expired,
+  // AND open the post-sale intermission in the SAME commit.
+  //
   // .returning() gives us fresh column values (including counter-bid updates)
   // in the same atomic operation — no stale re-read risk from replication lag.
-  const updated = await db
-    .update(auctionBids)
-    .set({ status: "sold", updatedAt: now })
-    .where(
-      and(
-        eq(auctionBids.id, bid.id),
-        eq(auctionBids.status, "open"),
-        lte(auctionBids.expiresAt, cutoff)
+  //
+  // The intermission belongs in here rather than in the caller's `beginIntermission` because
+  // "lot sold" and "intermission open" must not be separately observable. Between them the session
+  // row reads: no open bid, no deadline, no intermission — indistinguishable from an idle auction
+  // sitting on `currentNominatorIndex`. Every connected browser polls that state every 2s, and the
+  // first to see it arms a fresh nomination window for the cursor, which still points at the team
+  // whose lot just sold. They nominate again, and the next team's turn is lost behind it. A
+  // concurrency soak reproduces ~36 such doubles in 40 lots when these are two writes; as one
+  // commit the intermediate state does not exist. `beginIntermission` is idempotent, so the
+  // caller's follow-up call is a no-op on this path.
+  const updated = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(auctionBids)
+      .set({ status: "sold", updatedAt: now })
+      .where(
+        and(
+          eq(auctionBids.id, bid.id),
+          eq(auctionBids.status, "open"),
+          lte(auctionBids.expiresAt, cutoff)
+        )
       )
-    )
-    .returning();
+      .returning();
+    if (rows.length === 0) return rows;
+
+    if (intermissionSecs > 0) {
+      await tx
+        .update(auctionSessions)
+        .set({
+          intermissionUntil: new Date(Date.now() + intermissionSecs * 1000),
+          nominationDeadline: null,
+        })
+        .where(eq(auctionSessions.id, bid.sessionId));
+    }
+    return rows;
+  });
 
   // If no row was returned, either already resolved or timer was extended
   if (updated.length === 0) return false;
@@ -201,6 +236,53 @@ export async function resolveExpiredBid(
 
 // ---- Nominator Advancement ----
 
+/** Actor that drove a turn mutation — see `auction_turn_events.actor`. */
+export type TurnActor = "sse" | "rest" | "nominate" | "admin";
+
+/**
+ * Append a turn-cycle event. Best-effort: the audit trail must never be able to break the auction,
+ * so failures are logged and swallowed.
+ *
+ * This exists because turn state is a single mutable row with no history. When the 2026-08-19
+ * session ate seven turns, six left no trace at all and had to be reconstructed from gaps in
+ * `auction_bids.created_at` versus the snake ring.
+ */
+export async function logTurnEvent(entry: {
+  sessionId: string;
+  leagueId: string;
+  teamId?: string | null;
+  nominatorIndex?: number | null;
+  event: string;
+  actor: TurnActor;
+  detail?: unknown;
+}): Promise<void> {
+  try {
+    await db.insert(auctionTurnEvents).values({
+      id: generateId(),
+      sessionId: entry.sessionId,
+      leagueId: entry.leagueId,
+      teamId: entry.teamId ?? null,
+      nominatorIndex: entry.nominatorIndex ?? null,
+      event: entry.event,
+      actor: entry.actor,
+      detail: entry.detail === undefined ? null : JSON.stringify(entry.detail),
+    });
+  } catch (err) {
+    console.error("[turn-event] insert failed", entry.event, err);
+  }
+}
+
+/** Parse a `makeupQueue` / `snakeOrder` JSON column defensively — a malformed value must not stall the auction. */
+function parseIdList(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * True if `teamId` has at least one open slot in their squad given current ownership + penalty +
  * bonus slot config. Used by `advanceNominator` to proactively skip squad-full teams instead of
@@ -233,11 +315,19 @@ async function isNominatorEligible(leagueId: string, teamId: string): Promise<bo
  *
  * Proactively skips squad-full teams: after incrementing the cursor, we check whether the new
  * nominator has any open slot left. If not, we keep incrementing. If every team in the order is
- * full, the session is marked `completed` — there's nothing left to auction.
+ * full we idle and wait for the admin to complete the session.
+ *
+ * **Make-up turns take priority over the ring.** If `makeupQueue` is non-empty this arms its head
+ * instead of stepping the ring, parking the real ring position in `ringReturnIndex`.
+ *
+ * Every write is a compare-and-swap against the state the caller observed. That matters because
+ * ~20 independent processes (one SSE poll loop per connected browser, plus a mutating REST poll per
+ * client) all run this cycle concurrently against one row. An unguarded write here is what let two
+ * callers each step the cursor and silently eat a team's turn.
  */
 export async function advanceNominator(
   sessionId: string,
-  opts: { claimIntermission?: Date | null } = {},
+  opts: { claimIntermission?: Date | null; expectIndex?: number; actor?: TurnActor } = {},
 ): Promise<void> {
   const sessionRow = await db
     .select({
@@ -246,11 +336,15 @@ export async function advanceNominator(
       snakeOrder: auctionSessions.snakeOrder,
       currentNominatorIndex: auctionSessions.currentNominatorIndex,
       nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds,
+      makeupQueue: auctionSessions.makeupQueue,
+      ringReturnIndex: auctionSessions.ringReturnIndex,
     })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
   if (!sessionRow.length) return;
+
+  const actor: TurnActor = opts.actor ?? "sse";
 
   // When advancing out of a post-sale intermission, the claim on `intermissionUntil` and the cursor
   // move must be ONE write. Claiming separately meant a request torn down between the two — routine
@@ -260,13 +354,18 @@ export async function advanceNominator(
   // exists": the caller read its value in an earlier snapshot, and a newer intermission may have
   // been written since. Matching exactly means a stale caller affects 0 rows instead of spending a
   // token that belongs to a later lot (which advanced the cursor twice and skipped a team).
+  //
+  // `expectIndex` extends the same discipline to callers that hold no intermission token — the
+  // penalty and squad-full paths. Without it those writes were unguarded, so a concurrent advance
+  // could double-step the cursor on exactly the code path that runs when someone misses a turn.
   const claiming = opts.claimIntermission != null;
-  const claimWhere = claiming
-    ? and(
-        eq(auctionSessions.id, sessionId),
-        eq(auctionSessions.intermissionUntil, opts.claimIntermission as Date),
-      )
-    : eq(auctionSessions.id, sessionId);
+  const rawQueue = sessionRow[0].makeupQueue ?? "[]";
+  const guards = [eq(auctionSessions.id, sessionId)];
+  if (claiming) guards.push(eq(auctionSessions.intermissionUntil, opts.claimIntermission as Date));
+  if (opts.expectIndex != null) guards.push(eq(auctionSessions.currentNominatorIndex, opts.expectIndex));
+  // Pin the queue too: a concurrent admin grant must not be silently swallowed by this write.
+  guards.push(eq(auctionSessions.makeupQueue, rawQueue));
+  const claimWhere = and(...guards);
   const claimSet = claiming ? { intermissionUntil: null } : {};
 
   if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
@@ -274,11 +373,64 @@ export async function advanceNominator(
     return;
   }
 
-  const snakeOrder: string[] = JSON.parse(sessionRow[0].snakeOrder);
+  const snakeOrder: string[] = parseIdList(sessionRow[0].snakeOrder);
   if (snakeOrder.length === 0) return;
 
   const leagueId = sessionRow[0].leagueId;
-  const startIndex = sessionRow[0].currentNominatorIndex ?? 0;
+  const nomTimeout = sessionRow[0].nominationTimeoutSeconds ?? 60;
+  const cursor = sessionRow[0].currentNominatorIndex ?? 0;
+
+  // ---- Make-up turns first ----
+  //
+  // A make-up turn is an INSERTION, not a cursor move: once the queue drains the ring must resume
+  // exactly where it stopped, or rectifying one turn re-skews everyone after it. We still move
+  // `currentNominatorIndex` onto the make-up team, because every downstream consumer (the SSE
+  // payloads, the auction room UI, and the nominate route's "is it your turn" check) derives the
+  // active nominator from it. The real ring position is parked in `ringReturnIndex` instead.
+  const queue = parseIdList(rawQueue);
+  if (queue.length > 0) {
+    for (let k = 0; k < queue.length; k++) {
+      const teamId = queue[k];
+      const armIndex = snakeOrder.indexOf(teamId);
+      // Drop entries not in this session's order, or whose squad has since filled up — arming them
+      // would just burn the window and hand out a penalty for a turn we owed them.
+      if (armIndex < 0) continue;
+      if (!(await isNominatorEligible(leagueId, teamId))) continue;
+
+      const remaining = queue.slice(k + 1);
+      const ringReturn = sessionRow[0].ringReturnIndex ?? cursor;
+      const updated = await db
+        .update(auctionSessions)
+        .set({
+          ...claimSet,
+          currentNominatorIndex: armIndex,
+          ringReturnIndex: ringReturn,
+          makeupQueue: JSON.stringify(remaining),
+          nominationDeadline: new Date(Date.now() + nomTimeout * 1000),
+        })
+        .where(claimWhere);
+      if (updated.rowsAffected > 0) {
+        await logTurnEvent({
+          sessionId,
+          leagueId,
+          teamId,
+          nominatorIndex: armIndex,
+          event: "makeup-armed",
+          actor,
+          detail: { remaining, ringReturnIndex: ringReturn },
+        });
+      }
+      return;
+    }
+    // Every queued entry was stale or ineligible — fall through to the ring, clearing the queue in
+    // the same write below so it cannot be retried forever.
+  }
+
+  // ---- Normal ring walk ----
+  //
+  // Resume from `ringReturnIndex` when coming off a make-up turn, so the inserted turn costs nobody
+  // their place in the order.
+  const startIndex = sessionRow[0].ringReturnIndex ?? cursor;
 
   // Walk forward up to snakeOrder.length steps to find the first eligible (squad-not-full) team.
   for (let step = 1; step <= snakeOrder.length; step++) {
@@ -287,12 +439,27 @@ export async function advanceNominator(
     if (!candidateTeamId) continue;
     const eligible = await isNominatorEligible(leagueId, candidateTeamId);
     if (eligible) {
-      const nomTimeout = sessionRow[0].nominationTimeoutSeconds ?? 60;
-      const deadline = new Date(Date.now() + nomTimeout * 1000);
-      await db
+      const updated = await db
         .update(auctionSessions)
-        .set({ ...claimSet, currentNominatorIndex: nextIndex, nominationDeadline: deadline })
+        .set({
+          ...claimSet,
+          currentNominatorIndex: nextIndex,
+          nominationDeadline: new Date(Date.now() + nomTimeout * 1000),
+          ringReturnIndex: null,
+          makeupQueue: "[]",
+        })
         .where(claimWhere);
+      if (updated.rowsAffected > 0) {
+        await logTurnEvent({
+          sessionId,
+          leagueId,
+          teamId: candidateTeamId,
+          nominatorIndex: nextIndex,
+          event: "advanced",
+          actor,
+          detail: { from: startIndex },
+        });
+      }
       return;
     }
   }
@@ -306,7 +473,7 @@ export async function advanceNominator(
   });
   await db
     .update(auctionSessions)
-    .set({ ...claimSet, nominationDeadline: null })
+    .set({ ...claimSet, nominationDeadline: null, ringReturnIndex: null, makeupQueue: "[]" })
     .where(claimWhere);
 }
 
@@ -446,7 +613,10 @@ export async function allSquadsFull(leagueId: string, teamIds: string[]): Promis
  * cycle, or initial auction starting after a prior session left squad state), delegate to
  * `advanceNominator` which will proactively walk to the next eligible team.
  */
-export async function setNominationDeadline(sessionId: string): Promise<void> {
+export async function setNominationDeadline(
+  sessionId: string,
+  opts: { expectIndex?: number; actor?: TurnActor } = {},
+): Promise<void> {
   const sessionRow = await db
     .select({
       leagueId: auctionSessions.leagueId,
@@ -454,32 +624,94 @@ export async function setNominationDeadline(sessionId: string): Promise<void> {
       snakeOrder: auctionSessions.snakeOrder,
       currentNominatorIndex: auctionSessions.currentNominatorIndex,
       nominationTimeoutSeconds: auctionSessions.nominationTimeoutSeconds,
+      makeupQueue: auctionSessions.makeupQueue,
+      intermissionUntil: auctionSessions.intermissionUntil,
     })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
   if (sessionRow[0]?.type === CLUB_AUCTION_SESSION_TYPE) {
-    await setClubNominationDeadline(sessionId);
+    await setClubNominationDeadline(sessionId, opts);
     return;
   }
   if (!sessionRow.length) return;
-  const snakeOrder: string[] = JSON.parse(sessionRow[0].snakeOrder);
+
+  // Nothing to arm while a post-sale beat is running — the advance that ends it will arm the next
+  // team itself. Bailing here (rather than relying only on the write guard below) also keeps the
+  // make-up delegation from arming a team while leaving the intermission behind for a later,
+  // spurious second claim.
+  if (sessionRow[0].intermissionUntil) return;
+
+  const actor: TurnActor = opts.actor ?? "sse";
+  const leagueId = sessionRow[0].leagueId;
+  const snakeOrder: string[] = parseIdList(sessionRow[0].snakeOrder);
   const currentIdx = sessionRow[0].currentNominatorIndex ?? 0;
+
+  // A make-up turn is owed — arm its head rather than the ring cursor. `advanceNominator` owns that
+  // logic (and leaves the ring position parked in `ringReturnIndex`), so delegate rather than
+  // duplicate it here.
+  if (parseIdList(sessionRow[0].makeupQueue).length > 0) {
+    await advanceNominator(sessionId, { expectIndex: opts.expectIndex ?? currentIdx, actor });
+    return;
+  }
+
   const currentTeamId = snakeOrder[currentIdx];
   if (currentTeamId) {
-    const eligible = await isNominatorEligible(sessionRow[0].leagueId, currentTeamId);
+    const eligible = await isNominatorEligible(leagueId, currentTeamId);
     if (!eligible) {
       // Walk forward to find someone who can actually nominate.
-      await advanceNominator(sessionId);
+      await advanceNominator(sessionId, { expectIndex: currentIdx, actor });
       return;
     }
   }
+
+  // Never arm a window while a lot is on the block. The caller decided there was none from a
+  // snapshot taken at the top of its poll; a nomination landing since then means the turn is already
+  // spent, and arming here would hand the same team a second one.
+  const liveBid = await db
+    .select({ id: auctionBids.id })
+    .from(auctionBids)
+    .where(and(eq(auctionBids.sessionId, sessionId), eq(auctionBids.status, "open")))
+    .limit(1);
+  if (liveBid.length > 0) return;
+
   const nomTimeout = sessionRow[0]?.nominationTimeoutSeconds ?? 60;
   const deadline = new Date(Date.now() + nomTimeout * 1000);
-  await db
+
+  // Compare-and-swap, NOT a bare write by session id. This is the fallback that arms a window when
+  // nothing is armed, and every connected browser runs it on its own 2s poll off a snapshot taken
+  // at the top of the tick.
+  //
+  // Selling a lot takes two writes — mark the bid sold, then open the intermission. A tick landing
+  // between them sees no open bid, no intermission and no deadline, and used to arm a fresh full
+  // window for `currentNominatorIndex`, which still pointed at the team that had just sold. That
+  // handed the same team a second consecutive nomination and, once a stale poll consumed the
+  // window, cost the next team its turn outright.
+  //
+  // Requiring both fields to still be NULL at write time means such a tick affects 0 rows: by then
+  // `beginIntermission` has landed. `expectIndex` additionally pins the cursor the caller observed.
+  const guards = [
+    eq(auctionSessions.id, sessionId),
+    isNull(auctionSessions.nominationDeadline),
+    isNull(auctionSessions.intermissionUntil),
+  ];
+  if (opts.expectIndex != null) guards.push(eq(auctionSessions.currentNominatorIndex, opts.expectIndex));
+
+  const updated = await db
     .update(auctionSessions)
     .set({ nominationDeadline: deadline })
-    .where(eq(auctionSessions.id, sessionId));
+    .where(and(...guards));
+
+  if (updated.rowsAffected > 0) {
+    await logTurnEvent({
+      sessionId,
+      leagueId,
+      teamId: currentTeamId ?? null,
+      nominatorIndex: currentIdx,
+      event: "armed",
+      actor,
+    });
+  }
 }
 
 /**
@@ -491,19 +723,28 @@ export async function setNominationDeadline(sessionId: string): Promise<void> {
  */
 export async function beginIntermission(sessionId: string): Promise<void> {
   const row = await db
-    .select({ intermissionSeconds: auctionSessions.intermissionSeconds })
+    .select({
+      intermissionSeconds: auctionSessions.intermissionSeconds,
+      currentNominatorIndex: auctionSessions.currentNominatorIndex,
+    })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
   const secs = row[0]?.intermissionSeconds ?? 5;
   if (secs <= 0) {
-    await advanceNominator(sessionId);
+    // No intermission to claim, so pin the cursor we observed instead — otherwise this is a bare
+    // write that a concurrent advance can double-step.
+    await advanceNominator(sessionId, { expectIndex: row[0]?.currentNominatorIndex ?? undefined });
     return;
   }
+  // Idempotent: only opens a beat when one is not already running. `resolveBidToSold` now opens the
+  // post-sale intermission inside the same commit that marks the lot sold, so the callers that still
+  // invoke this after a sale land here as a no-op. Without the guard they would push the beat out by
+  // another full interval each time, and N pollers resolving concurrently would stretch it further.
   await db
     .update(auctionSessions)
     .set({ intermissionUntil: new Date(Date.now() + secs * 1000), nominationDeadline: null })
-    .where(eq(auctionSessions.id, sessionId));
+    .where(and(eq(auctionSessions.id, sessionId), isNull(auctionSessions.intermissionUntil)));
 }
 
 /**
@@ -693,14 +934,27 @@ export async function handleNominationTimeout(
   // Club auction: no wishlist / penalty model — auto-pick a random available club for the team so
   // the snake keeps moving. A "completed"/"noop" outcome (e.g. clubs exhausted) maps to skipped-full.
   const sessTypeRow = await db
-    .select({ type: auctionSessions.type })
+    .select({ type: auctionSessions.type, currentNominatorIndex: auctionSessions.currentNominatorIndex })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, sessionId))
     .limit(1);
+  const nominatorIndex = sessTypeRow[0]?.currentNominatorIndex ?? null;
   if (sessTypeRow[0]?.type === CLUB_AUCTION_SESSION_TYPE) {
     const outcome = await autoNominateClubForTeam(sessionId, nominatorTeamId);
     return outcome === "auto-nominated" ? "auto-nominated" : "skipped-full";
   }
+
+  // Both terminal branches below end the turn via `beginIntermission`, NOT a direct
+  // `advanceNominator`. Two reasons:
+  //
+  //  1. It matches the intended cycle — nominate (or auto-nominate, or penalise) → 5s intermission
+  //     → next in queue. Previously a missed turn skipped the beat entirely and armed the next team
+  //     instantly, so whoever followed a penalty got no sync pause and a countdown that had already
+  //     started before their client heard about it.
+  //  2. Advancing here meant a bare, unguarded cursor write on exactly the path that runs when
+  //     someone misses a turn, letting a concurrent advance double-step the cursor and eat a second
+  //     team's turn. Routing through the intermission means the single CAS-guarded advance in
+  //     `advanceNominator` is the only thing that ever moves the cursor.
 
   // If the team's squad is already full (or full minus penalty slots), skip
   // them without penalty — they have nothing left to bid on.
@@ -721,7 +975,16 @@ export async function handleNominationTimeout(
     const counts = countsFromOwnership(ownership);
     const maxSize = effectiveMaxSquadSize(teamRow[0].penaltySlots ?? 0, teamRow[0].bonusSlots ?? 0);
     if (counts.total >= maxSize) {
-      await advanceNominator(sessionId);
+      await logTurnEvent({
+        sessionId,
+        leagueId,
+        teamId: nominatorTeamId,
+        nominatorIndex,
+        event: "skipped-full",
+        actor: "sse",
+        detail: { squadSize: counts.total, maxSize },
+      });
+      await beginIntermission(sessionId);
       return "skipped-full";
     }
   }
@@ -733,11 +996,27 @@ export async function handleNominationTimeout(
   );
 
   if (autoNominated) {
+    await logTurnEvent({
+      sessionId,
+      leagueId,
+      teamId: nominatorTeamId,
+      nominatorIndex,
+      event: "auto-nominated",
+      actor: "sse",
+    });
     return "auto-nominated";
   }
 
   // Wishlist empty/exhausted — penalise and skip
   await applyNominationPenalty(nominatorTeamId, sessionId, leagueId);
-  await advanceNominator(sessionId);
+  await logTurnEvent({
+    sessionId,
+    leagueId,
+    teamId: nominatorTeamId,
+    nominatorIndex,
+    event: "penalised",
+    actor: "sse",
+  });
+  await beginIntermission(sessionId);
   return "penalised";
 }

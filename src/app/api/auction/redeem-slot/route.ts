@@ -230,7 +230,9 @@ export async function POST(request: NextRequest) {
         .limit(1);
       if (openBid.length === 0) {
         // Idle/drained — arm a nominator (the freed-up redeeming team is now the eligible one).
-        await setNominationDeadline(s.id);
+        // No `expectIndex` deliberately: this path does not observe the cursor, and the
+        // deadline/intermission NULL guards inside `setNominationDeadline` are what make it safe.
+        await setNominationDeadline(s.id, { actor: "rest" });
       }
     }
   } catch (e) {

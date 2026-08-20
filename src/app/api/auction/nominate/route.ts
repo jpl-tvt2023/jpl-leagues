@@ -5,7 +5,7 @@ import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import {
   resolveExpiredBid,
-  beginIntermission,
+  logTurnEvent,
 } from "@/lib/formats/auction/resolve-bid";
 import { calculatePurse } from "@/lib/formats/auction/economy";
 import { countsFromOwnership, validateAddPlayer } from "@/lib/formats/auction/squad-rules";
@@ -114,7 +114,8 @@ export async function POST(request: NextRequest) {
           // Open the post-sale intermission here too. Previously this path resolved the lot but
           // left no intermission, so the inter-lot gap was governed by whichever caller happened
           // to notice — and the turn could be handed straight back to the team that just won.
-          await beginIntermission(sessionId);
+          // Intermission already opened inside the resolution transaction — see the note in
+          // `resolveBidToSold`. Re-opening it here could hand out a second beat and skip a team.
         }
         // Do NOT call advanceNominator — let SSE stream handle advancement
         // to avoid double-advancing when both SSE and this safety-net resolve the same bid
@@ -235,50 +236,73 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Atomically claim the nomination window. This is the synchronisation point that makes a late
-  // nomination and the deadline-expiry penalty mutually exclusive: whoever flips `nominationDeadline`
-  // to null first wins. If the SSE penalty path already claimed it (the team missed its window),
-  // rowsAffected is 0 here and we reject — so a team can never be both penalised AND nominate.
-  // `intermissionUntil` is cleared here too: an intermission belongs to exactly one inter-lot gap,
-  // and once a lot is on the block it must not survive. A leftover intermission was claimable a
-  // second time after the next sale, which advanced the cursor twice and skipped a team's turn.
-  const claimedDeadline = await db
-    .update(auctionSessions)
-    .set({ nominationDeadline: null, intermissionUntil: null })
-    .where(and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.nominationDeadline)));
-  if (claimedDeadline.rowsAffected === 0) {
-    return NextResponse.json({ error: "Your nomination window has passed." }, { status: 409 });
-  }
-
   // Create the auction bid item
   const bidTimerSeconds = auctionSession.bidTimerSeconds ?? 20;
   const expiresAt = new Date(Date.now() + bidTimerSeconds * 1000);
-
   const bidId = generateId();
-  await db.insert(auctionBids).values({
-    id: bidId,
-    leagueId,
+
+  // Atomically claim the nomination window AND open the lot.
+  //
+  // The claim is the synchronisation point that makes a late nomination and the deadline-expiry
+  // penalty mutually exclusive: whoever flips `nominationDeadline` to null first wins. If the SSE
+  // penalty path already claimed it (the team missed its window), rowsAffected is 0 and we reject —
+  // so a team can never be both penalised AND nominate. `intermissionUntil` is cleared here too: an
+  // intermission belongs to exactly one inter-lot gap, and once a lot is on the block it must not
+  // survive. A leftover intermission was claimable a second time after the next sale, which
+  // advanced the cursor twice and skipped a team's turn.
+  //
+  // The claim and the insert MUST commit together. Run as two round trips, the row briefly reads
+  // "no deadline, no intermission" with no lot open — indistinguishable from an idle auction. Every
+  // connected browser polls that state every 2s, and the first one to see it arms a fresh window for
+  // `currentNominatorIndex`, which is still the team that just nominated. They then nominate a
+  // second time. A concurrency soak reproduces this ~37 times in 40 lots; in one transaction it is
+  // structurally impossible, because no observer ever sees the in-between state.
+  const claimResult = await db.transaction(async (tx) => {
+    const claimedDeadline = await tx
+      .update(auctionSessions)
+      .set({ nominationDeadline: null, intermissionUntil: null })
+      .where(and(eq(auctionSessions.id, sessionId), isNotNull(auctionSessions.nominationDeadline)));
+    if (claimedDeadline.rowsAffected === 0) return { claimed: false as const };
+
+    await tx.insert(auctionBids).values({
+      id: bidId,
+      leagueId,
+      sessionId,
+      nominatorTeamId: currentNominatorId,
+      fplElementId,
+      playerName,
+      currentHighBid: startingBid,
+      currentHighBidderId: currentNominatorId, // nominator starts as default bidder
+      minBid: startingBid,
+      status: "open",
+      expiresAt,
+    });
+
+    // Log the nomination event
+    await tx.insert(auctionBidLogs).values({
+      id: generateId(),
+      bidId,
+      teamId: currentNominatorId,
+      amount: startingBid,
+      type: "nomination",
+    });
+
+    return { claimed: true as const };
+  });
+
+  if (!claimResult.claimed) {
+    return NextResponse.json({ error: "Your nomination window has passed." }, { status: 409 });
+  }
+
+  await logTurnEvent({
     sessionId,
-    nominatorTeamId: currentNominatorId,
-    fplElementId,
-    playerName,
-    currentHighBid: startingBid,
-    currentHighBidderId: currentNominatorId, // nominator starts as default bidder
-    minBid: startingBid,
-    status: "open",
-    expiresAt,
-  });
-
-  // Log the nomination event
-  await db.insert(auctionBidLogs).values({
-    id: generateId(),
-    bidId,
+    leagueId,
     teamId: currentNominatorId,
-    amount: startingBid,
-    type: "nomination",
+    nominatorIndex: auctionSession.currentNominatorIndex,
+    event: "nominated",
+    actor: "nominate",
+    detail: { bidId, playerName, startingBid },
   });
-
-  // (The nomination deadline was already atomically claimed above; the bid timer now takes over.)
 
   return NextResponse.json({
     success: true,

@@ -475,6 +475,17 @@ export const auctionSessions = sqliteTable("auction_sessions", {
   intermissionSeconds: integer("intermission_seconds").notNull().default(5), // Post-sale cooldown before the next nomination (sync beat + pacing)
   intermissionUntil: integer("intermission_until", { mode: "timestamp" }), // When the current post-sale intermission ends (null = not in an intermission)
   pausedAt: integer("paused_at", { mode: "timestamp" }), // Set when status flips to "paused"; on resume, all open deadlines shift forward by (now - pausedAt)
+  // Make-up nomination turns owed to teams (JSON array of teamIds, FIFO). Drained by
+  // `advanceNominator` BEFORE the snake ring and WITHOUT moving `currentNominatorIndex`, so a
+  // rectified turn is an insertion: once the queue empties the ring resumes exactly where it
+  // stopped. Written only by admin corrections; see auction-corrections/route.ts.
+  makeupQueue: text("makeup_queue").notNull().default("[]"),
+  // Where the snake ring resumes once `makeupQueue` drains. Set to the pre-makeup cursor when the
+  // first make-up turn is armed, and cleared when the queue empties. While it is non-null,
+  // `currentNominatorIndex` points at the make-up team (so the UI, the SSE payloads and the
+  // nominate route's "is it your turn" check all keep working unchanged) and this holds the real
+  // ring position. Null in normal operation.
+  ringReturnIndex: integer("ring_return_index"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -513,6 +524,27 @@ export const auctionBidLogs = sqliteTable("auction_bid_logs", {
   teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   amount: integer("amount").notNull(),
   type: text("type").notNull(), // "nomination" | "bid" | "sold" | "unsold"
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+// Auction turn events — append-only audit of the nomination turn cycle.
+//
+// Exists because turn state lives in a single mutable row on `auction_sessions` (cursor + deadline)
+// with no history: when the 2026-08-19 session silently ate seven turns, six of them left no trace
+// anywhere and had to be inferred from gaps in `auction_bids.created_at` versus the snake ring.
+// Every mutation of the turn cycle writes a row here so a recurrence is visible live, and so admin
+// rectification has something accurate to act on.
+export const auctionTurnEvents = sqliteTable("auction_turn_events", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull().references(() => auctionSessions.id, { onDelete: "cascade" }),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  teamId: text("team_id").references(() => teams.id, { onDelete: "set null" }), // null for events not tied to a team
+  nominatorIndex: integer("nominator_index"), // `currentNominatorIndex` at the time of the event
+  // "armed" | "nominated" | "auto-nominated" | "penalised" | "skipped-full" | "advanced"
+  // | "makeup-granted" | "makeup-armed" | "nomination-cancelled" | "admin-rewind"
+  event: text("event").notNull(),
+  actor: text("actor").notNull(), // "sse" | "rest" | "nominate" | "admin"
+  detail: text("detail"), // optional JSON blob (e.g. queue contents, cancelled bid id)
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 

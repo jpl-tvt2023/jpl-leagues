@@ -21,7 +21,12 @@
  */
 import { db } from "@/lib/db";
 import { leagues, teams, auctionSessions, auctionBids, auctionOwnership } from "@/lib/db/schema";
-import { advanceNominator, beginIntermission } from "@/lib/formats/auction/resolve-bid";
+import {
+  advanceNominator,
+  beginIntermission,
+  setNominationDeadline,
+  handleNominationTimeout,
+} from "@/lib/formats/auction/resolve-bid";
 import { eq, and, isNotNull } from "drizzle-orm";
 
 const LEAGUE_ID = "zz-verify-turn";
@@ -172,6 +177,192 @@ async function main() {
   check("loose claim wrongly succeeds", await claimTimeoutLoose(), 1);
   check("team 2's window destroyed", (await sess()).nominationDeadline, null);
   console.log("      ^ with the stale snapshot's teamId, this is what penalised the wrong team");
+
+  // ── C: the arm-the-current-cursor fallback ───────────────────────────────────────────────────
+  console.log("\n--- 11. setNominationDeadline must not arm during an intermission ---");
+  // The race: selling a lot takes two writes (mark the bid sold, then open the intermission). A poll
+  // tick landing between them sees no open bid, no intermission and no deadline — and its snapshot
+  // still points at the team that just sold. Unguarded, it armed that team a second time.
+  await setState({
+    currentNominatorIndex: 2,
+    intermissionUntil: new Date(Date.now() + 5000),
+    nominationDeadline: null,
+  });
+  await setNominationDeadline(SESSION_ID, { expectIndex: 2 });
+  check("no window armed while an intermission is pending", (await sess()).nominationDeadline, null);
+  check("cursor untouched", (await sess()).currentNominatorIndex, 2);
+
+  console.log("\n--- 12. setNominationDeadline must not arm a cursor the caller did not observe ---");
+  await setState({ currentNominatorIndex: 3, intermissionUntil: null, nominationDeadline: null });
+  await setNominationDeadline(SESSION_ID, { expectIndex: 2 }); // stale snapshot: thought cursor was 2
+  check("stale cursor arms nothing", (await sess()).nominationDeadline, null);
+  await setNominationDeadline(SESSION_ID, { expectIndex: 3 }); // fresh snapshot
+  check("matching cursor arms the window", (await sess()).nominationDeadline !== null, true);
+
+  console.log("\n--- 13. CONTROL: the old unguarded arm re-arms the team that just sold ---");
+  await setState({
+    currentNominatorIndex: 2,
+    intermissionUntil: new Date(Date.now() + 5000),
+    nominationDeadline: null,
+  });
+  await db
+    .update(auctionSessions)
+    .set({ nominationDeadline: new Date(Date.now() + 60_000) }) // old style: bare write by session id
+    .where(eq(auctionSessions.id, SESSION_ID));
+  check("unguarded arm lands mid-intermission", (await sess()).nominationDeadline !== null, true);
+  console.log("      ^ that window belonged to the team that had just sold — their second nomination");
+
+  console.log("\n--- 14. expectIndex stops a double advance with no intermission token ---");
+  await setState({ currentNominatorIndex: 0, intermissionUntil: null, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { expectIndex: 0 }); // poller 1
+  await advanceNominator(SESSION_ID, { expectIndex: 0 }); // poller 2, same snapshot — must no-op
+  check("advanced exactly one team (0 -> 1)", (await sess()).currentNominatorIndex, 1);
+
+  // ── D: missed turn ends with an intermission, not a bare advance ──────────────────────────────
+  console.log("\n--- 15. A missed turn opens an intermission instead of advancing directly ---");
+  await setState({ currentNominatorIndex: 1, intermissionUntil: null, nominationDeadline: null });
+  const outcome = await handleNominationTimeout(SESSION_ID, TEAM_IDS[1], LEAGUE_ID);
+  check("no wishlist -> penalised", outcome, "penalised");
+  check("cursor has NOT moved yet", (await sess()).currentNominatorIndex, 1);
+  check("intermission opened", (await sess()).intermissionUntil !== null, true);
+  const penaltyBeat = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({ intermissionUntil: penaltyBeat });
+  await advanceNominator(SESSION_ID, { claimIntermission: penaltyBeat });
+  check("then exactly one advance (1 -> 2)", (await sess()).currentNominatorIndex, 2);
+
+  // ── E: make-up turns ─────────────────────────────────────────────────────────────────────────
+  console.log("\n--- 16. A make-up turn is inserted; the ring resumes where it stopped ---");
+  const beat1 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({
+    currentNominatorIndex: 1,
+    intermissionUntil: beat1,
+    nominationDeadline: null,
+    makeupQueue: JSON.stringify([TEAM_IDS[3]]),
+    ringReturnIndex: null,
+  });
+  await advanceNominator(SESSION_ID, { claimIntermission: beat1 });
+  check("make-up team armed", (await sess()).currentNominatorIndex, 3);
+  check("ring position parked", (await sess()).ringReturnIndex, 1);
+  check("queue drained", (await sess()).makeupQueue, "[]");
+  check("window armed for them", (await sess()).nominationDeadline !== null, true);
+
+  // Their lot resolves — the ring must now continue from team 1, i.e. to team 2. NOT from team 3.
+  const beat2 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({ intermissionUntil: beat2, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { claimIntermission: beat2 });
+  check("ring resumes at 2, not 4", (await sess()).currentNominatorIndex, 2);
+  check("parked position cleared", (await sess()).ringReturnIndex, null);
+
+  console.log("\n--- 17. Two make-up turns drain in order before the ring resumes ---");
+  const beat3 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({
+    currentNominatorIndex: 1,
+    intermissionUntil: beat3,
+    nominationDeadline: null,
+    makeupQueue: JSON.stringify([TEAM_IDS[3], TEAM_IDS[0]]),
+    ringReturnIndex: null,
+  });
+  await advanceNominator(SESSION_ID, { claimIntermission: beat3 });
+  check("first make-up armed", (await sess()).currentNominatorIndex, 3);
+  const beat4 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({ intermissionUntil: beat4, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { claimIntermission: beat4 });
+  check("second make-up armed", (await sess()).currentNominatorIndex, 0);
+  check("ring position still parked at 1", (await sess()).ringReturnIndex, 1);
+  const beat5 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({ intermissionUntil: beat5, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { claimIntermission: beat5 });
+  check("ring resumes at 2", (await sess()).currentNominatorIndex, 2);
+
+  console.log("\n--- 18. Unknown queue entries are dropped, not stalled on ---");
+  const beat6 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({
+    currentNominatorIndex: 1,
+    intermissionUntil: beat6,
+    nominationDeadline: null,
+    makeupQueue: JSON.stringify(["zz-not-a-team"]),
+    ringReturnIndex: null,
+  });
+  await advanceNominator(SESSION_ID, { claimIntermission: beat6 });
+  check("fell through to the ring (1 -> 2)", (await sess()).currentNominatorIndex, 2);
+  check("bogus queue cleared", (await sess()).makeupQueue, "[]");
+
+  console.log("\n--- 19. A make-up advance is single-shot under two pollers ---");
+  const beat7 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({
+    currentNominatorIndex: 1,
+    intermissionUntil: beat7,
+    nominationDeadline: null,
+    makeupQueue: JSON.stringify([TEAM_IDS[3], TEAM_IDS[0]]),
+    ringReturnIndex: null,
+  });
+  await advanceNominator(SESSION_ID, { claimIntermission: beat7 });
+  await advanceNominator(SESSION_ID, { claimIntermission: beat7 }); // token already spent
+  check("only the first make-up was armed", (await sess()).currentNominatorIndex, 3);
+  check("one entry left in the queue", JSON.parse((await sess()).makeupQueue).length, 1);
+
+  // ── F: admin rectification ───────────────────────────────────────────────────────────────────
+  // The writes below are re-expressed from `admin/[leagueId]/auction-corrections/route.ts` for the
+  // same reason the timeout claims are: they live inline in the route. What is verified here is the
+  // resulting state machine, which is where the turn bugs lived.
+  console.log("\n--- 20. Voiding a live lot moves no money and returns the turn ---");
+  await setState({
+    currentNominatorIndex: 2,
+    nominationDeadline: new Date(Date.now() + 60_000),
+    intermissionUntil: null,
+    makeupQueue: "[]",
+    ringReturnIndex: null,
+  });
+  await db.insert(auctionBids).values({
+    id: "zz-bid-void", leagueId: LEAGUE_ID, sessionId: SESSION_ID, nominatorTeamId: TEAM_IDS[2],
+    fplElementId: 77, playerName: "ZZ Voidable", currentHighBid: 4_000_000, currentHighBidderId: TEAM_IDS[1],
+    minBid: 500_000, status: "open", expiresAt: new Date(Date.now() + 30_000),
+  });
+  const purseBefore = (await db.select().from(teams).where(eq(teams.id, TEAM_IDS[1])).limit(1))[0];
+
+  // What `cancel-nomination` does: flip the open lot to cancelled, clear the timers, and hand the
+  // nominator their turn back. Ownership and purse are only ever written by `resolveBidToSold`,
+  // which has not run — so there is nothing to unwind.
+  const voided = await db
+    .update(auctionBids)
+    .set({ status: "cancelled" })
+    .where(and(eq(auctionBids.id, "zz-bid-void"), eq(auctionBids.status, "open")));
+  await setState({
+    nominationDeadline: null,
+    intermissionUntil: null,
+    makeupQueue: JSON.stringify([TEAM_IDS[2]]),
+  });
+  const purseAfter = (await db.select().from(teams).where(eq(teams.id, TEAM_IDS[1])).limit(1))[0];
+  const ownedAfter = await db
+    .select({ id: auctionOwnership.id })
+    .from(auctionOwnership)
+    .where(and(eq(auctionOwnership.leagueId, LEAGUE_ID), eq(auctionOwnership.fplElementId, 77)));
+
+  check("lot voided", voided.rowsAffected, 1);
+  check("high bidder's purse unchanged", purseAfter.purse, purseBefore.purse);
+  check("high bidder's spend unchanged", purseAfter.totalSpent, purseBefore.totalSpent);
+  check("no ownership row was created", ownedAfter.length, 0);
+  check("nominator is owed a turn", (await sess()).makeupQueue, JSON.stringify([TEAM_IDS[2]]));
+
+  console.log("\n--- 21. Full rectification: skipped team goes first, then the voided nominator ---");
+  // Admin grants the skipped team (3) the front of the queue, ahead of the voided nominator (2).
+  await setState({ makeupQueue: JSON.stringify([TEAM_IDS[3], TEAM_IDS[2]]) });
+  await setNominationDeadline(SESSION_ID, { expectIndex: 2 }); // what the poll does on resume
+  check("skipped team armed first", (await sess()).currentNominatorIndex, 3);
+  check("ring parked at the pre-correction cursor", (await sess()).ringReturnIndex, 2);
+
+  const rBeat1 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({ intermissionUntil: rBeat1, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { claimIntermission: rBeat1 });
+  check("voided nominator armed second", (await sess()).currentNominatorIndex, 2);
+  check("ring still parked at 2", (await sess()).ringReturnIndex, 2);
+
+  const rBeat2 = new Date(Math.floor((Date.now() - 1000) / 1000) * 1000);
+  await setState({ intermissionUntil: rBeat2, nominationDeadline: null });
+  await advanceNominator(SESSION_ID, { claimIntermission: rBeat2 });
+  check("ring resumes at 3 — exactly where it would have been", (await sess()).currentNominatorIndex, 3);
+  check("no correction state left behind", (await sess()).ringReturnIndex, null);
+  check("queue empty", (await sess()).makeupQueue, "[]");
 
   await db.delete(auctionOwnership).where(eq(auctionOwnership.leagueId, LEAGUE_ID));
   await db.delete(leagues).where(eq(leagues.id, LEAGUE_ID));
