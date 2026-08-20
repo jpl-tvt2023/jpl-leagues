@@ -106,6 +106,9 @@ interface BidFeedItem {
 
 const POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 
+/** Rows rendered at once in the Available tab; the header always reports the true total. */
+const POOL_RENDER_CAP = 100;
+
 function formatCurrency(amount: number): string {
   const abs = Math.abs(amount);
   const sign = amount < 0 ? "-" : "";
@@ -386,7 +389,11 @@ export default function AuctionRoomPage() {
   const [wlSearchTerm, setWlSearchTerm] = useState("");
   // Tabbed panel: "wishlist" (existing list) vs "unsold" (players nominated this session but received
   // no bid). The Unsold tab supports multi-select + bulk add to wishlist.
-  const [wishlistTab, setWishlistTab] = useState<"wishlist" | "unsold">("wishlist");
+  const [wishlistTab, setWishlistTab] = useState<"wishlist" | "unsold" | "available">("wishlist");
+  // "Available" tab: everyone still unowned, filtered by position/club/name.
+  const [poolPositionFilter, setPoolPositionFilter] = useState<number | null>(null);
+  const [poolClubFilter, setPoolClubFilter] = useState<number | null>(null);
+  const [poolSearch, setPoolSearch] = useState("");
   const [unsoldPlayers, setUnsoldPlayers] = useState<Array<{ bidId: string; fplElementId: number; playerName: string; nominatedAt: string }>>([]);
   const [unsoldSelections, setUnsoldSelections] = useState<Set<number>>(new Set());
   const [bulkAddingWishlist, setBulkAddingWishlist] = useState(false);
@@ -1060,6 +1067,34 @@ export default function AuctionRoomPage() {
       .slice(0, 30);
   }, [elements, ownedElementIds, searchTerm, positionFilter]);
 
+  // "Available" tab pool: everyone not yet owned by a team. Unlike searchResults above, the lot on
+  // the block stays in the list (badged) — this view answers "who is left", so hiding it would make
+  // the count wrong.
+  const availablePlayers = useMemo(() => {
+    const lc = poolSearch.trim().toLowerCase();
+    return elements
+      .filter((el) => {
+        if (ownedElementIds.has(el.id)) return false;
+        if (poolPositionFilter !== null && el.element_type !== poolPositionFilter) return false;
+        if (poolClubFilter !== null && el.team !== poolClubFilter) return false;
+        if (lc && !el.web_name.toLowerCase().includes(lc)) return false;
+        return true;
+      })
+      .sort((a, b) => b.total_points - a.total_points);
+  }, [elements, ownedElementIds, poolPositionFilter, poolClubFilter, poolSearch]);
+
+  const totalAvailable = useMemo(
+    () => elements.reduce((n, el) => (ownedElementIds.has(el.id) ? n : n + 1), 0),
+    [elements, ownedElementIds]
+  );
+
+  const poolClubOptions = useMemo(
+    () => [...plTeams.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    [plTeams]
+  );
+
+  const poolFiltered = poolPositionFilter !== null || poolClubFilter !== null || poolSearch.trim() !== "";
+
   // Available PL clubs for the club-auction nominate modal: all 20 PL teams minus those already
   // owned by a fantasy team in this league (derived from each team's ownedClub), minus the one
   // currently on the block. Filtered by the club search box.
@@ -1700,6 +1735,15 @@ export default function AuctionRoomPage() {
                   >
                     Unsold <span className="text-[10px] text-gray-500 ml-1">({unsoldPlayers.length})</span>
                   </button>
+                  <button
+                    onClick={() => setWishlistTab("available")}
+                    title="Every player still unowned — filter by position or club to see who is left."
+                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px transition ${
+                      wishlistTab === "available" ? "border-yellow-400 text-yellow-300" : "border-transparent text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Available <span className="text-[10px] text-gray-500 ml-1">({totalAvailable})</span>
+                  </button>
                 </div>
 
                 {wishlistTab === "wishlist" ? (
@@ -1759,7 +1803,7 @@ export default function AuctionRoomPage() {
                       />
                     </div>
                   </>
-                ) : (
+                ) : wishlistTab === "unsold" ? (
                   <>
                     {unsoldPlayers.length === 0 ? (
                       <div className="text-[10px] text-gray-500 py-2 text-center">
@@ -1821,6 +1865,108 @@ export default function AuctionRoomPage() {
                           })}
                         </div>
                       </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* Filters — position pills + club select + name search */}
+                    <div className="flex flex-wrap items-center gap-1 mb-2">
+                      <button
+                        onClick={() => setPoolPositionFilter(null)}
+                        className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition ${
+                          poolPositionFilter === null ? "bg-yellow-400/20 text-yellow-200" : "bg-white/5 text-gray-400 hover:bg-white/10"
+                        }`}
+                      >
+                        All
+                      </button>
+                      {[1, 2, 3, 4].map((pos) => (
+                        <button
+                          key={pos}
+                          onClick={() => setPoolPositionFilter(poolPositionFilter === pos ? null : pos)}
+                          className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition ${
+                            poolPositionFilter === pos ? "bg-yellow-400/20 text-yellow-200" : "bg-white/5 text-gray-400 hover:bg-white/10"
+                          }`}
+                        >
+                          {POSITION_LABELS[pos]}
+                        </button>
+                      ))}
+                      {poolFiltered && (
+                        <button
+                          onClick={() => { setPoolPositionFilter(null); setPoolClubFilter(null); setPoolSearch(""); }}
+                          className="ml-auto px-2 py-1 rounded text-[10px] font-bold uppercase text-gray-400 hover:text-white transition"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-1 mb-2">
+                      <select
+                        value={poolClubFilter ?? ""}
+                        onChange={(e) => setPoolClubFilter(e.target.value === "" ? null : Number(e.target.value))}
+                        className="rounded-lg bg-white/10 border border-white/20 px-2 py-1.5 text-xs text-white focus:border-yellow-400 focus:outline-none"
+                      >
+                        <option value="" className="bg-[#1a0021]">All clubs</option>
+                        {poolClubOptions.map((t) => (
+                          <option key={t.id} value={t.id} className="bg-[#1a0021]">{t.name}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Search…"
+                        value={poolSearch}
+                        onChange={(e) => setPoolSearch(e.target.value)}
+                        className="flex-1 min-w-0 rounded-lg bg-white/10 border border-white/20 px-2 py-1.5 text-xs text-white placeholder-gray-500 focus:border-yellow-400 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="text-[10px] text-gray-500 mb-1">
+                      {poolFiltered
+                        ? `${availablePlayers.length} of ${totalAvailable} still available`
+                        : `${totalAvailable} still available`}
+                    </div>
+
+                    <div className="space-y-0.5 max-h-52 overflow-y-auto">
+                      {availablePlayers.length === 0 ? (
+                        <div className="text-[10px] text-gray-500 py-2 text-center">
+                          {totalAvailable === 0 ? "No players left." : "No players match these filters."}
+                        </div>
+                      ) : (
+                        availablePlayers.slice(0, POOL_RENDER_CAP).map((el) => {
+                          const inWl = wishlistElementIds.has(el.id);
+                          const onBlock = currentBid?.fplElementId === el.id;
+                          return (
+                            <div
+                              key={el.id}
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs ${onBlock ? "bg-yellow-400/10" : "bg-white/5"}`}
+                            >
+                              <span className="text-[9px] text-gray-500 w-6 shrink-0">{POSITION_LABELS[el.element_type] ?? ""}</span>
+                              <span className="flex-1 truncate text-white">{el.web_name}</span>
+                              {onBlock && (
+                                <span className="text-[9px] text-yellow-300 font-bold uppercase shrink-0" title="Currently on the block">
+                                  On block
+                                </span>
+                              )}
+                              <span className="text-[9px] text-gray-500 shrink-0">{plTeams.get(el.team)?.short_name ?? ""}</span>
+                              <span className="text-[9px] text-gray-500 w-8 text-right shrink-0">{el.total_points}</span>
+                              <button
+                                onClick={() => handleToggleWishlist(el.id, el.web_name)}
+                                className={`h-5 w-5 shrink-0 flex items-center justify-center rounded-full text-[10px] transition ${
+                                  inWl ? "bg-yellow-400/20 text-yellow-400 hover:bg-yellow-400/30" : "bg-white/10 text-gray-300 hover:bg-purple-500/30 hover:text-purple-300"
+                                }`}
+                                title={inWl ? "Remove from shortlist" : "Add to shortlist"}
+                              >
+                                {inWl ? "★" : "+"}
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {availablePlayers.length > POOL_RENDER_CAP && (
+                      <div className="text-[10px] text-gray-500 mt-1.5">
+                        Showing top {POOL_RENDER_CAP} by points — filter to narrow.
+                      </div>
                     )}
                   </>
                 )}

@@ -10,10 +10,13 @@ import { AuctionTimerRing } from "@/components/AuctionTimerRing";
 import { formatCurrency } from "@/lib/format/currency";
 import { effectiveMaxSquadSize } from "@/lib/formats/auction/squad-rules";
 import type { ClubTier } from "@/lib/db/schema";
-import { POSITION_LABELS } from "@/lib/fpl/positions";
+import { POSITION_LABELS, POSITION_COLORS, POSITION_ORDER } from "@/lib/fpl/positions";
 import { getPlTeamFullName } from "@/lib/data/pl-team-full-names";
 
 const CLUB_AUCTION_TYPE = "club-auction";
+/** Rows rendered at once in the available-players panel. ~700 unfiltered players re-rendering on
+ *  every 3s poll is wasteful; the count line always reports the true total. */
+const POOL_RENDER_CAP = 150;
 const MIN_QUOTA: Record<"GKP" | "DEF" | "MID" | "FWD", number> = { GKP: 1, DEF: 3, MID: 3, FWD: 1 };
 
 interface SessionRow {
@@ -92,6 +95,12 @@ interface BootstrapElement {
   // The player's real-life PL club. Already on the wire from /api/fpl/bootstrap — this interface
   // simply narrowed it away, which is why the admin room could show no club or tier for a player.
   team: number;
+  // Likewise already on the wire and previously discarded. The available-players panel needs a name
+  // to show, points to sort by, and a price to display.
+  web_name: string;
+  total_points: number;
+  now_cost: number;
+  status: string;
 }
 
 interface BootstrapTeam {
@@ -231,6 +240,19 @@ function buildFeed(
   return groups.flatMap((g) => g.items);
 }
 
+/**
+ * Element ids that were nominated this session and closed with no bids. buildFeed renders these as
+ * text lines and drops the id, so the available-players panel derives its own set from the same
+ * already-polled payload.
+ */
+function passedIdsFrom(bids: BidHistoryBid[]): Set<number> {
+  const ids = new Set<number>();
+  for (const b of bids) {
+    if (b.status === "unsold" && b.fplElementId) ids.add(b.fplElementId);
+  }
+  return ids;
+}
+
 const SESSION_LABEL: Record<SessionRow["type"], (cycle: number) => string> = {
   initial: () => "Initial Auction",
   "club-auction": () => "Club Auction",
@@ -274,6 +296,14 @@ export default function AdminAuctionRoomPage() {
   const [ringReturnIndex, setRingReturnIndex] = useState<number | null>(null);
   const [grantTeamId, setGrantTeamId] = useState<string>("");
 
+  // Available-players panel. `ownedElementIds` rides along on the league-owned response that
+  // refreshTeamsAndSquads already polls every 3s, so the pool stays live for free.
+  const [ownedElementIds, setOwnedElementIds] = useState<Set<number>>(new Set());
+  const [passedElementIds, setPassedElementIds] = useState<Set<number>>(new Set());
+  const [poolPositionFilter, setPoolPositionFilter] = useState<number | null>(null);
+  const [poolClubFilter, setPoolClubFilter] = useState<number | null>(null);
+  const [poolSearch, setPoolSearch] = useState("");
+
   const leagueDbIdRef = useRef<string | null>(null);
   const teamsRef = useRef<Map<string, TeamInfo>>(new Map());
   useEffect(() => { leagueDbIdRef.current = leagueDbId; }, [leagueDbId]);
@@ -306,6 +336,35 @@ export default function AdminAuctionRoomPage() {
   useEffect(() => { elementByIdRef.current = elementById; }, [elementById]);
   useEffect(() => { plTeamsRef.current = plTeams; }, [plTeams]);
 
+  // Clubs for the pool filter dropdown, alphabetical.
+  const poolClubOptions = useMemo(
+    () => [...plTeams.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    [plTeams]
+  );
+
+  // Everyone not yet owned by a team — i.e. still available to be nominated. Mirrors the participant
+  // room's nomination picker, minus the "hide the lot on the block" rule: the admin wants to see it,
+  // badged, rather than have it vanish.
+  const availablePlayers = useMemo(() => {
+    const lc = poolSearch.trim().toLowerCase();
+    return elements
+      .filter((el) => {
+        if (ownedElementIds.has(el.id)) return false;
+        if (poolPositionFilter !== null && el.element_type !== poolPositionFilter) return false;
+        if (poolClubFilter !== null && el.team !== poolClubFilter) return false;
+        if (lc && !el.web_name.toLowerCase().includes(lc)) return false;
+        return true;
+      })
+      .sort((a, b) => b.total_points - a.total_points);
+  }, [elements, ownedElementIds, poolPositionFilter, poolClubFilter, poolSearch]);
+
+  const totalAvailable = useMemo(
+    () => elements.reduce((n, el) => (ownedElementIds.has(el.id) ? n : n + 1), 0),
+    [elements, ownedElementIds]
+  );
+
+  const poolFiltered = poolPositionFilter !== null || poolClubFilter !== null || poolSearch.trim() !== "";
+
   const refreshTeamsAndSquads = useCallback(async () => {
     const lid = leagueDbIdRef.current;
     const [teamsRes, ownedRes] = await Promise.all([
@@ -323,6 +382,7 @@ export default function AdminAuctionRoomPage() {
     if (ownedRes && ownedRes.ok) {
       const d = await ownedRes.json();
       setTeamSummaries(d.teamSummaries ?? {});
+      setOwnedElementIds(new Set<number>(d.ownedElementIds ?? []));
     }
   }, [leagueSlug]);
 
@@ -330,7 +390,9 @@ export default function AdminAuctionRoomPage() {
     const res = await fetch(`/api/auction/bid-history?sessionId=${sessionId}`);
     if (!res.ok) return;
     const d = await res.json();
-    setFeed(buildFeed(d.bids ?? [], d.penalties ?? [], teamsRef.current, playerTag));
+    const bids: BidHistoryBid[] = d.bids ?? [];
+    setFeed(buildFeed(bids, d.penalties ?? [], teamsRef.current, playerTag));
+    setPassedElementIds(passedIdsFrom(bids));
   }, [sessionId, playerTag]);
 
   const refreshSessions = useCallback(async () => {
@@ -385,6 +447,7 @@ export default function AdminAuctionRoomPage() {
       if (ownedRes.ok) {
         const d = await ownedRes.json();
         setTeamSummaries(d.teamSummaries ?? {});
+        setOwnedElementIds(new Set<number>(d.ownedElementIds ?? []));
       }
       if (sessRes.ok) {
         const d = await sessRes.json();
@@ -400,7 +463,9 @@ export default function AdminAuctionRoomPage() {
       }
       if (histRes.ok) {
         const d = await histRes.json();
-        setFeed(buildFeed(d.bids ?? [], d.penalties ?? [], teamMap, playerTag));
+        const bids: BidHistoryBid[] = d.bids ?? [];
+        setFeed(buildFeed(bids, d.penalties ?? [], teamMap, playerTag));
+        setPassedElementIds(passedIdsFrom(bids));
       }
       if (bootstrapRes.ok) {
         const d = await bootstrapRes.json();
@@ -1017,6 +1082,154 @@ export default function AdminAuctionRoomPage() {
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Who's still available. Club auctions bid on PL clubs, not players, so a player pool is
+            meaningless there. */}
+        {session.type !== CLUB_AUCTION_TYPE && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur mb-6">
+            <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                Available Players
+              </h3>
+              <span className="text-xs text-gray-400">
+                <span className="font-mono text-white">{totalAvailable}</span> unsold
+                {poolFiltered && (
+                  <> · showing <span className="font-mono text-white">{availablePlayers.length}</span></>
+                )}
+              </span>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setPoolPositionFilter(null)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                    poolPositionFilter === null
+                      ? "bg-white/15 text-white border-white/25"
+                      : "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10"
+                  }`}
+                >
+                  ALL
+                </button>
+                {POSITION_ORDER.map((pos) => (
+                  <button
+                    key={pos}
+                    onClick={() => setPoolPositionFilter(poolPositionFilter === pos ? null : pos)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                      poolPositionFilter === pos
+                        ? "bg-white/15 text-white border-white/25"
+                        : "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10"
+                    }`}
+                  >
+                    {POSITION_LABELS[pos]}
+                  </button>
+                ))}
+              </div>
+
+              <select
+                value={poolClubFilter ?? ""}
+                onChange={(e) => setPoolClubFilter(e.target.value === "" ? null : Number(e.target.value))}
+                className="rounded-lg border border-white/15 bg-slate-800 px-2 py-1.5 text-xs text-white"
+              >
+                <option value="" className="bg-slate-800">All clubs</option>
+                {poolClubOptions.map((t) => (
+                  <option key={t.id} value={t.id} className="bg-slate-800">
+                    {getPlTeamFullName(t.id, t.name, t.short_name)}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="text"
+                value={poolSearch}
+                onChange={(e) => setPoolSearch(e.target.value)}
+                placeholder="Search player…"
+                className="rounded-lg border border-white/15 bg-slate-800 px-2 py-1.5 text-xs text-white placeholder-gray-500 w-40"
+              />
+
+              {poolFiltered && (
+                <button
+                  onClick={() => { setPoolPositionFilter(null); setPoolClubFilter(null); setPoolSearch(""); }}
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:bg-white/10 transition"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto max-h-96 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-900/95 z-10">
+                  <tr className="text-gray-400 uppercase tracking-wider border-b border-white/10">
+                    <th className="text-left py-2 px-2">Pos</th>
+                    <th className="text-left py-2 px-2">Player</th>
+                    <th className="text-left py-2 px-2">Club</th>
+                    <th className="text-right py-2 px-2">Price</th>
+                    <th className="text-right py-2 px-2">Pts</th>
+                    <th className="text-left py-2 px-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {availablePlayers.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-gray-500 py-6 text-center">
+                        {totalAvailable === 0 ? "No players left" : "No players match these filters"}
+                      </td>
+                    </tr>
+                  ) : (
+                    availablePlayers.slice(0, POOL_RENDER_CAP).map((el) => {
+                      const onBlock = currentBid?.fplElementId === el.id;
+                      const passed = passedElementIds.has(el.id);
+                      const club = plTeams.get(el.team);
+                      return (
+                        <tr
+                          key={el.id}
+                          className={`border-b border-white/5 ${onBlock ? "bg-yellow-500/15" : ""}`}
+                        >
+                          <td className={`py-1.5 px-2 font-semibold ${POSITION_COLORS[el.element_type] ?? "text-gray-400"}`}>
+                            {POSITION_LABELS[el.element_type]}
+                          </td>
+                          <td className="py-1.5 px-2 text-white">{el.web_name}</td>
+                          <td className="py-1.5 px-2 text-gray-400">{club?.short_name ?? `Team ${el.team}`}</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-gray-300">
+                            {formatCurrency(el.now_cost * 100_000)}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-gray-300">{el.total_points}</td>
+                          <td className="py-1.5 px-2">
+                            <div className="flex gap-1">
+                              {onBlock && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">
+                                  On block
+                                </span>
+                              )}
+                              {passed && !onBlock && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider border border-orange-500/30 bg-orange-500/10 text-orange-300">
+                                  Passed
+                                </span>
+                              )}
+                              {el.status !== "a" && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider border border-red-500/30 bg-red-500/10 text-red-300">
+                                  {el.status === "i" ? "Injured" : el.status === "s" ? "Susp" : "Unavail"}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {availablePlayers.length > POOL_RENDER_CAP && (
+              <div className="text-[10px] text-gray-500 mt-2">
+                Showing top {POOL_RENDER_CAP} by points — filter by club or position to narrow.
+              </div>
+            )}
           </div>
         )}
 
