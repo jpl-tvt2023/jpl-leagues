@@ -296,7 +296,7 @@ async function idleClubSession(sessionId: string): Promise<void> {
 async function armClubNominator(
   sessionId: string,
   startOffset: number,
-  opts: { onlyIfUnarmed?: boolean; claimIntermission?: Date | null } = {}
+  opts: { onlyIfUnarmed?: boolean; claimIntermission?: Date | null; expectIndex?: number } = {}
 ): Promise<void> {
   const sess = await db.select().from(auctionSessions).where(eq(auctionSessions.id, sessionId)).limit(1);
   if (!sess.length || sess[0].type !== CLUB_AUCTION_SESSION_TYPE || sess[0].status !== "active") return;
@@ -329,6 +329,12 @@ async function armClubNominator(
   if (opts.claimIntermission != null) {
     conditions.push(eq(auctionSessions.intermissionUntil, opts.claimIntermission));
   }
+  // Pin the cursor the caller observed. Callers holding no intermission token (session start, the
+  // SSE no-deadline fallback) otherwise write unguarded, which is how concurrent pollers double-step
+  // the cursor and skip a team — see the note on `setNominationDeadline` in resolve-bid.ts.
+  if (opts.expectIndex != null) {
+    conditions.push(eq(auctionSessions.currentNominatorIndex, opts.expectIndex));
+  }
 
   await db
     .update(auctionSessions)
@@ -341,8 +347,14 @@ async function armClubNominator(
 }
 
 /** Arm the current club-less nominator (used on session start / SSE no-deadline poll). */
-export async function setClubNominationDeadline(sessionId: string): Promise<void> {
-  await armClubNominator(sessionId, 0);
+export async function setClubNominationDeadline(
+  sessionId: string,
+  opts: { expectIndex?: number } = {},
+): Promise<void> {
+  // `onlyIfUnarmed` matters here for the same reason it does on the advance path: this is the
+  // fallback every connected client runs when it sees no deadline, so without it N pollers each
+  // re-arm the window.
+  await armClubNominator(sessionId, 0, { onlyIfUnarmed: true, expectIndex: opts.expectIndex });
 }
 
 /** Advance to the next club-less nominator after a club resolves. Offset 1, so the turn genuinely
@@ -353,9 +365,13 @@ export async function setClubNominationDeadline(sessionId: string): Promise<void
  *  (SSE + REST safety-net) no-ops instead of skipping a turn. */
 export async function advanceClubNominator(
   sessionId: string,
-  opts: { claimIntermission?: Date | null } = {},
+  opts: { claimIntermission?: Date | null; expectIndex?: number } = {},
 ): Promise<void> {
-  await armClubNominator(sessionId, 1, { onlyIfUnarmed: true, claimIntermission: opts.claimIntermission });
+  await armClubNominator(sessionId, 1, {
+    onlyIfUnarmed: true,
+    claimIntermission: opts.claimIntermission,
+    expectIndex: opts.expectIndex,
+  });
 }
 
 /**
@@ -480,11 +496,36 @@ interface BidRow {
 export async function resolveClubBid(bid: BidRow): Promise<"sold" | "already-resolved"> {
   // The nominator is always the opening floor bidder, so a nominated club always sells — to the
   // nominator, or to a higher counter-bid. Idempotent: only one caller flips status from open.
-  const updated = await db
-    .update(auctionBids)
-    .set({ status: "sold", updatedAt: new Date() })
-    .where(and(eq(auctionBids.id, bid.id), eq(auctionBids.status, "open")))
-    .returning();
+  //
+  // The post-sale intermission is opened in the SAME commit, for the same reason it is on the
+  // player-auction path (see `resolveBidToSold`): between "lot sold" and "intermission open" the
+  // session row is indistinguishable from an idle auction sitting on the current cursor, and the
+  // first of ~20 pollers to observe that arms a fresh window for the team whose lot just sold.
+  const cfg = await db
+    .select({ intermissionSeconds: auctionSessions.intermissionSeconds })
+    .from(auctionSessions)
+    .where(eq(auctionSessions.id, bid.sessionId))
+    .limit(1);
+  const intermissionSecs = cfg[0]?.intermissionSeconds ?? 5;
+
+  const updated = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(auctionBids)
+      .set({ status: "sold", updatedAt: new Date() })
+      .where(and(eq(auctionBids.id, bid.id), eq(auctionBids.status, "open")))
+      .returning();
+    if (rows.length === 0) return rows;
+    if (intermissionSecs > 0) {
+      await tx
+        .update(auctionSessions)
+        .set({
+          intermissionUntil: new Date(Date.now() + intermissionSecs * 1000),
+          nominationDeadline: null,
+        })
+        .where(eq(auctionSessions.id, bid.sessionId));
+    }
+    return rows;
+  });
   if (updated.length === 0) return "already-resolved";
   const fresh = updated[0];
 

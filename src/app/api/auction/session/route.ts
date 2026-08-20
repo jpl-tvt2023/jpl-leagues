@@ -6,7 +6,6 @@ import { generateId } from "@/lib/id";
 import { generateSnakeOrder } from "@/lib/formats/auction/mini-auction";
 import {
   resolveExpiredBid,
-  beginIntermission,
   advanceNominator,
   setNominationDeadline,
   auditAuctionComposition,
@@ -31,7 +30,20 @@ import { writeAuctionCompleteSnapshot } from "@/lib/backup/snapshot";
 /**
  * Auto-resolve expired open bids that SSE may have missed.
  * Creates ownership + deducts purse for sold bids, advances nominator.
+ *
+ * **This is a fallback, not the engine.** It runs inside a GET that every connected client polls
+ * every 3s (plus every page load, refresh and prefetch), so on a busy auction it is ~11 extra
+ * writers racing the ~11 SSE poll loops for the same single row of turn state. The SSE streams tick
+ * every 2s and own the cycle in normal operation; this only needs to cover the case where nothing
+ * is connected at all.
+ *
+ * So it deliberately waits `STALE_GRACE_MS` past a deadline before touching anything. Within that
+ * window the streams will have handled it and this no-ops; past it, the auction was genuinely
+ * stalled and self-heals here. Every write below is still CAS-guarded, so the grace period is
+ * defence in depth rather than the correctness argument.
  */
+const STALE_GRACE_MS = 10_000;
+
 async function resolveExpiredBids(sessionId: string) {
   const openBids = await db
     .select()
@@ -47,12 +59,13 @@ async function resolveExpiredBids(sessionId: string) {
   let hadOpenBids = false;
   for (const bid of openBids) {
     hadOpenBids = true;
-    if (now > bid.expiresAt) {
+    if (now.getTime() > bid.expiresAt.getTime() + STALE_GRACE_MS) {
       const outcome = await resolveExpiredBid(bid);
       if (outcome === "sold") {
         // Begin the post-sale intermission (the SSE stream advances the nominator when it elapses),
         // mirroring the stream's resolution path so the safety-net doesn't skip the cooldown.
-        await beginIntermission(sessionId);
+        // Intermission already opened inside the resolution transaction — see the note in
+        // `resolveBidToSold`. Re-opening it here could hand out a second beat and skip a team.
       }
     }
   }
@@ -62,14 +75,27 @@ async function resolveExpiredBids(sessionId: string) {
   // live to do it. Atomic claim (intermissionUntil → null) guarantees a single advance across pollers.
   if (!hadOpenBids) {
     const sess = await db
-      .select({ status: auctionSessions.status, intermissionUntil: auctionSessions.intermissionUntil })
+      .select({
+        status: auctionSessions.status,
+        intermissionUntil: auctionSessions.intermissionUntil,
+        currentNominatorIndex: auctionSessions.currentNominatorIndex,
+      })
       .from(auctionSessions)
       .where(eq(auctionSessions.id, sessionId))
       .limit(1);
-    if (sess.length && sess[0].status === "active" && sess[0].intermissionUntil && now >= sess[0].intermissionUntil) {
+    if (
+      sess.length &&
+      sess[0].status === "active" &&
+      sess[0].intermissionUntil &&
+      now.getTime() >= sess[0].intermissionUntil.getTime() + STALE_GRACE_MS
+    ) {
       // Claim + advance in one write — see advanceNominator. A separate claim could be spent
       // without the cursor moving, or leave a stale intermission to be claimed twice later.
-      await advanceNominator(sessionId, { claimIntermission: sess[0].intermissionUntil });
+      await advanceNominator(sessionId, {
+        claimIntermission: sess[0].intermissionUntil,
+        expectIndex: sess[0].currentNominatorIndex,
+        actor: "rest",
+      });
     }
   }
 }
@@ -576,9 +602,12 @@ export async function POST(request: NextRequest) {
   // team-nominated too, so both paths set a deadline for the first team in the snake order.
   if (newStatus === "active" && action === "start") {
     if (sessionRow[0].type === CLUB_AUCTION_SESSION_TYPE) {
-      await setClubNominationDeadline(sessionId);
+      await setClubNominationDeadline(sessionId, { expectIndex: sessionRow[0].currentNominatorIndex ?? 0 });
     } else {
-      await setNominationDeadline(sessionId);
+      await setNominationDeadline(sessionId, {
+        expectIndex: sessionRow[0].currentNominatorIndex ?? 0,
+        actor: "admin",
+      });
     }
   }
 
