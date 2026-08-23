@@ -10,6 +10,7 @@ import {
   CACHE_TTL,
   LIVE_CACHE_TTL,
   getLiveCachedScores,
+  isLiveCacheFresh,
   type LiveFixtureScore,
 } from "@/lib/fpl-cache";
 import { computeLiveFixtureScores } from "@/lib/fpl-live/tvt-live-scores";
@@ -158,10 +159,20 @@ export async function GET(request: NextRequest) {
 
     // ── Live scores for this one fixture ──────────────────────────────────
     let live: LiveFixtureScore | null = null;
+    // True when the numbers being returned are past their fresh window. The
+    // card shows them at once and asks for a refresh behind them, rather than
+    // making the reader wait on a sweep — same bargain as the fixtures page.
+    let liveIsStale = false;
+    /** When these numbers were computed, so the card can show their age. */
+    let liveCachedAt: string | null = null;
     const wantsRefresh = request.nextUrl.searchParams.get("refresh") === "1";
     if (isLive) {
       const cached = wantsRefresh ? null : await getLiveCachedScores(gw, league.id);
       live = cached?.fixtures.find((f) => f.fixtureId === fixtureRow.id) ?? null;
+      if (live) {
+        liveIsStale = !isLiveCacheFresh(cached);
+        liveCachedAt = cached?.cachedAt ?? null;
+      }
       if (!live) {
         try {
           const computed = await withFplBudget(
@@ -179,6 +190,7 @@ export async function GET(request: NextRequest) {
               })
           );
           live = computed[0] ?? null;
+          if (live) liveCachedAt = new Date().toISOString();
         } catch (err) {
           if (!(err instanceof FplUnavailableError)) throw err;
           // Breaker open or scoring in progress — fall back to stored data.
@@ -282,6 +294,8 @@ export async function GET(request: NextRequest) {
       defaultGw,
       linkGw,
       isLive,
+      stale: liveIsStale,
+      liveCachedAt,
       isHome: fixtureRow.homeTeamId === teamId,
       fixture: {
         id: fixtureRow.id,

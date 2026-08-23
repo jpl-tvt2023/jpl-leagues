@@ -108,16 +108,25 @@ export default function FplLeaguePage() {
     if (stalledRef.current >= MAX_STALLED_POLLS) return;
     if (pollsRef.current >= MAX_TOTAL_POLLS) return;
 
+    // The first pass goes out immediately: the table is already on screen, so
+    // there is nothing to wait for. Later passes are spaced, since they only
+    // exist for the case where one pass did not finish the job.
+    const delay = pollsRef.current === 0 ? 0 : WARM_POLL_MS;
+
     const id = setTimeout(async () => {
       pollsRef.current += 1;
       stalledRef.current += 1; // reset above if this poll turns out to help
       try {
-        const res = await fetch(`/api/fpl-league?leagueSlug=${encodeURIComponent(leagueSlug)}`);
+        // warm=1: this is the request that actually fetches from FPL. The
+        // initial load deliberately does not, so first paint is instant.
+        const res = await fetch(
+          `/api/fpl-league?leagueSlug=${encodeURIComponent(leagueSlug)}&warm=1`,
+        );
         if (res.ok) setData(await res.json());
       } catch {
         // A failed poll should never disturb the table already on screen.
       }
-    }, WARM_POLL_MS);
+    }, delay);
     return () => clearTimeout(id);
   }, [data, leagueSlug]);
 

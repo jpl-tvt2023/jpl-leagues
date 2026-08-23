@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { GwNavigator } from "@/components/GwNavigator";
+import { LiveFreshness } from "@/components/LiveFreshness";
 import {
   PlayerBreakdown,
   type BreakdownChips,
@@ -71,6 +72,10 @@ interface Payload {
   defaultGw: number | null;
   linkGw: number | null;
   isLive: boolean;
+  /** The live numbers are past their fresh window; a refresh is worth making. */
+  stale?: boolean;
+  /** When those numbers were computed. */
+  liveCachedAt?: string | null;
   isHome?: boolean;
   fixture: { id: string; home: SideInfo; away: SideInfo } | null;
   live: LiveFixtureScore | null;
@@ -87,6 +92,9 @@ export function PlFixtureCard() {
   const [gw, setGw] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // A refresh the reader did not ask for. Kept separate from isRefreshing so it
+  // does not disable the button or relabel it "Refreshing…".
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   // Collapsed by default — the card is a summary first. Chips live inside the
   // breakdown and are hidden with it, which is fine; players-left is not, so it
   // is rendered in the header where it survives the collapse.
@@ -111,6 +119,21 @@ export function PlFixtureCard() {
         setData(body);
         setGw(body.gw);
         setError(null);
+        // Shown immediately, replaced shortly — the reader never waits on the
+        // sweep, and never sees a stale number without it being updated.
+        if (body.stale) {
+          setIsBackgroundRefreshing(true);
+          load(body.gw, true)
+            .then((fresh) => {
+              if (!cancelled) setData(fresh);
+            })
+            .catch(() => {
+              // Leave the stale numbers on screen.
+            })
+            .finally(() => {
+              if (!cancelled) setIsBackgroundRefreshing(false);
+            });
+        }
       } catch {
         if (!cancelled) setError("Could not load your fixture.");
       } finally {
@@ -195,6 +218,10 @@ export function PlFixtureCard() {
           <span className="text-yellow-400">⚔</span> GW{data.gw} PL Fixture
         </h2>
         <div className="flex items-center gap-2">
+          <LiveFreshness
+            updatedAt={data.liveCachedAt ?? null}
+            isRefreshing={isBackgroundRefreshing}
+          />
           {data.isLive && (
             <span className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-semibold flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -234,7 +261,7 @@ export function PlFixtureCard() {
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-center gap-4 mb-3">
+          <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3">
             <SideHeader side={fixture.home} label={data.isHome ? "HOME" : "HOME"} score={hasScore ? homeScore : undefined} />
             <span className="text-gray-500 font-medium">VS</span>
             <SideHeader side={fixture.away} label="AWAY" score={hasScore ? awayScore : undefined} align="right" />
@@ -278,12 +305,13 @@ function SideHeader({
   align?: "left" | "right";
 }) {
   return (
-    <div className={`text-center ${align === "right" ? "order-3" : ""}`}>
+    <div className={`flex-1 min-w-0 text-center ${align === "right" ? "order-3" : ""}`}>
       <div className="text-xs text-gray-400 mb-1">{label}</div>
-      {/* Wraps rather than truncates: a clipped team name ("Differential Disa…")
-          is worse than a two-line one, and these are the two teams the card is
-          about. max-w keeps the VS column centred. */}
-      <div className="text-lg font-bold text-white break-words max-w-[10rem] mx-auto">{side.name}</div>
+      {/* One line, whole name. The fixed 10rem cap clipped "Differential Disaster"
+          to "Differential Disa…"; letting it wrap instead made the two sides
+          different heights and pushed the score down. Each side now takes half
+          the row, which fits these names outright. */}
+      <div className="text-base sm:text-lg font-bold text-white whitespace-nowrap">{side.name}</div>
       {score !== undefined && <div className="text-xl font-bold text-white">{score}</div>}
       {/* Kept in the header, not only in the breakdown: this is a live figure and
           the breakdown is collapsed by default. */}

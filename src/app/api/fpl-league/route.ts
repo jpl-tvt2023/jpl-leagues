@@ -38,8 +38,11 @@ export async function GET(request: NextRequest) {
     const gwParam = searchParams.get("gw");
     const gw = gwParam ? Number(gwParam) : undefined;
 
+    // warm=1 is what the page asks for AFTER it has painted. A plain read
+    // must stay instant, so it never fetches.
     const standings = await buildFplLeagueStandings(leagueRow[0].id, {
       gw: Number.isFinite(gw) ? gw : undefined,
+      warm: searchParams.get("warm") === "1",
     });
 
     return NextResponse.json({ ...standings, leagueName: leagueRow[0].name });

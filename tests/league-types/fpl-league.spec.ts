@@ -24,11 +24,19 @@ import {
 
 let league: LeagueRef;
 
-/** The page warms a few managers per request; loop until it settles. */
+/**
+ * Load with warming requested, until the table settles.
+ *
+ * warm=1 matters: a plain read deliberately makes no FPL calls so the page can
+ * paint instantly, so without it nothing ever fills in and every row stays
+ * pending.
+ */
 async function loadUntilWarm(request: APIRequestContext, slug: string, maxTries = 12) {
   let body: { rows: { pending?: true }[]; warming: number } | null = null;
   for (let i = 0; i < maxTries; i++) {
-    const res = await request.get(`/api/fpl-league?leagueSlug=${encodeURIComponent(slug)}`);
+    const res = await request.get(
+      `/api/fpl-league?leagueSlug=${encodeURIComponent(slug)}&warm=1`,
+    );
     expect(res.ok(), `fpl-league returned ${res.status()}`).toBeTruthy();
     body = await res.json();
     if (body!.warming === 0) break;

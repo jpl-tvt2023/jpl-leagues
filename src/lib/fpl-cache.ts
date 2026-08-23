@@ -28,7 +28,18 @@ export function isFplCacheEnabled(): boolean {
 }
 
 export const CACHE_TTL = 60 * 60 * 24; // 24 hours
+/** How long a live payload is considered FRESH. */
 export const LIVE_CACHE_TTL = 60 * 10; // 10 minutes
+/**
+ * How long it is RETAINED after that.
+ *
+ * Past LIVE_CACHE_TTL the numbers are stale but still worth showing: a whole
+ * gameweek costs ~65 FPL calls, which the gateway's rate cap stretches to about
+ * ten seconds, and with a hard 10-minute expiry the first visitor after each
+ * lapse paid that in full while the page sat there. Keeping the last copy for an
+ * hour means it can be served instantly and refreshed behind the reader.
+ */
+export const LIVE_CACHE_STALE_TTL = 60 * 60; // 1 hour
 const PAGE_CACHE_TTL = 60 * 60 * 25; // 25 hours (slightly longer than daily cron interval)
 
 interface CachedScore {
@@ -585,8 +596,18 @@ function getLiveKey(gameweek: number, leagueId?: string | null): string {
   return `live:gw${gameweek}:${leagueId ?? "all"}`;
 }
 
+/** Whether a cached live payload is still within its fresh window. */
+export function isLiveCacheFresh(data: { cachedAt?: string } | null | undefined): boolean {
+  if (!data?.cachedAt) return false;
+  const age = Date.now() - new Date(data.cachedAt).getTime();
+  return Number.isFinite(age) && age >= 0 && age < LIVE_CACHE_TTL * 1000;
+}
+
 /**
- * Get cached live scores for a gameweek
+ * Get cached live scores for a gameweek, fresh or stale.
+ *
+ * Callers decide what to do with an entry older than LIVE_CACHE_TTL — see
+ * isLiveCacheFresh.
  */
 export async function getLiveCachedScores(
   gameweek: number,
@@ -599,7 +620,11 @@ export async function getLiveCachedScores(
 }
 
 /**
- * Set cached live scores for a gameweek (10-min TTL)
+ * Set cached live scores for a gameweek.
+ *
+ * Stored for LIVE_CACHE_STALE_TTL; freshness is judged from `cachedAt` in the
+ * payload rather than by the key expiring, so a lapsed entry degrades to
+ * "stale but serveable" instead of vanishing.
  */
 export async function setLiveCachedScores(
   gameweek: number,
@@ -608,7 +633,7 @@ export async function setLiveCachedScores(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_TTL });
+  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_STALE_TTL });
 }
 
 /**

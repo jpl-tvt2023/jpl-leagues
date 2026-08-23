@@ -4,6 +4,7 @@ import { fixtures, gameweeks, leagues } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
   getLiveCachedScores,
+  isLiveCacheFresh,
   setLiveCachedScores,
   type LiveFixtureScore,
   type LiveGameweekData,
@@ -94,10 +95,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ isLive: false, fixtures: storedFixtures, reason: "already_processed", cachedAt: new Date().toISOString() });
     }
 
-    // Check live cache first
+    // Serve whatever is cached, fresh or stale.
+    //
+    // A stale copy goes back immediately rather than being recomputed. A whole
+    // gameweek is ~65 FPL calls, which the gateway's rate cap stretches to about
+    // ten seconds; making whichever reader happens to arrive after the fresh
+    // window lapses pay that for everyone — while the page showed "Upcoming" —
+    // is precisely the problem. The client refreshes behind the numbers instead.
     const cached = await getLiveCachedScores(gwNumber, leagueId);
     if (cached && cached.fixtures && cached.fixtures.length > 0) {
-      return NextResponse.json({ isLive: true, ...cached });
+      return NextResponse.json({
+        isLive: true,
+        ...cached,
+        stale: !isLiveCacheFresh(cached),
+      });
     }
 
     // Cache miss - check if we have DB results (fallback when Redis is empty)

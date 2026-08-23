@@ -77,10 +77,8 @@ test.describe.serial("Redis-backed paths (TVT)", () => {
   test("the FPL League table converges, then serves later loads without touching FPL", async ({
     request,
   }) => {
-    // The server warms at most WARM_BATCH (12) entries per request behind a
-    // ~10s single-flight claim, so a 16-manager league legitimately needs more
-    // than one round. This is the regression guard for the bug where `warming`
-    // could never reach zero.
+    // Regression guard for the bug where `warming` could never reach zero.
+    // Polls with warm=1 because a plain read deliberately fetches nothing.
     let latest: {
       warming: number;
       cacheEnabled: boolean;
@@ -90,7 +88,7 @@ test.describe.serial("Redis-backed paths (TVT)", () => {
     await expect
       .poll(
         async () => {
-          const res = await request.get(leagueUrl("/api/fpl-league"));
+          const res = await request.get(leagueUrl("/api/fpl-league?warm=1"));
           expect(res.ok()).toBeTruthy();
           latest = await res.json();
           return latest!.warming;
@@ -199,7 +197,10 @@ test.describe.serial("Redis-backed paths (TVT)", () => {
       // scoring run is routine, and blanking a public page for two minutes
       // every time one starts would be worse than showing stale rows.
       await resetCounts(request);
-      const res = await request.get(leagueUrl("/api/fpl-league"));
+      // warm=1, so this genuinely tries to fetch and is genuinely refused. A
+      // plain read fetches nothing by design, which would make the zero-call
+      // assertion below true for the wrong reason.
+      const res = await request.get(leagueUrl("/api/fpl-league?warm=1"));
       expect(res.status(), "the page must degrade, not fail").toBe(200);
 
       const body = await res.json();
@@ -218,12 +219,96 @@ test.describe.serial("Redis-backed paths (TVT)", () => {
     await expect
       .poll(
         async () => {
-          await request.get(leagueUrl("/api/fpl-league"));
+          await request.get(leagueUrl("/api/fpl-league?warm=1"));
           return (await counts(request))["entry/history"] ?? 0;
         },
         { timeout: 30_000, intervals: [2000], message: "warming never resumed after the lock" },
       )
       .toBeGreaterThan(0);
+  });
+
+  test("a plain read serves the table instantly, fetching nothing", async ({ request }) => {
+    // The property that keeps first paint instant. Warming a league is ~10s of
+    // rate-capped FPL calls; if it ever moves back onto the read path the page
+    // goes blank for that long instead of painting at once.
+    //
+    // The cold cache is the whole point of the test — with entries already warm
+    // there is nothing to fetch and 'zero calls' would prove nothing.
+    const redis = new Redis({ url: REDIS_URL!, token: REDIS_TOKEN! });
+    for (const pattern of ["fpl:history:*", "fpl-league:warm:*"]) {
+      const keys = await redis.keys(pattern);
+      if (keys.length > 0) await redis.del(...keys);
+    }
+    await resetCounts(request);
+
+    const res = await request.get(leagueUrl("/api/fpl-league"));
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+
+    expect(body.rows.length, "the table still comes back in full").toBe(league.teamSize * 2);
+    expect(body.warming, "and it knows rows are outstanding").toBeGreaterThan(0);
+    expect(
+      (await counts(request))["entry/history"] ?? 0,
+      "a plain read must not fetch entry histories",
+    ).toBe(0);
+  });
+
+  test("one warm pass fills the whole league, not a dozen at a time", async ({ request }) => {
+    // Follows directly from the test above, which left the cache cold.
+    await resetCounts(request);
+    const res = await request.get(leagueUrl("/api/fpl-league?warm=1"));
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+
+    expect(
+      body.warming,
+      "a single warm request should finish the league, not leave rows for later",
+    ).toBe(0);
+    expect(body.rows.filter((r: { pending?: true }) => r.pending).length).toBe(0);
+    expect(
+      (await counts(request))["entry/history"] ?? 0,
+      "it really did fetch them",
+    ).toBe(league.teamSize * 2);
+  });
+
+  test("a lapsed live cache is served immediately rather than recomputed", async ({ request }) => {
+    await request.post("/api/test-fpl-stub/control", { data: { finishedThrough: 0, liveGw: 1 } });
+    await expireGameweek(league.id, 1);
+
+    // Populate the live cache, then age it past the fresh window by rewriting
+    // cachedAt — freshness is judged from the payload, not from key expiry.
+    const redis = new Redis({ url: REDIS_URL!, token: REDIS_TOKEN! });
+    // Clear any refresh claim left by an earlier test. Without this the sweep
+    // below loses the single-flight race, returns 202 pending, and never
+    // populates the cache this test is about.
+    const stale = await redis.keys("live:refresh:lock:*");
+    if (stale.length > 0) await redis.del(...stale);
+
+    const seeded = await request.get(leagueUrl("/api/fixtures/live/refresh?gameweek=1"));
+    expect(seeded.ok(), "the seeding sweep should win the claim").toBeTruthy();
+    const key = `live:gw1:${league.id}`;
+    const stored = await redis.get<{ cachedAt: string; fixtures: unknown[] }>(key);
+    expect(stored, "the refresh should have populated the live cache").toBeTruthy();
+    await redis.set(
+      key,
+      { ...stored!, cachedAt: new Date(Date.now() - 30 * 60_000).toISOString() },
+      { ex: 3600 },
+    );
+
+    await resetCounts(request);
+    const res = await request.get(leagueUrl("/api/fixtures/live?gameweek=1"));
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+
+    expect(body.stale, "30 minutes old is past the 10-minute fresh window").toBe(true);
+    expect(body.fixtures.length, "but it is served, not withheld").toBeGreaterThan(0);
+
+    // The point: nobody waits for a sweep. The client refreshes behind this.
+    const after = await counts(request);
+    expect(
+      (after["entry/picks"] ?? 0) + (after["event/live"] ?? 0),
+      "serving a stale copy must not touch FPL",
+    ).toBe(0);
   });
 
   test.afterAll(async ({ request }) => {

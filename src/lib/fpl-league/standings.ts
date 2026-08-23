@@ -22,28 +22,43 @@ import { buildFplChipStatus, type FplChipStatus } from "./chips";
  * official FPL season total.
  *
  * The cost problem, and how this handles it: a 32-team TVT league is 64 FPL
- * entries. Fetching all 64 histories on a cold request would be both a burst
- * big enough to get rate-limited and a real risk of blowing the 60s function
- * ceiling. So instead:
+ * entries, and the gateway's rate cap makes that about ten seconds of calls
+ * however they are arranged. Ten seconds is too long to sit in front of a
+ * reader, so it happens behind them instead:
  *
  *   - every entry is cached independently and long-lived,
- *   - a request serves whatever is already cached, immediately,
- *   - and warms at most WARM_BATCH stale entries, behind a single-flight lock.
+ *   - a plain read serves whatever is cached and returns immediately, making
+ *     no FPL calls at all — rows without data render as "—",
+ *   - warming happens only when a caller asks for it (`warm: true`), which the
+ *     page does straight after painting, and covers the whole league in one
+ *     pass behind a single-flight lock.
  *
- * A cold league therefore converges over a handful of page loads instead of
- * one huge burst, and the steady state is zero outbound calls. Rows that are
- * not warm yet render as "—" rather than blocking the page.
+ * So the table appears at once and completes a few seconds later, and the
+ * steady state is zero outbound calls.
  *
  * All of which depends on there being somewhere to cache to. Without Redis
- * nothing survives the request, so each load re-warms the same first WARM_BATCH
- * entries and the rest can never fill in. That is a legitimate degraded mode —
- * a partial table beats an empty one — but it is NOT "still loading", and
- * `cacheEnabled` exists so the page can tell the two apart instead of polling
- * for progress that will never come.
+ * nothing survives the request, so each warm re-fetches the same entries and
+ * the rest can never fill in. That is a legitimate degraded mode — a partial
+ * table beats an empty one — but it is NOT "still loading", and `cacheEnabled`
+ * exists so the page can tell the two apart instead of polling for progress
+ * that will never come.
  */
 
-/** Entries refreshed per request. Small on purpose — see above. */
-const WARM_BATCH = 12;
+/**
+ * Entries refreshed per warm request — a whole league in one pass.
+ *
+ * This was 12, on the belief that a small batch protected the FPL rate limit.
+ * It did not: fpl/gateway.ts already caps ALL outbound traffic at
+ * MAX_CONCURRENCY 4 with a 120ms floor between calls, globally, whoever is
+ * asking. Sixty-four managers therefore cost the same sixty-four calls at the
+ * same peak rate whether they go out in one pass or six; the batch size only
+ * decided whether the reader waited once or six times, and six rounds behind a
+ * 10s claim meant a table that dribbled in for a minute.
+ *
+ * The ceiling is about the 60s function limit, not FPL: 80 x 120ms is roughly
+ * ten seconds of enforced spacing, which leaves ample headroom.
+ */
+const WARM_BATCH = 80;
 /** Parallelism within a batch. */
 const WARM_CONCURRENCY = 4;
 
@@ -84,7 +99,11 @@ export interface FplLeagueStandings {
 
 export async function buildFplLeagueStandings(
   leagueId: string,
-  opts?: { gw?: number }
+  opts?: {
+    gw?: number;
+    /** Fetch missing entries. Off by default so reads stay instant. */
+    warm?: boolean;
+  }
 ): Promise<FplLeagueStandings> {
   // players has no leagueId — reach it through teams.
   const rows = await db
@@ -105,9 +124,12 @@ export async function buildFplLeagueStandings(
   const cacheEnabled = isFplCacheEnabled();
   const cached = await getCachedEntryHistories(fplIds);
 
-  // Warm a small slice of whatever is missing, if nobody else already is.
+  // Warming is opt-in, and that is what keeps first paint instant: the page's
+  // initial read serves whatever is cached and returns straight away, then asks
+  // for a warm pass behind the rendered table. Doing it inline would put the
+  // whole sweep in front of the reader.
   const missing = fplIds.filter((id) => !cached.has(id));
-  if (missing.length > 0 && (await claimFplLeagueWarm(leagueId))) {
+  if (opts?.warm && missing.length > 0 && (await claimFplLeagueWarm(leagueId))) {
     const batch = missing.slice(0, WARM_BATCH);
     const ttl = isLive ? LIVE_CACHE_TTL : CACHE_TTL;
     try {

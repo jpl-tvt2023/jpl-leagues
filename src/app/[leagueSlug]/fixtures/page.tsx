@@ -1,6 +1,7 @@
 "use client";
 
 import { GwNavigator } from "@/components/GwNavigator";
+import { LiveFreshness } from "@/components/LiveFreshness";
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
@@ -153,6 +154,42 @@ export default function LeagueFixturesPage() {
   const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
   const [isManuallyRefreshed, setIsManuallyRefreshed] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // First live fetch for the selected gameweek. Without this the badge falls
+  // through to "Upcoming" while loading, which is not a neutral placeholder —
+  // it is the same badge a gameweek that has genuinely not kicked off shows.
+  const [isLoadingLive, setIsLoadingLive] = useState(true);
+  // A refresh the reader did not ask for, triggered because the served copy was
+  // past its fresh window.
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
+
+  /**
+   * Re-sweep FPL behind the numbers already on screen.
+   *
+   * Deliberately does NOT set isManuallyRefreshed: that flag turns the badge
+   * amber to mean "you forced this", and the reader did nothing. Any failure —
+   * including the 503 returned while a scoring run holds the lock — leaves the
+   * stale scores in place rather than blanking them.
+   */
+  const refreshInBackground = useCallback(async (gw: number) => {
+    setIsBackgroundRefreshing(true);
+    try {
+      const res = await fetch(
+        `/api/fixtures/live/refresh?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.fixtures?.length) {
+          setLiveScores(data.fixtures);
+          setIsLive(true);
+          setLiveCachedAt(data.cachedAt || null);
+        }
+      }
+    } catch {
+      // Keep what is on screen.
+    } finally {
+      setIsBackgroundRefreshing(false);
+    }
+  }, [leagueSlug]);
 
   const fetchLiveScores = useCallback(async (gw: number) => {
     try {
@@ -163,11 +200,15 @@ export default function LeagueFixturesPage() {
         setIsLive(data.isLive ?? false);
         setLiveCachedAt(data.cachedAt || null);
         setIsManuallyRefreshed(false);
+        // Served past its fresh window: show it now, replace it shortly.
+        if (data.stale) void refreshInBackground(gw);
       }
     } catch {
       // Silently fail — live scores are optional
+    } finally {
+      setIsLoadingLive(false);
     }
-  }, [leagueSlug]);
+  }, [leagueSlug, refreshInBackground]);
 
   const handleRefresh = async () => {
     if (!selectedGW || isRefreshing) return;
@@ -192,6 +233,7 @@ export default function LeagueFixturesPage() {
 
   useEffect(() => {
     if (!selectedGW) return;
+    setIsLoadingLive(true);
     fetchLiveScores(selectedGW);
     const interval = setInterval(() => fetchLiveScores(selectedGW), 10 * 60 * 1000);
     return () => clearInterval(interval);
@@ -319,6 +361,16 @@ export default function LeagueFixturesPage() {
                 <span className="px-4 py-1 rounded-full bg-green-500/20 text-green-400 text-sm font-medium">
                   Results Available
                 </span>
+              ) : isLoadingLive ? (
+                /* Not "Upcoming": until the first fetch lands we do not know
+                   whether this gameweek is live, and claiming otherwise is what
+                   made the page look stuck. */
+                <span className="px-4 py-1 rounded-full bg-white/10 text-gray-300 text-sm font-medium flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Fetching live scores…
+                </span>
               ) : isLive ? (
                 <span className={`px-4 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${
                   isManuallyRefreshed ? "bg-amber-500/20 text-amber-400" : "bg-white/10 text-gray-300"
@@ -358,14 +410,13 @@ export default function LeagueFixturesPage() {
                 </svg>
                 {isRefreshing ? "Refreshing..." : "Refresh"}
               </button>
-              {deadline && !hasResults && !isLive && (
+              {deadline && !hasResults && !isLive && !isLoadingLive && (
                 <span className="text-sm text-gray-400">Deadline: {formatDeadline(deadline)}</span>
               )}
-              {liveCachedAt && (
-                <span className="text-xs text-gray-500">
-                  Updated: {new Date(liveCachedAt).toLocaleTimeString()}
-                </span>
-              )}
+              <LiveFreshness
+                updatedAt={liveCachedAt}
+                isRefreshing={isBackgroundRefreshing}
+              />
             </div>
 
             {hasGroupB ? (
