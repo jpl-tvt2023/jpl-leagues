@@ -71,12 +71,45 @@ export interface FPLLiveData {
 }
 
 /**
+ * In-flight bootstrap requests, keyed by lane.
+ *
+ * bootstrap-static is the single most duplicated call in the app: twenty call
+ * sites, and several ask for it twice at once — `Promise.all([fetchElementInfo(),
+ * fetchBootstrapData()])` in the auction routes is two identical requests every
+ * time the cache is cold, because neither has written it yet when the other
+ * starts. Overlapping callers now share one request.
+ *
+ * Keyed by lane, never shared across lanes, and that matters for correctness
+ * rather than tidiness. The two lanes have different permissions: background
+ * calls are refused while a scoring run holds the lock, critical calls are
+ * always attempted. Letting a background caller await a critical request would
+ * smuggle it past a refusal it was supposed to receive; the reverse would
+ * subject scoring to a refusal it is meant to be exempt from.
+ */
+const inFlightBootstrap = new Map<FplLane, Promise<unknown>>();
+
+/**
  * Fetch general bootstrap data (all players, teams, gameweeks)
  */
 export async function fetchBootstrapData(lane: FplLane = "background") {
-  const res = await fplFetch(`${FPL_BASE_URL}/bootstrap-static/`, lane);
-  if (!res.ok) throw new Error("Failed to fetch FPL bootstrap data");
-  return res.json();
+  const existing = inFlightBootstrap.get(lane);
+  if (existing) return existing;
+
+  const pending = (async () => {
+    const res = await fplFetch(`${FPL_BASE_URL}/bootstrap-static/`, lane);
+    if (!res.ok) throw new Error("Failed to fetch FPL bootstrap data");
+    return res.json();
+  })();
+
+  inFlightBootstrap.set(lane, pending);
+  // Dropped as soon as it settles, so the next caller re-checks the caches
+  // upstream instead of being pinned to one snapshot for the whole process.
+  // A rejection is cleared the same way — it must not be replayed to everyone.
+  void pending.catch(() => undefined).finally(() => {
+    if (inFlightBootstrap.get(lane) === pending) inFlightBootstrap.delete(lane);
+  });
+
+  return pending;
 }
 
 /**

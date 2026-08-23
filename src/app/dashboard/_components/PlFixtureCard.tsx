@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { GwNavigator } from "@/components/GwNavigator";
-import { FplEntryLink } from "@/components/FplEntryLink";
-import { PlayerBreakdown, type Fixture, type LiveFixtureScore } from "@/app/[leagueSlug]/_components/fixtures/shared";
-import { FPL_CHIP_ORDER, FPL_CHIP_LABELS } from "@/lib/fpl-league/chips";
+import {
+  PlayerBreakdown,
+  type BreakdownChips,
+  type Fixture,
+  type LiveFixtureScore,
+} from "@/app/[leagueSlug]/_components/fixtures/shared";
+import { chipState, type ChipState, type FplChipStatus } from "@/lib/fpl-league/chips";
 
 /**
  * The dashboard's PL Fixture card.
@@ -14,17 +18,51 @@ import { FPL_CHIP_ORDER, FPL_CHIP_LABELS } from "@/lib/fpl-league/chips";
  * re-fetch the entire dashboard payload.
  */
 
-interface ChipStatus {
-  used: { code: string; gw: number }[];
-  available: string[];
-}
-
 interface SideInfo {
   teamId: string;
   name: string;
-  players: { name: string; fplId: string; fplUrl: string; fplChips: ChipStatus | null }[];
-  tvtChips: { set: 1 | 2 | "playoffs"; doublePointer: boolean; challengeChip: boolean; winWin: boolean };
+  players: { name: string; fplId: string; fplUrl: string; fplChips: FplChipStatus | null }[];
+  tvtChips: {
+    set: 1 | 2 | "playoffs";
+    doublePointer: boolean;
+    challengeChip: boolean;
+    winWin: boolean;
+    /** Gameweek each spent chip was played in. Past deadlines only. */
+    usedGws: { code: string; gw: number }[];
+  };
   playersLeft: { leftToPlay: number; total: number } | null;
+}
+
+/** TVT chips in display order, with the flag on SideInfo that marks each spent. */
+const TVT_CHIPS: { code: string; label: string; flag: keyof SideInfo["tvtChips"] }[] = [
+  { code: "DP", label: "Double Pointer", flag: "doublePointer" },
+  { code: "CC", label: "Challenge Chip", flag: "challengeChip" },
+  { code: "WW", label: "Win-Win", flag: "winWin" },
+];
+
+/**
+ * Fold one side's chip state into the shape the points breakdown renders.
+ *
+ * The two families resolve differently. FPL chips carry the gameweek they were
+ * played, so their state falls straight out of `chipState`. A TVT chip may be
+ * flagged spent while its gameweek is deliberately withheld — declarations for
+ * a gameweek whose deadline has not passed are not published, so an opponent
+ * cannot read them early. That case is "past" with no gameweek: spent, but we
+ * are not saying when.
+ */
+function buildChips(side: SideInfo, gwNumber: number | null): BreakdownChips {
+  const playedIn = new Map(side.tvtChips.usedGws.map((u) => [u.code, u.gw]));
+
+  return {
+    byFplId: Object.fromEntries(side.players.map((p) => [p.fplId, p.fplChips])),
+    tvtLabel: side.tvtChips.set === "playoffs" ? "playoffs" : `Set ${side.tvtChips.set}`,
+    tvt: TVT_CHIPS.map(({ code, label, flag }) => {
+      const gw = playedIn.get(code) ?? null;
+      const spent = side.tvtChips[flag] === true;
+      const state: ChipState = gw != null ? chipState(gw, gwNumber) : spent ? "past" : "available";
+      return { code, label, state, gw };
+    }),
+  };
 }
 
 interface Payload {
@@ -49,7 +87,9 @@ export function PlFixtureCard() {
   const [gw, setGw] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  // Open by default: the breakdown now carries the chip rows too, so a
+  // collapsed card would hide them entirely.
+  const [expanded, setExpanded] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (targetGw: number | null, refresh = false) => {
@@ -199,18 +239,24 @@ export function PlFixtureCard() {
             <SideHeader side={fixture.away} label="AWAY" score={hasScore ? awayScore : undefined} align="right" />
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:gap-4 mb-3">
-            <SideChips side={fixture.home} linkGw={data.linkGw} />
-            <SideChips side={fixture.away} linkGw={data.linkGw} />
-          </div>
-
           <button
             onClick={() => setExpanded(!expanded)}
             className="w-full text-center text-[11px] text-gray-500 hover:text-gray-300 transition py-1"
           >
             {expanded ? "▲ Hide points breakdown" : "▼ Points breakdown"}
           </button>
-          {expanded && <PlayerBreakdown fixture={asFixture} liveData={live ?? undefined} />}
+          {expanded && (
+            <PlayerBreakdown
+              fixture={asFixture}
+              liveData={live ?? undefined}
+              homeChips={buildChips(fixture.home, data.gw)}
+              awayChips={buildChips(fixture.away, data.gw)}
+              // Not data.gw: FPL cannot render a gameweek that has not kicked
+              // off, so paging forward must keep the links on the last one that
+              // started.
+              linkGw={data.linkGw}
+            />
+          )}
         </>
       )}
     </div>
@@ -233,81 +279,6 @@ function SideHeader({
       <div className="text-xs text-gray-400 mb-1">{label}</div>
       <div className="text-lg font-bold text-white truncate max-w-[10rem]">{side.name}</div>
       {score !== undefined && <div className="text-xl font-bold text-white">{score}</div>}
-      {side.playersLeft && (
-        <div className="text-[10px] text-emerald-400 mt-0.5">
-          ⏳ {side.playersLeft.leftToPlay}/{side.playersLeft.total} left
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Per-side chip state: the two managers' FPL chips, plus the team's TVT chips. */
-function SideChips({ side, linkGw }: { side: SideInfo; linkGw: number | null }) {
-  const tvt: [string, boolean, string][] = [
-    ["DP", side.tvtChips.doublePointer, "Double Pointer"],
-    ["CC", side.tvtChips.challengeChip, "Challenge Chip"],
-    ["WW", side.tvtChips.winWin, "Win-Win"],
-  ];
-
-  return (
-    <div className="p-2 rounded-lg bg-white/5 border border-white/10">
-      <div className="text-[10px] text-gray-400 mb-1 truncate">{side.name}</div>
-
-      {side.players.map((p) => (
-        <div key={p.fplId} className="mb-1.5">
-          <FplEntryLink
-            fplId={p.fplId}
-            gw={linkGw}
-            className="text-[11px] text-blue-400 hover:text-blue-300 underline truncate block"
-          >
-            {p.name}
-          </FplEntryLink>
-          <div className="flex flex-wrap gap-0.5 mt-0.5">
-            {p.fplChips ? (
-              FPL_CHIP_ORDER.map((code) => {
-                const used = p.fplChips!.used.find((u) => u.code === code);
-                return (
-                  <span
-                    key={code}
-                    title={used ? `${FPL_CHIP_LABELS[code]} — played GW${used.gw}` : `${FPL_CHIP_LABELS[code]} — available`}
-                    className={`px-1 py-px rounded text-[8px] font-semibold border ${
-                      used
-                        ? "bg-purple-500/25 text-purple-200 border-purple-400/30"
-                        : "border-white/15 text-gray-500"
-                    }`}
-                  >
-                    {code}
-                  </span>
-                );
-              })
-            ) : (
-              <span className="text-[8px] text-gray-600">FPL chips unavailable</span>
-            )}
-          </div>
-        </div>
-      ))}
-
-      <div className="mt-1 pt-1 border-t border-white/10">
-        <div className="text-[9px] text-gray-500 mb-0.5">
-          TVT chips {side.tvtChips.set === "playoffs" ? "(playoffs)" : `(Set ${side.tvtChips.set})`}
-        </div>
-        <div className="flex gap-0.5">
-          {tvt.map(([code, used, label]) => (
-            <span
-              key={code}
-              title={`${label} — ${used ? "used" : "available"}`}
-              className={`px-1 py-px rounded text-[8px] font-semibold border ${
-                used
-                  ? "bg-amber-500/20 text-amber-300 border-amber-400/30"
-                  : "border-white/15 text-gray-500"
-              }`}
-            >
-              {code}
-            </span>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

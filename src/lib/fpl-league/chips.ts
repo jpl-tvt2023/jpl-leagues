@@ -30,6 +30,30 @@ export interface FplChipStatus {
   available: FplChipCode[];
 }
 
+/**
+ * How a chip should read to someone looking at gameweek N.
+ *
+ * Three states rather than the played/unplayed pair the UI used to show,
+ * because "played" answers the wrong question during a live gameweek: a chip
+ * burned in GW3 and a chip being played right now are both "used", but only
+ * one of them is still affecting the score on screen.
+ */
+export type ChipState = "past" | "current" | "available";
+
+/**
+ * @param usedGw   the gameweek the chip was played in, or null/undefined if unplayed
+ * @param currentGw the gameweek being displayed — null when none resolves, in
+ *                  which case a played chip is simply "past"
+ */
+export function chipState(
+  usedGw: number | null | undefined,
+  currentGw: number | null | undefined
+): ChipState {
+  if (usedGw == null) return "available";
+  if (currentGw != null && usedGw === currentGw) return "current";
+  return "past";
+}
+
 /** FPL's raw chip names → our display codes. Wildcards are handled separately. */
 const NAME_TO_CODE: Record<string, FplChipCode> = {
   bboost: "BB",

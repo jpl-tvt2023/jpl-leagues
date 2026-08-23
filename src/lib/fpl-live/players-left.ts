@@ -57,7 +57,7 @@ export interface FplFixture {
  * Logs to console.warn on suspicious responses (non-2xx, non-array, empty)
  * so Vercel logs surface what's happening when the UI shows "—".
  */
-async function getAllFplFixtures(): Promise<FplFixture[] | null> {
+async function loadAllFplFixtures(): Promise<FplFixture[] | null> {
   const r = getRedis();
 
   if (r) {
@@ -93,6 +93,40 @@ async function getAllFplFixtures(): Promise<FplFixture[] | null> {
     console.warn("[players-left] FPL /fixtures/ fetch error", e);
     return null;
   }
+}
+
+/**
+ * In-process single-flight for the fixtures list.
+ *
+ * The Redis cache above only helps callers that are separated in time. Callers
+ * that overlap all miss it, because none of them has written it yet — and the
+ * natural shape of this code is to overlap. A single TVT fixture scores both
+ * sides with `Promise.all`, so two calls land together; the fixtures page does
+ * sixteen fixtures at once.
+ *
+ * That was not merely wasteful, it was a visible bug: the dashboard card runs
+ * on a bounded FPL budget, the duplicate request pushed it over, and the loser
+ * had its refusal quietly converted to `null` — which is why the away side
+ * showed "—" for players-left while the home side rendered fine.
+ *
+ * Everyone arriving while a fetch is in flight now awaits that same promise.
+ * The entry is dropped as soon as it settles, so the next request re-checks
+ * Redis rather than pinning one list for the lifetime of the process.
+ */
+let inFlightFixtures: Promise<FplFixture[] | null> | null = null;
+
+function getAllFplFixtures(): Promise<FplFixture[] | null> {
+  if (inFlightFixtures) return inFlightFixtures;
+
+  const pending = loadAllFplFixtures();
+  inFlightFixtures = pending;
+  void pending
+    .catch(() => null) // loadAllFplFixtures resolves null rather than throwing; belt and braces.
+    .finally(() => {
+      if (inFlightFixtures === pending) inFlightFixtures = null;
+    });
+
+  return pending;
 }
 
 /**

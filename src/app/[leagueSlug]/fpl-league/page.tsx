@@ -6,7 +6,8 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useLeague } from "@/lib/league-context";
 import { fplEntryUrl } from "@/lib/fpl-links";
-import { FPL_CHIP_ORDER, FPL_CHIP_LABELS } from "@/lib/fpl-league/chips";
+import { FplChipRow } from "@/components/ChipPill";
+import { type FplChipStatus } from "@/lib/fpl-league/chips";
 
 interface Row {
   rank: number;
@@ -17,7 +18,7 @@ interface Row {
   gwPoints: number | null;
   gwTransferCost: number;
   totalPoints: number;
-  chips: { used: { code: string; gw: number }[]; available: string[] };
+  chips: FplChipStatus;
   pending?: true;
 }
 
@@ -273,7 +274,12 @@ export default function FplLeaguePage() {
                           {row.pending ? <span className="text-gray-600">—</span> : row.totalPoints}
                         </td>
                         <td className="px-2 py-2 sm:px-3">
-                          <ChipPills chips={row.chips} />
+                          <div className="flex flex-wrap gap-1">
+                            {/* Coloured against the gameweek this table is showing, so a
+                                chip being played right now reads differently from one
+                                spent weeks ago. */}
+                            <FplChipRow status={row.chips} gwNumber={data.gw} />
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -289,46 +295,6 @@ export default function FplLeaguePage() {
           </>
         )}
       </div>
-    </div>
-  );
-}
-
-/** Six fixed pills: filled once played, dim outline while still available. */
-function ChipPills({ chips }: { chips: Row["chips"] }) {
-  const usedByCode = new Map(chips.used.map((u) => [u.code, u.gw]));
-  // Anything FPL returned that is not one of the six standard chips (a new
-  // chip in a future season) still gets a pill rather than disappearing.
-  const extras = chips.used.filter((u) => !FPL_CHIP_ORDER.includes(u.code as never));
-
-  return (
-    <div className="flex flex-wrap gap-1">
-      {FPL_CHIP_ORDER.map((code) => {
-        const gw = usedByCode.get(code);
-        return (
-          <span
-            key={code}
-            title={gw ? `${FPL_CHIP_LABELS[code]} — played GW${gw}` : `${FPL_CHIP_LABELS[code]} — available`}
-            className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border ${
-              gw
-                ? "bg-purple-500/25 text-purple-200 border-purple-400/30"
-                : "border-white/15 text-gray-500"
-            }`}
-          >
-            {code}
-            {gw ? <span className="opacity-70"> {gw}</span> : null}
-          </span>
-        );
-      })}
-      {extras.map((u) => (
-        <span
-          key={u.code}
-          title={`${u.code} — played GW${u.gw}`}
-          className="px-1.5 py-0.5 rounded text-[9px] font-semibold border bg-purple-500/25 text-purple-200 border-purple-400/30"
-        >
-          {u.code}
-          <span className="opacity-70"> {u.gw}</span>
-        </span>
-      ))}
     </div>
   );
 }

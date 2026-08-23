@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { teams, fixtures, gameweeks, leagues } from "@/lib/db/schema";
-import { and, asc, eq, or } from "drizzle-orm";
+import { teams, fixtures, gameweeks, leagues, gameweekChips } from "@/lib/db/schema";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { fplEntryUrl } from "@/lib/fpl-links";
 import { fetchTeamHistory } from "@/lib/fpl";
 import {
@@ -40,9 +40,30 @@ interface SideInfo {
   teamId: string;
   name: string;
   players: { name: string; fplId: string; fplUrl: string; fplChips: FplChipStatus | null }[];
-  tvtChips: { set: 1 | 2 | "playoffs"; doublePointer: boolean; challengeChip: boolean; winWin: boolean };
+  tvtChips: {
+    set: 1 | 2 | "playoffs";
+    doublePointer: boolean;
+    challengeChip: boolean;
+    winWin: boolean;
+    /**
+     * Which gameweek each spent chip was played in, so the UI can distinguish a
+     * chip burned weeks ago from one in play right now. Past deadlines only —
+     * see the filter in loadTvtChipGameweeks.
+     */
+    usedGws: { code: string; gw: number }[];
+  };
   playersLeft: { leftToPlay: number; total: number } | null;
 }
+
+/** Stored chip type → the code shown on a pill. */
+const TVT_CHIP_CODES: Record<string, string> = {
+  D: "DP",
+  C: "CC",
+  W: "WW",
+  SL: "SL",
+  CB: "CB",
+  UD: "UD",
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -144,7 +165,12 @@ export async function GET(request: NextRequest) {
       if (!live) {
         try {
           const computed = await withFplBudget(
-            { lane: "background", label: `pl-fixture gw${gw}`, max: 8 },
+            // One fixture costs 1 live fetch + 4 picks + the shared fixtures and
+            // bootstrap lookups: seven on a cold cache. The old ceiling of 8 sat
+            // close enough that a single duplicated lookup pushed it over, and a
+            // budget refusal surfaces as a silently missing players-left count
+            // rather than an error. Headroom, not a licence to fan out.
+            { lane: "background", label: `pl-fixture gw${gw}`, max: 12 },
             () =>
               computeLiveFixtureScores({
                 leagueId: league.id,
@@ -185,6 +211,38 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // ── Which gameweek each TVT chip was played in ────────────────────────
+    //
+    // ⚠️ Past deadlines ONLY, and this filter is load-bearing. A gameweek_chips
+    // row is written when a chip is DECLARED, which can be well before that
+    // gameweek's deadline — and this payload goes to both teams in the fixture.
+    // Including a pending row would let a team see their opponent's Double
+    // Pointer before choosing their own captain: precisely the leak that the
+    // used/available booleans below were introduced to prevent.
+    const chipRows = await db
+      .select({
+        teamId: gameweekChips.teamId,
+        chipType: gameweekChips.chipType,
+        gameweekId: gameweekChips.gameweekId,
+      })
+      .from(gameweekChips)
+      .where(
+        and(
+          inArray(gameweekChips.teamId, [fixtureRow.homeTeamId, fixtureRow.awayTeamId]),
+          eq(gameweekChips.isValid, true)
+        )
+      );
+
+    const usedGwsByTeam = new Map<string, { code: string; gw: number }[]>();
+    for (const row of chipRows) {
+      const chipGw = gwById.get(row.gameweekId);
+      if (!chipGw || chipGw.deadline > now) continue; // not public yet
+      const list = usedGwsByTeam.get(row.teamId) ?? [];
+      list.push({ code: TVT_CHIP_CODES[row.chipType] ?? row.chipType, gw: chipGw.number });
+      usedGwsByTeam.set(row.teamId, list);
+    }
+    for (const list of usedGwsByTeam.values()) list.sort((a, b) => a.gw - b.gw);
+
     const chipSet = getChipSet(gw, league.playoffStartGw ?? 31);
 
     const buildSide = (
@@ -208,6 +266,7 @@ export async function GET(request: NextRequest) {
         doublePointer: chipSet === 1 ? row.doublePointerSet1Used : chipSet === 2 ? row.doublePointerSet2Used : false,
         challengeChip: chipSet === 1 ? row.challengeChipSet1Used : chipSet === 2 ? row.challengeChipSet2Used : false,
         winWin: chipSet === 1 ? row.winWinSet1Used : chipSet === 2 ? row.winWinSet2Used : false,
+        usedGws: usedGwsByTeam.get(t.id) ?? [],
       },
       playersLeft,
     });

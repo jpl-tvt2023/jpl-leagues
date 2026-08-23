@@ -111,6 +111,49 @@ test.describe.serial("FPL League (TVT)", () => {
     }
   });
 
+  test("the gameweek column is that gameweek alone, never a running total", async ({ request }) => {
+    // The distinction only becomes visible from GW2 onwards: at GW1 a manager's
+    // gameweek score and their season total are the same number, so a column
+    // that had been quietly summing every gameweek would look perfectly correct.
+    //
+    // GW3, not GW2: "in flight" is decided from OUR gameweek rows (deadline
+    // passed, no result yet) and beforeAll already expired GW1-3, so the app
+    // considers GW3 live whatever the stub says. Pointing the stub at GW2 would
+    // only create a disagreement between the two, which is not what this tests.
+    //
+    // The cached histories are reused deliberately. entryHistory depends only on
+    // max(finishedThrough, liveGw), which is 3 both before and after this change,
+    // so their contents are identical -- and discarding them would leave every
+    // row pending behind the warm single-flight, with nothing to assert on.
+    await request.post("/api/test-fpl-stub/control", {
+      data: { finishedThrough: 2, liveGw: 3 },
+    });
+
+    const body = (await loadUntilWarm(request, league.slug)) as unknown as {
+      gw: number;
+      isLive: boolean;
+      rows: { fplId: string; gwPoints: number | null; totalPoints: number }[];
+    };
+    expect(body.gw).toBe(3);
+    expect(body.isLive, "GW3 is in flight").toBe(true);
+
+    const row = body.rows.find((r) => r.gwPoints != null);
+    expect(row, "at least one manager should have GW3 points").toBeTruthy();
+
+    const history = await (
+      await request.get(`/api/test-fpl-stub/entry/${row!.fplId}/history`)
+    ).json();
+    const liveGw = history.current.find((c: { event: number }) => c.event === 3);
+    const cumulative = history.current[history.current.length - 1].total_points;
+
+    // Guards the guard: if these two were equal the assertion below would pass
+    // for a cumulative column as well, and prove nothing.
+    expect(liveGw.points, "GW3 alone must differ from the season total").not.toBe(cumulative);
+
+    expect(row!.gwPoints, "GW column is GW3 alone").toBe(liveGw.points);
+    expect(row!.totalPoints, "Total column carries the cumulative figure").toBe(cumulative);
+  });
+
   test("a gameweek with no data yet renders as blank rather than failing", async ({ request }) => {
     // GW30 is a real gameweek but nothing has been played in it, so every
     // manager should come back with null points and the page should still
