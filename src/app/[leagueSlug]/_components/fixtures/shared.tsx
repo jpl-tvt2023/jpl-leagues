@@ -1,6 +1,7 @@
 "use client";
 
 import { PlayerScoreFormula } from "../playoffs/shared";
+import { FplEntryLink } from "@/components/FplEntryLink";
 
 export interface LivePlayerScore {
   name: string;
@@ -24,6 +25,9 @@ export interface LiveFixtureScore {
   awayScore: number;
   homePlayers: LivePlayerScore[];
   awayPlayers: LivePlayerScore[];
+  /** Fixtures still to play across the side's active XI. null = FPL unreachable. */
+  homePlayersLeft?: { leftToPlay: number; total: number } | null;
+  awayPlayersLeft?: { leftToPlay: number; total: number } | null;
 }
 
 export interface FixtureTeam {
@@ -59,16 +63,38 @@ export function PlayerBreakdownSide({
   gwNumber,
   isGhost,
   ghostScore,
+  playersLeft,
 }: {
   players: LivePlayerScore[];
   teamLabel: string;
   gwNumber: number;
   isGhost?: boolean;
   ghostScore?: number;
+  playersLeft?: { leftToPlay: number; total: number } | null;
 }) {
   return (
     <div>
       <div className="text-[10px] text-gray-400 mb-1 text-center">{teamLabel}</div>
+      {playersLeft !== undefined && !isGhost && (
+        <div
+          className={`text-[10px] mb-1 text-center ${
+            playersLeft === null
+              ? "text-gray-600"
+              : playersLeft.leftToPlay > 0
+              ? "text-emerald-400"
+              : "text-gray-500"
+          }`}
+          title={
+            playersLeft === null
+              ? "Could not reach FPL for fixture data"
+              : "Fixtures still to play across both managers' active picks"
+          }
+        >
+          {playersLeft === null
+            ? "—"
+            : `⏳ ${playersLeft.leftToPlay}/${playersLeft.total} left`}
+        </div>
+      )}
       {isGhost ? (
         <div className="text-center py-3">
           <span className="text-purple-400 italic text-xs">Ghost (Group Avg)</span>
@@ -80,15 +106,14 @@ export function PlayerBreakdownSide({
         players.map((p, i) => (
           <div key={i} className="flex items-center justify-between py-1">
             <div className="flex items-center gap-1 min-w-0">
-              <a
-                href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gwNumber}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <FplEntryLink
+                fplId={p.fplId}
+                gw={gwNumber}
                 className="text-blue-400 hover:text-blue-300 underline truncate"
-                onClick={(e) => e.stopPropagation()}
+                stopPropagation
               >
                 {p.name}
-              </a>
+              </FplEntryLink>
               {p.isCaptain && p.isTempCaptain && (
                 <span
                   className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 shrink-0"
@@ -159,6 +184,7 @@ export function PlayerBreakdown({
           gwNumber={gwNumber}
           isGhost={fixture.homeTeam.isGhost}
           ghostScore={fixture.result?.homeScore}
+          playersLeft={liveData?.homePlayersLeft}
         />
         <PlayerBreakdownSide
           players={awayPlayers}
@@ -166,6 +192,7 @@ export function PlayerBreakdown({
           gwNumber={gwNumber}
           isGhost={fixture.awayTeam.isGhost}
           ghostScore={fixture.result?.awayScore}
+          playersLeft={liveData?.awayPlayersLeft}
         />
       </div>
       {hasTempCaptain && (

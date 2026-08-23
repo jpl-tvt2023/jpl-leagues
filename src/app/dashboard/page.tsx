@@ -9,6 +9,8 @@ import { TierChip } from "@/components/TierChip";
 import { Logo } from "@/components/Logo";
 import { HelpTip } from "@/components/HelpTip";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
+import { fplEntryUrl, fplEntryLabel } from "@/lib/fpl-links";
+import { PlFixtureCard } from "./_components/PlFixtureCard";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
 import { EligibilitySelect } from "@/app/dashboard/_components/EligibilitySelect";
 import { WishlistManager } from "@/components/WishlistManager";
@@ -39,8 +41,12 @@ interface DashboardData {
   submission: {
     gameweek: number;
     timestamp: string | null;
-    state: "open" | "locked" | "closed";
+    state: "open" | "locked" | "awaiting-results" | "closed";
     opensAt: string | null;
+    /** Set when state is "awaiting-results": the GW FPL has not finished yet. */
+    awaitingGw: number | null;
+    /** True when FPL status was unavailable and the window fell open. */
+    degraded: boolean;
   };
   serverTime: string;
   upcomingFixture: {
@@ -981,6 +987,20 @@ export default function DashboardPage() {
     return () => clearTimeout(timer);
   }, [data?.submission?.state, data?.submission?.opensAt, data?.serverTime, fetchDashboard]);
 
+  // While waiting on FPL to finalise the previous gameweek there is no known
+  // opensAt to schedule against — FPL decides. Poll instead, but slowly: the
+  // underlying fetchEventStatus is Redis-cached for 10 minutes, so a faster
+  // interval returns identical bytes and just burns the dashboard route. The
+  // document.hidden guard keeps background tabs quiet, and the existing
+  // focus/visibilitychange refetch covers the user returning to the tab.
+  useEffect(() => {
+    if (data?.submission?.state !== "awaiting-results") return;
+    const id = setInterval(() => {
+      if (!document.hidden) fetchDashboard();
+    }, 10 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [data?.submission?.state, fetchDashboard]);
+
   // GW navigation handlers
   const handlePrevGw = () => {
     if (data && viewedGw && data.minCompletedGw && viewedGw > data.minCompletedGw) {
@@ -996,12 +1016,15 @@ export default function DashboardPage() {
   };
 
   const handleLiveRefresh = async () => {
-    if (!data || !viewedGw) return;
+    if (!data || !viewedGw || !leagueSlug) return;
     setLiveRefreshing(true);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${viewedGw}`, {
-        credentials: "include", // Ensure cookies are sent
-      });
+      // leagueSlug is required: without it the route resolved the gameweek by
+      // number alone and could return another league's fixtures entirely.
+      const res = await fetch(
+        `/api/fixtures/live/refresh?gameweek=${viewedGw}&leagueSlug=${encodeURIComponent(leagueSlug)}`,
+        { credentials: "include" } // Ensure cookies are sent
+      );
       if (res.ok) {
         const freshData = await res.json();
         // Find the fixture matching this user's team
@@ -1418,7 +1441,7 @@ export default function DashboardPage() {
                                       <div className="flex gap-2">
                                         <a href={p.fplUrl} target="_blank" rel="noopener noreferrer"
                                           className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition">
-                                          GW{data.upcomingFixture?.lastCompletedGw ?? (data.deadline.gameweek - 1)} ↗
+                                          {fplEntryLabel(data.upcomingFixture?.lastCompletedGw)} ↗
                                         </a>
                                       </div>
                                     </div>
@@ -1463,55 +1486,9 @@ export default function DashboardPage() {
                   <DeadlineTimer deadline={data.deadline.timestamp} gameweek={data.deadline.gameweek} serverTime={data.serverTime} />
                 </div>
 
-                {/* Upcoming Fixture */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                  <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                    <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} PL Fixture
-                  </h2>
-                  {data.upcomingFixture ? (
-                    <div>
-                      <div className="flex items-center justify-center gap-4 mb-3">
-                        <div className="text-center">
-                          <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "HOME" : "AWAY"}</div>
-                          <div className="text-lg font-bold text-white">{data.team.name}</div>
-                        </div>
-                        <span className="text-gray-500 font-medium">VS</span>
-                        <div className="text-center">
-                          <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "AWAY" : "HOME"}</div>
-                          <button
-                            onClick={() => setShowOpponentPlayers(!showOpponentPlayers)}
-                            className="text-lg font-bold text-blue-400 hover:text-blue-300 underline decoration-dotted underline-offset-4 transition"
-                          >
-                            {data.upcomingFixture.opponent.name}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="text-center text-xs text-gray-500 mb-2">
-                        Click opponent name to {showOpponentPlayers ? "hide" : "view"} players
-                      </div>
-                      {showOpponentPlayers && (
-                        <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/10">
-                          <div className="text-xs text-gray-400 mb-2 font-semibold">{data.upcomingFixture.opponent.name} — Players</div>
-                          <div className="space-y-2">
-                            {data.upcomingFixture.opponent.players.map((p, i) => (
-                              <div key={i} className="flex items-center justify-between">
-                                <span className="text-white text-sm">{p.name}</span>
-                                <div className="flex gap-2">
-                                  <a href={p.fplUrl} target="_blank" rel="noopener noreferrer"
-                                    className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition">
-                                    GW{data.upcomingFixture?.lastCompletedGw ?? (data.deadline.gameweek - 1)} ↗
-                                  </a>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-400">No upcoming fixture</div>
-                  )}
-                </div>
+                {/* PL Fixture — gameweek navigation, points breakdown, chip
+                    state and players-left all live in this component. */}
+                <PlFixtureCard />
               </div>
             )}
 
@@ -1614,6 +1591,31 @@ export default function DashboardPage() {
               {data.submission.state === "locked" && (
                 <div className="mb-4 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 text-sm">
                   Deadline passed — submissions reopen at {formatClockTime(data.submission.opensAt)} for GW{data.submission.gameweek + 1}.
+                </div>
+              )}
+              {data.submission.state === "awaiting-results" && (
+                <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm">
+                  <div className="font-semibold mb-1">
+                    Waiting on FPL to finalise GW{data.submission.awaitingGw}.
+                  </div>
+                  <p className="text-blue-300/80">
+                    GW{data.submission.gameweek} submissions open as soon as FPL marks
+                    GW{data.submission.awaitingGw} finished — usually within a few hours of the
+                    last match. Double Pointer and Challenge Chip eligibility depend on the final
+                    league table, so the window cannot open before then.
+                  </p>
+                  <button
+                    onClick={() => fetchDashboard()}
+                    className="mt-2 text-xs px-2 py-1 rounded bg-blue-500/20 hover:bg-blue-500/30 transition"
+                  >
+                    Check again
+                  </button>
+                </div>
+              )}
+              {data.submission.degraded && (
+                <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-gray-400 text-xs">
+                  FPL status is currently unavailable — chip eligibility shown may not reflect the
+                  final GW{data.submission.gameweek - 1} standings.
                 </div>
               )}
               {data.submission.state === "closed" && (
@@ -1925,7 +1927,9 @@ export default function DashboardPage() {
                               <div className="flex items-center gap-2">
                                 {(('fplUrl' in p && p.fplUrl) || ('fplId' in p && p.fplId)) ? (
                                   <a
-                                    href={'fplUrl' in p && p.fplUrl ? p.fplUrl : `https://fantasy.premierleague.com/entry/${'fplId' in p ? p.fplId : ''}/event/${data.lastGwResult!.gameweek}`}
+                                    href={'fplUrl' in p && p.fplUrl
+                                      ? p.fplUrl
+                                      : fplEntryUrl(('fplId' in p ? p.fplId : '') ?? '', data.lastGwResult!.gameweek)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-blue-400 hover:text-blue-300 underline"
@@ -1969,7 +1973,9 @@ export default function DashboardPage() {
                               <div className="flex items-center gap-2">
                                 {(('fplUrl' in p && p.fplUrl) || ('fplId' in p && p.fplId)) ? (
                                   <a
-                                    href={'fplUrl' in p && p.fplUrl ? p.fplUrl : `https://fantasy.premierleague.com/entry/${'fplId' in p ? p.fplId : ''}/event/${data.lastGwResult!.gameweek}`}
+                                    href={'fplUrl' in p && p.fplUrl
+                                      ? p.fplUrl
+                                      : fplEntryUrl(('fplId' in p ? p.fplId : '') ?? '', data.lastGwResult!.gameweek)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-blue-400 hover:text-blue-300 underline"

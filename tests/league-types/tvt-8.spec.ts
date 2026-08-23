@@ -20,6 +20,7 @@ import {
   getFixtureStatus,
   setupAllTeams,
   ensureGameweeks,
+  scoreGameweek,
   teamLoginId,
   TEAM_RESET_PASSWORD,
   uiSignIn,
@@ -39,8 +40,10 @@ test.describe.serial("TVT-8 (admin + user)", () => {
     league = await createTvtLeague(request, { teams: 8 });
     teams = await setupAllTeams(request, league.slug, league.teamSize, "tvt");
     await apiSignInSuperadmin(request);
-    await generateFixtures(request, league.slug);
+    // Gameweeks must exist first — generate-fixtures rejects a league with no
+    // league-stage gameweeks (it needs their deadlines to place fixtures).
     await ensureGameweeks(league.id);
+    await generateFixtures(request, league.slug);
   });
 
   // -------------------- ADMIN SCENARIOS --------------------
@@ -59,6 +62,10 @@ test.describe.serial("TVT-8 (admin + user)", () => {
     await deleteFixtures(request, league.slug);
     const after = await getFixtureStatus(request, league.slug);
     expect(after.fixturesGenerated).toBe(false);
+    // DELETE removes the league-stage gameweeks along with the fixtures (see
+    // the DELETE handler in generate-fixtures/route.ts), so put them back
+    // before regenerating.
+    await ensureGameweeks(league.id);
     const summary = await generateFixtures(request, league.slug);
     expect(summary.leagueStageGws).toBe(35);
     expect(summary.repetitions).toBe(5);
@@ -81,10 +88,16 @@ test.describe.serial("TVT-8 (admin + user)", () => {
 
   test("admin: backup export round-trips through the backups list", async ({ request }) => {
     await apiSignInSuperadmin(request);
-    const create = await request.post(`/api/admin/${league.slug}/backup`, { data: {} });
+    // Creating a snapshot is POST /backups (plural). The singular /backup
+    // route is GET-only — it downloads an export — so POSTing there 405s.
+    const create = await request.post(`/api/admin/${league.slug}/backups`, { data: {} });
     expect(create.ok()).toBeTruthy();
+    const created = await create.json();
+    expect(created.success).toBe(true);
+
     const list = await request.get(`/api/admin/${league.slug}/backups`).then((r) => r.json());
-    expect(Array.isArray(list.backups ?? list)).toBeTruthy();
+    expect(Array.isArray(list.backups)).toBeTruthy();
+    expect(list.backups.some((b: { id: string }) => b.id === created.id)).toBe(true);
   });
 
   // -------------------- USER SCENARIOS --------------------
@@ -95,6 +108,11 @@ test.describe.serial("TVT-8 (admin + user)", () => {
   });
 
   test("user: public standings page shows seeded teams", async ({ page }) => {
+    // The standings page deliberately renders a "Standings Coming Soon"
+    // placeholder until at least one match has been played, so score GW1
+    // first — this also exercises the real standings aggregation rather than
+    // just asserting a page loads.
+    await scoreGameweek(league.id, 1, () => ({ home: 60, away: 50 }));
     await expectStandingsHasTeam(page, league.slug, teams[0].name);
   });
 
@@ -114,7 +132,10 @@ test.describe.serial("TVT-8 (admin + user)", () => {
 
     // Pick the first player from the team's dashboard
     const dash = await request.get("/api/team/dashboard").then((r) => r.json());
-    const players = dash?.team?.players ?? dash?.players ?? [];
+    // Player IDs come from captaincyStatus — the dashboard's `teamMembers`
+    // array carries names/fplIds for display but deliberately no row ids.
+    const players = [dash?.captaincyStatus?.player1, dash?.captaincyStatus?.player2]
+      .filter((p): p is { id: string; name: string } => Boolean(p?.id));
     expect(players.length).toBeGreaterThan(0);
 
     const res = await request.post("/api/team/captain", {
@@ -127,11 +148,14 @@ test.describe.serial("TVT-8 (admin + user)", () => {
 
   test("user: chip submission succeeds for an enabled chip", async ({ request }) => {
     await apiSignInTeam(request, league.slug, 2);
+    // Win-Win, not Double Pointer: DP is deliberately ineligible in GW1
+    // because its rank rule needs a league table that does not exist yet
+    // (see double-pointer-eligibility.ts). WW carries no positional constraint.
     const res = await request.post("/api/team/chips", {
-      data: { gameweek: 1, chipType: "D" }, // Double Pointer — enabled by default
+      data: { gameweek: 1, chipType: "W" }, // Win-Win — enabled by default
       failOnStatusCode: false,
     });
-    expect(res.ok()).toBeTruthy();
+    expect(res.ok(), `chips POST failed: ${res.status()} ${await res.text()}`).toBeTruthy();
     await apiSignOut(request);
   });
 

@@ -17,6 +17,7 @@ import {
   getFixtureStatus,
   setupAllTeams,
   ensureGameweeks,
+  scoreGameweek,
   expectStandingsHasTeam,
   expectFixturesPageRenders,
   expectPageLoads,
@@ -33,8 +34,10 @@ test.describe.serial("TVT-16 (admin + user)", () => {
     league = await createTvtLeague(request, { teams: 16 });
     teams = await setupAllTeams(request, league.slug, league.teamSize, "tvt");
     await apiSignInSuperadmin(request);
-    await generateFixtures(request, league.slug);
+    // Gameweeks must exist first — generate-fixtures rejects a league with no
+    // league-stage gameweeks (it needs their deadlines to place fixtures).
     await ensureGameweeks(league.id);
+    await generateFixtures(request, league.slug);
   });
 
   test("admin: 16-team league has 30 league-stage GWs and 2 repetitions", async ({ request }) => {
@@ -68,6 +71,8 @@ test.describe.serial("TVT-16 (admin + user)", () => {
   });
 
   test("user: team can view standings + fixtures pages", async ({ page }) => {
+    // Standings show a placeholder until a match is played — score GW1 first.
+    await scoreGameweek(league.id, 1, () => ({ home: 60, away: 50 }));
     await expectStandingsHasTeam(page, league.slug, teams[0].name);
     await expectFixturesPageRenders(page, league.slug);
   });
@@ -79,7 +84,10 @@ test.describe.serial("TVT-16 (admin + user)", () => {
   test("user: captain submission flow works for an authenticated team", async ({ request }) => {
     await apiSignInTeam(request, league.slug, 1);
     const dash = await request.get("/api/team/dashboard").then((r) => r.json());
-    const players = dash?.team?.players ?? dash?.players ?? [];
+    // Player IDs come from captaincyStatus — the dashboard's `teamMembers`
+    // array carries names/fplIds for display but deliberately no row ids.
+    const players = [dash?.captaincyStatus?.player1, dash?.captaincyStatus?.player2]
+      .filter((p): p is { id: string; name: string } => Boolean(p?.id));
     expect(players.length).toBeGreaterThan(0);
     const res = await request.post("/api/team/captain", {
       data: { playerId: players[0].id, gameweek: 1 },

@@ -35,6 +35,9 @@ yarn-error.log*
 # Opt-in: .env.test contains only file:./test.db + a throwaway session secret.
 # Safe to commit so teammates/CI can run `npm run test:e2e` without extra setup.
 !.env.test
+# The placeholder overlay is committed; the real `.env.test.local` it is copied
+# to holds live Upstash tokens and stays ignored by the `.env*` rule above.
+!.env.test.local.example
 
 # vercel
 .vercel

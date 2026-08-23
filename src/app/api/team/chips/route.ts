@@ -4,6 +4,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { resolveSubmissionWindow, formatLateness } from "@/lib/gameweek-window";
+import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
 import { CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
 
@@ -133,13 +134,18 @@ export async function POST(request: NextRequest) {
       orderBy: asc(gameweeks.number),
     });
     const now = new Date();
-    const window = resolveSubmissionWindow(allLeagueGws, now);
+    const finishedGws = await getFinishedGwNumbers();
+    const window = resolveSubmissionWindow(allLeagueGws, now, finishedGws, {
+      requirePreviousFinished: leagueRow[0].format === "tvt",
+    });
 
     if (window.state !== "open" || window.gw?.number !== gameweekNumber) {
       const deadline = new Date(gw.deadline);
       const isLate = deadline <= now;
       const message = isLate
         ? `GW${gameweekNumber}'s deadline (${deadline.toISOString()}) passed ${formatLateness(now.getTime() - deadline.getTime())} before your submission arrived at ${now.toISOString()} — rejected.`
+        : window.state === "awaiting-results"
+        ? `GW${gameweekNumber} is not open yet: FPL has not marked GW${window.awaitingGw} finished. Double Pointer and Challenge Chip depend on the final league table, so declarations open once GW${window.awaitingGw} is settled.`
         : `GW${gameweekNumber} is not currently open for submissions.`;
 
       await db.insert(auditLogs).values({
@@ -366,8 +372,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Load league config (playoffStartGw drives dynamic set boundaries)
-    const leagueRow = await db.select({ playoffStartGw: leagues.playoffStartGw })
+    // Load league config (playoffStartGw drives dynamic set boundaries; format
+    // decides whether the previous GW must be FPL-finished before the window opens)
+    const leagueRow = await db.select({ format: leagues.format, playoffStartGw: leagues.playoffStartGw })
       .from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
     if (leagueRow.length === 0) {
       return NextResponse.json({ error: "League not found" }, { status: 404 });
@@ -383,13 +390,25 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Gameweek not found" }, { status: 404 });
     }
 
-    // Check deadline
+    // Cancelling is governed by exactly the same window as submitting. This
+    // used to check only `gw.deadline < now`, which let a team withdraw a chip
+    // for a gameweek that was no longer the open one.
     const now = new Date();
-    if (gw.deadline && gw.deadline < now) {
-      return NextResponse.json(
-        { error: "Cannot cancel chip after deadline has passed" },
-        { status: 400 }
-      );
+    const allLeagueGws = await db.query.gameweeks.findMany({
+      where: eq(gameweeks.leagueId, team.leagueId),
+      orderBy: asc(gameweeks.number),
+    });
+    const finishedGws = await getFinishedGwNumbers();
+    const window = resolveSubmissionWindow(allLeagueGws, now, finishedGws, {
+      requirePreviousFinished: leagueRow[0].format === "tvt",
+    });
+
+    if (window.state !== "open" || window.gw?.number !== gameweekNumber) {
+      const message =
+        gw.deadline && gw.deadline < now
+          ? "Cannot cancel chip after deadline has passed"
+          : `GW${gameweekNumber} is not currently open for submissions.`;
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
     // Find the chip submission

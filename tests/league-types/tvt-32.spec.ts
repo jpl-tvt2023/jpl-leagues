@@ -18,6 +18,7 @@ import {
   getFixtureStatus,
   setupAllTeams,
   ensureGameweeks,
+  scoreGameweek,
   expectStandingsHasTeam,
   expectFixturesPageRenders,
   expectPageLoads,
@@ -38,8 +39,10 @@ test.describe.serial("TVT-32 (admin + user)", () => {
     league = await createTvtLeague(request, { teams: 32 });
     teams = await setupAllTeams(request, league.slug, league.teamSize, "tvt");
     await apiSignInSuperadmin(request);
-    await generateFixtures(request, league.slug);
+    // Gameweeks must exist first — generate-fixtures rejects a league with no
+    // league-stage gameweeks (it needs their deadlines to place fixtures).
     await ensureGameweeks(league.id);
+    await generateFixtures(request, league.slug);
   });
 
   test("admin: league has 32 teams split across 2 groups", async () => {
@@ -82,6 +85,8 @@ test.describe.serial("TVT-32 (admin + user)", () => {
   });
 
   test("user: standings page lists at least one of the 32 teams", async ({ page }) => {
+    // Standings show a placeholder until a match is played — score GW1 first.
+    await scoreGameweek(league.id, 1, () => ({ home: 60, away: 50 }));
     await expectStandingsHasTeam(page, league.slug, teams[0].name);
   });
 

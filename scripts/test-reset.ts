@@ -9,6 +9,7 @@
  * 2. Deletes the existing SQLite file (and -shm / -wal sidecars).
  * 3. Runs `drizzle-kit push` against the empty file to recreate every table.
  * 4. Seeds one superadmin user that every spec reuses for setup.
+ * 5. Flushes the test Redis, if one is configured (see flushTestRedis).
  */
 
 import "dotenv/config";
@@ -16,6 +17,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { createClient } from "@libsql/client";
+import { Redis } from "@upstash/redis";
 import { drizzle } from "drizzle-orm/libsql";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -105,11 +107,60 @@ async function seedSuperadmin(url: string) {
   console.log(`  ✓ seeded superadmin (${TEST_SUPERADMIN.email} / ${TEST_SUPERADMIN.password})`);
 }
 
+/**
+ * Flush the test Redis, if one is configured.
+ *
+ * Page caches live for 25 hours (standings:v2:*, fixtures:*, playoffs:*), so
+ * without this a database wipe leaves the previous run's caches happily serving
+ * data for leagues that no longer exist -- which surfaces as a spec failing on
+ * numbers from a league it never created.
+ *
+ * Guarded the same way guardDatabaseUrl guards the database, and for the same
+ * reason: FLUSHDB is unrecoverable and an Upstash REST URL carries no marker
+ * saying which environment it belongs to, so nothing but an explicit opt-in can
+ * distinguish the test database from production. Hence TEST_REDIS_CONFIRM=1.
+ *
+ * Missing credentials is the normal case and simply skips; credentials WITHOUT
+ * the confirmation is a hard error, because silently leaving stale caches in
+ * place is exactly the failure this function exists to prevent.
+ */
+async function flushTestRedis() {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (!url || !token) {
+    console.log("  · no test Redis configured — skipping (this is the default)");
+    return;
+  }
+
+  const host = new URL(url).host;
+  if (process.env.TEST_REDIS_CONFIRM !== "1") {
+    throw new Error(
+      `Refusing to FLUSHDB ${host} without TEST_REDIS_CONFIRM=1.
+` +
+        "Set it in .env.test.local, but only after confirming that URL is a " +
+        "dedicated test database and NOT production.",
+    );
+  }
+
+  const redis = new Redis({ url, token });
+  // Reported before the flush so a wrong target is at least visible in the log:
+  // a test database holds tens of keys, production holds thousands.
+  const before = await redis.dbsize();
+  await redis.flushdb();
+  console.log(`  ✓ flushed ${host} (${before} keys)`);
+}
+
 async function main() {
   const url = guardDatabaseUrl();
   const filePath = resolveFilePath(url);
 
   console.log(`\n🧪  Resetting test database at ${path.relative(process.cwd(), filePath)}\n`);
+  // Redis first: it is the only step that can refuse, and refusing after the
+  // database was already wiped would leave a half-reset environment behind.
+  console.log("→ flushing test Redis");
+  await flushTestRedis();
+
   console.log("→ wiping existing file");
   wipeDb(filePath);
 

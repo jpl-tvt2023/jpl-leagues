@@ -18,6 +18,7 @@ import {
   getFixtureStatus,
   setupAllTeams,
   ensureGameweeks,
+  scoreGameweek,
   expectStandingsHasTeam,
   expectFixturesPageRenders,
   expectPageLoads,
@@ -35,8 +36,10 @@ test.describe.serial("Continental Championship 20 (admin + user)", () => {
     league = await createContinentalChampionshipLeague(request);
     teams = await setupAllTeams(request, league.slug, league.teamSize, "continental-championship");
     await apiSignInSuperadmin(request);
-    await generateFixtures(request, league.slug);
+    // Gameweeks must exist first — generate-fixtures rejects a league with no
+    // league-stage gameweeks (it needs their deadlines to place fixtures).
     await ensureGameweeks(league.id);
+    await generateFixtures(request, league.slug);
   });
 
   test("admin: league created with 20 teams and continental-championship format", async () => {
@@ -69,6 +72,8 @@ test.describe.serial("Continental Championship 20 (admin + user)", () => {
   });
 
   test("user: standings + fixtures pages render", async ({ page }) => {
+    // Standings show a placeholder until a match is played — score GW1 first.
+    await scoreGameweek(league.id, 1, () => ({ home: 60, away: 50 }));
     await expectStandingsHasTeam(page, league.slug, teams[0].name);
     await expectFixturesPageRenders(page, league.slug);
   });
@@ -87,7 +92,10 @@ test.describe.serial("Continental Championship 20 (admin + user)", () => {
   test("user: captain submission honours the Continental-Championship-specific 19-chip cap", async ({ request }) => {
     await apiSignInTeam(request, league.slug, 1);
     const dash = await request.get("/api/team/dashboard").then((r) => r.json());
-    const players = dash?.team?.players ?? dash?.players ?? [];
+    // Player IDs come from captaincyStatus — the dashboard's `teamMembers`
+    // array carries names/fplIds for display but deliberately no row ids.
+    const players = [dash?.captaincyStatus?.player1, dash?.captaincyStatus?.player2]
+      .filter((p): p is { id: string; name: string } => Boolean(p?.id));
     expect(players.length).toBeGreaterThan(0);
     const res = await request.post("/api/team/captain", {
       data: { playerId: players[0].id, gameweek: 1 },

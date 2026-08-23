@@ -22,12 +22,31 @@
 
 - **30-minute lock after every deadline:** For 30 minutes after any
   gameweek's deadline, submissions are locked entirely — this is a fixed
-  blackout window, independent of whether that GW's match results have come
-  in yet. Once the 30 minutes pass, the **next** gameweek's submission
-  window opens automatically (no need to wait for the previous GW's scores
-  to be processed). A late or mistimed attempt during this window is
-  recorded in the system's internal log — this is not a player-facing
-  feature or an admin action, just an internal record.
+  blackout window. A late or mistimed attempt during this window is recorded
+  in the system's internal log — this is not a player-facing feature or an
+  admin action, just an internal record.
+
+- **The next GW opens only once the previous one has finished:** After the
+  30-minute blackout, GW(n+1)'s window does **not** open until the Premier
+  League has marked GW(n) as finished (i.e. every match played). This is
+  because **Double Pointer**'s rank rule and **Challenge Chip**'s top-2 target
+  are both league-table position dependent — declaring them against a table
+  that is still moving would let a team pick a chip its final position never
+  entitled them to. While waiting, the portal shows which gameweek it is
+  waiting on and re-checks automatically.
+
+  Three deliberate exceptions:
+    - **GW1** is exempt — nothing precedes it, so there is no table to wait for.
+    - This waits on the **Premier League**, not on the admin entering results.
+      Scores can be processed days later; the window does not care.
+    - If FPL's status feed is unreachable, the window falls back to the
+      30-minute rule rather than locking everyone out, and says so on screen.
+      There is also a 24-hour safety valve before any deadline, so a congested
+      midweek schedule can never leave a team unable to declare.
+
+  This gate applies to the TVT formats (8 / 16 / 32), which have
+  position-dependent chips. The Continental Championship announces captains
+  only, so it keeps the 30-minute rule.
 
 - **Missed announcement:** If a team does not announce a captain, the portal
   **auto-assigns the lower-scoring member** of the team as captain for that
@@ -65,5 +84,5 @@
 |---|---|
 | Changing the other team's captaincy is not allowed; perpetrators get the least-scoring member as captain | Structurally impossible on the portal — a team login can only manage its own captain. The "lower scorer becomes captain" mechanic survives as the **missed-announcement auto-assign** rule instead. |
 | Spamming captaincy messages → −1 on the TVT table (GW1–30) or −8 (GW31+) | There is no announcement group to spam. Switching your captain on the portal before the deadline is free and unlimited. |
-| Captains locked in once the deadline passes | Still true — a late pick is rejected outright with the deadline timestamp and your submission timestamp shown, so lateness is provable. For 30 minutes after any deadline, submissions are locked entirely; after that the next gameweek's window opens automatically. No admin review needed, nothing rolls over. |
+| Captains locked in once the deadline passes | Still true — a late pick is rejected outright with the deadline timestamp and your submission timestamp shown, so lateness is provable. For 30 minutes after any deadline, submissions are locked entirely; after that the next gameweek's window opens once the Premier League has finished the previous gameweek. No admin review needed, nothing rolls over. |
 | Table formed and updated manually after every gameweek | Standings update automatically on the portal. |

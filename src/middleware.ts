@@ -15,7 +15,27 @@ function getRedis(): Redis | null {
   return redis;
 }
 
+/**
+ * Rate limiting is ON by default and only ever switched off by an explicit flag.
+ *
+ * Deliberately NOT keyed on NODE_ENV: `next dev` forces NODE_ENV=development no
+ * matter what the env file says -- the same trap that made the FPL stub route
+ * silently 404 earlier. A named flag says what it means and cannot be set by
+ * accident in production.
+ *
+ * The e2e suite sets this to 0. It runs every request from one IP and signs in
+ * up to 32 teams inside a single beforeAll, against a 5/min cap on
+ * /api/auth/signin -- so the moment a test Redis is configured, an unflagged
+ * limiter would 429 the entire suite.
+ */
+function rateLimitEnabled(): boolean {
+  const flag = process.env.RATE_LIMIT_ENABLED;
+  return flag !== "0" && flag !== "false";
+}
+
 async function rateLimit(key: string, maxAttempts: number, windowMs: number): Promise<boolean> {
+  if (!rateLimitEnabled()) return true;
+
   const kv = getRedis();
   if (!kv) return true; // Skip rate limiting if Redis not configured (local dev)
 
@@ -61,11 +81,22 @@ const PUBLIC_ROUTES = [
   // them (e.g. the players catalog).
   "/api/fpl/bootstrap",
   "/api/fpl/players-left",
+  // Player-level FPL standings. Public for the same reason /api/standings is:
+  // it exposes nothing a viewer could not read on the FPL site itself.
+  "/api/fpl-league",
+  // Test-only FPL stub. The route itself 404s unless NODE_ENV=test, so
+  // whitelisting it here is inert in production.
+  "/api/test-fpl-stub",
 ];
 
 function isPublicRoute(pathname: string, method: string): boolean {
   // Auth routes are always public
   if (pathname.startsWith("/api/auth/")) return true;
+
+  // Test-only FPL stub, all methods — specs POST to /control to drive FPL
+  // state before signing in as anyone. The route itself 404s unless
+  // TEST_FPL_STUB=1, so this is inert in production.
+  if (pathname.startsWith("/api/test-fpl-stub")) return true;
 
   // Public GET-only routes
   if (method === "GET") {
