@@ -107,6 +107,28 @@ test.describe.serial("TVT-8 (admin + user)", () => {
     await expect.poll(() => page.url(), { timeout: 15_000 }).not.toContain("/signin");
   });
 
+  test("user: the dashboard nav links to every league page, FPL League included", async ({ page }) => {
+    // The dashboard does NOT use the shared LeagueNav — it keeps its own copy of
+    // the link list. That duplication is exactly how FPL League ended up
+    // reachable from every league page but not from here, so this asserts the
+    // dashboard's own nav rather than trusting the two stay in step.
+    await uiSignIn(page, teams[0].loginId, TEAM_RESET_PASSWORD);
+    await expect.poll(() => page.url(), { timeout: 15_000 }).not.toContain("/signin");
+    await page.goto("/dashboard");
+
+    const nav = page.locator("nav").first();
+    for (const label of ["Standings", "Fixtures", "FPL League", "Playoffs"]) {
+      await expect(
+        nav.getByRole("link", { name: label, exact: true }),
+        `dashboard nav is missing ${label}`,
+      ).toBeVisible();
+    }
+
+    // And it actually goes somewhere.
+    await nav.getByRole("link", { name: "FPL League", exact: true }).click();
+    await expect.poll(() => page.url(), { timeout: 15_000 }).toContain("/fpl-league");
+  });
+
   test("user: public standings page shows seeded teams", async ({ page }) => {
     // The standings page deliberately renders a "Standings Coming Soon"
     // placeholder until at least one match has been played, so score GW1

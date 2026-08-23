@@ -1316,6 +1316,42 @@ export default function DashboardPage() {
     </div>
   ) : null;
 
+  /**
+   * Extracted so the wide column (TVT) and the full-width grid (Continental
+   * Championship) can each render it without duplicating the markup. TVT moved
+   * it up beside Upcoming Fixtures to fill the column; CC's layout is unchanged.
+   */
+  const captainHistoryCard = (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+      <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Captain History</h2>
+      <div className="space-y-2">
+        {(showAllCaptains
+          ? data.captaincyStatus.recentCaptains
+          : data.captaincyStatus.recentCaptains.slice(0, 3)
+        ).map((c, i) => (
+          <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 w-8">GW{c.gameweek}</span>
+              <span className="text-white">{c.playerName}</span>
+            </div>
+            <span className="text-yellow-400 font-bold">{c.score}</span>
+          </div>
+        ))}
+        {data.captaincyStatus.recentCaptains.length === 0 && (
+          <div className="text-gray-400 text-center py-4">No captain history</div>
+        )}
+        {data.captaincyStatus.recentCaptains.length > 3 && (
+          <button
+            onClick={() => setShowAllCaptains(!showAllCaptains)}
+            className="w-full text-center text-sm text-yellow-400 hover:text-yellow-300 transition py-2"
+          >
+            {showAllCaptains ? "See Less ▲" : `See More (${data.captaincyStatus.recentCaptains.length}) ▼`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
@@ -1340,6 +1376,10 @@ export default function DashboardPage() {
             <>
               <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
               <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
+              {/* Kept in step with LeagueNav, which this nav duplicates rather
+                  than reuses — that duplication is why this link was reachable
+                  from every league page but not from here. */}
+              <Link href={`/${leagueSlug}/fpl-league`} className="text-gray-300 hover:text-white transition">FPL League</Link>
               <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
             </>
           )}
@@ -2032,6 +2072,7 @@ export default function DashboardPage() {
                             C* = auto-assigned temp captain (lowest scorer)
                           </div>
                         ) : null;
+
                       })()}
                     </>
                   )}
@@ -2171,7 +2212,7 @@ export default function DashboardPage() {
                               }`}>
                                 {t.rank}
                               </span>
-                              <span className={`truncate ${t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}`}>
+                              <span className={`break-words ${t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}`}>
                                 {t.name}
                               </span>
                             </div>
@@ -2188,6 +2229,43 @@ export default function DashboardPage() {
                     </Link>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Upcoming Fixtures + Captain History — in the wide column so it does
+                not end far above the narrow one. Continental Championship keeps
+                both in the full-width grid below, where its Upcoming Fixtures
+                variant splits league from cup. */}
+            {leagueFormat !== "continental-championship" && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
+                  {data.upcomingFixtures.length === 0 ? (
+                    <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
+                  ) : (
+                    /* One line per fixture. The older layout boxed each gameweek with
+                       its own header row and a trailing competition label — three
+                       lines of chrome to say "GW1, home, Stretford Kops". The label
+                       was noise: the API stamps every non-cup fixture "JPL", so it
+                       read the same on every row. */
+                    <div className="space-y-1.5">
+                      {data.upcomingFixtures.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5">
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider w-10 shrink-0">
+                            GW{f.gameweek}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded font-semibold shrink-0 ${
+                            f.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"
+                          }`}>
+                            {f.isHome ? "H" : "A"}
+                          </span>
+                          <span className="text-white text-sm break-words">{f.opponent}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {captainHistoryCard}
               </div>
             )}
 
@@ -2334,9 +2412,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Group Table / Upcoming Fixtures / Captain History — full page width, below both columns
-            (moved out of the 2/3-width Left Column, which was capping them; Right Column has already
-            ended above this point so there's nothing to reserve the remaining 1/3 for). */}
+        {/* Continental Championship only. TVT's cards all live in the two
+            columns above now; rendering this grid empty for TVT would still
+            add its mt-6 below the page. */}
+        {leagueFormat === "continental-championship" && (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mt-6">
           {/* Standings — Continental Championship's JPL/Cup tabbed table only.
               TVT's group tables moved into the wide column above, where both
@@ -2428,40 +2507,6 @@ export default function DashboardPage() {
             })()
           )}
 
-          {/* Upcoming Fixtures — one line per fixture.
-
-              The previous layout wrapped each gameweek in its own bordered box
-              with a separate GW header row and a trailing competition label:
-              three lines of chrome to convey "GW1, home, Stretford Kops". The
-              label was pure noise here — the API stamps every non-cup fixture
-              "JPL", so TVT rendered the same word on every row. Continental
-              Championship keeps its own version below, where the label
-              genuinely distinguishes league from cup. */}
-          {leagueFormat !== "continental-championship" && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
-              {data.upcomingFixtures.length === 0 ? (
-                <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
-              ) : (
-                <div className="space-y-1.5">
-                  {data.upcomingFixtures.map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5">
-                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider w-10 shrink-0">
-                        GW{f.gameweek}
-                      </span>
-                      <span className={`text-xs px-2 py-0.5 rounded font-semibold shrink-0 ${
-                        f.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"
-                      }`}>
-                        {f.isHome ? "H" : "A"}
-                      </span>
-                      <span className="text-white text-sm truncate">{f.opponent}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Upcoming Fixtures — Continental Championship, splits PL/Cup fixtures per GW */}
           {leagueFormat === "continental-championship" && data.upcomingFixtures.length > 0 && (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
@@ -2507,36 +2552,9 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Captain History */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-            <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Captain History</h2>
-            <div className="space-y-2">
-              {(showAllCaptains
-                ? data.captaincyStatus.recentCaptains
-                : data.captaincyStatus.recentCaptains.slice(0, 3)
-              ).map((c, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 w-8">GW{c.gameweek}</span>
-                    <span className="text-white">{c.playerName}</span>
-                  </div>
-                  <span className="text-yellow-400 font-bold">{c.score}</span>
-                </div>
-              ))}
-              {data.captaincyStatus.recentCaptains.length === 0 && (
-                <div className="text-gray-400 text-center py-4">No captain history</div>
-              )}
-              {data.captaincyStatus.recentCaptains.length > 3 && (
-                <button
-                  onClick={() => setShowAllCaptains(!showAllCaptains)}
-                  className="w-full text-center text-sm text-yellow-400 hover:text-yellow-300 transition py-2"
-                >
-                  {showAllCaptains ? "See Less ▲" : `See More (${data.captaincyStatus.recentCaptains.length}) ▼`}
-                </button>
-              )}
-            </div>
-          </div>
+          {captainHistoryCard}
         </div>
+        )}
       </div>
     </div>
   );

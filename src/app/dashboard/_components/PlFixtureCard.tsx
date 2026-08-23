@@ -280,7 +280,10 @@ function SideHeader({
   return (
     <div className={`text-center ${align === "right" ? "order-3" : ""}`}>
       <div className="text-xs text-gray-400 mb-1">{label}</div>
-      <div className="text-lg font-bold text-white truncate max-w-[10rem]">{side.name}</div>
+      {/* Wraps rather than truncates: a clipped team name ("Differential Disa…")
+          is worse than a two-line one, and these are the two teams the card is
+          about. max-w keeps the VS column centred. */}
+      <div className="text-lg font-bold text-white break-words max-w-[10rem] mx-auto">{side.name}</div>
       {score !== undefined && <div className="text-xl font-bold text-white">{score}</div>}
       {/* Kept in the header, not only in the breakdown: this is a live figure and
           the breakdown is collapsed by default. */}
