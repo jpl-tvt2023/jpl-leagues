@@ -1,0 +1,1282 @@
+
+> jpl-tvt@0.1.0 test:e2e
+> dotenv -e .env.test -- playwright test --reporter=list
+
+[2m[WebServer] [22m[1m[38;2;173;127;168m▲ Next.js 16.1.6[39m[22m (webpack)
+[2m[WebServer] [22m- Local:         http://localhost:3100
+[2m[WebServer] [22m- Network:       http://192.168.1.107:3100
+[2m[WebServer] [22m- Environments: .env.test
+[2m[WebServer] [22m
+[2m[WebServer] [22m[32m[1m✓[22m[39m Starting...
+[2m[WebServer] [22m[33m[1m⚠[22m[39m The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+[2m[WebServer] [22m[32m[1m✓[22m[39m Ready in 7.5s
+[2m[WebServer] [22m[37m[1m○[22m[39m Compiling / ...
+[2m[WebServer] [22m GET / [32m200[39m in 7.6s[2m (compile: 7.3s, render: 274ms)[22m
+✔ GW1 is exempt — nothing precedes it, so it opens even with no finished GWs (1.657ms)
+✔ inside the 30-minute post-deadline blackout the window is locked (0.9778ms)
+✔ after the blackout, GW2 stays shut while FPL has not finished GW1 (0.1674ms)
+✔ once FPL marks GW1 finished, GW2 opens (0.148ms)
+✔ FPL outage fails OPEN and flags itself as degraded (0.174ms)
+✔ the 24h safety valve opens the window even when the previous GW is unfinished (0.2148ms)
+✔ requirePreviousFinished:false restores the old behaviour for other formats (0.1883ms)
+✔ gating uses the array-previous gameweek, not number - 1 (0.1806ms)
+✔ past the final deadline the window is closed (0.2434ms)
+✔ an empty gameweek list is closed, not a crash (0.2752ms)
+
+Running 63 tests using 1 worker
+
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 3.1s[2m (compile: 2.8s, proxy.ts: 110ms, render: 141ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 4.1s[2m (compile: 2.6s, proxy.ts: 26ms, render: 1485ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 127ms[2m (compile: 8ms, proxy.ts: 8ms, render: 111ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 1072ms[2m (compile: 397ms, proxy.ts: 8ms, render: 668ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 606ms[2m (compile: 447ms, proxy.ts: 10ms, render: 149ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 351ms[2m (compile: 329ms, proxy.ts: 8ms, render: 14ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 191ms[2m (compile: 34ms, proxy.ts: 8ms, render: 148ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 345ms[2m (compile: 9ms, proxy.ts: 8ms, render: 328ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 157ms[2m (compile: 14ms, proxy.ts: 7ms, render: 136ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 18ms[2m (compile: 3ms, proxy.ts: 7ms, render: 8ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 104ms[2m (compile: 3ms, proxy.ts: 8ms, render: 93ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 347ms[2m (compile: 3ms, proxy.ts: 7ms, render: 338ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 200ms[2m (compile: 4ms, proxy.ts: 48ms, render: 148ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 3ms, proxy.ts: 6ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 109ms[2m (compile: 2ms, proxy.ts: 6ms, render: 100ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 342ms[2m (compile: 2ms, proxy.ts: 7ms, render: 333ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 123ms[2m (compile: 3ms, proxy.ts: 7ms, render: 114ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 2ms, proxy.ts: 5ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 109ms[2m (compile: 2ms, proxy.ts: 6ms, render: 102ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 312ms[2m (compile: 2ms, proxy.ts: 6ms, render: 304ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 101ms[2m (compile: 1950µs, proxy.ts: 6ms, render: 93ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 18ms[2m (compile: 3ms, proxy.ts: 7ms, render: 8ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 98ms[2m (compile: 1855µs, proxy.ts: 6ms, render: 90ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 314ms[2m (compile: 2ms, proxy.ts: 6ms, render: 306ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 145ms[2m (compile: 1951µs, proxy.ts: 6ms, render: 137ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 2ms, proxy.ts: 6ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 102ms[2m (compile: 2ms, proxy.ts: 5ms, render: 95ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 320ms[2m (compile: 3ms, proxy.ts: 7ms, render: 310ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 123ms[2m (compile: 1812µs, proxy.ts: 6ms, render: 115ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 1966µs, proxy.ts: 6ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 95ms[2m (compile: 1938µs, proxy.ts: 6ms, render: 87ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 674ms[2m (compile: 1862µs, proxy.ts: 5ms, render: 667ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 146ms[2m (compile: 2ms, proxy.ts: 7ms, render: 137ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 16ms[2m (compile: 2ms, proxy.ts: 6ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 122ms[2m (compile: 1905µs, proxy.ts: 6ms, render: 114ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 331ms[2m (compile: 3ms, proxy.ts: 5ms, render: 324ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 155ms[2m (compile: 2ms, proxy.ts: 8ms, render: 145ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 16ms[2m (compile: 2ms, proxy.ts: 6ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 110ms[2m (compile: 2ms, proxy.ts: 7ms, render: 101ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 317ms[2m (compile: 2ms, proxy.ts: 5ms, render: 309ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 122ms[2m (compile: 1830µs, proxy.ts: 7ms, render: 113ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 22ms[2m (compile: 1978µs, proxy.ts: 14ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 114ms[2m (compile: 1793µs, proxy.ts: 7ms, render: 105ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 309ms[2m (compile: 3ms, proxy.ts: 6ms, render: 301ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 131ms[2m (compile: 2ms, proxy.ts: 6ms, render: 123ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 2ms, proxy.ts: 6ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 101ms[2m (compile: 1937µs, proxy.ts: 6ms, render: 93ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 339ms[2m (compile: 2ms, proxy.ts: 6ms, render: 331ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 146ms[2m (compile: 2ms, proxy.ts: 6ms, render: 137ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 2ms, proxy.ts: 6ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 98ms[2m (compile: 1998µs, proxy.ts: 5ms, render: 91ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 325ms[2m (compile: 2ms, proxy.ts: 5ms, render: 317ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 145ms[2m (compile: 1792µs, proxy.ts: 7ms, render: 136ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 1924µs, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 104ms[2m (compile: 1802µs, proxy.ts: 5ms, render: 98ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 321ms[2m (compile: 2ms, proxy.ts: 6ms, render: 312ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 145ms[2m (compile: 2ms, proxy.ts: 6ms, render: 137ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 2ms, proxy.ts: 5ms, render: 6ms)[22m
+  ok  1 [chromium] › tests\league-types\auction-complete-14.spec.ts:41:7 › Auction Complete 14 (admin + user) › admin: league created with 14 teams, tier=complete (5ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 93ms[2m (compile: 1616µs, proxy.ts: 5ms, render: 86ms)[22m
+[2m[WebServer] [22m POST /api/auction/session [32m200[39m in 1530ms[2m (compile: 1027ms, proxy.ts: 7ms, render: 496ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 1702ms[2m (compile: 1490ms, proxy.ts: 194ms, render: 18ms)[22m
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 76bea64a-f7d5-4713-a45e-b9ce7faaf860 in round 12 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m2[39m, [32m'2'[39m: [33m1[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m6[39m, total: [33m12[39m },
+[2m[WebServer] [22m  purse: [33m300000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 450f2a05-41fe-4003-ba05-e00646a9d1d0 in round 13 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m3[39m, [32m'2'[39m: [33m2[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m5[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m400000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 50b4b6ae-f9e7-4ae4-8cc8-d3375afd4c07 in round 13 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m3[39m, [32m'2'[39m: [33m1[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m6[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m100000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 3ab41487-10f9-4aed-8aef-41e9da7f3876 in round 13 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m5[39m, [32m'2'[39m: [33m5[39m, [32m'3'[39m: [33m1[39m, [32m'4'[39m: [33m2[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m300000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team b0c2b78b-d15e-4151-bcd3-62b019d422d1 in round 13 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m3[39m, [32m'2'[39m: [33m2[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m5[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m0[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 76bea64a-f7d5-4713-a45e-b9ce7faaf860 in round 13 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m2[39m, [32m'2'[39m: [33m1[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m6[39m, total: [33m12[39m },
+[2m[WebServer] [22m  purse: [33m300000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 3f02e271-4616-4a85-8dec-d7adcf8fa155 in round 13 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m2[39m, [32m'2'[39m: [33m1[39m, [32m'3'[39m: [33m4[39m, [32m'4'[39m: [33m6[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m100000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 3f02e271-4616-4a85-8dec-d7adcf8fa155 in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m2[39m, [32m'2'[39m: [33m1[39m, [32m'3'[39m: [33m4[39m, [32m'4'[39m: [33m6[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m100000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 76bea64a-f7d5-4713-a45e-b9ce7faaf860 in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m2[39m, [32m'2'[39m: [33m1[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m6[39m, total: [33m12[39m },
+[2m[WebServer] [22m  purse: [33m300000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team b0c2b78b-d15e-4151-bcd3-62b019d422d1 in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m3[39m, [32m'2'[39m: [33m2[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m5[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m0[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 3ab41487-10f9-4aed-8aef-41e9da7f3876 in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m5[39m, [32m'2'[39m: [33m5[39m, [32m'3'[39m: [33m1[39m, [32m'4'[39m: [33m2[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m300000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 50b4b6ae-f9e7-4ae4-8cc8-d3375afd4c07 in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m3[39m, [32m'2'[39m: [33m1[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m6[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m100000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 450f2a05-41fe-4003-ba05-e00646a9d1d0 in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m3[39m, [32m'2'[39m: [33m2[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m5[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m400000[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m POST /api/auction/session [32m200[39m in 4.7s[2m (compile: 2ms, proxy.ts: 7ms, render: 4.7s)[22m
+  ok  2 [chromium] › tests\league-types\auction-complete-14.spec.ts:46:7 › Auction Complete 14 (admin + user) › admin: simulated draft assigns players to every team (6.4s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 148ms[2m (compile: 52ms, proxy.ts: 6ms, render: 90ms)[22m
+[2m[WebServer] [22m POST /api/auction/trade [33m400[39m in 613ms[2m (compile: 600ms, proxy.ts: 4ms, render: 9ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 17ms[2m (compile: 4ms, proxy.ts: 5ms, render: 7ms)[22m
+  ok  3 [chromium] › tests\league-types\auction-complete-14.spec.ts:60:7 › Auction Complete 14 (admin + user) › complete: trade proposal endpoint is reachable (tier allows trades) (791ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 98ms[2m (compile: 8ms, proxy.ts: 4ms, render: 85ms)[22m
+[2m[WebServer] [22m POST /api/auction/unlock-slot [33m400[39m in 358ms[2m (compile: 345ms, proxy.ts: 4ms, render: 9ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 16ms[2m (compile: 4ms, proxy.ts: 4ms, render: 8ms)[22m
+  ok  4 [chromium] › tests\league-types\auction-complete-14.spec.ts:77:7 › Auction Complete 14 (admin + user) › complete: unlock-slot endpoint accepts the request shape (may fail business rules — not tier) (483ms)
+[2m[WebServer] [22m GET /ac-4vljudj6/marketplace [32m200[39m in 1928ms[2m (compile: 1702ms, render: 226ms)[22m
+  ok  5 [chromium] › tests\league-types\auction-complete-14.spec.ts:84:7 › Auction Complete 14 (admin + user) › user: marketplace page loads for complete-tier (3.5s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 825ms[2m (compile: 596ms, proxy.ts: 128ms, render: 101ms)[22m
+[2m[WebServer] [22m GET /ac-4vljudj6/squad [32m200[39m in 2.3s[2m (compile: 1984ms, render: 294ms)[22m
+[2m[WebServer] [22m GET /api/auth/me [32m200[39m in 1234ms[2m (compile: 1189ms, proxy.ts: 33ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /signin [32m200[39m in 827ms[2m (compile: 783ms, render: 43ms)[22m
+[2m[WebServer] [22m GET /ac-4vljudj6/finance [32m200[39m in 2.5s[2m (compile: 2.3s, render: 196ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 35ms[2m (compile: 14ms, proxy.ts: 9ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/auth/me [32m200[39m in 73ms[2m (compile: 55ms, proxy.ts: 12ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /signin [32m200[39m in 30ms[2m (compile: 3ms, render: 27ms)[22m
+  ok  6 [chromium] › tests\league-types\auction-complete-14.spec.ts:88:7 › Auction Complete 14 (admin + user) › user: squad + finance pages render after draft (7.5s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 103ms[2m (compile: 11ms, proxy.ts: 7ms, render: 84ms)[22m
+[2m[WebServer] [22m GET /api/auction/gw-summary?leagueId=81683fe7-60ae-4997-bcdf-ea5cbd2b6e65 [33m400[39m in 835ms[2m (compile: 824ms, proxy.ts: 4ms, render: 7ms)[22m
+  ok  7 [chromium] › tests\league-types\auction-complete-14.spec.ts:95:7 › Auction Complete 14 (admin + user) › admin: gw-summary endpoint returns JSON for the league (951ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 96ms[2m (compile: 8ms, proxy.ts: 5ms, render: 83ms)[22m
+[2m[WebServer] [22m POST /api/auction/release [33m400[39m in 502ms[2m (compile: 490ms, proxy.ts: 5ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 16ms[2m (compile: 5ms, proxy.ts: 4ms, render: 7ms)[22m
+  ok  8 [chromium] › tests\league-types\auction-complete-14.spec.ts:101:7 › Auction Complete 14 (admin + user) › admin: release endpoint requires a teamId + ownership row (rejected without one) (628ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 95ms[2m (compile: 7ms, proxy.ts: 6ms, render: 82ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 801ms[2m (compile: 12ms, proxy.ts: 4ms, render: 785ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 87ms[2m (compile: 8ms, proxy.ts: 5ms, render: 75ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 255ms[2m (compile: 8ms, proxy.ts: 4ms, render: 243ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 124ms[2m (compile: 7ms, proxy.ts: 5ms, render: 113ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 3ms, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 2ms, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 519ms[2m (compile: 1968µs, proxy.ts: 4ms, render: 512ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 146ms[2m (compile: 1535µs, proxy.ts: 5ms, render: 140ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1512µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1699µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 275ms[2m (compile: 1588µs, proxy.ts: 4ms, render: 270ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 134ms[2m (compile: 1463µs, proxy.ts: 4ms, render: 128ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1320µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1315µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 273ms[2m (compile: 1345µs, proxy.ts: 4ms, render: 268ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 147ms[2m (compile: 1437µs, proxy.ts: 6ms, render: 140ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 2ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1633µs, proxy.ts: 5ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 283ms[2m (compile: 1931µs, proxy.ts: 5ms, render: 276ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 156ms[2m (compile: 2ms, proxy.ts: 7ms, render: 147ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 3ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 82ms[2m (compile: 1437µs, proxy.ts: 4ms, render: 76ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 277ms[2m (compile: 2ms, proxy.ts: 4ms, render: 272ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 159ms[2m (compile: 1338µs, proxy.ts: 4ms, render: 154ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 20ms[2m (compile: 1426µs, proxy.ts: 14ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 83ms[2m (compile: 3ms, proxy.ts: 6ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 256ms[2m (compile: 1946µs, proxy.ts: 6ms, render: 247ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 126ms[2m (compile: 1466µs, proxy.ts: 4ms, render: 120ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1423µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1492µs, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 281ms[2m (compile: 1492µs, proxy.ts: 4ms, render: 275ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 119ms[2m (compile: 1413µs, proxy.ts: 4ms, render: 113ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1834µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 1892µs, proxy.ts: 4ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 241ms[2m (compile: 1561µs, proxy.ts: 4ms, render: 235ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 122ms[2m (compile: 3ms, proxy.ts: 7ms, render: 112ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1423µs, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1487µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 264ms[2m (compile: 1644µs, proxy.ts: 4ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 112ms[2m (compile: 1554µs, proxy.ts: 4ms, render: 106ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1555µs, proxy.ts: 4ms, render: 5ms)[22m
+  ok  9 [chromium] › tests\league-types\auction-primary-10.spec.ts:44:7 › Auction Primary 10 (admin + user) › admin: league created with 10 teams and tier=primary (3ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1440µs, proxy.ts: 5ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auction/session [32m200[39m in 158ms[2m (compile: 26ms, proxy.ts: 5ms, render: 128ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 36ms[2m (compile: 19ms, proxy.ts: 4ms, render: 13ms)[22m
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team b7664f4b-604d-4309-9af1-52359b5bf76c in round 13 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m2[39m, [32m'2'[39m: [33m2[39m, [32m'3'[39m: [33m8[39m, [32m'4'[39m: [33m1[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m0[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team b7664f4b-604d-4309-9af1-52359b5bf76c in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m2[39m, [32m'2'[39m: [33m2[39m, [32m'3'[39m: [33m8[39m, [32m'4'[39m: [33m1[39m, total: [33m13[39m },
+[2m[WebServer] [22m  purse: [33m0[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 2386327f-fb1e-43f1-a74f-8fa4d46a9cfc in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m3[39m, [32m'2'[39m: [33m2[39m, [32m'3'[39m: [33m7[39m, [32m'4'[39m: [33m2[39m, total: [33m14[39m },
+[2m[WebServer] [22m  purse: [33m0[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m[simulate] No feasible+affordable player for team 439988bf-ae06-4033-a8be-eeb4b624f5e3 in round 14 {
+[2m[WebServer] [22m  counts: { [32m'1'[39m: [33m5[39m, [32m'2'[39m: [33m2[39m, [32m'3'[39m: [33m3[39m, [32m'4'[39m: [33m4[39m, total: [33m14[39m },
+[2m[WebServer] [22m  purse: [33m0[39m,
+[2m[WebServer] [22m  penaltySlots: [33m0[39m
+[2m[WebServer] [22m}
+[2m[WebServer] [22m POST /api/auction/session [32m200[39m in 2.2s[2m (compile: 1534µs, proxy.ts: 5ms, render: 2.2s)[22m
+  ok 10 [chromium] › tests\league-types\auction-primary-10.spec.ts:50:7 › Auction Primary 10 (admin + user) › admin: simulated initial auction fills every team's squad (2.5s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 174ms[2m (compile: 2ms, proxy.ts: 5ms, render: 167ms)[22m
+[2m[WebServer] [22m POST /api/auction/trade [33m400[39m in 24ms[2m (compile: 10ms, proxy.ts: 7ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1866µs, proxy.ts: 5ms, render: 5ms)[22m
+  ok 11 [chromium] › tests\league-types\auction-primary-10.spec.ts:68:7 › Auction Primary 10 (admin + user) › primary: trade proposals are rejected for primary tier (225ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 1354µs, proxy.ts: 5ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/auction/unlock-slot [33m400[39m in 18ms[2m (compile: 6ms, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 2ms, proxy.ts: 6ms, render: 5ms)[22m
+  ok 12 [chromium] › tests\league-types\auction-primary-10.spec.ts:85:7 › Auction Primary 10 (admin + user) › primary: slot unlock is rejected before initial auction completes (and stays off-tier after) (126ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 1818µs, proxy.ts: 5ms, render: 74ms)[22m
+[2m[WebServer] [22m GET /ap-4vmf6o9v/squad [32m200[39m in 208ms[2m (compile: 49ms, render: 160ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 21ms[2m (compile: 4ms, proxy.ts: 9ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/auth/me [32m200[39m in 22ms[2m (compile: 8ms, proxy.ts: 9ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /signin [32m200[39m in 43ms[2m (compile: 16ms, render: 27ms)[22m
+  ok 13 [chromium] › tests\league-types\auction-primary-10.spec.ts:95:7 › Auction Primary 10 (admin + user) › user: squad page loads after the simulated draft (1.3s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 83ms[2m (compile: 1415µs, proxy.ts: 5ms, render: 77ms)[22m
+[2m[WebServer] [22m GET /dashboard [32m200[39m in 1164ms[2m (compile: 1038ms, render: 127ms)[22m
+[2m[WebServer] [22m GET /api/auth/me [32m200[39m in 134ms[2m (compile: 110ms, proxy.ts: 12ms, render: 11ms)[22m
+[2m[WebServer] [22m GET /signin [32m200[39m in 40ms[2m (compile: 17ms, render: 23ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 4ms, proxy.ts: 4ms, render: 8ms)[22m
+  ok 14 [chromium] › tests\league-types\auction-primary-10.spec.ts:101:7 › Auction Primary 10 (admin + user) › user: dashboard page loads without a client-side error (2.9s)
+[2m[WebServer] [22m GET /ap-4vmf6o9v/finance [32m200[39m in 119ms[2m (compile: 26ms, render: 93ms)[22m
+[2m[WebServer] [22m GET /ap-4vmf6o9v/marketplace [32m200[39m in 172ms[2m (compile: 31ms, render: 141ms)[22m
+  ok 15 [chromium] › tests\league-types\auction-primary-10.spec.ts:110:7 › Auction Primary 10 (admin + user) › user: finance + marketplace pages load (marketplace renders "unavailable" for primary) (1.8s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 109ms[2m (compile: 11ms, proxy.ts: 5ms, render: 94ms)[22m
+[2m[WebServer] [22m GET /api/auction/scoring-status?leagueId=56a57429-8033-4e09-bbc2-1446c533074d [32m200[39m in 722ms[2m (compile: 688ms, proxy.ts: 5ms, render: 28ms)[22m
+  ok 16 [chromium] › tests\league-types\auction-primary-10.spec.ts:115:7 › Auction Primary 10 (admin + user) › admin: scoring-status endpoint reports a state for the league (843ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 118ms[2m (compile: 11ms, proxy.ts: 7ms, render: 100ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 1485ms[2m (compile: 26ms, proxy.ts: 4ms, render: 1454ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1872µs, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 664ms[2m (compile: 7ms, proxy.ts: 4ms, render: 654ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 353ms[2m (compile: 8ms, proxy.ts: 4ms, render: 341ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 4ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1291µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 260ms[2m (compile: 1532µs, proxy.ts: 5ms, render: 254ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 275ms[2m (compile: 2ms, proxy.ts: 5ms, render: 267ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1671µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1740µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 275ms[2m (compile: 1796µs, proxy.ts: 5ms, render: 268ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 252ms[2m (compile: 2ms, proxy.ts: 4ms, render: 245ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1300µs, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1431µs, proxy.ts: 4ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 252ms[2m (compile: 1466µs, proxy.ts: 4ms, render: 247ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 242ms[2m (compile: 3ms, proxy.ts: 4ms, render: 235ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1498µs, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1335µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 242ms[2m (compile: 1971µs, proxy.ts: 5ms, render: 235ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 220ms[2m (compile: 2ms, proxy.ts: 5ms, render: 213ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1304µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1358µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 253ms[2m (compile: 1781µs, proxy.ts: 5ms, render: 247ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 263ms[2m (compile: 1386µs, proxy.ts: 5ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1448µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1332µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 263ms[2m (compile: 1395µs, proxy.ts: 5ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 275ms[2m (compile: 1407µs, proxy.ts: 6ms, render: 268ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 2ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 85ms[2m (compile: 1297µs, proxy.ts: 4ms, render: 80ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 265ms[2m (compile: 1669µs, proxy.ts: 5ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1366µs, proxy.ts: 5ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1355µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1396µs, proxy.ts: 5ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 283ms[2m (compile: 1863µs, proxy.ts: 4ms, render: 276ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 596ms[2m (compile: 1519µs, proxy.ts: 6ms, render: 588ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 16ms[2m (compile: 3ms, proxy.ts: 7ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 139ms[2m (compile: 3ms, proxy.ts: 6ms, render: 130ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 242ms[2m (compile: 2ms, proxy.ts: 4ms, render: 236ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1345µs, proxy.ts: 4ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 1748µs, proxy.ts: 5ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1813µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 282ms[2m (compile: 2ms, proxy.ts: 5ms, render: 275ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 287ms[2m (compile: 1526µs, proxy.ts: 4ms, render: 281ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1358µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 3ms, proxy.ts: 4ms, render: 69ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 265ms[2m (compile: 1386µs, proxy.ts: 4ms, render: 260ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 302ms[2m (compile: 1596µs, proxy.ts: 4ms, render: 296ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 2ms, proxy.ts: 6ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 3ms, proxy.ts: 5ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 260ms[2m (compile: 1902µs, proxy.ts: 5ms, render: 253ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1872µs, proxy.ts: 5ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 2ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1418µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 286ms[2m (compile: 1335µs, proxy.ts: 5ms, render: 280ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 230ms[2m (compile: 1615µs, proxy.ts: 4ms, render: 224ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1291µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1263µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 242ms[2m (compile: 1369µs, proxy.ts: 4ms, render: 237ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 229ms[2m (compile: 1479µs, proxy.ts: 6ms, render: 222ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1393µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1651µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 241ms[2m (compile: 1976µs, proxy.ts: 4ms, render: 235ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1402µs, proxy.ts: 5ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1302µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1330µs, proxy.ts: 5ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 272ms[2m (compile: 1308µs, proxy.ts: 4ms, render: 267ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 646ms[2m (compile: 3ms, proxy.ts: 12ms, render: 631ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1970µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1256µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 258ms[2m (compile: 1594µs, proxy.ts: 4ms, render: 253ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 274ms[2m (compile: 1298µs, proxy.ts: 5ms, render: 267ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1913µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 84ms[2m (compile: 1552µs, proxy.ts: 4ms, render: 79ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 267ms[2m (compile: 1581µs, proxy.ts: 4ms, render: 261ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 274ms[2m (compile: 1403µs, proxy.ts: 5ms, render: 268ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 3ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1295µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 275ms[2m (compile: 1441µs, proxy.ts: 4ms, render: 270ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 230ms[2m (compile: 1367µs, proxy.ts: 4ms, render: 224ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1594µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1355µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/admin/tc-4vmvkrmh/generate-fixtures [32m200[39m in 54s[2m (compile: 1581ms, proxy.ts: 6ms, render: 53s)[22m
+  ok 17 [chromium] › tests\league-types\continental-championship-20.spec.ts:45:7 › Continental Championship 20 (admin + user) › admin: league created with 20 teams and continental-championship format (2ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 108ms[2m (compile: 9ms, proxy.ts: 8ms, render: 91ms)[22m
+[2m[WebServer] [22m GET /api/admin/tc-4vmvkrmh/generate-fixtures [32m200[39m in 26ms[2m (compile: 13ms, proxy.ts: 5ms, render: 9ms)[22m
+  ok 18 [chromium] › tests\league-types\continental-championship-20.spec.ts:50:7 › Continental Championship 20 (admin + user) › admin: fixture generation produces 38 GWs of PL fixtures (146ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1581µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/admin/tc-4vmvkrmh/generate-cup-groups [32m200[39m in 23.0s[2m (compile: 1192ms, proxy.ts: 5ms, render: 21.8s)[22m
+[2m[WebServer] [22m DELETE /api/admin/tc-4vmvkrmh/generate-cup-groups [32m200[39m in 199ms[2m (compile: 10ms, proxy.ts: 6ms, render: 182ms)[22m
+  ok 19 [chromium] › tests\league-types\continental-championship-20.spec.ts:57:7 › Continental Championship 20 (admin + user) › admin: cup groups can be generated and deleted (23.3s)
+[2m[WebServer] [22m GET /api/continental-championship/cup-standings?leagueId=32661f14-ffc0-4006-93f8-79b0a0cb651f [32m200[39m in 408ms[2m (compile: 389ms, proxy.ts: 5ms, render: 14ms)[22m
+  ok 20 [chromium] › tests\league-types\continental-championship-20.spec.ts:69:7 › Continental Championship 20 (admin + user) › user: cup-standings endpoint returns JSON (413ms)
+[2m[WebServer] [22m GET /tc-4vmvkrmh/standings [32m200[39m in 1717ms[2m (compile: 1512ms, render: 205ms)[22m
+[2m[WebServer] [22m GET /api/standings?leagueSlug=tc-4vmvkrmh [32m200[39m in 728ms[2m (compile: 658ms, proxy.ts: 7ms, render: 62ms)[22m
+[2m[WebServer] [22m GET /tc-4vmvkrmh/fixtures [32m200[39m in 3.6s[2m (compile: 3.3s, render: 269ms)[22m
+[2m[WebServer] [22m GET /api/fixtures?leagueSlug=tc-4vmvkrmh [32m200[39m in 961ms[2m (compile: 890ms, proxy.ts: 5ms, render: 66ms)[22m
+  ok 21 [chromium] › tests\league-types\continental-championship-20.spec.ts:74:7 › Continental Championship 20 (admin + user) › user: standings + fixtures pages render (10.7s)
+[2m[WebServer] [22mError: Route "/[leagueSlug]/jcl" used `params.leagueSlug`. `params` is a Promise and must be unwrapped with `await` or `React.use()` before accessing its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+[2m[WebServer] [22m    at JclRedirectPage (src\app\[leagueSlug]\jcl\page.tsx:4:23)
+[2m[WebServer] [22m[0m [90m 2 |[39m
+[2m[WebServer] [22m [90m 3 |[39m [36mexport[39m [36mdefault[39m [36mfunction[39m [33mJclRedirectPage[39m({ params }[33m:[39m { params[33m:[39m { leagueSlug[33m:[39m string } }) {
+[2m[WebServer] [22m[31m[1m>[22m[39m[90m 4 |[39m   redirect([32m`/${params.leagueSlug}/jpl-cup-standings`[39m)[33m;[39m
+[2m[WebServer] [22m [90m   |[39m                       [31m[1m^[22m[39m
+[2m[WebServer] [22m [90m 5 |[39m }
+[2m[WebServer] [22m [90m 6 |[39m[0m
+[2m[WebServer] [22m GET /tc-4vmvkrmh/jcl [32m200[39m in 1466ms[2m (compile: 1293ms, render: 173ms)[22m
+[2m[WebServer] [22mError: Route "/[leagueSlug]/jel" used `params.leagueSlug`. `params` is a Promise and must be unwrapped with `await` or `React.use()` before accessing its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+[2m[WebServer] [22m    at JelRedirectPage (src\app\[leagueSlug]\jel\page.tsx:4:23)
+[2m[WebServer] [22m[0m [90m 2 |[39m
+[2m[WebServer] [22m [90m 3 |[39m [36mexport[39m [36mdefault[39m [36mfunction[39m [33mJelRedirectPage[39m({ params }[33m:[39m { params[33m:[39m { leagueSlug[33m:[39m string } }) {
+[2m[WebServer] [22m[31m[1m>[22m[39m[90m 4 |[39m   redirect([32m`/${params.leagueSlug}/jpl-cup-standings`[39m)[33m;[39m
+[2m[WebServer] [22m [90m   |[39m                       [31m[1m^[22m[39m
+[2m[WebServer] [22m [90m 5 |[39m }
+[2m[WebServer] [22m [90m 6 |[39m[0m
+[2m[WebServer] [22m GET /tc-4vmvkrmh/jel [32m200[39m in 1538ms[2m (compile: 1362ms, render: 176ms)[22m
+[2m[WebServer] [22m GET /tc-4vmvkrmh/jpl-cup-standings [32m200[39m in 1689ms[2m (compile: 1496ms, render: 193ms)[22m
+  ok 22 [chromium] › tests\league-types\continental-championship-20.spec.ts:81:7 › Continental Championship 20 (admin + user) › user: JCL / JEL / cup standings pages load (6.8s)
+[2m[WebServer] [22m GET /tc-4vmvkrmh/rules [32m200[39m in 1857ms[2m (compile: 1715ms, render: 142ms)[22m
+  ok 23 [chromium] › tests\league-types\continental-championship-20.spec.ts:87:7 › Continental Championship 20 (admin + user) › user: rules page renders Continental-Championship-specific content (3.3s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 104ms[2m (compile: 8ms, proxy.ts: 7ms, render: 89ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 656ms[2m (compile: 639ms, proxy.ts: 4ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 38ms[2m (compile: 19ms, proxy.ts: 9ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 6.8s[2m (compile: 989ms, proxy.ts: 4ms, render: 5.8s)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 30ms[2m (compile: 16ms, proxy.ts: 5ms, render: 10ms)[22m
+[2m[WebServer] [22m POST /api/team/captain [32m200[39m in 1560ms[2m (compile: 1332ms, proxy.ts: 12ms, render: 216ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 1059ms[2m (compile: 1041ms, proxy.ts: 6ms, render: 11ms)[22m
+  ok 24 [chromium] › tests\league-types\continental-championship-20.spec.ts:92:7 › Continental Championship 20 (admin + user) › user: captain submission honours the Continental-Championship-specific 19-chip cap (9.7s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 137ms[2m (compile: 45ms, proxy.ts: 5ms, render: 87ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 1635ms[2m (compile: 935ms, proxy.ts: 5ms, render: 695ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 86ms[2m (compile: 6ms, proxy.ts: 5ms, render: 75ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 1302ms[2m (compile: 1023ms, proxy.ts: 5ms, render: 274ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 999ms[2m (compile: 751ms, proxy.ts: 5ms, render: 243ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 16ms[2m (compile: 4ms, proxy.ts: 4ms, render: 8ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 88ms[2m (compile: 6ms, proxy.ts: 4ms, render: 78ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 688ms[2m (compile: 6ms, proxy.ts: 5ms, render: 678ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 313ms[2m (compile: 21ms, proxy.ts: 9ms, render: 282ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 3ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 84ms[2m (compile: 2ms, proxy.ts: 5ms, render: 76ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 271ms[2m (compile: 2ms, proxy.ts: 5ms, render: 264ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 220ms[2m (compile: 1444µs, proxy.ts: 5ms, render: 213ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1444µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1601µs, proxy.ts: 6ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 249ms[2m (compile: 1745µs, proxy.ts: 4ms, render: 243ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 295ms[2m (compile: 1328µs, proxy.ts: 5ms, render: 288ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1421µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 2ms, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 243ms[2m (compile: 1353µs, proxy.ts: 4ms, render: 238ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 252ms[2m (compile: 1346µs, proxy.ts: 4ms, render: 246ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 2ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1700µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 262ms[2m (compile: 1327µs, proxy.ts: 4ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 273ms[2m (compile: 1320µs, proxy.ts: 4ms, render: 268ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1310µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1695µs, proxy.ts: 5ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 275ms[2m (compile: 2ms, proxy.ts: 4ms, render: 269ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 252ms[2m (compile: 1331µs, proxy.ts: 4ms, render: 246ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1379µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1445µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 415ms[2m (compile: 1318µs, proxy.ts: 4ms, render: 410ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 220ms[2m (compile: 1704µs, proxy.ts: 4ms, render: 214ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1659µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1431µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vpn847f/generate-fixtures [32m200[39m in 16.6s[2m (compile: 23ms, proxy.ts: 5ms, render: 16.5s)[22m
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 35ms[2m (compile: 17ms, proxy.ts: 5ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/event/1/live [32m200[39m in 19ms[2m (compile: 7ms, proxy.ts: 5ms, render: 8ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1002/event/1/picks [32m200[39m in 16ms[2m (compile: 5ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1003/event/1/picks [32m200[39m in 14ms[2m (compile: 5ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1016/event/1/picks [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 3ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1017/event/1/picks [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 34ms[2m (compile: 15ms, proxy.ts: 5ms, render: 15ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 34ms[2m (compile: 15ms, proxy.ts: 5ms, render: 15ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 5ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 5ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1004/event/1/picks [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1005/event/1/picks [32m200[39m in 16ms[2m (compile: 4ms, proxy.ts: 7ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1014/event/1/picks [32m200[39m in 12ms[2m (compile: 3ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1015/event/1/picks [32m200[39m in 22ms[2m (compile: 11ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 29ms[2m (compile: 9ms, proxy.ts: 8ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 29ms[2m (compile: 9ms, proxy.ts: 8ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 6ms, proxy.ts: 6ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 6ms, proxy.ts: 6ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1006/event/1/picks [32m200[39m in 19ms[2m (compile: 8ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1007/event/1/picks [32m200[39m in 13ms[2m (compile: 4ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1012/event/1/picks [32m200[39m in 23ms[2m (compile: 13ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1013/event/1/picks [32m200[39m in 17ms[2m (compile: 8ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 25ms[2m (compile: 8ms, proxy.ts: 6ms, render: 11ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 25ms[2m (compile: 8ms, proxy.ts: 6ms, render: 11ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 28ms[2m (compile: 6ms, proxy.ts: 8ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 28ms[2m (compile: 6ms, proxy.ts: 8ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1008/event/1/picks [32m200[39m in 12ms[2m (compile: 3ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1009/event/1/picks [32m200[39m in 22ms[2m (compile: 12ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1010/event/1/picks [32m200[39m in 13ms[2m (compile: 4ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1011/event/1/picks [32m200[39m in 16ms[2m (compile: 5ms, proxy.ts: 6ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 24ms[2m (compile: 7ms, proxy.ts: 5ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 25ms[2m (compile: 7ms, proxy.ts: 5ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 23ms[2m (compile: 6ms, proxy.ts: 6ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 23ms[2m (compile: 6ms, proxy.ts: 6ms, render: 12ms)[22m
+[2m[WebServer] [22m[fpl] live gw1 lane=background calls=33/80 rejected=0
+[2m[WebServer] [22m GET /api/fixtures/live?gameweek=1&leagueSlug=t8-4vpn847f [32m200[39m in 3.1s[2m (compile: 21ms, proxy.ts: 9ms, render: 3.0s)[22m
+  ok 25 [chromium] › tests\league-types\live-scores.spec.ts:51:7 › live scores (TVT) › live endpoint reports the gameweek as live and scores every fixture (3.1s)
+[2m[WebServer] [22m GET /api/test-fpl-stub/event/1/live [32m200[39m in 21ms[2m (compile: 11ms, proxy.ts: 3ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1002/event/1/picks [32m200[39m in 16ms[2m (compile: 4ms, proxy.ts: 6ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1003/event/1/picks [32m200[39m in 15ms[2m (compile: 4ms, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1016/event/1/picks [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1017/event/1/picks [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 38ms[2m (compile: 17ms, proxy.ts: 7ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 38ms[2m (compile: 17ms, proxy.ts: 7ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 7ms, proxy.ts: 5ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 7ms, proxy.ts: 5ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1004/event/1/picks [32m200[39m in 15ms[2m (compile: 5ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1005/event/1/picks [32m200[39m in 21ms[2m (compile: 6ms, proxy.ts: 8ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1014/event/1/picks [32m200[39m in 16ms[2m (compile: 5ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1015/event/1/picks [32m200[39m in 24ms[2m (compile: 11ms, proxy.ts: 4ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 25ms[2m (compile: 7ms, proxy.ts: 5ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 25ms[2m (compile: 7ms, proxy.ts: 5ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 6ms, proxy.ts: 6ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 6ms, proxy.ts: 6ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1006/event/1/picks [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1007/event/1/picks [32m200[39m in 13ms[2m (compile: 4ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1012/event/1/picks [32m200[39m in 22ms[2m (compile: 11ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1013/event/1/picks [32m200[39m in 14ms[2m (compile: 5ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 27ms[2m (compile: 9ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 27ms[2m (compile: 9ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 28ms[2m (compile: 7ms, proxy.ts: 7ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 28ms[2m (compile: 7ms, proxy.ts: 7ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1008/event/1/picks [32m200[39m in 18ms[2m (compile: 9ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1009/event/1/picks [32m200[39m in 21ms[2m (compile: 11ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1010/event/1/picks [32m200[39m in 15ms[2m (compile: 4ms, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1011/event/1/picks [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 25ms[2m (compile: 7ms, proxy.ts: 6ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 25ms[2m (compile: 7ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 27ms[2m (compile: 6ms, proxy.ts: 7ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 27ms[2m (compile: 6ms, proxy.ts: 7ms, render: 14ms)[22m
+[2m[WebServer] [22m[fpl] live gw1 lane=background calls=33/80 rejected=0
+[2m[WebServer] [22m GET /api/fixtures/live?gameweek=1&leagueSlug=t8-4vpn847f [32m200[39m in 3.1s[2m (compile: 3ms, proxy.ts: 4ms, render: 3.1s)[22m
+  ok 26 [chromium] › tests\league-types\live-scores.spec.ts:69:7 › live scores (TVT) › players-left rides along in the live payload and is non-zero mid-gameweek (3.1s)
+[2m[WebServer] [22m GET /api/test-fpl-stub/event/1/live [32m200[39m in 1795ms[2m (compile: 1604ms, proxy.ts: 176ms, render: 16ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1002/event/1/picks [32m200[39m in 35ms[2m (compile: 8ms, proxy.ts: 12ms, render: 16ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/event/1/live [32m200[39m in 36ms[2m (compile: 8ms, proxy.ts: 12ms, render: 16ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1002/event/1/picks [32m200[39m in 28ms[2m (compile: 13ms, proxy.ts: 8ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1003/event/1/picks [32m200[39m in 32ms[2m (compile: 19ms, proxy.ts: 8ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1003/event/1/picks [32m200[39m in 21ms[2m (compile: 6ms, proxy.ts: 5ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1016/event/1/picks [32m200[39m in 21ms[2m (compile: 6ms, proxy.ts: 5ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1016/event/1/picks [32m200[39m in 28ms[2m (compile: 9ms, proxy.ts: 5ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1017/event/1/picks [32m200[39m in 28ms[2m (compile: 9ms, proxy.ts: 5ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1017/event/1/picks [32m200[39m in 34ms[2m (compile: 10ms, proxy.ts: 6ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 34ms[2m (compile: 10ms, proxy.ts: 6ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 34ms[2m (compile: 10ms, proxy.ts: 6ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 62ms[2m (compile: 18ms, proxy.ts: 10ms, render: 34ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 62ms[2m (compile: 18ms, proxy.ts: 10ms, render: 34ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 62ms[2m (compile: 19ms, proxy.ts: 10ms, render: 34ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 62ms[2m (compile: 19ms, proxy.ts: 10ms, render: 34ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1004/event/1/picks [32m200[39m in 41ms[2m (compile: 12ms, proxy.ts: 8ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 42ms[2m (compile: 12ms, proxy.ts: 8ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 42ms[2m (compile: 12ms, proxy.ts: 8ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1004/event/1/picks [32m200[39m in 45ms[2m (compile: 15ms, proxy.ts: 14ms, render: 15ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1005/event/1/picks [32m200[39m in 45ms[2m (compile: 15ms, proxy.ts: 14ms, render: 15ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1005/event/1/picks [32m200[39m in 99ms[2m (compile: 6ms, proxy.ts: 80ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1014/event/1/picks [32m200[39m in 99ms[2m (compile: 6ms, proxy.ts: 80ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1014/event/1/picks [32m200[39m in 20ms[2m (compile: 6ms, proxy.ts: 5ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1015/event/1/picks [32m200[39m in 20ms[2m (compile: 6ms, proxy.ts: 5ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1015/event/1/picks [32m200[39m in 31ms[2m (compile: 7ms, proxy.ts: 6ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 31ms[2m (compile: 7ms, proxy.ts: 6ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 31ms[2m (compile: 7ms, proxy.ts: 6ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 63ms[2m (compile: 21ms, proxy.ts: 11ms, render: 32ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 63ms[2m (compile: 21ms, proxy.ts: 11ms, render: 31ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 63ms[2m (compile: 21ms, proxy.ts: 11ms, render: 31ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 63ms[2m (compile: 21ms, proxy.ts: 11ms, render: 31ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1006/event/1/picks [32m200[39m in 31ms[2m (compile: 7ms, proxy.ts: 8ms, render: 16ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 32ms[2m (compile: 7ms, proxy.ts: 8ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 32ms[2m (compile: 7ms, proxy.ts: 8ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1006/event/1/picks [32m200[39m in 21ms[2m (compile: 5ms, proxy.ts: 5ms, render: 11ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1007/event/1/picks [32m200[39m in 21ms[2m (compile: 5ms, proxy.ts: 5ms, render: 11ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1007/event/1/picks [32m200[39m in 24ms[2m (compile: 7ms, proxy.ts: 7ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1012/event/1/picks [32m200[39m in 24ms[2m (compile: 8ms, proxy.ts: 7ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1012/event/1/picks [32m200[39m in 22ms[2m (compile: 6ms, proxy.ts: 5ms, render: 11ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1013/event/1/picks [32m200[39m in 22ms[2m (compile: 6ms, proxy.ts: 5ms, render: 11ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1013/event/1/picks [32m200[39m in 43ms[2m (compile: 19ms, proxy.ts: 8ms, render: 16ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 43ms[2m (compile: 19ms, proxy.ts: 8ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 43ms[2m (compile: 19ms, proxy.ts: 8ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 45ms[2m (compile: 14ms, proxy.ts: 7ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 45ms[2m (compile: 14ms, proxy.ts: 7ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 45ms[2m (compile: 14ms, proxy.ts: 7ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 45ms[2m (compile: 14ms, proxy.ts: 7ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1008/event/1/picks [32m200[39m in 32ms[2m (compile: 8ms, proxy.ts: 8ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 33ms[2m (compile: 8ms, proxy.ts: 8ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 33ms[2m (compile: 8ms, proxy.ts: 8ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1008/event/1/picks [32m200[39m in 26ms[2m (compile: 8ms, proxy.ts: 8ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1009/event/1/picks [32m200[39m in 26ms[2m (compile: 8ms, proxy.ts: 8ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1009/event/1/picks [32m200[39m in 28ms[2m (compile: 8ms, proxy.ts: 6ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1010/event/1/picks [32m200[39m in 28ms[2m (compile: 8ms, proxy.ts: 6ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1010/event/1/picks [32m200[39m in 22ms[2m (compile: 7ms, proxy.ts: 5ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1011/event/1/picks [32m200[39m in 22ms[2m (compile: 7ms, proxy.ts: 5ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1011/event/1/picks [32m200[39m in 42ms[2m (compile: 16ms, proxy.ts: 7ms, render: 19ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 42ms[2m (compile: 16ms, proxy.ts: 7ms, render: 19ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 42ms[2m (compile: 16ms, proxy.ts: 7ms, render: 19ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 45ms[2m (compile: 11ms, proxy.ts: 8ms, render: 26ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/fixtures [32m200[39m in 45ms[2m (compile: 11ms, proxy.ts: 8ms, render: 26ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 45ms[2m (compile: 11ms, proxy.ts: 8ms, render: 26ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 45ms[2m (compile: 11ms, proxy.ts: 8ms, render: 26ms)[22m
+[2m[WebServer] [22m[fpl] live gw1 lane=background calls=33/80 rejected=0
+[2m[WebServer] [22m GET /api/fixtures/live?gameweek=1&leagueSlug=t8-4vpn847f [32m200[39m in 5.1s[2m (compile: 3ms, proxy.ts: 7ms, render: 5.1s)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 27ms[2m (compile: 7ms, proxy.ts: 7ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 27ms[2m (compile: 7ms, proxy.ts: 8ms, render: 13ms)[22m
+[2m[WebServer] [22m[fpl] refresh gw1 lane=background calls=33/80 rejected=0
+[2m[WebServer] [22m GET /api/fixtures/live/refresh?gameweek=1&leagueSlug=t8-4vpn847f [32m200[39m in 5.2s[2m (compile: 2.2s, proxy.ts: 7ms, render: 3.1s)[22m
+  ok 27 [chromium] › tests\league-types\live-scores.spec.ts:85:7 › live scores (TVT) › refresh and live agree on every score (one shared scorer) (5.3s)
+[2m[WebServer] [22m GET /api/fixtures/live/refresh?gameweek=1 [33m400[39m in 13ms[2m (compile: 2ms, proxy.ts: 4ms, render: 6ms)[22m
+  ok 28 [chromium] › tests\league-types\live-scores.spec.ts:118:7 › live scores (TVT) › refresh refuses to run without a leagueSlug (18ms)
+[2m[WebServer] [22m GET /api/fixtures/live?gameweek=2&leagueSlug=t8-4vpn847f [32m200[39m in 19ms[2m (compile: 7ms, proxy.ts: 4ms, render: 8ms)[22m
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 15ms[2m (compile: 4ms, proxy.ts: 5ms, render: 6ms)[22m
+  ok 29 [chromium] › tests\league-types\live-scores.spec.ts:127:7 › live scores (TVT) › a not-yet-started gameweek is not live (25ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 104ms[2m (compile: 11ms, proxy.ts: 7ms, render: 87ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 734ms[2m (compile: 13ms, proxy.ts: 6ms, render: 714ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1497µs, proxy.ts: 4ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 275ms[2m (compile: 6ms, proxy.ts: 4ms, render: 266ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 262ms[2m (compile: 8ms, proxy.ts: 7ms, render: 247ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 20ms[2m (compile: 4ms, proxy.ts: 7ms, render: 9ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 87ms[2m (compile: 2ms, proxy.ts: 6ms, render: 79ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 309ms[2m (compile: 13ms, proxy.ts: 27ms, render: 269ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 607ms[2m (compile: 3ms, proxy.ts: 4ms, render: 600ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1451µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1350µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 246ms[2m (compile: 1489µs, proxy.ts: 5ms, render: 240ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 218ms[2m (compile: 1536µs, proxy.ts: 5ms, render: 212ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1444µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 84ms[2m (compile: 1794µs, proxy.ts: 5ms, render: 78ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 255ms[2m (compile: 1712µs, proxy.ts: 5ms, render: 249ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 272ms[2m (compile: 2ms, proxy.ts: 6ms, render: 263ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 2ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 86ms[2m (compile: 1736µs, proxy.ts: 4ms, render: 80ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 265ms[2m (compile: 1632µs, proxy.ts: 6ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 296ms[2m (compile: 1698µs, proxy.ts: 5ms, render: 289ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1660µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 83ms[2m (compile: 1568µs, proxy.ts: 6ms, render: 76ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 266ms[2m (compile: 1596µs, proxy.ts: 5ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1490µs, proxy.ts: 4ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1567µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1485µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 266ms[2m (compile: 1600µs, proxy.ts: 5ms, render: 260ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 251ms[2m (compile: 1510µs, proxy.ts: 4ms, render: 246ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1670µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1398µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 262ms[2m (compile: 1481µs, proxy.ts: 4ms, render: 256ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 252ms[2m (compile: 1429µs, proxy.ts: 4ms, render: 247ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1420µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1428µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vqkl21g/generate-fixtures [32m200[39m in 16.0s[2m (compile: 17ms, proxy.ts: 5ms, render: 15.9s)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 20ms[2m (compile: 3ms, proxy.ts: 9ms, render: 8ms)[22m
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 28ms[2m (compile: 14ms, proxy.ts: 7ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 199ms[2m (compile: 3ms, proxy.ts: 8ms, render: 187ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 12ms, proxy.ts: 5ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.2s[2m (compile: 22ms, proxy.ts: 8ms, render: 5.1s)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1422µs, proxy.ts: 4ms, render: 6ms)[22m
+  ok 30 [chromium] › tests\league-types\submission-gate.spec.ts:67:7 › submission gate (TVT) › GW1 is open even though nothing has finished — nothing precedes it (5.4s)
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 81ms[2m (compile: 1724µs, proxy.ts: 5ms, render: 74ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 17ms[2m (compile: 5ms, proxy.ts: 6ms, render: 6ms)[22m
+[2m[WebServer] [22m[gameweeks] FPL event status unavailable; submission gate falls open TypeError: fetch failed
+[2m[WebServer] [22m    at async fplRequest (src\lib\fpl\gateway.ts:235:13)
+[2m[WebServer] [22m    at async fetchBootstrapData (src\lib\fpl.ts:77:15)
+[2m[WebServer] [22m    at async fetchEventStatus (src\lib\fpl.ts:366:21)
+[2m[WebServer] [22m    at async getFinishedGwNumbers (src\lib\gameweeks\finished-set.ts:21:20)
+[2m[WebServer] [22m    at async GET (src\app\api\team\dashboard\route.ts:173:31)
+[2m[WebServer] [22m[0m [90m 233 |[39m     [36mtry[39m {
+[2m[WebServer] [22m [90m 234 |[39m       [36mawait[39m pace()[33m;[39m
+[2m[WebServer] [22m[31m[1m>[22m[39m[90m 235 |[39m       res [33m=[39m [36mawait[39m fetchOnce(url[33m,[39m timeoutMs[33m,[39m signal)[33m;[39m
+[2m[WebServer] [22m [90m     |[39m             [31m[1m^[22m[39m
+[2m[WebServer] [22m [90m 236 |[39m     } [36mfinally[39m {
+[2m[WebServer] [22m [90m 237 |[39m       release()[33m;[39m
+[2m[WebServer] [22m [90m 238 |[39m     }[0m {
+[2m[WebServer] [22m  [cause]: Error: read ECONNRESET
+[2m[WebServer] [22m      at [3mignore-listed frames[23m {
+[2m[WebServer] [22m    errno: [33m-4077[39m,
+[2m[WebServer] [22m    code: [32m'ECONNRESET'[39m,
+[2m[WebServer] [22m    syscall: [32m'read'[39m
+[2m[WebServer] [22m  }
+[2m[WebServer] [22m}
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 6.2s[2m (compile: 1824µs, proxy.ts: 6ms, render: 6.2s)[22m
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 23ms[2m (compile: 12ms, proxy.ts: 4ms, render: 7ms)[22m
+  x  31 [chromium] › tests\league-types\submission-gate.spec.ts:78:7 › submission gate (TVT) › while GW1 is in flight, GW2 is gated on FPL finishing GW1 (6.3s)
+  -  32 [chromium] › tests\league-types\submission-gate.spec.ts:92:7 › submission gate (TVT) › captain and chip submissions are rejected server-side while gated
+  -  33 [chromium] › tests\league-types\submission-gate.spec.ts:116:7 › submission gate (TVT) › chip eligibility is suppressed rather than computed off a moving table
+  -  34 [chromium] › tests\league-types\submission-gate.spec.ts:128:7 › submission gate (TVT) › once FPL marks GW1 finished, GW2 opens and accepts a submission
+  -  35 [chromium] › tests\league-types\submission-gate.spec.ts:147:7 › submission gate (TVT) › a rejected submission is recorded as a LATE_ATTEMPT audit row
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1360µs, proxy.ts: 4ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 662ms[2m (compile: 1515µs, proxy.ts: 5ms, render: 655ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 1398µs, proxy.ts: 4ms, render: 75ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 562ms[2m (compile: 2ms, proxy.ts: 4ms, render: 555ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 240ms[2m (compile: 2ms, proxy.ts: 4ms, render: 233ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1441µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1307µs, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 277ms[2m (compile: 1559µs, proxy.ts: 4ms, render: 271ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 271ms[2m (compile: 1424µs, proxy.ts: 4ms, render: 266ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1336µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 1267µs, proxy.ts: 7ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 267ms[2m (compile: 1436µs, proxy.ts: 5ms, render: 260ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 273ms[2m (compile: 1540µs, proxy.ts: 5ms, render: 266ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1711µs, proxy.ts: 6ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1330µs, proxy.ts: 5ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 266ms[2m (compile: 1398µs, proxy.ts: 5ms, render: 260ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 406ms[2m (compile: 1380µs, proxy.ts: 4ms, render: 400ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1667µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1226µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 247ms[2m (compile: 1517µs, proxy.ts: 5ms, render: 241ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 229ms[2m (compile: 1462µs, proxy.ts: 5ms, render: 222ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1569µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1519µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 269ms[2m (compile: 2ms, proxy.ts: 6ms, render: 261ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 295ms[2m (compile: 1289µs, proxy.ts: 4ms, render: 290ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 19ms[2m (compile: 8ms, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 95ms[2m (compile: 3ms, proxy.ts: 8ms, render: 85ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 297ms[2m (compile: 2ms, proxy.ts: 6ms, render: 289ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 273ms[2m (compile: 1804µs, proxy.ts: 6ms, render: 266ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 2ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 2ms, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 268ms[2m (compile: 2ms, proxy.ts: 4ms, render: 262ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 251ms[2m (compile: 1466µs, proxy.ts: 5ms, render: 244ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1297µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1687µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vrfgz89/generate-fixtures [32m200[39m in 18.3s[2m (compile: 11ms, proxy.ts: 6ms, render: 18.3s)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 76ms[2m (compile: 4ms, proxy.ts: 66ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 25ms[2m (compile: 14ms, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 81ms[2m (compile: 1512µs, proxy.ts: 4ms, render: 75ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 14ms[2m (compile: 5ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 25ms[2m (compile: 12ms, proxy.ts: 6ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.0s[2m (compile: 1984µs, proxy.ts: 5ms, render: 5.0s)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1690µs, proxy.ts: 5ms, render: 5ms)[22m
+  ok 36 [chromium] › tests\league-types\submission-gate.spec.ts:67:7 › submission gate (TVT) › GW1 is open even though nothing has finished — nothing precedes it (retry #1) (5.2s)
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 13ms[2m (compile: 4ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 2ms, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 11ms, proxy.ts: 6ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 4.5s[2m (compile: 3ms, proxy.ts: 5ms, render: 4.5s)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1438µs, proxy.ts: 5ms, render: 5ms)[22m
+  ok 37 [chromium] › tests\league-types\submission-gate.spec.ts:78:7 › submission gate (TVT) › while GW1 is in flight, GW2 is gated on FPL finishing GW1 (retry #1) (4.7s)
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 18ms[2m (compile: 8ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 1597µs, proxy.ts: 4ms, render: 74ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 13ms[2m (compile: 3ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 25ms[2m (compile: 12ms, proxy.ts: 6ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.3s[2m (compile: 1862µs, proxy.ts: 4ms, render: 5.3s)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 13ms[2m (compile: 3ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/team/captain [33m400[39m in 616ms[2m (compile: 8ms, proxy.ts: 4ms, render: 604ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 30ms[2m (compile: 17ms, proxy.ts: 4ms, render: 9ms)[22m
+[2m[WebServer] [22m POST /api/team/chips [33m400[39m in 1051ms[2m (compile: 828ms, proxy.ts: 6ms, render: 216ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 17ms[2m (compile: 5ms, proxy.ts: 5ms, render: 8ms)[22m
+  ok 38 [chromium] › tests\league-types\submission-gate.spec.ts:92:7 › submission gate (TVT) › captain and chip submissions are rejected server-side while gated (retry #1) (7.2s)
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 93ms[2m (compile: 6ms, proxy.ts: 5ms, render: 83ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 15ms[2m (compile: 4ms, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 23ms[2m (compile: 12ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.0s[2m (compile: 15ms, proxy.ts: 4ms, render: 5.0s)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1412µs, proxy.ts: 4ms, render: 7ms)[22m
+  ok 39 [chromium] › tests\league-types\submission-gate.spec.ts:116:7 › submission gate (TVT) › chip eligibility is suppressed rather than computed off a moving table (retry #1) (5.2s)
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 13ms[2m (compile: 3ms, proxy.ts: 4ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 81ms[2m (compile: 1355µs, proxy.ts: 4ms, render: 76ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 13ms[2m (compile: 4ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 24ms[2m (compile: 11ms, proxy.ts: 5ms, render: 7ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.0s[2m (compile: 2ms, proxy.ts: 7ms, render: 5.0s)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 13ms[2m (compile: 3ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 22ms[2m (compile: 11ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.0s[2m (compile: 1684µs, proxy.ts: 6ms, render: 5.0s)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/team/captain [32m200[39m in 212ms[2m (compile: 5ms, proxy.ts: 5ms, render: 202ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1394µs, proxy.ts: 4ms, render: 5ms)[22m
+  ok 40 [chromium] › tests\league-types\submission-gate.spec.ts:128:7 › submission gate (TVT) › once FPL marks GW1 finished, GW2 opens and accepts a submission (retry #1) (10.4s)
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 12ms[2m (compile: 3ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1342µs, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 13ms[2m (compile: 3ms, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 25ms[2m (compile: 12ms, proxy.ts: 5ms, render: 8ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.5s[2m (compile: 1605µs, proxy.ts: 4ms, render: 5.5s)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 13ms[2m (compile: 3ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/team/captain [33m400[39m in 205ms[2m (compile: 1861µs, proxy.ts: 4ms, render: 199ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 23ms[2m (compile: 3ms, proxy.ts: 16ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/test-fpl-stub/control [32m200[39m in 14ms[2m (compile: 3ms, proxy.ts: 4ms, render: 6ms)[22m
+  ok 41 [chromium] › tests\league-types\submission-gate.spec.ts:147:7 › submission gate (TVT) › a rejected submission is recorded as a LATE_ATTEMPT audit row (retry #1) (5.9s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 81ms[2m (compile: 1802µs, proxy.ts: 5ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 1512ms[2m (compile: 8ms, proxy.ts: 6ms, render: 1498ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1610µs, proxy.ts: 5ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 277ms[2m (compile: 8ms, proxy.ts: 4ms, render: 266ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 285ms[2m (compile: 8ms, proxy.ts: 5ms, render: 272ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1645µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 2ms, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 370ms[2m (compile: 1361µs, proxy.ts: 4ms, render: 365ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 507ms[2m (compile: 1657µs, proxy.ts: 6ms, render: 500ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 16ms[2m (compile: 3ms, proxy.ts: 6ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1581µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 265ms[2m (compile: 2ms, proxy.ts: 4ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 297ms[2m (compile: 2ms, proxy.ts: 5ms, render: 290ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1727µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1255µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 265ms[2m (compile: 1519µs, proxy.ts: 4ms, render: 260ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 629ms[2m (compile: 1476µs, proxy.ts: 4ms, render: 624ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1489µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1381µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 267ms[2m (compile: 1449µs, proxy.ts: 4ms, render: 261ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 430ms[2m (compile: 2ms, proxy.ts: 13ms, render: 415ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1514µs, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1355µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 286ms[2m (compile: 1608µs, proxy.ts: 5ms, render: 279ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 276ms[2m (compile: 1476µs, proxy.ts: 4ms, render: 270ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1619µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1445µs, proxy.ts: 6ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 283ms[2m (compile: 1955µs, proxy.ts: 6ms, render: 276ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 849ms[2m (compile: 1476µs, proxy.ts: 4ms, render: 843ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1627µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1336µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 582ms[2m (compile: 1680µs, proxy.ts: 4ms, render: 576ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 463ms[2m (compile: 1549µs, proxy.ts: 4ms, render: 457ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1604µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1352µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 255ms[2m (compile: 3ms, proxy.ts: 4ms, render: 249ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 235ms[2m (compile: 1458µs, proxy.ts: 4ms, render: 229ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1493µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 126ms[2m (compile: 5ms, proxy.ts: 4ms, render: 118ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 304ms[2m (compile: 2ms, proxy.ts: 5ms, render: 296ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 230ms[2m (compile: 1459µs, proxy.ts: 4ms, render: 224ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 3ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1271µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 570ms[2m (compile: 1376µs, proxy.ts: 4ms, render: 565ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 220ms[2m (compile: 1407µs, proxy.ts: 4ms, render: 215ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1596µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1563µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 250ms[2m (compile: 2ms, proxy.ts: 4ms, render: 244ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1526µs, proxy.ts: 5ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1691µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 2ms, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 265ms[2m (compile: 1420µs, proxy.ts: 4ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1490µs, proxy.ts: 4ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1354µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1321µs, proxy.ts: 3ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 274ms[2m (compile: 1522µs, proxy.ts: 4ms, render: 268ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 275ms[2m (compile: 1486µs, proxy.ts: 5ms, render: 269ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1299µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1404µs, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 274ms[2m (compile: 1388µs, proxy.ts: 4ms, render: 268ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 286ms[2m (compile: 1311µs, proxy.ts: 6ms, render: 279ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1339µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1253µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 266ms[2m (compile: 2ms, proxy.ts: 5ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1441µs, proxy.ts: 5ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1327µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 2ms, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/admin/t16-4vswrjm2/generate-fixtures [32m200[39m in 33.1s[2m (compile: 19ms, proxy.ts: 4ms, render: 33.1s)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 229ms[2m (compile: 4ms, proxy.ts: 27ms, render: 198ms)[22m
+[2m[WebServer] [22m GET /api/admin/t16-4vswrjm2/generate-fixtures [32m200[39m in 43ms[2m (compile: 20ms, proxy.ts: 11ms, render: 12ms)[22m
+  ok 42 [chromium] › tests\league-types\tvt-16.spec.ts:43:7 › TVT-16 (admin + user) › admin: 16-team league has 30 league-stage GWs and 2 repetitions (343ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 100ms[2m (compile: 3ms, proxy.ts: 9ms, render: 88ms)[22m
+[2m[WebServer] [22m POST /api/admin/t16-4vswrjm2/settings [32m200[39m in 1696ms[2m (compile: 1512ms, proxy.ts: 8ms, render: 176ms)[22m
+[2m[WebServer] [22m GET /api/admin/t16-4vswrjm2/settings [32m200[39m in 24ms[2m (compile: 12ms, proxy.ts: 5ms, render: 8ms)[22m
+[2m[WebServer] [22m POST /api/admin/t16-4vswrjm2/settings [32m200[39m in 466ms[2m (compile: 3ms, proxy.ts: 6ms, render: 457ms)[22m
+  ok 43 [chromium] › tests\league-types\tvt-16.spec.ts:51:7 › TVT-16 (admin + user) › admin: chip enable/disable toggle persists per league (2.3s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 92ms[2m (compile: 7ms, proxy.ts: 4ms, render: 80ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 27ms[2m (compile: 14ms, proxy.ts: 4ms, render: 9ms)[22m
+[2m[WebServer] [22m POST /api/admin/t16-4vswrjm2/generate-playoffs [32m200[39m in 7.9s[2m (compile: 1271ms, proxy.ts: 5ms, render: 6.6s)[22m
+  ok 44 [chromium] › tests\league-types\tvt-16.spec.ts:63:7 › TVT-16 (admin + user) › admin: generate-playoffs creates bracket fixtures starting at GW31 (8.0s)
+[2m[WebServer] [22m GET /t16-4vswrjm2/standings [32m200[39m in 913ms[2m (compile: 708ms, render: 205ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1002/event/1/picks [32m200[39m in 36ms[2m (compile: 19ms, proxy.ts: 5ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1020/event/1/picks [32m200[39m in 47ms[2m (compile: 13ms, proxy.ts: 11ms, render: 23ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1021/event/1/picks [32m200[39m in 47ms[2m (compile: 13ms, proxy.ts: 11ms, render: 23ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1003/event/1/picks [32m200[39m in 47ms[2m (compile: 13ms, proxy.ts: 11ms, render: 23ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1022/event/1/picks [32m200[39m in 47ms[2m (compile: 13ms, proxy.ts: 11ms, render: 23ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1024/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1025/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1023/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1026/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1029/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1030/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1027/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1028/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1004/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1031/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1032/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1033/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1005/event/1/picks [32m200[39m in 53ms[2m (compile: 12ms, proxy.ts: 21ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1006/event/1/picks [32m200[39m in 53ms[2m (compile: 12ms, proxy.ts: 21ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1007/event/1/picks [32m200[39m in 53ms[2m (compile: 12ms, proxy.ts: 21ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1008/event/1/picks [32m200[39m in 53ms[2m (compile: 12ms, proxy.ts: 21ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1009/event/1/picks [32m200[39m in 47ms[2m (compile: 18ms, proxy.ts: 7ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1010/event/1/picks [32m200[39m in 47ms[2m (compile: 18ms, proxy.ts: 7ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1011/event/1/picks [32m200[39m in 47ms[2m (compile: 18ms, proxy.ts: 7ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1012/event/1/picks [32m200[39m in 47ms[2m (compile: 18ms, proxy.ts: 7ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1016/event/1/picks [32m200[39m in 42ms[2m (compile: 11ms, proxy.ts: 9ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1013/event/1/picks [32m200[39m in 42ms[2m (compile: 11ms, proxy.ts: 9ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1014/event/1/picks [32m200[39m in 42ms[2m (compile: 12ms, proxy.ts: 9ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1015/event/1/picks [32m200[39m in 42ms[2m (compile: 12ms, proxy.ts: 9ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1017/event/1/picks [32m200[39m in 31ms[2m (compile: 10ms, proxy.ts: 6ms, render: 15ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1018/event/1/picks [32m200[39m in 31ms[2m (compile: 10ms, proxy.ts: 6ms, render: 15ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1019/event/1/picks [32m200[39m in 31ms[2m (compile: 10ms, proxy.ts: 6ms, render: 15ms)[22m
+[2m[WebServer] [22m GET /api/standings?leagueSlug=t16-4vswrjm2 [32m200[39m in 1873ms[2m (compile: 786ms, proxy.ts: 6ms, render: 1081ms)[22m
+[2m[WebServer] [22m GET /t16-4vswrjm2/fixtures [32m200[39m in 668ms[2m (compile: 420ms, render: 248ms)[22m
+[2m[WebServer] [22m GET /api/fixtures?leagueSlug=t16-4vswrjm2 [32m200[39m in 937ms[2m (compile: 882ms, proxy.ts: 10ms, render: 45ms)[22m
+  ok 45 [chromium] › tests\league-types\tvt-16.spec.ts:73:7 › TVT-16 (admin + user) › user: team can view standings + fixtures pages (8.1s)
+[2m[WebServer] [22m GET /api/fixtures/live?gameweek=1&leagueSlug=t16-4vswrjm2 [32m200[39m in 532ms[2m (compile: 515ms, proxy.ts: 5ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /t16-4vswrjm2/playoffs [32m200[39m in 2.3s[2m (compile: 2.1s, render: 244ms)[22m
+  ok 46 [chromium] › tests\league-types\tvt-16.spec.ts:80:7 › TVT-16 (admin + user) › user: playoffs page returns 200 even with no bracket yet (3.2s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 1069ms[2m (compile: 936ms, proxy.ts: 9ms, render: 124ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 30ms[2m (compile: 17ms, proxy.ts: 5ms, render: 8ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 34ms[2m (compile: 16ms, proxy.ts: 8ms, render: 10ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.8s[2m (compile: 686ms, proxy.ts: 4ms, render: 5.1s)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 31ms[2m (compile: 16ms, proxy.ts: 5ms, render: 9ms)[22m
+[2m[WebServer] [22m POST /api/team/captain [32m200[39m in 1378ms[2m (compile: 729ms, proxy.ts: 10ms, render: 639ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 415ms[2m (compile: 400ms, proxy.ts: 6ms, render: 9ms)[22m
+  ok 47 [chromium] › tests\league-types\tvt-16.spec.ts:84:7 › TVT-16 (admin + user) › user: captain submission flow works for an authenticated team (8.7s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 120ms[2m (compile: 36ms, proxy.ts: 4ms, render: 80ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 2.9s[2m (compile: 583ms, proxy.ts: 4ms, render: 2.3s)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 84ms[2m (compile: 5ms, proxy.ts: 4ms, render: 75ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 730ms[2m (compile: 466ms, proxy.ts: 5ms, render: 260ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 1254ms[2m (compile: 641ms, proxy.ts: 5ms, render: 609ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 4ms, proxy.ts: 5ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 100ms[2m (compile: 6ms, proxy.ts: 4ms, render: 90ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 269ms[2m (compile: 6ms, proxy.ts: 4ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 288ms[2m (compile: 3ms, proxy.ts: 10ms, render: 275ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 18ms[2m (compile: 3ms, proxy.ts: 9ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 104ms[2m (compile: 3ms, proxy.ts: 12ms, render: 88ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 846ms[2m (compile: 3ms, proxy.ts: 7ms, render: 836ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 418ms[2m (compile: 1808µs, proxy.ts: 6ms, render: 410ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 1949µs, proxy.ts: 6ms, render: 8ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1626µs, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 295ms[2m (compile: 1435µs, proxy.ts: 4ms, render: 290ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1344µs, proxy.ts: 4ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1323µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1274µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 266ms[2m (compile: 1400µs, proxy.ts: 5ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 285ms[2m (compile: 1410µs, proxy.ts: 4ms, render: 279ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1570µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1274µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 266ms[2m (compile: 1868µs, proxy.ts: 5ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 695ms[2m (compile: 1358µs, proxy.ts: 4ms, render: 689ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1391µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1399µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 263ms[2m (compile: 2ms, proxy.ts: 5ms, render: 255ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 286ms[2m (compile: 2ms, proxy.ts: 5ms, render: 279ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1359µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1609µs, proxy.ts: 5ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 242ms[2m (compile: 1688µs, proxy.ts: 4ms, render: 237ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 231ms[2m (compile: 1387µs, proxy.ts: 4ms, render: 226ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1336µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1318µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 266ms[2m (compile: 1540µs, proxy.ts: 6ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 263ms[2m (compile: 1504µs, proxy.ts: 4ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1424µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1553µs, proxy.ts: 5ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 264ms[2m (compile: 1465µs, proxy.ts: 6ms, render: 256ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1573µs, proxy.ts: 5ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1429µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1248µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 271ms[2m (compile: 1976µs, proxy.ts: 4ms, render: 264ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 274ms[2m (compile: 1589µs, proxy.ts: 4ms, render: 268ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 1412µs, proxy.ts: 6ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1635µs, proxy.ts: 5ms, render: 69ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 275ms[2m (compile: 1358µs, proxy.ts: 4ms, render: 270ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 297ms[2m (compile: 1497µs, proxy.ts: 5ms, render: 291ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1417µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1334µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 552ms[2m (compile: 1516µs, proxy.ts: 5ms, render: 545ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 429ms[2m (compile: 1687µs, proxy.ts: 4ms, render: 424ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1444µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1691µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 537ms[2m (compile: 1555µs, proxy.ts: 5ms, render: 530ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 231ms[2m (compile: 1391µs, proxy.ts: 4ms, render: 225ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1310µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1250µs, proxy.ts: 3ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 277ms[2m (compile: 1364µs, proxy.ts: 5ms, render: 271ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 261ms[2m (compile: 1890µs, proxy.ts: 6ms, render: 253ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 1536µs, proxy.ts: 4ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 266ms[2m (compile: 3ms, proxy.ts: 4ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 285ms[2m (compile: 1307µs, proxy.ts: 4ms, render: 280ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 2ms, proxy.ts: 6ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 86ms[2m (compile: 2ms, proxy.ts: 6ms, render: 78ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 314ms[2m (compile: 3ms, proxy.ts: 8ms, render: 302ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 286ms[2m (compile: 1747µs, proxy.ts: 7ms, render: 278ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1474µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 2ms, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 273ms[2m (compile: 1585µs, proxy.ts: 4ms, render: 267ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 263ms[2m (compile: 1518µs, proxy.ts: 5ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1453µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1485µs, proxy.ts: 5ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 285ms[2m (compile: 1391µs, proxy.ts: 6ms, render: 277ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 274ms[2m (compile: 1810µs, proxy.ts: 5ms, render: 266ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1472µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1619µs, proxy.ts: 5ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 273ms[2m (compile: 2ms, proxy.ts: 4ms, render: 267ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 218ms[2m (compile: 1457µs, proxy.ts: 5ms, render: 212ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1347µs, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1302µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 616ms[2m (compile: 1401µs, proxy.ts: 4ms, render: 611ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 252ms[2m (compile: 1584µs, proxy.ts: 7ms, render: 244ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1518µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1437µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 265ms[2m (compile: 2ms, proxy.ts: 4ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1591µs, proxy.ts: 5ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 2ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 91ms[2m (compile: 2ms, proxy.ts: 5ms, render: 83ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 269ms[2m (compile: 1736µs, proxy.ts: 4ms, render: 263ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 265ms[2m (compile: 2ms, proxy.ts: 6ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 1431µs, proxy.ts: 6ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 81ms[2m (compile: 3ms, proxy.ts: 6ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 270ms[2m (compile: 1836µs, proxy.ts: 7ms, render: 262ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 263ms[2m (compile: 1629µs, proxy.ts: 5ms, render: 256ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 2ms, proxy.ts: 7ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 82ms[2m (compile: 1554µs, proxy.ts: 4ms, render: 76ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 244ms[2m (compile: 1517µs, proxy.ts: 4ms, render: 238ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 230ms[2m (compile: 1557µs, proxy.ts: 4ms, render: 224ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1558µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1357µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 253ms[2m (compile: 1674µs, proxy.ts: 5ms, render: 247ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 241ms[2m (compile: 1370µs, proxy.ts: 4ms, render: 236ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1745µs, proxy.ts: 6ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 87ms[2m (compile: 1850µs, proxy.ts: 6ms, render: 79ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 295ms[2m (compile: 1837µs, proxy.ts: 4ms, render: 289ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 263ms[2m (compile: 1608µs, proxy.ts: 5ms, render: 257ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1532µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1333µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 279ms[2m (compile: 1373µs, proxy.ts: 4ms, render: 273ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1715µs, proxy.ts: 5ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 9ms[2m (compile: 1478µs, proxy.ts: 4ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1378µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 273ms[2m (compile: 1682µs, proxy.ts: 5ms, render: 266ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 756ms[2m (compile: 1599µs, proxy.ts: 7ms, render: 747ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1421µs, proxy.ts: 5ms, render: 4ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 78ms[2m (compile: 1703µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 263ms[2m (compile: 2ms, proxy.ts: 4ms, render: 256ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 276ms[2m (compile: 2ms, proxy.ts: 4ms, render: 270ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1505µs, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1337µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 326ms[2m (compile: 1445µs, proxy.ts: 4ms, render: 321ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 284ms[2m (compile: 1458µs, proxy.ts: 5ms, render: 278ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1503µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 3ms, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 273ms[2m (compile: 1412µs, proxy.ts: 4ms, render: 267ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 298ms[2m (compile: 3ms, proxy.ts: 4ms, render: 290ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 13ms[2m (compile: 2ms, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 83ms[2m (compile: 1850µs, proxy.ts: 9ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/admin/t32-4vupalmb/generate-fixtures [32m200[39m in 67s[2m (compile: 22ms, proxy.ts: 7ms, render: 67s)[22m
+  ok 48 [chromium] › tests\league-types\tvt-32.spec.ts:48:7 › TVT-32 (admin + user) › admin: league has 32 teams split across 2 groups (3ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 2ms, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m GET /api/admin/t32-4vupalmb/generate-fixtures [32m200[39m in 28ms[2m (compile: 12ms, proxy.ts: 6ms, render: 10ms)[22m
+  ok 49 [chromium] › tests\league-types\tvt-32.spec.ts:59:7 › TVT-32 (admin + user) › admin: 32-team league has 30 league-stage GWs (117ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 1495µs, proxy.ts: 4ms, render: 74ms)[22m
+[2m[WebServer] [22m POST /api/admin/t32-4vupalmb/settings [32m200[39m in 157ms[2m (compile: 17ms, proxy.ts: 5ms, render: 135ms)[22m
+[2m[WebServer] [22m GET /api/admin/t32-4vupalmb/settings [32m200[39m in 15ms[2m (compile: 3ms, proxy.ts: 5ms, render: 6ms)[22m
+  ok 50 [chromium] › tests\league-types\tvt-32.spec.ts:67:7 › TVT-32 (admin + user) › admin: groups reveal setting can be toggled (266ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 81ms[2m (compile: 1881µs, proxy.ts: 5ms, render: 74ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 32ms[2m (compile: 17ms, proxy.ts: 6ms, render: 10ms)[22m
+[2m[WebServer] [22m POST /api/admin/t32-4vupalmb/generate-playoffs [32m200[39m in 5.0s[2m (compile: 24ms, proxy.ts: 4ms, render: 4.9s)[22m
+  ok 51 [chromium] › tests\league-types\tvt-32.spec.ts:76:7 › TVT-32 (admin + user) › admin: generate-playoffs endpoint accepts a POST for the configured format (5.1s)
+[2m[WebServer] [22m GET /t32-4vupalmb/standings [32m200[39m in 283ms[2m (compile: 65ms, render: 218ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1002/event/1/picks [32m200[39m in 26ms[2m (compile: 13ms, proxy.ts: 5ms, render: 8ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1020/event/1/picks [32m200[39m in 42ms[2m (compile: 11ms, proxy.ts: 9ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1021/event/1/picks [32m200[39m in 42ms[2m (compile: 11ms, proxy.ts: 9ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1022/event/1/picks [32m200[39m in 42ms[2m (compile: 11ms, proxy.ts: 9ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1003/event/1/picks [32m200[39m in 42ms[2m (compile: 11ms, proxy.ts: 9ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1023/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 8ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1024/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 8ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1025/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 8ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1026/event/1/picks [32m200[39m in 40ms[2m (compile: 11ms, proxy.ts: 8ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1028/event/1/picks [32m200[39m in 74ms[2m (compile: 25ms, proxy.ts: 16ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1029/event/1/picks [32m200[39m in 74ms[2m (compile: 25ms, proxy.ts: 16ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1030/event/1/picks [32m200[39m in 74ms[2m (compile: 25ms, proxy.ts: 16ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1027/event/1/picks [32m200[39m in 74ms[2m (compile: 25ms, proxy.ts: 16ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1031/event/1/picks [32m200[39m in 27ms[2m (compile: 6ms, proxy.ts: 10ms, render: 11ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1032/event/1/picks [32m200[39m in 67ms[2m (compile: 22ms, proxy.ts: 12ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1033/event/1/picks [32m200[39m in 67ms[2m (compile: 22ms, proxy.ts: 12ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1034/event/1/picks [32m200[39m in 67ms[2m (compile: 22ms, proxy.ts: 13ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1035/event/1/picks [32m200[39m in 67ms[2m (compile: 22ms, proxy.ts: 13ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1036/event/1/picks [32m200[39m in 66ms[2m (compile: 29ms, proxy.ts: 13ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1037/event/1/picks [32m200[39m in 66ms[2m (compile: 29ms, proxy.ts: 13ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1038/event/1/picks [32m200[39m in 66ms[2m (compile: 29ms, proxy.ts: 13ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1039/event/1/picks [32m200[39m in 66ms[2m (compile: 29ms, proxy.ts: 13ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1004/event/1/picks [32m200[39m in 68ms[2m (compile: 23ms, proxy.ts: 10ms, render: 34ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1005/event/1/picks [32m200[39m in 68ms[2m (compile: 23ms, proxy.ts: 10ms, render: 34ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1040/event/1/picks [32m200[39m in 67ms[2m (compile: 23ms, proxy.ts: 10ms, render: 34ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1041/event/1/picks [32m200[39m in 67ms[2m (compile: 23ms, proxy.ts: 10ms, render: 34ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1042/event/1/picks [32m200[39m in 56ms[2m (compile: 13ms, proxy.ts: 10ms, render: 33ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1043/event/1/picks [32m200[39m in 56ms[2m (compile: 13ms, proxy.ts: 10ms, render: 32ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1044/event/1/picks [32m200[39m in 56ms[2m (compile: 13ms, proxy.ts: 10ms, render: 32ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1045/event/1/picks [32m200[39m in 56ms[2m (compile: 13ms, proxy.ts: 11ms, render: 32ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1046/event/1/picks [32m200[39m in 39ms[2m (compile: 10ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1047/event/1/picks [32m200[39m in 40ms[2m (compile: 10ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1049/event/1/picks [32m200[39m in 40ms[2m (compile: 10ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1048/event/1/picks [32m200[39m in 40ms[2m (compile: 10ms, proxy.ts: 9ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1050/event/1/picks [32m200[39m in 38ms[2m (compile: 11ms, proxy.ts: 8ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1051/event/1/picks [32m200[39m in 38ms[2m (compile: 11ms, proxy.ts: 8ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1052/event/1/picks [32m200[39m in 38ms[2m (compile: 10ms, proxy.ts: 8ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1053/event/1/picks [32m200[39m in 38ms[2m (compile: 10ms, proxy.ts: 8ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1054/event/1/picks [32m200[39m in 48ms[2m (compile: 14ms, proxy.ts: 12ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1055/event/1/picks [32m200[39m in 48ms[2m (compile: 14ms, proxy.ts: 12ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1056/event/1/picks [32m200[39m in 48ms[2m (compile: 14ms, proxy.ts: 12ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1057/event/1/picks [32m200[39m in 48ms[2m (compile: 14ms, proxy.ts: 12ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1058/event/1/picks [32m200[39m in 56ms[2m (compile: 24ms, proxy.ts: 9ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1059/event/1/picks [32m200[39m in 56ms[2m (compile: 24ms, proxy.ts: 9ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1006/event/1/picks [32m200[39m in 56ms[2m (compile: 24ms, proxy.ts: 9ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1007/event/1/picks [32m200[39m in 56ms[2m (compile: 24ms, proxy.ts: 9ms, render: 24ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1060/event/1/picks [32m200[39m in 60ms[2m (compile: 26ms, proxy.ts: 11ms, render: 23ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1061/event/1/picks [32m200[39m in 60ms[2m (compile: 26ms, proxy.ts: 11ms, render: 23ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1062/event/1/picks [32m200[39m in 60ms[2m (compile: 26ms, proxy.ts: 11ms, render: 23ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1063/event/1/picks [32m200[39m in 60ms[2m (compile: 26ms, proxy.ts: 12ms, render: 23ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1064/event/1/picks [32m200[39m in 44ms[2m (compile: 14ms, proxy.ts: 8ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1065/event/1/picks [32m200[39m in 44ms[2m (compile: 14ms, proxy.ts: 8ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1008/event/1/picks [32m200[39m in 44ms[2m (compile: 14ms, proxy.ts: 8ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1009/event/1/picks [32m200[39m in 44ms[2m (compile: 14ms, proxy.ts: 8ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1010/event/1/picks [32m200[39m in 47ms[2m (compile: 15ms, proxy.ts: 11ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1011/event/1/picks [32m200[39m in 47ms[2m (compile: 15ms, proxy.ts: 11ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1012/event/1/picks [32m200[39m in 47ms[2m (compile: 15ms, proxy.ts: 11ms, render: 22ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1013/event/1/picks [32m200[39m in 47ms[2m (compile: 15ms, proxy.ts: 11ms, render: 21ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1014/event/1/picks [32m200[39m in 49ms[2m (compile: 14ms, proxy.ts: 9ms, render: 26ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1015/event/1/picks [32m200[39m in 49ms[2m (compile: 14ms, proxy.ts: 9ms, render: 26ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1016/event/1/picks [32m200[39m in 49ms[2m (compile: 14ms, proxy.ts: 9ms, render: 26ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1017/event/1/picks [32m200[39m in 49ms[2m (compile: 14ms, proxy.ts: 9ms, render: 26ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1018/event/1/picks [32m200[39m in 27ms[2m (compile: 8ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1019/event/1/picks [32m200[39m in 27ms[2m (compile: 8ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/standings?leagueSlug=t32-4vupalmb [32m200[39m in 2.4s[2m (compile: 21ms, proxy.ts: 6ms, render: 2.4s)[22m
+  ok 52 [chromium] › tests\league-types\tvt-32.spec.ts:87:7 › TVT-32 (admin + user) › user: standings page lists at least one of the 32 teams (6.1s)
+[2m[WebServer] [22m GET /t32-4vupalmb/fixtures [32m200[39m in 111ms[2m (compile: 22ms, render: 88ms)[22m
+[2m[WebServer] [22m GET /api/fixtures?leagueSlug=t32-4vupalmb [32m200[39m in 81ms[2m (compile: 7ms, proxy.ts: 4ms, render: 69ms)[22m
+[2m[WebServer] [22m GET /api/fixtures/live?gameweek=1&leagueSlug=t32-4vupalmb [32m200[39m in 24ms[2m (compile: 11ms, proxy.ts: 4ms, render: 9ms)[22m
+  ok 53 [chromium] › tests\league-types\tvt-32.spec.ts:93:7 › TVT-32 (admin + user) › user: fixtures page renders without error (1.2s)
+[2m[WebServer] [22m GET /t32-4vupalmb/winners [32m200[39m in 2.1s[2m (compile: 1910ms, render: 201ms)[22m
+[2m[WebServer] [22m GET /api/auth/me [32m200[39m in 1254ms[2m (compile: 1044ms, proxy.ts: 140ms, render: 70ms)[22m
+[2m[WebServer] [22m GET /api/leagues [32m200[39m in 1254ms[2m (compile: 1044ms, proxy.ts: 140ms, render: 70ms)[22m
+[2m[WebServer] [22m GET /api/playoffs/winners?leagueSlug=t32-4vupalmb [32m200[39m in 1254ms[2m (compile: 1044ms, proxy.ts: 140ms, render: 70ms)[22m
+[2m[WebServer] [22m GET /t32-4vupalmb/playoffs [32m200[39m in 1482ms[2m (compile: 1276ms, render: 206ms)[22m
+  ok 54 [chromium] › tests\league-types\tvt-32.spec.ts:97:7 › TVT-32 (admin + user) › user: winners + playoffs pages load (even before brackets seeded) (5.0s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 1042ms[2m (compile: 748ms, proxy.ts: 157ms, render: 137ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 28ms[2m (compile: 15ms, proxy.ts: 4ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 36ms[2m (compile: 18ms, proxy.ts: 10ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 6.4s[2m (compile: 679ms, proxy.ts: 4ms, render: 5.7s)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 678ms[2m (compile: 658ms, proxy.ts: 8ms, render: 11ms)[22m
+  ok 55 [chromium] › tests\league-types\tvt-32.spec.ts:102:7 › TVT-32 (admin + user) › user: team can view its own dashboard after sign-in (8.2s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 225ms[2m (compile: 131ms, proxy.ts: 8ms, render: 86ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 1532ms[2m (compile: 649ms, proxy.ts: 4ms, render: 879ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 85ms[2m (compile: 3ms, proxy.ts: 6ms, render: 75ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 929ms[2m (compile: 649ms, proxy.ts: 4ms, render: 276ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 1414ms[2m (compile: 661ms, proxy.ts: 4ms, render: 749ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 14ms[2m (compile: 4ms, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 84ms[2m (compile: 5ms, proxy.ts: 4ms, render: 75ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 242ms[2m (compile: 6ms, proxy.ts: 5ms, render: 232ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 243ms[2m (compile: 1446µs, proxy.ts: 4ms, render: 237ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1376µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1295µs, proxy.ts: 4ms, render: 72ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 271ms[2m (compile: 1532µs, proxy.ts: 5ms, render: 264ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 274ms[2m (compile: 1289µs, proxy.ts: 4ms, render: 269ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1328µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1714µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 265ms[2m (compile: 1707µs, proxy.ts: 4ms, render: 259ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 287ms[2m (compile: 1409µs, proxy.ts: 4ms, render: 281ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1367µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1411µs, proxy.ts: 5ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 282ms[2m (compile: 1345µs, proxy.ts: 4ms, render: 277ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 275ms[2m (compile: 2ms, proxy.ts: 4ms, render: 269ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1329µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 84ms[2m (compile: 1231µs, proxy.ts: 3ms, render: 79ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 269ms[2m (compile: 1365µs, proxy.ts: 4ms, render: 264ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 275ms[2m (compile: 1896µs, proxy.ts: 4ms, render: 269ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 11ms[2m (compile: 1387µs, proxy.ts: 4ms, render: 6ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 74ms[2m (compile: 1288µs, proxy.ts: 4ms, render: 69ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 272ms[2m (compile: 1376µs, proxy.ts: 5ms, render: 265ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 298ms[2m (compile: 1577µs, proxy.ts: 4ms, render: 292ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1336µs, proxy.ts: 4ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 76ms[2m (compile: 1438µs, proxy.ts: 4ms, render: 70ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 276ms[2m (compile: 1292µs, proxy.ts: 5ms, render: 269ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 264ms[2m (compile: 1665µs, proxy.ts: 5ms, render: 258ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 12ms[2m (compile: 1845µs, proxy.ts: 5ms, render: 5ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 79ms[2m (compile: 3ms, proxy.ts: 4ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vxe3zbh/generate-fixtures [32m200[39m in 16.1s[2m (compile: 21ms, proxy.ts: 7ms, render: 16.1s)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 87ms[2m (compile: 3ms, proxy.ts: 8ms, render: 76ms)[22m
+[2m[WebServer] [22m GET /api/admin/t8-4vxe3zbh/generate-fixtures [32m200[39m in 35ms[2m (compile: 16ms, proxy.ts: 7ms, render: 12ms)[22m
+  ok 56 [chromium] › tests\league-types\tvt-8.spec.ts:51:7 › TVT-8 (admin + user) › admin: league was created with 8 teams and 35 league-stage GWs (136ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 169ms[2m (compile: 2ms, proxy.ts: 6ms, render: 161ms)[22m
+[2m[WebServer] [22m DELETE /api/admin/t8-4vxe3zbh/generate-fixtures [32m200[39m in 688ms[2m (compile: 4ms, proxy.ts: 8ms, render: 676ms)[22m
+[2m[WebServer] [22m GET /api/admin/t8-4vxe3zbh/generate-fixtures [32m200[39m in 32ms[2m (compile: 15ms, proxy.ts: 6ms, render: 11ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vxe3zbh/generate-fixtures [32m200[39m in 16.4s[2m (compile: 12ms, proxy.ts: 4ms, render: 16.3s)[22m
+  ok 57 [chromium] › tests\league-types\tvt-8.spec.ts:60:7 › TVT-8 (admin + user) › admin: fixtures can be deleted and regenerated (21.0s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 75ms[2m (compile: 1334µs, proxy.ts: 5ms, render: 69ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vxe3zbh/settings [32m200[39m in 147ms[2m (compile: 14ms, proxy.ts: 5ms, render: 128ms)[22m
+[2m[WebServer] [22m GET /api/admin/t8-4vxe3zbh/settings [32m200[39m in 16ms[2m (compile: 4ms, proxy.ts: 5ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vxe3zbh/settings [32m200[39m in 146ms[2m (compile: 4ms, proxy.ts: 6ms, render: 136ms)[22m
+[2m[WebServer] [22m GET /api/admin/t8-4vxe3zbh/settings [32m200[39m in 13ms[2m (compile: 3ms, proxy.ts: 5ms, render: 5ms)[22m
+  ok 58 [chromium] › tests\league-types\tvt-8.spec.ts:74:7 › TVT-8 (admin + user) › admin: league settings (captain/chip toggles) persist (483ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 80ms[2m (compile: 1874µs, proxy.ts: 5ms, render: 73ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vxe3zbh/backups [32m200[39m in 1866ms[2m (compile: 1685ms, proxy.ts: 6ms, render: 175ms)[22m
+[2m[WebServer] [22m GET /api/admin/t8-4vxe3zbh/backups [32m200[39m in 53ms[2m (compile: 17ms, proxy.ts: 26ms, render: 10ms)[22m
+  ok 59 [chromium] › tests\league-types\tvt-8.spec.ts:89:7 › TVT-8 (admin + user) › admin: backup export round-trips through the backups list (2.0s)
+[2m[WebServer] [22m GET /signin [32m200[39m in 746ms[2m (compile: 596ms, render: 150ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 124ms[2m (compile: 33ms, proxy.ts: 7ms, render: 84ms)[22m
+[2m[WebServer] [22m GET /dashboard [32m200[39m in 1089ms[2m (compile: 965ms, render: 124ms)[22m
+[2m[WebServer] [22m GET /api/auth/me [32m200[39m in 487ms[2m (compile: 468ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 37ms[2m (compile: 17ms, proxy.ts: 4ms, render: 16ms)[22m
+[2m[WebServer] [22m[gameweeks] FPL event status unavailable; submission gate falls open TypeError: fetch failed
+[2m[WebServer] [22m    at async fplRequest (src\lib\fpl\gateway.ts:235:13)
+[2m[WebServer] [22m    at async fetchBootstrapData (src\lib\fpl.ts:77:15)
+[2m[WebServer] [22m    at async fetchEventStatus (src\lib\fpl.ts:366:21)
+[2m[WebServer] [22m    at async getFinishedGwNumbers (src\lib\gameweeks\finished-set.ts:21:20)
+[2m[WebServer] [22m    at async GET (src\app\api\team\dashboard\route.ts:173:31)
+[2m[WebServer] [22m[0m [90m 233 |[39m     [36mtry[39m {
+[2m[WebServer] [22m [90m 234 |[39m       [36mawait[39m pace()[33m;[39m
+[2m[WebServer] [22m[31m[1m>[22m[39m[90m 235 |[39m       res [33m=[39m [36mawait[39m fetchOnce(url[33m,[39m timeoutMs[33m,[39m signal)[33m;[39m
+[2m[WebServer] [22m [90m     |[39m             [31m[1m^[22m[39m
+[2m[WebServer] [22m [90m 236 |[39m     } [36mfinally[39m {
+[2m[WebServer] [22m [90m 237 |[39m       release()[33m;[39m
+[2m[WebServer] [22m [90m 238 |[39m     }[0m {
+[2m[WebServer] [22m  [cause]: Error: read ECONNRESET
+[2m[WebServer] [22m      at [3mignore-listed frames[23m {
+[2m[WebServer] [22m    errno: [33m-4077[39m,
+[2m[WebServer] [22m    code: [32m'ECONNRESET'[39m,
+[2m[WebServer] [22m    syscall: [32m'read'[39m
+[2m[WebServer] [22m  }
+[2m[WebServer] [22m}
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 6.5s[2m (compile: 28ms, proxy.ts: 5ms, render: 6.5s)[22m
+[2m[WebServer] [22m GET /api/notifications [32m200[39m in 475ms[2m (compile: 455ms, proxy.ts: 6ms, render: 13ms)[22m
+[2m[WebServer] [22m GET /api/notifications [32m200[39m in 20ms[2m (compile: 3ms, proxy.ts: 9ms, render: 8ms)[22m
+  ok 60 [chromium] › tests\league-types\tvt-8.spec.ts:105:7 › TVT-8 (admin + user) › user: team can sign in after first-login password change (11.7s)
+[2m[WebServer] [22m GET /t8-4vxe3zbh/standings [32m200[39m in 147ms[2m (compile: 46ms, render: 101ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1002/event/1/picks [32m200[39m in 34ms[2m (compile: 20ms, proxy.ts: 7ms, render: 8ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1004/event/1/picks [32m200[39m in 37ms[2m (compile: 10ms, proxy.ts: 7ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1005/event/1/picks [32m200[39m in 37ms[2m (compile: 10ms, proxy.ts: 7ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1006/event/1/picks [32m200[39m in 37ms[2m (compile: 10ms, proxy.ts: 7ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1003/event/1/picks [32m200[39m in 37ms[2m (compile: 10ms, proxy.ts: 7ms, render: 20ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1007/event/1/picks [32m200[39m in 36ms[2m (compile: 10ms, proxy.ts: 8ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1008/event/1/picks [32m200[39m in 36ms[2m (compile: 10ms, proxy.ts: 8ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1009/event/1/picks [32m200[39m in 36ms[2m (compile: 10ms, proxy.ts: 8ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1010/event/1/picks [32m200[39m in 36ms[2m (compile: 10ms, proxy.ts: 8ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1011/event/1/picks [32m200[39m in 34ms[2m (compile: 10ms, proxy.ts: 7ms, render: 18ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1012/event/1/picks [32m200[39m in 34ms[2m (compile: 10ms, proxy.ts: 7ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1013/event/1/picks [32m200[39m in 34ms[2m (compile: 10ms, proxy.ts: 7ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1014/event/1/picks [32m200[39m in 34ms[2m (compile: 10ms, proxy.ts: 7ms, render: 17ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1015/event/1/picks [32m200[39m in 29ms[2m (compile: 7ms, proxy.ts: 8ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1016/event/1/picks [32m200[39m in 30ms[2m (compile: 7ms, proxy.ts: 8ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/entry/1017/event/1/picks [32m200[39m in 29ms[2m (compile: 7ms, proxy.ts: 8ms, render: 14ms)[22m
+[2m[WebServer] [22m GET /api/standings?leagueSlug=t8-4vxe3zbh [32m200[39m in 1459ms[2m (compile: 837ms, proxy.ts: 6ms, render: 617ms)[22m
+  ok 61 [chromium] › tests\league-types\tvt-8.spec.ts:110:7 › TVT-8 (admin + user) › user: public standings page shows seeded teams (3.3s)
+[2m[WebServer] [22m GET /t8-4vxe3zbh/fixtures [32m200[39m in 674ms[2m (compile: 539ms, render: 135ms)[22m
+[2m[WebServer] [22m GET /api/fixtures?leagueSlug=t8-4vxe3zbh [32m200[39m in 763ms[2m (compile: 729ms, proxy.ts: 4ms, render: 30ms)[22m
+[2m[WebServer] [22m GET /api/fixtures/live?gameweek=1&leagueSlug=t8-4vxe3zbh [32m200[39m in 502ms[2m (compile: 484ms, proxy.ts: 7ms, render: 11ms)[22m
+  ok 62 [chromium] › tests\league-types\tvt-8.spec.ts:119:7 › TVT-8 (admin + user) › user: public fixtures page renders (3.0s)
+[2m[WebServer] [22m GET /t8-4vxe3zbh/rules [32m200[39m in 614ms[2m (compile: 481ms, render: 134ms)[22m
+[2m[WebServer] [22m GET /t8-4vxe3zbh/teams [32m200[39m in 1790ms[2m (compile: 1679ms, render: 111ms)[22m
+  ok 63 [chromium] › tests\league-types\tvt-8.spec.ts:123:7 › TVT-8 (admin + user) › user: rules + teams pages load without error (3.8s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 92ms[2m (compile: 7ms, proxy.ts: 5ms, render: 80ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 25ms[2m (compile: 13ms, proxy.ts: 4ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 22ms[2m (compile: 11ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.5s[2m (compile: 20ms, proxy.ts: 4ms, render: 5.5s)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 26ms[2m (compile: 14ms, proxy.ts: 4ms, render: 8ms)[22m
+[2m[WebServer] [22m POST /api/team/captain [32m200[39m in 1075ms[2m (compile: 900ms, proxy.ts: 4ms, render: 171ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 540ms[2m (compile: 528ms, proxy.ts: 5ms, render: 8ms)[22m
+  ok 64 [chromium] › tests\league-types\tvt-8.spec.ts:128:7 › TVT-8 (admin + user) › user: captain submission succeeds for a future-deadline GW (7.3s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 104ms[2m (compile: 24ms, proxy.ts: 5ms, render: 76ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 29ms[2m (compile: 15ms, proxy.ts: 5ms, render: 9ms)[22m
+[2m[WebServer] [22m POST /api/team/chips [32m200[39m in 870ms[2m (compile: 674ms, proxy.ts: 5ms, render: 190ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 4ms, proxy.ts: 5ms, render: 6ms)[22m
+  ok 65 [chromium] › tests\league-types\tvt-8.spec.ts:149:7 › TVT-8 (admin + user) › user: chip submission succeeds for an enabled chip (1.0s)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 87ms[2m (compile: 4ms, proxy.ts: 4ms, render: 79ms)[22m
+[2m[WebServer] [22m POST /api/team/chips [33m400[39m in 13ms[2m (compile: 1425µs, proxy.ts: 5ms, render: 7ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 10ms[2m (compile: 1357µs, proxy.ts: 4ms, render: 4ms)[22m
+  ok 66 [chromium] › tests\league-types\tvt-8.spec.ts:162:7 › TVT-8 (admin + user) › user: chip submission for a disabled chip returns 400 (121ms)
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 77ms[2m (compile: 1605µs, proxy.ts: 4ms, render: 71ms)[22m
+[2m[WebServer] [22m POST /api/superadmin/leagues [32m200[39m in 1560ms[2m (compile: 516ms, proxy.ts: 5ms, render: 1039ms)[22m
+[2m[WebServer] [22m POST /api/admin/t8-4vz7qn74/generate-fixtures [32m200[39m in 20.7s[2m (compile: 18ms, proxy.ts: 6ms, render: 20.7s)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 94ms[2m (compile: 6ms, proxy.ts: 9ms, render: 79ms)[22m
+[2m[WebServer] [22m POST /api/auth/change-password [32m200[39m in 1819ms[2m (compile: 797ms, proxy.ts: 5ms, render: 1016ms)[22m
+[2m[WebServer] [22m POST /api/team/setup [32m200[39m in 823ms[2m (compile: 534ms, proxy.ts: 5ms, render: 285ms)[22m
+[2m[WebServer] [22m POST /api/auth/signout [32m200[39m in 15ms[2m (compile: 4ms, proxy.ts: 5ms, render: 6ms)[22m
+[2m[WebServer] [22m GET /signin [32m200[39m in 136ms[2m (compile: 39ms, render: 97ms)[22m
+[2m[WebServer] [22m POST /api/auth/signin [32m200[39m in 87ms[2m (compile: 4ms, proxy.ts: 5ms, render: 78ms)[22m
+[2m[WebServer] [22m GET /dashboard [32m200[39m in 81ms[2m (compile: 17ms, render: 64ms)[22m
+[2m[WebServer] [22m GET /api/auth/me [32m200[39m in 21ms[2m (compile: 7ms, proxy.ts: 5ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 27ms[2m (compile: 15ms, proxy.ts: 4ms, render: 9ms)[22m
+[2m[WebServer] [22m GET /api/test-fpl-stub/bootstrap-static [32m200[39m in 32ms[2m (compile: 16ms, proxy.ts: 8ms, render: 8ms)[22m
+[2m[WebServer] [22m GET /api/team/dashboard [32m200[39m in 5.2s[2m (compile: 20ms, proxy.ts: 5ms, render: 5.1s)[22m
+[2m[WebServer] [22m GET /api/notifications [32m200[39m in 38ms[2m (compile: 11ms, proxy.ts: 14ms, render: 12ms)[22m
+[2m[WebServer] [22m GET /api/notifications [32m200[39m in 22ms[2m (compile: 3ms, proxy.ts: 9ms, render: 10ms)[22m
+  ok 67 [chromium] › tests\smoke\smoke.spec.ts:23:7 › smoke: harness end-to-end › superadmin can create a TVT-8 league, generate fixtures, and a team can sign in (39.0s)
+[2m[WebServer] [22m GET /api/leagues [32m200[39m in 559ms[2m (compile: 545ms, proxy.ts: 4ms, render: 10ms)[22m
+  ok 68 [chromium] › tests\smoke\smoke.spec.ts:46:7 › smoke: harness end-to-end › public standings endpoint returns JSON for the smoke league (567ms)
+[2m[WebServer] [22m POST /api/auth/signin [33m401[39m in 16ms[2m (compile: 5ms, proxy.ts: 5ms, render: 6ms)[22m
+  ok 69 [chromium] › tests\smoke\smoke.spec.ts:55:7 › smoke: harness end-to-end › apiSignIn rejects invalid credentials with 401 (21ms)
+
+
+  1) [chromium] › tests\league-types\submission-gate.spec.ts:78:7 › submission gate (TVT) › while GW1 is in flight, GW2 is gated on FPL finishing GW1 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"awaiting-results"[39m
+    Received: [31m"open"[39m
+
+      84 |     const submission = await submissionState(request);
+      85 |     expect(submission.gameweek).toBe(2);
+    > 86 |     expect(submission.state).toBe("awaiting-results");
+         |                              ^
+      87 |     expect(submission.awaitingGw).toBe(1);
+      88 |     expect(submission.degraded).toBe(false);
+      89 |     await apiSignOut(request);
+        at D:\JPL\JPL-Leagues\jpl-leagues\tests\league-types\submission-gate.spec.ts:86:30
+
+    Error Context: test-results\league-types-submission-ga-daa7d--gated-on-FPL-finishing-GW1-chromium\error-context.md
+
+    Error Context: test-results\league-types-submission-ga-daa7d--gated-on-FPL-finishing-GW1-chromium\error-context.md
+
+  1 flaky
+    [chromium] › tests\league-types\submission-gate.spec.ts:78:7 › submission gate (TVT) › while GW1 is in flight, GW2 is gated on FPL finishing GW1 
+  62 passed (11.7m)

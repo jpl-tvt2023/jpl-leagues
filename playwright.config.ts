@@ -8,7 +8,10 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // 1 retry everywhere, not just CI: `next dev --webpack` compiles each route
+  // on first hit, and a cold compile can drop the connection (ECONNRESET) on
+  // an otherwise-passing request. Same reason the timeouts below are generous.
+  retries: 1,
   reporter: process.env.CI ? [["html"], ["github"]] : [["html", { open: "never" }], ["list"]],
   // Generous per-test timeout — Next.js webpack dev compiles each API/UI route on
   // first hit (~5-10s each), so a spec touching many endpoints can easily need a minute.
@@ -37,7 +40,7 @@ export default defineConfig({
     // Use `npx` so `dotenv-cli` resolves through node_modules/.bin even when
     // Playwright spawns the server outside of an npm-script context (which is
     // what makes the local bins reachable on PATH).
-    command: `npx dotenv -e .env.test -- next dev --webpack -p ${PORT}`,
+    command: `npx dotenv -e .env.test.local -e .env.test -- next dev --webpack -p ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

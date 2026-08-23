@@ -4,6 +4,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
 import { resolveSubmissionWindow, formatLateness } from "@/lib/gameweek-window";
+import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 
 /**
  * POST /api/team/captain
@@ -112,13 +113,18 @@ export async function POST(request: NextRequest) {
       orderBy: asc(gameweeks.number),
     });
     const now = new Date();
-    const window = resolveSubmissionWindow(allLeagueGws, now);
+    const finishedGws = await getFinishedGwNumbers();
+    const window = resolveSubmissionWindow(allLeagueGws, now, finishedGws, {
+      requirePreviousFinished: leagueFormat === "tvt",
+    });
 
     if (window.state !== "open" || window.gw?.number !== gameweekNumber) {
       const deadline = new Date(gw.deadline);
       const isLate = deadline <= now;
       const message = isLate
         ? `GW${gameweekNumber}'s deadline (${deadline.toISOString()}) passed ${formatLateness(now.getTime() - deadline.getTime())} before your submission arrived at ${now.toISOString()} — rejected.`
+        : window.state === "awaiting-results"
+        ? `GW${gameweekNumber} is not open yet: FPL has not marked GW${window.awaitingGw} finished. Double Pointer and Challenge Chip depend on the final league table, so declarations open once GW${window.awaitingGw} is settled.`
         : `GW${gameweekNumber} is not currently open for submissions.`;
 
       await db.insert(auditLogs).values({

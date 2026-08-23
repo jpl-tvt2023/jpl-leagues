@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, players, groups, fixtures, results, gameweeks, gameweekCaptains, gameweekChips, settings, leagues } from "@/lib/db";
 import { eq, and, gt, asc, desc, or, inArray } from "drizzle-orm";
+import { fplEntryUrl } from "@/lib/fpl-links";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { shouldSyncDeadlines } from "@/lib/fpl-cache";
 import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
@@ -12,20 +13,13 @@ import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 import { buildTeamLedger } from "@/lib/formats/auction/finance";
 import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
 import { resolveSubmissionWindow } from "@/lib/gameweek-window";
+import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
 
 const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
 // ⚠️ TEST OVERRIDE: set to null to use live GW detection
 const TEST_GW_OVERRIDE: number | null = null;
-
-// Generate FPL Team URL
-function getFplTeamUrl(fplId: string, gameweek?: number): string {
-  if (gameweek) {
-    return `https://fantasy.premierleague.com/entry/${fplId}/event/${gameweek}`;
-  }
-  return `https://fantasy.premierleague.com/entry/${fplId}/history`;
-}
 
 async function getAnnouncementSettings(leagueId: string) {
   const [captainSetting, chipSetting] = await Promise.all([
@@ -169,8 +163,15 @@ export async function GET(request: NextRequest) {
     // this week's deadline (plus its 30-min lock) has passed, not wait for
     // this week's scores to be entered. Fixture/results display below keeps
     // using nextGameweek, untouched.
-    const submissionWindow = resolveSubmissionWindow(allGameweeks, new Date());
+    const finishedGwNumbers = await getFinishedGwNumbers();
+    const submissionWindow = resolveSubmissionWindow(allGameweeks, new Date(), finishedGwNumbers, {
+      requirePreviousFinished: leagueFormat === "tvt",
+    });
     const submissionGw = submissionWindow.gw;
+    // While the previous GW is still settling, every chip is unusable. Skip the
+    // rank/top-2 lookups entirely below: they would read a moving table and
+    // show eligibility the POST route would reject anyway.
+    const awaitingResults = submissionWindow.state === "awaiting-results";
 
     // ============================================
     // UPCOMING FIXTURE
@@ -194,7 +195,7 @@ export async function GET(request: NextRequest) {
             players: opponentPlayers.map(p => ({
               name: p.name,
               fplId: p.fplId,
-              fplUrl: getFplTeamUrl(p.fplId, latestCompletedGW || undefined),
+              fplUrl: fplEntryUrl(p.fplId, latestCompletedGW || undefined),
             })),
           },
           gameweek: nextGameweek.number,
@@ -209,7 +210,7 @@ export async function GET(request: NextRequest) {
             players: opponentPlayers.map(p => ({
               name: p.name,
               fplId: p.fplId,
-              fplUrl: getFplTeamUrl(p.fplId, latestCompletedGW || undefined),
+              fplUrl: fplEntryUrl(p.fplId, latestCompletedGW || undefined),
             })),
           },
           gameweek: nextGameweek.number,
@@ -293,7 +294,7 @@ export async function GET(request: NextRequest) {
         hasMyCaptainData = true;
         myPlayerScores = team.players.map(p => {
           const isCaptain = myCaptain.playerId === p.id;
-          const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
+          const fplUrl = fplEntryUrl(p.fplId, lastF.gameweek.number);
           if (isCaptain) {
             return {
               name: p.name,
@@ -322,7 +323,7 @@ export async function GET(request: NextRequest) {
         // No captain data - infer scores
         myPlayerScores = team.players.map((p, i) => {
           const inferred = inferScores(myScore, team.players)[i];
-          const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
+          const fplUrl = fplEntryUrl(p.fplId, lastF.gameweek.number);
           return {
             ...inferred,
             fplId: p.fplId,
@@ -339,7 +340,7 @@ export async function GET(request: NextRequest) {
         hasOppCaptainData = true;
         oppPlayerScores = opponentTeamPlayers.map(p => {
           const isCaptain = oppCaptain.playerId === p.id;
-          const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
+          const fplUrl = fplEntryUrl(p.fplId, lastF.gameweek.number);
           if (isCaptain) {
             return {
               name: p.name,
@@ -367,7 +368,7 @@ export async function GET(request: NextRequest) {
         // No captain data - infer scores
         oppPlayerScores = opponentTeamPlayers.map((p, i) => {
           const inferred = inferScores(oppScore, opponentTeamPlayers)[i];
-          const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
+          const fplUrl = fplEntryUrl(p.fplId, lastF.gameweek.number);
           return {
             ...inferred,
             fplId: p.fplId,
@@ -573,12 +574,17 @@ export async function GET(request: NextRequest) {
     const buildUsedReason = (used: boolean, set: 1 | 2 | "playoffs") =>
       used && set !== "playoffs" ? `Already used in Set ${set}` : null;
 
+    const awaitingReason = `Waiting for FPL to finalise GW${submissionWindow.awaitingGw}`;
+
     let dpEligible = true;
     let dpReason: string | null = null;
     const dpUsed = chipSet === 1 ? team.doublePointerSet1Used : chipSet === 2 ? team.doublePointerSet2Used : false;
     if (dpUsed) {
       dpReason = buildUsedReason(true, chipSet);
       dpEligible = false;
+    } else if (awaitingResults) {
+      dpEligible = false;
+      dpReason = awaitingReason;
     } else if (submissionGw && chipSet !== "playoffs" && team.groupId) {
       const groupId = team.groupId;
       const homeFixture = team.homeFixtures.find(f => f.gameweek.id === submissionGw.id);
@@ -603,10 +609,20 @@ export async function GET(request: NextRequest) {
       D: { used: !!dpUsed, eligible: dpEligible, reason: dpReason },
       C: {
         used: !!ccUsed,
-        eligible: !ccUsed && !ccGw1Blocked,
-        reason: ccUsed ? buildUsedReason(true, chipSet) : ccGw1Blocked ? CHIP_GW1_POSITION_REASON : null,
+        eligible: !ccUsed && !ccGw1Blocked && !awaitingResults,
+        reason: ccUsed
+          ? buildUsedReason(true, chipSet)
+          : ccGw1Blocked
+          ? CHIP_GW1_POSITION_REASON
+          : awaitingResults
+          ? awaitingReason
+          : null,
       },
-      W: { used: !!wwUsed, eligible: !wwUsed, reason: buildUsedReason(!!wwUsed, chipSet) },
+      W: {
+        used: !!wwUsed,
+        eligible: !wwUsed && !awaitingResults,
+        reason: wwUsed ? buildUsedReason(true, chipSet) : awaitingResults ? awaitingReason : null,
+      },
     };
 
     // ============================================
@@ -617,54 +633,117 @@ export async function GET(request: NextRequest) {
     let zone: "playoffs" | "challenger" | "eliminated" = "eliminated";
     let miniTable: Array<{ rank: number; name: string; points: number; isCurrentTeam: boolean }> = [];
 
-    if (team.groupId) {
-      // Get all teams in same group for ranking
-      const groupTeams = await db.query.teams.findMany({
-        where: eq(teams.groupId, team.groupId),
+    interface GroupTableRow {
+      rank: number;
+      name: string;
+      points: number;
+      isCurrentTeam: boolean;
+    }
+
+    /**
+     * A five-row slice of EVERY group's table, not just the viewer's own.
+     *
+     * Always anchored to the top of the table. The older window (two above the
+     * viewer, two below) could show a mid-table slice that never included the
+     * leaders, which tells you nothing about the race you are in. A viewer
+     * outside the top five gets the top four plus their own row appended, so
+     * position is still visible without losing the leaders.
+     */
+    const groupTables: Array<{
+      groupId: string;
+      name: string;
+      isMyGroup: boolean;
+      rows: GroupTableRow[];
+      /** True when ranks were elided between the leaders and the viewer's row. */
+      truncated: boolean;
+    }> = [];
+
+    if (teamLeagueId) {
+      // One query for the whole league rather than one per group. Ghosts are
+      // excluded: they are bye placeholders, not competitors, and a ghost row
+      // in a standings table is noise.
+      const leagueTeams = await db.query.teams.findMany({
+        where: and(eq(teams.leagueId, teamLeagueId), eq(teams.isGhost, false)),
         with: {
           homeFixtures: { with: { result: true } },
           awayFixtures: { with: { result: true } },
         },
       });
 
-      // Calculate standings
-      const standings = groupTeams.map(t => {
-        const pts = t.leaguePoints;
-        let wins = 0;
+      const rankGroup = (members: typeof leagueTeams) =>
+        members
+          .map((t) => {
+            let wins = 0;
+            for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
+              if (!f.result) continue;
+              const matchPts =
+                f.homeTeamId === t.id ? f.result.homeMatchPoints : f.result.awayMatchPoints;
+              if (matchPts === 2) wins++;
+            }
+            return { id: t.id, name: t.name, points: t.leaguePoints, wins };
+          })
+          .sort((a, b) => (a.points !== b.points ? b.points - a.points : b.wins - a.wins));
 
-        [...t.homeFixtures, ...t.awayFixtures].forEach(f => {
-          if (f.result) {
-            const isHome = f.homeTeamId === t.id;
-            const matchPts = isHome ? f.result.homeMatchPoints : f.result.awayMatchPoints;
-            if (matchPts === 2) wins++;
-          }
+      // Cup groups belong to Continental Championship's own tabbed table, which
+      // renders separately — including them here would show a viewer two
+      // unrelated competitions side by side.
+      const leagueGroups = (
+        await db.query.groups.findMany({ where: eq(groups.leagueId, teamLeagueId) })
+      ).filter((g) => (g.groupType ?? "jpl") !== "cup");
+
+      const TOP_ROWS = 5;
+
+      for (const g of leagueGroups) {
+        const standings = rankGroup(leagueTeams.filter((t) => t.groupId === g.id));
+        if (standings.length === 0) continue;
+
+        const myIndex = standings.findIndex((t) => t.id === teamId);
+        const asRow = (t: (typeof standings)[number], i: number): GroupTableRow => ({
+          rank: i + 1,
+          name: t.name,
+          points: t.points,
+          isCurrentTeam: t.id === teamId,
         });
 
-        return { id: t.id, name: t.name, points: pts, wins };
-      }).sort((a, b) => {
-        if (a.points !== b.points) return b.points - a.points;
-        return b.wins - a.wins;
-      });
+        let rows: GroupTableRow[];
+        let truncated = false;
+        if (myIndex < 0 || myIndex < TOP_ROWS) {
+          // Not this viewer's group, or they are already in the shown range.
+          rows = standings.slice(0, TOP_ROWS).map(asRow);
+        } else {
+          rows = standings.slice(0, TOP_ROWS - 1).map(asRow);
+          rows.push(asRow(standings[myIndex], myIndex));
+          truncated = true;
+        }
 
-      groupRank = standings.findIndex(t => t.id === teamId) + 1;
-      pointsToTop = standings[0]?.points - team.leaguePoints || 0;
+        groupTables.push({
+          groupId: g.id,
+          name: g.name,
+          isMyGroup: g.id === team.groupId,
+          rows,
+          truncated,
+        });
 
-      // Determine zone
-      zone = "playoffs";
-      if (groupRank > 8) zone = "challenger";
-      if (groupRank > 14) zone = "eliminated";
+        if (g.id === team.groupId && myIndex >= 0) {
+          groupRank = myIndex + 1;
+          pointsToTop = standings[0].points - team.leaguePoints || 0;
+          zone = groupRank > 14 ? "eliminated" : groupRank > 8 ? "challenger" : "playoffs";
+          // Unchanged for existing consumers: the window centred on the viewer.
+          miniTable = standings
+            .slice(Math.max(0, myIndex - 2), Math.min(standings.length, myIndex + 3))
+            .map((t) => ({
+              rank: standings.indexOf(t) + 1,
+              name: t.name,
+              points: t.points,
+              isCurrentTeam: t.id === teamId,
+            }));
+        }
+      }
 
-      // Mini table (2 above, current, 2 below)
-      const myIndex = standings.findIndex(t => t.id === teamId);
-      miniTable = standings.slice(
-        Math.max(0, myIndex - 2),
-        Math.min(standings.length, myIndex + 3)
-      ).map((t, i) => ({
-        rank: standings.indexOf(t) + 1,
-        name: t.name,
-        points: t.points,
-        isCurrentTeam: t.id === teamId,
-      }));
+      // The viewer's own group leads, so it reads first left-to-right.
+      groupTables.sort((a, b) =>
+        a.isMyGroup === b.isMyGroup ? a.name.localeCompare(b.name) : a.isMyGroup ? -1 : 1
+      );
     }
 
     // ============================================
@@ -744,8 +823,8 @@ export async function GET(request: NextRequest) {
     const teamMembers = team.players.map(p => ({
       name: p.name,
       fplId: p.fplId,
-      fplUrl: getFplTeamUrl(p.fplId, currentGwNumber || undefined),
-      fplHistoryUrl: getFplTeamUrl(p.fplId),
+      fplUrl: fplEntryUrl(p.fplId, currentGwNumber || undefined),
+      fplHistoryUrl: fplEntryUrl(p.fplId),
       captaincyChipsUsed: p.captaincyChipsUsed,
     }));
 
@@ -955,7 +1034,7 @@ export async function GET(request: NextRequest) {
             cupLastHasMyCaptainData = true;
             cupLastMyPlayerScores = team.players.map(p => {
               const isCaptain = cupMyCaptain.playerId === p.id;
-              const fplUrl = getFplTeamUrl(p.fplId, lastCupF.gameweek.number);
+              const fplUrl = fplEntryUrl(p.fplId, lastCupF.gameweek.number);
               if (isCaptain) return { name: p.name, isCaptain: true, fplScore: cupMyCaptain.fplScore, transferHits: cupMyCaptain.transferHits, finalScore: cupMyCaptain.doubledScore, fplId: p.fplId, fplUrl };
               const nonCaptain = cupMyScore - cupMyCaptain.doubledScore;
               return { name: p.name, isCaptain: false, fplScore: nonCaptain, transferHits: 0, finalScore: nonCaptain, fplId: p.fplId, fplUrl };
@@ -963,7 +1042,7 @@ export async function GET(request: NextRequest) {
           } else {
             cupLastMyPlayerScores = team.players.map((p, i) => {
               const inf = inferScores(cupMyScore, team.players)[i];
-              return { ...inf, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, lastCupF.gameweek.number) };
+              return { ...inf, fplId: p.fplId, fplUrl: fplEntryUrl(p.fplId, lastCupF.gameweek.number) };
             });
           }
 
@@ -971,7 +1050,7 @@ export async function GET(request: NextRequest) {
             cupLastHasOppCaptainData = true;
             cupLastOppPlayerScores = cupOpponentTeam.players.map((p: any) => {
               const isCaptain = cupOppCaptain.playerId === p.id;
-              const fplUrl = getFplTeamUrl(p.fplId, lastCupF.gameweek.number);
+              const fplUrl = fplEntryUrl(p.fplId, lastCupF.gameweek.number);
               if (isCaptain) return { name: p.name, isCaptain: true, fplScore: cupOppCaptain.fplScore, transferHits: cupOppCaptain.transferHits, finalScore: cupOppCaptain.doubledScore, fplId: p.fplId, fplUrl };
               const nonCaptain = cupOppScore - cupOppCaptain.doubledScore;
               return { name: p.name, isCaptain: false, fplScore: nonCaptain, transferHits: 0, finalScore: nonCaptain, fplId: p.fplId, fplUrl };
@@ -979,7 +1058,7 @@ export async function GET(request: NextRequest) {
           } else if (cupOpponentTeam?.players) {
             cupLastOppPlayerScores = cupOpponentTeam.players.map((p: any, i: number) => {
               const inf = inferScores(cupOppScore, cupOpponentTeam.players)[i];
-              return { ...inf, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, lastCupF.gameweek.number) };
+              return { ...inf, fplId: p.fplId, fplUrl: fplEntryUrl(p.fplId, lastCupF.gameweek.number) };
             });
           }
         }
@@ -1129,6 +1208,8 @@ export async function GET(request: NextRequest) {
         timestamp: submissionGw?.deadline?.toISOString() || null,
         state: submissionWindow.state,
         opensAt: submissionWindow.opensAt,
+        awaitingGw: submissionWindow.awaitingGw,
+        degraded: submissionWindow.degraded,
       },
       serverTime: new Date().toISOString(),
       upcomingFixture,
@@ -1160,6 +1241,7 @@ export async function GET(request: NextRequest) {
         pointsToTop,
         miniTable,
       },
+      groupTables,
       chipStatus,
       captaincyStatus,
       upcomingFixtures,

@@ -11,6 +11,7 @@ import {
   apiSignInSuperadmin,
   createTvtLeague,
   generateFixtures,
+  ensureGameweeks,
   setupTvtTeam,
   apiSignIn,
   uiSignIn,
@@ -27,6 +28,8 @@ test.describe.serial("smoke: harness end-to-end", () => {
     expect(league.teamSize).toBe(8);
     expect(league.format).toBe("tvt");
 
+    // Gameweeks must exist before fixtures can be generated.
+    await ensureGameweeks(league.id);
     const summary = await generateFixtures(request, league.slug);
     expect(summary.leagueStageGws).toBe(35); // 8-team × 5 reps
     expect(summary.totalFixtures).toBeGreaterThan(0);
@@ -47,6 +50,30 @@ test.describe.serial("smoke: harness end-to-end", () => {
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     expect(Array.isArray(body.leagues ?? body)).toBeTruthy();
+  });
+
+  test("the FPL redirect hop forwards permitted paths and refuses anything else", async ({ request }) => {
+    // /go/fpl/* is a best-effort workaround for Android opening FPL links in
+    // the Premier League app. It must never become an open redirect: without
+    // the allow-list, an attacker could hand out links on our domain that
+    // land on a phishing page.
+    const ok = await request.get("/go/fpl/entry/12345/event/7", {
+      maxRedirects: 0,
+      failOnStatusCode: false,
+    });
+    expect(ok.status()).toBe(302);
+    expect(ok.headers()["location"]).toBe(
+      "https://fantasy.premierleague.com/entry/12345/event/7",
+    );
+
+    for (const bad of [
+      "/go/fpl/entry/abc/event/7",
+      "/go/fpl/entry/12345/transfers",
+      "/go/fpl/evil",
+    ]) {
+      const res = await request.get(bad, { maxRedirects: 0, failOnStatusCode: false });
+      expect(res.status(), `${bad} should be refused`).toBe(400);
+    }
   });
 
   test("apiSignIn rejects invalid credentials with 401", async ({ request }) => {

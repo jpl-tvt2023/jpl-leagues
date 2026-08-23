@@ -1,5 +1,8 @@
 "use client";
 
+import { GwNavigator } from "@/components/GwNavigator";
+import { LiveFreshness } from "@/components/LiveFreshness";
+
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -100,6 +103,18 @@ function FixtureCard({
         </div>
       </div>
 
+      {isLive && (liveData?.homePlayersLeft !== undefined || liveData?.awayPlayersLeft !== undefined) && (
+        <div className="mt-1 flex items-center justify-between text-[10px] text-gray-500">
+          <span className={liveData?.homePlayersLeft ? "text-emerald-400/80" : ""}>
+            {liveData?.homePlayersLeft ? `⏳ ${liveData.homePlayersLeft.leftToPlay} left` : "—"}
+          </span>
+          <span className="text-gray-600">to play</span>
+          <span className={liveData?.awayPlayersLeft ? "text-emerald-400/80" : ""}>
+            {liveData?.awayPlayersLeft ? `⏳ ${liveData.awayPlayersLeft.leftToPlay} left` : "—"}
+          </span>
+        </div>
+      )}
+
       <div className="mt-2">
         <button
           onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
@@ -139,6 +154,42 @@ export default function LeagueFixturesPage() {
   const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
   const [isManuallyRefreshed, setIsManuallyRefreshed] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // First live fetch for the selected gameweek. Without this the badge falls
+  // through to "Upcoming" while loading, which is not a neutral placeholder —
+  // it is the same badge a gameweek that has genuinely not kicked off shows.
+  const [isLoadingLive, setIsLoadingLive] = useState(true);
+  // A refresh the reader did not ask for, triggered because the served copy was
+  // past its fresh window.
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
+
+  /**
+   * Re-sweep FPL behind the numbers already on screen.
+   *
+   * Deliberately does NOT set isManuallyRefreshed: that flag turns the badge
+   * amber to mean "you forced this", and the reader did nothing. Any failure —
+   * including the 503 returned while a scoring run holds the lock — leaves the
+   * stale scores in place rather than blanking them.
+   */
+  const refreshInBackground = useCallback(async (gw: number) => {
+    setIsBackgroundRefreshing(true);
+    try {
+      const res = await fetch(
+        `/api/fixtures/live/refresh?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.fixtures?.length) {
+          setLiveScores(data.fixtures);
+          setIsLive(true);
+          setLiveCachedAt(data.cachedAt || null);
+        }
+      }
+    } catch {
+      // Keep what is on screen.
+    } finally {
+      setIsBackgroundRefreshing(false);
+    }
+  }, [leagueSlug]);
 
   const fetchLiveScores = useCallback(async (gw: number) => {
     try {
@@ -149,11 +200,15 @@ export default function LeagueFixturesPage() {
         setIsLive(data.isLive ?? false);
         setLiveCachedAt(data.cachedAt || null);
         setIsManuallyRefreshed(false);
+        // Served past its fresh window: show it now, replace it shortly.
+        if (data.stale) void refreshInBackground(gw);
       }
     } catch {
       // Silently fail — live scores are optional
+    } finally {
+      setIsLoadingLive(false);
     }
-  }, []);
+  }, [leagueSlug, refreshInBackground]);
 
   const handleRefresh = async () => {
     if (!selectedGW || isRefreshing) return;
@@ -178,6 +233,7 @@ export default function LeagueFixturesPage() {
 
   useEffect(() => {
     if (!selectedGW) return;
+    setIsLoadingLive(true);
     fetchLiveScores(selectedGW);
     const interval = setInterval(() => fetchLiveScores(selectedGW), 10 * 60 * 1000);
     return () => clearInterval(interval);
@@ -290,44 +346,13 @@ export default function LeagueFixturesPage() {
         ) : (
           <>
             {/* Gameweek Filter */}
-            <div className="flex items-center justify-center gap-2 sm:gap-4 mb-6 sm:mb-8">
-              <button
-                onClick={() => setSelectedGW(prev => {
-                  const idx = availableGWs.indexOf(prev!);
-                  return idx > 0 ? availableGWs[idx - 1] : prev;
-                })}
-                disabled={selectedGW === availableGWs[0]}
-                className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-
-              <select
-                value={selectedGW || ""}
-                onChange={(e) => setSelectedGW(Number(e.target.value))}
-                className={`border rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base font-semibold min-w-[140px] sm:min-w-[180px] text-center appearance-none cursor-pointer transition ${isContinentalChampionship ? "bg-[#00ff85]/10 border-[#00ff85]/30 text-[#00ff85] hover:bg-[#00ff85]/20" : "bg-white/10 border-white/20 text-white hover:bg-white/20"}`}
-              >
-                {availableGWs.map((gw) => (
-                  <option key={gw} value={gw} className="bg-slate-800 text-white">
-                    Gameweek {gw}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                onClick={() => setSelectedGW(prev => {
-                  const idx = availableGWs.indexOf(prev!);
-                  return idx < availableGWs.length - 1 ? availableGWs[idx + 1] : prev;
-                })}
-                disabled={selectedGW === availableGWs[availableGWs.length - 1]}
-                className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+            <div className="mb-6 sm:mb-8">
+              <GwNavigator
+                gws={availableGWs}
+                value={selectedGW}
+                onChange={setSelectedGW}
+                accent={isContinentalChampionship ? "continental" : "default"}
+              />
             </div>
 
             {/* Status Badge */}
@@ -335,6 +360,16 @@ export default function LeagueFixturesPage() {
               {hasResults ? (
                 <span className="px-4 py-1 rounded-full bg-green-500/20 text-green-400 text-sm font-medium">
                   Results Available
+                </span>
+              ) : isLoadingLive ? (
+                /* Not "Upcoming": until the first fetch lands we do not know
+                   whether this gameweek is live, and claiming otherwise is what
+                   made the page look stuck. */
+                <span className="px-4 py-1 rounded-full bg-white/10 text-gray-300 text-sm font-medium flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Fetching live scores…
                 </span>
               ) : isLive ? (
                 <span className={`px-4 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${
@@ -351,28 +386,37 @@ export default function LeagueFixturesPage() {
                   Upcoming
                 </span>
               )}
-              {/* Refresh button — always visible */}
+              {/* Refresh button. Disabled unless the gameweek is actually live —
+                  a click on a finished or not-yet-started GW costs a full FPL
+                  sweep (one picks fetch per manager) to return identical numbers. */}
               <button
                 onClick={handleRefresh}
-                disabled={isRefreshing}
+                disabled={isRefreshing || !isLive}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                  isRefreshing ? "bg-white/5 text-gray-500" : "bg-white/10 text-gray-300 hover:bg-white/20"
+                  isRefreshing || !isLive
+                    ? "bg-white/5 text-gray-500 cursor-not-allowed"
+                    : "bg-white/10 text-gray-300 hover:bg-white/20"
                 }`}
-                title="Refresh scores"
+                title={
+                  isLive
+                    ? "Refresh scores"
+                    : hasResults
+                    ? "This gameweek is finished — scores will not change"
+                    : "This gameweek has not started yet"
+                }
               >
                 <svg className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 {isRefreshing ? "Refreshing..." : "Refresh"}
               </button>
-              {deadline && !hasResults && !isLive && (
+              {deadline && !hasResults && !isLive && !isLoadingLive && (
                 <span className="text-sm text-gray-400">Deadline: {formatDeadline(deadline)}</span>
               )}
-              {liveCachedAt && (
-                <span className="text-xs text-gray-500">
-                  Updated: {new Date(liveCachedAt).toLocaleTimeString()}
-                </span>
-              )}
+              <LiveFreshness
+                updatedAt={liveCachedAt}
+                isRefreshing={isBackgroundRefreshing}
+              />
             </div>
 
             {hasGroupB ? (

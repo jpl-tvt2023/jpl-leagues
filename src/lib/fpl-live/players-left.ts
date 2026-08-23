@@ -12,6 +12,7 @@
 
 import { Redis } from "@upstash/redis";
 import { fetchElementInfo } from "../fpl";
+import { fplRequest, FPL_BASE_URL, FplUnavailableError } from "../fpl/gateway";
 
 let redis: Redis | null = null;
 function getRedis(): Redis | null {
@@ -26,9 +27,7 @@ function getRedis(): Redis | null {
 
 const ALL_FIXTURES_CACHE_KEY = "fpl:fixtures:all";
 const ALL_FIXTURES_TTL_SECONDS = 60;
-const FPL_FIXTURES_URL = "https://fantasy.premierleague.com/api/fixtures/";
-// Some shared User-Agent — FPL is friendlier to clients that identify themselves.
-const FPL_USER_AGENT = "Mozilla/5.0 (compatible; jpl-leagues/1.0; +https://jpl-leagues.vercel.app)";
+const FPL_FIXTURES_URL = `${FPL_BASE_URL}/fixtures/`;
 
 export interface FplFixture {
   id: number;
@@ -58,7 +57,7 @@ export interface FplFixture {
  * Logs to console.warn on suspicious responses (non-2xx, non-array, empty)
  * so Vercel logs surface what's happening when the UI shows "—".
  */
-async function getAllFplFixtures(): Promise<FplFixture[] | null> {
+async function loadAllFplFixtures(): Promise<FplFixture[] | null> {
   const r = getRedis();
 
   if (r) {
@@ -67,11 +66,10 @@ async function getAllFplFixtures(): Promise<FplFixture[] | null> {
   }
 
   try {
-    const res = await fetch(FPL_FIXTURES_URL, {
-      // Bypass Next.js fetch cache — Redis handles caching for us.
-      cache: "no-store",
-      headers: { "User-Agent": FPL_USER_AGENT },
-    });
+    // Always the background lane: players-left is a display nicety, never
+    // load-bearing for scoring. A gateway refusal falls through to the catch
+    // below and surfaces as "—" in the UI.
+    const res = await fplRequest(FPL_FIXTURES_URL, { lane: "background" });
     if (!res.ok) {
       console.warn(`[players-left] FPL /fixtures/ status=${res.status}`);
       return null;
@@ -88,9 +86,47 @@ async function getAllFplFixtures(): Promise<FplFixture[] | null> {
     if (r) await r.set(ALL_FIXTURES_CACHE_KEY, data, { ex: ALL_FIXTURES_TTL_SECONDS });
     return data;
   } catch (e) {
+    if (e instanceof FplUnavailableError) {
+      // Breaker open, or a scoring run is in progress. Expected, not an error.
+      return null;
+    }
     console.warn("[players-left] FPL /fixtures/ fetch error", e);
     return null;
   }
+}
+
+/**
+ * In-process single-flight for the fixtures list.
+ *
+ * The Redis cache above only helps callers that are separated in time. Callers
+ * that overlap all miss it, because none of them has written it yet — and the
+ * natural shape of this code is to overlap. A single TVT fixture scores both
+ * sides with `Promise.all`, so two calls land together; the fixtures page does
+ * sixteen fixtures at once.
+ *
+ * That was not merely wasteful, it was a visible bug: the dashboard card runs
+ * on a bounded FPL budget, the duplicate request pushed it over, and the loser
+ * had its refusal quietly converted to `null` — which is why the away side
+ * showed "—" for players-left while the home side rendered fine.
+ *
+ * Everyone arriving while a fetch is in flight now awaits that same promise.
+ * The entry is dropped as soon as it settles, so the next request re-checks
+ * Redis rather than pinning one list for the lifetime of the process.
+ */
+let inFlightFixtures: Promise<FplFixture[] | null> | null = null;
+
+function getAllFplFixtures(): Promise<FplFixture[] | null> {
+  if (inFlightFixtures) return inFlightFixtures;
+
+  const pending = loadAllFplFixtures();
+  inFlightFixtures = pending;
+  void pending
+    .catch(() => null) // loadAllFplFixtures resolves null rather than throwing; belt and braces.
+    .finally(() => {
+      if (inFlightFixtures === pending) inFlightFixtures = null;
+    });
+
+  return pending;
 }
 
 /**

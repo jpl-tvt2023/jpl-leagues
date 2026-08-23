@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, teams, fixtures, results, gameweeks, gameweekCaptains, leagues } from "@/lib/db";
 import { eq, and, asc, desc } from "drizzle-orm";
-
-function getFplTeamUrl(fplId: string, gameweek?: number): string {
-  if (gameweek) {
-    return `https://fantasy.premierleague.com/entry/${fplId}/event/${gameweek}`;
-  }
-  return `https://fantasy.premierleague.com/entry/${fplId}/history`;
-}
+import { fplEntryUrl } from "@/lib/fpl-links";
 
 function inferScores(total: number, players: { name: string }[]) {
   const captainBase = Math.floor((total - 1) / 3);
@@ -127,7 +121,7 @@ export async function GET(request: NextRequest) {
         cupHasMyCaptainData = true;
         cupMyPlayerScores = team.players.map(p => {
           const isCaptain = cupMyCaptain.playerId === p.id;
-          const fplUrl = getFplTeamUrl(p.fplId, cupF.gameweek.number);
+          const fplUrl = fplEntryUrl(p.fplId, cupF.gameweek.number);
           if (isCaptain) return { name: p.name, isCaptain: true, fplScore: cupMyCaptain.fplScore, transferHits: cupMyCaptain.transferHits, finalScore: cupMyCaptain.doubledScore, fplId: p.fplId, fplUrl };
           const nc = cupMyScore - cupMyCaptain.doubledScore;
           return { name: p.name, isCaptain: false, fplScore: nc, transferHits: 0, finalScore: nc, fplId: p.fplId, fplUrl };
@@ -135,7 +129,7 @@ export async function GET(request: NextRequest) {
       } else {
         cupMyPlayerScores = team.players.map((p, i) => {
           const inf = inferScores(cupMyScore, team.players)[i];
-          return { ...inf, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, cupF.gameweek.number) };
+          return { ...inf, fplId: p.fplId, fplUrl: fplEntryUrl(p.fplId, cupF.gameweek.number) };
         });
       }
       let cupOppPlayerScores: any[] = [];
@@ -145,7 +139,7 @@ export async function GET(request: NextRequest) {
         cupHasOppCaptainData = true;
         cupOppPlayerScores = oppPlayers.map((p: any) => {
           const isCaptain = cupOppCaptain.playerId === p.id;
-          const fplUrl = getFplTeamUrl(p.fplId, cupF.gameweek.number);
+          const fplUrl = fplEntryUrl(p.fplId, cupF.gameweek.number);
           if (isCaptain) return { name: p.name, isCaptain: true, fplScore: cupOppCaptain.fplScore, transferHits: cupOppCaptain.transferHits, finalScore: cupOppCaptain.doubledScore, fplId: p.fplId, fplUrl };
           const nc = cupOppScore - cupOppCaptain.doubledScore;
           return { name: p.name, isCaptain: false, fplScore: nc, transferHits: 0, finalScore: nc, fplId: p.fplId, fplUrl };
@@ -153,7 +147,7 @@ export async function GET(request: NextRequest) {
       } else if (oppPlayers.length > 0) {
         cupOppPlayerScores = oppPlayers.map((p: any, i: number) => {
           const inf = inferScores(cupOppScore, oppPlayers)[i];
-          return { ...inf, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, cupF.gameweek.number) };
+          return { ...inf, fplId: p.fplId, fplUrl: fplEntryUrl(p.fplId, cupF.gameweek.number) };
         });
       }
       const compType = cupF.competitionType ?? "cup-group";
@@ -217,7 +211,7 @@ export async function GET(request: NextRequest) {
       hasMyCaptainData = true;
       myPlayerScores = team.players.map(p => {
         const isCaptain = myCaptain.playerId === p.id;
-        const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
+        const fplUrl = fplEntryUrl(p.fplId, lastF.gameweek.number);
         if (isCaptain) {
           return {
             name: p.name, isCaptain: true,
@@ -236,7 +230,7 @@ export async function GET(request: NextRequest) {
     } else {
       myPlayerScores = team.players.map((p, i) => {
         const inferred = inferScores(myScore, team.players)[i];
-        const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
+        const fplUrl = fplEntryUrl(p.fplId, lastF.gameweek.number);
         return { ...inferred, fplId: p.fplId, fplUrl };
       });
     }
@@ -249,7 +243,7 @@ export async function GET(request: NextRequest) {
       hasOppCaptainData = true;
       oppPlayerScores = opponentTeam.players.map(p => {
         const isCaptain = oppCaptain.playerId === p.id;
-        const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
+        const fplUrl = fplEntryUrl(p.fplId, lastF.gameweek.number);
         if (isCaptain) {
           return {
             name: p.name, isCaptain: true,
@@ -268,7 +262,7 @@ export async function GET(request: NextRequest) {
     } else if (opponentTeam) {
       oppPlayerScores = opponentTeam.players.map((p, i) => {
         const inferred = inferScores(oppScore, opponentTeam.players)[i];
-        const fplUrl = getFplTeamUrl(p.fplId, lastF.gameweek.number);
+        const fplUrl = fplEntryUrl(p.fplId, lastF.gameweek.number);
         return { ...inferred, fplId: p.fplId, fplUrl };
       });
     }
@@ -323,7 +317,7 @@ export async function GET(request: NextRequest) {
           cupHasMyCaptainData = true;
           cupMyPlayerScores = team.players.map(p => {
             const isCaptain = cupMyCaptain.playerId === p.id;
-            const fplUrl = getFplTeamUrl(p.fplId, cupF.gameweek.number);
+            const fplUrl = fplEntryUrl(p.fplId, cupF.gameweek.number);
             if (isCaptain) {
               return { name: p.name, isCaptain: true, fplScore: cupMyCaptain.fplScore, transferHits: cupMyCaptain.transferHits, finalScore: cupMyCaptain.doubledScore, fplId: p.fplId, fplUrl };
             }
@@ -333,7 +327,7 @@ export async function GET(request: NextRequest) {
         } else {
           cupMyPlayerScores = team.players.map((p, i) => {
             const inferred = inferScores(cupMyScore, team.players)[i];
-            return { ...inferred, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, cupF.gameweek.number) };
+            return { ...inferred, fplId: p.fplId, fplUrl: fplEntryUrl(p.fplId, cupF.gameweek.number) };
           });
         }
 
@@ -343,7 +337,7 @@ export async function GET(request: NextRequest) {
           cupHasOppCaptainData = true;
           cupOppPlayerScores = (cupOpponentTeam as any).players?.map((p: any) => {
             const isCaptain = cupOppCaptain.playerId === p.id;
-            const fplUrl = getFplTeamUrl(p.fplId, cupF.gameweek.number);
+            const fplUrl = fplEntryUrl(p.fplId, cupF.gameweek.number);
             if (isCaptain) {
               return { name: p.name, isCaptain: true, fplScore: cupOppCaptain.fplScore, transferHits: cupOppCaptain.transferHits, finalScore: cupOppCaptain.doubledScore, fplId: p.fplId, fplUrl };
             }
@@ -354,7 +348,7 @@ export async function GET(request: NextRequest) {
           const oppPlayers = (cupOpponentTeam as any).players ?? [];
           cupOppPlayerScores = oppPlayers.map((p: any, i: number) => {
             const inferred = inferScores(cupOppScore, oppPlayers)[i];
-            return { ...inferred, fplId: p.fplId, fplUrl: getFplTeamUrl(p.fplId, cupF.gameweek.number) };
+            return { ...inferred, fplId: p.fplId, fplUrl: fplEntryUrl(p.fplId, cupF.gameweek.number) };
           });
         }
 

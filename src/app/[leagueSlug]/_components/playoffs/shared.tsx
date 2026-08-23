@@ -1,5 +1,7 @@
 "use client";
 
+import { FplEntryLink } from "@/components/FplEntryLink";
+
 import { useState, useEffect, useMemo, Fragment } from "react";
 
 export interface LiveFixtureScore {
@@ -158,14 +160,13 @@ function PlayerBreakdown({
       {players.map((p, i) => (
         <div key={i} className="flex items-center justify-between py-0.5 text-xs min-w-0">
           <div className="flex items-center gap-1 min-w-0 flex-1">
-            <a
-              href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/${gameweek}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <FplEntryLink
+              fplId={p.fplId}
+              gw={gameweek}
               className="text-blue-400 hover:text-blue-300 underline truncate"
             >
               {p.name}
-            </a>
+            </FplEntryLink>
             {p.isCaptain && p.isTempCaptain && (
               <span
                 className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 shrink-0"
@@ -614,14 +615,14 @@ export function SurvivalTable({
                           {e.playerScores.map((p, idx) => (
                             <div key={idx} className="flex items-center justify-between text-xs">
                               <div className="flex items-center gap-1.5 min-w-0">
-                                <a
-                                  href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/33`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                {/* GW33 — the Challenger Survival round is fixed to that gameweek. */}
+                                <FplEntryLink
+                                  fplId={p.fplId}
+                                  gw={33}
                                   className="text-blue-400 hover:text-blue-300 underline truncate"
                                 >
                                   {p.name}
-                                </a>
+                                </FplEntryLink>
                                 {p.isCaptain && p.isTempCaptain && (
                                   <span
                                     className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 shrink-0"

@@ -15,8 +15,31 @@ function getRedis(): Redis | null {
   return redis;
 }
 
+/**
+ * Whether a cache backend is actually configured.
+ *
+ * Every helper here degrades silently to a no-op without Redis, which is the
+ * right default — but a caller that *warms* a cache in batches needs to know,
+ * because without somewhere to write to, warming can never make progress and
+ * asking the caller to "try again" would loop forever.
+ */
+export function isFplCacheEnabled(): boolean {
+  return getRedis() !== null;
+}
+
 export const CACHE_TTL = 60 * 60 * 24; // 24 hours
+/** How long a live payload is considered FRESH. */
 export const LIVE_CACHE_TTL = 60 * 10; // 10 minutes
+/**
+ * How long it is RETAINED after that.
+ *
+ * Past LIVE_CACHE_TTL the numbers are stale but still worth showing: a whole
+ * gameweek costs ~65 FPL calls, which the gateway's rate cap stretches to about
+ * ten seconds, and with a hard 10-minute expiry the first visitor after each
+ * lapse paid that in full while the page sat there. Keeping the last copy for an
+ * hour means it can be served instantly and refreshed behind the reader.
+ */
+export const LIVE_CACHE_STALE_TTL = 60 * 60; // 1 hour
 const PAGE_CACHE_TTL = 60 * 60 * 25; // 25 hours (slightly longer than daily cron interval)
 
 interface CachedScore {
@@ -363,6 +386,184 @@ export async function shouldSyncDeadlines(leagueId: string): Promise<boolean> {
 }
 
 // ============================================
+// Entry History Cache
+// /entry/{id}/history/ returns a manager's whole season in one call: per-GW
+// points, the official season total, and every chip they have played. One key
+// per entry, so a 32-team TVT league is 64 keys.
+// ============================================
+
+export interface CachedEntryHistory {
+  current: {
+    event: number;
+    points: number;
+    total_points: number;
+    rank: number | null;
+    overall_rank: number | null;
+    event_transfers: number;
+    event_transfers_cost: number;
+    points_on_bench: number;
+    value: number;
+    bank: number;
+  }[];
+  past: { season_name: string; total_points: number; rank: number }[];
+  chips: { name: string; time: string; event: number }[];
+  cachedAt: string;
+}
+
+function getEntryHistoryKey(fplId: string): string {
+  return `fpl:history:${fplId}`;
+}
+
+export async function getCachedEntryHistory(fplId: string): Promise<CachedEntryHistory | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return (await r.get<CachedEntryHistory>(getEntryHistoryKey(fplId))) ?? null;
+}
+
+export async function setCachedEntryHistory(
+  fplId: string,
+  data: Omit<CachedEntryHistory, "cachedAt">,
+  ttlSeconds: number
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(
+    getEntryHistoryKey(fplId),
+    { ...data, cachedAt: new Date().toISOString() },
+    { ex: ttlSeconds }
+  );
+}
+
+/** Bulk read, so a page can serve whatever is already warm without N round trips. */
+export async function getCachedEntryHistories(
+  fplIds: string[]
+): Promise<Map<string, CachedEntryHistory>> {
+  const out = new Map<string, CachedEntryHistory>();
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return out;
+  const values = await r.mget<(CachedEntryHistory | null)[]>(
+    ...fplIds.map(getEntryHistoryKey)
+  );
+  fplIds.forEach((id, i) => {
+    const v = values?.[i];
+    if (v) out.set(id, v);
+  });
+  return out;
+}
+
+// ============================================
+// FPL League Page Single-Flight
+// The page warms a few stale entries per request. Without a gate, concurrent
+// visitors each warm their own batch and multiply the outbound calls.
+// ============================================
+
+/**
+ * How long one warm claim blocks the next.
+ *
+ * This is a DEDUPE window, not a rate limit: it exists so that visitors
+ * arriving at the same moment do not each warm their own batch. It only needs
+ * to outlast a single batch (12 entries at concurrency 4).
+ *
+ * It must stay well under the page's poll interval budget, because a cold
+ * league only converges by warming repeatedly: 64 managers at WARM_BATCH=12
+ * is 6 rounds, and at the previous 30s every one of those rounds cost half a
+ * minute -- three minutes to fill a table, far longer than anyone waits. The
+ * page polls every 4s, so 10s lets roughly every third poll make progress.
+ */
+const FPL_LEAGUE_WARM_TTL = 10; // seconds
+
+export async function claimFplLeagueWarm(leagueId: string): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return true;
+  const claimed = await r.set(`fpl-league:warm:${leagueId}`, "1", {
+    ex: FPL_LEAGUE_WARM_TTL,
+    nx: true,
+  });
+  return claimed !== null;
+}
+
+// ============================================
+// Refresh Single-Flight
+// The forced-refresh route recomputes an entire gameweek from FPL. Without a
+// gate, N members clicking Refresh at kickoff means N full sweeps. One caller
+// computes; everyone else inside the window serves the cached result.
+// ============================================
+
+const REFRESH_LOCK_TTL = 120; // seconds — outlives a slow sweep
+const REFRESH_RESULT_TTL = 60;
+
+function getRefreshLockKey(gameweek: number, leagueId?: string | null): string {
+  return `live:refresh:lock:gw${gameweek}:${leagueId ?? "all"}`;
+}
+
+/**
+ * Claim the right to perform a forced refresh. Returns true only for the
+ * caller that wins the race; losers should serve cached data instead.
+ * Falls back to true when Redis is absent (local dev / tests) so the route
+ * still works, just without the stampede guard.
+ */
+export async function claimRefreshSlot(
+  gameweek: number,
+  leagueId?: string | null
+): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return true;
+  const claimed = await r.set(getRefreshLockKey(gameweek, leagueId), "1", {
+    ex: REFRESH_LOCK_TTL,
+    nx: true,
+  });
+  return claimed !== null;
+}
+
+/** Release the refresh claim early once the sweep finishes. */
+export async function releaseRefreshSlot(
+  gameweek: number,
+  leagueId?: string | null
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  // Keep a short cooldown rather than deleting outright, so a burst of clicks
+  // right after a sweep still coalesces onto the fresh cached result.
+  await r.set(getRefreshLockKey(gameweek, leagueId), "1", { ex: REFRESH_RESULT_TTL });
+}
+
+// ============================================
+// Scoring Lock
+// While the scoring pipeline (processAllLeagues) is running, every
+// user-facing FPL call is refused by the gateway so the run gets the whole
+// budget. Scoring failures write wrong league tables; a user-facing page
+// showing stale numbers for two minutes does not.
+// ============================================
+
+const SCORING_LOCK_KEY = "fpl:scoring-active";
+/** Long enough to outlive a slow batch, short enough to self-heal on crash. */
+const SCORING_LOCK_TTL = 120; // seconds
+
+/** Mark a scoring run as in progress. Safe to call repeatedly to extend. */
+export async function markScoringActive(): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(SCORING_LOCK_KEY, "1", { ex: SCORING_LOCK_TTL });
+}
+
+/** Clear the scoring lock. Call in a finally block. */
+export async function clearScoringActive(): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.del(SCORING_LOCK_KEY);
+}
+
+/**
+ * True while a scoring run holds the lock. Returns false when Redis is absent
+ * (local dev / tests) so the gateway does not refuse everything by default.
+ */
+export async function isScoringActive(): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return false;
+  return (await r.get(SCORING_LOCK_KEY)) !== null;
+}
+
+// ============================================
 // Live Score Cache (10-minute TTL)
 // ============================================
 
@@ -377,6 +578,12 @@ export interface LiveFixtureScore {
   awayScore: number;
   homePlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
   awayPlayers: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
+  // Fixtures still to play across the side's active XI (both managers combined).
+  // Optional on purpose: payloads already sitting in Redis under the previous
+  // shape keep deserialising and render "—" instead of crashing, so no cache
+  // key bump or invalidation is needed. null means FPL was unreachable.
+  homePlayersLeft?: { leftToPlay: number; total: number } | null;
+  awayPlayersLeft?: { leftToPlay: number; total: number } | null;
 }
 
 export interface LiveGameweekData {
@@ -389,8 +596,18 @@ function getLiveKey(gameweek: number, leagueId?: string | null): string {
   return `live:gw${gameweek}:${leagueId ?? "all"}`;
 }
 
+/** Whether a cached live payload is still within its fresh window. */
+export function isLiveCacheFresh(data: { cachedAt?: string } | null | undefined): boolean {
+  if (!data?.cachedAt) return false;
+  const age = Date.now() - new Date(data.cachedAt).getTime();
+  return Number.isFinite(age) && age >= 0 && age < LIVE_CACHE_TTL * 1000;
+}
+
 /**
- * Get cached live scores for a gameweek
+ * Get cached live scores for a gameweek, fresh or stale.
+ *
+ * Callers decide what to do with an entry older than LIVE_CACHE_TTL — see
+ * isLiveCacheFresh.
  */
 export async function getLiveCachedScores(
   gameweek: number,
@@ -403,7 +620,11 @@ export async function getLiveCachedScores(
 }
 
 /**
- * Set cached live scores for a gameweek (10-min TTL)
+ * Set cached live scores for a gameweek.
+ *
+ * Stored for LIVE_CACHE_STALE_TTL; freshness is judged from `cachedAt` in the
+ * payload rather than by the key expiring, so a lapsed entry degrades to
+ * "stale but serveable" instead of vanishing.
  */
 export async function setLiveCachedScores(
   gameweek: number,
@@ -412,7 +633,7 @@ export async function setLiveCachedScores(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_TTL });
+  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_STALE_TTL });
 }
 
 /**

@@ -1,5 +1,7 @@
 "use client";
 
+import { fplEntryUrl } from "@/lib/fpl-links";
+
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -174,7 +176,7 @@ function ContinentalChampionshipCard({ winner }: { winner: Winner }) {
             {winner.players.map((p, i) => (
               <a
                 key={i}
-                href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/38`}
+                href={fplEntryUrl(p.fplId, 38)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block text-xs sm:text-sm text-blue-300 hover:text-blue-200 underline"
@@ -268,7 +270,7 @@ function WinnerRow({ winner }: { winner: Winner }) {
             {winner.players.map((p, i) => (
               <a
                 key={i}
-                href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/38`}
+                href={fplEntryUrl(p.fplId, 38)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block text-blue-400 hover:text-blue-300 underline"
@@ -306,7 +308,7 @@ function AuctionTrophy({ winners }: { winners: Winner[] }) {
               {w.players.map((p, i) => (
                 <a
                   key={i}
-                  href={`https://fantasy.premierleague.com/entry/${p.fplId}/event/38`}
+                  href={fplEntryUrl(p.fplId, 38)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-emerald-300 hover:text-emerald-200 underline text-sm"

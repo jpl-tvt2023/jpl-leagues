@@ -9,17 +9,25 @@ import { expect, type Page } from "@playwright/test";
 /** Visit /[leagueSlug]/standings and verify the team appears in the table. */
 export async function expectStandingsHasTeam(page: Page, slug: string, teamName: string): Promise<void> {
   await page.goto(`/${slug}/standings`);
-  await expect(page.getByRole("cell", { name: teamName })).toBeVisible({ timeout: 15_000 });
+  // exact: true — otherwise "Team 1" also matches "Team 10".."Team 19" and
+  // Playwright fails with a strict-mode violation on a page that rendered fine.
+  await expect(
+    page.getByRole("cell", { name: teamName, exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
 }
 
 /** Visit /[leagueSlug]/fixtures and assert at least one fixture rendered. */
 export async function expectFixturesPageRenders(page: Page, slug: string): Promise<void> {
   await page.goto(`/${slug}/fixtures`);
-  // Match either a "GW1" heading, a table, or any fixture-card class — be tolerant
-  // because the UI markup can change without breaking the underlying feature.
-  await expect(
-    page.locator("text=/GW\\s*\\d+|Gameweek|Round/i").first(),
-  ).toBeVisible({ timeout: 15_000 });
+  // The gameweek picker only renders in the non-empty branch — the empty state
+  // shows "No Fixtures Yet" instead — so its presence is the real signal that
+  // fixtures loaded.
+  //
+  // Assert on the combobox rather than "Gameweek N" text: that text lives
+  // inside <option> elements, and Playwright's text engine resolves to the
+  // deepest match, so toBeVisible() fails on an <option> even when the page
+  // rendered perfectly.
+  await expect(page.getByRole("combobox").first()).toBeVisible({ timeout: 15_000 });
 }
 
 /** Sign-in success: we're redirected off /signin within `timeout`. */

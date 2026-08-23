@@ -18,7 +18,7 @@ import { gameweekCaptains, playoffTies } from "@/lib/db/schema";
 import { asc, eq, and, isNull, ne, or } from "drizzle-orm";
 import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
 import { syncGameweekDeadlines } from "@/lib/gameweeks/sync-deadlines";
-import { clearLiveCache, setLiveCachedScores, invalidateLeaguePageCache, type FplEventStatus } from "@/lib/fpl-cache";
+import { clearLiveCache, setLiveCachedScores, invalidateLeaguePageCache, markScoringActive, clearScoringActive, type FplEventStatus } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
@@ -191,7 +191,7 @@ export async function computePlan(): Promise<Plan> {
   let bootstrapEvents: FplEvent[] | null = null;
   let bootstrapError: string | null = null;
   try {
-    const bs = await fetchBootstrapData() as { events?: FplEvent[] };
+    const bs = await fetchBootstrapData("critical") as { events?: FplEvent[] };
     bootstrapEvents = bs.events ?? [];
   } catch (e) {
     bootstrapError = e instanceof Error ? e.message : "unknown error";
@@ -597,19 +597,30 @@ export type Summary = {
 
 /** Server-side single-shot orchestration. Used by /api/cron/process-scores. */
 export async function processAllLeagues(input: FetchInput): Promise<Summary> {
-  const plan = await computePlan();
-  const results: LeagueResult[] = [];
-  for (const lg of plan.leagues) {
-    const r = await processOneLeague(lg, plan.dueGws, input);
-    results.push(r);
+  // Hold the scoring lock for the whole run. While it is set the FPL gateway
+  // refuses every background (user-facing) call, so this run gets the entire
+  // request budget. A scoring failure writes a wrong league table; a page
+  // showing stale numbers for a couple of minutes does not.
+  await markScoringActive();
+  try {
+    const plan = await computePlan();
+    const results: LeagueResult[] = [];
+    for (const lg of plan.leagues) {
+      // Refresh the lock between leagues so a long run cannot let its own TTL lapse.
+      await markScoringActive();
+      const r = await processOneLeague(lg, plan.dueGws, input);
+      results.push(r);
+    }
+    await finishRun(plan.runId, plan.dueGws, results, plan.globalErrors, input);
+    return {
+      runId: plan.runId,
+      dueGws: plan.dueGws,
+      leagues: results,
+      globalErrors: plan.globalErrors,
+    };
+  } finally {
+    await clearScoringActive();
   }
-  await finishRun(plan.runId, plan.dueGws, results, plan.globalErrors, input);
-  return {
-    runId: plan.runId,
-    dueGws: plan.dueGws,
-    leagues: results,
-    globalErrors: plan.globalErrors,
-  };
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -701,7 +712,7 @@ async function calculateLiveTeamScore(
   const rawScores: Array<{ id: string; name: string; fplId: string; fplScore: number; transferHits: number; netScore: number }> = [];
   for (const player of teamPlayers) {
     try {
-      const picks = await fetchTeamGameweekPicks(player.fplId, gameweek);
+      const picks = await fetchTeamGameweekPicks(player.fplId, gameweek, "critical");
       const fplScore = picks.entry_history.points;
       const transferHits = picks.entry_history.event_transfers_cost;
       rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore, transferHits, netScore: fplScore - transferHits });

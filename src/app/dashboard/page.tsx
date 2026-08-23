@@ -9,6 +9,8 @@ import { TierChip } from "@/components/TierChip";
 import { Logo } from "@/components/Logo";
 import { HelpTip } from "@/components/HelpTip";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
+import { fplEntryUrl, fplEntryLabel } from "@/lib/fpl-links";
+import { PlFixtureCard } from "./_components/PlFixtureCard";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
 import { EligibilitySelect } from "@/app/dashboard/_components/EligibilitySelect";
 import { WishlistManager } from "@/components/WishlistManager";
@@ -39,8 +41,12 @@ interface DashboardData {
   submission: {
     gameweek: number;
     timestamp: string | null;
-    state: "open" | "locked" | "closed";
+    state: "open" | "locked" | "awaiting-results" | "closed";
     opensAt: string | null;
+    /** Set when state is "awaiting-results": the GW FPL has not finished yet. */
+    awaitingGw: number | null;
+    /** True when FPL status was unavailable and the window fell open. */
+    degraded: boolean;
   };
   serverTime: string;
   upcomingFixture: {
@@ -99,6 +105,18 @@ interface DashboardData {
     pointsToTop: number;
     miniTable: { rank: number; name: string; points: number; isCurrentTeam: boolean }[];
   };
+  /**
+   * Every group's table, five rows each, the viewer's own group first.
+   * Empty for formats that do not use groups.
+   */
+  groupTables: {
+    groupId: string;
+    name: string;
+    isMyGroup: boolean;
+    rows: { rank: number; name: string; points: number; isCurrentTeam: boolean }[];
+    /** Ranks were elided between the leaders and the viewer's row. */
+    truncated: boolean;
+  }[];
   chipStatus: {
     currentSet: 1 | 2 | "playoffs";
     set1: {
@@ -981,6 +999,20 @@ export default function DashboardPage() {
     return () => clearTimeout(timer);
   }, [data?.submission?.state, data?.submission?.opensAt, data?.serverTime, fetchDashboard]);
 
+  // While waiting on FPL to finalise the previous gameweek there is no known
+  // opensAt to schedule against — FPL decides. Poll instead, but slowly: the
+  // underlying fetchEventStatus is Redis-cached for 10 minutes, so a faster
+  // interval returns identical bytes and just burns the dashboard route. The
+  // document.hidden guard keeps background tabs quiet, and the existing
+  // focus/visibilitychange refetch covers the user returning to the tab.
+  useEffect(() => {
+    if (data?.submission?.state !== "awaiting-results") return;
+    const id = setInterval(() => {
+      if (!document.hidden) fetchDashboard();
+    }, 10 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [data?.submission?.state, fetchDashboard]);
+
   // GW navigation handlers
   const handlePrevGw = () => {
     if (data && viewedGw && data.minCompletedGw && viewedGw > data.minCompletedGw) {
@@ -996,12 +1028,15 @@ export default function DashboardPage() {
   };
 
   const handleLiveRefresh = async () => {
-    if (!data || !viewedGw) return;
+    if (!data || !viewedGw || !leagueSlug) return;
     setLiveRefreshing(true);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${viewedGw}`, {
-        credentials: "include", // Ensure cookies are sent
-      });
+      // leagueSlug is required: without it the route resolved the gameweek by
+      // number alone and could return another league's fixtures entirely.
+      const res = await fetch(
+        `/api/fixtures/live/refresh?gameweek=${viewedGw}&leagueSlug=${encodeURIComponent(leagueSlug)}`,
+        { credentials: "include" } // Ensure cookies are sent
+      );
       if (res.ok) {
         const freshData = await res.json();
         // Find the fixture matching this user's team
@@ -1281,6 +1316,42 @@ export default function DashboardPage() {
     </div>
   ) : null;
 
+  /**
+   * Extracted so the wide column (TVT) and the full-width grid (Continental
+   * Championship) can each render it without duplicating the markup. TVT moved
+   * it up beside Upcoming Fixtures to fill the column; CC's layout is unchanged.
+   */
+  const captainHistoryCard = (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+      <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Captain History</h2>
+      <div className="space-y-2">
+        {(showAllCaptains
+          ? data.captaincyStatus.recentCaptains
+          : data.captaincyStatus.recentCaptains.slice(0, 3)
+        ).map((c, i) => (
+          <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 w-8">GW{c.gameweek}</span>
+              <span className="text-white">{c.playerName}</span>
+            </div>
+            <span className="text-yellow-400 font-bold">{c.score}</span>
+          </div>
+        ))}
+        {data.captaincyStatus.recentCaptains.length === 0 && (
+          <div className="text-gray-400 text-center py-4">No captain history</div>
+        )}
+        {data.captaincyStatus.recentCaptains.length > 3 && (
+          <button
+            onClick={() => setShowAllCaptains(!showAllCaptains)}
+            className="w-full text-center text-sm text-yellow-400 hover:text-yellow-300 transition py-2"
+          >
+            {showAllCaptains ? "See Less ▲" : `See More (${data.captaincyStatus.recentCaptains.length}) ▼`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       {/* Navigation */}
@@ -1305,6 +1376,10 @@ export default function DashboardPage() {
             <>
               <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
               <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
+              {/* Kept in step with LeagueNav, which this nav duplicates rather
+                  than reuses — that duplication is why this link was reachable
+                  from every league page but not from here. */}
+              <Link href={`/${leagueSlug}/fpl-league`} className="text-gray-300 hover:text-white transition">FPL League</Link>
               <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
             </>
           )}
@@ -1418,7 +1493,7 @@ export default function DashboardPage() {
                                       <div className="flex gap-2">
                                         <a href={p.fplUrl} target="_blank" rel="noopener noreferrer"
                                           className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition">
-                                          GW{data.upcomingFixture?.lastCompletedGw ?? (data.deadline.gameweek - 1)} ↗
+                                          {fplEntryLabel(data.upcomingFixture?.lastCompletedGw)} ↗
                                         </a>
                                       </div>
                                     </div>
@@ -1463,55 +1538,9 @@ export default function DashboardPage() {
                   <DeadlineTimer deadline={data.deadline.timestamp} gameweek={data.deadline.gameweek} serverTime={data.serverTime} />
                 </div>
 
-                {/* Upcoming Fixture */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                  <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                    <span className="text-yellow-400">⚔</span> GW{data.deadline.gameweek} PL Fixture
-                  </h2>
-                  {data.upcomingFixture ? (
-                    <div>
-                      <div className="flex items-center justify-center gap-4 mb-3">
-                        <div className="text-center">
-                          <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "HOME" : "AWAY"}</div>
-                          <div className="text-lg font-bold text-white">{data.team.name}</div>
-                        </div>
-                        <span className="text-gray-500 font-medium">VS</span>
-                        <div className="text-center">
-                          <div className="text-xs text-gray-400 mb-1">{data.upcomingFixture.isHome ? "AWAY" : "HOME"}</div>
-                          <button
-                            onClick={() => setShowOpponentPlayers(!showOpponentPlayers)}
-                            className="text-lg font-bold text-blue-400 hover:text-blue-300 underline decoration-dotted underline-offset-4 transition"
-                          >
-                            {data.upcomingFixture.opponent.name}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="text-center text-xs text-gray-500 mb-2">
-                        Click opponent name to {showOpponentPlayers ? "hide" : "view"} players
-                      </div>
-                      {showOpponentPlayers && (
-                        <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/10">
-                          <div className="text-xs text-gray-400 mb-2 font-semibold">{data.upcomingFixture.opponent.name} — Players</div>
-                          <div className="space-y-2">
-                            {data.upcomingFixture.opponent.players.map((p, i) => (
-                              <div key={i} className="flex items-center justify-between">
-                                <span className="text-white text-sm">{p.name}</span>
-                                <div className="flex gap-2">
-                                  <a href={p.fplUrl} target="_blank" rel="noopener noreferrer"
-                                    className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition">
-                                    GW{data.upcomingFixture?.lastCompletedGw ?? (data.deadline.gameweek - 1)} ↗
-                                  </a>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-400">No upcoming fixture</div>
-                  )}
-                </div>
+                {/* PL Fixture — gameweek navigation, points breakdown, chip
+                    state and players-left all live in this component. */}
+                <PlFixtureCard />
               </div>
             )}
 
@@ -1614,6 +1643,31 @@ export default function DashboardPage() {
               {data.submission.state === "locked" && (
                 <div className="mb-4 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 text-sm">
                   Deadline passed — submissions reopen at {formatClockTime(data.submission.opensAt)} for GW{data.submission.gameweek + 1}.
+                </div>
+              )}
+              {data.submission.state === "awaiting-results" && (
+                <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm">
+                  <div className="font-semibold mb-1">
+                    Waiting on FPL to finalise GW{data.submission.awaitingGw}.
+                  </div>
+                  <p className="text-blue-300/80">
+                    GW{data.submission.gameweek} submissions open as soon as FPL marks
+                    GW{data.submission.awaitingGw} finished — usually within a few hours of the
+                    last match. Double Pointer and Challenge Chip eligibility depend on the final
+                    league table, so the window cannot open before then.
+                  </p>
+                  <button
+                    onClick={() => fetchDashboard()}
+                    className="mt-2 text-xs px-2 py-1 rounded bg-blue-500/20 hover:bg-blue-500/30 transition"
+                  >
+                    Check again
+                  </button>
+                </div>
+              )}
+              {data.submission.degraded && (
+                <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-gray-400 text-xs">
+                  FPL status is currently unavailable — chip eligibility shown may not reflect the
+                  final GW{data.submission.gameweek - 1} standings.
                 </div>
               )}
               {data.submission.state === "closed" && (
@@ -1788,6 +1842,11 @@ export default function DashboardPage() {
             {/* Last Result — Continental Championship gets a JPL/Cup tab toggle sharing one
                 card; TVT always shows its single (untabbed) result. */}
             {(() => {
+              // Not shown on the TVT dashboard: the same scoreline and breakdown
+              // live on the GW Results page, and the group tables below now use
+              // this space. Continental Championship keeps it -- its JPL/Cup tab
+              // toggle has no equivalent anywhere else.
+              if (leagueFormat === "tvt") return null;
               const cupResult = leagueFormat === "continental-championship" ? (data.cupGwResult ?? data.cupProgress?.lastCupResult ?? null) : null;
               const showCupTab = leagueFormat === "continental-championship" && !!cupResult;
               const activeTab = showCupTab ? dashboardTab : "jpl";
@@ -1925,7 +1984,9 @@ export default function DashboardPage() {
                               <div className="flex items-center gap-2">
                                 {(('fplUrl' in p && p.fplUrl) || ('fplId' in p && p.fplId)) ? (
                                   <a
-                                    href={'fplUrl' in p && p.fplUrl ? p.fplUrl : `https://fantasy.premierleague.com/entry/${'fplId' in p ? p.fplId : ''}/event/${data.lastGwResult!.gameweek}`}
+                                    href={'fplUrl' in p && p.fplUrl
+                                      ? p.fplUrl
+                                      : fplEntryUrl(('fplId' in p ? p.fplId : '') ?? '', data.lastGwResult!.gameweek)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-blue-400 hover:text-blue-300 underline"
@@ -1969,7 +2030,9 @@ export default function DashboardPage() {
                               <div className="flex items-center gap-2">
                                 {(('fplUrl' in p && p.fplUrl) || ('fplId' in p && p.fplId)) ? (
                                   <a
-                                    href={'fplUrl' in p && p.fplUrl ? p.fplUrl : `https://fantasy.premierleague.com/entry/${'fplId' in p ? p.fplId : ''}/event/${data.lastGwResult!.gameweek}`}
+                                    href={'fplUrl' in p && p.fplUrl
+                                      ? p.fplUrl
+                                      : fplEntryUrl(('fplId' in p ? p.fplId : '') ?? '', data.lastGwResult!.gameweek)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-blue-400 hover:text-blue-300 underline"
@@ -2009,6 +2072,7 @@ export default function DashboardPage() {
                             C* = auto-assigned temp captain (lowest scorer)
                           </div>
                         ) : null;
+
                       })()}
                     </>
                   )}
@@ -2119,8 +2183,104 @@ export default function DashboardPage() {
               );
             })()}
 
+            {/* Group tables — every group, five rows each, the viewer's own first.
+                Continental Championship is excluded: it renders its own JPL/Cup
+                tabbed table further down and would otherwise show two. */}
+            {leagueFormat !== "continental-championship" && data.groupTables.length > 0 && (
+              <div className={data.groupTables.length > 1 ? "grid gap-6 md:grid-cols-2" : ""}>
+                {data.groupTables.map((g) => (
+                  <div key={g.groupId} className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                    <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">
+                      Group {g.name} Table
+                      {g.isMyGroup && <span className="ml-2 text-xs font-normal text-yellow-400">your group</span>}
+                    </h2>
+                    <div className="space-y-2">
+                      {g.rows.map((t, i) => (
+                        <div key={t.rank}>
+                          {/* Marks where ranks were skipped, so 4th sitting directly
+                              above 12th does not read as a continuous table. */}
+                          {g.truncated && i === g.rows.length - 1 && (
+                            <div className="text-center text-gray-600 text-xs leading-none py-1">···</div>
+                          )}
+                          <div className={`flex items-center justify-between p-2.5 rounded-lg ${
+                            t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
+                          }`}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className={`w-6 h-6 shrink-0 flex items-center justify-center rounded-full text-xs font-bold ${
+                                t.rank <= 8 ? "bg-green-500/20 text-green-400" :
+                                t.rank <= 14 ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
+                              }`}>
+                                {t.rank}
+                              </span>
+                              <span className={`break-words ${t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}`}>
+                                {t.name}
+                              </span>
+                            </div>
+                            <span className="text-white font-bold shrink-0 ml-2">{t.points}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Link
+                      href={`/${leagueSlug}/standings`}
+                      className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
+                    >
+                      View Full Table →
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Upcoming Fixtures + Captain History — in the wide column so it does
+                not end far above the narrow one. Continental Championship keeps
+                both in the full-width grid below, where its Upcoming Fixtures
+                variant splits league from cup. */}
+            {leagueFormat !== "continental-championship" && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
+                  {data.upcomingFixtures.length === 0 ? (
+                    <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
+                  ) : (
+                    /* One line per fixture. The older layout boxed each gameweek with
+                       its own header row and a trailing competition label — three
+                       lines of chrome to say "GW1, home, Stretford Kops". The label
+                       was noise: the API stamps every non-cup fixture "JPL", so it
+                       read the same on every row. */
+                    <div className="space-y-1.5">
+                      {data.upcomingFixtures.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5">
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider w-10 shrink-0">
+                            GW{f.gameweek}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded font-semibold shrink-0 ${
+                            f.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"
+                          }`}>
+                            {f.isHome ? "H" : "A"}
+                          </span>
+                          <span className="text-white text-sm break-words">{f.opponent}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {captainHistoryCard}
+              </div>
+            )}
+
+          </div>
+
+          {/* Right Column */}
+          {/* min-w-0 overrides the grid item's default min-width:auto — without it, the
+              Captains & Chips card's horizontal-scroll region below forces this whole
+              grid track (and the page) wider than the viewport instead of scrolling internally. */}
+          <div className="space-y-6 min-w-0">
+            {/* Captain Announcements — league-wide list, same right-column slot for every format */}
+            {captainAnnouncementsCard}
+
             {/* Recent Form & Stats */}
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="space-y-6">
               {/* Recent Form */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Recent Form</h2>
@@ -2191,7 +2351,7 @@ export default function DashboardPage() {
             {/* Team Members */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Team Members</h2>
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-3">
                 {data.teamMembers.map((member, i) => (
                   <div key={i} className="p-4 rounded-xl bg-white/5">
                     <div className="font-semibold text-white mb-2">{member.name}</div>
@@ -2220,15 +2380,6 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
-          </div>
-
-          {/* Right Column */}
-          {/* min-w-0 overrides the grid item's default min-width:auto — without it, the
-              Captains & Chips card's horizontal-scroll region below forces this whole
-              grid track (and the page) wider than the viewport instead of scrolling internally. */}
-          <div className="space-y-6 min-w-0">
-            {/* Captain Announcements — league-wide list, same right-column slot for every format */}
-            {captainAnnouncementsCard}
 
             {/* Highs & Lows */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
@@ -2261,12 +2412,15 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Group Table / Upcoming Fixtures / Captain History — full page width, below both columns
-            (moved out of the 2/3-width Left Column, which was capping them; Right Column has already
-            ended above this point so there's nothing to reserve the remaining 1/3 for). */}
+        {/* Continental Championship only. TVT's cards all live in the two
+            columns above now; rendering this grid empty for TVT would still
+            add its mt-6 below the page. */}
+        {leagueFormat === "continental-championship" && (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mt-6">
-          {/* Standings — TVT's single Group Table, or Continental Championship's JPL/Cup tabbed table */}
-          {leagueFormat === "continental-championship" ? (
+          {/* Standings — Continental Championship's JPL/Cup tabbed table only.
+              TVT's group tables moved into the wide column above, where both
+              groups are shown side by side rather than just the viewer's. */}
+          {leagueFormat === "continental-championship" && (
             (() => {
               const isCupView = dashboardTab === "cup" && !!data.cupProgress;
               const cupMyStat = data.cupProgress?.miniTable.find(t => t.isCurrentTeam);
@@ -2351,97 +2505,6 @@ export default function DashboardPage() {
                 </div>
               );
             })()
-          ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Group {data.team.group} Table</h2>
-              <div className="space-y-2">
-                {data.leaguePosition.miniTable.map((t) => (
-                  <div
-                    key={t.rank}
-                    className={`flex items-center justify-between p-3 rounded-lg ${
-                      t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${
-                        t.rank <= 8 ? "bg-green-500/20 text-green-400" :
-                        t.rank <= 14 ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
-                      }`}>
-                        {t.rank}
-                      </span>
-                      <span className={t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}>
-                        {t.name}
-                      </span>
-                    </div>
-                    <span className="text-white font-bold">{t.points}</span>
-                  </div>
-                ))}
-              </div>
-              <Link
-                href={`/${leagueSlug}/standings`}
-                className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
-              >
-                View Full Table →
-              </Link>
-            </div>
-          )}
-
-          {/* Upcoming Fixtures — shared slot; Continental Championship's version splits PL/Cup fixtures per GW */}
-          {leagueFormat !== "continental-championship" && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
-              {data.upcomingFixtures.length === 0 ? (
-                <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
-              ) : (
-                <div className="space-y-3">
-                  {(() => {
-                    // Group by GW number preserving order
-                    const byGw = new Map<number, typeof data.upcomingFixtures>();
-                    for (const f of data.upcomingFixtures) {
-                      if (!byGw.has(f.gameweek)) byGw.set(f.gameweek, []);
-                      byGw.get(f.gameweek)!.push(f);
-                    }
-                    return Array.from(byGw.entries()).map(([gw, gwFixtures]) => {
-                      const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "jpl");
-                      const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "jpl");
-                      const isDouble = !!plFix && !!cupFix;
-                      return (
-                        <div key={gw} className="rounded-xl border border-white/8 overflow-hidden">
-                          {/* GW label */}
-                          <div className="px-3 py-1.5 bg-white/5 border-b border-white/8">
-                            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">GW{gw}</span>
-                            {isDouble && (
-                              <span className="ml-2 text-xs text-yellow-400 font-semibold">Double Header</span>
-                            )}
-                          </div>
-                          {/* Fixture row(s) */}
-                          <div className={isDouble ? "grid grid-cols-2 divide-x divide-white/8" : ""}>
-                            {plFix && (
-                              <div className="flex items-center gap-2 px-3 py-2.5">
-                                <span className={`text-xs px-2 py-0.5 rounded font-semibold ${plFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
-                                  {plFix.isHome ? "H" : "A"}
-                                </span>
-                                <span className="text-white text-sm truncate">{plFix.opponent}</span>
-                                <span className="text-xs text-gray-500 ml-auto shrink-0">{plFix.competitionLabel ?? "PL"}</span>
-                              </div>
-                            )}
-                            {cupFix && (
-                              <div className="flex items-center gap-2 px-3 py-2.5">
-                                <span className={`text-xs px-2 py-0.5 rounded font-semibold ${cupFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
-                                  {cupFix.isHome ? "H" : "A"}
-                                </span>
-                                <span className="text-blue-200 text-sm truncate">{cupFix.opponent}</span>
-                                <span className="text-xs text-blue-400/70 ml-auto shrink-0">{cupFix.competitionLabel ?? "Cup"}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              )}
-            </div>
           )}
 
           {/* Upcoming Fixtures — Continental Championship, splits PL/Cup fixtures per GW */}
@@ -2489,36 +2552,9 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Captain History */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-            <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Captain History</h2>
-            <div className="space-y-2">
-              {(showAllCaptains
-                ? data.captaincyStatus.recentCaptains
-                : data.captaincyStatus.recentCaptains.slice(0, 3)
-              ).map((c, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 w-8">GW{c.gameweek}</span>
-                    <span className="text-white">{c.playerName}</span>
-                  </div>
-                  <span className="text-yellow-400 font-bold">{c.score}</span>
-                </div>
-              ))}
-              {data.captaincyStatus.recentCaptains.length === 0 && (
-                <div className="text-gray-400 text-center py-4">No captain history</div>
-              )}
-              {data.captaincyStatus.recentCaptains.length > 3 && (
-                <button
-                  onClick={() => setShowAllCaptains(!showAllCaptains)}
-                  className="w-full text-center text-sm text-yellow-400 hover:text-yellow-300 transition py-2"
-                >
-                  {showAllCaptains ? "See Less ▲" : `See More (${data.captaincyStatus.recentCaptains.length}) ▼`}
-                </button>
-              )}
-            </div>
-          </div>
+          {captainHistoryCard}
         </div>
+        )}
       </div>
     </div>
   );

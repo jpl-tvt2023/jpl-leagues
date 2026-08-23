@@ -26,6 +26,10 @@ export async function generateFixtures(
 ): Promise<FixtureSummary> {
   const res = await request.post(`/api/admin/${leagueSlugOrId}/generate-fixtures`, {
     failOnStatusCode: false,
+    // A 32-team league is 2 groups x 16 teams x 30 league-stage GWs = 480
+    // fixtures, inserted row by row. That comfortably exceeds the 45s
+    // actionTimeout in playwright.config.ts, so this call gets its own budget.
+    timeout: 150_000,
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok()) {
@@ -56,6 +60,13 @@ export async function getFixtureStatus(
   fixturesGenerated: boolean;
   totalFixtures: number;
   readyToGenerate: boolean;
+  // Returned by GET /api/admin/[leagueId]/generate-fixtures; null when the
+  // league row cannot be resolved. Specs assert teamSize/playoffStartGw here.
+  leagueConfig: {
+    teamSize: number;
+    groupCount: number;
+    playoffStartGw: number;
+  } | null;
 }> {
   const res = await request.get(`/api/admin/${leagueSlugOrId}/generate-fixtures`, {
     failOnStatusCode: false,

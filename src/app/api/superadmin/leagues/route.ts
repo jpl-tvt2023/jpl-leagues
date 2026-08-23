@@ -211,6 +211,7 @@ export async function POST(request: NextRequest) {
       groupCount: resolvedGroupCount,
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: resolvedEnabledChips,
+      auctionTier: resolvedAuctionTier,
       teamCount: createdTeams,
       currentGameweek: null,
     });

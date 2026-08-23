@@ -141,6 +141,7 @@ export function LeagueNav({
           <>
             <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>Standings</NavLink>
             <NavLink href={`/${leagueSlug}/fixtures`} activeClass={activeClass} active={currentPage ==="fixtures"}>Fixtures</NavLink>
+            <NavLink href={`/${leagueSlug}/fpl-league`} activeClass={activeClass} active={currentPage ==="fpl-league"}>FPL League</NavLink>
             <NavLink href={`/${leagueSlug}/playoffs`} activeClass={activeClass} active={currentPage ==="playoffs"}>Playoffs</NavLink>
             <NavLink href={`/${leagueSlug}/winners`} activeClass={activeClass} active={currentPage ==="winners"}>Winners</NavLink>
             <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>

@@ -40,6 +40,51 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
 
   const generalFaqs: FaqEntry[] = [
     {
+      question: "Player links open the Premier League app instead of a browser tab. Can I stop that?",
+      answer: (
+        <>
+          <p>
+            Yes, but it has to be changed on your phone — a website cannot override it. On Android,
+            whether a <span className="text-white">fantasy.premierleague.com</span> link opens the
+            Fantasy app or a browser tab is decided by Android itself, from a setting on the app.
+          </p>
+          <p className="mt-2">
+            To force links into the browser: <strong className="text-white">Settings → Apps →
+            Fantasy Premier League → Open by default</strong>, then turn off{" "}
+            <strong className="text-white">Open supported links</strong>. On some phones this is
+            listed as &ldquo;Opening links&rdquo; or &ldquo;Set as default&rdquo;.
+          </p>
+          <p className="mt-2">
+            iPhone users do not need to do anything. And you can usually avoid the link altogether —
+            the points breakdown on the Fixtures page and your dashboard shows each manager&rsquo;s
+            score without leaving the portal.
+          </p>
+        </>
+      ),
+    },
+    {
+      question: "Why can I not announce next gameweek's captain or chip yet?",
+      answer: (
+        <>
+          <p>
+            The window for the next gameweek opens once the Premier League has finished the current
+            one — not the moment the deadline passes. The dashboard tells you which gameweek it is
+            waiting on, and re-checks by itself.
+          </p>
+          <p className="mt-2">
+            This is because <strong className="text-white">Double Pointer</strong> and{" "}
+            <strong className="text-white">Challenge Chip</strong> both depend on league table
+            positions. If declarations were allowed while matches were still being played, you could
+            pick a chip your final position never entitled you to.
+          </p>
+          <p className="mt-2">
+            GW1 is the exception — nothing precedes it, so it is open from the start. It also does
+            not wait on the admin entering results; only on the real-world matches finishing.
+          </p>
+        </>
+      ),
+    },
+    {
       question: "What is JPL / TVT format?",
       answer: (
         <p>

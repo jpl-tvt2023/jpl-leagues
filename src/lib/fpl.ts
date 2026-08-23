@@ -1,21 +1,21 @@
 // FPL API Service
 // Official Fantasy Premier League API endpoints
 
-const FPL_BASE_URL = "https://fantasy.premierleague.com/api";
-const FPL_TIMEOUT_MS = 10000;
-// FPL is friendlier to clients that identify themselves — requests without a
-// User-Agent from cloud/serverless IPs (Vercel etc.) intermittently get
-// rejected. Same header already used successfully in fpl-live/players-left.ts.
-const FPL_USER_AGENT = "Mozilla/5.0 (compatible; jpl-leagues/1.0; +https://jpl-leagues.vercel.app)";
+import { fplRequest, FPL_BASE_URL, type FplLane } from "@/lib/fpl/gateway";
 
-function fplFetch(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FPL_TIMEOUT_MS);
-  return fetch(url, {
-    signal: controller.signal,
-    cache: 'no-store',
-    headers: { "User-Agent": FPL_USER_AGENT },
-  }).finally(() => clearTimeout(timer));
+export { FPL_BASE_URL };
+
+/**
+ * All FPL traffic is funnelled through the gateway, which enforces the global
+ * concurrency cap, the circuit breaker and the critical/background lanes.
+ *
+ * The default lane is "background" deliberately: user-facing code vastly
+ * outnumbers the scoring pipeline, and defaulting to "critical" would let a
+ * new page silently bypass every protection. The scoring pipeline opts in to
+ * "critical" explicitly at its call sites.
+ */
+function fplFetch(url: string, lane: FplLane = "background"): Promise<Response> {
+  return fplRequest(url, { lane });
 }
 
 export interface FPLPlayer {
@@ -71,19 +71,55 @@ export interface FPLLiveData {
 }
 
 /**
+ * In-flight bootstrap requests, keyed by lane.
+ *
+ * bootstrap-static is the single most duplicated call in the app: twenty call
+ * sites, and several ask for it twice at once — `Promise.all([fetchElementInfo(),
+ * fetchBootstrapData()])` in the auction routes is two identical requests every
+ * time the cache is cold, because neither has written it yet when the other
+ * starts. Overlapping callers now share one request.
+ *
+ * Keyed by lane, never shared across lanes, and that matters for correctness
+ * rather than tidiness. The two lanes have different permissions: background
+ * calls are refused while a scoring run holds the lock, critical calls are
+ * always attempted. Letting a background caller await a critical request would
+ * smuggle it past a refusal it was supposed to receive; the reverse would
+ * subject scoring to a refusal it is meant to be exempt from.
+ */
+const inFlightBootstrap = new Map<FplLane, Promise<unknown>>();
+
+/**
  * Fetch general bootstrap data (all players, teams, gameweeks)
  */
-export async function fetchBootstrapData() {
-  const res = await fplFetch(`${FPL_BASE_URL}/bootstrap-static/`);
-  if (!res.ok) throw new Error("Failed to fetch FPL bootstrap data");
-  return res.json();
+export async function fetchBootstrapData(lane: FplLane = "background") {
+  const existing = inFlightBootstrap.get(lane);
+  if (existing) return existing;
+
+  const pending = (async () => {
+    const res = await fplFetch(`${FPL_BASE_URL}/bootstrap-static/`, lane);
+    if (!res.ok) throw new Error("Failed to fetch FPL bootstrap data");
+    return res.json();
+  })();
+
+  inFlightBootstrap.set(lane, pending);
+  // Dropped as soon as it settles, so the next caller re-checks the caches
+  // upstream instead of being pinned to one snapshot for the whole process.
+  // A rejection is cleared the same way — it must not be replayed to everyone.
+  void pending.catch(() => undefined).finally(() => {
+    if (inFlightBootstrap.get(lane) === pending) inFlightBootstrap.delete(lane);
+  });
+
+  return pending;
 }
 
 /**
  * Fetch a specific FPL team entry by ID
  */
-export async function fetchTeamEntry(teamId: string): Promise<FPLTeamEntry> {
-  const res = await fplFetch(`${FPL_BASE_URL}/entry/${teamId}/`);
+export async function fetchTeamEntry(
+  teamId: string,
+  lane: FplLane = "background"
+): Promise<FPLTeamEntry> {
+  const res = await fplFetch(`${FPL_BASE_URL}/entry/${teamId}/`, lane);
   if (!res.ok) throw new Error(`Failed to fetch FPL team ${teamId}`);
   return res.json();
 }
@@ -93,9 +129,10 @@ export async function fetchTeamEntry(teamId: string): Promise<FPLTeamEntry> {
  */
 export async function fetchTeamGameweekPicks(
   teamId: string,
-  gameweek: number
+  gameweek: number,
+  lane: FplLane = "background"
 ): Promise<FPLGameweekPicks> {
-  const res = await fplFetch(`${FPL_BASE_URL}/entry/${teamId}/event/${gameweek}/picks/`);
+  const res = await fplFetch(`${FPL_BASE_URL}/entry/${teamId}/event/${gameweek}/picks/`, lane);
   if (!res.ok) throw new Error(`Failed to fetch picks for team ${teamId} GW${gameweek}`);
   return res.json();
 }
@@ -103,19 +140,62 @@ export async function fetchTeamGameweekPicks(
 /**
  * Fetch live gameweek data (real-time scores)
  */
-export async function fetchLiveGameweek(gameweek: number): Promise<FPLLiveData> {
-  const res = await fplFetch(`${FPL_BASE_URL}/event/${gameweek}/live/`);
+export async function fetchLiveGameweek(
+  gameweek: number,
+  lane: FplLane = "background"
+): Promise<FPLLiveData> {
+  const res = await fplFetch(`${FPL_BASE_URL}/event/${gameweek}/live/`, lane);
   if (!res.ok) throw new Error(`Failed to fetch live data for GW${gameweek}`);
   return res.json();
 }
 
+/** One row of an entry's current-season history, as FPL returns it. */
+export interface FplEntryHistoryCurrent {
+  event: number;
+  points: number;
+  total_points: number;
+  rank: number | null;
+  overall_rank: number | null;
+  event_transfers: number;
+  event_transfers_cost: number;
+  points_on_bench: number;
+  value: number;
+  bank: number;
+}
+
+/** An FPL chip play. `name` is FPL's raw code: wildcard | bboost | 3xc | freehit | manager. */
+export interface FplEntryChip {
+  name: string;
+  time: string;
+  event: number;
+}
+
+export interface FplEntryHistory {
+  current: FplEntryHistoryCurrent[];
+  past: { season_name: string; total_points: number; rank: number }[];
+  chips: FplEntryChip[];
+}
+
 /**
- * Fetch team history (past seasons + current season gameweeks)
+ * Fetch team history (past seasons + current season gameweeks + chips played).
+ *
+ * One call yields everything the FPL League page needs for an entry: per-GW
+ * points and the official season total from `current`, plus `chips`. Callers
+ * should go through `getEntryHistory` in fpl-history.ts, which adds caching —
+ * this is the raw, uncached fetch.
  */
-export async function fetchTeamHistory(teamId: string) {
-  const res = await fplFetch(`${FPL_BASE_URL}/entry/${teamId}/history/`);
+export async function fetchTeamHistory(
+  teamId: string,
+  lane: FplLane = "background"
+): Promise<FplEntryHistory> {
+  const res = await fplFetch(`${FPL_BASE_URL}/entry/${teamId}/history/`, lane);
   if (!res.ok) throw new Error(`Failed to fetch history for team ${teamId}`);
-  return res.json();
+  const raw = (await res.json()) as Partial<FplEntryHistory>;
+  return {
+    current: Array.isArray(raw.current) ? raw.current : [],
+    past: Array.isArray(raw.past) ? raw.past : [],
+    chips: Array.isArray(raw.chips) ? raw.chips : [],
+  };
 }
 
 import {
