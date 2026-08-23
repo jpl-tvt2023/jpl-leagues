@@ -87,9 +87,10 @@ export function PlFixtureCard() {
   const [gw, setGw] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  // Open by default: the breakdown now carries the chip rows too, so a
-  // collapsed card would hide them entirely.
-  const [expanded, setExpanded] = useState(true);
+  // Collapsed by default — the card is a summary first. Chips live inside the
+  // breakdown and are hidden with it, which is fine; players-left is not, so it
+  // is rendered in the header where it survives the collapse.
+  const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (targetGw: number | null, refresh = false) => {
@@ -251,6 +252,8 @@ export function PlFixtureCard() {
               liveData={live ?? undefined}
               homeChips={buildChips(fixture.home, data.gw)}
               awayChips={buildChips(fixture.away, data.gw)}
+              // Already in the header above, which is visible either way.
+              hidePlayersLeft
               // Not data.gw: FPL cannot render a gameweek that has not kicked
               // off, so paging forward must keep the links on the last one that
               // started.
@@ -279,6 +282,13 @@ function SideHeader({
       <div className="text-xs text-gray-400 mb-1">{label}</div>
       <div className="text-lg font-bold text-white truncate max-w-[10rem]">{side.name}</div>
       {score !== undefined && <div className="text-xl font-bold text-white">{score}</div>}
+      {/* Kept in the header, not only in the breakdown: this is a live figure and
+          the breakdown is collapsed by default. */}
+      {side.playersLeft && (
+        <div className="text-[10px] text-emerald-400 mt-0.5">
+          ⏳ {side.playersLeft.leftToPlay}/{side.playersLeft.total} left
+        </div>
+      )}
     </div>
   );
 }

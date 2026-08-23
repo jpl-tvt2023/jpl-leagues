@@ -105,4 +105,54 @@ test.describe.serial("TVT-32 (admin + user)", () => {
     expect(dash.ok()).toBeTruthy();
     await apiSignOut(request);
   });
+
+  test("user: the dashboard carries a five-row table for BOTH groups", async ({ request }) => {
+    // Only a two-group league exercises this; TVT-8 has one, so the rest of the
+    // suite cannot cover it.
+    await apiSignInTeam(request, league.slug, 1);
+    const dash = await request.get("/api/team/dashboard");
+    expect(dash.ok()).toBeTruthy();
+    const body = await dash.json();
+    await apiSignOut(request);
+
+    const tables: {
+      name: string;
+      isMyGroup: boolean;
+      truncated: boolean;
+      rows: { rank: number; isCurrentTeam: boolean }[];
+    }[] = body.groupTables;
+
+    expect(tables.length, "a 32-team league is two groups").toBe(2);
+    expect(tables[0].isMyGroup, "the viewer's own group comes first").toBe(true);
+    expect(tables.filter((t) => t.isMyGroup).length).toBe(1);
+
+    for (const table of tables) {
+      expect(table.rows.length, `${table.name} row count`).toBeGreaterThan(0);
+      expect(table.rows.length, `${table.name} is capped at five rows`).toBeLessThanOrEqual(5);
+
+      // Always anchored to the top of the table — the bug in the old "window
+      // around your team" behaviour was that it could omit the leaders entirely.
+      expect(table.rows[0].rank, `${table.name} starts at the top`).toBe(1);
+
+      const own = table.rows.filter((r) => r.isCurrentTeam);
+      if (table.isMyGroup) {
+        expect(own.length, "the viewer appears exactly once in their own group").toBe(1);
+        const me = table.rows[table.rows.length - 1];
+        if (table.truncated) {
+          // Top four, then the viewer: ranks jump, and the viewer is last.
+          expect(me.isCurrentTeam).toBe(true);
+          expect(me.rank).toBeGreaterThan(5);
+          expect(table.rows.slice(0, 4).map((r) => r.rank)).toEqual([1, 2, 3, 4]);
+        } else {
+          // Viewer is inside the top five, so it is a plain 1..n run.
+          expect(table.rows.map((r) => r.rank)).toEqual(
+            table.rows.map((_, i) => i + 1),
+          );
+        }
+      } else {
+        expect(own.length, "the other group must not contain the viewer").toBe(0);
+        expect(table.truncated, "nothing to elide in a top-five list").toBe(false);
+      }
+    }
+  });
 });

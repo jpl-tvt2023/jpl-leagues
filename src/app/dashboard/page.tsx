@@ -105,6 +105,18 @@ interface DashboardData {
     pointsToTop: number;
     miniTable: { rank: number; name: string; points: number; isCurrentTeam: boolean }[];
   };
+  /**
+   * Every group's table, five rows each, the viewer's own group first.
+   * Empty for formats that do not use groups.
+   */
+  groupTables: {
+    groupId: string;
+    name: string;
+    isMyGroup: boolean;
+    rows: { rank: number; name: string; points: number; isCurrentTeam: boolean }[];
+    /** Ranks were elided between the leaders and the viewer's row. */
+    truncated: boolean;
+  }[];
   chipStatus: {
     currentSet: 1 | 2 | "playoffs";
     set1: {
@@ -1790,6 +1802,11 @@ export default function DashboardPage() {
             {/* Last Result — Continental Championship gets a JPL/Cup tab toggle sharing one
                 card; TVT always shows its single (untabbed) result. */}
             {(() => {
+              // Not shown on the TVT dashboard: the same scoreline and breakdown
+              // live on the GW Results page, and the group tables below now use
+              // this space. Continental Championship keeps it -- its JPL/Cup tab
+              // toggle has no equivalent anywhere else.
+              if (leagueFormat === "tvt") return null;
               const cupResult = leagueFormat === "continental-championship" ? (data.cupGwResult ?? data.cupProgress?.lastCupResult ?? null) : null;
               const showCupTab = leagueFormat === "continental-championship" && !!cupResult;
               const activeTab = showCupTab ? dashboardTab : "jpl";
@@ -2125,8 +2142,67 @@ export default function DashboardPage() {
               );
             })()}
 
+            {/* Group tables — every group, five rows each, the viewer's own first.
+                Continental Championship is excluded: it renders its own JPL/Cup
+                tabbed table further down and would otherwise show two. */}
+            {leagueFormat !== "continental-championship" && data.groupTables.length > 0 && (
+              <div className={data.groupTables.length > 1 ? "grid gap-6 md:grid-cols-2" : ""}>
+                {data.groupTables.map((g) => (
+                  <div key={g.groupId} className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                    <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">
+                      Group {g.name} Table
+                      {g.isMyGroup && <span className="ml-2 text-xs font-normal text-yellow-400">your group</span>}
+                    </h2>
+                    <div className="space-y-2">
+                      {g.rows.map((t, i) => (
+                        <div key={t.rank}>
+                          {/* Marks where ranks were skipped, so 4th sitting directly
+                              above 12th does not read as a continuous table. */}
+                          {g.truncated && i === g.rows.length - 1 && (
+                            <div className="text-center text-gray-600 text-xs leading-none py-1">···</div>
+                          )}
+                          <div className={`flex items-center justify-between p-2.5 rounded-lg ${
+                            t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
+                          }`}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className={`w-6 h-6 shrink-0 flex items-center justify-center rounded-full text-xs font-bold ${
+                                t.rank <= 8 ? "bg-green-500/20 text-green-400" :
+                                t.rank <= 14 ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
+                              }`}>
+                                {t.rank}
+                              </span>
+                              <span className={`truncate ${t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}`}>
+                                {t.name}
+                              </span>
+                            </div>
+                            <span className="text-white font-bold shrink-0 ml-2">{t.points}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Link
+                      href={`/${leagueSlug}/standings`}
+                      className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
+                    >
+                      View Full Table →
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+
+          </div>
+
+          {/* Right Column */}
+          {/* min-w-0 overrides the grid item's default min-width:auto — without it, the
+              Captains & Chips card's horizontal-scroll region below forces this whole
+              grid track (and the page) wider than the viewport instead of scrolling internally. */}
+          <div className="space-y-6 min-w-0">
+            {/* Captain Announcements — league-wide list, same right-column slot for every format */}
+            {captainAnnouncementsCard}
+
             {/* Recent Form & Stats */}
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="space-y-6">
               {/* Recent Form */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                 <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Recent Form</h2>
@@ -2197,7 +2273,7 @@ export default function DashboardPage() {
             {/* Team Members */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Team Members</h2>
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-3">
                 {data.teamMembers.map((member, i) => (
                   <div key={i} className="p-4 rounded-xl bg-white/5">
                     <div className="font-semibold text-white mb-2">{member.name}</div>
@@ -2226,15 +2302,6 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
-          </div>
-
-          {/* Right Column */}
-          {/* min-w-0 overrides the grid item's default min-width:auto — without it, the
-              Captains & Chips card's horizontal-scroll region below forces this whole
-              grid track (and the page) wider than the viewport instead of scrolling internally. */}
-          <div className="space-y-6 min-w-0">
-            {/* Captain Announcements — league-wide list, same right-column slot for every format */}
-            {captainAnnouncementsCard}
 
             {/* Highs & Lows */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
@@ -2271,8 +2338,10 @@ export default function DashboardPage() {
             (moved out of the 2/3-width Left Column, which was capping them; Right Column has already
             ended above this point so there's nothing to reserve the remaining 1/3 for). */}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mt-6">
-          {/* Standings — TVT's single Group Table, or Continental Championship's JPL/Cup tabbed table */}
-          {leagueFormat === "continental-championship" ? (
+          {/* Standings — Continental Championship's JPL/Cup tabbed table only.
+              TVT's group tables moved into the wide column above, where both
+              groups are shown side by side rather than just the viewer's. */}
+          {leagueFormat === "continental-championship" && (
             (() => {
               const isCupView = dashboardTab === "cup" && !!data.cupProgress;
               const cupMyStat = data.cupProgress?.miniTable.find(t => t.isCurrentTeam);
@@ -2357,94 +2426,37 @@ export default function DashboardPage() {
                 </div>
               );
             })()
-          ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-              <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Group {data.team.group} Table</h2>
-              <div className="space-y-2">
-                {data.leaguePosition.miniTable.map((t) => (
-                  <div
-                    key={t.rank}
-                    className={`flex items-center justify-between p-3 rounded-lg ${
-                      t.isCurrentTeam ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-white/5"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${
-                        t.rank <= 8 ? "bg-green-500/20 text-green-400" :
-                        t.rank <= 14 ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
-                      }`}>
-                        {t.rank}
-                      </span>
-                      <span className={t.isCurrentTeam ? "text-yellow-400 font-semibold" : "text-white"}>
-                        {t.name}
-                      </span>
-                    </div>
-                    <span className="text-white font-bold">{t.points}</span>
-                  </div>
-                ))}
-              </div>
-              <Link
-                href={`/${leagueSlug}/standings`}
-                className="block text-center text-sm text-blue-400 hover:text-blue-300 mt-4"
-              >
-                View Full Table →
-              </Link>
-            </div>
           )}
 
-          {/* Upcoming Fixtures — shared slot; Continental Championship's version splits PL/Cup fixtures per GW */}
+          {/* Upcoming Fixtures — one line per fixture.
+
+              The previous layout wrapped each gameweek in its own bordered box
+              with a separate GW header row and a trailing competition label:
+              three lines of chrome to convey "GW1, home, Stretford Kops". The
+              label was pure noise here — the API stamps every non-cup fixture
+              "JPL", so TVT rendered the same word on every row. Continental
+              Championship keeps its own version below, where the label
+              genuinely distinguishes league from cup. */}
           {leagueFormat !== "continental-championship" && (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Upcoming Fixtures</h2>
               {data.upcomingFixtures.length === 0 ? (
                 <div className="text-gray-400 text-center py-4">No upcoming fixtures</div>
               ) : (
-                <div className="space-y-3">
-                  {(() => {
-                    // Group by GW number preserving order
-                    const byGw = new Map<number, typeof data.upcomingFixtures>();
-                    for (const f of data.upcomingFixtures) {
-                      if (!byGw.has(f.gameweek)) byGw.set(f.gameweek, []);
-                      byGw.get(f.gameweek)!.push(f);
-                    }
-                    return Array.from(byGw.entries()).map(([gw, gwFixtures]) => {
-                      const plFix = gwFixtures.find(f => !f.competitionType || f.competitionType === "jpl");
-                      const cupFix = gwFixtures.find(f => f.competitionType && f.competitionType !== "jpl");
-                      const isDouble = !!plFix && !!cupFix;
-                      return (
-                        <div key={gw} className="rounded-xl border border-white/8 overflow-hidden">
-                          {/* GW label */}
-                          <div className="px-3 py-1.5 bg-white/5 border-b border-white/8">
-                            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">GW{gw}</span>
-                            {isDouble && (
-                              <span className="ml-2 text-xs text-yellow-400 font-semibold">Double Header</span>
-                            )}
-                          </div>
-                          {/* Fixture row(s) */}
-                          <div className={isDouble ? "grid grid-cols-2 divide-x divide-white/8" : ""}>
-                            {plFix && (
-                              <div className="flex items-center gap-2 px-3 py-2.5">
-                                <span className={`text-xs px-2 py-0.5 rounded font-semibold ${plFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
-                                  {plFix.isHome ? "H" : "A"}
-                                </span>
-                                <span className="text-white text-sm truncate">{plFix.opponent}</span>
-                                <span className="text-xs text-gray-500 ml-auto shrink-0">{plFix.competitionLabel ?? "PL"}</span>
-                              </div>
-                            )}
-                            {cupFix && (
-                              <div className="flex items-center gap-2 px-3 py-2.5">
-                                <span className={`text-xs px-2 py-0.5 rounded font-semibold ${cupFix.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"}`}>
-                                  {cupFix.isHome ? "H" : "A"}
-                                </span>
-                                <span className="text-blue-200 text-sm truncate">{cupFix.opponent}</span>
-                                <span className="text-xs text-blue-400/70 ml-auto shrink-0">{cupFix.competitionLabel ?? "Cup"}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
+                <div className="space-y-1.5">
+                  {data.upcomingFixtures.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5">
+                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider w-10 shrink-0">
+                        GW{f.gameweek}
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded font-semibold shrink-0 ${
+                        f.isHome ? "bg-green-500/20 text-green-400" : "bg-blue-500/20 text-blue-400"
+                      }`}>
+                        {f.isHome ? "H" : "A"}
+                      </span>
+                      <span className="text-white text-sm truncate">{f.opponent}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

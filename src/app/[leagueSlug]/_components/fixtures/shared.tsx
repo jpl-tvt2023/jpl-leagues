@@ -215,6 +215,7 @@ export function PlayerBreakdown({
   homeChips,
   awayChips,
   linkGw,
+  hidePlayersLeft,
 }: {
   fixture: Fixture;
   liveData?: LiveFixtureScore;
@@ -223,6 +224,13 @@ export function PlayerBreakdown({
   awayChips?: BreakdownChips;
   /** See PlayerBreakdownSide: overrides the gameweek manager links point at. */
   linkGw?: number | null;
+  /**
+   * Suppress the per-side players-left line. For callers that already show the
+   * number somewhere always-visible — the dashboard card shows it in its header,
+   * which stays on screen when the breakdown is collapsed — repeating it here
+   * would print the same figure twice on expand.
+   */
+  hidePlayersLeft?: boolean;
 }) {
   const homePlayers: LivePlayerScore[] =
     (liveData?.homePlayers?.length ?? 0) > 0
@@ -257,7 +265,7 @@ export function PlayerBreakdown({
           gwNumber={gwNumber}
           isGhost={fixture.homeTeam.isGhost}
           ghostScore={fixture.result?.homeScore}
-          playersLeft={liveData?.homePlayersLeft}
+          playersLeft={hidePlayersLeft ? undefined : liveData?.homePlayersLeft}
           chips={homeChips}
           linkGw={linkGw}
         />
@@ -267,7 +275,7 @@ export function PlayerBreakdown({
           gwNumber={gwNumber}
           isGhost={fixture.awayTeam.isGhost}
           ghostScore={fixture.result?.awayScore}
-          playersLeft={liveData?.awayPlayersLeft}
+          playersLeft={hidePlayersLeft ? undefined : liveData?.awayPlayersLeft}
           chips={awayChips}
           linkGw={linkGw}
         />

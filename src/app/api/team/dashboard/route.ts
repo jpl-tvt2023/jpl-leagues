@@ -633,54 +633,117 @@ export async function GET(request: NextRequest) {
     let zone: "playoffs" | "challenger" | "eliminated" = "eliminated";
     let miniTable: Array<{ rank: number; name: string; points: number; isCurrentTeam: boolean }> = [];
 
-    if (team.groupId) {
-      // Get all teams in same group for ranking
-      const groupTeams = await db.query.teams.findMany({
-        where: eq(teams.groupId, team.groupId),
+    interface GroupTableRow {
+      rank: number;
+      name: string;
+      points: number;
+      isCurrentTeam: boolean;
+    }
+
+    /**
+     * A five-row slice of EVERY group's table, not just the viewer's own.
+     *
+     * Always anchored to the top of the table. The older window (two above the
+     * viewer, two below) could show a mid-table slice that never included the
+     * leaders, which tells you nothing about the race you are in. A viewer
+     * outside the top five gets the top four plus their own row appended, so
+     * position is still visible without losing the leaders.
+     */
+    const groupTables: Array<{
+      groupId: string;
+      name: string;
+      isMyGroup: boolean;
+      rows: GroupTableRow[];
+      /** True when ranks were elided between the leaders and the viewer's row. */
+      truncated: boolean;
+    }> = [];
+
+    if (teamLeagueId) {
+      // One query for the whole league rather than one per group. Ghosts are
+      // excluded: they are bye placeholders, not competitors, and a ghost row
+      // in a standings table is noise.
+      const leagueTeams = await db.query.teams.findMany({
+        where: and(eq(teams.leagueId, teamLeagueId), eq(teams.isGhost, false)),
         with: {
           homeFixtures: { with: { result: true } },
           awayFixtures: { with: { result: true } },
         },
       });
 
-      // Calculate standings
-      const standings = groupTeams.map(t => {
-        const pts = t.leaguePoints;
-        let wins = 0;
+      const rankGroup = (members: typeof leagueTeams) =>
+        members
+          .map((t) => {
+            let wins = 0;
+            for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
+              if (!f.result) continue;
+              const matchPts =
+                f.homeTeamId === t.id ? f.result.homeMatchPoints : f.result.awayMatchPoints;
+              if (matchPts === 2) wins++;
+            }
+            return { id: t.id, name: t.name, points: t.leaguePoints, wins };
+          })
+          .sort((a, b) => (a.points !== b.points ? b.points - a.points : b.wins - a.wins));
 
-        [...t.homeFixtures, ...t.awayFixtures].forEach(f => {
-          if (f.result) {
-            const isHome = f.homeTeamId === t.id;
-            const matchPts = isHome ? f.result.homeMatchPoints : f.result.awayMatchPoints;
-            if (matchPts === 2) wins++;
-          }
+      // Cup groups belong to Continental Championship's own tabbed table, which
+      // renders separately — including them here would show a viewer two
+      // unrelated competitions side by side.
+      const leagueGroups = (
+        await db.query.groups.findMany({ where: eq(groups.leagueId, teamLeagueId) })
+      ).filter((g) => (g.groupType ?? "jpl") !== "cup");
+
+      const TOP_ROWS = 5;
+
+      for (const g of leagueGroups) {
+        const standings = rankGroup(leagueTeams.filter((t) => t.groupId === g.id));
+        if (standings.length === 0) continue;
+
+        const myIndex = standings.findIndex((t) => t.id === teamId);
+        const asRow = (t: (typeof standings)[number], i: number): GroupTableRow => ({
+          rank: i + 1,
+          name: t.name,
+          points: t.points,
+          isCurrentTeam: t.id === teamId,
         });
 
-        return { id: t.id, name: t.name, points: pts, wins };
-      }).sort((a, b) => {
-        if (a.points !== b.points) return b.points - a.points;
-        return b.wins - a.wins;
-      });
+        let rows: GroupTableRow[];
+        let truncated = false;
+        if (myIndex < 0 || myIndex < TOP_ROWS) {
+          // Not this viewer's group, or they are already in the shown range.
+          rows = standings.slice(0, TOP_ROWS).map(asRow);
+        } else {
+          rows = standings.slice(0, TOP_ROWS - 1).map(asRow);
+          rows.push(asRow(standings[myIndex], myIndex));
+          truncated = true;
+        }
 
-      groupRank = standings.findIndex(t => t.id === teamId) + 1;
-      pointsToTop = standings[0]?.points - team.leaguePoints || 0;
+        groupTables.push({
+          groupId: g.id,
+          name: g.name,
+          isMyGroup: g.id === team.groupId,
+          rows,
+          truncated,
+        });
 
-      // Determine zone
-      zone = "playoffs";
-      if (groupRank > 8) zone = "challenger";
-      if (groupRank > 14) zone = "eliminated";
+        if (g.id === team.groupId && myIndex >= 0) {
+          groupRank = myIndex + 1;
+          pointsToTop = standings[0].points - team.leaguePoints || 0;
+          zone = groupRank > 14 ? "eliminated" : groupRank > 8 ? "challenger" : "playoffs";
+          // Unchanged for existing consumers: the window centred on the viewer.
+          miniTable = standings
+            .slice(Math.max(0, myIndex - 2), Math.min(standings.length, myIndex + 3))
+            .map((t) => ({
+              rank: standings.indexOf(t) + 1,
+              name: t.name,
+              points: t.points,
+              isCurrentTeam: t.id === teamId,
+            }));
+        }
+      }
 
-      // Mini table (2 above, current, 2 below)
-      const myIndex = standings.findIndex(t => t.id === teamId);
-      miniTable = standings.slice(
-        Math.max(0, myIndex - 2),
-        Math.min(standings.length, myIndex + 3)
-      ).map((t, i) => ({
-        rank: standings.indexOf(t) + 1,
-        name: t.name,
-        points: t.points,
-        isCurrentTeam: t.id === teamId,
-      }));
+      // The viewer's own group leads, so it reads first left-to-right.
+      groupTables.sort((a, b) =>
+        a.isMyGroup === b.isMyGroup ? a.name.localeCompare(b.name) : a.isMyGroup ? -1 : 1
+      );
     }
 
     // ============================================
@@ -1178,6 +1241,7 @@ export async function GET(request: NextRequest) {
         pointsToTop,
         miniTable,
       },
+      groupTables,
       chipStatus,
       captaincyStatus,
       upcomingFixtures,
