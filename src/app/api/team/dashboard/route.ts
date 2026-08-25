@@ -1240,6 +1240,13 @@ export async function GET(request: NextRequest) {
         zone,
         pointsToTop,
         miniTable,
+        /**
+         * True once the league stage is over. Drives wording only: while the stage is
+         * running, a bottom-of-the-table team is in the *elimination zone* (still
+         * playable), not eliminated. Calling it "Eliminated" in GW1 tells a team its
+         * season is over when 29 gameweeks remain.
+         */
+        leagueStageComplete: latestCompletedGW >= leaguePlayoffStartGw - 1,
       },
       groupTables,
       chipStatus,

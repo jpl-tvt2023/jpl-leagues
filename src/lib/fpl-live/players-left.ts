@@ -115,7 +115,7 @@ async function loadAllFplFixtures(): Promise<FplFixture[] | null> {
  */
 let inFlightFixtures: Promise<FplFixture[] | null> | null = null;
 
-function getAllFplFixtures(): Promise<FplFixture[] | null> {
+export function getAllFplFixtures(): Promise<FplFixture[] | null> {
   if (inFlightFixtures) return inFlightFixtures;
 
   const pending = loadAllFplFixtures();

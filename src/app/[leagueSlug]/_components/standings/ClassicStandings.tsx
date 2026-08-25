@@ -25,6 +25,7 @@ export function ClassicStandings() {
   const [latestGameweek, setLatestGameweek] = useState<number>(0);
   const [teamSize, setTeamSize] = useState<number>(league.teamSize);
   const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
+  const [leagueStageEnd, setLeagueStageEnd] = useState<number>(0);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -42,6 +43,7 @@ export function ClassicStandings() {
         if (data.teamSize) setTeamSize(data.teamSize);
         setGroupsRevealed(data.groupsRevealed === true);
         const stageEnd: number = data.leagueStageEnd ?? 30;
+        setLeagueStageEnd(stageEnd);
         const maxPlayed = Math.min(
           Math.max(
             ...(data.groupA ?? []).map((t: TeamStanding) => t.played),
@@ -63,6 +65,9 @@ export function ClassicStandings() {
 
   const totalTeams = groupA.length + groupB.length;
   const isContinentalChampionship = leagueFormat === "continental-championship";
+  // `latestGameweek` is already clamped to the stage end when it is loaded, so this
+  // flips exactly when the final league-stage gameweek has been played.
+  const leagueStageComplete = leagueStageEnd > 0 && latestGameweek >= leagueStageEnd;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
@@ -120,7 +125,12 @@ export function ClassicStandings() {
                 )}
                 <div className="flex items-center gap-2">
                   <span className="h-3 w-3 rounded-full bg-red-500"></span>
-                  <span className="text-gray-400">Eliminated ({teamSize === 8 ? "5-8" : "15-16"})</span>
+                  {/* Worded by stage: during the league stage these teams are in the
+                      elimination ZONE and can still climb out of it. Only once the
+                      stage is complete are they actually eliminated. */}
+                  <span className="text-gray-400">
+                    {leagueStageComplete ? "Eliminated" : "Elimination Zone"} ({teamSize === 8 ? "5-8" : "15-16"})
+                  </span>
                 </div>
               </div>
             )}

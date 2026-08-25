@@ -104,6 +104,8 @@ interface DashboardData {
     zone: "playoffs" | "challenger" | "eliminated";
     pointsToTop: number;
     miniTable: { rank: number; name: string; points: number; isCurrentTeam: boolean }[];
+    /** True once the league stage is over — see ZoneBadge for why the wording depends on it. */
+    leagueStageComplete?: boolean;
   };
   /**
    * Every group's table, five rows each, the viewer's own group first.
@@ -349,11 +351,19 @@ function FormBadge({ result, gotBonus }: { result: "W" | "D" | "L"; gotBonus: bo
 }
 
 // Zone Badge
-function ZoneBadge({ zone }: { zone: "playoffs" | "challenger" | "eliminated" }) {
+//
+// The red zone is worded by stage, not just by rank. During the league stage a
+// bottom team is in the *elimination zone* — a position it can still play its way
+// out of. Only once the league stage is complete is it actually eliminated.
+function ZoneBadge({ zone, leagueStageComplete }: { zone: "playoffs" | "challenger" | "eliminated"; leagueStageComplete?: boolean }) {
   const config = {
     playoffs: { bg: "bg-green-500/20", text: "text-green-400", label: "Playoffs" },
     challenger: { bg: "bg-yellow-500/20", text: "text-yellow-400", label: "Challenger" },
-    eliminated: { bg: "bg-red-500/20", text: "text-red-400", label: "Eliminated" },
+    eliminated: {
+      bg: "bg-red-500/20",
+      text: "text-red-400",
+      label: leagueStageComplete ? "Eliminated" : "Elimination Zone",
+    },
   };
 
   return (
@@ -1417,7 +1427,7 @@ export default function DashboardPage() {
                 )}
               </>
             ) : (
-              <ZoneBadge zone={data.leaguePosition.zone} />
+              <ZoneBadge zone={data.leaguePosition.zone} leagueStageComplete={data.leaguePosition.leagueStageComplete} />
             )}
           </div>
           <p className="text-sm sm:text-base text-gray-400">

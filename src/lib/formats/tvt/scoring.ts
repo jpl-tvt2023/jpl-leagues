@@ -211,36 +211,7 @@ export function canBeCaptain(
   return chipsUsed < MAX_CAPTAINCY_CHIPS;
 }
 
-/**
- * Tiebreaker comparison for League Stage
- * 1) Overall Points, 2) Max Wins, 3) Head-to-Head, 4) Bonus Points
- */
-export interface TeamStanding {
-  teamId: string;
-  leaguePoints: number;
-  wins: number;
-  headToHeadRecord: Record<string, number>; // teamId -> points earned against them
-  bonusPoints: number;
-}
-
-export function compareTiebreaker(a: TeamStanding, b: TeamStanding): number {
-  // 1) Overall Points
-  if (a.leaguePoints !== b.leaguePoints) {
-    return b.leaguePoints - a.leaguePoints;
-  }
-
-  // 2) Max Wins
-  if (a.wins !== b.wins) {
-    return b.wins - a.wins;
-  }
-
-  // 3) Head-to-Head
-  const aH2H = a.headToHeadRecord[b.teamId] || 0;
-  const bH2H = b.headToHeadRecord[a.teamId] || 0;
-  if (aH2H !== bH2H) {
-    return bH2H - aH2H;
-  }
-
-  // 4) Bonus Points
-  return b.bonusPoints - a.bonusPoints;
-}
+// The canonical league-stage tiebreaker lives in ./tiebreaker.ts — a module with no
+// imports, so it stays unit-testable without a DB. Re-exported here because callers
+// have always reached for it via this file.
+export { compareTiebreaker, type TeamStanding } from "./tiebreaker";

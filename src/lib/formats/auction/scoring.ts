@@ -6,6 +6,8 @@
 // Total scoring + ranking is handled by processAuctionGameweek; this file just computes per-team breakdowns.
 
 import { fetchElementGameweekPoints, fetchElementInfo } from "../../fpl";
+import type { CachedElementInfo } from "../../fpl-cache";
+import type { FplLane } from "../../fpl/gateway";
 import { db, auctionOwnership, auctionClubOwnership } from "../../db";
 import { eq, and, lt, gte, or, isNull } from "drizzle-orm";
 import { computeClubResultBonus } from "./club-auction";
@@ -40,6 +42,39 @@ export const SYNERGY_BONUS_RATIO = 0.5;
 // path (which back-fills tooltip summaries for legacy rows) can share it.
 
 /**
+ * The league-wide FPL data every team in a gameweek needs, fetched once.
+ *
+ * `processAuctionGameweek` scores all teams concurrently. Each team used to fetch this
+ * itself, so a 14-team league issued 14 identical requests for the multi-MB
+ * /event/{gw}/live/ payload; the gateway serialized them and the whole call exceeded
+ * the 60s function ceiling. Hoisting the fetch turns N round-trips into 1.
+ */
+export interface AuctionGwFplData {
+  /** elementId -> GW points, from /event/{gw}/live/. */
+  elementPoints: Record<number, number>;
+  /** elementId -> player metadata, from bootstrap-static. */
+  elementById: Map<number, CachedElementInfo>;
+}
+
+/**
+ * Fetch the shared per-gameweek FPL data once for a whole league.
+ *
+ * Pass `lane: "critical"` from the scoring pipeline. The background lane is refused
+ * outright while a scoring run holds the FPL lock, which would make auction scoring
+ * fail exactly when cron is running.
+ */
+export async function loadAuctionGwFplData(
+  gameweek: number,
+  lane: FplLane = "background"
+): Promise<AuctionGwFplData> {
+  const [elementPoints, elementInfo] = await Promise.all([
+    fetchElementGameweekPoints(gameweek, lane),
+    fetchElementInfo(lane),
+  ]);
+  return { elementPoints, elementById: new Map(elementInfo.map((e) => [e.id, e])) };
+}
+
+/**
  * Per-player data carried forward across re-processings. Captured at scoring time and stored in
  * `auctionScores.playerBreakdown` JSON, then replayed when admin re-processes the same GW.
  */
@@ -68,7 +103,8 @@ export async function calculateAuctionTeamScore(
   leagueId: string,
   teamId: string,
   gameweek: number,
-  preservedPlayerDataByElementId?: Map<number, PreservedPlayerData>
+  preservedPlayerDataByElementId?: Map<number, PreservedPlayerData>,
+  fplData?: AuctionGwFplData
 ): Promise<AuctionTeamGwScore> {
   // Squad owned during this GW
   const ownedPlayers = await db
@@ -95,12 +131,10 @@ export async function calculateAuctionTeamScore(
   const ownedClubPlTeamId = clubRow[0]?.plTeamId ?? null;
   const ownedClubTier = (clubRow[0]?.tier as ClubTier | undefined) ?? null;
 
-  // FPL data: all element GW points + element metadata (for current PL team lookup)
-  const [elementPoints, elementInfo] = await Promise.all([
-    fetchElementGameweekPoints(gameweek),
-    fetchElementInfo(),
-  ]);
-  const elementById = new Map(elementInfo.map((e) => [e.id, e]));
+  // FPL data: all element GW points + element metadata (for current PL team lookup).
+  // Callers scoring a whole league pass this in via `loadAuctionGwFplData` so the
+  // fetch happens once rather than once per team; a lone caller still loads its own.
+  const { elementPoints, elementById } = fplData ?? (await loadAuctionGwFplData(gameweek));
 
   // Per-player breakdown. The synergy decision uses the player's PL team at the time the GW was
   // *originally* scored (snapshotted in the preserved data). Falls back to the live bootstrap on

@@ -3,7 +3,8 @@
 
 import { db, teams, auctionScores, auctionOwnership, leagues } from "../../db";
 import { eq, and } from "drizzle-orm";
-import { calculateAuctionTeamScore } from "./scoring";
+import { calculateAuctionTeamScore, loadAuctionGwFplData } from "./scoring";
+import type { FplLane } from "../../fpl/gateway";
 import { assignRanksAndPayouts, calculateRefund, calculateFMV } from "./economy";
 import { createNotification } from "../../notifications";
 import { randomUUID } from "crypto";
@@ -27,7 +28,13 @@ export async function processAuctionGameweek(
   gameweekId: string,
   gameweekNumber: number,
   leagueId: string,
-  forceReprocess: boolean
+  forceReprocess: boolean,
+  /**
+   * FPL request lane. Defaults to "critical" because every caller of this function is
+   * a scoring path: the background lane is refused outright while a scoring run holds
+   * the FPL lock, which made auction scoring fail exactly when cron was running.
+   */
+  lane: FplLane = "critical"
 ): Promise<AuctionProcessResult> {
   // Check if already processed
   if (!forceReprocess) {
@@ -107,6 +114,12 @@ export async function processAuctionGameweek(
     }
   }
 
+  // Fetch the league-wide FPL data ONCE, before fanning out. Every team needs the same
+  // /event/{gw}/live/ payload and the same bootstrap element metadata; letting each of
+  // them fetch it independently is what used to push this call past the 60s function
+  // ceiling and drop the connection.
+  const fplData = await loadAuctionGwFplData(gameweekNumber, lane);
+
   // Calculate scores for all teams
   const teamScores = await Promise.all(
     leagueTeams.map(async (team) => {
@@ -114,7 +127,8 @@ export async function processAuctionGameweek(
         leagueId,
         team.id,
         gameweekNumber,
-        preservedDataByTeam.get(team.id)
+        preservedDataByTeam.get(team.id),
+        fplData
       );
       return { ...score, teamName: team.name };
     })

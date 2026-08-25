@@ -6,8 +6,9 @@ import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { computeAuctionStandings } from "@/lib/formats/auction/standings";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { getClubOwnershipsByTeam, computeClubResultBonus } from "@/lib/formats/auction/club-auction";
-import { fetchBootstrapData } from "@/lib/fpl";
 import { backfillClubSummaries } from "@/lib/formats/auction/club-summary-backfill";
+import { compareTiebreaker } from "@/lib/formats/tvt/tiebreaker";
+import { getActiveFplGameweek } from "@/lib/fpl/event-status";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
 
@@ -54,8 +55,8 @@ interface TeamStanding {
   chipPoints: number;
   cbpPoints: number;
   cbpTooltip: CbpTooltip;
-  // Match points (W=2, D=1, L=0) earned vs each opponent — used by the
-  // canonical 4-tier tiebreaker (Overall Points → Wins → Head-to-Head → Bonus).
+  // Match points (W=2, D=1, L=0) earned vs each opponent — tier 3 of the canonical
+  // tiebreaker in src/lib/formats/tvt/scoring.ts.
   // Internal-only; stripped before responding to the client (see toResponseRow).
   headToHeadRecord: Record<string, number>;
   players: { name: string; fplId: string; captaincyChipsUsed: number }[];
@@ -113,7 +114,19 @@ export async function GET(request: NextRequest) {
     if (!group) {
       try {
         const cached = await getCachedStandings(leagueId);
-        if (cached) return NextResponse.json(cached);
+        if (cached) {
+          // The auction payload embeds `currentGwNumber`, which moves every week while
+          // this entry lives for 25 hours. Serving it verbatim froze the club tooltip on
+          // a stale gameweek for a full day; refresh just that field on the way out.
+          if (leagueFormat === "auction" && typeof (cached as { currentGwNumber?: number }).currentGwNumber === "number") {
+            const refreshed = await getActiveFplGameweek().catch(() => null);
+            if (refreshed?.gw != null) {
+              const c = cached as { currentGwNumber: number };
+              return NextResponse.json({ ...c, currentGwNumber: Math.max(c.currentGwNumber, refreshed.gw) });
+            }
+          }
+          return NextResponse.json(cached);
+        }
       } catch {
         // Cache miss or Redis error — fall through to DB computation
       }
@@ -194,13 +207,18 @@ export async function GET(request: NextRequest) {
         })),
       }));
 
-      // Current GW for the multi-GW club tooltip: max of "highest scored GW" and "FPL is_current/is_next".
-      // The tooltip renders rows 1..currentGwNumber so it always reflects in-flight progress.
+      // Current GW for the multi-GW club tooltip: max of "highest scored GW" and the
+      // gameweek FPL is actually on. The tooltip renders rows 1..currentGwNumber so it
+      // always reflects in-flight progress.
+      //
+      // Read from /event-status/ (60s) rather than bootstrap's is_current/is_next, which
+      // sat behind a 10-minute cache on top of an ~800KB CDN-fronted payload. This value
+      // is also recomputed on every cache hit below — it used to be frozen into the
+      // cached blob for its full 25h TTL, so a day-old "current GW" could be served.
       let currentGwNumber = 0;
       try {
-        const bootstrap = await fetchBootstrapData();
-        const events = (bootstrap.events ?? []) as Array<{ id: number; is_current?: boolean; is_next?: boolean }>;
-        const fplCurrent = events.find((e) => e.is_current)?.id ?? events.find((e) => e.is_next)?.id ?? 0;
+        const active = await getActiveFplGameweek();
+        const fplCurrent = active.gw ?? 0;
         const maxScoredGw = scores.reduce((m, s) => Math.max(m, gwNumbers.get(s.gameweekId) ?? 0), 0);
         currentGwNumber = Math.max(maxScoredGw, fplCurrent);
       } catch {
@@ -409,21 +427,34 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Compute previous-GW sort keys per team (leaguePoints, pointsFor, cbpPoints).
-    const prevSortKeysByTeam = new Map<string, { leaguePoints: number; pointsFor: number; cbpPoints: number; group: string | null }>();
+    // Compute previous-GW sort keys per team. Carries the full `compareTiebreaker`
+    // key set — sorting the snapshot by a *different* rule than the live table is
+    // what used to produce phantom ▲/▼ arrows on teams that never actually moved.
+    const prevSortKeysByTeam = new Map<string, {
+      teamId: string;
+      leaguePoints: number;
+      wins: number;
+      headToHeadRecord: Record<string, number>;
+      cbpPoints: number;
+      pointsFor: number;
+      group: string | null;
+    }>();
     if (maxPlayedGw > 0) {
       for (const team of allTeams) {
         let pWins = 0, pDraws = 0, pLosses = 0, pPointsFor = 0;
         let pBonusPtsTotal = 0;
+        const pHeadToHeadRecord: Record<string, number> = {};
         for (const f of team.homeFixtures) {
           if (f.gameweek.number > leagueStageEnd) continue;
           if (f.gameweek.number === maxPlayedGw) continue;
           if (f.competitionType && f.competitionType !== "jpl") continue;
           if (!f.result) continue;
           pPointsFor += f.result.homeScore;
-          if (f.result.homeScore > f.result.awayScore) pWins++;
-          else if (f.result.homeScore === f.result.awayScore) pDraws++;
+          let pMatchPts = 0;
+          if (f.result.homeScore > f.result.awayScore) { pWins++; pMatchPts = 2; }
+          else if (f.result.homeScore === f.result.awayScore) { pDraws++; pMatchPts = 1; }
           else pLosses++;
+          pHeadToHeadRecord[f.awayTeamId] = (pHeadToHeadRecord[f.awayTeamId] ?? 0) + pMatchPts;
           if (f.result.homeGotBonus) pBonusPtsTotal += f.result.homeUsedDoublePointer ? 2 : 1;
         }
         for (const f of team.awayFixtures) {
@@ -432,9 +463,11 @@ export async function GET(request: NextRequest) {
           if (f.competitionType && f.competitionType !== "jpl") continue;
           if (!f.result) continue;
           pPointsFor += f.result.awayScore;
-          if (f.result.awayScore > f.result.homeScore) pWins++;
-          else if (f.result.awayScore === f.result.homeScore) pDraws++;
+          let pMatchPts = 0;
+          if (f.result.awayScore > f.result.homeScore) { pWins++; pMatchPts = 2; }
+          else if (f.result.awayScore === f.result.homeScore) { pDraws++; pMatchPts = 1; }
           else pLosses++;
+          pHeadToHeadRecord[f.homeTeamId] = (pHeadToHeadRecord[f.homeTeamId] ?? 0) + pMatchPts;
           if (f.result.awayGotBonus) pBonusPtsTotal += f.result.awayUsedDoublePointer ? 2 : 1;
         }
         void pLosses; // shape parity with current loop
@@ -455,29 +488,29 @@ export async function GET(request: NextRequest) {
         // values only and equivalently derives from W/D minus hits).
         const pLeaguePoints = (pWins * 2) + (pDraws * 1) + pCbpPts - pHitPenaltyTotal;
         prevSortKeysByTeam.set(team.id, {
+          teamId: team.id,
           leaguePoints: pLeaguePoints,
-          pointsFor: pPointsFor,
+          wins: pWins,
+          headToHeadRecord: pHeadToHeadRecord,
           cbpPoints: pCbpPts,
+          pointsFor: pPointsFor,
           group: team.group?.name ?? null,
         });
       }
     }
 
-    // Sort previous snapshot per group, assign 1-based previous rank.
+    // Sort previous snapshot per group with the SAME canonical comparator the live
+    // table uses, then assign 1-based previous rank.
     const prevRankByTeam = new Map<string, number>();
     if (maxPlayedGw > 1) {
-      const prevByGroup = new Map<string | null, { teamId: string; leaguePoints: number; pointsFor: number; cbpPoints: number }[]>();
-      for (const [teamId, v] of prevSortKeysByTeam.entries()) {
+      const prevByGroup = new Map<string | null, (typeof prevSortKeysByTeam extends Map<string, infer V> ? V : never)[]>();
+      for (const v of prevSortKeysByTeam.values()) {
         const arr = prevByGroup.get(v.group) ?? [];
-        arr.push({ teamId, leaguePoints: v.leaguePoints, pointsFor: v.pointsFor, cbpPoints: v.cbpPoints });
+        arr.push(v);
         prevByGroup.set(v.group, arr);
       }
       for (const arr of prevByGroup.values()) {
-        arr.sort((a, b) => {
-          if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
-          if (a.pointsFor !== b.pointsFor) return b.pointsFor - a.pointsFor;
-          return b.cbpPoints - a.cbpPoints;
-        });
+        arr.sort(compareTiebreaker);
         arr.forEach((row, idx) => prevRankByTeam.set(row.teamId, idx + 1));
       }
     }
@@ -642,21 +675,9 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Canonical TVT league-stage tiebreaker (src/lib/formats/tvt/scoring.ts:215-246):
-    //   1) Overall Points (leaguePoints) DESC
-    //   2) Max Wins DESC
-    //   3) Head-to-Head match points DESC (each team's points earned vs the other)
-    //   4) Bonus Points DESC
-    // Previously the route used (leaguePoints, pointsFor, cbpPoints) which mismatched
-    // the documented rule and could resolve ties incorrectly.
-    standings.sort((a: TeamStanding, b: TeamStanding) => {
-      if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
-      if (a.wins !== b.wins) return b.wins - a.wins;
-      const aH2H = a.headToHeadRecord[b.teamId] ?? 0;
-      const bH2H = b.headToHeadRecord[a.teamId] ?? 0;
-      if (aH2H !== bH2H) return bH2H - aH2H;
-      return b.bonusPoints - a.bonusPoints;
-    });
+    // Canonical league-stage tiebreaker — defined once in src/lib/formats/tvt/scoring.ts
+    // and shared with playoff seeding, so the table you see IS the seeding you get.
+    standings.sort(compareTiebreaker);
 
     // Strip internal-only fields from the public team row.
     type ResponseTeam = Omit<TeamStanding, "headToHeadRecord">;
@@ -706,15 +727,20 @@ export async function GET(request: NextRequest) {
     // Format-aware legend. The previous hard-coded 8/14/16 keys were wrong for
     // 8-team leagues (no rank 9..14 exists; cutoff is top-4 for playoffs).
     // Match the actual qualification rules in getQualificationZone below.
+    // Red-zone wording tracks the stage, not just the rank: during the league stage
+    // these teams are in the elimination ZONE and can still climb out of it; only once
+    // the stage is complete are they eliminated.
+    const leagueStageComplete = maxPlayedGw >= leagueStageEnd;
+    const eliminationLabel = leagueStageComplete ? "Eliminated" : "Elimination Zone";
     const legend = leagueTeamSize === 8
       ? {
           top4: "TVT Title Play-offs",
-          rank5to8: "Eliminated",
+          rank5to8: eliminationLabel,
         }
       : {
           top8: "TVT Title Play-offs",
           rank9to14: "Challenger Series",
-          rank15to16: "Eliminated",
+          rank15to16: eliminationLabel,
         };
 
     const responseData = {

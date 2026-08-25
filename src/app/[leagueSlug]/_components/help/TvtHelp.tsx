@@ -177,7 +177,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
           <ul className="list-disc list-inside space-y-1 ml-1">
             <li><strong className="text-white">Current GW result</strong> — Win, Draw, or Loss, with your score vs opponent&apos;s score.</li>
             <li><strong className="text-white">Captain</strong> — which player was nominated and their doubled score.</li>
-            <li><strong className="text-white">League position</strong> — your current rank, zone (Playoffs / Challenger / Eliminated), and points to the team above.</li>
+            <li><strong className="text-white">League position</strong> — your current rank, zone (Playoffs / Challenger / Elimination Zone), and points to the team above. The red zone reads &ldquo;Elimination Zone&rdquo; while the league stage is still running — you can climb out of it — and becomes &ldquo;Eliminated&rdquo; once the stage ends.</li>
             <li><strong className="text-white">Chip status</strong> — which chips you&apos;ve used in Set 1 and Set 2, and what remains.</li>
             <li><strong className="text-white">Season stats</strong> — played, W/D/L, total points, bonus points, and current streak.</li>
             <li><strong className="text-white">Recent form</strong> — last 5 results at a glance.</li>
@@ -301,10 +301,11 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
       question: "What are the tiebreaker rules?",
       answer: (
         <ol className="list-decimal list-inside space-y-1.5">
-          <li><strong className="text-white">League points</strong> — higher total wins.</li>
+          <li><strong className="text-white">Total league points</strong> — higher total wins.</li>
+          <li><strong className="text-white">Most wins</strong> — more wins beats more draws on the same points.</li>
           <li><strong className="text-white">Head-to-head record</strong> — points earned between the tied teams specifically.</li>
+          <li><strong className="text-white">CP/BP</strong> — chip &amp; bonus points, as shown in the standings column.</li>
           <li><strong className="text-white">Total FPL score</strong> — combined FPL points across all gameweeks.</li>
-          <li><strong className="text-white">Alphabetical order</strong> — last resort only.</li>
         </ol>
       ),
     },
@@ -339,7 +340,7 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
         `Green rows (Rank 1–${topCutoff}) are heading to the Title Play-offs.`,
         teamSize !== 8 ? "Yellow rows (Rank 9–14) are heading to the Challenger Series." : null,
         `Red rows (Rank ${eliminatedRange}) are eliminated after the league stage.`,
-        "If two teams are tied on points, the tiebreaker order is: head-to-head record → total FPL score → alphabetical.",
+        "If two teams are tied on points, the tiebreaker order is: most wins → head-to-head record → CP/BP → total FPL score.",
       ].filter(Boolean) as string[],
     },
     {

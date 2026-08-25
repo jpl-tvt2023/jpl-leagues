@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
 
-export default function JelRedirectPage({ params }: { params: { leagueSlug: string } }) {
-  redirect(`/${params.leagueSlug}/jpl-cup-standings`);
+// `params` is a Promise in Next 15+; typing it as a plain object fails the
+// production type check (the dev server tolerates it, so this went unnoticed).
+export default async function JelRedirectPage({ params }: { params: Promise<{ leagueSlug: string }> }) {
+  const { leagueSlug } = await params;
+  redirect(`/${leagueSlug}/jpl-cup-standings`);
 }

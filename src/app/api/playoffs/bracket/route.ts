@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, gameweekChips, leagues } from "@/lib/db/schema";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, leagues } from "@/lib/db/schema";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { fetchTeamGameweekPicks, detectLiveGameweek } from "@/lib/fpl";
 import { getLiveCachedScores, getCachedPlayoffBracket, setCachedPlayoffBracket } from "@/lib/fpl-cache";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
@@ -12,6 +12,7 @@ import {
   CHALL_GB_MATCHES,
   RO16_SEEDING,
   C31_SEEDING_32 as C31_SEEDING,
+  getGroupStandings,
   type GSMatch16,
 } from "@/lib/formats/tvt/playoffs";
 
@@ -958,7 +959,7 @@ async function buildTentativeTC(latestCompletedGw: number, mode: "tentative" | "
 }
 
 async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative" | "projected", leagueId?: string | null, teamSize = 32, playoffStartGw = 31) {
-  const standings = await getGroupStandings(leagueId);
+  const standings = await getGroupStandingsForBracket(leagueId, playoffStartGw - 1);
   if (!standings) {
     return { mode, latestCompletedGw, teamSize, error: "Failed to compute standings", tvt: {}, challenger: {} };
   }
@@ -1595,103 +1596,21 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
 }
 
 // ============================================
-// Standings computation (copy from generate-playoffs)
+// Standings computation
 // ============================================
-async function getGroupStandings(leagueId?: string | null) {
-  try {
-    // Scope teams query server-side when leagueId is provided. Without this,
-    // every bracket render loads every team across every league + their fixtures
-    // — slow on cold caches in multi-league deployments.
-    const allTeamsRaw = await db.query.teams.findMany({
-      where: leagueId ? eq(teams.leagueId, leagueId) : undefined,
-      with: {
-        group: true,
-        players: true,
-        homeFixtures: { with: { result: true, gameweek: true } },
-        awayFixtures: { with: { result: true, gameweek: true } },
-      },
-    });
-    const allTeams = allTeamsRaw; // already league-scoped via the where clause above
-
-    // Scope chips query to this league's gameweeks (chips don't carry leagueId
-    // directly — index via gameweekId).
-    let allChipsRaw: Awaited<ReturnType<typeof db.query.gameweekChips.findMany>>;
-    if (leagueId) {
-      const gwIdRows = await db
-        .select({ id: gameweeks.id })
-        .from(gameweeks)
-        .where(eq(gameweeks.leagueId, leagueId));
-      const gwIds = gwIdRows.map(g => g.id);
-      allChipsRaw = gwIds.length === 0 ? [] : await db.query.gameweekChips.findMany({
-        where: inArray(gameweekChips.gameweekId, gwIds),
-        with: { gameweek: true },
-      });
-    } else {
-      allChipsRaw = await db.query.gameweekChips.findMany({ with: { gameweek: true } });
-    }
-    const chipPointsByTeam = new Map<string, number>();
-    for (const chip of allChipsRaw) {
-      if (chip.isProcessed) {
-        const pts = chip.pointsAwarded || 0;
-        if (chip.chipType === "C" || pts > 0) {
-          chipPointsByTeam.set(chip.teamId, (chipPointsByTeam.get(chip.teamId) || 0) + pts);
-        }
-      }
-    }
-
-    const standings = allTeams.filter(t => !t.group || t.group.name !== "Playoffs").map((team) => {
-      let wins = 0, draws = 0, pointsFor = 0, bonusPtsTotal = 0;
-
-      for (const fixture of team.homeFixtures) {
-        if (fixture.result && !fixture.isPlayoff && (!fixture.competitionType || fixture.competitionType === "jpl")) {
-          pointsFor += fixture.result.homeScore;
-          if (fixture.result.homeScore > fixture.result.awayScore) wins++;
-          else if (fixture.result.homeScore === fixture.result.awayScore) draws++;
-          if (fixture.result.homeGotBonus) bonusPtsTotal += fixture.result.homeUsedDoublePointer ? 2 : 1;
-        }
-      }
-
-      for (const fixture of team.awayFixtures) {
-        if (fixture.result && !fixture.isPlayoff && (!fixture.competitionType || fixture.competitionType === "jpl")) {
-          pointsFor += fixture.result.awayScore;
-          if (fixture.result.awayScore > fixture.result.homeScore) wins++;
-          else if (fixture.result.awayScore === fixture.result.homeScore) draws++;
-          if (fixture.result.awayGotBonus) bonusPtsTotal += fixture.result.awayUsedDoublePointer ? 2 : 1;
-        }
-      }
-
-      const chipPts = chipPointsByTeam.get(team.id) || 0;
-      const cbpPts = chipPts + bonusPtsTotal;
-
-      return {
-        teamId: team.id,
-        name: team.name,
-        group: team.group?.name ?? null,
-        leaguePoints: (wins * 2) + draws + cbpPts,
-        pointsFor,
-        cbpPoints: cbpPts,
-        groupRank: 0,
-      };
-    });
-
-    const sortFn = (a: typeof standings[0], b: typeof standings[0]) => {
-      if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
-      if (a.pointsFor !== b.pointsFor) return b.pointsFor - a.pointsFor;
-      return b.cbpPoints - a.cbpPoints;
-    };
-
-    const groupA = standings.filter(t => t.group === "A").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
-    const groupB = standings.filter(t => t.group === "B").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
-
-    // For groupless formats (8-team, 16-team), all teams go into groupA
-    if (groupA.length === 0 && groupB.length === 0 && standings.length > 0) {
-      const all = standings.sort(sortFn).map((t, i) => ({ ...t, group: "A", groupRank: i + 1 }));
-      return { groupA: all, groupB: [] };
-    }
-
-    return { groupA, groupB };
-  } catch (error) {
-    console.error("Error computing group standings:", error);
-    return null;
-  }
+/**
+ * Tentative/projected brackets are seeded from the SAME `getGroupStandings` the
+ * admin generator uses (src/lib/formats/tvt/playoffs.ts), so the bracket a user
+ * previews matches the bracket that actually gets generated.
+ *
+ * The private copy that used to live here drifted in two ways: it omitted the
+ * hit penalty from `leaguePoints`, and it used a 3-tier sort that ignored wins
+ * and head-to-head. Both are gone with it.
+ *
+ * Returns null without a leagueId — the shared helper is league-scoped, and the
+ * caller already renders a "Failed to compute standings" bracket for null.
+ */
+async function getGroupStandingsForBracket(leagueId: string | null | undefined, leagueStageEnd: number) {
+  if (!leagueId) return null;
+  return getGroupStandings(leagueId, leagueStageEnd);
 }

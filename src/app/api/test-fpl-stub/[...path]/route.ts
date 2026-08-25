@@ -32,8 +32,17 @@ function isEnabled(): boolean {
 }
 
 interface StubState {
-  /** Every GW <= this reports finished: true in bootstrap-static. */
+  /** Every GW <= this reports finished: true in bootstrap-static and /fixtures/. */
   finishedThrough: number;
+  /**
+   * Every GW <= this reports bonus_added: true in /event-status/.
+   *
+   * Separate from `finishedThrough` because the two genuinely diverge in
+   * production: matches end, then FPL confirms bonus a while later. Scoring
+   * gates on this one, team submission gates on `finishedThrough`. Defaults to
+   * tracking `finishedThrough` when a spec never sets it explicitly.
+   */
+  bonusAddedThrough: number | null;
   /** The GW whose fixtures are mid-flight (kickoffs in the past, not finished). */
   liveGw: number | null;
   /**
@@ -56,12 +65,16 @@ interface StubState {
 const globalForStub = globalThis as typeof globalThis & { __fplStubState?: StubState };
 const state: StubState = (globalForStub.__fplStubState ??= {
   finishedThrough: 0,
+  bonusAddedThrough: null,
   liveGw: null,
   counts: {},
 });
 // A server that was already running before counts existed keeps its old
 // globalThis object, so the field can be genuinely absent here.
 state.counts ??= {};
+// Same reason as `counts`: a server started before this field existed keeps its
+// old globalThis object, where the property is genuinely absent.
+state.bonusAddedThrough ??= null;
 
 const TOTAL_ELEMENTS = 700;
 const PL_TEAM_COUNT = 20;
@@ -237,6 +250,35 @@ function liveGameweek(gw: number) {
   };
 }
 
+/**
+ * FPL's /event-status/ payload: one row per match day of the current gameweek.
+ *
+ * The stub emits a single row for the latest settled GW, which is enough to drive
+ * `isGameweekConcluded` — it asks whether every row for a GW has bonus_added and
+ * whether `leagues` reads "Updated".
+ */
+function eventStatus() {
+  const bonusThrough = state.bonusAddedThrough ?? state.finishedThrough;
+  const rows = [];
+  // Report the most recent few gameweeks; callers only ever look up one.
+  const from = Math.max(1, state.finishedThrough - 2);
+  for (let gw = from; gw <= Math.max(from, state.finishedThrough); gw++) {
+    if (state.finishedThrough === 0) break;
+    const bonusAdded = gw <= bonusThrough;
+    rows.push({
+      event: gw,
+      bonus_added: bonusAdded,
+      points: bonusAdded ? "r" : "p",
+      date: stubDeadline(gw).toISOString().slice(0, 10),
+    });
+  }
+  // "Updated" only once every reported GW has its bonus in — otherwise FPL is
+  // still recalculating, and a spec setting bonusAddedThrough below
+  // finishedThrough expects the gameweek to read as NOT concluded.
+  const leagues = rows.length > 0 && rows.every((r) => r.bonus_added) ? "Updated" : "Updating";
+  return { status: rows, leagues };
+}
+
 function allFixtures() {
   const out = [];
   for (let gw = 1; gw <= 38; gw++) {
@@ -305,6 +347,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ path: s
 
   if (joined === "bootstrap-static") return NextResponse.json(bootstrap());
   if (joined === "fixtures") return NextResponse.json(allFixtures());
+  if (joined === "event-status") return NextResponse.json(eventStatus());
   if (joined === "control") return NextResponse.json(state);
 
   if (segments[0] === "event" && segments[2] === "live") {
@@ -339,7 +382,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ path: s
  * Drop the caches derived from the simulated FPL world.
  *
  * Without this, /control silently lies whenever a test Redis is configured.
- * `fetchEventStatus` serves `fpl:events:latest` for 10 minutes and
+ * `fetchBootstrapEventFlags` serves `fpl:events:latest` for 10 minutes and
  * `fetchBootstrapData` serves `fpl:bootstrap:latest` for a day, so a spec that
  * sets finishedThrough=3 goes on being reasoned about as finishedThrough=0 —
  * the submission gate and the FPL League header gameweek both read straight
@@ -362,7 +405,7 @@ async function invalidateWorldDerivedCaches(): Promise<void> {
   const { Redis } = await import("@upstash/redis");
   const redis = new Redis({ url, token });
 
-  await redis.del("fpl:events:latest", "fpl:bootstrap:latest");
+  await redis.del("fpl:events:latest", "fpl:bootstrap:latest", "fpl:event-status:latest", "fpl:fixtures:all");
   for (const pattern of ["fpl:elements:gw*", "live:gw*", "fpl:deadline-sync:*"]) {
     const keys = await redis.keys(pattern);
     if (keys.length > 0) await redis.del(...keys);
@@ -388,6 +431,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ path: 
   if (typeof body.finishedThrough === "number" && body.finishedThrough !== state.finishedThrough) {
     state.finishedThrough = body.finishedThrough;
     worldChanged = true;
+  }
+  if (body.bonusAddedThrough === null || typeof body.bonusAddedThrough === "number") {
+    const next = body.bonusAddedThrough ?? null;
+    if (next !== state.bonusAddedThrough) {
+      state.bonusAddedThrough = next;
+      worldChanged = true;
+    }
   }
   if (body.liveGw === null || typeof body.liveGw === "number") {
     const next = body.liveGw ?? null;

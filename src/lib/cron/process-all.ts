@@ -16,9 +16,10 @@ import { NextRequest } from "next/server";
 import { db, gameweeks, fixtures, leagues, auditLogs, results } from "@/lib/db";
 import { gameweekCaptains, playoffTies } from "@/lib/db/schema";
 import { asc, eq, and, isNull, ne, or } from "drizzle-orm";
-import { detectLiveGameweek, fetchBootstrapData, fetchTeamGameweekPicks } from "@/lib/fpl";
+import { detectLiveGameweek, fetchTeamGameweekPicks } from "@/lib/fpl";
+import { getGameweekConclusion, getActiveFplGameweek, type ActiveGameweek } from "@/lib/fpl/event-status";
 import { syncGameweekDeadlines } from "@/lib/gameweeks/sync-deadlines";
-import { clearLiveCache, setLiveCachedScores, invalidateLeaguePageCache, markScoringActive, clearScoringActive, type FplEventStatus } from "@/lib/fpl-cache";
+import { clearLiveCache, setLiveCachedScores, invalidateLeaguePageCache, markScoringActive, clearScoringActive } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
@@ -80,7 +81,9 @@ export type Plan = {
   runId: string;
   dueGws: number[];
   leagues: LeaguePlanItem[];
-  globalErrors: string[];   // GWs skipped because FPL not finalized, FPL bootstrap failed, etc.
+  globalErrors: string[];   // GWs skipped because FPL not finalized, FPL unreachable, etc.
+  /** What FPL itself is currently on — rendered in the Operations header. */
+  fplStatus: ActiveGameweek;
 };
 
 export type LeagueResult = {
@@ -92,8 +95,8 @@ export type LeagueResult = {
   advancedGws: number[];
   generatedFor: number[];
   generatedAlready: number[];      // generate fired but bracket already existed (no-op success)
-  advanceWindowFuture: number[];   // advance window GWs blocked because the GW isn't FPL-finalized yet
-  errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league"; message: string }>;
+  advanceWindowFuture: number[];   // advance window GWs blocked because the GW hasn't concluded on FPL yet
+  errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league" | "request"; message: string }>;
 };
 
 /**
@@ -112,7 +115,7 @@ export type LeagueGwResult = {
   generatedAlready: boolean;  // generate fired but bracket already existed
   advanced: boolean;          // advance dispatcher fired AND did work
   advanceSkipped: boolean;    // advance window matched but nothing pending
-  advanceWindowFuture: boolean; // gw is in advance window but not in dueGws (FPL not finalized)
+  advanceWindowFuture: boolean; // gw is in advance window but not in dueGws (hasn't concluded on FPL)
   errors: Array<{ step: "score" | "generate" | "advance" | "auction"; message: string }>;
 };
 
@@ -124,41 +127,28 @@ interface FetchInput {
 /*  Helpers                                                                   */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-// Shared with the FPL cache layer, which keys element-points TTL off the same flags.
-// Note this module's own eligibility check below deliberately gates on `finished` alone.
-type FplEvent = FplEventStatus;
 type FinalizeStatus = { ok: true } | { ok: false; reason: string };
 
 /**
- * Pure lookup against an already-fetched bootstrap events array.
- * Returns a precise reason when the GW is not eligible, so the UI can show
- * "FPL still in progress (finished=false)" vs "FPL bootstrap fetch failed: HTTP 429"
- * vs "not present in FPL bootstrap" — instead of a single generic "not finalized" line.
+ * Is this gameweek settled enough to score?
  *
- * Note: we deliberately gate on `finished` only, NOT `data_checked`. FPL flips
- * `data_checked` 1–2 days after `finished` (it's the bonus-points reconciliation
- * flag); for our scoring + advance pipeline the published `entry_history.points`
- * is stable as soon as `finished=true`.
+ * Delegates to `getGameweekConclusion`, which requires every PL fixture finished AND
+ * FPL to have confirmed bonus points, read from /event-status/ + /fixtures/ with
+ * bootstrap-static as the fallback. It returns a precise reason when the GW is not
+ * eligible, so the UI can show "3 of 10 PL fixtures still in progress" or "bonus
+ * points not yet confirmed by FPL" rather than a single generic "not finalized" line.
+ *
+ * This gate is deliberately STRICTER than the team-submission gate
+ * (getFinishedGwNumbers), which opens as soon as the matches end. Here we are writing
+ * points into league tables, so waiting for bonus to stop moving is the point.
  */
-function isGwFinalized(
-  gw: number,
-  bootstrapEvents: FplEvent[] | null,
-  bootstrapError: string | null,
-): FinalizeStatus {
-  if (bootstrapError) {
-    return { ok: false, reason: `cannot verify FPL state — bootstrap fetch failed: ${bootstrapError}` };
-  }
-  if (!bootstrapEvents) {
-    return { ok: false, reason: "FPL bootstrap unavailable" };
-  }
-  const event = bootstrapEvents.find(e => e.id === gw);
-  if (!event) {
-    return { ok: false, reason: "not present in FPL bootstrap" };
-  }
-  if (event.finished !== true) {
-    return { ok: false, reason: "FPL still in progress (finished=false)" };
-  }
-  return { ok: true };
+async function isGwFinalized(gw: number): Promise<FinalizeStatus> {
+  // Critical lane: this is the scoring pipeline, and a gateway refusal here would
+  // silently skip a gameweek that is genuinely ready.
+  const { concluded, source, detail } = await getGameweekConclusion(gw, "critical");
+  if (concluded) return { ok: true };
+  const prefix = source === "unavailable" ? "" : `[${source}] `;
+  return { ok: false, reason: `${prefix}${detail}` };
 }
 
 function messageFrom(e: unknown): string {
@@ -186,45 +176,6 @@ export async function computePlan(): Promise<Plan> {
     console.error("computePlan: CRON_RUN_START write failed:", e);
   }
 
-  // Fetch FPL bootstrap ONCE for the whole plan. If this fails we surface the
-  // single error to the UI rather than silently flagging every GW as "not finalized".
-  let bootstrapEvents: FplEvent[] | null = null;
-  let bootstrapError: string | null = null;
-  try {
-    const bs = await fetchBootstrapData("critical") as { events?: FplEvent[] };
-    bootstrapEvents = bs.events ?? [];
-  } catch (e) {
-    bootstrapError = e instanceof Error ? e.message : "unknown error";
-    globalErrors.push(`FPL bootstrap fetch failed: ${bootstrapError}`);
-  }
-
-  // Build the dueGws set: deadline passed AND FPL bootstrap says finished.
-  // No force-bypass — emergency reprocess belongs in per-league admin.
-  const allGameweeks = await db.select().from(gameweeks).orderBy(asc(gameweeks.number));
-  const now = new Date();
-  const seen = new Set<number>();
-  const dueByNumber = new Set<number>();
-
-  for (const gw of allGameweeks) {
-    if (gw.deadline > now) continue;
-    if (seen.has(gw.number)) continue;
-    seen.add(gw.number);
-
-    const fxRows = await db
-      .select({ id: fixtures.id })
-      .from(fixtures)
-      .where(eq(fixtures.gameweekId, gw.id));
-    if (fxRows.length === 0) continue;
-
-    const status = isGwFinalized(gw.number, bootstrapEvents, bootstrapError);
-    if (!status.ok) {
-      globalErrors.push(`GW${gw.number}: ${status.reason} — skipped`);
-      continue;
-    }
-    dueByNumber.add(gw.number);
-  }
-  const dueGws = [...dueByNumber].sort((a, b) => a - b);
-
   const activeLeagues = await db
     .select({
       id: leagues.id,
@@ -236,11 +187,77 @@ export async function computePlan(): Promise<Plan> {
     .from(leagues)
     .where(eq(leagues.isActive, true));
 
+  // What FPL itself is on right now. Surfaced in the Operations header so an
+  // operator can see whether a run is worth starting before starting it.
+  const fplStatus = await getActiveFplGameweek("critical");
+  if (fplStatus.source === "unavailable") {
+    globalErrors.push(`FPL unreachable: ${fplStatus.detail}`);
+  }
+
+  // Build the dueGws set: deadline passed AND the gameweek has concluded per FPL.
+  // No force-bypass — emergency reprocess belongs in per-league admin.
+  const allGameweeks = await db.select().from(gameweeks).orderBy(asc(gameweeks.number));
+  const now = new Date();
+  const dueByNumber = new Set<number>();
+  const rejectedByNumber = new Map<number, string>();
+  const conclusionByNumber = new Map<number, FinalizeStatus>();
+
+  // Auction leagues have no fixtures at all — create-gameweeks seeds GW rows and
+  // generate-fixtures is TVT/CC-only — so "has fixtures" cannot be a precondition
+  // for their gameweeks. It also must not be evaluated before the dedupe, which is
+  // the bug this replaces: `seen` was marked before the fixtures check, so whenever
+  // an auction league's row for a GW number happened to sort first, that gameweek
+  // was dropped for EVERY league, silently and non-deterministically.
+  const fixturelessFormats = new Set(["auction"]);
+  const formatByLeagueId = new Map(activeLeagues.map((l) => [l.id, l.format]));
+
+  for (const gw of allGameweeks) {
+    if (gw.deadline > now) continue;
+    if (dueByNumber.has(gw.number)) continue;
+
+    const format = formatByLeagueId.get(gw.leagueId);
+    // Gameweek rows for inactive leagues aren't our business.
+    if (format === undefined) continue;
+
+    if (!fixturelessFormats.has(format)) {
+      const fxRows = await db
+        .select({ id: fixtures.id })
+        .from(fixtures)
+        .where(eq(fixtures.gameweekId, gw.id));
+      // No fixtures for this league's GW — nothing to score HERE, but another
+      // league may still have work at the same GW number, so keep looking.
+      if (fxRows.length === 0) continue;
+    }
+
+    // Memoized per GW NUMBER, not per row: late in the season this loop sees ~38
+    // gameweeks x every active league, and the conclusion check is identical for
+    // all leagues sharing a number. /plan runs on a 30s budget.
+    let status = conclusionByNumber.get(gw.number);
+    if (!status) {
+      status = await isGwFinalized(gw.number);
+      conclusionByNumber.set(gw.number, status);
+    }
+    if (!status.ok) {
+      // One notice per GW number, not one per league that shares it.
+      if (!rejectedByNumber.has(gw.number)) rejectedByNumber.set(gw.number, status.reason);
+      continue;
+    }
+    dueByNumber.add(gw.number);
+  }
+
+  for (const [gwNumber, reason] of rejectedByNumber) {
+    if (dueByNumber.has(gwNumber)) continue;
+    globalErrors.push(`GW${gwNumber}: ${reason} — skipped`);
+  }
+
+  const dueGws = [...dueByNumber].sort((a, b) => a - b);
+
   return {
     runId,
     dueGws,
     leagues: activeLeagues,
     globalErrors,
+    fplStatus,
   };
 }
 

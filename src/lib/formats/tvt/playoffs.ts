@@ -8,6 +8,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { calculateTeamGameweekScore, fetchBootstrapData } from "@/lib/fpl";
 import { getAllCachedScores } from "@/lib/fpl-cache";
 import { generateId } from "@/lib/id";
+import { compareTiebreaker } from "./tiebreaker";
 
 // ============================================
 // Seeding tables — 32-team (cross-group)
@@ -94,6 +95,9 @@ export interface RankedTeam {
   group: string;
   groupRank: number;
   leaguePoints: number;
+  wins: number;
+  /** Match points earned vs each opponent — tier 3 of `compareTiebreaker`. */
+  headToHeadRecord: Record<string, number>;
   pointsFor: number;
   cbpPoints: number;
 }
@@ -170,15 +174,23 @@ export async function getGroupStandings(leagueId: string, leagueStageEnd: number
 
     const standings = allTeams.map((team) => {
       let wins = 0, draws = 0, losses = 0, pointsFor = 0, pointsAgainst = 0, bonusPtsTotal = 0;
+      // Tier-3 tiebreaker input. Mirrors the accumulation in /api/standings so
+      // seeding and the displayed table resolve ties identically.
+      const headToHeadRecord: Record<string, number> = {};
 
       for (const fixture of team.homeFixtures) {
         if (fixture.gameweek.number > leagueStageEnd) continue;
+        // League-stage only: Continental-Championship cup fixtures must not leak
+        // into seeding points (the standings route has always applied this filter).
+        if (fixture.competitionType && fixture.competitionType !== "jpl") continue;
         if (fixture.result) {
           pointsFor += fixture.result.homeScore;
           pointsAgainst += fixture.result.awayScore;
-          if (fixture.result.homeScore > fixture.result.awayScore) wins++;
-          else if (fixture.result.homeScore === fixture.result.awayScore) draws++;
+          let matchPts = 0;
+          if (fixture.result.homeScore > fixture.result.awayScore) { wins++; matchPts = 2; }
+          else if (fixture.result.homeScore === fixture.result.awayScore) { draws++; matchPts = 1; }
           else losses++;
+          headToHeadRecord[fixture.awayTeamId] = (headToHeadRecord[fixture.awayTeamId] ?? 0) + matchPts;
           if (fixture.result.homeGotBonus) {
             bonusPtsTotal += fixture.result.homeUsedDoublePointer ? 2 : 1;
           }
@@ -187,12 +199,15 @@ export async function getGroupStandings(leagueId: string, leagueStageEnd: number
 
       for (const fixture of team.awayFixtures) {
         if (fixture.gameweek.number > leagueStageEnd) continue;
+        if (fixture.competitionType && fixture.competitionType !== "jpl") continue;
         if (fixture.result) {
           pointsFor += fixture.result.awayScore;
           pointsAgainst += fixture.result.homeScore;
-          if (fixture.result.awayScore > fixture.result.homeScore) wins++;
-          else if (fixture.result.awayScore === fixture.result.homeScore) draws++;
+          let matchPts = 0;
+          if (fixture.result.awayScore > fixture.result.homeScore) { wins++; matchPts = 2; }
+          else if (fixture.result.awayScore === fixture.result.homeScore) { draws++; matchPts = 1; }
           else losses++;
+          headToHeadRecord[fixture.homeTeamId] = (headToHeadRecord[fixture.homeTeamId] ?? 0) + matchPts;
           if (fixture.result.awayGotBonus) {
             bonusPtsTotal += fixture.result.awayUsedDoublePointer ? 2 : 1;
           }
@@ -219,17 +234,16 @@ export async function getGroupStandings(leagueId: string, leagueStageEnd: number
         name: team.name,
         group: team.group?.name || "Unknown",
         leaguePoints,
+        wins,
+        headToHeadRecord,
         pointsFor,
         cbpPoints: cbpPts,
         groupRank: 0,
       };
     });
 
-    const sortFn = (a: typeof standings[0], b: typeof standings[0]) => {
-      if (a.leaguePoints !== b.leaguePoints) return b.leaguePoints - a.leaguePoints;
-      if (a.pointsFor !== b.pointsFor) return b.pointsFor - a.pointsFor;
-      return b.cbpPoints - a.cbpPoints;
-    };
+    // Canonical tiebreaker, shared with /api/standings — see src/lib/formats/tvt/scoring.ts.
+    const sortFn = compareTiebreaker;
 
     const groupA = standings.filter(t => t.group === "A").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
     const groupB = standings.filter(t => t.group === "B").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
