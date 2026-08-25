@@ -20,6 +20,7 @@ import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getGroupStandings } from "@/lib/formats/tvt/playoffs";
+import { compareTiebreaker } from "@/lib/formats/tvt/tiebreaker";
 import { generateCupGroupFixtures, seedCupGroups } from "@/lib/formats/continental-championship/fixtures";
 
 export async function POST(request: NextRequest) {
@@ -76,8 +77,11 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Sort by leaguePoints (descending)
-    allTeams.sort((a, b) => b.leaguePoints - a.leaguePoints);
+    // Merge the two group tables into one 20-team order using the SAME rule that ranked
+    // them. The previous `b.leaguePoints - a.leaguePoints` re-sort threw the tiebreaker
+    // away immediately after getGroupStandings had applied it, making snake seeding
+    // non-deterministic on ties — and this decides cup groups for the whole season.
+    allTeams.sort(compareTiebreaker);
 
     // Seed into 4 cup groups using snake distribution
     const seededGroups = seedCupGroups(

@@ -6,7 +6,7 @@ import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { resolveSubmissionWindow, formatLateness } from "@/lib/gameweek-window";
 import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
-import { CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
+import { CHIP_GW1_POSITION_REASON, getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 
 const ALL_CHIP_CODES = ["W", "D", "C", "SL", "CB", "UD"] as const;
 type ChipCode = typeof ALL_CHIP_CODES[number];
@@ -280,6 +280,21 @@ export async function POST(request: NextRequest) {
           { error: "Challenge Chip can only be used against a team from the opposite group" },
           { status: 400 }
         );
+      }
+
+      // Enforce the top-2 rule server-side. Until now the dashboard dropdown was the ONLY
+      // thing restricting the target: this route checked opposite-group membership and
+      // nothing else, and the scoring path never re-checked either, so a request posting
+      // any opposite-group team id was accepted and scored. Deliberately the same function
+      // the dropdown is built from, so the UI can never offer something rejected here.
+      if (challengedTeam.groupId) {
+        const top2 = await getTop2FromGroup(challengedTeam.groupId, gameweekNumber);
+        if (top2.length > 0 && !top2.some((t) => t.teamId === challengedTeamId)) {
+          return NextResponse.json(
+            { error: "Challenge Chip can only target the top 2 teams of the opposite group" },
+            { status: 400 }
+          );
+        }
       }
 
       validatedChallengedTeamId = challengedTeamId;

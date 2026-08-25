@@ -3,12 +3,11 @@
  * Handles bracket seeding for all TVT formats: 32-team, 16-team, 8-team
  */
 
-import { db, teams, gameweeks, groups, playoffTies, fixtures, results } from "@/lib/db";
-import { eq, and, inArray } from "drizzle-orm";
-import { calculateTeamGameweekScore, fetchBootstrapData } from "@/lib/fpl";
-import { getAllCachedScores } from "@/lib/fpl-cache";
+import { db, gameweeks } from "@/lib/db";
+import { eq, and } from "drizzle-orm";
+import { fetchBootstrapData } from "@/lib/fpl";
 import { generateId } from "@/lib/id";
-import { compareTiebreaker } from "./tiebreaker";
+import { computeLeagueStageStandings, type LeagueStageRow } from "@/lib/standings/league-stage";
 
 // ============================================
 // Seeding tables — 32-team (cross-group)
@@ -102,158 +101,34 @@ export interface RankedTeam {
   cbpPoints: number;
 }
 
+/**
+ * Ranked group standings for playoff seeding.
+ *
+ * A thin adapter over the canonical computation, so the bracket a league is seeded into
+ * is built from exactly the table the standings page shows. The duplicate row-builder
+ * this replaces had drifted: it queried every chip row in every league unfiltered, and
+ * its cold-cache hit-penalty loop fetched each player serially (~1900 round-trips on a
+ * 32-team league) instead of in parallel per gameweek.
+ */
 export async function getGroupStandings(leagueId: string, leagueStageEnd: number): Promise<{ groupA: RankedTeam[]; groupB: RankedTeam[] } | null> {
   try {
-    const allTeams = await db.query.teams.findMany({
-      where: eq(teams.leagueId, leagueId),
-      with: {
-        group: true,
-        players: true,
-        homeFixtures: { with: { result: true, gameweek: true } },
-        awayFixtures: { with: { result: true, gameweek: true } },
-      },
-    });
+    const { byGroup } = await computeLeagueStageStandings(leagueId, { throughGw: leagueStageEnd });
 
-    const playerGwHitsMap = new Map<string, Map<number, number>>();
-    const allFplIds = new Set<string>();
-    for (const t of allTeams) {
-      for (const p of t.players) {
-        allFplIds.add(p.fplId);
-      }
-    }
+    const toRanked = (rows: LeagueStageRow[], groupName: string): RankedTeam[] =>
+      rows.map((r) => ({
+        teamId: r.teamId,
+        name: r.name,
+        group: groupName,
+        groupRank: r.groupRank,
+        leaguePoints: r.leaguePoints,
+        wins: r.wins,
+        headToHeadRecord: r.headToHeadRecord,
+        pointsFor: r.pointsFor,
+        cbpPoints: r.cbpPoints,
+      }));
 
-    const processedGws = new Set<number>();
-    for (const t of allTeams) {
-      for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-        if (f.result && f.gameweek.number <= leagueStageEnd) {
-          processedGws.add(f.gameweek.number);
-        }
-      }
-    }
-
-    for (const gw of processedGws) {
-      const gwCache = await getAllCachedScores(gw, leagueId);
-      const suffix = `_gw${gw}`;
-      if (Object.keys(gwCache).length > 0) {
-        for (const [key, data] of Object.entries(gwCache)) {
-          if (key.endsWith(suffix)) {
-            const fplId = key.slice(0, -suffix.length);
-            if (!playerGwHitsMap.has(fplId)) playerGwHitsMap.set(fplId, new Map());
-            playerGwHitsMap.get(fplId)!.set(gw, data.transferHits);
-          }
-        }
-      } else {
-        for (const fplId of allFplIds) {
-          try {
-            const score = await calculateTeamGameweekScore(fplId, gw, leagueId);
-            if (!playerGwHitsMap.has(fplId)) playerGwHitsMap.set(fplId, new Map());
-            playerGwHitsMap.get(fplId)!.set(gw, score.transferHits);
-          } catch {
-            // FPL API may fail — skip gracefully
-          }
-        }
-      }
-    }
-
-    const allChipsRaw = await db.query.gameweekChips.findMany({
-      with: { gameweek: true },
-    });
-
-    const chipPointsByTeam = new Map<string, number>();
-    for (const chip of allChipsRaw) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const chipGw = (chip as any).gameweek?.number;
-      if (chipGw && chipGw > leagueStageEnd) continue;
-      if (chip.isProcessed) {
-        const pts = chip.pointsAwarded || 0;
-        if (chip.chipType === "C" || pts > 0) {
-          chipPointsByTeam.set(chip.teamId, (chipPointsByTeam.get(chip.teamId) || 0) + pts);
-        }
-      }
-    }
-
-    const standings = allTeams.map((team) => {
-      let wins = 0, draws = 0, losses = 0, pointsFor = 0, pointsAgainst = 0, bonusPtsTotal = 0;
-      // Tier-3 tiebreaker input. Mirrors the accumulation in /api/standings so
-      // seeding and the displayed table resolve ties identically.
-      const headToHeadRecord: Record<string, number> = {};
-
-      for (const fixture of team.homeFixtures) {
-        if (fixture.gameweek.number > leagueStageEnd) continue;
-        // League-stage only: Continental-Championship cup fixtures must not leak
-        // into seeding points (the standings route has always applied this filter).
-        if (fixture.competitionType && fixture.competitionType !== "jpl") continue;
-        if (fixture.result) {
-          pointsFor += fixture.result.homeScore;
-          pointsAgainst += fixture.result.awayScore;
-          let matchPts = 0;
-          if (fixture.result.homeScore > fixture.result.awayScore) { wins++; matchPts = 2; }
-          else if (fixture.result.homeScore === fixture.result.awayScore) { draws++; matchPts = 1; }
-          else losses++;
-          headToHeadRecord[fixture.awayTeamId] = (headToHeadRecord[fixture.awayTeamId] ?? 0) + matchPts;
-          if (fixture.result.homeGotBonus) {
-            bonusPtsTotal += fixture.result.homeUsedDoublePointer ? 2 : 1;
-          }
-        }
-      }
-
-      for (const fixture of team.awayFixtures) {
-        if (fixture.gameweek.number > leagueStageEnd) continue;
-        if (fixture.competitionType && fixture.competitionType !== "jpl") continue;
-        if (fixture.result) {
-          pointsFor += fixture.result.awayScore;
-          pointsAgainst += fixture.result.homeScore;
-          let matchPts = 0;
-          if (fixture.result.awayScore > fixture.result.homeScore) { wins++; matchPts = 2; }
-          else if (fixture.result.awayScore === fixture.result.homeScore) { draws++; matchPts = 1; }
-          else losses++;
-          headToHeadRecord[fixture.homeTeamId] = (headToHeadRecord[fixture.homeTeamId] ?? 0) + matchPts;
-          if (fixture.result.awayGotBonus) {
-            bonusPtsTotal += fixture.result.awayUsedDoublePointer ? 2 : 1;
-          }
-        }
-      }
-
-      const chipPts = chipPointsByTeam.get(team.id) || 0;
-      const cbpPts = chipPts + bonusPtsTotal;
-
-      let hitPenaltyTotal = 0;
-      for (const player of team.players) {
-        const gwHits = playerGwHitsMap.get(player.fplId);
-        if (gwHits) {
-          for (const [, hits] of gwHits.entries()) {
-            if (hits > 12) hitPenaltyTotal++;
-          }
-        }
-      }
-
-      const leaguePoints = (wins * 2) + draws + cbpPts - hitPenaltyTotal;
-
-      return {
-        teamId: team.id,
-        name: team.name,
-        group: team.group?.name || "Unknown",
-        leaguePoints,
-        wins,
-        headToHeadRecord,
-        pointsFor,
-        cbpPoints: cbpPts,
-        groupRank: 0,
-      };
-    });
-
-    // Canonical tiebreaker, shared with /api/standings — see src/lib/formats/tvt/scoring.ts.
-    const sortFn = compareTiebreaker;
-
-    const groupA = standings.filter(t => t.group === "A").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
-    const groupB = standings.filter(t => t.group === "B").sort(sortFn).map((t, i) => ({ ...t, groupRank: i + 1 }));
-
-    // For groupless/single-group formats (8-team, 16-team), all teams go into groupA
-    if (groupA.length === 0 && groupB.length === 0 && standings.length > 0) {
-      const all = standings.sort(sortFn).map((t, i) => ({ ...t, group: "A", groupRank: i + 1 }));
-      return { groupA: all, groupB: [] };
-    }
-
+    const groupA = toRanked(byGroup.get("A") ?? [], "A");
+    const groupB = toRanked(byGroup.get("B") ?? [], "B");
     return { groupA, groupB };
   } catch (error) {
     console.error("Error computing group standings:", error);
