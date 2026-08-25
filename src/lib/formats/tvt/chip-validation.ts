@@ -20,9 +20,10 @@
  * - Win additional 2 points if they beat them
  */
 
-import { db, teams, fixtures, gameweekChips, gameweeks, groups } from "../../db";
-import { eq, and, lt } from "drizzle-orm";
+import { db, gameweekChips, groups } from "../../db";
+import { eq, and } from "drizzle-orm";
 import { getChipSet } from "./scoring";
+import { computeLeagueStageStandings } from "@/lib/standings/league-stage";
 
 export interface ChipValidationResult {
   isValid: boolean;
@@ -121,106 +122,41 @@ export async function isChipUsedInSet(
 }
 
 /**
- * Get team rankings for a group before a specific gameweek
- * Rankings are calculated by summing results from GW1 to GW(n-1)
+ * Team rankings for a group as they stood BEFORE a given gameweek.
+ *
+ * "Before GW n" is the basis both chip rules are defined against: a team's Double
+ * Pointer eligibility and the Challenge Chip's legal targets are fixed by the table
+ * going into the gameweek, not by how it ends up afterwards.
+ *
+ * Delegates to the canonical league-stage computation with `throughGw = n - 1`, so this
+ * agrees with the standings page and the dashboard by construction. It previously ran
+ * its own 2-tier sort (leaguePoints, then the stored `teams.bonusPoints` column — which
+ * is a COUNT of bonuses, not points) over chip-adjusted match points drawn from an
+ * unscoped query across every league. All four of those were wrong, and because rank
+ * here gates real submissions, they were wrong in a way that accepted and rejected
+ * chips incorrectly.
  */
 export async function getGroupRankingsBeforeGW(
   groupId: string,
   gameweekNumber: number
 ): Promise<TeamRanking[]> {
-  // Get all teams in the group
-  const teamsInGroup = await db.query.teams.findMany({
-    where: eq(teams.groupId, groupId),
-    with: {
-      group: true,
-    },
+  const groupRow = await db.query.groups.findFirst({ where: eq(groups.id, groupId) });
+  if (!groupRow) return [];
+
+  const { byGroup } = await computeLeagueStageStandings(groupRow.leagueId, {
+    throughGw: gameweekNumber - 1,
   });
+  const members = byGroup.get(groupRow.name) ?? [];
 
-  // Calculate historical points for each team
-  const teamPoints = await calculateHistoricalPoints(teamsInGroup.map(t => t.id), gameweekNumber);
-
-  // Build rankings with historical points
-  const teamsWithPoints = teamsInGroup.map(team => ({
-    ...team,
-    historicalLeaguePoints: teamPoints.get(team.id)?.leaguePoints || 0,
-    historicalBonusPoints: teamPoints.get(team.id)?.bonusPoints || 0,
+  return members.map((row) => ({
+    teamId: row.teamId,
+    groupId,
+    groupName: groupRow.name,
+    rank: row.groupRank,
+    leaguePoints: row.leaguePoints,
+    // The CP/BP value the standings column renders, not the stored bonus-count column.
+    bonusPoints: row.cbpPoints,
   }));
-
-  // Sort by league points (desc), then bonus points (desc)
-  const sorted = teamsWithPoints.sort((a, b) => {
-    if (a.historicalLeaguePoints !== b.historicalLeaguePoints) {
-      return b.historicalLeaguePoints - a.historicalLeaguePoints;
-    }
-    return b.historicalBonusPoints - a.historicalBonusPoints;
-  });
-
-  return sorted.map((team, index) => ({
-    teamId: team.id,
-    groupId: team.groupId!,
-    groupName: team.group?.name || "",
-    rank: index + 1,
-    leaguePoints: team.historicalLeaguePoints,
-    bonusPoints: team.historicalBonusPoints,
-  }));
-}
-
-/**
- * Calculate historical points for teams based on results before a gameweek
- * Returns a map of teamId -> { leaguePoints, bonusPoints }
- */
-async function calculateHistoricalPoints(
-  teamIds: string[],
-  beforeGameweekNumber: number
-): Promise<Map<string, { leaguePoints: number; bonusPoints: number }>> {
-  const pointsMap = new Map<string, { leaguePoints: number; bonusPoints: number }>();
-
-  // Initialize all teams with 0 points
-  for (const teamId of teamIds) {
-    pointsMap.set(teamId, { leaguePoints: 0, bonusPoints: 0 });
-  }
-
-  // If gameweek 1, everyone starts with 0
-  if (beforeGameweekNumber <= 1) {
-    return pointsMap;
-  }
-
-  // Get all fixtures from previous gameweeks
-  const previousFixtures = await db.query.fixtures.findMany({
-    with: {
-      result: true,
-      gameweek: true,
-    },
-  });
-
-  // Filter to only fixtures from previous gameweeks that have results
-  const relevantFixtures = previousFixtures.filter(
-    f => f.gameweek && f.gameweek.number < beforeGameweekNumber && f.result
-  );
-
-  // Sum up points from each result
-  for (const fixture of relevantFixtures) {
-    if (!fixture.result) continue;
-
-    // Home team points
-    if (pointsMap.has(fixture.homeTeamId)) {
-      const current = pointsMap.get(fixture.homeTeamId)!;
-      pointsMap.set(fixture.homeTeamId, {
-        leaguePoints: current.leaguePoints + fixture.result.homeMatchPoints,
-        bonusPoints: current.bonusPoints + (fixture.result.homeGotBonus ? 1 : 0),
-      });
-    }
-
-    // Away team points
-    if (pointsMap.has(fixture.awayTeamId)) {
-      const current = pointsMap.get(fixture.awayTeamId)!;
-      pointsMap.set(fixture.awayTeamId, {
-        leaguePoints: current.leaguePoints + fixture.result.awayMatchPoints,
-        bonusPoints: current.bonusPoints + (fixture.result.awayGotBonus ? 1 : 0),
-      });
-    }
-  }
-
-  return pointsMap;
 }
 
 /**

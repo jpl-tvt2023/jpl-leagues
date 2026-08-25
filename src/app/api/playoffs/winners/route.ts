@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leagues, playoffTies, teams, players, gameweeks, fixtures, results } from "@/lib/db/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
+import { computeLeagueStageStandings } from "@/lib/standings/league-stage";
 
 /**
  * Hall of Champions — return the FULL position set for the league's format on
@@ -149,16 +150,16 @@ async function isGw38Settled(leagueId: string): Promise<boolean> {
 async function buildContinentalChampionshipWinners(leagueId: string): Promise<Winner[]> {
   const winners: Winner[] = [];
 
-  // 1) PL Champion — top leaguePoints. Gated on GW38 being fully scored so we
-  // don't crown mid-season leaders prematurely.
+  // 1) PL Champion — rank 1 of the canonical table. Gated on GW38 being fully scored so
+  // we don't crown mid-season leaders prematurely.
+  //
+  // This used to be `orderBy(desc(teams.leaguePoints)).limit(1)`: no tiebreaker at all,
+  // over the stored column, so a level top two handed the trophy to whichever row the
+  // database returned first.
   const settled = await isGw38Settled(leagueId);
   if (settled) {
-    const topTeam = await db.select({ id: teams.id })
-      .from(teams)
-      .where(eq(teams.leagueId, leagueId))
-      .orderBy(desc(teams.leaguePoints))
-      .limit(1);
-    const teamData = topTeam.length > 0 ? await getTeamData(topTeam[0].id) : null;
+    const { rows } = await computeLeagueStageStandings(leagueId);
+    const teamData = rows.length > 0 ? await getTeamData(rows[0].teamId) : null;
     if (teamData) {
       winners.push({ position: 1, label: "JPL Champion", category: "jpl", pending: false, ...teamData });
     } else {

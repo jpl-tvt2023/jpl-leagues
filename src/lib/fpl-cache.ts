@@ -750,4 +750,44 @@ export async function invalidateLeaguePageCache(leagueId: string): Promise<void>
   // unversioned `standings:{leagueId}` here silently deleted a key nothing reads or writes, leaving
   // every caller's invalidation a no-op for the standings cache.
   await r.del(standingsKey(leagueId), `fixtures:${leagueId}`, `playoffs:${leagueId}`);
+  // Computed standings rows are keyed per (league, throughGw) — one entry per historical
+  // cut, so they must be swept by pattern rather than deleted by name.
+  await invalidateLeagueStageRows(leagueId);
+}
+
+// ============================================
+// Computed league-stage standings rows
+// Keyed per (leagueId, throughGw): chip eligibility asks for historical cuts
+// ("the table before GW n"), so one key per league is not enough.
+// ============================================
+
+/**
+ * Short TTL on purpose. Unlike the rendered standings page (25h), these rows back the
+ * dashboard AND chip eligibility, and a stale rank there decides whether a chip
+ * submission is accepted. 10 minutes bounds the damage if an invalidation is ever missed;
+ * admin writes still bust it explicitly via invalidateLeaguePageCache.
+ */
+const LEAGUE_STAGE_ROWS_TTL = 60 * 10;
+
+function leagueStageRowsKey(leagueId: string, throughGw: number): string {
+  return `standings:rows:v1:${leagueId}:${throughGw}`;
+}
+
+export async function getCachedLeagueStageRows(leagueId: string, throughGw: number): Promise<unknown | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return (await r.get(leagueStageRowsKey(leagueId, throughGw))) ?? null;
+}
+
+export async function setCachedLeagueStageRows(leagueId: string, throughGw: number, data: unknown): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(leagueStageRowsKey(leagueId, throughGw), data, { ex: LEAGUE_STAGE_ROWS_TTL });
+}
+
+export async function invalidateLeagueStageRows(leagueId: string): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  const keys = await r.keys(`standings:rows:v1:${leagueId}:*`);
+  if (keys.length > 0) await r.del(...keys);
 }

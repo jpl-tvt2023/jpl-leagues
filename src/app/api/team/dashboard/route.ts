@@ -6,6 +6,7 @@ import { fetchBootstrapData } from "@/lib/fpl";
 import { shouldSyncDeadlines } from "@/lib/fpl-cache";
 import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
+import { computeLeagueStageStandings } from "@/lib/standings/league-stage";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 import { computeCupGroupStandings } from "@/lib/formats/continental-championship/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
@@ -660,30 +661,10 @@ export async function GET(request: NextRequest) {
     }> = [];
 
     if (teamLeagueId) {
-      // One query for the whole league rather than one per group. Ghosts are
-      // excluded: they are bye placeholders, not competitors, and a ghost row
-      // in a standings table is noise.
-      const leagueTeams = await db.query.teams.findMany({
-        where: and(eq(teams.leagueId, teamLeagueId), eq(teams.isGhost, false)),
-        with: {
-          homeFixtures: { with: { result: true } },
-          awayFixtures: { with: { result: true } },
-        },
-      });
-
-      const rankGroup = (members: typeof leagueTeams) =>
-        members
-          .map((t) => {
-            let wins = 0;
-            for (const f of [...t.homeFixtures, ...t.awayFixtures]) {
-              if (!f.result) continue;
-              const matchPts =
-                f.homeTeamId === t.id ? f.result.homeMatchPoints : f.result.awayMatchPoints;
-              if (matchPts === 2) wins++;
-            }
-            return { id: t.id, name: t.name, points: t.leaguePoints, wins };
-          })
-          .sort((a, b) => (a.points !== b.points ? b.points - a.points : b.wins - a.wins));
+      // The SAME ranked table /api/standings renders. This used to be a local 2-tier
+      // sort over the stored `teams.leaguePoints` column, which is why a team could
+      // read #11 here and #14 on the standings page.
+      const leagueStanding = await computeLeagueStageStandings(teamLeagueId);
 
       // Cup groups belong to Continental Championship's own tabbed table, which
       // renders separately — including them here would show a viewer two
@@ -695,7 +676,12 @@ export async function GET(request: NextRequest) {
       const TOP_ROWS = 5;
 
       for (const g of leagueGroups) {
-        const standings = rankGroup(leagueTeams.filter((t) => t.groupId === g.id));
+        const standings = (leagueStanding.byGroup.get(g.name) ?? []).map((r) => ({
+          id: r.teamId,
+          name: r.name,
+          points: r.leaguePoints,
+          zone: r.zone,
+        }));
         if (standings.length === 0) continue;
 
         const myIndex = standings.findIndex((t) => t.id === teamId);
@@ -727,8 +713,13 @@ export async function GET(request: NextRequest) {
 
         if (g.id === team.groupId && myIndex >= 0) {
           groupRank = myIndex + 1;
-          pointsToTop = standings[0].points - team.leaguePoints || 0;
-          zone = groupRank > 14 ? "eliminated" : groupRank > 8 ? "challenger" : "playoffs";
+          // Both sides from the derived table. Mixing the derived leader total with the
+          // stored `teams.leaguePoints` column (as this did) produced a nonsense gap
+          // whenever the stored column had drifted.
+          pointsToTop = standings[0].points - standings[myIndex].points || 0;
+          // From the shared, format-aware helper. The inline `> 14 / > 8` thresholds this
+          // replaces were wrong for 8-team leagues, where the cutoff is the top 4.
+          zone = standings[myIndex].zone;
           // Unchanged for existing consumers: the window centred on the viewer.
           miniTable = standings
             .slice(Math.max(0, myIndex - 2), Math.min(standings.length, myIndex + 3))
@@ -906,10 +897,15 @@ export async function GET(request: NextRequest) {
     let allNonGhostSorted: { id: string; name: string; leaguePoints: number }[] = [];
     if (leagueFormat === "continental-championship" && teamLeagueId) {
       try {
-        const allNonGhost = await db.select({ id: teams.id, name: teams.name, leaguePoints: teams.leaguePoints })
-          .from(teams)
-          .where(and(eq(teams.leagueId, teamLeagueId), eq(teams.isGhost, false)));
-        allNonGhost.sort((a, b) => b.leaguePoints - a.leaguePoints);
+        // Continental Championship is groupless, so the whole 20-team PL table arrives
+        // under "A". Previously this was a single-tier `b.leaguePoints - a.leaguePoints`
+        // sort over the stored column, which disagreed with /api/standings on any tie.
+        const ccStanding = await computeLeagueStageStandings(teamLeagueId);
+        const allNonGhost = (ccStanding.byGroup.get("A") ?? ccStanding.rows).map((r) => ({
+          id: r.teamId,
+          name: r.name,
+          leaguePoints: r.leaguePoints,
+        }));
         allNonGhostSorted = allNonGhost;
         const plRank = allNonGhost.findIndex(t => t.id === teamId) + 1;
         plPosition = { rank: plRank, totalTeams: allNonGhost.length };
