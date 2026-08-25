@@ -58,7 +58,9 @@ type ProcessAllLeagueResult = {
   generatedFor: number[];
   generatedAlready: number[];
   advanceWindowFuture: number[];
-  errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league"; message: string }>;
+  // "request" = the HTTP call itself failed (timeout / dropped connection), as
+  // distinct from a stage that ran server-side and reported an error.
+  errors: Array<{ gw?: number; step: "score" | "generate" | "advance" | "auction" | "league" | "request"; message: string }>;
 };
 
 // ── Per-GW chip state, populated as each /league-gw call returns ──
@@ -603,6 +605,12 @@ export default function SuperAdminDashboard() {
 
   // ── Operations: Run Auto-Processing (client-orchestrated, league × gw) ──
   type LeaguePlanItem = { id: string; slug: string; format: string; teamSize: number | null; playoffStartGw: number | null };
+  type FplStatus = {
+    gw: number | null;
+    lastConcludedGw: number | null;
+    source: "event-status" | "bootstrap-fallback" | "unavailable";
+    detail: string;
+  };
   type LeagueRow = ProcessAllLeagueResult & {
     uiStatus: "queued" | "processing" | "ok" | "partial" | "error" | "skipped";
     gwStates: Record<number, GwChipState>;
@@ -617,6 +625,112 @@ export default function SuperAdminDashboard() {
   const [processLeagues, setProcessLeagues] = useState<LeagueRow[]>([]);
   const [processCurrentSlug, setProcessCurrentSlug] = useState<string | null>(null);
   const [processStartedAt, setProcessStartedAt] = useState<number | null>(null);
+  const [fplStatus, setFplStatus] = useState<FplStatus | null>(null);
+  const [fplStatusCheckedAt, setFplStatusCheckedAt] = useState<number | null>(null);
+  const [fplStatusLoading, setFplStatusLoading] = useState(false);
+
+  // Which gameweek FPL is actually on. Shown in the Operations header so an operator
+  // can tell whether a run is worth starting before starting one. Uses its own
+  // endpoint rather than /plan, which writes a CRON_RUN_START audit row.
+  const loadFplStatus = useCallback(async () => {
+    setFplStatusLoading(true);
+    try {
+      const res = await fetch("/api/admin/process-all/fpl-status", { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setFplStatus(data.fplStatus as FplStatus);
+      setFplStatusCheckedAt(data.checkedAt ?? Date.now());
+    } catch {
+      setFplStatus({ gw: null, lastConcludedGw: null, source: "unavailable", detail: "status check failed" });
+      setFplStatusCheckedAt(Date.now());
+    } finally {
+      setFplStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "operations" && fplStatus === null && !fplStatusLoading) {
+      void loadFplStatus();
+    }
+  }, [activeTab, fplStatus, fplStatusLoading, loadFplStatus]);
+
+  /**
+   * Run one (league x gameweek) call, with a timeout and one retry.
+   *
+   * Three failure modes the previous inline version handled badly:
+   *   - No AbortSignal at all, so a hung request sat until the platform killed it.
+   *     The budget here is just past the route's own maxDuration of 60s.
+   *   - A dropped connection surfaced as a bare "TypeError: Failed to fetch", which
+   *     reads like the browser is offline. It usually means the function died mid-call
+   *     (overran its ceiling, or crashed) without emitting a response.
+   *   - Middleware caps this endpoint at 30 POSTs/min per session, so a real catch-up
+   *     run over several leagues x gameweeks starts collecting 429s. Those are retried
+   *     after the window rather than reported as failures.
+   */
+  const runLeagueGw = async (
+    runId: string,
+    lg: LeaguePlanItem,
+    gw: number,
+  ): Promise<{ result: LeagueGwResult | null; error: string | null }> => {
+    const CALL_TIMEOUT_MS = 70_000; // route maxDuration is 60s; leave headroom for the 504
+    const MAX_ATTEMPTS = 2;
+
+    let lastError = "unknown";
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch("/api/admin/process-all/league-gw", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId, league: lg, gw }),
+          signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+        });
+
+        if (res.status === 429) {
+          // Rate limited by our own middleware. Wait out the window and retry once.
+          const retryAfter = Number(res.headers.get("retry-after")) || 20;
+          lastError = `Rate limited (429). Waited ${retryAfter}s and retried.`;
+          if (attempt < MAX_ATTEMPTS - 1) {
+            await new Promise(r => setTimeout(r, retryAfter * 1000));
+            continue;
+          }
+          return { result: null, error: `Rate limited (429) — too many calls in one minute. Re-run to pick up where this left off.` };
+        }
+
+        const ct = res.headers.get("content-type") ?? "";
+        if (!ct.includes("application/json")) {
+          const txt = (await res.text()).slice(0, 200);
+          return {
+            result: null,
+            error: res.status === 504
+              ? `Call timed out server-side (60s). Visit this league's admin page to process GW${gw} manually.`
+              : `Non-JSON response (HTTP ${res.status}): ${txt}`,
+          };
+        }
+
+        const data = await res.json();
+        if (!res.ok) {
+          return { result: null, error: `HTTP ${res.status}: ${data.error ?? data.message ?? "unknown"}` };
+        }
+        return { result: data.result as LeagueGwResult, error: null };
+      } catch (e) {
+        const isTimeout = e instanceof DOMException && e.name === "TimeoutError";
+        const isDropped = e instanceof TypeError; // "Failed to fetch" — no response arrived
+        lastError = isTimeout
+          ? `No response within ${CALL_TIMEOUT_MS / 1000}s — the call likely exceeded the 60s function limit.`
+          : isDropped
+            ? `Connection dropped before a response arrived — the server call likely exceeded the 60s function limit or crashed.`
+            : `Network error: ${e instanceof Error ? e.message : "unknown"}`;
+        // Retry once: both timeout and dropped-connection are worth a second attempt,
+        // since the first may have warmed the caches the slow path was waiting on.
+        if (attempt < MAX_ATTEMPTS - 1) {
+          await new Promise(r => setTimeout(r, 1_000));
+          continue;
+        }
+      }
+    }
+    return { result: null, error: `${lastError} (retried once)` };
+  };
 
   const handleRunProcessAll = async () => {
     if (processRunning) return;
@@ -630,7 +744,7 @@ export default function SuperAdminDashboard() {
     setProcessStartedAt(Date.now());
 
     // Step 1: fetch the plan
-    let plan: { runId: string; dueGws: number[]; leagues: LeaguePlanItem[]; globalErrors: string[] };
+    let plan: { runId: string; dueGws: number[]; leagues: LeaguePlanItem[]; globalErrors: string[]; fplStatus?: FplStatus };
     try {
       const planRes = await fetch("/api/admin/process-all/plan", { credentials: "include" });
       if (!planRes.ok) {
@@ -652,6 +766,11 @@ export default function SuperAdminDashboard() {
     setProcessRunId(plan.runId);
     setProcessDueGws(plan.dueGws);
     setProcessGlobalErrors(plan.globalErrors);
+    if (plan.fplStatus) {
+      // The plan just read this on the critical lane — fresher than the mount read.
+      setFplStatus(plan.fplStatus);
+      setFplStatusCheckedAt(Date.now());
+    }
 
     // Initialize per-league rows with every dueGw queued.
     const initialGwStates = plan.dueGws.reduce<Record<number, GwChipState>>((acc, gw) => { acc[gw] = "queued"; return acc; }, {});
@@ -694,33 +813,7 @@ export default function SuperAdminDashboard() {
           ? { ...row, gwStates: { ...row.gwStates, [gw]: "processing" } }
           : row));
 
-        let gwResult: LeagueGwResult | null = null;
-        let gwError: string | null = null;
-
-        try {
-          const res = await fetch("/api/admin/process-all/league-gw", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ runId: plan.runId, league: lg, gw }),
-          });
-          const ct = res.headers.get("content-type") ?? "";
-          if (!ct.includes("application/json")) {
-            const txt = (await res.text()).slice(0, 200);
-            gwError = res.status === 504
-              ? `Call timed out (60s). Visit this league's admin page to process GW${gw} manually.`
-              : `Non-JSON response (HTTP ${res.status}): ${txt}`;
-          } else {
-            const data = await res.json();
-            if (!res.ok) {
-              gwError = `HTTP ${res.status}: ${data.error ?? data.message ?? "unknown"}`;
-            } else {
-              gwResult = data.result as LeagueGwResult;
-            }
-          }
-        } catch (e) {
-          gwError = `Network error: ${e instanceof Error ? e.message : "unknown"}`;
-        }
+        const { result: gwResult, error: gwError } = await runLeagueGw(plan.runId, lg, gw);
 
         // Aggregate into the league row + update the chip state.
         let chipState: GwChipState;
@@ -728,7 +821,10 @@ export default function SuperAdminDashboard() {
         if (gwError) {
           chipState = "error";
           tooltip = `GW${gw} — ${gwError}`;
-          agg.errors.push({ gw, step: "score", message: gwError });
+          // step: "request" — the call never produced a result, so we do NOT know which
+          // stage failed. Labelling every transport failure as "score" is what made an
+          // auction league that never reached scoring report "GW1 score: Network error".
+          agg.errors.push({ gw, step: "request", message: gwError });
         } else if (gwResult) {
           if (gwResult.scored || gwResult.scoreSkipped) agg.scoredGws.push(gw);
           if (gwResult.advanced) agg.advancedGws.push(gw);
@@ -1737,11 +1833,60 @@ export default function SuperAdminDashboard() {
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-white">Operations</h2>
               <p className="text-gray-400 text-sm mt-1">
-                Catch-up runner — scores pending fixtures, generates initial playoff brackets,
-                advances every league through its playoff window, and pre-warms page caches.
-                Idempotent (safe to re-click). Skips any GW where FPL hasn&apos;t marked the
-                gameweek as finalized yet.
+                Catch-up runner — scores pending fixtures, generates initial playoff brackets and
+                advances every league through its playoff window. Idempotent (safe to re-click).
+                Skips any GW that hasn&apos;t concluded on FPL yet (all matches played and bonus
+                points confirmed).
               </p>
+            </div>
+
+            {/* FPL status — what the upstream API is on right now. */}
+            <div className="mb-4 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+              {(() => {
+                if (!fplStatus) {
+                  return <span className="text-sm text-gray-500">Checking FPL status…</span>;
+                }
+                const unavailable = fplStatus.source === "unavailable";
+                const tone = unavailable ? "text-red-300" : "text-gray-300";
+                const checkedAgo = fplStatusCheckedAt != null
+                  ? `${Math.max(0, Math.round((Date.now() - fplStatusCheckedAt) / 1000))}s ago`
+                  : null;
+                return (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <span className="text-gray-500">FPL status:</span>
+                    {unavailable ? (
+                      <span className={tone}>unavailable</span>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-white">
+                          {fplStatus.gw != null ? `GW${fplStatus.gw} active` : "season complete"}
+                        </span>
+                        <span className="text-gray-600">·</span>
+                        <span className={tone}>
+                          {fplStatus.lastConcludedGw != null
+                            ? `GW${fplStatus.lastConcludedGw} concluded`
+                            : "no gameweek concluded yet"}
+                        </span>
+                      </>
+                    )}
+                    <span className="text-gray-600">·</span>
+                    <span className="text-xs text-gray-500" title={fplStatus.detail}>
+                      {fplStatus.detail}
+                    </span>
+                    {/* Source is shown so a degraded read is never mistaken for a confident one. */}
+                    {fplStatus.source !== "event-status" && (
+                      <span className="text-xs text-yellow-500/80">via {fplStatus.source}</span>
+                    )}
+                    <button
+                      onClick={loadFplStatus}
+                      disabled={fplStatusLoading}
+                      className="ml-auto text-xs text-gray-400 hover:text-white underline disabled:opacity-50"
+                    >
+                      {fplStatusLoading ? "checking…" : checkedAgo ? `checked ${checkedAgo} · refresh` : "refresh"}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
@@ -1760,7 +1905,7 @@ export default function SuperAdminDashboard() {
                 )}
               </div>
               <p className="text-xs text-gray-500 mt-3">
-                For force-reprocess (recompute every result) or to bypass the FPL finalization gate, use the
+                For force-reprocess (recompute every result) or to bypass the FPL conclusion gate, use the
                 affected league&apos;s own admin page (Scoring tab → Reprocess). The buttons there are scoped
                 to one league at a time.
               </p>
@@ -1835,7 +1980,7 @@ export default function SuperAdminDashboard() {
                   );
                 })()}
 
-                {/* Global errors (run-wide skips like "GW35 not yet finalized") */}
+                {/* Global errors (run-wide skips like "GW35: bonus points not yet confirmed by FPL") */}
                 {processGlobalErrors.length > 0 && (
                   <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
                     <div className="font-semibold text-yellow-300 mb-2 text-sm">Global notices</div>
@@ -1931,7 +2076,7 @@ export default function SuperAdminDashboard() {
                           {lg.advanceWindowFuture.length > 0 && (
                             <div className="italic text-yellow-200/70">
                               <span className="text-gray-500 not-italic">Awaiting:</span>{" "}
-                              {lg.advanceWindowFuture.map(n => `GW${n}`).join(", ")} not yet finalized
+                              {lg.advanceWindowFuture.map(n => `GW${n}`).join(", ")} not yet concluded on FPL
                             </div>
                           )}
                         </div>

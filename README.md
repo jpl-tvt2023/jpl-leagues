@@ -410,9 +410,15 @@ Bonus points (BP) are awarded based on match margin:
 
 ### League Point Tiebreakers
 
+Defined once in `src/lib/formats/tvt/tiebreaker.ts` (`compareTiebreaker`) and shared by
+`/api/standings`, playoff seeding and the bracket preview — the displayed table and the
+generated bracket always resolve ties identically.
+
 1. Most **league points**
-2. Most **CP/BP points**
-3. Highest **total FPL score** (Points For)
+2. Most **wins**
+3. **Head-to-head** match points between the tied teams
+4. Most **CP/BP points** (chips + bonus)
+5. Highest **total FPL score** (Points For)
 
 ### Hit Penalty System
 

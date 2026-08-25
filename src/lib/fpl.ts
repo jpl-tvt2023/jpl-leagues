@@ -367,32 +367,69 @@ export async function detectLiveGameweek(): Promise<{
  * Returns a map of elementId -> total_points for the gameweek.
  * Uses cache (24hr TTL) to avoid rate limits.
  */
+/**
+ * In-flight dedupe, keyed by gameweek + lane.
+ *
+ * Without this, N concurrent callers all miss the Redis cache (none has written it
+ * yet) and each pulls the multi-MB /event/{gw}/live/ payload independently. That is
+ * the natural shape of auction scoring, which fans out over every team at once: a
+ * 14-team league made 14 identical requests, the gateway serialized them 4 at a time
+ * at 120ms apart with 10s timeouts, and the whole call blew past the 60s function
+ * ceiling — surfacing in the browser as a bare "Failed to fetch".
+ *
+ * Lane is part of the key for the same reason it is on `inFlightBootstrap`: a
+ * background caller must not ride along on a critical request it would have been
+ * refused, nor vice versa.
+ */
+const inFlightElementPoints = new Map<string, Promise<Record<number, number>>>();
+
 export async function fetchElementGameweekPoints(
-  gameweek: number
+  gameweek: number,
+  lane: FplLane = "background"
 ): Promise<Record<number, number>> {
   // Check cache first
   const cached = await getCachedElementPoints(gameweek);
   if (cached) return cached;
 
-  // Fetch from FPL API — one call returns all ~700 players
-  const liveData = await fetchLiveGameweek(gameweek);
-  const pointsMap: Record<number, number> = {};
-  for (const element of liveData.elements) {
-    pointsMap[element.id] = element.stats.total_points;
-  }
+  const key = `${lane}:${gameweek}`;
+  const existing = inFlightElementPoints.get(key);
+  if (existing) return existing;
 
-  // Cache the result. A finished GW's points never move, so it keeps the long TTL; an in-flight
-  // GW gets the short one so live scores actually refresh during matches.
-  const final = await isGameweekFinal(gameweek);
-  await setCachedElementPoints(gameweek, pointsMap, final ? CACHE_TTL : LIVE_CACHE_TTL);
-  return pointsMap;
+  const pending = (async () => {
+    // Fetch from FPL API — one call returns all ~700 players
+    const liveData = await fetchLiveGameweek(gameweek, lane);
+    const pointsMap: Record<number, number> = {};
+    for (const element of liveData.elements) {
+      pointsMap[element.id] = element.stats.total_points;
+    }
+
+    // Cache the result. A finished GW's points never move, so it keeps the long TTL; an in-flight
+    // GW gets the short one so live scores actually refresh during matches.
+    const final = await isGameweekFinal(gameweek);
+    await setCachedElementPoints(gameweek, pointsMap, final ? CACHE_TTL : LIVE_CACHE_TTL);
+    return pointsMap;
+  })();
+
+  inFlightElementPoints.set(key, pending);
+  void pending.catch(() => undefined).finally(() => {
+    if (inFlightElementPoints.get(key) === pending) inFlightElementPoints.delete(key);
+  });
+
+  return pending;
 }
 
 /**
- * Fetch per-gameweek FPL event status (finished / data_checked).
+ * Fetch the per-gameweek `finished` / `data_checked` flags out of bootstrap-static.
+ *
+ * NOT to be confused with FPL's own /event-status/ endpoint — this reads
+ * `bootstrap.events`, which is the same information arriving considerably later.
+ * It was called `fetchEventStatus` for a long time, which is exactly the confusion
+ * the rename removes; `src/lib/fpl/event-status.ts` owns the honest name and
+ * treats this as its fallback source.
+ *
  * Uses its own 10-minute cache — these flags flip mid-weekend.
  */
-export async function fetchEventStatus(): Promise<FplEventStatus[]> {
+export async function fetchBootstrapEventFlags(): Promise<FplEventStatus[]> {
   const cached = await getCachedEventStatus();
   if (cached) return cached;
 
@@ -412,9 +449,11 @@ export async function fetchEventStatus(): Promise<FplEventStatus[]> {
 /**
  * True only once a gameweek's points are settled.
  *
- * `finished` means every match has kicked off and ended; `data_checked` means FPL has confirmed
- * bonus points. Points still move between the two, so both are required before we cache a GW's
- * points for a full day.
+ * Delegates to `isGameweekConcluded`, which requires every PL fixture finished AND FPL to have
+ * confirmed bonus points. Points still move between "last whistle" and "bonus confirmed", so both
+ * are required before we cache a GW's points for a full day. That used to be read as
+ * `finished && data_checked` off bootstrap-static; the event-status endpoint carries the same
+ * signal and publishes it sooner.
  *
  * Any failure resolves to `false`, which selects the SHORT cache TTL. Erring toward re-fetching
  * too often is always recoverable; erring toward a 24h freeze is what this whole change exists
@@ -422,10 +461,10 @@ export async function fetchEventStatus(): Promise<FplEventStatus[]> {
  */
 export async function isGameweekFinal(gameweek: number): Promise<boolean> {
   try {
-    const events = await fetchEventStatus();
-    const event = events.find((e) => e.id === gameweek);
-    if (!event) return false;
-    return event.finished === true && event.data_checked === true;
+    // Imported lazily: fpl/event-status.ts imports this module for its bootstrap
+    // fallback, and a static import here would close that cycle.
+    const { isGameweekConcluded } = await import("./fpl/event-status");
+    return await isGameweekConcluded(gameweek);
   } catch (error) {
     console.warn(`[fpl] event status lookup failed for GW${gameweek}; treating as not final`, error);
     return false;
@@ -436,13 +475,14 @@ export async function isGameweekFinal(gameweek: number): Promise<boolean> {
  * Fetch PL player metadata (name, team, position, status, cost, minutes).
  * Uses cache (24hr TTL) since bootstrap updates once daily.
  */
-export async function fetchElementInfo(): Promise<CachedElementInfo[]> {
+export async function fetchElementInfo(lane: FplLane = "background"): Promise<CachedElementInfo[]> {
   // Check cache first
   const cached = await getCachedBootstrap();
   if (cached) return cached;
 
-  // Fetch from FPL API
-  const bootstrap = await fetchBootstrapData();
+  // Fetch from FPL API. `fetchBootstrapData` already dedupes in flight, so
+  // concurrent callers here collapse onto one request.
+  const bootstrap = await fetchBootstrapData(lane);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawElements = bootstrap.elements as any[];
   const elements: CachedElementInfo[] = rawElements.map((p) => ({

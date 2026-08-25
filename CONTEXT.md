@@ -434,8 +434,10 @@ determineMatchResult(homeScore, awayScore, isDP_home, isDP_away)
 // Win = 2pts, Draw = 1pt, Loss = 0pt (doubled if Double Pointer)
 // Bonus: win by 75+ points
 getChipSet(gameweek, playoffStartGw): 1|2|"playoffs"
-compareTiebreaker(a, b): number
-// Order: leaguePoints > wins > h2h > bonusPoints
+compareTiebreaker(a, b): number   // re-exported from ./tiebreaker.ts
+// Order: leaguePoints > wins > h2h > cbpPoints > pointsFor
+// Canonical for /api/standings, playoff seeding and the bracket preview.
+// Lives in tiebreaker.ts (zero imports) so it stays unit-testable without a DB.
 ```
 
 ### `src/lib/fixtures.ts`

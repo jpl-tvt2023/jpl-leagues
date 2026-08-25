@@ -357,6 +357,52 @@ export async function setCachedEventStatus(data: FplEventStatus[]): Promise<void
 }
 
 // ============================================
+// FPL /event-status/ Cache (60-second TTL)
+// The purpose-built endpoint: ~1KB against bootstrap-static's ~800KB, and it is
+// not fronted by the same long-lived Cloudflare cache, so `bonus_added` flips
+// here minutes before `events[].finished` moves in the bootstrap payload.
+//
+// 60s rather than the 10 minutes above: this is the signal that decides whether
+// a gameweek has concluded (and therefore whether auto-processing may run and
+// which GW is "current"). A ten-minute-stale answer to that question is exactly
+// the problem this cache tier exists to remove.
+// ============================================
+
+const EVENT_STATUS_TTL = 60; // 60 seconds
+
+/** One row of FPL's /event-status/ `status` array. */
+export interface FplEventStatusRow {
+  event: number;
+  bonus_added: boolean;
+  /** "r" = raw, "p" = provisional, "c" = confirmed. */
+  points: string;
+  date: string;
+}
+
+export interface FplEventStatusPayload {
+  status: FplEventStatusRow[];
+  /** "Updated" once FPL has finished recalculating league tables for the GW. */
+  leagues: string;
+}
+
+function getLiveEventStatusKey(): string {
+  return "fpl:event-status:latest";
+}
+
+export async function getCachedLiveEventStatus(): Promise<FplEventStatusPayload | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<FplEventStatusPayload>(getLiveEventStatusKey());
+  return data || null;
+}
+
+export async function setCachedLiveEventStatus(data: FplEventStatusPayload): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(getLiveEventStatusKey(), data, { ex: EVENT_STATUS_TTL });
+}
+
+// ============================================
 // Deadline Sync Gate (30-minute TTL)
 // FPL gameweek deadlines almost never change once published, but the
 // dashboard route used to re-fetch bootstrap-static and rewrite every
