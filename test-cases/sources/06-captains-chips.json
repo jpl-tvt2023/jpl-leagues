@@ -1023,7 +1023,7 @@
         "id": "AC-CHIP-061",
         "given": "a TVT league with 4 teams (A,B,C,D); team A is the viewer; teams A and B have announced captains for GW10 but C and D have not",
         "when": "team A loads /dashboard",
-        "then": "the response's leagueCaptains array contains 4 entries; team A appears first with isOwnTeam=true; B has captainPlayerName set; C and D have captainPlayerName=null. The dashboard renders a Captain Announcements section at the top showing A and B's picks and \"Not Announced\" for C and D",
+        "then": "the response's leagueCaptains array contains 4 entries; team A appears first with isOwnTeam=true; B has captainPlayerName set; C and D have captainPlayerName=null. The dashboard renders a Captain Announcements section at the top showing A and B's picks and a muted em dash \"—\" (aria-label \"Not announced\") for C and D",
         "linksTo": "BR-CHIP-058"
       },
       {
@@ -2780,13 +2780,13 @@
       "preconditions": "Team A is on /dashboard with the tab focused; no captains announced for GW10 yet; a second browser session can act as team B",
       "testData": "leagueId=L1; gw=10; viewer=team A; second-actor=team B",
       "testSteps": [
-        "1. Team A loads /dashboard; confirm Captain Announcements shows team B as \"Not Announced\".",
+        "1. Team A loads /dashboard; confirm Captain Announcements shows team B as a muted em dash \"—\" (aria-label \"Not announced\").",
         "2. Switch team A's browser tab away from /dashboard.",
         "3. In a second session, team B POSTs /api/team/captain announcing player X for GW10.",
         "4. Team A switches back to the /dashboard tab.",
         "5. Observe whether team A's widget updates without manual reload."
       ],
-      "expectedResult": "Within the next render after focus/visibility change, team B's row updates from \"Not Announced\" to player X's name. No full-page reload; only a fetch to /api/team/dashboard.",
+      "expectedResult": "Within the next render after focus/visibility change, team B's row updates from the muted em dash \"—\" to player X's name. No full-page reload; only a fetch to /api/team/dashboard.",
       "postconditions": "no DB change",
       "requirementId": "AC-CHIP-063",
       "author": "qa-tester",
@@ -2807,7 +2807,7 @@
         "2. Team B announces captain Salah for GW10.",
         "3. Team A clicks the Refresh button inside the Captain Announcements section."
       ],
-      "expectedResult": "A new GET /api/team/dashboard fires; the widget row for team B updates from \"Not Announced\" to \"Salah\".",
+      "expectedResult": "A new GET /api/team/dashboard fires; the widget row for team B updates from the muted em dash \"—\" to \"Salah\".",
       "postconditions": "no DB change",
       "requirementId": "AC-CHIP-064",
       "author": "qa-tester",
