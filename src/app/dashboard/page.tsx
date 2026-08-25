@@ -156,7 +156,11 @@ interface DashboardData {
     isOwnTeam: boolean;
     captainPlayerName: string | null;
     announcedAt: string | null;
+    /** Raw stored code ("D"). NOT for display — render `chipCode` instead. */
     chipType: string | null;
+    /** Short pill code ("DP"). */
+    chipCode: string | null;
+    /** Full name for the pill's tooltip ("Double Pointer"). */
     chipName: string | null;
   }[];
   teamMembers: {
@@ -1274,27 +1278,42 @@ export default function DashboardPage() {
         </button>
       </div>
       {(() => {
-        const renderRow = (c: (typeof data.leagueCaptains)[number]) => (
-          <li
-            key={c.teamId}
-            className={`flex items-start justify-between gap-2 py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
-          >
-            <span className="truncate flex-shrink-0 max-w-[55%]">{c.teamName}{c.isOwnTeam ? " (you)" : ""}</span>
-            <div className="flex flex-col items-end min-w-0">
-              <span className={`truncate ${c.captainPlayerName ? "" : "text-gray-500"}`}>
-                {c.captainPlayerName ?? "Not Announced"}
-              </span>
-              {leagueFormat !== "continental-championship" && c.chipName && (
-                <span
-                  className="mt-1 text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-300 font-semibold uppercase tracking-wide truncate max-w-full"
-                  title={c.chipName}
-                >
-                  {c.chipType}: {c.chipName}
-                </span>
-              )}
-            </div>
-          </li>
-        );
+        const renderRow = (c: (typeof data.leagueCaptains)[number]) => {
+          const displayName = `${c.teamName}${c.isOwnTeam ? " (you)" : ""}`;
+          return (
+            <li
+              key={c.teamId}
+              className={`flex items-start justify-between gap-2 py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
+            >
+              {/* flex-1 + min-w-0 (not the old `flex-shrink-0 max-w-[55%]`): the name
+                  claims whatever the right-hand cell doesn't need, so a row with no
+                  captain announced gives it almost the whole width. The old hard 55%
+                  cap clipped "Differential Disaster (you)" even with space to spare. */}
+              <span className="truncate min-w-0 flex-1" title={displayName}>{displayName}</span>
+              {/* max-w-[50%] guarantees the team name always keeps at least half the
+                  row, so an unusually long player name can't starve it. */}
+              <div className="flex flex-col items-end min-w-0 max-w-[50%]">
+                {c.captainPlayerName ? (
+                  <span className="truncate" title={c.captainPlayerName}>{c.captainPlayerName}</span>
+                ) : (
+                  // A bare em dash is meaningless to a screen reader, so it carries the
+                  // full meaning via aria-label (and title for sighted hover).
+                  <span className="truncate text-gray-500" title="Not announced" aria-label="Not announced">—</span>
+                )}
+                {leagueFormat !== "continental-championship" && c.chipName && (
+                  <span
+                    className="mt-1 text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-300 font-semibold uppercase tracking-wide truncate max-w-full"
+                    title={c.chipName}
+                  >
+                    {/* The short code ("DP"), not the raw stored letter — `chipType` is
+                        "D", which is not a code any rule or UI elsewhere uses. */}
+                    {c.chipCode ?? c.chipType}
+                  </span>
+                )}
+              </div>
+            </li>
+          );
+        };
         const hasGroups = (data.leagueGroupCount ?? 1) > 1;
         if (!hasGroups) {
           return (
@@ -1312,8 +1331,12 @@ export default function DashboardPage() {
         const orderedGroups = Array.from(byGroup.keys()).sort();
         return (
           <div className="flex gap-4 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0">
+            {/* Column min-width is 280px, not 220: this container already scrolls
+                horizontally on mobile, so the extra width is free and lets the longest
+                team names render in full alongside an announced captain. sm:min-w-0
+                hands control back to the 2-column grid on desktop. */}
             {orderedGroups.map((groupName) => (
-              <div key={groupName} className="min-w-[220px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
+              <div key={groupName} className="min-w-[280px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
                 <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Group {groupName}</div>
                 <ul className="divide-y divide-white/5">
                   {byGroup.get(groupName)!.map(renderRow)}

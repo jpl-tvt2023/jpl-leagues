@@ -20,6 +20,7 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { withFplBudget, FplUnavailableError } from "@/lib/fpl/gateway";
 import { buildFplChipStatus, type FplChipStatus } from "@/lib/fpl-league/chips";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
+import { TVT_CHIP_CODES } from "@/lib/formats/tvt/chip-labels";
 
 /**
  * GET /api/team/dashboard/pl-fixture[?gw=N][&refresh=1]
@@ -55,16 +56,6 @@ interface SideInfo {
   };
   playersLeft: { leftToPlay: number; total: number } | null;
 }
-
-/** Stored chip type → the code shown on a pill. */
-const TVT_CHIP_CODES: Record<string, string> = {
-  D: "DP",
-  C: "CC",
-  W: "WW",
-  SL: "SL",
-  CB: "CB",
-  UD: "UD",
-};
 
 export async function GET(request: NextRequest) {
   try {

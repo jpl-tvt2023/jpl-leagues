@@ -6,6 +6,7 @@ import { fetchBootstrapData } from "@/lib/fpl";
 import { shouldSyncDeadlines } from "@/lib/fpl-cache";
 import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
+import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 import { computeCupGroupStandings } from "@/lib/formats/continental-championship/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
 import { calculatePurse, calculateRefund, calculateFMV } from "@/lib/formats/auction/economy";
@@ -1118,14 +1119,6 @@ export async function GET(request: NextRequest) {
     // the dashboard's top widget. Immediately visible to every team on
     // announcement; no deadline gate. Chips are TVT-only — for Continental Championship the
     // chip mapping stays null. Queries bounded by team count (≤32 per league).
-    const CHIP_NAMES_TVT: Record<string, string> = {
-      W: "Win-Win",
-      D: "Double Pointer",
-      C: "Challenge Chip",
-      SL: "Score Lock",
-      CB: "Comeback",
-      UD: "Underdog",
-    };
     let leagueCaptains: Array<{
       teamId: string;
       teamName: string;
@@ -1133,7 +1126,11 @@ export async function GET(request: NextRequest) {
       isOwnTeam: boolean;
       captainPlayerName: string | null;
       announcedAt: string | null;
+      /** Raw stored code ("D"). NOT for display — see `chipCode`. */
       chipType: string | null;
+      /** Short pill code ("DP"). */
+      chipCode: string | null;
+      /** Full name for tooltips ("Double Pointer"). */
       chipName: string | null;
     }> = [];
     if (nextGameweek && teamLeagueId) {
@@ -1177,7 +1174,8 @@ export async function GET(request: NextRequest) {
           captainPlayerName: picked?.name ?? null,
           announcedAt: picked?.announcedAt ? picked.announcedAt.toISOString() : null,
           chipType,
-          chipName: chipType ? (CHIP_NAMES_TVT[chipType] ?? chipType) : null,
+          chipCode: chipType ? chipCode(chipType) : null,
+          chipName: chipType ? chipName(chipType) : null,
         };
       });
       leagueCaptains.sort((a, b) => {
