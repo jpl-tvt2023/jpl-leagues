@@ -6,6 +6,7 @@ import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { getCurrentGameweekNumber } from "@/lib/gameweeks/current-gw";
 import { validateEnabledChipsArray } from "@/lib/formats/tvt/chip-validation";
+import { DEFAULT_RELEASE_CYCLE_GWS, validateReleaseCycleGws } from "@/lib/formats/auction/cycle";
 import bcrypt from "bcryptjs";
 
 export async function GET(request: NextRequest) {
@@ -40,7 +41,12 @@ export async function GET(request: NextRequest) {
       })
       .from(leagues)
       .orderBy(leagues.createdAt);
-    all = fallback.map((row) => ({ ...row, auctionTier: "complete" as const }));
+    all = fallback.map((row) => ({
+      ...row,
+      auctionTier: "complete" as const,
+      startGameweek: 1,
+      releaseCycleGws: JSON.stringify(DEFAULT_RELEASE_CYCLE_GWS),
+    }));
   }
 
   // Attach quick stats to each league
@@ -70,7 +76,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget, isSimulated, clubAuctionEnabled, auctionTier } = body;
+  const { slug, name, sport, format, season, teamSize, groupCount, playoffStartGw, enabledChips, initialBudget, isSimulated, clubAuctionEnabled, auctionTier, startGameweek, releaseCycleGws } = body;
 
   if (!slug || !name || !sport || !format || !season) {
     return NextResponse.json({ error: "slug, name, sport, format, and season are required" }, { status: 400 });
@@ -81,6 +87,10 @@ export async function POST(request: NextRequest) {
   let resolvedGroupCount: number;
   let resolvedPlayoffStartGw: number;
   let resolvedEnabledChips: string[];
+  // Auction-only. Non-auction formats are pinned to the GW1 / legacy-cadence defaults
+  // below so the columns can never mean anything for TVT / Continental Championship.
+  let resolvedStartGameweek = 1;
+  let resolvedReleaseCycleGws = [...DEFAULT_RELEASE_CYCLE_GWS];
 
   if (format === "continental-championship") {
     // Continental Championship: hardcoded values
@@ -114,6 +124,26 @@ export async function POST(request: NextRequest) {
     resolvedGroupCount = 0;
     resolvedPlayoffStartGw = 39; // effectively no playoffs
     resolvedEnabledChips = [];
+
+    // Scoring begins here; create-gameweeks never seeds rows below it.
+    resolvedStartGameweek = startGameweek ?? 1;
+    if (!Number.isInteger(resolvedStartGameweek) || resolvedStartGameweek < 1 || resolvedStartGameweek > 38) {
+      return NextResponse.json({ error: "Auction startGameweek must be an integer between 1 and 38" }, { status: 400 });
+    }
+
+    // Validated against the start GW so a boundary can't sit before the league begins.
+    if (releaseCycleGws !== undefined) {
+      const cycleCheck = validateReleaseCycleGws(releaseCycleGws, resolvedStartGameweek);
+      if (!cycleCheck.ok) {
+        return NextResponse.json({ error: cycleCheck.error }, { status: 400 });
+      }
+      resolvedReleaseCycleGws = cycleCheck.gws;
+    } else {
+      // Default 10/20/30 can fall outside a late start; keep only what's reachable,
+      // and fall back to the final gameweek so releases still finalize at some point.
+      const reachable = DEFAULT_RELEASE_CYCLE_GWS.filter((gw) => gw >= resolvedStartGameweek);
+      resolvedReleaseCycleGws = reachable.length > 0 ? reachable : [38];
+    }
   } else {
     return NextResponse.json({ error: `Format "${format}" is not supported` }, { status: 400 });
   }
@@ -148,6 +178,8 @@ export async function POST(request: NextRequest) {
         // PL Club Auction toggle — only meaningful on auction leagues; force false elsewhere
         clubAuctionEnabled: format === "auction" ? Boolean(clubAuctionEnabled) : false,
         auctionTier: resolvedAuctionTier,
+        startGameweek: resolvedStartGameweek,
+        releaseCycleGws: JSON.stringify(resolvedReleaseCycleGws),
       });
 
       // For TVT, pre-create the PL groups and split teams across them so the
@@ -212,6 +244,8 @@ export async function POST(request: NextRequest) {
       playoffStartGw: resolvedPlayoffStartGw,
       enabledChips: resolvedEnabledChips,
       auctionTier: resolvedAuctionTier,
+      startGameweek: resolvedStartGameweek,
+      releaseCycleGws: resolvedReleaseCycleGws,
       teamCount: createdTeams,
       currentGameweek: null,
     });

@@ -57,6 +57,18 @@ export const leagues = sqliteTable("leagues", {
   // Penalty-slot redemption stays available in both tiers. Non-auction formats ignore this.
   auctionTier: text("auction_tier", { enum: ["primary", "complete"] }).notNull().default("complete"),
 
+  // JPL Auction: first gameweek this league scores. `create-gameweeks` never seeds rows
+  // below it, and both the cron plan and the processor key off existing gameweek rows, so
+  // earlier gameweeks are skipped for free. Numbers stay real FPL event ids either way.
+  // Always 1 for non-auction formats.
+  startGameweek: integer("start_gameweek").notNull().default(1),
+
+  // JPL Auction: gameweeks at which pending player releases are finalized (refund credited,
+  // player returns to the pool). JSON array of GW numbers, ascending — parsed via
+  // parseReleaseCycleGws in lib/formats/auction/cycle.ts. The '[10,20,30]' default reproduces
+  // the old hardcoded `gw % 10 === 0` cadence, so pre-existing leagues are unaffected.
+  releaseCycleGws: text("release_cycle_gws").notNull().default('[10,20,30]'),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 

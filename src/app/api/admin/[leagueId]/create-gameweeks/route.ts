@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, gameweeks } from "@/lib/db";
+import { db, gameweeks, leagues } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
@@ -7,13 +7,26 @@ import { fetchBootstrapData } from "@/lib/fpl";
 
 /**
  * POST /api/admin/[leagueId]/create-gameweeks
- * Creates GW 1–38 for an auction league using real FPL event deadlines.
+ * Creates the league's gameweeks using real FPL event deadlines, from the league's
+ * configured `startGameweek` (default 1) through GW38.
+ *
+ * Not seeding rows below the start gameweek is what makes a mid-season league work:
+ * the cron plan builds its due list from existing gameweek rows, and the auction
+ * processor no-ops when a row is absent, so earlier gameweeks are skipped for free.
+ *
  * Skips any gameweeks that already exist.
  */
 export async function POST(request: NextRequest) {
   try {
     const leagueId = await getAuthorizedLeagueId(request);
     if (!leagueId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const leagueRow = await db
+      .select({ startGameweek: leagues.startGameweek })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    const startGw = leagueRow[0]?.startGameweek ?? 1;
 
     // Fetch real FPL gameweek deadlines from bootstrap
     let fplData: { events?: { id: number; deadline_time: string; is_playoffs?: boolean }[] };
@@ -39,7 +52,7 @@ export async function POST(request: NextRequest) {
     let skipped = 0;
 
     for (const event of events) {
-      if (event.id < 1 || event.id > 38) continue;
+      if (event.id < startGw || event.id > 38) continue;
 
       if (existingNumbers.has(event.id)) {
         skipped++;
@@ -59,7 +72,7 @@ export async function POST(request: NextRequest) {
       created++;
     }
 
-    return NextResponse.json({ success: true, created, skipped });
+    return NextResponse.json({ success: true, created, skipped, startGameweek: startGw });
   } catch (err) {
     console.error("[create-gameweeks]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -7,6 +7,7 @@ import { calculateAuctionTeamScore, loadAuctionGwFplData } from "./scoring";
 import type { FplLane } from "../../fpl/gateway";
 import { assignRanksAndPayouts, calculateRefund, calculateFMV } from "./economy";
 import { createNotification } from "../../notifications";
+import { isReleaseCycleBoundary, parseReleaseCycleGws } from "./cycle";
 import { randomUUID } from "crypto";
 
 export interface AuctionProcessResult {
@@ -113,6 +114,16 @@ export async function processAuctionGameweek(
       } catch { /* legacy breakdown rows that don't parse → nothing to preserve */ }
     }
   }
+
+  // Which gameweeks finalize pending releases for THIS league. Configured per league
+  // (default 10/20/30), replacing the old hardcoded `gameweekNumber % 10 === 0`, which
+  // could not follow a league that starts at a gameweek other than 1.
+  const leagueCfgRow = await db
+    .select({ releaseCycleGws: leagues.releaseCycleGws })
+    .from(leagues)
+    .where(eq(leagues.id, leagueId))
+    .limit(1);
+  const releaseCycleGws = parseReleaseCycleGws(leagueCfgRow[0]?.releaseCycleGws);
 
   // Fetch the league-wide FPL data ONCE, before fanning out. Every team needs the same
   // /event/{gw}/live/ payload and the same bootstrap element metadata; letting each of
@@ -295,8 +306,8 @@ export async function processAuctionGameweek(
         .where(eq(teams.id, teamId));
     }
 
-    // Finalize pending releases at cycle boundaries (GW 10, 20, 30)
-    if (gameweekNumber % 10 === 0) {
+    // Finalize pending releases at the league's configured cycle boundaries
+    if (isReleaseCycleBoundary(gameweekNumber, releaseCycleGws)) {
       const pendingReleases = await tx
         .select()
         .from(auctionOwnership)

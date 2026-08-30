@@ -826,9 +826,13 @@ export async function GET(request: NextRequest) {
     let highestGw: { gameweek: number; score: number; opponent?: string } | null = null;
     let lowestGw: { gameweek: number; score: number; opponent?: string } | null = null;
 
-    // Only consider fixtures from gameweeks strictly before the latest completed GW (ignore current and upcoming)
+    // Every fixture in `allFixtures` already has a result, so in-progress and
+    // upcoming gameweeks are excluded by construction. `latestCompletedGW` is the
+    // newest *scored* GW, so it must be included — the old `<` silently dropped it,
+    // which left the card showing "No data" for a whole season's first gameweek and
+    // kept it one GW stale thereafter.
     const concludedFixtures = allFixtures.filter(f =>
-      f.gameweek.number < latestCompletedGW
+      f.gameweek.number <= latestCompletedGW
     );
 
     for (const f of concludedFixtures) {
@@ -1128,6 +1132,10 @@ export async function GET(request: NextRequest) {
       chipCode: string | null;
       /** Full name for tooltips ("Double Pointer"). */
       chipName: string | null;
+      /** Team the Challenge Chip targets. Null for every other chip. */
+      challengedTeamId: string | null;
+      /** That team's name, resolved here so the client can render it directly. */
+      challengedTeamName: string | null;
     }> = [];
     if (nextGameweek && teamLeagueId) {
       const allTeamsInLeague = await db.query.teams.findMany({
@@ -1148,20 +1156,31 @@ export async function GET(request: NextRequest) {
         }
       }
       // Chip announcements — only TVT has chips. TC + auction skip the fetch.
-      const chipByTeam = new Map<string, string>();
+      // The Challenge Chip's target rides along so the dashboard can name it; the
+      // standings route already resolves the same column to a team name for its
+      // own tooltip.
+      const chipByTeam = new Map<string, { chipType: string; challengedTeamId: string | null }>();
       if (leagueFormat !== "continental-championship") {
         const chipsForGw = await db.query.gameweekChips.findMany({
           where: eq(gameweekChips.gameweekId, nextGameweek.id),
         });
         for (const ch of chipsForGw) {
           if (ch.teamId && ch.chipType) {
-            chipByTeam.set(ch.teamId, ch.chipType);
+            chipByTeam.set(ch.teamId, {
+              chipType: ch.chipType,
+              challengedTeamId: ch.challengedTeamId ?? null,
+            });
           }
         }
       }
+      // `allTeamsInLeague` is already loaded above, so resolving the challenged
+      // team's name costs nothing extra.
+      const teamNameById = new Map(allTeamsInLeague.map((t) => [t.id, t.name]));
       leagueCaptains = allTeamsInLeague.map((t) => {
         const picked = captainByTeam.get(t.id);
-        const chipType = chipByTeam.get(t.id) ?? null;
+        const chip = chipByTeam.get(t.id) ?? null;
+        const chipType = chip?.chipType ?? null;
+        const challengedTeamId = chip?.challengedTeamId ?? null;
         return {
           teamId: t.id,
           teamName: t.name,
@@ -1172,6 +1191,8 @@ export async function GET(request: NextRequest) {
           chipType,
           chipCode: chipType ? chipCode(chipType) : null,
           chipName: chipType ? chipName(chipType) : null,
+          challengedTeamId,
+          challengedTeamName: challengedTeamId ? teamNameById.get(challengedTeamId) ?? null : null,
         };
       });
       leagueCaptains.sort((a, b) => {

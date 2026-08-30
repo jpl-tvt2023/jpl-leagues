@@ -7,6 +7,7 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { isPrimary } from "@/lib/formats/auction/tier";
+import { formatReleaseCycleGws } from "@/lib/formats/auction/cycle";
 
 interface TradeProposal {
   id: string;
@@ -78,6 +79,8 @@ export default function MarketplacePage() {
   useEnforceFormat(["auction"]);
   const { league } = useLeague();
   const isPrimaryTier = isPrimary(league.auctionTier);
+  // Derived from league config so this never drifts from the scorer's boundaries.
+  const releaseCadence = formatReleaseCycleGws(league.releaseCycleGws);
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
@@ -507,7 +510,7 @@ export default function MarketplacePage() {
             ) : tab === "releases" ? (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-xs text-gray-400 mb-3">
-                  Players marked for release across the league. Release finalizes at the next GW 10/20/30 boundary — 50% refund is credited then. Player continues scoring for the owning team until then.
+                  Players marked for release across the league. Release finalizes at the next {releaseCadence} boundary — 50% refund is credited then. Player continues scoring for the owning team until then.
                 </p>
                 {pendingReleases.length === 0 ? (
                   <div className="text-center text-gray-400 py-8">No pending releases</div>

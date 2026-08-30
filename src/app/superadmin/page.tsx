@@ -135,6 +135,10 @@ export default function SuperAdminDashboard() {
     teamSize: 32, groupCount: 2, playoffStartGw: 31,
     enabledChips: ["D", "W", "C"] as string[],
     initialBudget: 100_000_000,
+    // Auction-only. Kept as free text so the admin can type "10, 20, 30"; the server
+    // validates and normalises it.
+    startGameweek: 1,
+    releaseCycleGws: "10, 20, 30",
     isSimulated: false,
     clubAuctionEnabled: false,
     auctionTier: "complete" as "primary" | "complete",
@@ -367,6 +371,8 @@ export default function SuperAdminDashboard() {
           playoffStartGw: leagueForm.playoffStartGw,
           enabledChips: leagueForm.enabledChips,
           initialBudget: leagueForm.initialBudget,
+          startGameweek: leagueForm.startGameweek,
+          releaseCycleGws: leagueForm.releaseCycleGws,
           isSimulated: leagueForm.isSimulated,
           clubAuctionEnabled: leagueForm.clubAuctionEnabled,
           auctionTier: leagueForm.auctionTier,
@@ -392,7 +398,7 @@ export default function SuperAdminDashboard() {
       setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
       setShowWizard(false);
       setWizardStep("sport");
-      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete" });
+      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, startGameweek: 1, releaseCycleGws: "10, 20, 30", isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete" });
       setWizardSelectedAdminIds([]);
       setLeagues(prev => [...prev, { ...data, teamCount: 0, currentGameweek: null }]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
@@ -1250,7 +1256,7 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400 text-sm mt-1">Manage all leagues on the platform</p>
               </div>
               <button
-                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete" }); setMessage(null); }}
+                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, startGameweek: 1, releaseCycleGws: "10, 20, 30", isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete" }); setMessage(null); }}
                 className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
               >
                 + Create League
@@ -1328,6 +1334,8 @@ export default function SuperAdminDashboard() {
                                   playoffStartGw: 39,
                                   enabledChips: [],
                                   initialBudget: 100_000_000,
+                                  startGameweek: 1,
+                                  releaseCycleGws: "10, 20, 30",
                                   isSimulated: false,
                                   clubAuctionEnabled: false,
                                   auctionTier: "complete",
@@ -1507,6 +1515,38 @@ export default function SuperAdminDashboard() {
                               />
                               <span className="text-gray-500 text-xs whitespace-nowrap">({(leagueForm.initialBudget / 1_000_000).toFixed(0)}M)</span>
                             </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Starting Gameweek</label>
+                            <input
+                              type="number" min={1} max={38} required value={leagueForm.startGameweek}
+                              onChange={e => {
+                                const nextStart = parseInt(e.target.value) || 1;
+                                // Keep the release gameweeks self-consistent: the default
+                                // 10/20/30 is invalid for a league starting at GW15, and
+                                // rejecting on submit for a field they never touched is a
+                                // poor first run. Only rewrite entries that fall below.
+                                const current = leagueForm.releaseCycleGws
+                                  .split(",").map(v => parseInt(v.trim())).filter(n => Number.isInteger(n));
+                                const kept = current.filter(n => n >= nextStart);
+                                const nextCycles = current.some(n => n < nextStart)
+                                  ? (kept.length > 0 ? kept : [38]).join(", ")
+                                  : leagueForm.releaseCycleGws;
+                                setLeagueForm({ ...leagueForm, startGameweek: nextStart, releaseCycleGws: nextCycles });
+                              }}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                            />
+                            <p className="text-gray-500 text-xs mt-1">Scoring begins here. Gameweeks before it are never created for this league.</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Release Gameweeks</label>
+                            <input
+                              type="text" required value={leagueForm.releaseCycleGws}
+                              onChange={e => setLeagueForm({ ...leagueForm, releaseCycleGws: e.target.value })}
+                              placeholder="10, 20, 30"
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                            />
+                            <p className="text-gray-500 text-xs mt-1">Comma-separated. Pending releases finalize at these gameweeks (must be on or after the starting gameweek).</p>
                           </div>
                           <div className="sm:col-span-2">
                             <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3 cursor-pointer hover:bg-white/10 transition">

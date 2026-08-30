@@ -156,12 +156,16 @@ interface DashboardData {
     isOwnTeam: boolean;
     captainPlayerName: string | null;
     announcedAt: string | null;
-    /** Raw stored code ("D"). NOT for display — render `chipCode` instead. */
+    /** Raw stored code ("D"). NOT for display — the pill renders `chipName`. */
     chipType: string | null;
-    /** Short pill code ("DP"). */
+    /** Short pill code ("DP"). Kept for other consumers; this card shows the full name. */
     chipCode: string | null;
-    /** Full name for the pill's tooltip ("Double Pointer"). */
+    /** Full name, rendered in the pill ("Double Pointer"). */
     chipName: string | null;
+    /** Team the Challenge Chip targets. Null for every other chip. */
+    challengedTeamId: string | null;
+    /** That team's name, shown in the pill's tooltip. */
+    challengedTeamName: string | null;
   }[];
   teamMembers: {
     name: string;
@@ -1278,39 +1282,59 @@ export default function DashboardPage() {
         </button>
       </div>
       {(() => {
+        // Does ANY team in the league have a chip this GW? Decided once for the whole
+        // card, because it controls whether every row reserves a chip column. Rows must
+        // agree: the chip cell used to sit UNDER the captain name (flex-col), which made
+        // chip rows taller than their neighbours and knocked Group A and Group B — two
+        // independent <ul>s in a grid — out of horizontal alignment with each other.
+        const hasAnyChip =
+          leagueFormat !== "continental-championship" &&
+          data.leagueCaptains.some((c) => c.chipName);
+
         const renderRow = (c: (typeof data.leagueCaptains)[number]) => {
           const displayName = `${c.teamName}${c.isOwnTeam ? " (you)" : ""}`;
+          // Full chip name in the pill; the tooltip carries the detail that doesn't fit —
+          // for the Challenge Chip that's who was challenged.
+          const chipTip =
+            c.chipType === "C" && c.challengedTeamName
+              ? `${c.chipName} — challenging ${c.challengedTeamName}`
+              : c.chipName;
           return (
             <li
               key={c.teamId}
-              className={`flex items-start justify-between gap-2 py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
+              className={`grid items-center gap-2 py-2 text-sm ${c.isOwnTeam ? "text-yellow-300 font-semibold" : "text-gray-200"}`}
+              // minmax(0,1fr) lets the team name claim whatever the other cells don't
+              // need and still truncate; `auto` sizes the captain to its content. The
+              // fixed third track is reserved on EVERY row (not just chip rows) so the
+              // two group columns keep identical geometry.
+              style={{ gridTemplateColumns: hasAnyChip ? "minmax(0,1fr) auto 5.5rem" : "minmax(0,1fr) auto" }}
             >
-              {/* flex-1 + min-w-0 (not the old `flex-shrink-0 max-w-[55%]`): the name
-                  claims whatever the right-hand cell doesn't need, so a row with no
-                  captain announced gives it almost the whole width. The old hard 55%
-                  cap clipped "Differential Disaster (you)" even with space to spare. */}
-              <span className="truncate min-w-0 flex-1" title={displayName}>{displayName}</span>
-              {/* max-w-[50%] guarantees the team name always keeps at least half the
-                  row, so an unusually long player name can't starve it. */}
-              <div className="flex flex-col items-end min-w-0 max-w-[50%]">
-                {c.captainPlayerName ? (
-                  <span className="truncate" title={c.captainPlayerName}>{c.captainPlayerName}</span>
-                ) : (
-                  // A bare em dash is meaningless to a screen reader, so it carries the
-                  // full meaning via aria-label (and title for sighted hover).
-                  <span className="truncate text-gray-500" title="Not announced" aria-label="Not announced">—</span>
-                )}
-                {leagueFormat !== "continental-championship" && c.chipName && (
-                  <span
-                    className="mt-1 text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-300 font-semibold uppercase tracking-wide truncate max-w-full"
-                    title={c.chipName}
-                  >
-                    {/* The short code ("DP"), not the raw stored letter — `chipType` is
-                        "D", which is not a code any rule or UI elsewhere uses. */}
-                    {c.chipCode ?? c.chipType}
-                  </span>
-                )}
-              </div>
+              <span className="truncate" title={displayName}>{displayName}</span>
+              {c.captainPlayerName ? (
+                <span className="truncate text-right" title={c.captainPlayerName}>{c.captainPlayerName}</span>
+              ) : (
+                // A bare em dash is meaningless to a screen reader, so it carries the
+                // full meaning via aria-label (and title for sighted hover).
+                <span className="truncate text-right text-gray-500" title="Not announced" aria-label="Not announced">—</span>
+              )}
+              {hasAnyChip && (
+                <span className="flex justify-end min-w-0">
+                  {c.chipName && chipTip ? (
+                    // HelpTip rather than a bare `title=`: its bubble is portalled to
+                    // <body> so the group container's overflow-x-auto can't clip it, and
+                    // it opens on focus as well as hover, so the challenged team is
+                    // reachable by tap on mobile where `title` never appears.
+                    <HelpTip tip={chipTip} className="no-underline min-w-0">
+                      <span
+                        className="block truncate text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-300 font-semibold tracking-wide whitespace-nowrap"
+                        aria-label={chipTip}
+                      >
+                        {c.chipName}
+                      </span>
+                    </HelpTip>
+                  ) : null}
+                </span>
+              )}
             </li>
           );
         };
@@ -1336,7 +1360,7 @@ export default function DashboardPage() {
                 team names render in full alongside an announced captain. sm:min-w-0
                 hands control back to the 2-column grid on desktop. */}
             {orderedGroups.map((groupName) => (
-              <div key={groupName} className="min-w-[280px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
+              <div key={groupName} className={`${hasAnyChip ? "min-w-[340px]" : "min-w-[280px]"} flex-shrink-0 sm:min-w-0 sm:flex-shrink`}>
                 <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Group {groupName}</div>
                 <ul className="divide-y divide-white/5">
                   {byGroup.get(groupName)!.map(renderRow)}
