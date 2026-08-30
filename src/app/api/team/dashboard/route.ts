@@ -8,6 +8,8 @@ import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/ch
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeLeagueStageStandings } from "@/lib/standings/league-stage";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
+import { buildChallengeMatches } from "@/lib/formats/tvt/challenge-match-query";
+import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
 import { computeCupGroupStandings } from "@/lib/formats/continental-championship/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
 import { calculatePurse, calculateRefund, calculateFMV } from "@/lib/formats/auction/economy";
@@ -1136,6 +1138,12 @@ export async function GET(request: NextRequest) {
       challengedTeamId: string | null;
       /** That team's name, resolved here so the client can render it directly. */
       challengedTeamName: string | null;
+      /**
+       * The challenge match itself, rebuilt from both sides' own fixture results for the
+       * chip's gameweek. Null until that gameweek is scored — this card shows the UPCOMING
+       * gameweek, so it is usually null and the pill just names the target.
+       */
+      challenge: ChallengeMatch | null;
     }> = [];
     if (nextGameweek && teamLeagueId) {
       const allTeamsInLeague = await db.query.teams.findMany({
@@ -1176,6 +1184,31 @@ export async function GET(request: NextRequest) {
       // `allTeamsInLeague` is already loaded above, so resolving the challenged
       // team's name costs nothing extra.
       const teamNameById = new Map(allTeamsInLeague.map((t) => [t.id, t.name]));
+
+      // Rebuild each Challenge Chip's match from the two teams' own results. Keyed off the
+      // chip's OWN gameweek, never the current one, so a GW2 challenge still reads GW2 while
+      // GW3 is live.
+      const challengeByTeam = new Map<string, ChallengeMatch>();
+      if (leagueFormat !== "continental-championship") {
+        const ccRows = await db
+          .select()
+          .from(gameweekChips)
+          .where(and(eq(gameweekChips.gameweekId, nextGameweek.id), eq(gameweekChips.chipType, "C")));
+        const matches = await buildChallengeMatches(
+          ccRows.map((c) => ({
+            id: c.id,
+            teamId: c.teamId,
+            challengedTeamId: c.challengedTeamId,
+            gameweekId: c.gameweekId,
+            pointsAwarded: c.pointsAwarded,
+            isProcessed: c.isProcessed,
+          })),
+        );
+        for (const c of ccRows) {
+          const m = matches.get(c.id);
+          if (m) challengeByTeam.set(c.teamId, m);
+        }
+      }
       leagueCaptains = allTeamsInLeague.map((t) => {
         const picked = captainByTeam.get(t.id);
         const chip = chipByTeam.get(t.id) ?? null;
@@ -1193,6 +1226,7 @@ export async function GET(request: NextRequest) {
           chipName: chipType ? chipName(chipType) : null,
           challengedTeamId,
           challengedTeamName: challengedTeamId ? teamNameById.get(challengedTeamId) ?? null : null,
+          challenge: chipType === "C" ? challengeByTeam.get(t.id) ?? null : null,
         };
       });
       leagueCaptains.sort((a, b) => {
