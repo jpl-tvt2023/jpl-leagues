@@ -198,6 +198,8 @@ test.describe.serial("Challenge Chip tooltip", () => {
 
     // The card's own click handler must not have fired.
     await expect(page.getByText("Hide breakdown")).toHaveCount(0);
+
+    await tip.screenshot({ path: "test-results/challenge-chip-tooltip.png" });
   });
 
   test("hover still opens it for a mouse, and clicking does not close it", async ({ page }) => {
