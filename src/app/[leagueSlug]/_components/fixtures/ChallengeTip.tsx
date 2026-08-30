@@ -53,7 +53,7 @@ export function ChallengeTip({
 
   const pill = (
     <span
-      className="inline-block rounded bg-yellow-400/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-yellow-300 whitespace-nowrap"
+      className="block truncate rounded bg-yellow-400/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-yellow-300 whitespace-nowrap"
       aria-label={typeof tip === "string" ? tip : `${chip.chipName} — view challenge result`}
     >
       {chip.chipCode}
@@ -64,7 +64,7 @@ export function ChallengeTip({
     // No default margin: the dashboard's chip column and the fixture card want different
     // spacing, and a hardcoded one here would collide with whatever the caller passes.
     <span className={`flex ${align === "right" ? "justify-end" : "justify-start"} ${className}`}>
-      <HelpTip tip={tip} wide={!!match} className="no-underline">
+      <HelpTip tip={tip} wide={!!match} className="no-underline flex min-w-0">
         {pill}
       </HelpTip>
     </span>
