@@ -70,7 +70,7 @@ export default function LeagueRulesPage() {
           </div>
         </div>
 
-        {isAuction ? <AuctionRules tier={league.auctionTier ?? "complete"} /> : isContinentalChampionship ? <ContinentalChampionshipRules /> : <TvtRules config={config} />}
+        {isAuction ? <AuctionRules tier={league.auctionTier ?? "complete"} releaseCycleGws={league.releaseCycleGws} /> : isContinentalChampionship ? <ContinentalChampionshipRules /> : <TvtRules config={config} />}
       </div>
     </div>
   );

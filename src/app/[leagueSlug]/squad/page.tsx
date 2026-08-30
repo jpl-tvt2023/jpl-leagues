@@ -8,6 +8,7 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { SlotStatus, type SlotStatusData } from "@/components/SlotStatus";
 import { HelpTip } from "@/components/HelpTip";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
+import { formatReleaseCycleGws } from "@/lib/formats/auction/cycle";
 import { MAX_SQUAD_SIZE, type SquadCounts } from "@/lib/formats/auction/squad-rules";
 import { useWishlist } from "@/hooks/useWishlist";
 import { WishlistList } from "@/components/WishlistList";
@@ -126,6 +127,9 @@ function formatCurrency(amount: number): string {
 export default function SquadPage() {
   useEnforceFormat(["auction"]);
   const { league } = useLeague();
+  // "GW 10/20/30" for a default league, whatever the admin configured otherwise.
+  // Derived rather than hardcoded so this copy can't drift from what the scorer does.
+  const releaseCadence = formatReleaseCycleGws(league.releaseCycleGws);
   const params = useParams();
   const router = useRouter();
   const leagueSlug = params.leagueSlug as string;
@@ -656,7 +660,7 @@ export default function SquadPage() {
                           return (
                           <div
                             className="pt-1 text-[10px] uppercase tracking-wider text-orange-400 font-bold"
-                            title={`Finalizes at next GW 10/20/30 boundary. Projected refund: ${formatCurrency(refund)} (50% of FMV at release). Projected forfeit: ${formatCurrency(p.purchasePrice - refund)}. Player continues scoring for you until finalization.`}
+                            title={`Finalizes at the next ${releaseCadence} boundary. Projected refund: ${formatCurrency(refund)} (50% of FMV at release). Projected forfeit: ${formatCurrency(p.purchasePrice - refund)}. Player continues scoring for you until finalization.`}
                           >
                             Pending Release — projected refund {formatCurrency(refund)}
                           </div>
@@ -666,7 +670,7 @@ export default function SquadPage() {
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
                             disabled={releasing === p.ownershipId}
-                            title={`50% of current FMV (${formatCurrency(Math.floor(p.fmv * 0.5))}) credited at GW 10/20/30. Player keeps scoring until then. Cancellable before finalization.`}
+                            title={`50% of current FMV (${formatCurrency(Math.floor(p.fmv * 0.5))}) credited at ${releaseCadence}. Player keeps scoring until then. Cancellable before finalization.`}
                             className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
                           >
                             {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.fmv * 0.5))})`}
@@ -676,7 +680,7 @@ export default function SquadPage() {
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
                             disabled={releasing === p.ownershipId}
-                            title={`Release this deadwood player for 50% of current FMV (${formatCurrency(Math.floor(p.fmv * 0.5))}), credited at the next GW 10/20/30 boundary.`}
+                            title={`Release this deadwood player for 50% of current FMV (${formatCurrency(Math.floor(p.fmv * 0.5))}), credited at the next ${releaseCadence} boundary.`}
                             className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
                           >
                             {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.fmv * 0.5))})`}

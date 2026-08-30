@@ -389,9 +389,9 @@
       },
       {
         "id": "BR-04-028",
-        "rule": "highestScoringGW / lowestScoringGW are derived ONLY from fixtures whose gameweek.number < latestCompletedGW — the current GW is excluded.",
+        "rule": "highestScoringGW / lowestScoringGW are derived from every fixture that already has a result, i.e. gameweek.number <= latestCompletedGW. In-progress and upcoming gameweeks have no result rows and are therefore excluded by construction; the newest SCORED gameweek is included.",
         "sourceRefs": [
-          "src/app/api/team/dashboard/route.ts:661-677"
+          "src/app/api/team/dashboard/route.ts:829-849"
         ]
       },
       {
@@ -863,7 +863,7 @@
         "id": "AC-04-035",
         "given": "latestCompletedGW=5 and the team has completed fixtures in GW 1–5",
         "when": "highestScoringGW / lowestScoringGW are computed",
-        "then": "they are derived from GW 1–4 only (gameweek.number < 5); GW 5 is excluded",
+        "then": "they are derived from GW 1–5 inclusive (gameweek.number <= 5); the newest scored GW is included",
         "linksTo": "BR-04-028"
       },
       {
@@ -2171,7 +2171,7 @@
     {
       "id": "TC-04-050",
       "feature": "Highest/Lowest GW",
-      "scenario": "Current GW (latestCompletedGW=5) is excluded from highest/lowest",
+      "scenario": "Newest scored GW (latestCompletedGW=5) is included in highest/lowest",
       "type": "Boundary",
       "priority": "P2",
       "preconditions": "Team with fixtures completed in GW 1-5 with myPoints 10,20,30,40,99 (GW5 being highest)",
@@ -2181,7 +2181,7 @@
         "2. GET dashboard",
         "3. Read highestScoringGW/lowestScoringGW"
       ],
-      "expectedResult": "highestScoringGW.gameweek=4 (the 40-point game); lowestScoringGW.gameweek=1 (the 10-point game); GW5 excluded entirely",
+      "expectedResult": "highestScoringGW.gameweek=5 (the 99-point game); lowestScoringGW.gameweek=1 (the 10-point game); GW5 included",
       "postconditions": "No state mutated",
       "requirementId": "AC-04-035",
       "author": "qa-tester",

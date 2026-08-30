@@ -9,6 +9,7 @@ import { TierChip } from "@/components/TierChip";
 import { Logo } from "@/components/Logo";
 import { formatCurrency } from "@/lib/format/currency";
 import { FeedbackTab } from "./FeedbackTab";
+import { DEFAULT_RELEASE_CYCLE_GWS, formatReleaseCycleGws, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
 
 interface Team {
   id: string;
@@ -193,8 +194,9 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<TabType>("teams");
   const [teams, setTeams] = useState<Team[]>([]);
-  const [leagueConfig, setLeagueConfig] = useState<{ leagueDbId?: string; teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string; clubAuctionEnabled?: boolean }>({
+  const [leagueConfig, setLeagueConfig] = useState<{ leagueDbId?: string; teamSize: number; groupCount: number; playoffStartGw: number; enabledChips: string[]; format?: string; clubAuctionEnabled?: boolean; startGameweek: number; releaseCycleGws: number[] }>({
     teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"],
+    startGameweek: 1, releaseCycleGws: DEFAULT_RELEASE_CYCLE_GWS,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -253,6 +255,10 @@ export default function AdminDashboard() {
 
   // Scoring State
   const [gameweekStatuses, setGameweekStatuses] = useState<GameweekStatus[]>([]);
+  // Auction config editor. Free text for the gameweek list so the admin can type
+  // "10, 20, 30"; the server validates and normalises.
+  const [auctionCfgForm, setAuctionCfgForm] = useState({ startGameweek: 1, releaseCycleGws: "10, 20, 30" });
+  const [savingAuctionCfg, setSavingAuctionCfg] = useState(false);
   const [scoringLoading, setScoringLoading] = useState(false);
   const [processingGW, setProcessingGW] = useState<number | null>(null);
   const [scoringResults, setScoringResults] = useState<ScoringResult[]>([]);
@@ -406,6 +412,12 @@ export default function AdminDashboard() {
             enabledChips,
             format: league.format,
             clubAuctionEnabled: Boolean(league.clubAuctionEnabled),
+            startGameweek: league.startGameweek ?? 1,
+            releaseCycleGws: parseReleaseCycleGws(league.releaseCycleGws),
+          });
+          setAuctionCfgForm({
+            startGameweek: league.startGameweek ?? 1,
+            releaseCycleGws: parseReleaseCycleGws(league.releaseCycleGws).join(", "),
           });
         }
       })
@@ -616,13 +628,56 @@ export default function AdminDashboard() {
     });
   };
 
+  // Client-side mirror of the server's lock; the route enforces it authoritatively.
+  const hasScoredGw = gameweekStatuses.some((g) => g.resultsProcessed > 0);
+
+  const saveAuctionConfig = async () => {
+    if (!leagueConfig.leagueDbId) return;
+    setSavingAuctionCfg(true);
+    try {
+      const res = await fetch(`/api/admin/${leagueId}/auction-config`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startGameweek: auctionCfgForm.startGameweek,
+          releaseCycleGws: auctionCfgForm.releaseCycleGws,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setLeagueConfig(prev => ({
+          ...prev,
+          startGameweek: data.startGameweek,
+          releaseCycleGws: data.releaseCycleGws,
+        }));
+        setAuctionCfgForm({
+          startGameweek: data.startGameweek,
+          releaseCycleGws: (data.releaseCycleGws as number[]).join(", "),
+        });
+        setMessage({
+          type: "success",
+          text: data.needsGameweekSeeding
+            ? `Saved. Starting gameweek moved to GW${data.startGameweek} — run Create Gameweeks to seed the new range.`
+            : "Auction config saved",
+        });
+        fetchGameweekStatuses();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to save auction config" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Failed to save auction config" });
+    } finally {
+      setSavingAuctionCfg(false);
+    }
+  };
+
   const createGameweeks = async () => {
     setScoringLoading(true);
     try {
       const res = await fetch(`/api/admin/${leagueId}/create-gameweeks`, { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: `Created ${data.created} gameweeks (${data.skipped} already existed)` });
+        setMessage({ type: "success", text: `Created ${data.created} gameweeks from GW${data.startGameweek ?? 1} (${data.skipped} already existed)` });
         fetchGameweekStatuses();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to create gameweeks" });
@@ -3203,6 +3258,66 @@ export default function AdminDashboard() {
         {/* Scoring Tab */}
         {activeTab === "scoring" && (
           <>
+            {isAuctionFormat && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur mb-6">
+                <h3 className="text-lg font-bold text-white mb-1">Auction Config</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  Starting gameweek locks once any gameweek has been scored — moving it deletes the
+                  gameweeks below it. Release gameweeks stay editable.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Starting Gameweek</label>
+                    <input
+                      type="number" min={1} max={38}
+                      value={auctionCfgForm.startGameweek}
+                      disabled={hasScoredGw}
+                      onChange={e => {
+                        const nextStart = parseInt(e.target.value) || 1;
+                        // Same self-consistency rule as the creation wizard: drop release
+                        // gameweeks that would now fall before the league starts, rather
+                        // than failing validation on a field the admin didn't touch.
+                        const current = auctionCfgForm.releaseCycleGws
+                          .split(",").map(v => parseInt(v.trim())).filter(n => Number.isInteger(n));
+                        const kept = current.filter(n => n >= nextStart);
+                        const nextCycles = current.some(n => n < nextStart)
+                          ? (kept.length > 0 ? kept : [38]).join(", ")
+                          : auctionCfgForm.releaseCycleGws;
+                        setAuctionCfgForm({ ...auctionCfgForm, startGameweek: nextStart, releaseCycleGws: nextCycles });
+                      }}
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={hasScoredGw ? "Locked — a gameweek has already been scored for this league" : undefined}
+                    />
+                    {hasScoredGw && (
+                      <p className="text-gray-500 text-xs mt-1">Locked: GW{leagueConfig.startGameweek} has scored results.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Release Gameweeks</label>
+                    <input
+                      type="text"
+                      value={auctionCfgForm.releaseCycleGws}
+                      placeholder="10, 20, 30"
+                      onChange={e => setAuctionCfgForm({ ...auctionCfgForm, releaseCycleGws: e.target.value })}
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                    />
+                    <p className="text-gray-500 text-xs mt-1">Comma-separated. Pending releases finalize here.</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                  <button
+                    onClick={saveAuctionConfig}
+                    disabled={savingAuctionCfg}
+                    className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-sm font-medium disabled:opacity-50 transition"
+                  >
+                    {savingAuctionCfg ? "Saving…" : "Save Auction Config"}
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    Currently GW{leagueConfig.startGameweek}–38 · releases at {formatReleaseCycleGws(leagueConfig.releaseCycleGws)}
+                  </span>
+                </div>
+              </div>
+            )}
             {/* Header + Action Bar */}
             <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -3261,7 +3376,7 @@ export default function AdminDashboard() {
                     disabled={scoringLoading}
                     className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-sm font-medium disabled:opacity-50 transition"
                   >
-                    Create Gameweeks (GW 1–38)
+                    Create Gameweeks (GW {leagueConfig.startGameweek}–38)
                   </button>
                 </div>
               ) : (
@@ -4250,7 +4365,7 @@ export default function AdminDashboard() {
 
         {/* Marketplace Tab (auction-only) */}
         {activeTab === "marketplace" && isAuctionFormat && leagueConfig.leagueDbId && (
-          <AdminMarketplaceTab leagueId={leagueConfig.leagueDbId} />
+          <AdminMarketplaceTab leagueId={leagueConfig.leagueDbId} releaseCycleGws={leagueConfig.releaseCycleGws} />
         )}
 
         {/* Finance Tab (auction-only) */}
@@ -4488,7 +4603,7 @@ function formatChipLabel(code: string): string {
   return CHIP_NAMES[code] ? `${code} (${CHIP_NAMES[code]})` : code;
 }
 
-function AdminMarketplaceTab({ leagueId }: { leagueId: string }) {
+function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; releaseCycleGws: number[] }) {
   const [proposals, setProposals] = useState<AdminMarketplaceProposal[]>([]);
   const [pendingReleases, setPendingReleases] = useState<AdminMarketplacePendingRelease[]>([]);
   const [squadCache, setSquadCache] = useState<AdminSquadCache>({});
@@ -4582,7 +4697,7 @@ function AdminMarketplaceTab({ leagueId }: { leagueId: string }) {
       {/* Pending Releases */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
         <h3 className="text-lg font-bold text-white mb-3">Pending Releases ({pendingReleases.length})</h3>
-        <p className="text-xs text-gray-400 mb-3">Finalize automatically at GW 10/20/30.</p>
+        <p className="text-xs text-gray-400 mb-3">Finalize automatically at {formatReleaseCycleGws(releaseCycleGws)}.</p>
         {pendingReleases.length === 0 ? (
           <div className="text-center text-gray-500 py-6">None</div>
         ) : (

@@ -1,12 +1,21 @@
 "use client";
 
 import { GW_PAYOUTS, MINIMUM_FLOOR_PAYOUT } from "@/lib/formats/auction/economy";
+import { DEFAULT_RELEASE_CYCLE_GWS, formatReleaseCycleGws } from "@/lib/formats/auction/cycle";
 import { RuleItem, SectionHeader, formatPayout } from "./shared";
 
-export function AuctionRules({ tier = "complete" }: { tier?: "primary" | "complete" }) {
+export function AuctionRules({
+  tier = "complete",
+  releaseCycleGws = DEFAULT_RELEASE_CYCLE_GWS,
+}: {
+  tier?: "primary" | "complete";
+  /** The league's configured release-cycle gameweeks, so the rules name the real ones. */
+  releaseCycleGws?: number[];
+}) {
   // Primary tier disables trades and slot 16/17/18 expansion — hide those rules so they aren't
   // shown for a feature the league can't use.
   const primary = tier === "primary";
+  const releaseCadence = formatReleaseCycleGws(releaseCycleGws);
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
@@ -23,7 +32,7 @@ export function AuctionRules({ tier = "complete" }: { tier?: "primary" | "comple
         <SectionHeader letter="B" color="purple" title="Auction Sessions" />
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
           <RuleItem>The <strong className="text-white">Initial Auction</strong> fills all squads before the season begins. Teams nominate players in snake-draft order.</RuleItem>
-          <RuleItem><strong className="text-white">Mini-Auctions</strong> occur at designated points during the season. Any released players return to the pool.</RuleItem>
+          <RuleItem><strong className="text-white">Mini-Auctions</strong> occur at designated points during the season, around the release gameweeks (<strong className="text-white">{releaseCadence}</strong>). Any released players return to the pool.</RuleItem>
           <RuleItem>Each nominated player goes to the highest bidder. If only one bid is placed, it wins at the minimum bid price.</RuleItem>
           <RuleItem>You cannot bid more than your remaining purse allows.</RuleItem>
           <RuleItem>The snake order for nominations reverses each round: bottom-ranked teams nominate first in mini-auctions.</RuleItem>
@@ -108,7 +117,7 @@ export function AuctionRules({ tier = "complete" }: { tier?: "primary" | "comple
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
           <RuleItem>You can <strong className="text-white">request a release</strong> for any active player at any time from your squad page.</RuleItem>
           <RuleItem>The released player continues scoring for your team until the release is finalized.</RuleItem>
-          <RuleItem>Releases are finalized at the <strong className="text-white">start of the next mini-auction</strong>. Upon finalization, you receive a <strong className="text-white">50% refund</strong> of the player&apos;s purchase price.</RuleItem>
+          <RuleItem>Releases are finalized at the <strong className="text-white">start of the next mini-auction</strong>, or at the next release gameweek (<strong className="text-white">{releaseCadence}</strong>) — whichever comes first. Upon finalization, you receive a <strong className="text-white">50% refund</strong> of the player&apos;s purchase price.</RuleItem>
           <RuleItem>The other 50% is forfeited — releasing is a cost, not a full recovery.</RuleItem>
           <RuleItem>You can <strong className="text-white">cancel a pending release</strong> any time before the mini-auction begins.</RuleItem>
           <RuleItem>Released players re-enter the player pool and are available in the next mini-auction.</RuleItem>

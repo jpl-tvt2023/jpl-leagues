@@ -8,7 +8,8 @@ import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 /**
  * POST /api/auction/release
- * Mark a player for pending release. The release only finalizes at GW 10/20/30 boundaries.
+ * Mark a player for pending release. The release only finalizes at the league's configured
+ * release-cycle gameweeks (see lib/formats/auction/cycle.ts; default GW 10/20/30).
  * Player continues scoring for the team until then. Refund is NOT credited yet.
  *
  * Body: { ownershipId }

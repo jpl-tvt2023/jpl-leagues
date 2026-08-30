@@ -21,6 +21,12 @@ export interface LeagueInfo {
   // Auction-only — "primary" disables trades + slot expansion. Default "complete" for legacy
   // (TVT/continental-championship leagues default to "complete" too but never act on it).
   auctionTier?: "primary" | "complete";
+  // Auction-only — first gameweek the league scores. 1 for every other format.
+  startGameweek: number;
+  // Auction-only — gameweeks at which pending releases finalize, already parsed from the
+  // stored JSON. Carried here so squad / marketplace / rules copy all name the same
+  // gameweeks instead of each hardcoding "GW 10/20/30".
+  releaseCycleGws: number[];
 }
 
 export interface ViewerInfo {

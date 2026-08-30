@@ -5,6 +5,7 @@ import { db, leagues, leagueAdmins, teams } from "@/lib/db";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { LeagueProvider, type LeagueInfo, type ViewerInfo } from "@/lib/league-context";
 import { getFormatPalette } from "@/lib/format-palette";
+import { DEFAULT_RELEASE_CYCLE_GWS, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
 
 function parseEnabledChips(raw: string): string[] {
   try {
@@ -92,6 +93,8 @@ export default async function LeagueLayout({
         enabledChips: string;
         initialBudget: number;
         auctionTier: "primary" | "complete";
+        startGameweek: number;
+        releaseCycleGws: string;
       }
     | undefined;
   try {
@@ -109,6 +112,8 @@ export default async function LeagueLayout({
         enabledChips: leagues.enabledChips,
         initialBudget: leagues.initialBudget,
         auctionTier: leagues.auctionTier,
+        startGameweek: leagues.startGameweek,
+        releaseCycleGws: leagues.releaseCycleGws,
       })
       .from(leagues)
       .where(eq(leagues.slug, leagueSlug))
@@ -134,7 +139,14 @@ export default async function LeagueLayout({
       .where(eq(leagues.slug, leagueSlug))
       .limit(1);
     const minimal = fallbackRows[0];
-    row = minimal ? { ...minimal, auctionTier: "complete" as const } : undefined;
+    row = minimal
+      ? {
+          ...minimal,
+          auctionTier: "complete" as const,
+          startGameweek: 1,
+          releaseCycleGws: JSON.stringify(DEFAULT_RELEASE_CYCLE_GWS),
+        }
+      : undefined;
   }
   if (!row) notFound();
 
@@ -151,6 +163,8 @@ export default async function LeagueLayout({
     enabledChips: parseEnabledChips(row.enabledChips),
     initialBudget: row.initialBudget,
     auctionTier: row.auctionTier,
+    startGameweek: row.startGameweek,
+    releaseCycleGws: parseReleaseCycleGws(row.releaseCycleGws),
   };
 
   const viewer = await resolveViewer();
