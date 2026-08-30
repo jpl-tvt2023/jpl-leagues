@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
     // Serve whatever is cached, fresh or stale.
     //
     // A stale copy goes back immediately rather than being recomputed. A whole
-    // gameweek is ~65 FPL calls, which the gateway's rate cap stretches to about
+    // gameweek is ~64 FPL calls, which the gateway's rate cap stretches to about
     // ten seconds; making whichever reader happens to arrive after the fresh
     // window lapses pay that for everyone — while the page showed "Upcoming" —
     // is precisely the problem. The client refreshes behind the numbers instead.

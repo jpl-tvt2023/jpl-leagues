@@ -4,12 +4,50 @@ import { useState } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 
+/**
+ * Eye / eye-off, inlined rather than pulled from an icon package — this repo
+ * has no icon dependency and every other glyph is a hand-written <svg>.
+ * `off` means the password is currently visible, so the icon offers to hide it.
+ */
+function EyeIcon({ off }: { off: boolean }) {
+  return (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      {off ? (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M3 3l18 18M10.6 10.6a3 3 0 004.2 4.2M9.9 5.1A9.6 9.6 0 0112 4.9c4.6 0 8.3 3 9.7 7.1a11.7 11.7 0 01-3.4 4.8M6.2 6.7A11.7 11.7 0 002.3 12c1.4 4.1 5.1 7.1 9.7 7.1 1.4 0 2.7-.3 3.9-.8"
+        />
+      ) : (
+        <>
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M2.3 12C3.7 7.9 7.4 4.9 12 4.9s8.3 3 9.7 7.1c-1.4 4.1-5.1 7.1-9.7 7.1s-8.3-3-9.7-7.1z"
+          />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export default function SignInPage() {
   const [formData, setFormData] = useState({
     identifier: "",
     password: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Off by default. Revealing is a deliberate act, and it keeps the field a
+  // real password input for browsers, password managers and the E2E helper.
+  const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -104,14 +142,31 @@ export default function SignInPage() {
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Password
                 </label>
-                <input
-                  type="password"
-                  required
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="••••••••"
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 pr-12 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    title={showPassword ? "Hide password" : "Show password"}
+                    // Not focusable by tab: it sits between the password field
+                    // and Sign In, and nobody tabbing through a login form
+                    // wants a stop there. Still reachable by pointer and by
+                    // screen readers.
+                    tabIndex={-1}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-white transition"
+                  >
+                    <EyeIcon off={showPassword} />
+                  </button>
+                </div>
               </div>
             </div>
 

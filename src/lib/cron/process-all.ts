@@ -321,7 +321,10 @@ export async function processOneLeagueOneGw(
     errors: [],
   };
 
-  try { await clearLiveCache(gw); } catch { /* non-fatal */ }
+  // League-scoped: the readers all pass a leagueSlug, so the key they hit is
+  // live:gw{N}:{leagueId}. Clearing the bare live:gw{N}:all left the real one
+  // serving pre-scoring captain data for its full retention window.
+  try { await clearLiveCache(gw, league.id); } catch { /* non-fatal */ }
 
   // ── Score ──
   // Per-GW pre-flight: are there any unscored fixtures for this league at this GW?

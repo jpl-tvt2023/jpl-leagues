@@ -98,6 +98,10 @@ export function PlFixtureCard() {
   // Collapsed by default — the card is a summary first. Chips live inside the
   // breakdown and are hidden with it, which is fine; players-left is not, so it
   // is rendered in the header where it survives the collapse.
+  //
+  // The exception is a gameweek that has not kicked off: there is no score to
+  // summarise, so the collapsed card would be two team names and nothing else.
+  // There the line-ups ARE the content, and the card opens on them.
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,6 +198,10 @@ export function PlFixtureCard() {
   }
 
   const { fixture, live, result } = data;
+  // Nothing has been scored for this gameweek yet — before kickoff, or an
+  // FPL outage on a live one. Either way the breakdown has no numbers and the
+  // line-ups are what the reader came for.
+  const scoresPending = !result && !live;
 
   // PlayerBreakdown is the same component the Fixtures page uses, so the two
   // can never render a fixture differently.
@@ -267,18 +275,27 @@ export function PlFixtureCard() {
             <SideHeader side={fixture.away} label="AWAY" score={hasScore ? awayScore : undefined} align="right" />
           </div>
 
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="w-full text-center text-[11px] text-gray-500 hover:text-gray-300 transition py-1"
-          >
-            {expanded ? "▲ Hide points breakdown" : "▼ Points breakdown"}
-          </button>
-          {expanded && (
+          {/* No toggle when there is nothing to collapse to — a scoreless
+              gameweek's card is the line-ups. */}
+          {!scoresPending && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="w-full text-center text-[11px] text-gray-500 hover:text-gray-300 transition py-1"
+            >
+              {expanded ? "▲ Hide points breakdown" : "▼ Points breakdown"}
+            </button>
+          )}
+          {(expanded || scoresPending) && (
             <PlayerBreakdown
               fixture={asFixture}
               liveData={live ?? undefined}
               homeChips={buildChips(fixture.home, data.gw)}
               awayChips={buildChips(fixture.away, data.gw)}
+              // Only used when the side has no scores: names, FPL chips and the
+              // team's TVT chips, so the card still says something useful
+              // between a scored gameweek and the next kickoff.
+              homeRoster={fixture.home.players}
+              awayRoster={fixture.away.players}
               // Already in the header above, which is visible either way.
               hidePlayersLeft
               // Not data.gw: FPL cannot render a gameweek that has not kicked
