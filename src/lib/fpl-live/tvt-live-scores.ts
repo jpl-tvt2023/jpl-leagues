@@ -2,28 +2,40 @@
  * Single source of truth for TVT live fixture scores.
  *
  * This replaces two separate `calculateLiveTeamScore` implementations that had
- * drifted apart:
- *   - api/fixtures/live/route.ts used `picks.entry_history.points`
- *   - api/fixtures/live/refresh/route.ts recomputed from /event/{gw}/live/
- *     with a vice-captain fallback
- * so the cached number and the refreshed number could legitimately disagree —
- * visible to users as a score that jumps when they hit Refresh, and (once the
- * dashboard renders its own breakdown) as the dashboard and the fixtures page
- * disagreeing about the same fixture.
+ * drifted apart, so the cached number and the refreshed number could
+ * legitimately disagree — visible to users as a score that jumped when they hit
+ * Refresh, and as the dashboard and the fixtures page disagreeing about the
+ * same fixture.
  *
- * The recomputed version is the correct one: it applies the vice-captain
- * fallback when a captain does not play, which `entry_history.points` cannot
- * express mid-gameweek. Both routes now use it.
+ * A manager's gameweek score is whatever FPL says it is.
  *
- * Cost: the old refresh path called fetchLiveGameweek() once per *team side*,
- * so a 16-fixture TVT-32 gameweek was ~32 live fetches plus 64 picks fetches.
- * Here the live element map is fetched exactly once per request.
+ * We take `picks.entry_history.points` verbatim off the payload we already
+ * fetch, rather than recomputing it from /event/{gw}/live/ and the pick
+ * multipliers. FPL has already applied the captain, the vice-captain handover,
+ * Triple Captain, Bench Boost and the bench auto-substitutions before handing
+ * us that number — reproducing all of it here only creates a second answer that
+ * can be wrong.
+ *
+ * It was. The recompute this replaced treated a captain on zero minutes as
+ * having blanked, which is also true of a captain whose match has not kicked
+ * off yet, and handed the armband to the vice-captain early: 23 of 64 managers
+ * were inflated on a live gameweek. FPL's own figure was correct in every one
+ * of those cases. Gating the handover on the captain's fixtures being finished
+ * fixed it, but the right lesson was that we should not be computing this at
+ * all — the final, cron and playoff scoring paths had always read
+ * `entry_history.points`, and now the live path agrees with them by construction.
+ *
+ * What this module still owns is the part FPL knows nothing about: which of a
+ * team's two *managers* is the JPL captain, and the doubling of their net score.
+ *
+ * Cost: one picks fetch per manager and nothing else. A 16-fixture TVT-32
+ * gameweek is 64 calls, down from 65 — the shared live-elements fetch is gone.
  */
 
 import { db } from "@/lib/db";
 import { fixtures, gameweeks, gameweekCaptains } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { fetchTeamGameweekPicks, fetchLiveGameweek } from "@/lib/fpl";
+import { fetchTeamGameweekPicks } from "@/lib/fpl";
 import type { LiveFixtureScore } from "@/lib/fpl-cache";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
@@ -34,11 +46,6 @@ export interface TvtLiveOptions {
   gwNumber: number;
   /** Restrict to these fixtures. Null/undefined computes the whole gameweek. */
   fixtureIds?: string[] | null;
-}
-
-interface LiveElement {
-  total_points: number;
-  minutes: number;
 }
 
 type TeamPlayer = { id: string; name: string; fplId: string };
@@ -115,21 +122,6 @@ export async function computeLiveFixtureScores(
     }
   }
 
-  // ── The one live fetch for the whole request ──────────────────────────
-  let liveElements: Map<number, LiveElement>;
-  try {
-    const liveData = await fetchLiveGameweek(gwNumber);
-    liveElements = new Map(liveData.elements.map((e) => [e.id, e.stats]));
-  } catch (err) {
-    if (err instanceof FplUnavailableError) {
-      // Breaker open or a scoring run holds the lock. Callers fall back to
-      // whatever they have cached rather than showing zeros.
-      throw err;
-    }
-    console.error(`[tvt-live] live data unavailable for GW${gwNumber}:`, err);
-    throw err;
-  }
-
   const results: LiveFixtureScore[] = [];
 
   for (const fixture of gwFixtures) {
@@ -148,16 +140,14 @@ export async function computeLiveFixtureScores(
         captainByTeam.get(fixture.homeTeamId),
         prevCaptainByTeam.get(fixture.homeTeamId) ?? null,
         gwNumber,
-        autoAssignedByTeam.get(fixture.homeTeamId) ?? false,
-        liveElements
+        autoAssignedByTeam.get(fixture.homeTeamId) ?? false
       );
       const away = await scoreSide(
         fixture.awayTeam.players,
         captainByTeam.get(fixture.awayTeamId),
         prevCaptainByTeam.get(fixture.awayTeamId) ?? null,
         gwNumber,
-        autoAssignedByTeam.get(fixture.awayTeamId) ?? false,
-        liveElements
+        autoAssignedByTeam.get(fixture.awayTeamId) ?? false
       );
 
       const [homePlayersLeft, awayPlayersLeft] = await Promise.all([
@@ -233,8 +223,7 @@ async function scoreSide(
   captainPlayerId: string | undefined,
   prevCaptainPlayerId: string | null,
   gameweek: number,
-  captainWasAutoAssigned: boolean,
-  liveElements: Map<number, LiveElement>
+  captainWasAutoAssigned: boolean
 ): Promise<SideResult> {
   const rawScores: {
     id: string;
@@ -251,34 +240,16 @@ async function scoreSide(
       const picks = await fetchTeamGameweekPicks(player.fplId, gameweek);
       const transferHits = picks.entry_history.event_transfers_cost;
 
-      // Collect the active XI from the RAW picks, before any vice-captain
-      // rewriting below. multiplier > 0 (not position <= 11) so Bench Boost
-      // correctly counts all 15.
+      // Which elements are actually featuring, for the players-left counter.
+      // multiplier > 0 (not position <= 11) so Bench Boost correctly counts all 15.
       for (const pick of picks.picks) {
         if (pick.multiplier > 0) activeElements.push(pick.element);
       }
 
-      const captainPick = picks.picks.find((p) => p.is_captain);
-      const captainLive = captainPick ? liveElements.get(captainPick.element) : null;
-      const captainPlayed = captainLive ? captainLive.minutes > 0 : false;
-
-      let teamScore = 0;
-      for (const pick of picks.picks) {
-        const liveElement = liveElements.get(pick.element);
-        if (!liveElement) continue;
-
-        let multiplier = pick.multiplier;
-        if (!captainPlayed) {
-          if (pick.is_captain) {
-            multiplier = 0;
-          } else if (pick.is_vice_captain) {
-            multiplier = captainPick?.multiplier ?? 2;
-          }
-        }
-        if (multiplier > 0) {
-          teamScore += liveElement.total_points * multiplier;
-        }
-      }
+      // FPL's own figure for this manager's gameweek, gross of transfer hits.
+      // Captain, vice-captain handover and every chip are already baked in — see
+      // the file header for why we no longer recompute any of it.
+      const teamScore = picks.entry_history.points;
 
       rawScores.push({
         id: player.id,

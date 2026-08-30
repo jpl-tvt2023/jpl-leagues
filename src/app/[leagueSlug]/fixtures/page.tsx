@@ -9,6 +9,7 @@ import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { useLeague } from "@/lib/league-context";
+import { pickDefaultGameweek } from "@/lib/gameweeks/default-gw";
 import {
   type Fixture,
   type GameweekFixtures,
@@ -259,22 +260,22 @@ export default function LeagueFixturesPage() {
         setAvailableGWs(gws);
 
         if (gws.length > 0) {
-          // Default to latest fully-concluded GW; if mid-flight (partial), use that; if none done, use first GW
-          let best = gws[0];
-          for (const gw of gws) {
-            const gwFixtures = fixturesData[gw] || [];
-            const allDone = gwFixtures.length > 0 && gwFixtures.every((f: Fixture) => f.result);
-            const anyDone = gwFixtures.some((f: Fixture) => f.result);
-            if (allDone) {
-              best = gw; // fully concluded — keep advancing
-            } else if (anyDone) {
-              best = gw; // partially in-flight — this is "current"
-              break;
-            } else {
-              break; // no results yet — stop
-            }
-          }
-          setSelectedGW(best);
+          // Open on the gameweek being played, else the next one — driven by
+          // deadlines, not by whether scores have been processed. The old
+          // results-based rule stopped at the last *scored* gameweek, so with
+          // GW1 scored and GW2 under way the page opened on GW1.
+          const choices = gws
+            .map((gw) => {
+              const gwFixtures: Fixture[] = fixturesData[gw] || [];
+              const deadline = Date.parse(String(gwFixtures[0]?.gameweek?.deadline ?? ""));
+              return {
+                gw,
+                deadline,
+                isFullyResolved: gwFixtures.length > 0 && gwFixtures.every((f) => f.result),
+              };
+            })
+            .filter((c) => Number.isFinite(c.deadline));
+          setSelectedGW(pickDefaultGameweek(choices) ?? gws[0]);
         }
       } catch (err) {
         console.error("Error fetching fixtures:", err);

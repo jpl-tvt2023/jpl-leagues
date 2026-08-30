@@ -167,11 +167,11 @@ export async function GET(request: NextRequest) {
       if (!live) {
         try {
           const computed = await withFplBudget(
-            // One fixture costs 1 live fetch + 4 picks + the shared fixtures and
-            // bootstrap lookups: seven on a cold cache. The old ceiling of 8 sat
-            // close enough that a single duplicated lookup pushed it over, and a
-            // budget refusal surfaces as a silently missing players-left count
-            // rather than an error. Headroom, not a licence to fan out.
+            // One fixture costs 4 picks plus the shared fixtures and bootstrap
+            // lookups: six on a cold cache. The old ceiling of 8 sat close enough
+            // that a single duplicated lookup pushed it over, and a budget refusal
+            // surfaces as a silently missing players-left count rather than an
+            // error. Headroom, not a licence to fan out.
             { lane: "background", label: `pl-fixture gw${gw}`, max: 12 },
             () =>
               computeLiveFixtureScores({

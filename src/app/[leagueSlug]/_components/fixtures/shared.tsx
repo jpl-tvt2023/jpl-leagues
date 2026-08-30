@@ -2,6 +2,7 @@
 
 import { PlayerScoreFormula } from "../playoffs/shared";
 import { FplEntryLink } from "@/components/FplEntryLink";
+import { fplEntryLabel } from "@/lib/fpl-links";
 import { ChipPill, FplChipRow } from "@/components/ChipPill";
 import {
   chipState,
@@ -89,6 +90,7 @@ export type GameweekFixtures = Record<number, Fixture[]>;
 
 export function PlayerBreakdownSide({
   players,
+  roster,
   teamLabel,
   gwNumber,
   isGhost,
@@ -98,6 +100,12 @@ export function PlayerBreakdownSide({
   linkGw,
 }: {
   players: LivePlayerScore[];
+  /**
+   * The side's managers, for when there are no scores to show yet — the
+   * gameweek has not kicked off. Rendered as names and chips only. Omit it and
+   * a scoreless side reads "No breakdown available", as the fixtures page wants.
+   */
+  roster?: { name: string; fplId: string }[];
   teamLabel: string;
   gwNumber: number;
   isGhost?: boolean;
@@ -189,6 +197,32 @@ export function PlayerBreakdownSide({
             )}
           </div>
         ))
+      ) : roster && roster.length > 0 ? (
+        /* No scores yet — the gameweek has not kicked off. Show who is playing,
+           where to read their last gameweek, and what chips they hold. */
+        roster.map((p, i) => (
+          <div key={i} className="py-1">
+            <div className="flex items-center justify-between gap-1">
+              <FplEntryLink
+                fplId={p.fplId}
+                gw={hrefGw}
+                className="text-blue-400 hover:text-blue-300 underline truncate"
+                stopPropagation
+              >
+                {p.name}
+              </FplEntryLink>
+              {/* The link points at the last gameweek that started, not the one
+                  on screen — FPL cannot render a gameweek that has not kicked
+                  off. Say which, so the destination is not a surprise. */}
+              <span className="text-[9px] text-gray-500 shrink-0">{fplEntryLabel(hrefGw)} ↗</span>
+            </div>
+            {chips && (
+              <div className="flex flex-wrap gap-0.5 mt-0.5">
+                <FplChipRow status={chips.byFplId[p.fplId]} gwNumber={gwNumber} />
+              </div>
+            )}
+          </div>
+        ))
       ) : (
         <div className="text-center text-gray-500 italic text-[10px] py-2">No breakdown available</div>
       )}
@@ -214,11 +248,20 @@ export function PlayerBreakdown({
   liveData,
   homeChips,
   awayChips,
+  homeRoster,
+  awayRoster,
   linkGw,
   hidePlayersLeft,
 }: {
   fixture: Fixture;
   liveData?: LiveFixtureScore;
+  /**
+   * Each side's managers, used only when that side has no scores yet. Lets a
+   * caller render a fixture whose gameweek has not kicked off as a line-up
+   * rather than as nothing at all. See PlayerBreakdownSide.
+   */
+  homeRoster?: { name: string; fplId: string }[];
+  awayRoster?: { name: string; fplId: string }[];
   /** Optional — only the dashboard card folds chips into the breakdown. */
   homeChips?: BreakdownChips;
   awayChips?: BreakdownChips;
@@ -246,7 +289,15 @@ export function PlayerBreakdown({
       : [];
   const gwNumber = liveData?.gameweek ?? fixture.gameweek.number;
 
-  if (homePlayers.length === 0 && awayPlayers.length === 0 && !fixture.homeTeam.isGhost && !fixture.awayTeam.isGhost) {
+  const hasRoster = (homeRoster?.length ?? 0) > 0 || (awayRoster?.length ?? 0) > 0;
+
+  if (
+    homePlayers.length === 0 &&
+    awayPlayers.length === 0 &&
+    !hasRoster &&
+    !fixture.homeTeam.isGhost &&
+    !fixture.awayTeam.isGhost
+  ) {
     return (
       <div className="mt-1 pt-2 border-t border-white/10 text-center text-gray-500 italic text-[10px] py-2">
         Player breakdown not available for this gameweek
@@ -261,6 +312,7 @@ export function PlayerBreakdown({
       <div className="grid grid-cols-2 gap-2 sm:gap-4">
         <PlayerBreakdownSide
           players={homePlayers}
+          roster={homeRoster}
           teamLabel={fixture.homeTeam.name}
           gwNumber={gwNumber}
           isGhost={fixture.homeTeam.isGhost}
@@ -271,6 +323,7 @@ export function PlayerBreakdown({
         />
         <PlayerBreakdownSide
           players={awayPlayers}
+          roster={awayRoster}
           teamLabel={fixture.awayTeam.name}
           gwNumber={gwNumber}
           isGhost={fixture.awayTeam.isGhost}
@@ -283,6 +336,13 @@ export function PlayerBreakdown({
       {hasTempCaptain && (
         <div className="mt-2 text-[10px] text-amber-400/70">
           C* = auto-assigned temp captain (lowest scorer)
+        </div>
+      )}
+      {/* Nothing scored on either side: say why, rather than leaving a
+          line-up that looks like it is missing its numbers. */}
+      {homePlayers.length === 0 && awayPlayers.length === 0 && hasRoster && (
+        <div className="mt-2 text-[10px] text-gray-500 text-center">
+          Scores appear once GW{gwNumber} kicks off.
         </div>
       )}
     </div>

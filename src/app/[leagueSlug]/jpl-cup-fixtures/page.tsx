@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { pickDefaultGameweek } from "@/lib/gameweeks/default-gw";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Logo } from "@/components/Logo";
 import { useEnforceFormat } from "@/lib/league-context";
@@ -124,22 +125,20 @@ export default function JplCupFixturesPage() {
         setFixtures(cupFixtures);
         setAvailableGWs(available);
         if (available.length > 0) {
-          // Default to latest fully-concluded GW; if mid-flight, use that; else use first GW
-          let best = available[0];
-          for (const gw of available) {
-            const gwFixtures = cupFixtures[gw] || [];
-            const allDone = gwFixtures.length > 0 && gwFixtures.every((f: Fixture) => f.result);
-            const anyDone = gwFixtures.some((f: Fixture) => f.result);
-            if (allDone) {
-              best = gw;
-            } else if (anyDone) {
-              best = gw;
-              break;
-            } else {
-              break;
-            }
-          }
-          setSelectedGW(best);
+          // Deadline-driven, same rule as the league fixtures page: the
+          // gameweek being played, else the next one. See lib/gameweeks/default-gw.
+          const choices = available
+            .map((gw) => {
+              const gwFixtures: Fixture[] = cupFixtures[gw] || [];
+              const deadline = Date.parse(String(gwFixtures[0]?.gameweek?.deadline ?? ""));
+              return {
+                gw,
+                deadline,
+                isFullyResolved: gwFixtures.length > 0 && gwFixtures.every((f) => f.result),
+              };
+            })
+            .filter((c) => Number.isFinite(c.deadline));
+          setSelectedGW(pickDefaultGameweek(choices) ?? available[0]);
         }
       })
       .catch(() => {})

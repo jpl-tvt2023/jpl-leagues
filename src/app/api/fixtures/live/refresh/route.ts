@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      // A whole TVT-32 gameweek is 1 live fetch + 64 picks fetches. The ceiling
+      // A whole TVT-32 gameweek is 64 picks fetches, one per manager. The ceiling
       // is deliberately a little above that so a legitimate sweep completes but
       // a runaway loop cannot.
       const liveFixtures = await withFplBudget(
