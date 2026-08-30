@@ -8,6 +8,8 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { TierChip } from "@/components/TierChip";
 import { Logo } from "@/components/Logo";
 import { HelpTip } from "@/components/HelpTip";
+import { ChallengeTip } from "../[leagueSlug]/_components/fixtures/ChallengeTip";
+import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
 import { PlayerScoreFormula } from "@/app/[leagueSlug]/_components/playoffs/shared";
 import { fplEntryUrl, fplEntryLabel } from "@/lib/fpl-links";
 import { PlFixtureCard } from "./_components/PlFixtureCard";
@@ -166,6 +168,11 @@ interface DashboardData {
     challengedTeamId: string | null;
     /** That team's name, shown in the pill's tooltip. */
     challengedTeamName: string | null;
+    /**
+     * The challenge match, rebuilt from both sides' own results for the chip's gameweek.
+     * Null until that gameweek is scored — this card shows the upcoming one, so usually null.
+     */
+    challenge: ChallengeMatch | null;
   }[];
   teamMembers: {
     name: string;
@@ -1291,14 +1298,31 @@ export default function DashboardPage() {
           leagueFormat !== "continental-championship" &&
           data.leagueCaptains.some((c) => c.chipName);
 
+        // One template drives the header row and every data row, so the labels can never
+        // drift out of alignment with the cells beneath them.
+        //
+        // The captain track is `auto`, deliberately not a percentage: grid maximises
+        // definite/intrinsic tracks to their growth limit BEFORE handing leftover space
+        // to `fr`, so a `minmax(0,50%)` captain track grows to 50% and starves the team
+        // name on every row — including rows with no captain announced. `auto` stops at
+        // the content width, which is what leaves the team name its space.
+        const columnTemplate = hasAnyChip
+          ? "minmax(0,1fr) auto 2.75rem"
+          : "minmax(0,1fr) auto";
+
+        const headerRow = (
+          <div
+            className="grid items-center gap-2 pb-1 text-[10px] uppercase tracking-wide text-gray-500 border-b border-white/10"
+            style={{ gridTemplateColumns: columnTemplate }}
+          >
+            <span>Team</span>
+            <span className="text-right">Captain</span>
+            {hasAnyChip && <span className="text-right">Chip</span>}
+          </div>
+        );
+
         const renderRow = (c: (typeof data.leagueCaptains)[number]) => {
           const displayName = `${c.teamName}${c.isOwnTeam ? " (you)" : ""}`;
-          // Full chip name in the pill; the tooltip carries the detail that doesn't fit —
-          // for the Challenge Chip that's who was challenged.
-          const chipTip =
-            c.chipType === "C" && c.challengedTeamName
-              ? `${c.chipName} — challenging ${c.challengedTeamName}`
-              : c.chipName;
           return (
             <li
               key={c.teamId}
@@ -1307,7 +1331,7 @@ export default function DashboardPage() {
               // need and still truncate; `auto` sizes the captain to its content. The
               // fixed third track is reserved on EVERY row (not just chip rows) so the
               // two group columns keep identical geometry.
-              style={{ gridTemplateColumns: hasAnyChip ? "minmax(0,1fr) auto 5.5rem" : "minmax(0,1fr) auto" }}
+              style={{ gridTemplateColumns: columnTemplate }}
             >
               <span className="truncate" title={displayName}>{displayName}</span>
               {c.captainPlayerName ? (
@@ -1319,19 +1343,20 @@ export default function DashboardPage() {
               )}
               {hasAnyChip && (
                 <span className="flex justify-end min-w-0">
-                  {c.chipName && chipTip ? (
-                    // HelpTip rather than a bare `title=`: its bubble is portalled to
-                    // <body> so the group container's overflow-x-auto can't clip it, and
-                    // it opens on focus as well as hover, so the challenged team is
-                    // reachable by tap on mobile where `title` never appears.
-                    <HelpTip tip={chipTip} className="no-underline min-w-0">
-                      <span
-                        className="block truncate text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-300 font-semibold tracking-wide whitespace-nowrap"
-                        aria-label={chipTip}
-                      >
-                        {c.chipName}
-                      </span>
-                    </HelpTip>
+                  {/* ChallengeTip owns the pill and its tooltip: hover on desktop, tap on
+                      mobile, and for a Challenge Chip the rebuilt challenge match. */}
+                  {c.chipName && c.chipCode ? (
+                    <ChallengeTip
+                      chip={{
+                        chipType: c.chipType ?? "",
+                        chipCode: c.chipCode,
+                        chipName: c.chipName,
+                        challengedTeamName: c.challengedTeamName,
+                        challenge: c.challenge,
+                      }}
+                      align="right"
+                      className="min-w-0"
+                    />
                   ) : null}
                 </span>
               )}
@@ -1341,9 +1366,12 @@ export default function DashboardPage() {
         const hasGroups = (data.leagueGroupCount ?? 1) > 1;
         if (!hasGroups) {
           return (
-            <ul className="divide-y divide-white/5">
-              {data.leagueCaptains.map(renderRow)}
-            </ul>
+            <div>
+              {headerRow}
+              <ul className="divide-y divide-white/5">
+                {data.leagueCaptains.map(renderRow)}
+              </ul>
+            </div>
           );
         }
         const byGroup = new Map<string, typeof data.leagueCaptains>();
@@ -1360,8 +1388,9 @@ export default function DashboardPage() {
                 team names render in full alongside an announced captain. sm:min-w-0
                 hands control back to the 2-column grid on desktop. */}
             {orderedGroups.map((groupName) => (
-              <div key={groupName} className={`${hasAnyChip ? "min-w-[340px]" : "min-w-[280px]"} flex-shrink-0 sm:min-w-0 sm:flex-shrink`}>
+              <div key={groupName} className={`${hasAnyChip ? "min-w-[310px]" : "min-w-[280px]"} flex-shrink-0 sm:min-w-0 sm:flex-shrink`}>
                 <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Group {groupName}</div>
+                {headerRow}
                 <ul className="divide-y divide-white/5">
                   {byGroup.get(groupName)!.map(renderRow)}
                 </ul>

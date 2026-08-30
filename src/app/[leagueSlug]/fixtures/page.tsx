@@ -16,15 +16,24 @@ import {
   type LiveFixtureScore,
   PlayerBreakdown,
 } from "../_components/fixtures/shared";
+import { ChallengeTip, type ChipDisplay } from "../_components/fixtures/ChallengeTip";
+
+/** Chips played in a gameweek, keyed by gameweek number then team id. */
+type ChipsByGameweek = Record<number, Record<string, ChipDisplay>>;
 
 function FixtureCard({
   fixture,
   liveData,
   isFreshlyRefreshed,
+  homeChip,
+  awayChip,
 }: {
   fixture: Fixture;
   liveData?: LiveFixtureScore;
   isFreshlyRefreshed?: boolean;
+  /** Chip that side played in THIS fixture's gameweek, if any. */
+  homeChip?: ChipDisplay;
+  awayChip?: ChipDisplay;
 }) {
   const [expanded, setExpanded] = useState(false);
   const result = fixture.result;
@@ -85,6 +94,7 @@ function FixtureCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0 text-left text-white">
           <div className="font-semibold text-xs sm:text-sm truncate">{fixture.homeTeam.name}</div>
+          {homeChip && <ChallengeTip chip={homeChip} align="left" className="mt-0.5" />}
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 px-1 sm:px-3 shrink-0">
@@ -101,6 +111,7 @@ function FixtureCard({
 
         <div className="flex-1 min-w-0 text-right text-white">
           <div className="font-semibold text-xs sm:text-sm truncate">{fixture.awayTeam.name}</div>
+          {awayChip && <ChallengeTip chip={awayChip} align="right" className="mt-0.5" />}
         </div>
       </div>
 
@@ -146,6 +157,7 @@ export default function LeagueFixturesPage() {
   const dashboardHref = viewer.dashboardHref;
 
   const [fixtures, setFixtures] = useState<GameweekFixtures>({});
+  const [chipsByGameweek, setChipsByGameweek] = useState<ChipsByGameweek>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
@@ -255,6 +267,8 @@ export default function LeagueFixturesPage() {
         // For Continental Championship, show all 38 GWs; for TVT, show up to playoffStartGw - 1
         const leaguePhaseEnd: number = leagueFormat === "continental-championship" ? 38 : (data.playoffStartGw ? data.playoffStartGw - 1 : league.playoffStartGw - 1);
         setFixtures(fixturesData);
+        // Absent on a legacy cached payload — treat that as "no chips" rather than crashing.
+        setChipsByGameweek(data.chipsByGameweek ?? {});
 
         const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
         setAvailableGWs(gws);
@@ -288,6 +302,9 @@ export default function LeagueFixturesPage() {
   }, [leagueSlug, leagueFormat, league.playoffStartGw]);
 
   const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
+  // Chips belong to the gameweek on screen, not to whatever is live. Switching gameweeks
+  // switches the chips (and each Challenge Chip's rebuilt match) with them.
+  const chipsForGw: Record<string, ChipDisplay> = selectedGW ? chipsByGameweek[selectedGW] ?? {} : {};
   const isContinentalChampionship = leagueFormat === "continental-championship";
 
   // Continental Championship: only show JPL fixtures on this page (cup/knockout live on JCL/JEL pages)
@@ -436,6 +453,8 @@ export default function LeagueFixturesPage() {
                           fixture={fixture}
                           liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
                           isFreshlyRefreshed={isManuallyRefreshed}
+                          homeChip={chipsForGw[fixture.homeTeam.id ?? ""]}
+                          awayChip={chipsForGw[fixture.awayTeam.id ?? ""]}
                         />
                       ))
                     ) : (
@@ -457,6 +476,8 @@ export default function LeagueFixturesPage() {
                           fixture={fixture}
                           liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
                           isFreshlyRefreshed={isManuallyRefreshed}
+                          homeChip={chipsForGw[fixture.homeTeam.id ?? ""]}
+                          awayChip={chipsForGw[fixture.awayTeam.id ?? ""]}
                         />
                       ))
                     ) : (
@@ -475,6 +496,8 @@ export default function LeagueFixturesPage() {
                       fixture={fixture}
                       liveData={liveScores.find((l) => l.fixtureId === fixture.id)}
                       isFreshlyRefreshed={isManuallyRefreshed}
+                      homeChip={chipsForGw[fixture.homeTeam.id ?? ""]}
+                      awayChip={chipsForGw[fixture.awayTeam.id ?? ""]}
                     />
                   ))
                 ) : (
