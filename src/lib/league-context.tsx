@@ -4,14 +4,17 @@ import { createContext, useContext, type ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { getFormatPalette, type FormatPalette } from "@/lib/format-palette";
 
-export type LeagueFormat = "tvt" | "continental-championship" | "auction";
+// Widening this union only loosens useEnforceFormat's ARGUMENT type below — every existing call
+// site passes a literal array that still excludes "fpl-classic", so they keep 404ing it exactly
+// as before. Adding the format here does not, by itself, grant it access to anything.
+export type LeagueFormat = "tvt" | "continental-championship" | "auction" | "fpl-classic";
 
 export interface LeagueInfo {
   id: string;
   slug: string;
   name: string;
   sport: string;
-  format: string; // "tvt" | "auction" | "continental-championship"
+  format: string; // "tvt" | "auction" | "continental-championship" | "fpl-classic"
   season: string;
   teamSize: number;
   groupCount: number;
@@ -27,6 +30,11 @@ export interface LeagueInfo {
   // stored JSON. Carried here so squad / marketplace / rules copy all name the same
   // gameweeks instead of each hardcoding "GW 10/20/30".
   releaseCycleGws: number[];
+  // fpl-classic only. Present so the standings/rules pages need no second fetch just to show
+  // which official FPL mini-league this page mirrors, and on what terms it is scored.
+  fplLeagueId?: number | null;
+  fplScoringMetric?: "net" | "gross";
+  fplWinnerCutPercent?: number;
 }
 
 export interface ViewerInfo {

@@ -15,6 +15,7 @@ export function GwNavigator({
   badge,
   accent = "default",
   disabled,
+  selectLabel = "Gameweek",
 }: {
   /** Selectable gameweeks, ascending. */
   gws: number[];
@@ -26,6 +27,12 @@ export function GwNavigator({
   badge?: React.ReactNode;
   accent?: "default" | "continental";
   disabled?: boolean;
+  /**
+   * Accessible name for the dropdown. Override it when a page shows more than one navigator —
+   * the dashboard has one for the PL fixture card and one for Captains & Chips, and two controls
+   * both called "Gameweek" are ambiguous to a screen reader and to a test locator alike.
+   */
+  selectLabel?: string;
 }) {
   const index = value == null ? -1 : gws.indexOf(value);
   const atStart = index <= 0;
@@ -55,7 +62,7 @@ export function GwNavigator({
         value={value ?? ""}
         onChange={(e) => onChange(Number(e.target.value))}
         disabled={disabled || gws.length === 0}
-        aria-label="Gameweek"
+        aria-label={selectLabel}
         className={`border rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base font-semibold min-w-[140px] sm:min-w-[180px] text-center appearance-none cursor-pointer transition disabled:opacity-40 disabled:cursor-not-allowed ${selectClass}`}
       >
         {gws.map((gw) => (

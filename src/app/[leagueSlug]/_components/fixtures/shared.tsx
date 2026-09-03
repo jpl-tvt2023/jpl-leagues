@@ -32,6 +32,19 @@ export interface BreakdownChips {
   tvt: { code: string; label: string; state: ChipState; gw: number | null }[];
   /** Which chip set these belong to, e.g. "Set 1". */
   tvtLabel: string;
+  /**
+   * Open chip tooltips on tap as well as hover, and say so.
+   *
+   * The public fixtures page sets this: it is read on phones, where a native `title=` tooltip
+   * simply does not exist, and the chip is frequently the whole explanation for a score. The
+   * dashboard leaves it off and keeps the tooltip it already had.
+   */
+  interactive?: boolean;
+  /**
+   * Render nothing for a manager whose FPL chip history is unknown, rather than a placeholder.
+   * The fixtures page reads chips from cache only, so "unknown" is the normal cold state.
+   */
+  silentWhenUnknown?: boolean;
 }
 
 export interface LivePlayerScore {
@@ -192,7 +205,12 @@ export function PlayerBreakdownSide({
                 in a separate block above. */}
             {chips && (
               <div className="flex flex-wrap gap-0.5 mt-0.5">
-                <FplChipRow status={chips.byFplId[p.fplId]} gwNumber={gwNumber} />
+                <FplChipRow
+                  status={chips.byFplId[p.fplId]}
+                  gwNumber={gwNumber}
+                  interactive={chips.interactive}
+                  silentWhenUnknown={chips.silentWhenUnknown}
+                />
               </div>
             )}
           </div>
@@ -218,7 +236,12 @@ export function PlayerBreakdownSide({
             </div>
             {chips && (
               <div className="flex flex-wrap gap-0.5 mt-0.5">
-                <FplChipRow status={chips.byFplId[p.fplId]} gwNumber={gwNumber} />
+                <FplChipRow
+                  status={chips.byFplId[p.fplId]}
+                  gwNumber={gwNumber}
+                  interactive={chips.interactive}
+                  silentWhenUnknown={chips.silentWhenUnknown}
+                />
               </div>
             )}
           </div>
@@ -234,7 +257,14 @@ export function PlayerBreakdownSide({
           <div className="text-[9px] text-gray-500 mb-0.5">TVT chips ({chips.tvtLabel})</div>
           <div className="flex flex-wrap gap-0.5">
             {chips.tvt.map((c) => (
-              <ChipPill key={c.code} code={c.code} label={c.label} state={c.state} gw={c.gw} />
+              <ChipPill
+                key={c.code}
+                code={c.code}
+                label={c.label}
+                state={c.state}
+                gw={c.gw}
+                interactive={chips.interactive}
+              />
             ))}
           </div>
         </div>
@@ -336,6 +366,13 @@ export function PlayerBreakdown({
       {hasTempCaptain && (
         <div className="mt-2 text-[10px] text-amber-400/70">
           C* = auto-assigned temp captain (lowest scorer)
+        </div>
+      )}
+      {/* Said once for the whole breakdown, not per side — the chips are all the same kind of
+          thing and repeating the instruction twice reads as two different instructions. */}
+      {(homeChips?.interactive || awayChips?.interactive) && (
+        <div className="mt-2 text-[10px] text-gray-500 text-center">
+          Tap or hover a chip to see what it is and when it was played.
         </div>
       )}
       {/* Nothing scored on either side: say why, rather than leaving a

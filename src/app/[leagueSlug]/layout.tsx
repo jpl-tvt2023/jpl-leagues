@@ -2,9 +2,10 @@ import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { db, leagues, leagueAdmins, teams } from "@/lib/db";
+import { fplClassicConfig } from "@/lib/db/schema";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { LeagueProvider, type LeagueInfo, type ViewerInfo } from "@/lib/league-context";
-import { getFormatPalette } from "@/lib/format-palette";
+import { getFormatPalette, FPL_CLASSIC_FORMAT } from "@/lib/format-palette";
 import { DEFAULT_RELEASE_CYCLE_GWS, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
 
 function parseEnabledChips(raw: string): string[] {
@@ -166,6 +167,30 @@ export default async function LeagueLayout({
     startGameweek: row.startGameweek,
     releaseCycleGws: parseReleaseCycleGws(row.releaseCycleGws),
   };
+
+  // fpl-classic only, and its own try/catch: a `fpl_classic_config` table that lags behind its
+  // migration must degrade to a missing `fplLeagueId` (the page still renders, minus the FPL
+  // deep-link), never take down this or any other format's league page the way a failure in the
+  // main `leagues` query above would. Gated on format so the extra query never runs for the
+  // other three formats at all.
+  if (row.format === FPL_CLASSIC_FORMAT) {
+    try {
+      const [config] = await db
+        .select({
+          fplLeagueId: fplClassicConfig.fplLeagueId,
+          scoringMetric: fplClassicConfig.scoringMetric,
+          winnerCutPercent: fplClassicConfig.winnerCutPercent,
+        })
+        .from(fplClassicConfig)
+        .where(eq(fplClassicConfig.leagueId, row.id))
+        .limit(1);
+      league.fplLeagueId = config?.fplLeagueId ?? null;
+      league.fplScoringMetric = (config?.scoringMetric as "net" | "gross") ?? "net";
+      league.fplWinnerCutPercent = config?.winnerCutPercent ?? 30;
+    } catch (err) {
+      console.warn("[layout] fpl_classic_config SELECT failed — continuing without fplLeagueId.", err);
+    }
+  }
 
   const viewer = await resolveViewer();
 

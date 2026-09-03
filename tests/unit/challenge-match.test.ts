@@ -19,6 +19,10 @@ import {
   type ChallengeChipRow,
   type TeamGwResult,
 } from "../../src/lib/formats/tvt/challenge-match";
+import {
+  buildLiveChallengeMatch,
+  indexLiveSides,
+} from "../../src/lib/formats/tvt/challenge-match-live";
 
 const GW = "gw2";
 const CHALLENGER = "t1";
@@ -141,4 +145,103 @@ test("resolves several chips in one pass", () => {
   assert.equal(out.size, 2);
   assert.equal(out.get("chip2")!.challengerTeamName, "Cobham to Carrington");
   assert.equal(out.get("chip2")!.outcome, "lost");
+});
+
+/* ── live rebuild (challenge-match-live.ts) ─────────────────────────────── */
+
+function liveFixture(over: Partial<Parameters<typeof indexLiveSides>[0][number]> = {}) {
+  return {
+    homeTeamId: CHALLENGER,
+    awayTeamId: "t5",
+    homeTeamName: "Pakhala Army",
+    awayTeamName: "Peaky Blinders",
+    homeScore: 288,
+    awayScore: 265,
+    homePlayers: [{ name: "Suvendu", finalScore: 198 }],
+    awayPlayers: [{ name: "Rahul", finalScore: 120 }],
+    ...over,
+  };
+}
+
+const LIVE_BOTH = [
+  liveFixture(),
+  liveFixture({
+    homeTeamId: CHALLENGED,
+    homeTeamName: "Cobham to Carrington",
+    homeScore: 319,
+    homePlayers: [{ name: "Vignesh", finalScore: 115 }],
+    awayTeamId: "t9",
+    awayTeamName: "The Invincibles",
+    awayScore: 279,
+  }),
+];
+
+test("live: builds the in-progress match from both sides' live scores", () => {
+  const m = buildLiveChallengeMatch(
+    { teamId: CHALLENGER, challengedTeamId: CHALLENGED, gameweek: 2 },
+    indexLiveSides(LIVE_BOTH),
+  )!;
+  assert.equal(m.gameweek, 2);
+  assert.equal(m.challengerTeamName, "Pakhala Army");
+  assert.equal(m.challengedTeamName, "Cobham to Carrington");
+  assert.equal(m.challengerScore, 288);
+  assert.equal(m.challengedScore, 319);
+  // Stringified so PlayerBreakdown can parse it exactly as it parses a stored result.
+  assert.deepEqual(JSON.parse(m.challengerPlayerScores!), [{ name: "Suvendu", finalScore: 198 }]);
+  assert.deepEqual(JSON.parse(m.challengedPlayerScores!), [{ name: "Vignesh", finalScore: 115 }]);
+});
+
+test("live: never awards points, even when the challenger is ahead", () => {
+  // Challenger leading 319-288: still no points. The scorer decides at conclusion.
+  const sides = indexLiveSides(LIVE_BOTH);
+  const m = buildLiveChallengeMatch(
+    { teamId: CHALLENGED, challengedTeamId: CHALLENGER, gameweek: 2 },
+    sides,
+  )!;
+  assert.ok(m.challengerScore > m.challengedScore);
+  assert.equal(m.outcome, "live");
+  assert.equal(m.pointsAwarded, null);
+});
+
+test("live: both sides or nothing", () => {
+  const sides = indexLiveSides([liveFixture()]); // challenged team absent — on a bye
+  assert.equal(
+    buildLiveChallengeMatch({ teamId: CHALLENGER, challengedTeamId: CHALLENGED, gameweek: 2 }, sides),
+    null,
+  );
+  // Challenger missing too.
+  assert.equal(
+    buildLiveChallengeMatch({ teamId: "nobody", challengedTeamId: CHALLENGER, gameweek: 2 }, sides),
+    null,
+  );
+  // No target at all.
+  assert.equal(
+    buildLiveChallengeMatch({ teamId: CHALLENGER, challengedTeamId: null, gameweek: 2 }, sides),
+    null,
+  );
+});
+
+test("live: indexes both halves of every fixture", () => {
+  const sides = indexLiveSides(LIVE_BOTH);
+  assert.equal(sides.size, 4);
+  assert.equal(sides.get("t9")!.score, 279);
+  assert.equal(sides.get("t5")!.teamName, "Peaky Blinders");
+});
+
+test("live: label says in progress, and claims no result", () => {
+  const m = buildLiveChallengeMatch(
+    { teamId: CHALLENGER, challengedTeamId: CHALLENGED, gameweek: 2 },
+    indexLiveSides(LIVE_BOTH),
+  )!;
+  assert.equal(challengeOutcomeLabel(m), "Challenge in progress · live");
+  // Must not read as won/lost/drawn, nor as a fixture result.
+  assert.ok(!/\bwon\b|\blost\b|\bdrew\b|\bFinal\b/i.test(challengeOutcomeLabel(m)));
+});
+
+test("live: challengeOutcome never produces the live state from stored data", () => {
+  // "live" is set only by the live builder. Anything read back from the store is
+  // pending or decided — never live.
+  for (const [pts, processed] of [[null, false], [0, true], [1, true], [2, true]] as const) {
+    assert.notEqual(challengeOutcome(pts, processed), "live");
+  }
 });

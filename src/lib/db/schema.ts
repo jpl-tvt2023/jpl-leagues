@@ -282,6 +282,19 @@ export const gameweekChips = sqliteTable("gameweek_chips", {
   
   // For Win-Win: track if team had negative hits (chip wasted)
   hadNegativeHits: integer("had_negative_hits", { mode: "boolean" }).notNull().default(false),
+
+  // Why the chip was wasted, when it was. Null means "not wasted".
+  //
+  // Free text rather than a boolean because the reasons differ and the UI states them:
+  // "Win-Win wasted — 8 transfer hits" vs "Double Pointer wasted — Bench Boost played the same
+  // gameweek". Set by the scorer; see lib/formats/tvt/chip-waste.ts for how waste is detected
+  // across this and the two older representations.
+  //
+  // ⚠️ Waste is recorded HERE, never by flipping isValid to false. The force-reprocess reset in
+  // api/gameweeks/[gw]/route.ts clears this along with isProcessed/pointsAwarded/hadNegativeHits,
+  // but deliberately leaves isValid alone — so a chip the scorer had invalidated would be excluded
+  // from the scorer's own `isValid: true` query on every later reprocess, silently and forever.
+  wastedReason: text("wasted_reason"),
   
   // For Double Pointer / Underdog: team's rank and opponent's rank at time of validation
   teamRankAtValidation: integer("team_rank_at_validation"),
@@ -650,6 +663,165 @@ export type Feedback = typeof feedback.$inferSelect;
 export type FeedbackInsert = typeof feedback.$inferInsert;
 
 // ============================================
+// FPL Classic format
+//
+// Plain FPL classic mini-leagues: public, read-only, no login accounts. Entrants are keyed by
+// FPL entry id and live in their OWN tables — deliberately not `teams`/`players`, which are login
+// accounts carrying purse/chip/auction columns that mean nothing here.
+//
+// No columns are added to `leagues` for this format. A side table degrades only this format if a
+// migration lags behind a deploy; a new `leagues` column would break every league page for every
+// format, which is exactly why [leagueSlug]/layout.tsx and superadmin/leagues/route.ts both carry
+// defensive minimal-column fallbacks today.
+//
+// ⚠️ No `gameweeks` rows are ever created for an fpl-classic league. The scoring orchestrator
+// (lib/cron/process-all.ts) discovers work by iterating `gameweeks` rows, so creating them would
+// make an unscoreable league structurally visible to it. Gameweek deadlines come from FPL's own
+// bootstrap data instead — see lib/fpl/gw-calendar.ts.
+// ============================================
+
+/** Per-league config and sync bookkeeping. */
+export const fplClassicConfig = sqliteTable("fpl_classic_config", {
+  leagueId: text("league_id").primaryKey().references(() => leagues.id, { onDelete: "cascade" }),
+
+  // The FPL classic mini-league id the superadmin supplied — the only input this format needs.
+  fplLeagueId: integer("fpl_league_id").notNull(),
+  // Snapshot of FPL's own league name, so the page never needs a call just to show it.
+  fplLeagueName: text("fpl_league_name"),
+  // FPL's own league.start_event.
+  fplStartEvent: integer("fpl_start_event"),
+  // First gameweek THIS league scores. Superadmin-set at creation.
+  startGameweek: integer("start_gameweek").notNull().default(1),
+  // "net" (after transfer hits) | "gross". Selects which figure every leaderboard ranks by.
+  scoringMetric: text("scoring_metric", { enum: ["net", "gross"] }).notNull().default("net"),
+  // Season winners are the top N% of entrants by season total.
+  winnerCutPercent: integer("winner_cut_percent").notNull().default(30),
+
+  entrantsSyncedAt: integer("entrants_synced_at", { mode: "timestamp" }),
+  entrantCount: integer("entrant_count").notNull().default(0),
+  // Highest gameweek for which EVERY active entrant has a persisted fpl_classic_entry_gws row.
+  // At or below this, data is immutable and served from SQL; above it, from the live Redis block.
+  // Advanced only on a fully successful settle sweep — never on a partial one, or a gap here
+  // becomes permanently missing data. See lib/fpl-classic/sync.ts.
+  settledThroughGw: integer("settled_through_gw").notNull().default(0),
+  // Last sync failure, surfaced in the superadmin row so a silently-stalled league is visible.
+  lastSyncError: text("last_sync_error"),
+
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  // Non-unique: the same FPL classic league legitimately recurs across seasons.
+  fplLeagueIdx: index("fpl_classic_config_fpl_league").on(table.fplLeagueId),
+}));
+
+/** One row per FPL entry in the mini-league. */
+export const fplClassicEntrants = sqliteTable("fpl_classic_entrants", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  fplEntryId: integer("fpl_entry_id").notNull(),
+
+  // Snapshots from FPL so the page renders with zero outbound calls.
+  entryName: text("entry_name").notNull(),
+  playerName: text("player_name").notNull(),
+
+  // From new_entries.results[].joined_time when FPL supplies it; null otherwise.
+  joinedTime: integer("joined_time", { mode: "timestamp" }),
+  // The gameweek our first sync saw this entrant. The award-eligibility floor: a manager who
+  // joined at GW10 must not be crowned winner of a GW3 leaderboard. Their FULL history still
+  // counts toward the season standings table — see lib/fpl-classic/standings.ts.
+  firstSeenGw: integer("first_seen_gw").notNull().default(1),
+
+  // Denormalised so a cold Redis cache or an FPL outage still renders an honest ordered table.
+  totalPoints: integer("total_points").notNull().default(0),
+  lastRank: integer("last_rank"),
+
+  // Entrants can leave a mini-league. Soft-delete: their historical rows and any award they
+  // already won must survive; they simply drop out of the live table.
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  leagueEntryUnique: uniqueIndex("fpl_classic_entrants_league_entry_unique").on(table.leagueId, table.fplEntryId),
+  // Serves the degraded ordered read when Redis is cold or FPL is unreachable.
+  leagueTotalIdx: index("fpl_classic_entrants_league_total").on(table.leagueId, table.totalPoints),
+}));
+
+/**
+ * One row per entrant per CONCLUDED gameweek. Written once by the settle sweep, never updated
+ * afterward (the row is immutable — a correction is a superadmin force-recompute, not an edit).
+ */
+export const fplClassicEntryGws = sqliteTable("fpl_classic_entry_gws", {
+  id: text("id").primaryKey(),
+  // Denormalised leagueId so every leaderboard query is a single-table indexed scan, no join.
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+  entrantId: text("entrant_id").notNull().references(() => fplClassicEntrants.id, { onDelete: "cascade" }),
+  gw: integer("gw").notNull(), // 1..38
+
+  points: integer("points").notNull(), // FPL history `points` — GROSS
+  transferCost: integer("transfer_cost").notNull().default(0), // FPL history `event_transfers_cost`
+  // points - transferCost. PERSISTED, not derived, so every leaderboard sorts on an indexed
+  // column and no two callers can disagree about whether hits count.
+  netPoints: integer("net_points").notNull(),
+  totalPoints: integer("total_points").notNull(), // FPL's own running season total at this GW
+  overallRank: integer("overall_rank"),
+  benchPoints: integer("bench_points").notNull().default(0), // FPL history `points_on_bench`
+  chip: text("chip"), // FPL's raw chip name for that GW, or null
+
+  // Calendar month of this gameweek's FPL deadline, e.g. "2025-11", UTC. FROZEN at settle time —
+  // a concluded gameweek's month must never move because FPL rescheduled something later. Makes
+  // the monthly leaderboard a pure indexed GROUP BY with no FPL dependency at read time.
+  monthKey: text("month_key").notNull(),
+
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  // Makes the settle sweep idempotent via onConflictDoNothing().
+  entrantGwUnique: uniqueIndex("fpl_classic_entry_gws_unique").on(table.entrantId, table.gw),
+  // Gameweek leaderboard: WHERE leagueId AND gw ORDER BY netPoints DESC.
+  leagueGwNetIdx: index("fpl_classic_entry_gws_league_gw_net").on(table.leagueId, table.gw, table.netPoints),
+  // Monthly leaderboard: WHERE leagueId AND monthKey.
+  leagueMonthIdx: index("fpl_classic_entry_gws_league_month").on(table.leagueId, table.monthKey),
+}));
+
+/**
+ * Frozen winner records — written when the superadmin processes a concluded gameweek from the
+ * Operations tab. Once a scope has rows here, the API serves them verbatim and never re-derives:
+ * a published winner must not silently change because FPL corrected a score later. A scope with
+ * no rows yet is computed on the fly and labelled PROVISIONAL by the API — the two states are
+ * never conflated.
+ *
+ * There is no prize, amount, or currency column, and none may be added — the platform announces
+ * winners, it does not list prizes. See lib/formats/fpl-classic/awards.ts.
+ */
+export const fplClassicAwards = sqliteTable("fpl_classic_awards", {
+  id: text("id").primaryKey(),
+  leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
+
+  awardType: text("award_type").notNull(), // open vocabulary, matches an AwardDefinition.key
+  scopeKey: text("scope_key").notNull(), // "season" | "gw:14" | "month:2025-11"
+  position: integer("position").notNull().default(1), // 1, 2, 3 … up to the winner cut for season
+  entrantId: text("entrant_id").notNull().references(() => fplClassicEntrants.id, { onDelete: "cascade" }),
+  value: integer("value").notNull(), // the winning figure — net points, bench points, …
+  isTied: integer("is_tied", { mode: "boolean" }).notNull().default(false),
+  // JSON. New award types add keys here, not columns — e.g. highest-gw-score stores { gw }.
+  detail: text("detail"),
+
+  computedAt: integer("computed_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  computedThroughGw: integer("computed_through_gw"),
+  recomputeCount: integer("recompute_count").notNull().default(0),
+}, (table) => ({
+  awardUnique: uniqueIndex("fpl_classic_awards_unique").on(
+    table.leagueId, table.awardType, table.scopeKey, table.position, table.entrantId,
+  ),
+  leagueAwardIdx: index("fpl_classic_awards_league_type").on(table.leagueId, table.awardType),
+}));
+
+export type FplClassicConfig = typeof fplClassicConfig.$inferSelect;
+export type FplClassicEntrant = typeof fplClassicEntrants.$inferSelect;
+export type FplClassicEntryGw = typeof fplClassicEntryGws.$inferSelect;
+export type FplClassicAward = typeof fplClassicAwards.$inferSelect;
+
+// ============================================
 // Relations
 // ============================================
 
@@ -912,6 +1084,48 @@ export const tradeProposalsRelations = relations(tradeProposals, ({ one }) => ({
     fields: [tradeProposals.targetTeamId],
     references: [teams.id],
     relationName: "receivedTrades",
+  }),
+}));
+
+// ============================================
+// FPL Classic relations
+// ============================================
+
+export const fplClassicConfigRelations = relations(fplClassicConfig, ({ one }) => ({
+  league: one(leagues, {
+    fields: [fplClassicConfig.leagueId],
+    references: [leagues.id],
+  }),
+}));
+
+export const fplClassicEntrantsRelations = relations(fplClassicEntrants, ({ one, many }) => ({
+  league: one(leagues, {
+    fields: [fplClassicEntrants.leagueId],
+    references: [leagues.id],
+  }),
+  gameweeks: many(fplClassicEntryGws),
+  awards: many(fplClassicAwards),
+}));
+
+export const fplClassicEntryGwsRelations = relations(fplClassicEntryGws, ({ one }) => ({
+  league: one(leagues, {
+    fields: [fplClassicEntryGws.leagueId],
+    references: [leagues.id],
+  }),
+  entrant: one(fplClassicEntrants, {
+    fields: [fplClassicEntryGws.entrantId],
+    references: [fplClassicEntrants.id],
+  }),
+}));
+
+export const fplClassicAwardsRelations = relations(fplClassicAwards, ({ one }) => ({
+  league: one(leagues, {
+    fields: [fplClassicAwards.leagueId],
+    references: [leagues.id],
+  }),
+  entrant: one(fplClassicEntrants, {
+    fields: [fplClassicAwards.entrantId],
+    references: [fplClassicEntrants.id],
   }),
 }));
 

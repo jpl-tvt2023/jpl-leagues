@@ -84,6 +84,10 @@ const PUBLIC_ROUTES = [
   // Player-level FPL standings. Public for the same reason /api/standings is:
   // it exposes nothing a viewer could not read on the FPL site itself.
   "/api/fpl-league",
+  // FPL Classic: the whole format is public, read-only, no login accounts. GET-only, per the
+  // matcher above — a future POST under this prefix (e.g. an admin sync trigger) stays
+  // authenticated on its own path, not under this one.
+  "/api/fpl-classic",
   // Test-only FPL stub. The route itself 404s unless NODE_ENV=test, so
   // whitelisting it here is inert in production.
   "/api/test-fpl-stub",

@@ -6,6 +6,10 @@ import { getCachedFixtures, setCachedFixtures } from "@/lib/fpl-cache";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 import { buildChallengeMatches } from "@/lib/formats/tvt/challenge-match-query";
 import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
+import { isChipDisclosable, isChipWasted } from "@/lib/formats/tvt/chip-waste";
+import { resolveFplChipStatuses } from "@/lib/fpl-league/chip-status-map";
+import type { FplChipStatus } from "@/lib/fpl-league/chips";
+import { players } from "@/lib/db/schema";
 
 /** One team's chip for one gameweek, as rendered on that team's fixture card. */
 export interface FixtureChip {
@@ -16,8 +20,22 @@ export interface FixtureChip {
   chipName: string;
   /** Challenge Chip only. */
   challengedTeamName?: string;
+  /**
+   * Challenge Chip only. The client needs the id, not just the name, to match the challenged team
+   * against the live-scores array and rebuild the challenge while the gameweek is in flight.
+   * Disclosed under the same past-deadline gate as `challengedTeamName`, so it reveals nothing new.
+   */
+  challengedTeamId?: string;
   /** Challenge Chip only, once both sides of that gameweek are scored. */
   challenge?: ChallengeMatch;
+  /**
+   * The chip was spent but awarded nothing — Win-Win against negative hits, or the team's
+   * managers playing an FPL chip the same gameweek. Wasted chips ARE shown: hiding them was the
+   * old behaviour and it made a burnt chip look like one never played.
+   */
+  isWasted?: boolean;
+  /** Why, in the words the scorer recorded. Null for a chip wasted before this field existed. */
+  wastedReason?: string | null;
 }
 
 /**
@@ -133,14 +151,19 @@ export async function GET(request: NextRequest) {
         .where(eq(gameweeks.leagueId, leagueId));
       const gwById = new Map(gwRows.map((g) => [g.id, g]));
 
+      // Deliberately NOT filtered on isValid in SQL. A wasted chip is stored with isValid false
+      // by the admin import/override path, and the whole point of this payload now is to SHOW
+      // wasted chips. `isChipDisclosable` keeps out the one case that must stay hidden: a chip
+      // that is invalid AND unprocessed, i.e. a declaration submission rejected and never played.
       const chipRows = await db
         .select()
         .from(gameweekChips)
-        .where(and(inArray(gameweekChips.gameweekId, leagueGwIds), eq(gameweekChips.isValid, true)));
+        .where(inArray(gameweekChips.gameweekId, leagueGwIds));
 
       const visible = chipRows.filter((c) => {
         const gw = gwById.get(c.gameweekId);
         if (!gw || gw.deadline > now) return false;      // not public yet
+        if (!isChipDisclosable(c)) return false;         // rejected declaration, never played
         return enabledChips.includes(c.chipType);
       });
 
@@ -168,19 +191,54 @@ export async function GET(request: NextRequest) {
 
       for (const c of visible) {
         const gw = gwById.get(c.gameweekId)!;
+        const wasted = isChipWasted(c);
         const entry: FixtureChip = {
           chipType: c.chipType,
           chipCode: chipCode(c.chipType),
           chipName: chipName(c.chipType),
+          isWasted: wasted,
+          wastedReason: wasted ? c.wastedReason ?? null : null,
         };
         if (c.chipType === "C") {
           const target = c.challengedTeamId ? targetNameById.get(c.challengedTeamId) : undefined;
           if (target) entry.challengedTeamName = target;
+          if (c.challengedTeamId) entry.challengedTeamId = c.challengedTeamId;
           const match = challenges.get(c.id);
           if (match) entry.challenge = match;
         }
         (chipsByGameweek[gw.number] ??= {})[c.teamId] = entry;
       }
+    }
+
+    // ── FPL chips played by each manager ─────────────────────────────────
+    //
+    // Rendered under each manager's name in the points breakdown, and used client-side to explain
+    // a TVT chip that is about to be wasted while a gameweek is still live.
+    //
+    // ⚠️ Cache-only: `topUp: 0`. This route is public and unauthenticated, so it must never fan
+    // out to FPL — a crawler would otherwise walk the league into a 429 that also takes down live
+    // scoring. Managers with no cached history are simply absent from the map, which the client
+    // renders as nothing at all rather than as "no chips played".
+    let fplChipsByFplId: Record<string, FplChipStatus> = {};
+    let playersByTeamId: Record<string, { name: string; fplId: string }[]> = {};
+    if (leagueGwIds.length > 0) {
+      const rosterRows = await db
+        .select({ teamId: players.teamId, name: players.name, fplId: players.fplId })
+        .from(players)
+        .innerJoin(teams, eq(players.teamId, teams.id))
+        .where(eq(teams.leagueId, leagueId));
+
+      playersByTeamId = rosterRows.reduce<Record<string, { name: string; fplId: string }[]>>((acc, r) => {
+        (acc[r.teamId] ??= []).push({ name: r.name, fplId: r.fplId });
+        return acc;
+      }, {});
+
+      const statuses = await resolveFplChipStatuses(rosterRows.map((r) => r.fplId), {
+        lane: "background",
+        topUp: 0,
+        label: "fixtures chips",
+      });
+      fplChipsByFplId = Object.fromEntries(statuses);
     }
 
     const responseData = {
@@ -189,6 +247,8 @@ export async function GET(request: NextRequest) {
       playoffStartGw,
       format,
       chipsByGameweek,
+      fplChipsByFplId,
+      playersByTeamId,
     };
 
     // Fire-and-forget cache write

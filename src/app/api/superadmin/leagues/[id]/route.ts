@@ -4,6 +4,7 @@ import {
   leagues, groups, teams, players, gameweeks, fixtures, results,
   gameweekChips, playoffTies, challengerSurvivalEntries, leagueAdmins, settings, users,
   auctionBids, auctionWishlists, auctionOwnership, auctionScores, auctionSessions, tradeProposals,
+  fplClassicConfig, fplClassicEntrants, fplClassicEntryGws, fplClassicAwards,
 } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { isSuperAdmin } from "@/lib/auth";
@@ -81,8 +82,10 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const body = await request.json();
-  const { password } = body;
+  // A bodyless DELETE is a caller mistake, not a server fault: without the catch, request.json()
+  // throws SyntaxError and this returns a bare 500 that no caller can branch on.
+  const body = await request.json().catch(() => ({} as Record<string, unknown>));
+  const password = typeof body.password === "string" ? body.password : "";
 
   if (!password) {
     return NextResponse.json({ error: "Password is required to confirm deletion" }, { status: 400 });
@@ -147,6 +150,14 @@ export async function DELETE(
     await tx.delete(auctionScores).where(eq(auctionScores.leagueId, id));
     await tx.delete(tradeProposals).where(eq(tradeProposals.leagueId, id));
     await tx.delete(auctionSessions).where(eq(auctionSessions.leagueId, id));
+    // 7b. FPL Classic data. ON DELETE CASCADE would cover these, but that relies on the
+    //     `PRAGMA foreign_keys = ON` in db/index.ts being in force on this connection — every
+    //     other block here deletes explicitly rather than trusting it, so these do too.
+    //     Awards reference entrants, so awards go first.
+    await tx.delete(fplClassicAwards).where(eq(fplClassicAwards.leagueId, id));
+    await tx.delete(fplClassicEntryGws).where(eq(fplClassicEntryGws.leagueId, id));
+    await tx.delete(fplClassicEntrants).where(eq(fplClassicEntrants.leagueId, id));
+    await tx.delete(fplClassicConfig).where(eq(fplClassicConfig.leagueId, id));
     // 8. Settings (depend on league)
     await tx.delete(settings).where(eq(settings.leagueId, id));
     // 9. League admins (depend on league)

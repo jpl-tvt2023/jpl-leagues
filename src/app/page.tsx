@@ -36,14 +36,17 @@ const STANDINGS_BTN: Record<string, string> = {
 // Format-specific overrides (applied on top of sport defaults)
 const FORMAT_GRADIENT: Record<string, string> = {
   "continental-championship": "from-[#0d1a33]/90 via-[#061426]/80 to-slate-900/70",
+  "fpl-classic": "from-sky-950/80 via-slate-900/80 to-slate-900/70",
 };
 
 const FORMAT_GLOW: Record<string, string> = {
   "continental-championship": "bg-[#0066cc]/15",
+  "fpl-classic": "bg-sky-500/15",
 };
 
 const FORMAT_PRIMARY_BTN: Record<string, string> = {
   "continental-championship": "bg-[#00cc44] hover:bg-[#00ff55] text-slate-900 font-bold",
+  "fpl-classic": "bg-sky-400 hover:bg-sky-300 text-slate-900 font-bold",
 };
 
 export default function Home() {
@@ -149,6 +152,13 @@ export default function Home() {
                           <Link href={`/${league.slug}/jpl-cup-standings`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">JPL Cup Standings</Link>
                           <Link href={`/${league.slug}/jpl-cup-fixtures`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">JPL Cup Fixtures</Link>
                           <Link href={`/${league.slug}/playoffs`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Playoffs</Link>
+                        </>
+                      ) : league.format === "fpl-classic" ? (
+                        /* Only the two pages this format actually has. Linking Fixtures or
+                           Playoffs here would send a reader to a page that 404s by design. */
+                        <>
+                          <Link href={`/${league.slug}/standings`} className={`rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition ${standingsBtn}`}>Standings</Link>
+                          <Link href={`/${league.slug}/rules`} className="rounded-full border border-white/20 bg-white/5 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white transition hover:bg-white/10">Rules</Link>
                         </>
                       ) : (
                         <>

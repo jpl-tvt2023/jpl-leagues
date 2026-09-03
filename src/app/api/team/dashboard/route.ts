@@ -9,6 +9,12 @@ import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { computeLeagueStageStandings } from "@/lib/standings/league-stage";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 import { buildChallengeMatches } from "@/lib/formats/tvt/challenge-match-query";
+import {
+  buildLeagueCaptains,
+  findGameweekId,
+  resolveCaptainsWindow,
+  type LeagueCaptainRow,
+} from "@/lib/dashboard/league-captains";
 import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
 import { computeCupGroupStandings } from "@/lib/formats/continental-championship/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
@@ -1117,124 +1123,34 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // League-wide captain + chip announcements for the upcoming GW — shown in
-    // the dashboard's top widget. Immediately visible to every team on
-    // announcement; no deadline gate. Chips are TVT-only — for Continental Championship the
-    // chip mapping stays null. Queries bounded by team count (≤32 per league).
-    let leagueCaptains: Array<{
-      teamId: string;
-      teamName: string;
-      groupName: string;
-      isOwnTeam: boolean;
-      captainPlayerName: string | null;
-      announcedAt: string | null;
-      /** Raw stored code ("D"). NOT for display — see `chipCode`. */
-      chipType: string | null;
-      /** Short pill code ("DP"). */
-      chipCode: string | null;
-      /** Full name for tooltips ("Double Pointer"). */
-      chipName: string | null;
-      /** Team the Challenge Chip targets. Null for every other chip. */
-      challengedTeamId: string | null;
-      /** That team's name, resolved here so the client can render it directly. */
-      challengedTeamName: string | null;
-      /**
-       * The challenge match itself, rebuilt from both sides' own fixture results for the
-       * chip's gameweek. Null until that gameweek is scored — this card shows the UPCOMING
-       * gameweek, so it is usually null and the pill just names the target.
-       */
-      challenge: ChallengeMatch | null;
-    }> = [];
-    if (nextGameweek && teamLeagueId) {
-      const allTeamsInLeague = await db.query.teams.findMany({
-        where: eq(teams.leagueId, teamLeagueId),
-        with: { group: true },
-      });
-      const captainsForGw = await db.query.gameweekCaptains.findMany({
-        where: eq(gameweekCaptains.gameweekId, nextGameweek.id),
-        with: { player: true },
-      });
-      const captainByTeam = new Map<string, { name: string; announcedAt: Date | null }>();
-      for (const c of captainsForGw) {
-        if (c.player?.teamId) {
-          captainByTeam.set(c.player.teamId, {
-            name: c.player.name,
-            announcedAt: c.announcedAt ?? null,
+    // League-wide captain + chip announcements — the dashboard's "Captains & Chips" card.
+    //
+    // The card is gameweek-navigable, so the shape it needs (rows + the selectable range) is
+    // built by src/lib/dashboard/league-captains.ts and shared with
+    // /api/team/dashboard/captains, which serves the other gameweeks. Returning the default
+    // gameweek here means the first paint needs no second request.
+    //
+    // The default is the lowest UNCONCLUDED gameweek, not `nextGameweek`: nextGameweek is
+    // results-driven and lags days behind a gameweek actually ending, which parked the card on
+    // a gameweek that finished last weekend.
+    let leagueCaptains: LeagueCaptainRow[] = [];
+    let captainsDefaultGw: number | null = null;
+    let captainsAvailableGws: number[] = [];
+    if (teamLeagueId) {
+      const window = await resolveCaptainsWindow(teamLeagueId);
+      if (window) {
+        captainsDefaultGw = window.defaultGw;
+        captainsAvailableGws = window.availableGws;
+        const gameweekId = await findGameweekId(teamLeagueId, window.defaultGw);
+        if (gameweekId) {
+          leagueCaptains = await buildLeagueCaptains({
+            leagueId: teamLeagueId,
+            gameweekId,
+            viewerTeamId: team.id,
+            leagueFormat,
           });
         }
       }
-      // Chip announcements — only TVT has chips. TC + auction skip the fetch.
-      // The Challenge Chip's target rides along so the dashboard can name it; the
-      // standings route already resolves the same column to a team name for its
-      // own tooltip.
-      const chipByTeam = new Map<string, { chipType: string; challengedTeamId: string | null }>();
-      if (leagueFormat !== "continental-championship") {
-        const chipsForGw = await db.query.gameweekChips.findMany({
-          where: eq(gameweekChips.gameweekId, nextGameweek.id),
-        });
-        for (const ch of chipsForGw) {
-          if (ch.teamId && ch.chipType) {
-            chipByTeam.set(ch.teamId, {
-              chipType: ch.chipType,
-              challengedTeamId: ch.challengedTeamId ?? null,
-            });
-          }
-        }
-      }
-      // `allTeamsInLeague` is already loaded above, so resolving the challenged
-      // team's name costs nothing extra.
-      const teamNameById = new Map(allTeamsInLeague.map((t) => [t.id, t.name]));
-
-      // Rebuild each Challenge Chip's match from the two teams' own results. Keyed off the
-      // chip's OWN gameweek, never the current one, so a GW2 challenge still reads GW2 while
-      // GW3 is live.
-      const challengeByTeam = new Map<string, ChallengeMatch>();
-      if (leagueFormat !== "continental-championship") {
-        const ccRows = await db
-          .select()
-          .from(gameweekChips)
-          .where(and(eq(gameweekChips.gameweekId, nextGameweek.id), eq(gameweekChips.chipType, "C")));
-        const matches = await buildChallengeMatches(
-          ccRows.map((c) => ({
-            id: c.id,
-            teamId: c.teamId,
-            challengedTeamId: c.challengedTeamId,
-            gameweekId: c.gameweekId,
-            pointsAwarded: c.pointsAwarded,
-            isProcessed: c.isProcessed,
-          })),
-        );
-        for (const c of ccRows) {
-          const m = matches.get(c.id);
-          if (m) challengeByTeam.set(c.teamId, m);
-        }
-      }
-      leagueCaptains = allTeamsInLeague.map((t) => {
-        const picked = captainByTeam.get(t.id);
-        const chip = chipByTeam.get(t.id) ?? null;
-        const chipType = chip?.chipType ?? null;
-        const challengedTeamId = chip?.challengedTeamId ?? null;
-        return {
-          teamId: t.id,
-          teamName: t.name,
-          groupName: t.group?.name ?? "",
-          isOwnTeam: t.id === team.id,
-          captainPlayerName: picked?.name ?? null,
-          announcedAt: picked?.announcedAt ? picked.announcedAt.toISOString() : null,
-          chipType,
-          chipCode: chipType ? chipCode(chipType) : null,
-          chipName: chipType ? chipName(chipType) : null,
-          challengedTeamId,
-          challengedTeamName: challengedTeamId ? teamNameById.get(challengedTeamId) ?? null : null,
-          challenge: chipType === "C" ? challengeByTeam.get(t.id) ?? null : null,
-        };
-      });
-      leagueCaptains.sort((a, b) => {
-        if (a.isOwnTeam !== b.isOwnTeam) return a.isOwnTeam ? -1 : 1;
-        const g = a.groupName.localeCompare(b.groupName);
-        if (g !== 0) return g;
-        return a.teamName.localeCompare(b.teamName);
-      });
     }
 
     return NextResponse.json({
@@ -1266,6 +1182,10 @@ export async function GET(request: NextRequest) {
       upcomingChip,
       chipEligibility,
       leagueCaptains,
+      // Drives the card's gameweek navigator. availableGws stops at defaultGw — see the
+      // disclosure note in lib/dashboard/league-captains.ts.
+      captainsDefaultGw,
+      captainsAvailableGws,
       lastGwResult,
       minCompletedGw,
       maxCompletedGw,

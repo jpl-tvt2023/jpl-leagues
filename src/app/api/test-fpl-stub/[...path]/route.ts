@@ -51,6 +51,26 @@ interface StubState {
    * single-flight, which are otherwise indistinguishable from a fast response.
    */
   counts: Record<string, number>;
+  /**
+   * Force an entry's FPL chip history, keyed by FPL entry id.
+   *
+   * The default chip plan is hash-gated per entry, which is fine for populating a chips column
+   * with a realistic mix but useless for a spec that needs "THIS manager played Bench Boost in
+   * GW2". An override replaces that entry's chips outright, empty array included — which is how
+   * a spec asserts the no-clash path.
+   */
+  chipOverrides: Record<string, { name: string; event: number }[]>;
+  /**
+   * Simulated FPL classic mini-leagues, keyed by FPL league id (as a string — control bodies are
+   * JSON, and object keys are always strings there regardless of what they represent).
+   *
+   * Defaulted to one 120-entrant league so pagination (50 rows/page) is exercised without a spec
+   * having to set anything up. Entry ids are in the 700000s specifically to stay clear of the
+   * fplBase=1000 default every TVT spec uses — a classic-league test creating its OWN league
+   * must never coincide with a TVT team's fplId, or Redis history cached by one bleeds into the
+   * other exactly the way it did before Part 4's fplBase fix in fpl-chips-fixtures.spec.ts.
+   */
+  classicLeagues: Record<string, { name: string; startEvent: number; entryIds: number[] }>;
 }
 
 /**
@@ -62,12 +82,28 @@ interface StubState {
  * gameweeks would flake. globalThis survives module re-evaluation within the
  * same process.
  */
+const DEFAULT_CLASSIC_LEAGUE_ID = "900001";
+const DEFAULT_CLASSIC_ENTRY_COUNT = 120;
+const DEFAULT_CLASSIC_ENTRY_BASE = 700_001;
+
+function defaultClassicLeagues(): StubState["classicLeagues"] {
+  return {
+    [DEFAULT_CLASSIC_LEAGUE_ID]: {
+      name: "Stub Classic",
+      startEvent: 1,
+      entryIds: Array.from({ length: DEFAULT_CLASSIC_ENTRY_COUNT }, (_, i) => DEFAULT_CLASSIC_ENTRY_BASE + i),
+    },
+  };
+}
+
 const globalForStub = globalThis as typeof globalThis & { __fplStubState?: StubState };
 const state: StubState = (globalForStub.__fplStubState ??= {
   finishedThrough: 0,
   bonusAddedThrough: null,
   liveGw: null,
   counts: {},
+  chipOverrides: {},
+  classicLeagues: defaultClassicLeagues(),
 });
 // A server that was already running before counts existed keeps its old
 // globalThis object, so the field can be genuinely absent here.
@@ -75,6 +111,8 @@ state.counts ??= {};
 // Same reason as `counts`: a server started before this field existed keeps its
 // old globalThis object, where the property is genuinely absent.
 state.bonusAddedThrough ??= null;
+// Same reason again, for a server already running before classic leagues existed.
+state.classicLeagues ??= defaultClassicLeagues();
 
 const TOTAL_ELEMENTS = 700;
 const PL_TEAM_COUNT = 20;
@@ -123,6 +161,19 @@ function entryGwPoints(entryId: number, gw: number): number {
 
 function entryTransferCost(entryId: number, gw: number): number {
   return hashed(entryId * 5 + gw * 3, 10) === 0 ? 4 : 0;
+}
+
+/**
+ * Running total through `throughGw`, gross (not net of transfer cost) — computed with the exact
+ * same formula entryHistory's inline loop uses for `total_points` at that gameweek. Used by the
+ * classic-league standings generator so the two endpoints can never numerically disagree; that
+ * agreement is what lets an FPL Classic e2e spec assert the live standings figure equals what
+ * settling later writes to fpl_classic_entry_gws.
+ */
+function cumulativePoints(entryId: number, throughGw: number): number {
+  let running = 0;
+  for (let gw = 1; gw <= throughGw; gw++) running += entryGwPoints(entryId, gw);
+  return running;
 }
 
 function bootstrap() {
@@ -192,13 +243,79 @@ function entryHistory(entryId: number) {
     ["wildcard", 22],
     ["manager", 11],
   ];
-  for (const [name, gw] of chipPlan) {
-    if (gw <= throughGw && hashed(entryId + gw * 17, 2) === 0) {
-      chips.push({ name, time: new Date(Date.UTC(2026, 7, 14 + gw * 7)).toISOString(), event: gw });
+  const override = state.chipOverrides?.[String(entryId)];
+  if (override) {
+    // Outright replacement, not a merge — a spec asserting "no FPL chip" needs the default plan
+    // gone, and an empty array must mean empty.
+    for (const c of override) {
+      chips.push({ name: c.name, time: new Date(Date.UTC(2026, 7, 14 + c.event * 7)).toISOString(), event: c.event });
+    }
+  } else {
+    for (const [name, gw] of chipPlan) {
+      if (gw <= throughGw && hashed(entryId + gw * 17, 2) === 0) {
+        chips.push({ name, time: new Date(Date.UTC(2026, 7, 14 + gw * 7)).toISOString(), event: gw });
+      }
     }
   }
 
   return { current, past: [], chips };
+}
+
+/**
+ * `leagues-classic/{id}/standings/` — paginated 50 rows at a time, matching the real endpoint,
+ * so the FPL Classic fetcher's pagination loop is genuinely exercised rather than short-circuited
+ * by a single-page stub.
+ *
+ * `entry_name`/`player_name` match the shape the plain `entry/{id}` handler already returns for
+ * the same id, and `total`/`event_total` are derived from `cumulativePoints`/`entryGwPoints` —
+ * the SAME generators `entryHistory` uses — so a spec can settle a gameweek and assert the
+ * persisted row equals what this endpoint reported while it was still live.
+ */
+const CLASSIC_PAGE_SIZE = 50;
+
+function classicLeagueStandings(
+  fplLeagueId: number,
+  pageStandings: number,
+  pageNewEntries: number,
+): { status: number; body: unknown } {
+  const league = state.classicLeagues[String(fplLeagueId)];
+  if (!league) return { status: 404, body: { detail: "not found" } };
+
+  const throughGw = Math.max(state.finishedThrough, state.liveGw ?? 0);
+  const entryIds = league.entryIds;
+
+  const start = (pageStandings - 1) * CLASSIC_PAGE_SIZE;
+  const pageIds = entryIds.slice(start, start + CLASSIC_PAGE_SIZE);
+  const hasNextStandings = start + CLASSIC_PAGE_SIZE < entryIds.length;
+
+  const results = pageIds.map((entryId, i) => {
+    const total = cumulativePoints(entryId, throughGw);
+    const eventTotal = throughGw > 0 ? entryGwPoints(entryId, throughGw) : 0;
+    const rank = start + i + 1; // stub ranks in entryIds order — good enough for a fixture server
+    return {
+      id: entryId,
+      entry: entryId,
+      entry_name: `Entry ${entryId}`,
+      player_name: `Test Manager ${entryId}`,
+      rank,
+      last_rank: rank,
+      rank_sort: rank,
+      total,
+      event_total: eventTotal,
+    };
+  });
+
+  // The stub never simulates a manager joining mid-season, so new_entries is always empty but
+  // still paginated correctly (has_next: false on page 1) — real, not omitted, shape.
+  return {
+    status: 200,
+    body: {
+      league: { id: fplLeagueId, name: league.name, start_event: league.startEvent, closed: false },
+      new_entries: { has_next: false, page: pageNewEntries, results: [] },
+      standings: { has_next: hasNextStandings, page: pageStandings, results },
+      last_updated_data: new Date().toISOString(),
+    },
+  };
 }
 
 function entryPicks(entryId: number, gw: number) {
@@ -328,6 +445,9 @@ function countKey(segments: string[]): string {
     if (segments.length === 2) return "entry";
   }
   if (segments[0] === "event" && segments[2] === "live") return "event/live";
+  // Bucketed by shape, not id — a spec paging through a 120-entrant league makes several calls
+  // to different ids/pages, and they must all count as the same "shape" for a call budget assert.
+  if (segments[0] === "leagues-classic" && segments[2] === "standings") return "leagues-classic/standings";
   return segments.join("/");
 }
 
@@ -375,6 +495,17 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ path: s
     }
   }
 
+  if (segments[0] === "leagues-classic" && segments[2] === "standings") {
+    const fplLeagueId = Number(segments[1]);
+    if (!Number.isFinite(fplLeagueId)) {
+      return NextResponse.json({ detail: "Not found." }, { status: 404 });
+    }
+    const pageStandings = Math.max(1, Number(request.nextUrl.searchParams.get("page_standings") ?? 1));
+    const pageNewEntries = Math.max(1, Number(request.nextUrl.searchParams.get("page_new_entries") ?? 1));
+    const { status, body } = classicLeagueStandings(fplLeagueId, pageStandings, pageNewEntries);
+    return NextResponse.json(body, { status });
+  }
+
   return NextResponse.json({ detail: "Not found.", path: joined }, { status: 404 });
 }
 
@@ -392,24 +523,50 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ path: s
  * Here the world genuinely changes the instant a spec says so, so the derived
  * state has to go with it.
  *
- * Deliberately NOT cleared: `fpl:history:*`. Entry history is keyed per entry
- * rather than per gameweek, and the caching specs assert that a second page
- * load makes zero FPL calls — they call /control to reset counters immediately
- * beforehand, so wiping history here would break the very behaviour under test.
+ * Deliberately NOT cleared here: `fpl:history:*`. Entry history is keyed per entry rather than
+ * per gameweek, and the caching specs assert that a second page load makes zero FPL calls — they
+ * call /control to reset counters immediately beforehand, so wiping history on every world change
+ * would break the very behaviour under test. fpl-league.spec.ts's "gameweek column" test relies
+ * on exactly this: entryHistory's content depends only on max(finishedThrough, liveGw), and a
+ * /control call that leaves that max unchanged must leave the cached history untouched too, or
+ * the test's warm single-flight has nothing to serve. See `invalidateHistoryCache` below for the
+ * one case that DOES need history swept.
  */
 async function invalidateWorldDerivedCaches(): Promise<void> {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return; // No cache configured — nothing to invalidate.
-
-  const { Redis } = await import("@upstash/redis");
-  const redis = new Redis({ url, token });
+  const redis = await connectStubRedis();
+  if (!redis) return;
 
   await redis.del("fpl:events:latest", "fpl:bootstrap:latest", "fpl:event-status:latest", "fpl:fixtures:all");
   for (const pattern of ["fpl:elements:gw*", "live:gw*", "fpl:deadline-sync:*"]) {
     const keys = await redis.keys(pattern);
     if (keys.length > 0) await redis.del(...keys);
   }
+}
+
+/**
+ * Sweep cached entry histories.
+ *
+ * Split out from `invalidateWorldDerivedCaches` on purpose — see that function's docblock. This
+ * one fires ONLY when `chipOverrides` itself changes: unlike `current[]` (a function of
+ * finishedThrough/liveGw alone), the `chips[]` array is a function of chipOverrides, so a spec
+ * that swaps a manager's simulated chip plan needs the old cached copy gone or the scorer and
+ * every cache-only reader keep serving the pre-swap chips.
+ */
+async function invalidateHistoryCache(): Promise<void> {
+  const redis = await connectStubRedis();
+  if (!redis) return;
+
+  const keys = await redis.keys("fpl:history:*");
+  if (keys.length > 0) await redis.del(...keys);
+}
+
+async function connectStubRedis() {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null; // No cache configured — nothing to invalidate.
+
+  const { Redis } = await import("@upstash/redis");
+  return new Redis({ url, token });
 }
 
 /** POST /api/test-fpl-stub/control — drive the stub from a spec. */
@@ -446,9 +603,23 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ path: 
       worldChanged = true;
     }
   }
+  // Deliberately its own flag, not folded into worldChanged: it drives a DIFFERENT sweep
+  // (invalidateHistoryCache), which must not fire on a bare finishedThrough/liveGw change — see
+  // invalidateWorldDerivedCaches' docblock for why that would break fpl-league.spec.ts.
+  let chipOverridesChanged = false;
+  if (body.chipOverrides && typeof body.chipOverrides === "object") {
+    state.chipOverrides = body.chipOverrides;
+    chipOverridesChanged = true;
+  }
+  // Outright replacement, like chipOverrides — a spec that wants a small, deterministic roster
+  // for one test must be able to say so without merging against the 120-entrant default.
+  if (body.classicLeagues && typeof body.classicLeagues === "object") {
+    state.classicLeagues = body.classicLeagues;
+  }
   if (body.resetCounts) state.counts = {};
 
   if (worldChanged) await invalidateWorldDerivedCaches();
+  if (chipOverridesChanged) await invalidateHistoryCache();
 
   return NextResponse.json(state);
 }
