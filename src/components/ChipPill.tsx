@@ -1,3 +1,5 @@
+"use client";
+
 import {
   chipState,
   FPL_CHIP_ORDER,
@@ -5,6 +7,7 @@ import {
   type ChipState,
   type FplChipStatus,
 } from "@/lib/fpl-league/chips";
+import { HelpTip } from "./HelpTip";
 
 /**
  * One chip badge, coloured by whether it is spent, in play, or still in hand.
@@ -37,6 +40,7 @@ export function ChipPill({
   state,
   gw,
   className = "",
+  interactive = false,
 }: {
   /** Short display code shown in the pill, e.g. "BB" or "DP". */
   code: string;
@@ -46,20 +50,38 @@ export function ChipPill({
   /** Gameweek it was played in; appended to the pill for spent/in-play chips. */
   gw?: number | null;
   className?: string;
+  /**
+   * Open the tooltip on tap as well as hover, via HelpTip.
+   *
+   * Off by default, and that default is load-bearing. The plain pill's tooltip is a native
+   * `title=`, which is invisible on touch — fine in the dashboard and the FPL League table, where
+   * the chip row sits beside plenty of other context. The public fixtures page is read on phones
+   * and the chip is often the whole explanation for a score, so there it opts in. Keeping it
+   * opt-in also means those two existing call sites render byte-identically.
+   */
+  interactive?: boolean;
 }) {
   const title =
     state === "available"
       ? `${label ?? code} — available`
       : `${label ?? code} — ${STATE_WORDS[state]}${gw != null ? ` (GW${gw})` : ""}`;
 
-  return (
+  const pill = (
     <span
-      title={title}
+      title={interactive ? undefined : title}
       className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border whitespace-nowrap ${STATE_CLASSES[state]} ${className}`}
     >
       {code}
       {gw != null && state !== "available" && <span className="opacity-70"> {gw}</span>}
     </span>
+  );
+
+  if (!interactive) return pill;
+
+  return (
+    <HelpTip tip={title} className="no-underline">
+      {pill}
+    </HelpTip>
   );
 }
 
@@ -72,11 +94,23 @@ export function ChipPill({
 export function FplChipRow({
   status,
   gwNumber,
+  interactive = false,
+  /**
+   * Render nothing at all when the status is unknown, instead of "FPL chips unavailable".
+   *
+   * The public fixtures page reads chip history from cache only and never fetches, so an unknown
+   * manager is the ordinary cold-cache state rather than a fault worth a label on a public page.
+   */
+  silentWhenUnknown = false,
 }: {
   status: FplChipStatus | null | undefined;
   gwNumber: number | null;
+  interactive?: boolean;
+  silentWhenUnknown?: boolean;
 }) {
-  if (!status) return <span className="text-[8px] text-gray-600">FPL chips unavailable</span>;
+  if (!status) {
+    return silentWhenUnknown ? null : <span className="text-[8px] text-gray-600">FPL chips unavailable</span>;
+  }
 
   const playedIn = new Map(status.used.map((u) => [u.code, u.gw]));
   // A chip FPL added mid-season that we do not have a slot for still gets a
@@ -94,11 +128,12 @@ export function FplChipRow({
             label={FPL_CHIP_LABELS[code]}
             state={chipState(gw, gwNumber)}
             gw={gw}
+            interactive={interactive}
           />
         );
       })}
       {extras.map((u) => (
-        <ChipPill key={u.code} code={u.code} state={chipState(u.gw, gwNumber)} gw={u.gw} />
+        <ChipPill key={u.code} code={u.code} state={chipState(u.gw, gwNumber)} gw={u.gw} interactive={interactive} />
       ))}
     </>
   );

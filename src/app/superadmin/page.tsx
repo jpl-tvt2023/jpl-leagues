@@ -83,7 +83,13 @@ type LeagueGwResult = {
 
 // ──────────────────────────────────────────────
 // Create-league wizard steps
-type WizardStep = "sport" | "format" | "team_size" | "chips" | "details" | "assign";
+type WizardStep = "sport" | "format" | "team_size" | "chips" | "fpl_league" | "details" | "assign";
+
+/** The FPL season a date falls in — seasons run August to May, so "2026-27" starts in Aug 2026. */
+function currentFplSeason(now = new Date()): string {
+  const startYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}
 const SPORT_OPTIONS = [
   { value: "fpl", label: "Football (FPL)", icon: "⚽" },
   { value: "cricket", label: "Cricket", icon: "🏏", comingSoon: true },
@@ -93,7 +99,7 @@ const FORMAT_OPTIONS: Record<string, { value: string; label: string; description
     { value: "tvt", label: "TVT", description: "Head-to-head, chips, captaincy, playoffs" },
     { value: "continental-championship", label: "JPL Continental Championship", description: "JPL + JCL + JEL — 20 teams, Double Header scoring" },
     { value: "auction", label: "JPL Auction", description: "14-player squads, live auctions, economy system — total points league" },
-    { value: "classic", label: "Classic", description: "Round-robin / points-based", comingSoon: true },
+    { value: "fpl-classic", label: "FPL Classic (public)", description: "Mirrors an official FPL mini-league — public, read-only, no team logins" },
   ],
 };
 const CHIP_OPTIONS: { code: string; name: string; description: string }[] = [
@@ -142,7 +148,17 @@ export default function SuperAdminDashboard() {
     isSimulated: false,
     clubAuctionEnabled: false,
     auctionTier: "complete" as "primary" | "complete",
+    // fpl-classic only. Slug and name are NOT collected — the server derives both from the FPL
+    // league itself, so there is nothing here for the admin to invent or keep consistent.
+    fplLeagueId: "",
+    scoringMetric: "net" as "net" | "gross",
+    winnerCutPercent: 30,
   });
+  const [fplPreview, setFplPreview] = useState<
+    { name: string; startEvent: number; entrantCount: number; truncated: boolean; sample: { entryName: string; playerName: string }[] } | null
+  >(null);
+  const [fplPreviewError, setFplPreviewError] = useState<string | null>(null);
+  const [fplPreviewLoading, setFplPreviewLoading] = useState(false);
   const [wizardSelectedAdminIds, setWizardSelectedAdminIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -348,8 +364,14 @@ export default function SuperAdminDashboard() {
 
   const handleCreateLeague = (e: React.FormEvent) => {
     e.preventDefault();
-    // Move to admin assignment step — actual API call happens in handleWizardFinish
     setWizardSelectedAdminIds([]);
+    // A public, read-only league has no league admins to assign, so there is nothing for the
+    // assign step to collect — create it directly instead of showing an empty picker.
+    if (leagueForm.format === "fpl-classic") {
+      void handleWizardFinish(true);
+      return;
+    }
+    // Move to admin assignment step — actual API call happens in handleWizardFinish
     setWizardStep("assign");
   };
 
@@ -376,6 +398,11 @@ export default function SuperAdminDashboard() {
           isSimulated: leagueForm.isSimulated,
           clubAuctionEnabled: leagueForm.clubAuctionEnabled,
           auctionTier: leagueForm.auctionTier,
+          // fpl-classic only; ignored by the server for every other format. Slug and name are
+          // deliberately not sent — the server derives both from the FPL league.
+          fplLeagueId: leagueForm.fplLeagueId ? Number(leagueForm.fplLeagueId) : undefined,
+          scoringMetric: leagueForm.scoringMetric,
+          winnerCutPercent: leagueForm.winnerCutPercent,
         }),
       });
       const data = await res.json();
@@ -395,10 +422,10 @@ export default function SuperAdminDashboard() {
         fetchAdmins();
       }
 
-      setMessage({ type: "success", text: `League "${leagueForm.name}" created!` });
+      setMessage({ type: "success", text: `League "${data.name ?? leagueForm.name}" created!` });
       setShowWizard(false);
       setWizardStep("sport");
-      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, startGameweek: 1, releaseCycleGws: "10, 20, 30", isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete" });
+      setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, startGameweek: 1, releaseCycleGws: "10, 20, 30", isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete", fplLeagueId: "", scoringMetric: "net", winnerCutPercent: 30 });
       setWizardSelectedAdminIds([]);
       setLeagues(prev => [...prev, { ...data, teamCount: 0, currentGameweek: null }]);
     } catch { setMessage({ type: "error", text: "Network error" }); }
@@ -622,6 +649,20 @@ export default function SuperAdminDashboard() {
     gwStates: Record<number, GwChipState>;
     gwTooltips: Record<number, string>;
   };
+  type FplClassicOpsRow = {
+    id: string;
+    slug: string;
+    name: string;
+    season: string;
+    fplLeagueId: number | null;
+    entrantCount: number;
+    settledThroughGw: number;
+    lastConcludedGw: number;
+    pendingGws: number;
+    frozenScopeCount: number;
+    entrantsSyncedAt: string | null;
+    lastSyncError: string | null;
+  };
 
   const [processRunning, setProcessRunning] = useState(false);
   const [processError, setProcessError] = useState<string | null>(null);
@@ -634,6 +675,15 @@ export default function SuperAdminDashboard() {
   const [fplStatus, setFplStatus] = useState<FplStatus | null>(null);
   const [fplStatusCheckedAt, setFplStatusCheckedAt] = useState<number | null>(null);
   const [fplStatusLoading, setFplStatusLoading] = useState(false);
+
+  // ── FPL Classic operations ──────────────────────────────────────────────
+  // Deliberately its own section and its own state: this format is invisible to the catch-up
+  // runner above (it creates no `gameweeks` rows, so computePlan never sees it), which is
+  // exactly how it stays isolated from the shared scoring orchestrator.
+  const [fplClassicLeagues, setFplClassicLeagues] = useState<FplClassicOpsRow[] | null>(null);
+  const [fplClassicLoading, setFplClassicLoading] = useState(false);
+  const [fplClassicBusyId, setFplClassicBusyId] = useState<string | null>(null);
+  const [fplClassicLog, setFplClassicLog] = useState<Record<string, string>>({});
 
   // Which gameweek FPL is actually on. Shown in the Operations header so an operator
   // can tell whether a run is worth starting before starting one. Uses its own
@@ -659,6 +709,88 @@ export default function SuperAdminDashboard() {
       void loadFplStatus();
     }
   }, [activeTab, fplStatus, fplStatusLoading, loadFplStatus]);
+
+  const loadFplClassicLeagues = useCallback(async () => {
+    setFplClassicLoading(true);
+    try {
+      const res = await fetch("/api/superadmin/fpl-classic/leagues");
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setFplClassicLeagues(data.leagues ?? []);
+    } catch {
+      setFplClassicLeagues([]);
+    } finally {
+      setFplClassicLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "operations" && fplClassicLeagues === null && !fplClassicLoading) {
+      void loadFplClassicLeagues();
+    }
+  }, [activeTab, fplClassicLeagues, fplClassicLoading, loadFplClassicLeagues]);
+
+  /**
+   * Drive one league's settle sweep to completion.
+   *
+   * The same browser-loop shape the catch-up runner above uses, and for the same reason: one
+   * call is bounded (~250 entrants' histories) so it returns inside the function ceiling, and
+   * the browser keeps calling while `done` is false.
+   */
+  const processFplClassic = useCallback(async (leagueId: string) => {
+    setFplClassicBusyId(leagueId);
+    setFplClassicLog((prev) => ({ ...prev, [leagueId]: "Starting…" }));
+    try {
+      for (let call = 1; call <= 20; call++) {
+        const res = await fetch(`/api/superadmin/fpl-classic/${leagueId}/process`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setFplClassicLog((prev) => ({ ...prev, [leagueId]: `Failed: ${data?.error ?? res.status}` }));
+          return;
+        }
+        const frozen = Array.isArray(data.frozen) && data.frozen.length > 0 ? ` · froze ${data.frozen.join(", ")}` : "";
+        setFplClassicLog((prev) => ({
+          ...prev,
+          [leagueId]: `Pass ${call}: settled through GW${data.settledThroughGw}${data.remainingEntrants > 0 ? ` · ${data.remainingEntrants} entrants pending` : ""}${frozen}`,
+        }));
+        if (data.done) break;
+      }
+      await loadFplClassicLeagues();
+    } catch (err) {
+      setFplClassicLog((prev) => ({ ...prev, [leagueId]: `Failed: ${err instanceof Error ? err.message : String(err)}` }));
+    } finally {
+      setFplClassicBusyId(null);
+    }
+  }, [loadFplClassicLeagues]);
+
+  /** Force-recompute frozen awards. Confirmed first — this overwrites published winners. */
+  const recomputeFplClassicAwards = useCallback(async (leagueId: string, leagueName: string) => {
+    if (!confirm(`Recompute awards for "${leagueName}"?
+
+This overwrites winners that have already been announced. The previous winners are written to the audit log first.`)) return;
+    setFplClassicBusyId(leagueId);
+    try {
+      const res = await fetch(`/api/superadmin/fpl-classic/${leagueId}/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: "freeze", force: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setFplClassicLog((prev) => ({
+        ...prev,
+        [leagueId]: res.ok
+          ? `Recomputed ${Array.isArray(data.frozen) ? data.frozen.length : 0} award scope(s)`
+          : `Failed: ${data?.error ?? res.status}`,
+      }));
+      await loadFplClassicLeagues();
+    } finally {
+      setFplClassicBusyId(null);
+    }
+  }, [loadFplClassicLeagues]);
 
   /**
    * Run one (league x gameweek) call, with a timeout and one retry.
@@ -1256,7 +1388,7 @@ export default function SuperAdminDashboard() {
                 <p className="text-gray-400 text-sm mt-1">Manage all leagues on the platform</p>
               </div>
               <button
-                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, startGameweek: 1, releaseCycleGws: "10, 20, 30", isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete" }); setMessage(null); }}
+                onClick={() => { setShowWizard(true); setWizardStep("sport"); setLeagueForm({ slug: "", name: "", sport: "", format: "", season: "", teamSize: 32, groupCount: 2, playoffStartGw: 31, enabledChips: ["D", "W", "C"], initialBudget: 100_000_000, startGameweek: 1, releaseCycleGws: "10, 20, 30", isSimulated: false, clubAuctionEnabled: false, auctionTier: "complete", fplLeagueId: "", scoringMetric: "net", winnerCutPercent: 30 }); setMessage(null); }}
                 className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-5 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
               >
                 + Create League
@@ -1344,7 +1476,7 @@ export default function SuperAdminDashboard() {
                                 setLeagueForm({ ...leagueForm, format: opt.value });
                               }
                               // TVT has team-size variants; Continental Championship and Auction go straight to details
-                              setWizardStep(opt.value === "tvt" ? "team_size" : "details");
+                              setWizardStep(opt.value === "tvt" ? "team_size" : opt.value === "fpl-classic" ? "fpl_league" : "details");
                             }
                           }}
                           className={`relative rounded-xl border p-5 text-left transition ${
@@ -1459,33 +1591,150 @@ export default function SuperAdminDashboard() {
                   </div>
                 )}
 
+                {/* Step: FPL league id (fpl-classic only) */}
+                {wizardStep === "fpl_league" && (
+                  <div>
+                    <button onClick={() => setWizardStep("format")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
+                    <h3 className="text-white font-semibold text-lg mb-1">Which FPL league?</h3>
+                    <p className="text-gray-400 text-sm mb-5">
+                      Paste the numeric id of the official FPL classic mini-league. Everything else —
+                      the name, the entrant list, the public URL — comes from FPL itself.
+                    </p>
+
+                    <div className="flex gap-2 items-start">
+                      <input
+                        value={leagueForm.fplLeagueId}
+                        onChange={e => {
+                          setLeagueForm({ ...leagueForm, fplLeagueId: e.target.value.replace(/[^0-9]/g, "") });
+                          setFplPreview(null);
+                          setFplPreviewError(null);
+                        }}
+                        placeholder="e.g. 314159"
+                        inputMode="numeric"
+                        className="flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        disabled={!leagueForm.fplLeagueId || fplPreviewLoading}
+                        onClick={async () => {
+                          setFplPreviewLoading(true);
+                          setFplPreviewError(null);
+                          setFplPreview(null);
+                          try {
+                            const res = await fetch(`/api/superadmin/fpl-classic/preview?fplLeagueId=${leagueForm.fplLeagueId}`);
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                              setFplPreviewError(data?.error ?? `Lookup failed (${res.status})`);
+                            } else {
+                              setFplPreview(data);
+                            }
+                          } catch (err) {
+                            setFplPreviewError(err instanceof Error ? err.message : "Lookup failed");
+                          } finally {
+                            setFplPreviewLoading(false);
+                          }
+                        }}
+                        className="rounded-lg bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        {fplPreviewLoading ? "Checking…" : "Verify"}
+                      </button>
+                    </div>
+
+                    {fplPreviewError && (
+                      <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                        {fplPreviewError}
+                      </div>
+                    )}
+
+                    {fplPreview && (
+                      <div className="mt-4 rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-3">
+                        <div className="font-semibold text-white">{fplPreview.name}</div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          {fplPreview.entrantCount} entrants · starts at GW{fplPreview.startEvent}
+                        </div>
+                        {fplPreview.truncated && (
+                          <div className="text-xs text-yellow-300 mt-2">
+                            This league is larger than one sync can load — the roster will be incomplete.
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-500 mt-2">
+                          {fplPreview.sample.map(e => e.entryName).join(" · ")}
+                          {fplPreview.entrantCount > fplPreview.sample.length ? " …" : ""}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-3 mt-6">
+                      <button
+                        type="button"
+                        disabled={!fplPreview}
+                        title={!fplPreview ? "Verify the league id first" : undefined}
+                        onClick={() => {
+                          // Prefill the start gameweek from FPL's own start_event; the admin can
+                          // still override it on the next step.
+                          setLeagueForm({
+                            ...leagueForm,
+                            startGameweek: fplPreview?.startEvent ?? 1,
+                            season: leagueForm.season || currentFplSeason(),
+                          });
+                          setWizardStep("details");
+                        }}
+                        className="rounded-lg bg-yellow-500 px-6 py-2.5 font-semibold text-slate-900 hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        Use this league →
+                      </button>
+                      <button type="button" onClick={() => setShowWizard(false)} className="text-gray-400 hover:text-white px-4 py-2.5 transition">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Step: Details form */}
                 {wizardStep === "details" && (
                   <div>
-                    <button onClick={() => setWizardStep(leagueForm.format === "tvt" ? "chips" : "format")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
+                    <button onClick={() => setWizardStep(leagueForm.format === "tvt" ? "chips" : leagueForm.format === "fpl-classic" ? "fpl_league" : "format")} className="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1 transition">← Back</button>
                     <h3 className="text-white font-semibold text-lg mb-1">League Details</h3>
                     <p className="text-gray-400 text-sm mb-5">
-                      {leagueForm.sport.toUpperCase()} · {leagueForm.format === "auction" ? "JPL Auction" : leagueForm.format.toUpperCase()} · {leagueForm.teamSize} {leagueForm.format === "auction" ? "Managers" : "Teams"}
+                      {leagueForm.format === "fpl-classic" ? (
+                        <>{leagueForm.sport.toUpperCase()} · FPL Classic · {fplPreview ? `${fplPreview.entrantCount} entrants (from FPL)` : "public, read-only"}</>
+                      ) : (
+                        <>{leagueForm.sport.toUpperCase()} · {leagueForm.format === "auction" ? "JPL Auction" : leagueForm.format.toUpperCase()} · {leagueForm.teamSize} {leagueForm.format === "auction" ? "Managers" : "Teams"}</>
+                      )}
                     </p>
                     <form onSubmit={handleCreateLeague} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">Slug <span className="text-gray-500">(unique ID, e.g. {leagueForm.format === "auction" ? "jpl-auction-2526" : "tvt-fpl-2526"})</span></label>
-                        <input
-                          required value={leagueForm.slug}
-                          onChange={e => setLeagueForm({ ...leagueForm, slug: e.target.value.toLowerCase().replace(/\s+/g, "-") })}
-                          placeholder={leagueForm.format === "auction" ? "jpl-auction-2526" : "tvt-fpl-2526"}
-                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">Name</label>
-                        <input
-                          required value={leagueForm.name}
-                          onChange={e => setLeagueForm({ ...leagueForm, name: e.target.value })}
-                          placeholder={leagueForm.format === "auction" ? "JPL Auction League" : "JPL TVT FPL"}
-                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
-                        />
-                      </div>
+                      {/* fpl-classic derives both from the FPL league itself — slug from the id,
+                          name from FPL's own league name — so there is nothing to type here and
+                          nothing that could drift out of sync with the upstream league. */}
+                      {leagueForm.format === "fpl-classic" ? (
+                        <div className="sm:col-span-2 rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-3 text-sm">
+                          <div className="text-gray-300">
+                            Name: <span className="font-semibold text-white">{fplPreview?.name ?? "—"}</span>
+                          </div>
+                          <div className="text-gray-500 text-xs mt-1">
+                            Both the name and the public URL are taken from FPL league #{leagueForm.fplLeagueId}.
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Slug <span className="text-gray-500">(unique ID, e.g. {leagueForm.format === "auction" ? "jpl-auction-2526" : "tvt-fpl-2526"})</span></label>
+                            <input
+                              required value={leagueForm.slug}
+                              onChange={e => setLeagueForm({ ...leagueForm, slug: e.target.value.toLowerCase().replace(/\s+/g, "-") })}
+                              placeholder={leagueForm.format === "auction" ? "jpl-auction-2526" : "tvt-fpl-2526"}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Name</label>
+                            <input
+                              required value={leagueForm.name}
+                              onChange={e => setLeagueForm({ ...leagueForm, name: e.target.value })}
+                              placeholder={leagueForm.format === "auction" ? "JPL Auction League" : "JPL TVT FPL"}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                            />
+                          </div>
+                        </>
+                      )}
                       <div>
                         <label className="block text-sm text-gray-300 mb-1">Season</label>
                         <input
@@ -1495,7 +1744,43 @@ export default function SuperAdminDashboard() {
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                         />
                       </div>
-                      {leagueForm.format === "auction" ? (
+                      {leagueForm.format === "fpl-classic" ? (
+                        <>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Starting Gameweek</label>
+                            <input
+                              type="number" min={1} max={38} required value={leagueForm.startGameweek}
+                              onChange={e => setLeagueForm({ ...leagueForm, startGameweek: parseInt(e.target.value) || 1 })}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
+                            />
+                            <p className="text-gray-500 text-xs mt-1">Gameweeks before this are ignored entirely.</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Leaderboard scoring</label>
+                            <select
+                              value={leagueForm.scoringMetric}
+                              onChange={e => setLeagueForm({ ...leagueForm, scoringMetric: e.target.value as "net" | "gross" })}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
+                            >
+                              <option value="net" className="bg-slate-800">Net points (after transfer hits)</option>
+                              <option value="gross" className="bg-slate-800">Gross points (before hits)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-1">Season winners — top %</label>
+                            <input
+                              type="number" min={1} max={100} required value={leagueForm.winnerCutPercent}
+                              onChange={e => setLeagueForm({ ...leagueForm, winnerCutPercent: parseInt(e.target.value) || 30 })}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white focus:border-yellow-500 focus:outline-none"
+                            />
+                            <p className="text-gray-500 text-xs mt-1">
+                              {fplPreview
+                                ? `Top ${Math.max(1, Math.ceil((fplPreview.entrantCount * leagueForm.winnerCutPercent) / 100))} of ${fplPreview.entrantCount} entrants.`
+                                : "Marked as a cutoff line in the standings table."}
+                            </p>
+                          </div>
+                        </>
+                      ) : leagueForm.format === "auction" ? (
                         <>
                           <div>
                             <label className="block text-sm text-gray-300 mb-1">Number of Managers</label>
@@ -1622,9 +1907,13 @@ export default function SuperAdminDashboard() {
                       <div className="sm:col-span-2 flex gap-3">
                         <button
                           type="submit"
-                          className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition"
+                          disabled={isSubmitting}
+                          className="bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-semibold px-6 py-2.5 rounded-lg hover:from-yellow-300 hover:to-orange-400 disabled:opacity-50 transition"
                         >
-                          Next →
+                          {/* fpl-classic has no assign step after this, so here it is the final action. */}
+                          {leagueForm.format === "fpl-classic"
+                            ? (isSubmitting ? "Creating…" : "Create League")
+                            : "Next →"}
                         </button>
                         <button type="button" onClick={() => setShowWizard(false)} className="text-gray-400 hover:text-white px-4 py-2.5 transition">Cancel</button>
                       </div>
@@ -2142,6 +2431,86 @@ export default function SuperAdminDashboard() {
                 )}
               </div>
             )}
+
+            {/* ── FPL Classic ────────────────────────────────────────────────
+                A separate section on purpose. These leagues create no `gameweeks`
+                rows, so the catch-up runner above cannot see them at all — which is
+                exactly what keeps this format out of the shared scoring orchestrator. */}
+            <div className="mt-10">
+              <div className="mb-4">
+                <h3 className="text-xl font-bold text-white">FPL Classic leagues</h3>
+                <p className="text-gray-400 text-sm mt-1 max-w-3xl">
+                  Public, read-only mini-leagues. Process fetches each entrant&apos;s history for any
+                  gameweek FPL has concluded, writes the settled rows, and freezes the winners for
+                  every period that is now complete. Idempotent — re-running once caught up does
+                  nothing and makes no FPL calls.
+                </p>
+              </div>
+
+              {fplClassicLoading && fplClassicLeagues === null && (
+                <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-gray-400">Loading…</div>
+              )}
+
+              {fplClassicLeagues !== null && fplClassicLeagues.length === 0 && (
+                <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-gray-500">
+                  No FPL Classic leagues yet. Create one from the Leagues tab.
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {(fplClassicLeagues ?? []).map((lg) => {
+                  const busy = fplClassicBusyId === lg.id;
+                  return (
+                    <div key={lg.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-white truncate">
+                            {lg.name}{" "}
+                            <span className="text-xs font-normal text-gray-500">/{lg.slug} · {lg.season}</span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+                            <span><span className="text-gray-500">Entrants:</span> {lg.entrantCount}</span>
+                            <span><span className="text-gray-500">Settled through:</span> GW{lg.settledThroughGw}</span>
+                            <span>
+                              <span className="text-gray-500">Pending:</span>{" "}
+                              {lg.pendingGws > 0
+                                ? <span className="text-yellow-300">{lg.pendingGws} gameweek{lg.pendingGws === 1 ? "" : "s"}</span>
+                                : <span className="text-green-300">up to date</span>}
+                            </span>
+                            <span><span className="text-gray-500">Frozen scopes:</span> {lg.frozenScopeCount}</span>
+                          </div>
+                          {lg.lastSyncError && (
+                            <div className="mt-2 text-[11px] text-red-300 font-mono whitespace-pre-wrap">
+                              Last sync error: {lg.lastSyncError}
+                            </div>
+                          )}
+                          {fplClassicLog[lg.id] && (
+                            <div className="mt-2 text-[11px] text-gray-300">{fplClassicLog[lg.id]}</div>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            onClick={() => void processFplClassic(lg.id)}
+                            disabled={busy}
+                            className="rounded-lg bg-sky-500/20 px-4 py-2 text-sm font-semibold text-sky-200 hover:bg-sky-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                          >
+                            {busy ? "Processing…" : "Process"}
+                          </button>
+                          <button
+                            onClick={() => void recomputeFplClassicAwards(lg.id, lg.name)}
+                            disabled={busy || lg.frozenScopeCount === 0}
+                            title={lg.frozenScopeCount === 0 ? "Nothing frozen yet" : "Overwrites announced winners"}
+                            className="rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                          >
+                            Recompute awards
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 

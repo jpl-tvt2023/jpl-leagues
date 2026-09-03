@@ -11,15 +11,20 @@
  */
 
 import type { APIRequestContext } from "@playwright/test";
+import { TEST_SUPERADMIN } from "./constants";
 
 export interface LeagueRef {
   id: string;
   slug: string;
   name: string;
-  format: "tvt" | "continental-championship" | "auction";
+  format: "tvt" | "continental-championship" | "auction" | "fpl-classic";
   teamSize: number;
   /** Only set for auction leagues. */
   auctionTier?: "primary" | "complete";
+  /** Only set for fpl-classic leagues. */
+  fplLeagueId?: number;
+  entrantCount?: number;
+  truncated?: boolean;
 }
 
 /**
@@ -54,6 +59,9 @@ async function createLeague(
     format: body.format,
     teamSize: body.teamSize,
     auctionTier: body.auctionTier,
+    fplLeagueId: body.fplLeagueId,
+    entrantCount: body.entrantCount,
+    truncated: body.truncated,
   };
 }
 
@@ -118,12 +126,43 @@ export async function createAuctionLeague(
 }
 
 /**
+ * Public FPL Classic league — only the FPL league id is required. No slug and no name: the
+ * route derives both from the FPL league itself (slug from the id, name from FPL's own league
+ * name), exactly as the superadmin wizard will. Deliberately does NOT accept a `slug` override —
+ * a spec that needs a specific slug is testing something this format does not do.
+ */
+export async function createFplClassicLeague(
+  request: APIRequestContext,
+  opts: {
+    fplLeagueId: number;
+    startGameweek?: number;
+    scoringMetric?: "net" | "gross";
+    winnerCutPercent?: number;
+    season?: string;
+  },
+): Promise<LeagueRef> {
+  return createLeague(request, {
+    sport: "fpl",
+    format: "fpl-classic",
+    season: opts.season ?? "2025-26",
+    fplLeagueId: opts.fplLeagueId,
+    ...(opts.startGameweek !== undefined ? { startGameweek: opts.startGameweek } : {}),
+    ...(opts.scoringMetric !== undefined ? { scoringMetric: opts.scoringMetric } : {}),
+    ...(opts.winnerCutPercent !== undefined ? { winnerCutPercent: opts.winnerCutPercent } : {}),
+  });
+}
+
+/**
  * Hard delete a league via DELETE /api/superadmin/leagues/[id].
  * Optional cleanup hook for specs that want to leave test.db tidy; the global
  * `npm run test:reset` is usually enough between runs.
  */
 export async function deleteLeague(request: APIRequestContext, id: string): Promise<void> {
-  const res = await request.delete(`/api/superadmin/leagues/${id}`, { failOnStatusCode: false });
+  const res = await request.delete(`/api/superadmin/leagues/${id}`, {
+    // The route confirms deletion against the caller's own password — omitting it is a 400.
+    data: { password: TEST_SUPERADMIN.password },
+    failOnStatusCode: false,
+  });
   if (!res.ok() && res.status() !== 404) {
     const body = await res.json().catch(() => ({}));
     throw new Error(`deleteLeague(${id}) failed: ${res.status()} ${body?.error ?? ""}`);

@@ -14,7 +14,7 @@ import { and, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   apiSignInSuperadmin, setupAllTeams, ensureGameweeks, expireGameweek,
-  generateFixtures, testDb, schema,
+  generateFixtures, testDb, schema, invalidateLeagueCache,
 } from "../harness";
 
 const TEAMS = 8;
@@ -248,5 +248,95 @@ test.describe.serial("Challenge Chip tooltip", () => {
     const tip = page.getByRole("tooltip");
     await expect(tip).toContainText("GW" + GW);
     await expect(tip).toContainText(String(CHALLENGER_SCORE));
+  });
+
+  /* ── live challenge, while the gameweek is still being played ──────────── */
+
+  test("an unscored challenge shows the live scoreline instead of a bare team name", async ({ page, request }) => {
+    // GW4 has fixtures but no results, so buildChallengeMatches cannot rebuild anything and
+    // `chip.challenge` is null. The tooltip must still show both scorelines, assembled in the
+    // browser from the live scores the page is already polling.
+    const LIVE_GW = 4;
+    const db = testDb();
+    await apiSignInSuperadmin(request);
+    await expireGameweek(leagueId, LIVE_GW);
+
+    const [gw] = await db.select().from(schema.gameweeks)
+      .where(and(eq(schema.gameweeks.leagueId, leagueId), eq(schema.gameweeks.number, LIVE_GW))).limit(1);
+    const teamRows = await db.select().from(schema.teams).where(eq(schema.teams.leagueId, leagueId));
+    const groupRows = await db.select().from(schema.groups).where(eq(schema.groups.leagueId, leagueId));
+    const teamById = new Map(teamRows.map((t) => [t.id, t]));
+    const groupNameById = new Map(groupRows.map((g) => [g.id, g.name]));
+    const groupOf = (teamId: string) => groupNameById.get(teamById.get(teamId)!.groupId ?? "");
+
+    const gwFixtures = await db.select().from(schema.fixtures).where(eq(schema.fixtures.gameweekId, gw.id));
+    const fxA = gwFixtures.find((f) => groupOf(f.homeTeamId) === "A")!;
+    const fxB = gwFixtures.find((f) => groupOf(f.homeTeamId) === "B")!;
+    expect(fxA && fxB, "need a fixture in each group for GW" + LIVE_GW).toBeTruthy();
+
+    // Unprocessed on purpose: the chip has been played, the gameweek has not been scored.
+    await db.insert(schema.gameweekChips).values({
+      id: randomUUID(),
+      gameweekId: gw.id,
+      teamId: fxA.homeTeamId,
+      chipType: "C",
+      challengedTeamId: fxB.homeTeamId,
+      isValid: true,
+      // The real shape of a played-but-unscored chip: points_awarded is NOT NULL and defaults
+      // to 0, so "no points yet" is expressed by isProcessed alone.
+      isProcessed: false,
+      pointsAwarded: 0,
+    });
+    // This spec writes rows directly, so it must invalidate exactly as every API write path does.
+    await invalidateLeagueCache(leagueId);
+
+    // The API cannot rebuild it — that is the precondition this test exists for.
+    const api = await request.get("/api/fixtures?leagueSlug=" + slug).then((r) => r.json());
+    const liveEntry = Object.values(api.chipsByGameweek?.[LIVE_GW] ?? {})
+      .find((c: any) => c.chipType === "C") as Record<string, unknown>;
+    expect(liveEntry, "the chip is disclosed once its deadline passes").toBeTruthy();
+    expect(liveEntry.challenge, "no stored result to rebuild from").toBeFalsy();
+    // ...but it now carries the id the client needs to find the challenged side live.
+    expect(liveEntry.challengedTeamId).toBe(fxB.homeTeamId);
+
+    await page.goto("/" + slug + "/fixtures");
+    await selectGw(page, LIVE_GW);
+    const pill = page.getByText("CC", { exact: true }).first();
+    await expect(pill).toBeVisible({ timeout: 60_000 });
+
+    // Wait for the live poll to land before opening the tip.
+    await expect(page.getByText("LIVE", { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+    await pill.tap();
+
+    const tip = page.getByRole("tooltip");
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText("Challenge Chip");
+    await expect(tip).toContainText("GW" + LIVE_GW);
+    await expect(tip).toContainText("LIVE");
+    await expect(tip).toContainText("Challenge in progress");
+    // Both team names, i.e. a real two-sided scoreline rather than the "challenging X" fallback.
+    await expect(tip).toContainText(teamById.get(fxA.homeTeamId)!.name);
+    await expect(tip).toContainText(teamById.get(fxB.homeTeamId)!.name);
+    // Nothing may claim a result while the gameweek is still being played.
+    await expect(tip).not.toContainText("Won the challenge");
+    await expect(tip).not.toContainText("Lost the challenge");
+    await expect(tip).toContainText("decided when the gameweek is scored");
+  });
+
+  test("a settled challenge is never redrawn from live data", async ({ page }) => {
+    // GW2 is scored and GW4 is live. Selecting GW2 must still read GW2's stored scoreline,
+    // with no LIVE badge inside the tooltip.
+    await page.goto("/" + slug + "/fixtures");
+    await selectGw(page, GW);
+    const pill = page.getByText("CC", { exact: true }).first();
+    await expect(pill).toBeVisible({ timeout: 60_000 });
+    await pill.tap();
+
+    const tip = page.getByRole("tooltip");
+    await expect(tip).toContainText("GW" + GW);
+    await expect(tip).toContainText(String(CHALLENGER_SCORE));
+    await expect(tip).toContainText(String(CHALLENGED_SCORE));
+    await expect(tip).toContainText("Won the challenge");
+    await expect(tip).not.toContainText("Challenge in progress");
   });
 });

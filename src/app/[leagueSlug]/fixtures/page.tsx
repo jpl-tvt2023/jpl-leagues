@@ -3,23 +3,38 @@
 import { GwNavigator } from "@/components/GwNavigator";
 import { LiveFreshness } from "@/components/LiveFreshness";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
-import { useLeague } from "@/lib/league-context";
+import { useLeague, useEnforceFormat } from "@/lib/league-context";
 import { pickDefaultGameweek } from "@/lib/gameweeks/default-gw";
 import {
   type Fixture,
   type GameweekFixtures,
   type LiveFixtureScore,
+  type BreakdownChips,
   PlayerBreakdown,
 } from "../_components/fixtures/shared";
 import { ChallengeTip, type ChipDisplay } from "../_components/fixtures/ChallengeTip";
+import {
+  buildLiveChallengeMatch,
+  indexLiveSides,
+} from "@/lib/formats/tvt/challenge-match-live";
+import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
+import { tvtChipWasteReasonFor } from "@/lib/formats/tvt/fpl-chip-clash";
+import type { FplChipStatus } from "@/lib/fpl-league/chips";
 
 /** Chips played in a gameweek, keyed by gameweek number then team id. */
 type ChipsByGameweek = Record<number, Record<string, ChipDisplay>>;
+/** Each league team's managers, keyed by team id. */
+type PlayersByTeamId = Record<string, { name: string; fplId: string }[]>;
+/** FPL chip status for every manager whose history is cached, keyed by FPL entry id. */
+type FplChipsByFplId = Record<string, FplChipStatus>;
+
+/** In-progress challenge matches for the gameweek on screen, keyed by challenger team id. */
+type LiveChallenges = Record<string, ChallengeMatch>;
 
 function FixtureCard({
   fixture,
@@ -27,6 +42,10 @@ function FixtureCard({
   isFreshlyRefreshed,
   homeChip,
   awayChip,
+  homeLiveChallenge,
+  awayLiveChallenge,
+  playersByTeamId,
+  fplChipsByFplId,
 }: {
   fixture: Fixture;
   liveData?: LiveFixtureScore;
@@ -34,11 +53,62 @@ function FixtureCard({
   /** Chip that side played in THIS fixture's gameweek, if any. */
   homeChip?: ChipDisplay;
   awayChip?: ChipDisplay;
+  /** That side's challenge as it stands right now, when the gameweek is still in flight. */
+  homeLiveChallenge?: ChallengeMatch | null;
+  awayLiveChallenge?: ChallengeMatch | null;
+  playersByTeamId: PlayersByTeamId;
+  fplChipsByFplId: FplChipsByFplId;
 }) {
   const [expanded, setExpanded] = useState(false);
   const result = fixture.result;
   const isResult = result !== undefined && result !== null;
   const isLive = !isResult && !!liveData;
+
+  const homePlayers = fixture.homeTeam.id ? playersByTeamId[fixture.homeTeam.id] ?? [] : [];
+  const awayPlayers = fixture.awayTeam.id ? playersByTeamId[fixture.awayTeam.id] ?? [] : [];
+
+  // FPL chip pills under each manager's name — cache-only data the page already fetched, so this
+  // costs nothing extra. `silentWhenUnknown` because a cold cache is the ordinary state on this
+  // public page, not a fault worth a placeholder.
+  const homeBreakdownChips: BreakdownChips | undefined = homePlayers.length > 0 ? {
+    byFplId: Object.fromEntries(homePlayers.map((p) => [p.fplId, fplChipsByFplId[p.fplId] ?? null])),
+    tvt: [],
+    tvtLabel: "",
+    interactive: true,
+    silentWhenUnknown: true,
+  } : undefined;
+  const awayBreakdownChips: BreakdownChips | undefined = awayPlayers.length > 0 ? {
+    byFplId: Object.fromEntries(awayPlayers.map((p) => [p.fplId, fplChipsByFplId[p.fplId] ?? null])),
+    tvt: [],
+    tvtLabel: "",
+    interactive: true,
+    silentWhenUnknown: true,
+  } : undefined;
+
+  /**
+   * "This TVT chip will be wasted" — a client-side prediction from FPL chip history, shown only
+   * before the fixture is scored. Once `fixture.result` exists, the scorer's own verdict
+   * (`chip.isWasted`) has already run for this gameweek and is used instead — see the guard in
+   * ChallengeTip, which always prefers stored fact over a prediction.
+   *
+   * `isResult` is a reasonable proxy for "has chip processing run this gameweek": the scorer
+   * processes every fixture and every chip — including the Challenge Chip's separate pass — in
+   * one request, so a written result implies the chip rows for this gameweek were touched too.
+   */
+  const homePredictedWaste = !isResult && homeChip && !homeChip.isWasted
+    ? tvtChipWasteReasonFor(
+        homePlayers.map((p) => fplChipsByFplId[p.fplId] ?? null),
+        fixture.gameweek.number,
+        homeChip.chipName,
+      )
+    : null;
+  const awayPredictedWaste = !isResult && awayChip && !awayChip.isWasted
+    ? tvtChipWasteReasonFor(
+        awayPlayers.map((p) => fplChipsByFplId[p.fplId] ?? null),
+        fixture.gameweek.number,
+        awayChip.chipName,
+      )
+    : null;
 
   const homeScore = isResult ? result.homeScore : liveData?.homeScore;
   const awayScore = isResult ? result.awayScore : liveData?.awayScore;
@@ -64,6 +134,7 @@ function FixtureCard({
 
   return (
     <div
+      data-testid={`fixture-card-${fixture.id}`}
       className={`rounded-xl border p-4 backdrop-blur transition ${
         isLive ? "border-green-500/30 bg-green-500/5" : "border-white/10 bg-white/5"
       } cursor-pointer`}
@@ -94,7 +165,15 @@ function FixtureCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0 text-left text-white">
           <div className="font-semibold text-xs sm:text-sm truncate">{fixture.homeTeam.name}</div>
-          {homeChip && <ChallengeTip chip={homeChip} align="left" className="mt-0.5" />}
+          {homeChip && (
+            <ChallengeTip
+              chip={homeChip}
+              liveChallenge={homeLiveChallenge}
+              predictedWasteReason={homePredictedWaste}
+              align="left"
+              className="mt-0.5"
+            />
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 px-1 sm:px-3 shrink-0">
@@ -111,7 +190,15 @@ function FixtureCard({
 
         <div className="flex-1 min-w-0 text-right text-white">
           <div className="font-semibold text-xs sm:text-sm truncate">{fixture.awayTeam.name}</div>
-          {awayChip && <ChallengeTip chip={awayChip} align="right" className="mt-0.5" />}
+          {awayChip && (
+            <ChallengeTip
+              chip={awayChip}
+              liveChallenge={awayLiveChallenge}
+              predictedWasteReason={awayPredictedWaste}
+              align="right"
+              className="mt-0.5"
+            />
+          )}
         </div>
       </div>
 
@@ -136,7 +223,14 @@ function FixtureCard({
         </button>
         {expanded && (
           hasPlayerData
-            ? <PlayerBreakdown fixture={fixture} liveData={liveData} />
+            ? (
+              <PlayerBreakdown
+                fixture={fixture}
+                liveData={liveData}
+                homeChips={homeBreakdownChips}
+                awayChips={awayBreakdownChips}
+              />
+            )
             : <div className="mt-2 p-3 rounded-lg bg-white/5 border border-white/10 text-center text-xs text-gray-400">
                 Player breakdown not yet available — FPL data will appear once the gameweek begins.
               </div>
@@ -151,6 +245,11 @@ export default function LeagueFixturesPage() {
   const leagueSlug = params.leagueSlug as string;
 
   const { league, viewer } = useLeague();
+  // Every format EXCEPT fpl-classic, which has none of this page's underlying data (no teams,
+  // no fixtures, no playoff bracket). Listing the three explicitly rather than excluding one
+  // keeps the existing formats' behaviour byte-identical.
+  useEnforceFormat(["tvt", "continental-championship", "auction"]);
+
   const leagueName = league.name;
   const leagueFormat = league.format;
   const isLoggedIn = viewer.authenticated;
@@ -158,6 +257,8 @@ export default function LeagueFixturesPage() {
 
   const [fixtures, setFixtures] = useState<GameweekFixtures>({});
   const [chipsByGameweek, setChipsByGameweek] = useState<ChipsByGameweek>({});
+  const [playersByTeamId, setPlayersByTeamId] = useState<PlayersByTeamId>({});
+  const [fplChipsByFplId, setFplChipsByFplId] = useState<FplChipsByFplId>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
@@ -269,6 +370,8 @@ export default function LeagueFixturesPage() {
         setFixtures(fixturesData);
         // Absent on a legacy cached payload — treat that as "no chips" rather than crashing.
         setChipsByGameweek(data.chipsByGameweek ?? {});
+        setPlayersByTeamId(data.playersByTeamId ?? {});
+        setFplChipsByFplId(data.fplChipsByFplId ?? {});
 
         const gws = Object.keys(fixturesData).map(Number).filter(gw => gw <= leaguePhaseEnd).sort((a, b) => a - b);
         setAvailableGWs(gws);
@@ -305,6 +408,33 @@ export default function LeagueFixturesPage() {
   // Chips belong to the gameweek on screen, not to whatever is live. Switching gameweeks
   // switches the chips (and each Challenge Chip's rebuilt match) with them.
   const chipsForGw: Record<string, ChipDisplay> = selectedGW ? chipsByGameweek[selectedGW] ?? {} : {};
+
+  /**
+   * In-progress challenge matches, assembled from the live scores already on this page.
+   *
+   * ⚠️ The `liveScores[0].gameweek === selectedGW` guard is load-bearing. `liveScores` holds
+   * whichever gameweek is in flight; without the guard, navigating back to a scored GW2 would
+   * redraw its challenge with GW3's numbers — the exact bleed ChallengeTip's docblock warns about
+   * and that challenge-chip-tooltip.spec.ts asserts against. A settled challenge also always wins
+   * over a live one, which ChallengeTip enforces by preferring `chip.challenge`.
+   */
+  const liveChallenges: LiveChallenges = useMemo(() => {
+    if (!isLive || !selectedGW || liveScores.length === 0) return {};
+    if (liveScores[0]?.gameweek !== selectedGW) return {};
+
+    const sides = indexLiveSides(liveScores);
+    const out: LiveChallenges = {};
+    for (const [teamId, chip] of Object.entries(chipsForGw)) {
+      if (chip.chipType !== "C" || chip.challenge) continue;
+      const match = buildLiveChallengeMatch(
+        { teamId, challengedTeamId: chip.challengedTeamId ?? null, gameweek: selectedGW },
+        sides,
+      );
+      if (match) out[teamId] = match;
+    }
+    return out;
+  }, [isLive, selectedGW, liveScores, chipsForGw]);
+
   const isContinentalChampionship = leagueFormat === "continental-championship";
 
   // Continental Championship: only show JPL fixtures on this page (cup/knockout live on JCL/JEL pages)
@@ -455,6 +585,10 @@ export default function LeagueFixturesPage() {
                           isFreshlyRefreshed={isManuallyRefreshed}
                           homeChip={chipsForGw[fixture.homeTeam.id ?? ""]}
                           awayChip={chipsForGw[fixture.awayTeam.id ?? ""]}
+                          homeLiveChallenge={liveChallenges[fixture.homeTeam.id ?? ""]}
+                          awayLiveChallenge={liveChallenges[fixture.awayTeam.id ?? ""]}
+                          playersByTeamId={playersByTeamId}
+                          fplChipsByFplId={fplChipsByFplId}
                         />
                       ))
                     ) : (
@@ -478,6 +612,10 @@ export default function LeagueFixturesPage() {
                           isFreshlyRefreshed={isManuallyRefreshed}
                           homeChip={chipsForGw[fixture.homeTeam.id ?? ""]}
                           awayChip={chipsForGw[fixture.awayTeam.id ?? ""]}
+                          homeLiveChallenge={liveChallenges[fixture.homeTeam.id ?? ""]}
+                          awayLiveChallenge={liveChallenges[fixture.awayTeam.id ?? ""]}
+                          playersByTeamId={playersByTeamId}
+                          fplChipsByFplId={fplChipsByFplId}
                         />
                       ))
                     ) : (
@@ -498,6 +636,10 @@ export default function LeagueFixturesPage() {
                       isFreshlyRefreshed={isManuallyRefreshed}
                       homeChip={chipsForGw[fixture.homeTeam.id ?? ""]}
                       awayChip={chipsForGw[fixture.awayTeam.id ?? ""]}
+                      homeLiveChallenge={liveChallenges[fixture.homeTeam.id ?? ""]}
+                      awayLiveChallenge={liveChallenges[fixture.awayTeam.id ?? ""]}
+                      playersByTeamId={playersByTeamId}
+                      fplChipsByFplId={fplChipsByFplId}
                     />
                   ))
                 ) : (

@@ -10,6 +10,9 @@ import { leagues, challengerSurvivalEntries } from "@/lib/db/schema";
 import { processContinentalChampionshipGameweek } from "@/lib/formats/continental-championship/process-gameweek";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
+import { resolveFplChipStatuses } from "@/lib/fpl-league/chip-status-map";
+import { tvtChipWasteReasonFor } from "@/lib/formats/tvt/fpl-chip-clash";
+import { chipName as tvtChipName } from "@/lib/formats/tvt/chip-labels";
 import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
 
 interface RouteParams {
@@ -462,9 +465,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
       }
       
-      // Also reset chip processing for this gameweek
+      // Also reset chip processing for this gameweek.
+      //
+      // `wastedReason` must be cleared here too, or a chip wasted on one run stays wasted forever:
+      // the reason is what the scorer and the UI read to decide waste, and nothing else rewrites
+      // it. Note `isValid` is deliberately NOT reset — it records whether the DECLARATION was
+      // accepted, which a re-score does not revisit. That asymmetry is exactly why scorer-detected
+      // waste lives in `wastedReason` and never in `isValid`.
       await db.update(gameweekChips)
-        .set({ isProcessed: false, pointsAwarded: 0, hadNegativeHits: false })
+        .set({ isProcessed: false, pointsAwarded: 0, hadNegativeHits: false, wastedReason: null })
         .where(eq(gameweekChips.gameweekId, gameweek.id));
       
       // Re-fetch gameweek with cleared results
@@ -519,6 +528,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
       }
     }
+
+    // ── FPL chip status for every manager being scored ────────────────────
+    //
+    // League rule: a team's TVT chip is WASTED if either of its managers played any official FPL
+    // chip that gameweek. Resolved ONCE here rather than per fixture — one cache read for the
+    // whole gameweek instead of one per match.
+    //
+    // The "critical" lane is used deliberately: this decides league points, so it is entitled to
+    // fetch during a scoring run. A manager whose history cannot be read is simply absent from
+    // the map, and tvtChipWasteReasonFor() then declines to declare waste — see below.
+    const scoringFplIds = unprocessedFixtures.flatMap((f: Fixture & { homeTeam: Team & { players: Player[] }; awayTeam: Team & { players: Player[] } }) => [
+      ...f.homeTeam.players.map((p: Player) => p.fplId),
+      ...f.awayTeam.players.map((p: Player) => p.fplId),
+    ]);
+    const fplChipStatusByFplId = await resolveFplChipStatuses(scoringFplIds, {
+      lane: "critical",
+      topUp: scoringFplIds.length,
+      label: `gw${gameweekNumber} chip clash`,
+    });
+
+    /**
+     * The reason a team's TVT chip is wasted this gameweek, or null.
+     *
+     * ⚠️ Returns null when NEITHER manager's history could be read. Voiding a chip on missing
+     * data costs the team real league points and nothing later corrects it; honouring a chip that
+     * should have been voided is fixable with the admin override that already exists. So the
+     * asymmetry is deliberate: only ever void on a history we actually read.
+     */
+    const wasteReasonFor = (teamPlayers: Player[], chipType: string): string | null =>
+      tvtChipWasteReasonFor(
+        teamPlayers.map((p: Player) => fplChipStatusByFplId.get(p.fplId) ?? null),
+        gameweekNumber,
+        tvtChipName(chipType),
+      );
 
     // Track margins for bonus point calculation per group
     // Key: groupId, Value: array of { teamId, margin, fixtureId, usedDoublePointer }
@@ -680,6 +723,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         // Process home team chips
         for (const chip of homeChips) {
+          // FPL chip clash — checked before any chip's own rules. A wasted chip is spent but
+          // awards nothing, so homePointsToAward keeps the natural match result.
+          const homeWaste = wasteReasonFor(fixture.homeTeam.players, chip.chipType);
+          if (homeWaste) {
+            await db.update(gameweekChips)
+              .set({ isProcessed: true, pointsAwarded: 0, wastedReason: homeWaste })
+              .where(eq(gameweekChips.id, chip.id));
+            continue;
+          }
           if (chip.chipType === "W") {
             // Win-Win: Check for negative hits
             const totalHits = homeScores.reduce((sum, s) => sum + s.transferHits, 0);
@@ -725,6 +777,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         // Process away team chips
         for (const chip of awayChips) {
+          // FPL chip clash — checked before any chip's own rules. A wasted chip is spent but
+          // awards nothing, so awayPointsToAward keeps the natural match result.
+          const awayWaste = wasteReasonFor(fixture.awayTeam.players, chip.chipType);
+          if (awayWaste) {
+            await db.update(gameweekChips)
+              .set({ isProcessed: true, pointsAwarded: 0, wastedReason: awayWaste })
+              .where(eq(gameweekChips.id, chip.id));
+            continue;
+          }
           if (chip.chipType === "W") {
             const totalHits = awayScores.reduce((sum: number, s: PlayerScoreData) => sum + s.transferHits, 0);
             if (totalHits > 0) {
@@ -1042,6 +1103,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               pointsAwarded: 0,
               validationErrors: "Team not found",
             })
+            .where(eq(gameweekChips.id, chip.id));
+          continue;
+        }
+
+        // FPL chip clash. The home/away loops above already catch a Challenge Chip whose team
+        // sits in an unprocessed fixture — they mark it processed, and this pass only selects
+        // isProcessed: false. This guard covers the remaining route in: a challenger whose own
+        // fixture was already scored. It declines to void when the challenger's managers are
+        // absent from the map, same asymmetry as everywhere else.
+        const ccWaste = tvtChipWasteReasonFor(
+          challengerTeam.players.map((p: Player) => fplChipStatusByFplId.get(p.fplId) ?? null),
+          gameweekNumber,
+          tvtChipName("C"),
+        );
+        if (ccWaste) {
+          await db.update(gameweekChips)
+            .set({ isProcessed: true, pointsAwarded: 0, wastedReason: ccWaste })
             .where(eq(gameweekChips.id, chip.id));
           continue;
         }

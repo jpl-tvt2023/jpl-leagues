@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { NotificationBell } from "@/components/NotificationBell";
 import { TierChip } from "@/components/TierChip";
+import { GwNavigator } from "@/components/GwNavigator";
 import { Logo } from "@/components/Logo";
 import { HelpTip } from "@/components/HelpTip";
 import { ChallengeTip } from "../[leagueSlug]/_components/fixtures/ChallengeTip";
@@ -170,10 +171,15 @@ interface DashboardData {
     challengedTeamName: string | null;
     /**
      * The challenge match, rebuilt from both sides' own results for the chip's gameweek.
-     * Null until that gameweek is scored — this card shows the upcoming one, so usually null.
+     * Null until that gameweek is scored, so it is populated when the reader steps back to a
+     * past gameweek and empty on the current one.
      */
     challenge: ChallengeMatch | null;
   }[];
+  /** Gameweek the Captains & Chips card lands on: the lowest UNCONCLUDED one. */
+  captainsDefaultGw: number | null;
+  /** Gameweeks the card may show. Ends at captainsDefaultGw — future chips are undisclosed. */
+  captainsAvailableGws: number[];
   teamMembers: {
     name: string;
     fplId: string;
@@ -904,12 +910,58 @@ export default function DashboardPage() {
   const [cupViewedGw, setCupViewedGw] = useState<number | null>(null);
   const [cupRefreshing, setCupRefreshing] = useState(false);
   const [liveRefreshing, setLiveRefreshing] = useState(false);
+  // Captains & Chips card: which gameweek is on screen, plus a per-gameweek cache so stepping
+  // back and forth does not refetch. null means "whatever the dashboard payload defaulted to".
+  const [captainsGw, setCaptainsGw] = useState<number | null>(null);
+  const [captainsByGw, setCaptainsByGw] = useState<Record<number, DashboardData["leagueCaptains"]>>({});
+  const [captainsLoading, setCaptainsLoading] = useState(false);
   const [liveScoreOverride, setLiveScoreOverride] = useState<{
     myScore: number;
     oppScore: number;
     myPlayerScores: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
     oppPlayerScores: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
   } | null>(null);
+
+  /**
+   * Move the Captains & Chips card to another gameweek.
+   *
+   * The default gameweek's rows already arrived with the dashboard payload, so selecting it
+   * costs nothing; every other gameweek is fetched once and cached. `force` is for the Refresh
+   * button, which must re-read even a gameweek it has already seen.
+   */
+  const loadCaptainsGw = useCallback(async (gw: number, opts?: { force?: boolean }) => {
+    setCaptainsGw(gw);
+    // The default gameweek's rows are seeded into the cache when the dashboard payload lands
+    // (see the effect below), so stepping away and back never costs a request.
+    if (!opts?.force && captainsByGw[gw]) return;
+    setCaptainsLoading(true);
+    try {
+      const res = await fetch(`/api/team/dashboard/captains?gw=${gw}`, { credentials: "include" });
+      if (res.ok) {
+        const payload = await res.json();
+        setCaptainsByGw((prev) => ({ ...prev, [gw]: payload.leagueCaptains }));
+      }
+      // A non-OK response leaves the previous rows on screen rather than blanking the card.
+      // The only expected failure is a gameweek past the disclosure edge, which the navigator
+      // does not offer in the first place.
+    } catch {
+      // Same: keep what is showing.
+    } finally {
+      setCaptainsLoading(false);
+    }
+  }, [captainsByGw]);
+
+  /**
+   * Seed the captains cache with the default gameweek's rows from the dashboard payload.
+   *
+   * Without this, selecting the default gameweek in the navigator would refetch rows already in
+   * hand. Keyed on the rows themselves so a dashboard Refresh replaces the seeded copy.
+   */
+  useEffect(() => {
+    const gw = data?.captainsDefaultGw;
+    if (gw == null || !data?.leagueCaptains) return;
+    setCaptainsByGw((prev) => ({ ...prev, [gw]: data.leagueCaptains }));
+  }, [data?.captainsDefaultGw, data?.leagueCaptains]);
 
   const fetchDashboard = useCallback(async (gw?: number) => {
     try {
@@ -1272,21 +1324,56 @@ export default function DashboardPage() {
   // Captain Announcements card — extracted so it can sit either in the TVT 3-col
   // top row (between Deadline and Fixture) or as a standalone full-width section
   // for Continental Championship (where deadline+captain are merged into one card).
-  const captainAnnouncementsCard = data.leagueCaptains && data.leagueCaptains.length > 0 ? (
+  // Which gameweek the card is showing, and its rows. Falls back to the dashboard payload's own
+  // default so the first paint needs no extra request.
+  const captainsShownGw = captainsGw ?? data.captainsDefaultGw ?? null;
+  const captainsRows =
+    captainsShownGw !== null && captainsByGw[captainsShownGw]
+      ? captainsByGw[captainsShownGw]
+      : data.leagueCaptains;
+
+  const captainAnnouncementsCard = captainsRows && captainsRows.length > 0 ? (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
           <span className="text-yellow-400">👑</span> {leagueFormat === "continental-championship" ? "Captains" : "Captains & Chips"}
-          {data.deadline.gameweek ? <span className="text-gray-400 font-normal text-sm">— GW{data.deadline.gameweek}</span> : null}
         </h2>
-        <button
-          type="button"
-          onClick={() => fetchDashboard()}
-          className="text-xs px-3 py-1 rounded-md bg-white/10 hover:bg-white/20 text-gray-200 transition"
-          aria-label="Refresh captain announcements"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {/* The range ends at the current gameweek: later ones may hold chip declarations
+              nobody has had to commit to yet. The server rejects anything past it too. */}
+          {data.captainsAvailableGws?.length > 0 && (
+            <GwNavigator
+              gws={data.captainsAvailableGws}
+              value={captainsShownGw}
+              onChange={loadCaptainsGw}
+              label={(gw) => `GW ${gw}`}
+              disabled={captainsLoading}
+              selectLabel="Captains gameweek"
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              // Drop the cached copy first, or the refetch below is served from it.
+              if (captainsShownGw !== null) {
+                setCaptainsByGw((prev) => {
+                  const next = { ...prev };
+                  delete next[captainsShownGw];
+                  return next;
+                });
+              }
+              if (captainsShownGw !== null && captainsShownGw !== data.captainsDefaultGw) {
+                void loadCaptainsGw(captainsShownGw, { force: true });
+              } else {
+                void fetchDashboard();
+              }
+            }}
+            className="text-xs px-3 py-1 rounded-md bg-white/10 hover:bg-white/20 text-gray-200 transition"
+            aria-label="Refresh captain announcements"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
       {(() => {
         // Does ANY team in the league have a chip this GW? Decided once for the whole
@@ -1296,7 +1383,7 @@ export default function DashboardPage() {
         // independent <ul>s in a grid — out of horizontal alignment with each other.
         const hasAnyChip =
           leagueFormat !== "continental-championship" &&
-          data.leagueCaptains.some((c) => c.chipName);
+          captainsRows.some((c) => c.chipName);
 
         // One template drives the header row and every data row, so the labels can never
         // drift out of alignment with the cells beneath them.
@@ -1321,7 +1408,7 @@ export default function DashboardPage() {
           </div>
         );
 
-        const renderRow = (c: (typeof data.leagueCaptains)[number]) => {
+        const renderRow = (c: (typeof captainsRows)[number]) => {
           const displayName = `${c.teamName}${c.isOwnTeam ? " (you)" : ""}`;
           return (
             <li
@@ -1369,13 +1456,13 @@ export default function DashboardPage() {
             <div>
               {headerRow}
               <ul className="divide-y divide-white/5">
-                {data.leagueCaptains.map(renderRow)}
+                {captainsRows.map(renderRow)}
               </ul>
             </div>
           );
         }
-        const byGroup = new Map<string, typeof data.leagueCaptains>();
-        for (const c of data.leagueCaptains) {
+        const byGroup = new Map<string, typeof captainsRows>();
+        for (const c of captainsRows) {
           const g = c.groupName || "Ungrouped";
           if (!byGroup.has(g)) byGroup.set(g, []);
           byGroup.get(g)!.push(c);

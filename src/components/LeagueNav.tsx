@@ -10,7 +10,7 @@ export interface LeagueNavProps {
   leagueSlug: string;
   leagueName: string;
   currentPage: string;
-  format: "auction" | "continental-championship" | "tvt";
+  format: "auction" | "continental-championship" | "tvt" | "fpl-classic";
   /** Optional: when provided, distinguishes TVT-8 / TVT-16 / TVT-32 in the format chip. */
   teamSize?: number | null;
   /** Auction-only: "primary" hides the Marketplace tab (trades disabled). Defaults to "complete". */
@@ -58,6 +58,9 @@ export function LeagueNav({
 }: LeagueNavProps) {
   const isAuction = format === "auction";
   const isContinentalChampionship = format === "continental-championship";
+  // Public, read-only, no login accounts — isLoggedIn is always false here in practice, but the
+  // nav also suppresses the Sign In invitation itself: there is nothing to sign in TO.
+  const isFplClassic = format === "fpl-classic";
   const isPrimaryTier = isAuction && auctionTier === "primary";
   const palette = getFormatPalette(format, teamSize);
   const activeClass = palette.badgeText; // active link uses the palette accent color
@@ -137,6 +140,11 @@ export function LeagueNav({
               <NavLink href={`/${leagueSlug}/feedback`} activeClass={activeClass} active={currentPage ==="feedback"}>Feedback</NavLink>
             )}
           </>
+        ) : isFplClassic ? (
+          <>
+            <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>Standings</NavLink>
+            <NavLink href={`/${leagueSlug}/rules`} activeClass={activeClass} active={currentPage ==="rules"}>Rules</NavLink>
+          </>
         ) : (
           <>
             <NavLink href={`/${leagueSlug}/standings`} activeClass={activeClass} active={currentPage ==="standings"}>Standings</NavLink>
@@ -159,8 +167,9 @@ export function LeagueNav({
         {/* Notifications */}
         {isLoggedIn && <NotificationBell />}
 
-        {/* Sign In / Sign Out */}
-        {isLoggedIn ? (
+        {/* Sign In / Sign Out — omitted entirely for fpl-classic: a public, read-only format
+            with no login accounts has nothing to sign in to. */}
+        {isFplClassic ? null : isLoggedIn ? (
           <button
             onClick={onSignOut}
             className="rounded-full bg-white/10 px-4 sm:px-6 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white hover:bg-white/20 transition"

@@ -14,6 +14,7 @@
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { testDb, schema } from "./db";
+import { invalidateLeaguePageCache } from "../../src/lib/fpl-cache";
 
 /**
  * Ensure GW 1..38 exist for the league. Every deadline is set to +30 days
@@ -56,4 +57,17 @@ export async function expireGameweek(leagueId: string, gwNumber: number): Promis
         eq(schema.gameweeks.number, gwNumber),
       ),
     );
+}
+
+/**
+ * Drop the league's cached page payloads (standings / fixtures / playoffs).
+ *
+ * Specs that write rows straight to the database bypass the API handlers, and every one of
+ * those handlers calls `invalidateLeaguePageCache` after a write. Without this, a spec that
+ * inserts a chip or a result and then loads the page is served the payload from before its
+ * own write — and only when a test Redis is actually configured, which makes it an
+ * intermittent failure that looks like a product bug.
+ */
+export async function invalidateLeagueCache(leagueId: string): Promise<void> {
+  await invalidateLeaguePageCache(leagueId);
 }

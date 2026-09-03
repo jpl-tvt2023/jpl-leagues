@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { useLeague } from "@/lib/league-context";
+import { useLeague, useEnforceFormat } from "@/lib/league-context";
 import { fplEntryUrl } from "@/lib/fpl-links";
 import { FplChipRow } from "@/components/ChipPill";
 import { type FplChipStatus } from "@/lib/fpl-league/chips";
@@ -55,6 +55,11 @@ export default function FplLeaguePage() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
   const { league, viewer } = useLeague();
+  // Every format EXCEPT fpl-classic, which has none of this page's underlying data (no teams,
+  // no fixtures, no playoff bracket). Listing the three explicitly rather than excluding one
+  // keeps the existing formats' behaviour byte-identical.
+  useEnforceFormat(["tvt", "continental-championship", "auction"]);
+
 
   const [data, setData] = useState<Payload | null>(null);
   const [isLoading, setIsLoading] = useState(true);

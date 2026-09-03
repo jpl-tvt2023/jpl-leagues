@@ -35,7 +35,12 @@ export interface ChallengeChipRow {
   isProcessed: boolean;
 }
 
-export type ChallengeOutcome = "won" | "drew" | "lost" | "pending";
+/**
+ * "live" is set only by `challenge-match-live.ts`, for a challenge whose gameweek is still in
+ * flight. `challengeOutcome()` below never returns it: a stored chip is pending or decided, never
+ * live, because the store only ever holds settled state.
+ */
+export type ChallengeOutcome = "won" | "drew" | "lost" | "pending" | "live";
 
 export interface ChallengeMatch {
   gameweek: number;
@@ -45,7 +50,7 @@ export interface ChallengeMatch {
   challengedScore: number;
   challengerPlayerScores: string | null;
   challengedPlayerScores: string | null;
-  /** 2 won, 1 drew, 0 lost. Null while the chip is unprocessed. */
+  /** 2 won, 1 drew, 0 lost. Null while the chip is unprocessed, and always null while live. */
   pointsAwarded: number | null;
   outcome: ChallengeOutcome;
 }
@@ -124,6 +129,9 @@ export function challengeOutcomeLabel(m: ChallengeMatch): string {
     case "won":  return `Won the challenge · +${m.pointsAwarded} chip points`;
     case "drew": return `Drew the challenge · +${m.pointsAwarded} chip point`;
     case "lost": return "Lost the challenge · no chip points";
+    // Deliberately not W/D/L wording: the chip's points are decided by the scorer when the
+    // gameweek concludes, so a challenger currently ahead has not won anything yet.
+    case "live": return "Challenge in progress · live";
     default:     return "Challenge not yet scored";
   }
 }
