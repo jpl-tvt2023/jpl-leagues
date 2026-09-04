@@ -5,6 +5,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { isChipWasted } from "@/lib/formats/tvt/chip-waste";
 
 // Valid chip types (existing + 3 new chips)
 const VALID_CHIPS = [
@@ -332,8 +333,10 @@ export async function GET(request: NextRequest) {
       const gwNumber = chip.gameweek.number;
       const set = gwNumber <= setMidpoint ? 1 : 2;
       const key = `${chip.chipType}${set}`; // e.g., "W1", "D2", "C1"
-      // Chip is wasted if it's processed but invalid, or has hadNegativeHits flag
-      const wasted = (chip.isProcessed && !chip.isValid) || chip.hadNegativeHits;
+      // Waste has three representations in the database and only isChipWasted knows all of
+      // them. The expression that used to live here missed `wastedReason` — the one the scorer
+      // actually writes — so a chip the scorer burnt showed up on this screen as plain "Used".
+      const wasted = isChipWasted(chip);
       chipGwLookup.get(chip.teamId)!.set(key, { gwNumber, wasted, points: chip.pointsAwarded || 0 });
     }
 

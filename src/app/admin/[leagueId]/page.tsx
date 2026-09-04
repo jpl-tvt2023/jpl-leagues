@@ -58,21 +58,21 @@ interface ChipInfo {
   points: number;
 }
 
+/**
+ * A team's chip slots, keyed by chip (doublePointer, challengeChip, winWin, scoreLock,
+ * comeback, underdog).
+ *
+ * Deliberately a Record and not a fixed shape: the GET handler only emits the slots this
+ * league has in `enabledChips`, so a league running SL/CB/UD carries none of the D/C/W keys.
+ * Destructuring fixed names here is what would blow up on those leagues.
+ */
 interface ChipTeam {
   id: string;
   name: string;
   group: string;
   chips: {
-    set1: {
-      doublePointer: ChipInfo;
-      challengeChip: ChipInfo;
-      winWin: ChipInfo;
-    };
-    set2: {
-      doublePointer: ChipInfo;
-      challengeChip: ChipInfo;
-      winWin: ChipInfo;
-    };
+    set1: Record<string, ChipInfo>;
+    set2: Record<string, ChipInfo>;
   };
 }
 
@@ -126,7 +126,7 @@ interface CacheStats {
   gameweeks: { gameweek: number; entries: number }[];
 }
 
-type TabType = "teams" | "groups" | "captain" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction" | "finance" | "marketplace" | "feedback";
+type TabType = "teams" | "groups" | "captain" | "chips" | "bulkUpload" | "scoring" | "playoffs" | "settings" | "auction" | "finance" | "marketplace" | "feedback";
 
 // Auction-specific interfaces
 interface AuctionSessionInfo {
@@ -231,6 +231,10 @@ export default function AdminDashboard() {
 
   // Chips Override State
   const [chipTeams, setChipTeams] = useState<ChipTeam[]>([]);
+  // Chip slot options for the override dropdown. Comes straight from the GET handler, which
+  // has already filtered to this league's enabledChips and built the labels — so the dropdown
+  // cannot offer a chip the POST handler would reject.
+  const [chipTypeOptions, setChipTypeOptions] = useState<{ value: string; label: string }[]>([]);
   const [chipsLoading, setChipsLoading] = useState(false);
   const [chipFilterTeam, setChipFilterTeam] = useState<string>("");
   const [chipOverride, setChipOverride] = useState({
@@ -362,6 +366,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (activeTab === "captain") {
       fetchCaptainData();
+    } else if (activeTab === "chips") {
+      fetchChipsData();
     } else if (activeTab === "scoring") {
       fetchGameweekStatuses();
       fetchCacheStats();
@@ -463,10 +469,11 @@ export default function AdminDashboard() {
       if (response.ok) {
         const data = await response.json();
         // Sort teams alphabetically by name (ascending)
-        const sortedTeams = (data.teams || []).sort((a: ChipTeam, b: ChipTeam) => 
+        const sortedTeams = (data.teams || []).sort((a: ChipTeam, b: ChipTeam) =>
           a.name.localeCompare(b.name)
         );
         setChipTeams(sortedTeams);
+        setChipTypeOptions(data.chipTypes || []);
       }
     } catch (error) {
       console.error("Failed to fetch chips data:", error);
@@ -2148,6 +2155,18 @@ export default function AdminDashboard() {
             Captain Override
           </button>
           )}
+          {leagueConfig.format === "tvt" && (
+          <button
+            onClick={() => { setActiveTab("chips"); setMessage(null); }}
+            className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
+              activeTab === "chips"
+                ? "bg-yellow-500 text-slate-900"
+                : "bg-white/5 text-gray-300 hover:bg-white/10"
+            }`}
+          >
+            Chip Override
+          </button>
+          )}
           <button
             onClick={() => { setActiveTab("bulkUpload"); setMessage(null); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
@@ -3017,6 +3036,186 @@ export default function AdminDashboard() {
           </>
         )}
 
+
+        {/* Chip Override Tab */}
+        {activeTab === "chips" && (
+          <>
+            <div className="mb-8">
+              <h1 className="text-2xl sm:text-3xl font-bold text-white">Chip Override</h1>
+              <p className="text-gray-400 mt-1">Reset or mark chips as used for teams in case of technical issues</p>
+            </div>
+
+            {chipsLoading ? (
+              <div className="text-center text-gray-400 py-12">Loading chips data...</div>
+            ) : (
+              <>
+                {/* Override Form */}
+                <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
+                  <h2 className="text-xl font-bold text-white mb-6">Update Chip Status</h2>
+
+                  <form onSubmit={handleChipsOverride} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Select Team</label>
+                        <select
+                          required
+                          value={chipOverride.teamId}
+                          onChange={(e) => setChipOverride({ ...chipOverride, teamId: e.target.value })}
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
+                        >
+                          <option value="" className="bg-slate-800">Select a team...</option>
+                          {chipTeams.map((team) => (
+                            <option key={team.id} value={team.id} className="bg-slate-800">
+                              {team.name} (Group {team.group})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Select Chip</label>
+                        {/* Options come from the API, already filtered to this league's enabled
+                            chips and labelled with their set — so this list and what the POST
+                            handler accepts are the same list by construction. */}
+                        <select
+                          required
+                          value={chipOverride.chipType}
+                          onChange={(e) => setChipOverride({ ...chipOverride, chipType: e.target.value })}
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-yellow-500 focus:outline-none"
+                        >
+                          <option value="" className="bg-slate-800">Select a chip...</option>
+                          {chipTypeOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value} className="bg-slate-800">
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Set Status To</label>
+                        <div className="flex gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="chipStatus"
+                              checked={chipOverride.status === "available"}
+                              onChange={() => setChipOverride({ ...chipOverride, status: "available" })}
+                              className="w-4 h-4 text-yellow-500"
+                            />
+                            <span className="text-green-400">Available (reset)</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="chipStatus"
+                              checked={chipOverride.status === "used"}
+                              onChange={() => setChipOverride({ ...chipOverride, status: "used" })}
+                              className="w-4 h-4 text-yellow-500"
+                            />
+                            <span className="text-red-400">Used</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="chipStatus"
+                              checked={chipOverride.status === "wasted"}
+                              onChange={() => setChipOverride({ ...chipOverride, status: "wasted" })}
+                              className="w-4 h-4 text-yellow-500"
+                            />
+                            <span className="text-orange-400">Used but wasted</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {chipOverride.status !== "available" && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-2">Gameweek Used</label>
+                          <input
+                            type="number"
+                            required
+                            min={1}
+                            max={leagueConfig.playoffStartGw - 1}
+                            value={chipOverride.gameweek}
+                            onChange={(e) => setChipOverride({ ...chipOverride, gameweek: e.target.value })}
+                            placeholder={chipOverride.chipType.includes("Set1") ? `1-${Math.ceil((leagueConfig.playoffStartGw - 1) / 2)}` : `${Math.ceil((leagueConfig.playoffStartGw - 1) / 2) + 1}-${leagueConfig.playoffStartGw - 1}`}
+                            className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Reason (optional)</label>
+                      <input
+                        type="text"
+                        value={chipOverride.reason}
+                        onChange={(e) => setChipOverride({ ...chipOverride, reason: e.target.value })}
+                        placeholder="e.g., Chip used by accident, system error"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-3 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
+                    >
+                      {isSubmitting ? "Updating..." : "Update Chip Status"}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Team Chips Status */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                  <h3 className="text-xl font-bold text-white mb-4">Team Chips Status</h3>
+
+                  {/* Team Filter */}
+                  <div className="flex flex-wrap gap-4 mb-4">
+                    <div className="min-w-[180px]">
+                      <label className="block text-xs text-gray-400 mb-1">Team</label>
+                      <select
+                        value={chipFilterTeam}
+                        onChange={(e) => setChipFilterTeam(e.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none"
+                      >
+                        <option value="" className="bg-slate-800">All Teams</option>
+                        {chipTeams.map((team) => (
+                          <option key={team.id} value={team.id} className="bg-slate-800">
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {chipTeams.length === 0 ? (
+                    <p className="text-gray-500">No teams found</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {chipTeams.filter((team) => !chipFilterTeam || team.id === chipFilterTeam).map((team) => (
+                        <div key={team.id} className="p-4 rounded-lg bg-white/5">
+                          <div className="font-semibold text-white mb-3">{team.name} (Group {team.group})</div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                            {/* Set 1 then Set 2, iterating whatever slots the league enabled. */}
+                            {Object.entries(team.chips.set1).map(([key, slot]) => (
+                              <ChipSlotRow key={`set1-${key}`} slot={slot} />
+                            ))}
+                            {Object.entries(team.chips.set2).map(([key, slot]) => (
+                              <ChipSlotRow key={`set2-${key}`} slot={slot} />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </>
+        )}
 
         {/* Bulk Upload Tab */}
         {activeTab === "bulkUpload" && (
@@ -4612,6 +4811,37 @@ const CHIP_NAMES: Record<string, string> = {
 
 function formatChipLabel(code: string): string {
   return CHIP_NAMES[code] ? `${code} (${CHIP_NAMES[code]})` : code;
+}
+
+/**
+ * One chip slot in the admin "Team Chips Status" list.
+ *
+ * `slot.name` already carries the set's gameweek range ("Double Pointer (GW1-15)") because the
+ * GET handler derives it from the league's playoffStartGw — so nothing here has to know about
+ * sets or chip codes, and this renders whichever of the six chips the league enabled.
+ */
+function ChipSlotRow({ slot }: { slot: ChipInfo }) {
+  const tone = slot.used
+    ? (slot.wasted ? "text-orange-400" : "text-red-400")
+    : "text-green-400";
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-start gap-2">
+        <span className={tone}>●</span>
+        <span className="text-gray-300">{slot.name}:</span>
+        <span className={tone}>
+          {slot.used
+            ? `${slot.wasted ? "Wasted" : "Used"} in GW${slot.gameweek ?? "?"}`
+            : "Available"}
+        </span>
+      </div>
+      {slot.used && (
+        <span className={`ml-5 text-xs ${slot.points > 0 ? "text-green-400" : "text-gray-500"}`}>
+          +{slot.points} points
+        </span>
+      )}
+    </div>
+  );
 }
 
 function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; releaseCycleGws: number[] }) {

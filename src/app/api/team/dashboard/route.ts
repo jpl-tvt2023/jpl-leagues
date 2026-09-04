@@ -563,13 +563,18 @@ export async function GET(request: NextRequest) {
           eq(gameweekChips.teamId, teamId),
           eq(gameweekChips.gameweekId, submissionGw.id)
         ),
+        // The challenged team comes along so the dashboard can show WHO was
+        // challenged after a reload. The name is needed as well as the id:
+        // oppositeGroupTeams is recomputed from live standings, so the target
+        // can drop out of the top 2 and have no <option> to select.
+        with: { challengedTeam: true },
       });
       if (upcomingChipSubmission) {
         upcomingChip = {
           type: upcomingChipSubmission.chipType,
-          chipName: upcomingChipSubmission.chipType === "D" ? "Double Pointer"
-            : upcomingChipSubmission.chipType === "C" ? "Challenge Chip"
-            : "Win-Win",
+          chipName: chipName(upcomingChipSubmission.chipType),
+          challengedTeamId: upcomingChipSubmission.challengedTeamId,
+          challengedTeamName: upcomingChipSubmission.challengedTeam?.name ?? null,
         };
       }
     }
