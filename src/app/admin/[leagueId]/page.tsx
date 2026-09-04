@@ -312,6 +312,10 @@ export default function AdminDashboard() {
   const [transferring, setTransferring] = useState(false);
 
   const isAuctionFormat = leagueConfig.format === "auction";
+  // Public, read-only, no gameweeks rows and no admins — nothing on this console applies. Reachable
+  // only by typing the URL now that the superadmin Manage link is suppressed, but the scoring loop
+  // below must still not fire: it would 404 on /api/gameweeks/1 for every such league.
+  const isFplClassicFormat = leagueConfig.format === "fpl-classic";
 
   // Reset Season State
   const [resetPassword, setResetPassword] = useState("");
@@ -487,6 +491,13 @@ export default function AdminDashboard() {
           }));
           setGameweekStatuses(statuses);
         }
+        setScoringLoading(false);
+        return;
+      }
+
+      // This format deliberately creates no `gameweeks` rows, so every call below would 404.
+      if (isFplClassicFormat) {
+        setGameweekStatuses([]);
         setScoringLoading(false);
         return;
       }

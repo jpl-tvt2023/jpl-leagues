@@ -3,7 +3,7 @@
 import { PlayerScoreFormula } from "../playoffs/shared";
 import { FplEntryLink } from "@/components/FplEntryLink";
 import { fplEntryLabel } from "@/lib/fpl-links";
-import { ChipPill, FplChipRow } from "@/components/ChipPill";
+import { ChipPill, FplChipRow, FplChipsPlayedInGw } from "@/components/ChipPill";
 import {
   chipState,
   type ChipState,
@@ -45,6 +45,22 @@ export interface BreakdownChips {
    * The fixtures page reads chips from cache only, so "unknown" is the normal cold state.
    */
   silentWhenUnknown?: boolean;
+  /**
+   * Show ONLY the chip(s) this manager played in the gameweek on screen, inline beside their name —
+   * instead of the full six-chip inventory row.
+   *
+   * The fixtures page sets this; the dashboard card and the FPL League table deliberately do not.
+   * Those two exist to answer "what does this manager still hold?", so the inventory is the point.
+   * A fixture card answers a different question — "why does this score look like that?" — and for
+   * that, five green "available" pills plus an unrelated `WC1 3` from a gameweek nobody is looking
+   * at is noise that reads as a highlight. It also made the display look arbitrary: chip data is
+   * cache-only here, so some managers showed six pills and their opponent showed none.
+   *
+   * Showing only what was played makes "nothing" the normal case, so a manager with a cold cache
+   * and one who genuinely played nothing render identically — which is the honest outcome, since
+   * we cannot tell them apart.
+   */
+  playedOnly?: boolean;
 }
 
 export interface LivePlayerScore {
@@ -189,6 +205,14 @@ export function PlayerBreakdownSide({
                 {p.isCaptain && !p.isTempCaptain && (
                   <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400 shrink-0">C</span>
                 )}
+                {/* Chips played THIS gameweek, inline beside the name. Usually nothing. */}
+                {chips?.playedOnly && (
+                  <FplChipsPlayedInGw
+                    status={chips.byFplId[p.fplId]}
+                    gwNumber={gwNumber}
+                    interactive={chips.interactive}
+                  />
+                )}
               </div>
               <div className="text-right shrink-0 ml-2">
                 <PlayerScoreFormula
@@ -200,10 +224,11 @@ export function PlayerBreakdownSide({
                 />
               </div>
             </div>
-            {/* This manager's FPL chips, directly under their name — the point
+            {/* This manager's full FPL chip inventory, directly under their name — the point
                 of folding them in here rather than repeating the manager list
-                in a separate block above. */}
-            {chips && (
+                in a separate block above. Suppressed when the caller asked for played-only
+                chips, which are rendered inline beside the name instead. */}
+            {chips && !chips.playedOnly && (
               <div className="flex flex-wrap gap-0.5 mt-0.5">
                 <FplChipRow
                   status={chips.byFplId[p.fplId]}
@@ -234,13 +259,24 @@ export function PlayerBreakdownSide({
                   off. Say which, so the destination is not a surprise. */}
               <span className="text-[9px] text-gray-500 shrink-0">{fplEntryLabel(hrefGw)} ↗</span>
             </div>
-            {chips && (
+            {chips && !chips.playedOnly && (
               <div className="flex flex-wrap gap-0.5 mt-0.5">
                 <FplChipRow
                   status={chips.byFplId[p.fplId]}
                   gwNumber={gwNumber}
                   interactive={chips.interactive}
                   silentWhenUnknown={chips.silentWhenUnknown}
+                />
+              </div>
+            )}
+            {/* Roster view: the gameweek has not kicked off, so nothing can have been played in it
+                yet. Rendered anyway so a late-published chip appears the moment it is known. */}
+            {chips?.playedOnly && (
+              <div className="flex flex-wrap gap-0.5 mt-0.5">
+                <FplChipsPlayedInGw
+                  status={chips.byFplId[p.fplId]}
+                  gwNumber={gwNumber}
+                  interactive={chips.interactive}
                 />
               </div>
             )}
@@ -337,6 +373,19 @@ export function PlayerBreakdown({
 
   const hasTempCaptain = [...homePlayers, ...awayPlayers].some(p => p.isTempCaptain);
 
+  // Is any chip pill actually rendered below? In playedOnly mode that is the exception rather than
+  // the rule, and the "tap a chip" hint must not point at an empty breakdown. Mirrors exactly what
+  // FplChipsPlayedInGw / FplChipRow decide to draw, per side.
+  const anyChipOnScreen = [
+    [homeChips, homeRoster, homePlayers] as const,
+    [awayChips, awayRoster, awayPlayers] as const,
+  ].some(([chipSet, sideRoster, sidePlayers]) => {
+    if (!chipSet) return false;
+    const fplIds = (sidePlayers.length > 0 ? sidePlayers : sideRoster ?? []).map((p) => p.fplId);
+    if (!chipSet.playedOnly) return fplIds.some((id) => chipSet.byFplId[id]);
+    return fplIds.some((id) => chipSet.byFplId[id]?.used.some((u) => u.gw === gwNumber));
+  });
+
   return (
     <div className="mt-1 pt-2 border-t border-white/10 text-xs">
       <div className="grid grid-cols-2 gap-2 sm:gap-4">
@@ -369,8 +418,10 @@ export function PlayerBreakdown({
         </div>
       )}
       {/* Said once for the whole breakdown, not per side — the chips are all the same kind of
-          thing and repeating the instruction twice reads as two different instructions. */}
-      {(homeChips?.interactive || awayChips?.interactive) && (
+          thing and repeating the instruction twice reads as two different instructions.
+          In playedOnly mode most gameweeks show no chips at all, so the hint is gated on at least
+          one actually being rendered; otherwise it points at nothing. */}
+      {(homeChips?.interactive || awayChips?.interactive) && anyChipOnScreen && (
         <div className="mt-2 text-[10px] text-gray-500 text-center">
           Tap or hover a chip to see what it is and when it was played.
         </div>

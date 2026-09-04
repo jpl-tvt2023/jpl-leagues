@@ -22,6 +22,7 @@ import { syncGameweekDeadlines } from "@/lib/gameweeks/sync-deadlines";
 import { clearLiveCache, setLiveCachedScores, invalidateLeaguePageCache, markScoringActive, clearScoringActive } from "@/lib/fpl-cache";
 import { processAuctionGameweek } from "@/lib/formats/auction/process-gameweek";
 import { getPlayoffAdvanceGws, getPlayoffGenerateAction } from "@/lib/playoffs/advance-windows";
+import { FPL_CLASSIC_FORMAT } from "@/lib/format-palette";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import { generateId } from "@/lib/id";
 import { writeAutoSnapshot } from "@/lib/backup/snapshot";
@@ -176,6 +177,13 @@ export async function computePlan(): Promise<Plan> {
     console.error("computePlan: CRON_RUN_START write failed:", e);
   }
 
+  // fpl-classic is excluded here, not merely absent by accident. It creates no `gameweeks` rows,
+  // so it contributes nothing to `dueGws` below — but this is a SEPARATE query, and without the
+  // exclusion the league still landed in `plan.leagues` and still received one
+  // POST /api/admin/process-all/league-gw per due gameweek. Those no-op safely (the pre-flight in
+  // processOneLeagueOneGw finds nothing unscored and sets scoreSkipped), but they burn round-trips
+  // against the 30-POST/min cap and put a confusing "skipped" row in the Operations table for a
+  // league that is processed from its own section entirely.
   const activeLeagues = await db
     .select({
       id: leagues.id,
@@ -185,7 +193,7 @@ export async function computePlan(): Promise<Plan> {
       playoffStartGw: leagues.playoffStartGw,
     })
     .from(leagues)
-    .where(eq(leagues.isActive, true));
+    .where(and(eq(leagues.isActive, true), ne(leagues.format, FPL_CLASSIC_FORMAT)));
 
   // What FPL itself is on right now. Surfaced in the Operations header so an
   // operator can see whether a run is worth starting before starting it.

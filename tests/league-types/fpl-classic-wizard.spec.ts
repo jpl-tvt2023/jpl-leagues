@@ -52,8 +52,12 @@ test.describe.serial("FPL Classic — creation wizard", () => {
     await page.getByRole("button", { name: "Verify" }).click();
 
     // The preview proves the FPL round-trip: name and entrant count come back from the stub.
-    await expect(page.getByText("Stub Classic")).toBeVisible();
-    await expect(page.getByText(`${STUB_ENTRANT_COUNT} entrants`)).toBeVisible();
+    // Scoped to the preview panel — the Leagues table behind the wizard also lists "Stub Classic"
+    // leagues left by the sibling fpl-classic specs, so an unscoped match is ambiguous.
+    const preview = page.getByTestId("fpl-league-preview");
+    await expect(preview).toBeVisible();
+    await expect(preview.getByText("Stub Classic")).toBeVisible();
+    await expect(preview.getByText(`${STUB_ENTRANT_COUNT} entrants`)).toBeVisible();
     await expect(useThis).toBeEnabled();
     await useThis.click();
 

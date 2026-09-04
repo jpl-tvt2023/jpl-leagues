@@ -138,3 +138,47 @@ export function FplChipRow({
     </>
   );
 }
+
+/**
+ * Only the chips this manager actually played in `gwNumber` — nothing when they played none.
+ *
+ * The counterpart to FplChipRow, not a variant of it: that one answers "what does this manager
+ * still hold?" and so must show all six; this one answers "did a chip explain this gameweek?" and
+ * so must show at most one or two. The filter also runs BEFORE the loop rather than inside it,
+ * which is why this is a separate component rather than a flag.
+ *
+ * Deliberately renders nothing — not a placeholder — for an unknown history. On the fixtures page
+ * chip data is cache-only (`topUp: 0`, so a public route never fans out to FPL), so "unknown" and
+ * "played nothing" are indistinguishable to us and must look identical to the reader.
+ *
+ * No gameweek suffix: every pill here is by construction from the gameweek on screen, so printing
+ * "BB 2" on the GW2 card is noise.
+ */
+export function FplChipsPlayedInGw({
+  status,
+  gwNumber,
+  interactive = false,
+}: {
+  status: FplChipStatus | null | undefined;
+  gwNumber: number | null;
+  interactive?: boolean;
+}) {
+  if (!status || gwNumber == null) return null;
+  const played = status.used.filter((u) => u.gw === gwNumber);
+  if (played.length === 0) return null;
+
+  return (
+    <>
+      {played.map((u) => (
+        <ChipPill
+          key={`${u.code}-${u.gw}`}
+          code={u.code}
+          label={FPL_CHIP_LABELS[u.code as keyof typeof FPL_CHIP_LABELS] ?? u.code}
+          state="current"
+          gw={null}
+          interactive={interactive}
+        />
+      ))}
+    </>
+  );
+}

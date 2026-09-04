@@ -76,6 +76,8 @@ function FixtureCard({
     tvtLabel: "",
     interactive: true,
     silentWhenUnknown: true,
+    // Only what was played in the gameweek on screen — see BreakdownChips.playedOnly.
+    playedOnly: true,
   } : undefined;
   const awayBreakdownChips: BreakdownChips | undefined = awayPlayers.length > 0 ? {
     byFplId: Object.fromEntries(awayPlayers.map((p) => [p.fplId, fplChipsByFplId[p.fplId] ?? null])),
@@ -83,6 +85,8 @@ function FixtureCard({
     tvtLabel: "",
     interactive: true,
     silentWhenUnknown: true,
+    // Only what was played in the gameweek on screen — see BreakdownChips.playedOnly.
+    playedOnly: true,
   } : undefined;
 
   /**

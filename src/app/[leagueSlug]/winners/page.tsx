@@ -4,7 +4,9 @@ import { fplEntryUrl } from "@/lib/fpl-links";
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { useEnforceFormat } from "@/lib/league-context";
+import { useEnforceFormat, useLeague } from "@/lib/league-context";
+import { FPL_CLASSIC_FORMAT } from "@/lib/format-palette";
+import { FplClassicWinners } from "../_components/winners/FplClassicWinners";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 
@@ -24,13 +26,27 @@ interface WinnersData {
   winners: Winner[];
 }
 
+/**
+ * Thin dispatcher, matching standings/page.tsx.
+ *
+ * fpl-classic has none of the playoff page's underlying data (no teams, no fixtures, no bracket)
+ * and its own winners model — season cut, monthly and gameweek winners, plus awards still being
+ * led. It gets its own component rather than an arm inside one below, and the split has to happen
+ * here at the top: the playoff component's own hooks (and its useEnforceFormat guard) must not run
+ * for a format it would 404 anyway.
+ */
 export default function LeagueWinnersPage() {
+  const { league } = useLeague();
+  if (league.format === FPL_CLASSIC_FORMAT) return <FplClassicWinners />;
+  return <PlayoffWinners />;
+}
+
+function PlayoffWinners() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
-  // Every format EXCEPT fpl-classic, which has none of this page's underlying data (no teams,
-  // no fixtures, no playoff bracket). Listing the three explicitly rather than excluding one
-  // keeps the existing formats' behaviour byte-identical.
+  // Every format EXCEPT fpl-classic, which is handled by the dispatcher above. Listing the three
+  // explicitly rather than excluding one keeps the existing formats' behaviour byte-identical.
   useEnforceFormat(["tvt", "continental-championship", "auction"]);
 
   const [data, setData] = useState<WinnersData | null>(null);

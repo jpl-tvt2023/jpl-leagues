@@ -34,9 +34,22 @@ export const CLASSIC_SETTLED_FRESH_SECONDS = 6 * 3600;
 const CLASSIC_RETENTION_SECONDS = 25 * 3600;
 
 const SYNC_LOCK_SECONDS = 60;
-/** The roster/settle sweep can run for tens of seconds; the lock must outlive one call. */
-const ROSTER_LOCK_SECONDS = 300;
-const SETTLE_LOCK_SECONDS = 300;
+/**
+ * The roster/settle sweep can run for tens of seconds, so the lock must outlive one call — but
+ * only just.
+ *
+ * These were 300s, which turned a single platform timeout into five minutes of silent failure:
+ * both sweeps release in a `finally`, and a Vercel kill at maxDuration=60 skips it, so the lock
+ * survives with nothing holding it. Every retry then hit "a sweep is already in progress" — which
+ * returns HTTP 200 with done:false, so the browser loop spun all 20 passes against a dead lock and
+ * reported success-shaped nonsense.
+ *
+ * 90s still comfortably outlives a real call (settle now stops fetching at 40s) while letting a
+ * killed one self-heal in under two minutes. The real fix is the deadline in settleGameweeks; this
+ * is the backstop for a kill that beats it anyway.
+ */
+const ROSTER_LOCK_SECONDS = 90;
+const SETTLE_LOCK_SECONDS = 90;
 
 function liveKey(leagueId: string): string {
   return `fplc:live:v1:${leagueId}`;

@@ -28,7 +28,8 @@ import {
 } from "./cache";
 import { monthLabel } from "./months";
 import { rankRows, topN, type Rankable } from "./leaderboard";
-import { allScopes, isScopeReady, type AwardContext } from "./awards";
+import { type AwardContext } from "./awards";
+import { buildAwardGroups, indexFrozenAwards, type ClassicAwardGroup } from "./award-groups";
 
 /** A live standings row carries the extra fields the season table needs alongside ranking. */
 interface LiveRankable extends Rankable {
@@ -108,30 +109,9 @@ export interface ClassicStandingsPayload {
   };
 }
 
-export interface ClassicAwardWinnerRow {
-  entrantId: string;
-  entryName: string;
-  playerName: string;
-  position: number;
-  value: number;
-  isTied: boolean;
-  detail: Record<string, unknown> | null;
-}
-
-export interface ClassicAwardGroup {
-  key: string;
-  label: string;
-  scope: "season" | "gameweek" | "month" | "special";
-  scopeKey: string;
-  /**
-   * Frozen means a superadmin has processed this scope from the Operations tab and the winners
-   * below are read verbatim from fpl_classic_awards — they will not change even if FPL later
-   * corrects a score. Unfrozen means the data is fully settled and computed live from the same
-   * rules, but has not yet been made official.
-   */
-  isFrozen: boolean;
-  winners: ClassicAwardWinnerRow[];
-}
+// Award shapes live in award-groups.ts, which owns the final/provisional/leading distinction.
+// Re-exported here so existing importers of this module keep working unchanged.
+export type { ClassicAwardWinnerRow, ClassicAwardGroup, ClassicAwardStatus } from "./award-groups";
 
 async function loadConfig(leagueId: string) {
   const [config] = await db
@@ -419,62 +399,16 @@ export async function buildClassicStandingsPayload(opts: {
   const frozenAwardRows = settledThroughGw > 0
     ? await db.select().from(fplClassicAwards).where(eq(fplClassicAwards.leagueId, opts.leagueId))
     : [];
-  const frozenByScope = new Map<string, typeof frozenAwardRows>();
-  for (const row of frozenAwardRows) {
-    const k = `${row.awardType}::${row.scopeKey}`;
-    const list = frozenByScope.get(k) ?? [];
-    list.push(row);
-    frozenByScope.set(k, list);
-  }
 
-  const awards: ClassicAwardGroup[] = [];
-  for (const { award, scopeKey } of allScopes(awardCtx)) {
-    if (!isScopeReady(awardCtx, award, scopeKey)) continue;
-    const frozen = frozenByScope.get(`${award.key}::${scopeKey}`);
-    if (frozen && frozen.length > 0) {
-      awards.push({
-        key: award.key,
-        label: award.label,
-        scope: award.scope,
-        scopeKey,
-        isFrozen: true,
-        winners: frozen.map((row) => {
-          const e = entrantById.get(row.entrantId);
-          return {
-            entrantId: row.entrantId,
-            entryName: e?.entryName ?? "—",
-            playerName: e?.playerName ?? "—",
-            position: row.position,
-            value: row.value,
-            isTied: row.isTied,
-            detail: row.detail ? (JSON.parse(row.detail) as Record<string, unknown>) : null,
-          };
-        }),
-      });
-      continue;
-    }
-    const result = award.compute(awardCtx, scopeKey);
-    if (!result) continue;
-    awards.push({
-      key: award.key,
-      label: award.label,
-      scope: award.scope,
-      scopeKey,
-      isFrozen: false,
-      winners: result.winners.map((w) => {
-        const e = entrantById.get(w.entrantId);
-        return {
-          entrantId: w.entrantId,
-          entryName: e?.entryName ?? "—",
-          playerName: e?.playerName ?? "—",
-          position: w.position,
-          value: w.value,
-          isTied: w.isTied,
-          detail: w.detail ?? null,
-        };
-      }),
-    });
-  }
+  // Standings shows decided awards only; "who is currently leading" lives on the winners page,
+  // which calls the same builder with includeLeading: true.
+  const awards = buildAwardGroups(
+    awardCtx,
+    indexFrozenAwards(frozenAwardRows),
+    new Map(entrants.map((e) => [e.id, { entryName: e.entryName, playerName: e.playerName }])),
+    { includeLeading: false },
+  );
+
   return {
     league: {
       slug: opts.leagueSlug,

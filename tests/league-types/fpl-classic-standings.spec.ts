@@ -92,8 +92,8 @@ test.describe.serial("FPL Classic — public standings", () => {
     // Confirms content actually loaded, not just the shell.
     await expect(page.getByText(/mirrors FPL classic league/i)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Standings" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Gameweek Leaderboard" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Monthly Leaderboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Manager of the Gameweek/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Manager of the Month/ })).toBeVisible();
     // No Sign In invitation on a page with no accounts.
     await expect(page.getByRole("link", { name: "Sign In" })).toHaveCount(0);
   });
