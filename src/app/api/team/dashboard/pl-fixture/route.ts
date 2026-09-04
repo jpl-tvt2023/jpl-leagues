@@ -20,6 +20,8 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { withFplBudget, FplUnavailableError } from "@/lib/fpl/gateway";
 import { buildFplChipStatus, type FplChipStatus } from "@/lib/fpl-league/chips";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
+import { chipsUsedInSet, type ChipUsageRow } from "@/lib/formats/tvt/chip-usage";
+import { isChipDisclosable } from "@/lib/formats/tvt/chip-waste";
 import { TVT_CHIP_CODES } from "@/lib/formats/tvt/chip-labels";
 
 /**
@@ -227,30 +229,41 @@ export async function GET(request: NextRequest) {
         teamId: gameweekChips.teamId,
         chipType: gameweekChips.chipType,
         gameweekId: gameweekChips.gameweekId,
+        isValid: gameweekChips.isValid,
+        isProcessed: gameweekChips.isProcessed,
+        hadNegativeHits: gameweekChips.hadNegativeHits,
+        wastedReason: gameweekChips.wastedReason,
       })
       .from(gameweekChips)
-      .where(
-        and(
-          inArray(gameweekChips.teamId, [fixtureRow.homeTeamId, fixtureRow.awayTeamId]),
-          eq(gameweekChips.isValid, true)
-        )
-      );
+      .where(inArray(gameweekChips.teamId, [fixtureRow.homeTeamId, fixtureRow.awayTeamId]));
 
     const usedGwsByTeam = new Map<string, { code: string; gw: number }[]>();
+    const usageRowsByTeam = new Map<string, ChipUsageRow[]>();
     for (const row of chipRows) {
       const chipGw = gwById.get(row.gameweekId);
       if (!chipGw || chipGw.deadline > now) continue; // not public yet
+      if (!isChipDisclosable(row)) continue; // rejected declaration, never played
       const list = usedGwsByTeam.get(row.teamId) ?? [];
       list.push({ code: TVT_CHIP_CODES[row.chipType] ?? row.chipType, gw: chipGw.number });
       usedGwsByTeam.set(row.teamId, list);
+      const usage = usageRowsByTeam.get(row.teamId) ?? [];
+      usage.push({
+        chipType: row.chipType,
+        gameweekNumber: chipGw.number,
+        isValid: row.isValid,
+        isProcessed: row.isProcessed,
+      });
+      usageRowsByTeam.set(row.teamId, usage);
     }
     for (const list of usedGwsByTeam.values()) list.sort((a, b) => a.gw - b.gw);
 
     const chipSet = getChipSet(gw, league.playoffStartGw ?? 31);
 
+    const usedFor = (teamRowId: string) =>
+      chipsUsedInSet(usageRowsByTeam.get(teamRowId) ?? [], chipSet, league.playoffStartGw ?? 31);
+
     const buildSide = (
       t: { id: string; name: string; players: { name: string; fplId: string }[] },
-      row: typeof team,
       playersLeft: { leftToPlay: number; total: number } | null
     ): SideInfo => ({
       teamId: t.id,
@@ -266,18 +279,14 @@ export async function GET(request: NextRequest) {
       // their Double Pointer before choosing their own captain.
       tvtChips: {
         set: chipSet,
-        doublePointer: chipSet === 1 ? row.doublePointerSet1Used : chipSet === 2 ? row.doublePointerSet2Used : false,
-        challengeChip: chipSet === 1 ? row.challengeChipSet1Used : chipSet === 2 ? row.challengeChipSet2Used : false,
-        winWin: chipSet === 1 ? row.winWinSet1Used : chipSet === 2 ? row.winWinSet2Used : false,
+        doublePointer: usedFor(t.id).has("D"),
+        challengeChip: usedFor(t.id).has("C"),
+        winWin: usedFor(t.id).has("W"),
         usedGws: usedGwsByTeam.get(t.id) ?? [],
       },
       playersLeft,
     });
 
-    const [homeTeamRow, awayTeamRow] = await Promise.all([
-      db.query.teams.findFirst({ where: eq(teams.id, fixtureRow.homeTeamId) }),
-      db.query.teams.findFirst({ where: eq(teams.id, fixtureRow.awayTeamId) }),
-    ]);
 
     return NextResponse.json({
       gw,
@@ -290,8 +299,8 @@ export async function GET(request: NextRequest) {
       isHome: fixtureRow.homeTeamId === teamId,
       fixture: {
         id: fixtureRow.id,
-        home: buildSide(fixtureRow.homeTeam, homeTeamRow!, live?.homePlayersLeft ?? null),
-        away: buildSide(fixtureRow.awayTeam, awayTeamRow!, live?.awayPlayersLeft ?? null),
+        home: buildSide(fixtureRow.homeTeam, live?.homePlayersLeft ?? null),
+        away: buildSide(fixtureRow.awayTeam, live?.awayPlayersLeft ?? null),
       },
       live,
       result: fixtureRow.result

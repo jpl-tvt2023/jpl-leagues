@@ -180,20 +180,9 @@ export function canUseDoublePointer(
   }
 }
 
-/**
- * Get chip set based on gameweek and league config.
- * Set boundaries:
- *   Set 1: GW1 to midpoint (ceil((playoffStartGw-1)/2))
- *   Set 2: GW(midpoint+1) to playoffStartGw-1
- * Examples:
- *   32/16-team (playoffStartGw=31): Set1 GW1-15, Set2 GW16-30
- *   8-team     (playoffStartGw=36): Set1 GW1-17, Set2 GW18-35
- */
-export function getChipSet(gameweek: number, playoffStartGw: number = 31): 1 | 2 | "playoffs" {
-  if (gameweek >= playoffStartGw) return "playoffs";
-  const midpoint = Math.ceil((playoffStartGw - 1) / 2);
-  return gameweek <= midpoint ? 1 : 2;
-}
+// Defined in ./chip-set.ts so callers that must not load a database can reach it
+// (this module imports the FPL gateway). Re-exported here for existing importers.
+export { getChipSet } from "./chip-set";
 
 /**
  * Check captaincy chip availability
