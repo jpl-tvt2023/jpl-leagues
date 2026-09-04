@@ -63,7 +63,12 @@ interface DashboardData {
     lastCompletedGw?: number;
   } | null;
   upcomingCaptain: { playerId: string; playerName: string } | null;
-  upcomingChip: { type: string; chipName: string } | null;
+  upcomingChip: {
+    type: string;
+    chipName: string;
+    challengedTeamId: string | null;
+    challengedTeamName: string | null;
+  } | null;
   lastGwResult: {
     gameweek: number;
     result: "W" | "D" | "L";
@@ -901,7 +906,9 @@ export default function DashboardPage() {
   // Submission states
   const [selectedCaptain, setSelectedCaptain] = useState<string>("");
   const [selectedChip, setSelectedChip] = useState<string | null>(null);
-  const [selectedChallengedTeam, setSelectedChallengedTeam] = useState<string>("");
+  // null = untouched this session (fall back to the submitted target), "" = the
+  // player explicitly cleared it. Same convention as selectedChip above.
+  const [selectedChallengedTeam, setSelectedChallengedTeam] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showOpponentPlayers, setShowOpponentPlayers] = useState(false);
@@ -921,6 +928,18 @@ export default function DashboardPage() {
     myPlayerScores: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
     oppPlayerScores: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; finalScore: number }[];
   } | null>(null);
+
+  /**
+   * Which team the Challenge Chip is currently aimed at.
+   *
+   * Local state wins while the player is choosing; otherwise this falls back to whatever they
+   * already submitted, which is the whole point — the select is empty on every fresh mount and
+   * used to lose the target on reload even though the row was safe in the database.
+   *
+   * The dropdown, the submit-disabled guard and the POST payload all read this one value. If any
+   * of them re-derived it, the button and the dropdown would disagree about whether a target is set.
+   */
+  const effectiveChallengedTeam = selectedChallengedTeam ?? data?.upcomingChip?.challengedTeamId ?? "";
 
   /**
    * Move the Captains & Chips card to another gameweek.
@@ -1222,11 +1241,12 @@ export default function DashboardPage() {
     if (selectedChip === "" && data.upcomingChip) {
       await handleCancelChip();
       setSelectedChip(null);
+      setSelectedChallengedTeam(null);
       return;
     }
 
     if (!selectedChip) return;
-    if (selectedChip === "C" && !selectedChallengedTeam) return;
+    if (selectedChip === "C" && !effectiveChallengedTeam) return;
 
     setIsSubmitting(true);
     setSubmitMessage(null);
@@ -1235,7 +1255,7 @@ export default function DashboardPage() {
       const payload = {
         chipType: selectedChip,
         gameweek: data.submission.gameweek,
-        ...(selectedChip === "C" && { challengedTeamId: selectedChallengedTeam }),
+        ...(selectedChip === "C" && { challengedTeamId: effectiveChallengedTeam }),
       };
 
       const response = await fetch("/api/team/chips", {
@@ -1257,7 +1277,10 @@ export default function DashboardPage() {
         setSubmitMessage({ type: "error", text: displayError });
       } else {
         setSubmitMessage({ type: "success", text: result.message });
+        // Drop both local picks so the refreshed payload becomes the source of truth — the
+        // dropdowns then read back what the server actually stored, not what was typed at it.
         setSelectedChip(null);
+        setSelectedChallengedTeam(null);
         // Refresh dashboard data
         fetchDashboard();
       }
@@ -1971,7 +1994,7 @@ export default function DashboardPage() {
                         <div className="mb-3">
                           <label className="block text-xs text-gray-400 mb-1">Challenge against (top 2 from opposite group)</label>
                           <select
-                            value={selectedChallengedTeam}
+                            value={effectiveChallengedTeam}
                             onChange={(e) => setSelectedChallengedTeam(e.target.value)}
                             className="w-full p-2 rounded-lg bg-slate-800 text-white border border-purple-400/50 focus:border-purple-400 focus:outline-none"
                             disabled={isSubmitting}
@@ -1980,6 +2003,16 @@ export default function DashboardPage() {
                             {(data.oppositeGroupTeams ?? []).map((t) => (
                               <option key={t.id} value={t.id}>{t.name}</option>
                             ))}
+                            {/* The submitted target is only in oppositeGroupTeams while it is still
+                                top 2 of its group — that list is recomputed from live standings on
+                                every load. Without this option the select would match nothing and
+                                render blank, which is the bug this whole change is fixing. */}
+                            {data.upcomingChip?.challengedTeamId &&
+                              !(data.oppositeGroupTeams ?? []).some((t) => t.id === data.upcomingChip!.challengedTeamId) && (
+                                <option value={data.upcomingChip.challengedTeamId}>
+                                  {data.upcomingChip.challengedTeamName ?? "Challenged team"}
+                                </option>
+                              )}
                           </select>
                         </div>
                       )}
@@ -1989,7 +2022,7 @@ export default function DashboardPage() {
                           isSubmitting ||
                           selectedChip === null ||
                           selectedChip === (data.upcomingChip?.type ?? "") ||
-                          ((selectedChip ?? data.upcomingChip?.type) === "C" && !selectedChallengedTeam) ||
+                          ((selectedChip ?? data.upcomingChip?.type) === "C" && !effectiveChallengedTeam) ||
                           data.submission.state !== "open"
                         }
                         className="w-full py-2 rounded-lg bg-purple-500/20 text-purple-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-purple-500/30 transition"
