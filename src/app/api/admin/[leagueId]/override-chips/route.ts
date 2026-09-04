@@ -327,6 +327,8 @@ export async function GET(request: NextRequest) {
     // Create a lookup map: teamId -> chipType -> { gwNumber, wasted, points }
     const chipGwLookup = new Map<string, Map<string, { gwNumber: number; wasted: boolean; points: number }>>();
     for (const chip of allChipUsage) {
+      // A declaration that was rejected and never played does not spend the slot.
+      if (!chip.isValid && !chip.isProcessed) continue;
       if (!chipGwLookup.has(chip.teamId)) {
         chipGwLookup.set(chip.teamId, new Map());
       }
@@ -344,15 +346,18 @@ export async function GET(request: NextRequest) {
     const set1Label = `(GW1-${setMidpoint})`;
     const set2Label = `(GW${setMidpoint + 1}-${playoffStartGw - 1})`;
 
-    // Build a chip slot from the league row's *Used column + the chipGwLookup entry.
+    // Build a chip slot from the chip rows alone.
+    //
+    // `used` used to read teams.<chip>Set<N>Used, but nothing on the player path ever writes
+    // those columns - so this screen reported a chip played in GW3 as still available while
+    // showing GW3 beside it. The row is the only thing that knows.
     const slot = (
       teamRow: typeof allTeams[number],
-      column: keyof typeof teams.$inferSelect,
       code: string,
       set: 1 | 2,
       displayName: string,
     ) => ({
-      used: teamRow[column] as boolean,
+      used: chipGwLookup.get(teamRow.id)?.has(`${code}${set}`) ?? false,
       name: displayName,
       gameweek: (chipGwLookup.get(teamRow.id)?.get(`${code}${set}`)?.gwNumber) ?? null,
       wasted: (chipGwLookup.get(teamRow.id)?.get(`${code}${set}`)?.wasted) ?? false,
@@ -363,12 +368,12 @@ export async function GET(request: NextRequest) {
       teams: allTeams.map(t => {
         const setChips = (set: 1 | 2, range: string) => {
           const out: Record<string, ReturnType<typeof slot>> = {};
-          if (isEnabled("D")) out.doublePointer = slot(t, set === 1 ? "doublePointerSet1Used" : "doublePointerSet2Used", "D", set, `Double Pointer ${range}`);
-          if (isEnabled("C")) out.challengeChip = slot(t, set === 1 ? "challengeChipSet1Used" : "challengeChipSet2Used", "C", set, `Challenge Chip ${range}`);
-          if (isEnabled("W")) out.winWin = slot(t, set === 1 ? "winWinSet1Used" : "winWinSet2Used", "W", set, `Win-Win ${range}`);
-          if (isEnabled("SL")) out.scoreLock = slot(t, set === 1 ? "scoreLockSet1Used" : "scoreLockSet2Used", "SL", set, `Score Lock ${range}`);
-          if (isEnabled("CB")) out.comeback = slot(t, set === 1 ? "comebackSet1Used" : "comebackSet2Used", "CB", set, `Comeback ${range}`);
-          if (isEnabled("UD")) out.underdog = slot(t, set === 1 ? "underdogSet1Used" : "underdogSet2Used", "UD", set, `Underdog ${range}`);
+          if (isEnabled("D")) out.doublePointer = slot(t, "D", set, `Double Pointer ${range}`);
+          if (isEnabled("C")) out.challengeChip = slot(t, "C", set, `Challenge Chip ${range}`);
+          if (isEnabled("W")) out.winWin = slot(t, "W", set, `Win-Win ${range}`);
+          if (isEnabled("SL")) out.scoreLock = slot(t, "SL", set, `Score Lock ${range}`);
+          if (isEnabled("CB")) out.comeback = slot(t, "CB", set, `Comeback ${range}`);
+          if (isEnabled("UD")) out.underdog = slot(t, "UD", set, `Underdog ${range}`);
           return out;
         };
         return {

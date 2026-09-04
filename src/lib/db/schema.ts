@@ -128,6 +128,16 @@ export const teams = sqliteTable("teams", {
   // Chip tracking — Set 1 and Set 2 (boundaries vary by league variant, see league.playoffStartGw)
   // Existing chips: WW = Win-Win, DP = Double Pointer, CC = Challenge Chip
   // New chips:      SL = Score Lock, CB = Comeback, UD = Underdog
+  //
+  // ⚠️ NOT the source of truth for whether a chip is spent — do not read these to decide.
+  // They were meant to cache it, but nothing on the player path ever wrote them: the chip
+  // POST inserts the gameweek_chips row and returns, and the scorer marks that row processed
+  // without touching the team. Only the admin override/import routes set one true, and only
+  // cancel sets one false. Every read that trusted them reported a chip played in an earlier
+  // gameweek as still available, and the submission guard that shared them let one chip be
+  // played twice in a set. Usage is derived from gameweek_chips — see
+  // src/lib/formats/tvt/chip-usage.ts. These columns are kept only because the admin
+  // override/import routes still write them alongside the rows.
   doublePointerSet1Used: integer("double_pointer_set1_used", { mode: "boolean" }).notNull().default(false),
   challengeChipSet1Used: integer("challenge_chip_set1_used", { mode: "boolean" }).notNull().default(false),
   winWinSet1Used: integer("win_win_set1_used", { mode: "boolean" }).notNull().default(false),

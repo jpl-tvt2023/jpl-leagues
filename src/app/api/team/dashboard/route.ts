@@ -6,6 +6,7 @@ import { fetchBootstrapData } from "@/lib/fpl";
 import { shouldSyncDeadlines } from "@/lib/fpl-cache";
 import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/chip-validation";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
+import { chipsUsedInSet } from "@/lib/formats/tvt/chip-usage";
 import { computeLeagueStageStandings } from "@/lib/standings/league-stage";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 import { buildChallengeMatches } from "@/lib/formats/tvt/challenge-match-query";
@@ -451,14 +452,17 @@ export async function GET(request: NextRequest) {
       if (gotBonus) bonusPointsEarned++;
     }
 
-    // Get chip points
-    const teamChips = await db.query.gameweekChips.findMany({
-      where: and(
-        eq(gameweekChips.teamId, teamId),
-        eq(gameweekChips.isProcessed, true)
-      ),
+    // Every chip this team has ever declared. Serves both the points total below and the
+    // per-set usage further down, so the dashboard reads the chip table once.
+    const allTeamChips = await db.query.gameweekChips.findMany({
+      where: eq(gameweekChips.teamId, teamId),
+      with: { gameweek: true },
     });
-    const chipPointsEarned = teamChips.reduce((sum, c) => sum + (c.pointsAwarded || 0), 0);
+
+    // Get chip points
+    const chipPointsEarned = allTeamChips
+      .filter((c) => c.isProcessed)
+      .reduce((sum, c) => sum + (c.pointsAwarded || 0), 0);
 
     // ============================================
     // CHIP STATUS
@@ -467,17 +471,30 @@ export async function GET(request: NextRequest) {
     // — this is what actually drives the chip picker's set boundaries.
     const chipSet = submissionGw ? getChipSet(submissionGw.number, leaguePlayoffStartGw) : 1;
 
+    // Usage comes from the chip rows, not the teams.<chip>Set<N>Used columns. Nothing on
+    // a normal submission path ever wrote those columns, so a chip played in an earlier
+    // gameweek read back as available for ever - see lib/formats/tvt/chip-usage.ts.
+    const usageRows = allTeamChips.map((c) => ({
+      chipType: c.chipType,
+      gameweekNumber: c.gameweek.number,
+      isValid: c.isValid,
+      isProcessed: c.isProcessed,
+    }));
+    const usedSet1 = chipsUsedInSet(usageRows, 1, leaguePlayoffStartGw);
+    const usedSet2 = chipsUsedInSet(usageRows, 2, leaguePlayoffStartGw);
+    const usedThisSet = chipSet === 1 ? usedSet1 : chipSet === 2 ? usedSet2 : new Set<string>();
+
     const chipStatus = {
       currentSet: chipSet,
       set1: {
-        doublePointer: { used: team.doublePointerSet1Used, name: "Double Pointer" },
-        challengeChip: { used: team.challengeChipSet1Used, name: "Challenge Chip" },
-        winWin: { used: team.winWinSet1Used, name: "Win-Win" },
+        doublePointer: { used: usedSet1.has("D"), name: "Double Pointer" },
+        challengeChip: { used: usedSet1.has("C"), name: "Challenge Chip" },
+        winWin: { used: usedSet1.has("W"), name: "Win-Win" },
       },
       set2: {
-        doublePointer: { used: team.doublePointerSet2Used, name: "Double Pointer" },
-        challengeChip: { used: team.challengeChipSet2Used, name: "Challenge Chip" },
-        winWin: { used: team.winWinSet2Used, name: "Win-Win" },
+        doublePointer: { used: usedSet2.has("D"), name: "Double Pointer" },
+        challengeChip: { used: usedSet2.has("C"), name: "Challenge Chip" },
+        winWin: { used: usedSet2.has("W"), name: "Win-Win" },
       },
     };
 
@@ -593,7 +610,7 @@ export async function GET(request: NextRequest) {
 
     let dpEligible = true;
     let dpReason: string | null = null;
-    const dpUsed = chipSet === 1 ? team.doublePointerSet1Used : chipSet === 2 ? team.doublePointerSet2Used : false;
+    const dpUsed = usedThisSet.has("D");
     if (dpUsed) {
       dpReason = buildUsedReason(true, chipSet);
       dpEligible = false;
@@ -612,8 +629,8 @@ export async function GET(request: NextRequest) {
       dpReason = dp.reason;
     }
 
-    const ccUsed = chipSet === 1 ? team.challengeChipSet1Used : chipSet === 2 ? team.challengeChipSet2Used : false;
-    const wwUsed = chipSet === 1 ? team.winWinSet1Used : chipSet === 2 ? team.winWinSet2Used : false;
+    const ccUsed = usedThisSet.has("C");
+    const wwUsed = usedThisSet.has("W");
 
     // Challenge Chip's "top 2 from opposite group" target is just as
     // position-dependent as Double Pointer's rank check — block it in GW1

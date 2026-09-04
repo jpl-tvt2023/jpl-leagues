@@ -3,6 +3,7 @@ import { db, teams, gameweeks, gameweekChips, settings, leagues, fixtures, audit
 import { eq, and, asc } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
+import { chipsUsedInSet } from "@/lib/formats/tvt/chip-usage";
 import { resolveSubmissionWindow, formatLateness } from "@/lib/gameweek-window";
 import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
@@ -175,11 +176,27 @@ export async function POST(request: NextRequest) {
     const set2Range = `GW${midpoint + 1}-${playoffStartGw - 1}`;
     const setRange = chipSet === 1 ? set1Range : set2Range;
 
-    // Check if chip is already used for this set using the column map
-    const [col1, col2] = CHIP_SET_COL[chipType as ChipCode];
-    const alreadyUsed = chipSet === 1
-      ? !!team[col1 as keyof typeof team]
-      : !!team[col2 as keyof typeof team];
+    // Whether this chip is already spent in the set comes from the chip rows, not from
+    // teams.<chip>Set<N>Used: nothing on this path ever wrote those columns, so the guard
+    // read false for ever and the same chip could be played twice in one set.
+    const teamChipRows = await db.query.gameweekChips.findMany({
+      where: eq(gameweekChips.teamId, teamId),
+      with: { gameweek: true },
+    });
+    const usageRows = teamChipRows.map((c) => ({
+      chipType: c.chipType,
+      gameweekNumber: c.gameweek.number,
+      isValid: c.isValid,
+      isProcessed: c.isProcessed,
+    }));
+    // The chip already sitting on THIS gameweek is the one being replaced, so it must not
+    // count against its own resubmission.
+    const usedInSet = chipsUsedInSet(
+      usageRows.filter((r) => r.gameweekNumber !== gameweekNumber),
+      chipSet,
+      playoffStartGw,
+    );
+    const alreadyUsed = usedInSet.has(chipType);
 
     if (alreadyUsed) {
       return NextResponse.json(
@@ -235,21 +252,6 @@ export async function POST(request: NextRequest) {
         { error: `${chipName} is already selected for GW${gameweekNumber}` },
         { status: 400 }
       );
-    }
-
-    // If switching chip types, check the NEW type isn't already used in the set
-    // (the old type doesn't count since we're replacing it)
-    if (existingChip && existingChip.chipType !== chipType) {
-      const [newCol1, newCol2] = CHIP_SET_COL[chipType as ChipCode];
-      const newAlreadyUsed = chipSet === 1
-        ? !!team[newCol1 as keyof typeof team]
-        : !!team[newCol2 as keyof typeof team];
-      if (newAlreadyUsed) {
-        return NextResponse.json(
-          { error: `${chipName} has already been used for Set ${chipSet} (${setRange})` },
-          { status: 400 }
-        );
-      }
     }
 
     // For Challenge Chip, validate the challenged team
