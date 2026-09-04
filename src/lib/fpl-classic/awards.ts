@@ -79,8 +79,28 @@ export interface AwardDefinition {
   scopeKeys(ctx: AwardContext): string[];
   /** Which gameweeks must be settled before `scopeKey` may be frozen. */
   requiredGws(ctx: AwardContext, scopeKey: string): number[];
-  /** Null when the scope's inputs are not ready yet — the caller renders "not yet available". */
-  compute(ctx: AwardContext, scopeKey: string): AwardResult | null;
+  /**
+   * Null when the scope's inputs are not ready yet — the caller renders "not yet available".
+   *
+   * With `{ requireComplete: false }` the award is computed over whatever IS settled so far,
+   * answering "who is leading?" instead of "who won?". The caller is then responsible for
+   * labelling it as such — see AwardStatus in the winners UI. Same function either way, on
+   * purpose: a leader and the eventual winner must never come from two implementations that can
+   * silently disagree about eligibility, ties or the metric.
+   *
+   * Some awards cannot be led: a gameweek winner needs that gameweek's rows to exist at all, so
+   * gw-winner ignores the flag.
+   */
+  compute(ctx: AwardContext, scopeKey: string, opts?: AwardComputeOptions): AwardResult | null;
+}
+
+export interface AwardComputeOptions {
+  /**
+   * Require every gameweek the award depends on to be settled (the default, and what the freeze
+   * writer must always use). False computes a provisional "currently leading" result from partial
+   * data — never write that to fpl_classic_awards.
+   */
+  requireComplete?: boolean;
 }
 
 function metricValue(row: AwardGwRow, metric: "net" | "gross"): number {
@@ -134,8 +154,10 @@ const seasonPodium: AwardDefinition = {
   positions: 3, // display cap for the "podium" framing; the full cut list is separate (standings page)
   scopeKeys: () => ["season"],
   requiredGws: (ctx) => Array.from({ length: 38 - ctx.startGameweek + 1 }, (_, i) => ctx.startGameweek + i),
-  compute(ctx) {
-    if (ctx.settledThroughGw < 38) return null; // the season is not over — no award yet, ever
+  compute(ctx, _scopeKey, opts) {
+    // Complete only when the season has actually ended. Relaxed, this is the current top of the
+    // table over everything settled so far — the leaders, not the winners.
+    if ((opts?.requireComplete ?? true) && ctx.settledThroughGw < 38) return null;
     const totals = new Map<string, number>();
     for (const row of ctx.rows) {
       const entrant = ctx.entrants.find((e) => e.id === row.entrantId);
@@ -185,15 +207,20 @@ const monthWinner: AwardDefinition = {
     const key = scopeKey.split(":").slice(1).join(":");
     return ctx.months.find((m) => m.key === key)?.gws ?? [];
   },
-  compute(ctx, scopeKey) {
+  compute(ctx, scopeKey, opts) {
     const key = scopeKey.split(":").slice(1).join(":");
     const month = ctx.months.find((m) => m.key === key);
     if (!month) return null;
-    if (!month.gws.every((gw) => gw <= ctx.settledThroughGw)) return null; // month not fully settled
+    // A month award is only real once every one of its gameweeks is settled — a partially-settled
+    // month would crown the wrong manager permanently. Relaxed, it reports who leads the month so
+    // far, over the settled subset only.
+    if ((opts?.requireComplete ?? true) && !month.gws.every((gw) => gw <= ctx.settledThroughGw)) return null;
+    const countedGws = month.gws.filter((gw) => gw <= ctx.settledThroughGw);
+    if (countedGws.length === 0) return null;
 
     const totals = new Map<string, number>();
     for (const row of ctx.rows) {
-      if (!month.gws.includes(row.gw)) continue;
+      if (!countedGws.includes(row.gw)) continue;
       const entrant = ctx.entrants.find((e) => e.id === row.entrantId);
       if (!entrant || !eligibleForMonth(entrant, month.gws)) continue;
       totals.set(row.entrantId, (totals.get(row.entrantId) ?? 0) + metricValue(row, ctx.metric));
@@ -213,8 +240,8 @@ const highestGwScore: AwardDefinition = {
   positions: 1,
   scopeKeys: () => ["season"],
   requiredGws: (ctx) => Array.from({ length: 38 - ctx.startGameweek + 1 }, (_, i) => ctx.startGameweek + i),
-  compute(ctx) {
-    if (ctx.settledThroughGw < 38) return null;
+  compute(ctx, _scopeKey, opts) {
+    if ((opts?.requireComplete ?? true) && ctx.settledThroughGw < 38) return null;
     if (ctx.rows.length === 0) return null;
     const best = new Map<string, { value: number; gw: number }>();
     for (const row of ctx.rows) {
@@ -240,8 +267,8 @@ const bestBench: AwardDefinition = {
   positions: 1,
   scopeKeys: () => ["season"],
   requiredGws: (ctx) => Array.from({ length: 38 - ctx.startGameweek + 1 }, (_, i) => ctx.startGameweek + i),
-  compute(ctx) {
-    if (ctx.settledThroughGw < 38) return null;
+  compute(ctx, _scopeKey, opts) {
+    if ((opts?.requireComplete ?? true) && ctx.settledThroughGw < 38) return null;
     const totals = new Map<string, number>();
     for (const row of ctx.rows) {
       totals.set(row.entrantId, (totals.get(row.entrantId) ?? 0) + row.benchPoints);

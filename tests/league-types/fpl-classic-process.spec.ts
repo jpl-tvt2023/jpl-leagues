@@ -109,7 +109,7 @@ test.describe.serial("FPL Classic — settle sweep and award freezing", () => {
     const body = await request.get(`/api/fpl-classic/standings?leagueSlug=${slug}`).then((r) => r.json());
     const gw1Award = body.awards.find((a: { scopeKey: string }) => a.scopeKey === "gw:1");
     expect(gw1Award).toBeTruthy();
-    expect(gw1Award.isFrozen).toBe(true);
+    expect(gw1Award.status).toBe("final");
     expect(gw1Award.winners.length).toBeGreaterThan(0);
   });
 
@@ -149,7 +149,7 @@ test.describe.serial("FPL Classic — settle sweep and award freezing", () => {
 
     const body = await request.get(`/api/fpl-classic/standings?leagueSlug=${slug}`).then((r) => r.json());
     const gw1Award = body.awards.find((a: { scopeKey: string }) => a.scopeKey === "gw:1");
-    expect(gw1Award.isFrozen).toBe(true);
+    expect(gw1Award.status).toBe("final");
     // Exactly the entrants frozen before the edit — read verbatim, never re-derived.
     expect(gw1Award.winners.map((w: { entrantId: string }) => w.entrantId).sort()).toEqual(
       frozenBefore.map((r) => r.entrantId).sort(),

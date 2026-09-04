@@ -8,10 +8,17 @@
  * from middleware; this route never gets that header).
  *
  * Body: `{ step？: "roster" | "settle" | "freeze", force?: boolean }`. Omitting `step` runs
- * roster → settle → freeze in one call — the common case. Each call is bounded (roster is ~4 FPL
- * calls; settle is capped at ENTRANT_BATCH entrants) so it returns well inside the Vercel Hobby
- * ceiling; the browser is expected to call again while `done` is false, exactly like the
- * existing Operations tab's process-all loop.
+ * roster → settle → freeze in one call — the common case. The browser is expected to call again
+ * while `done` is false, exactly like the existing Operations tab's process-all loop.
+ *
+ * ⚠️ Two bounds keep one call inside the Vercel Hobby ceiling of 60s, and BOTH are load-bearing:
+ * `ENTRANT_BATCH` caps how many entrants' histories a settle touches, and `SETTLE_DEADLINE_MS`
+ * stops it fetching at 40s regardless of count. The count alone is not enough — the affordable
+ * number depends on FPL latency, which varies by 2x and which this code cannot know up front.
+ * This route once claimed to be "bounded" with ENTRANT_BATCH at 250, larger than most leagues, so
+ * the cap never engaged: a 237-entrant league made ~237 paced FPL calls plus ~475 sequential DB
+ * round-trips and was killed mid-sweep with a bare 504. A kill is worse than a short pass — it
+ * skips sync.ts's `finally`, stranding the settle lock.
  *
  * This route — and this route alone — is where the expensive settle sweep can be triggered. No
  * public route does this; see the docblock on lib/fpl-classic/sync.ts.

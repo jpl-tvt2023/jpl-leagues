@@ -25,6 +25,11 @@ import {
 const STUB_LEAGUE_ID = 900001;
 const STUB_ENTRANT_COUNT = 120;
 
+// Seasons this file creates with a FIXED string (rather than a unique one), and so must clear
+// before it runs or the second local run 409s on the slug. Keep in step with the tests below.
+const FIXED_SEASONS = ["2026-27", "2027-28"];
+const FIXED_SEASON_SLUGS = FIXED_SEASONS.map((s) => `league-${STUB_LEAGUE_ID}-${s}`);
+
 // Each test signs in for itself — Playwright's `request` fixture inside beforeAll is a
 // different APIRequestContext from the one each test() receives, so a session established in
 // beforeAll does not carry over (the same reason tvt-32.spec.ts re-signs-in inside every test
@@ -42,7 +47,7 @@ test.describe.serial("FPL Classic league creation", () => {
       .from(schema.leagues)
       // Exact slugs only. A `like("league-900001%")` would also match the uniquely-seasoned
       // leagues the sibling fpl-classic specs create against this same stub league id.
-      .where(inArray(schema.leagues.slug, [`league-${STUB_LEAGUE_ID}`, `league-${STUB_LEAGUE_ID}-2026-27`]));
+      .where(inArray(schema.leagues.slug, [`league-${STUB_LEAGUE_ID}`, ...FIXED_SEASON_SLUGS]));
     for (const row of stale) await deleteLeague(request, row.id);
   });
 

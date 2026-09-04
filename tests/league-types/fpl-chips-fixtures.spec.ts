@@ -184,6 +184,35 @@ test.describe.serial("FPL chips on the fixtures page", () => {
     await expect(bbPill).toBeVisible();
   });
 
+  test("a chip played in a DIFFERENT gameweek does not appear on this one", async ({ request, page }) => {
+    // The regression this guards: the breakdown used to render all six FPL chips for every
+    // manager, each carrying the gameweek it was spent in — so a wildcard played in GW5 showed up
+    // as "WC1 5" on the GW2 card, alongside four green "available" pills. Only chips played in the
+    // gameweek on screen belong here.
+    await setFplChips(request, {
+      [chipTeamFplIds[0]]: [
+        { name: "bboost", event: GW },        // this gameweek — must show
+        { name: "wildcard", event: GW + 3 },  // a later gameweek — must NOT show
+      ],
+    });
+
+    await page.goto("/" + slug + "/fixtures");
+    await selectGw(page, GW);
+    const card = page.getByTestId(`fixture-card-${chipFixtureId}`);
+    await card.getByText("Player breakdown").click();
+    await expect(card.getByText("Hide breakdown")).toBeVisible();
+
+    await expect(card.getByText("BB", { exact: true }).first()).toBeVisible();
+    // Neither the bare code nor the old "WC1 5" form.
+    await expect(card.getByText("WC1", { exact: false })).toHaveCount(0);
+    // And no inventory pills for chips that were never played at all.
+    await expect(card.getByText("TC", { exact: false })).toHaveCount(0);
+    await expect(card.getByText("FH", { exact: false })).toHaveCount(0);
+
+    // Restore the fixture's expected chip state for the tests that follow.
+    await setFplChips(request, { [chipTeamFplIds[0]]: [{ name: "bboost", event: GW }] });
+  });
+
   test("page: tapping the FPL chip pill names it", async ({ page }) => {
     await page.goto("/" + slug + "/fixtures");
     await selectGw(page, GW);

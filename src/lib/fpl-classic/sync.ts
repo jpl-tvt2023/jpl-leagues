@@ -31,7 +31,31 @@ import {
 import { monthKeyFromDeadline } from "./months";
 import { AWARD_DEFINITIONS, allScopes, isScopeReady, type AwardContext } from "./awards";
 
-const ENTRANT_BATCH = 250;
+/**
+ * Entrants whose history one settle call will fetch.
+ *
+ * Was 250, which is larger than most leagues — so the cap never engaged and "bounded" meant "the
+ * whole league in one invocation". A 237-entrant league then made ~237 FPL calls against a gateway
+ * that admits 8.33 request starts/sec (MIN_INTERVAL_MS=120 at concurrency 4), i.e. a 28s pacing
+ * floor before latency, plus ~475 sequential libSQL round-trips — comfortably past the Vercel Hobby
+ * ceiling of 60s. The function was killed mid-sweep and returned a bare 504.
+ *
+ * 50 is ~6-10s of fan-out, so a 237-entrant league finishes in ~5 passes of the browser loop
+ * (which allows 20).
+ */
+const ENTRANT_BATCH = 50;
+
+/**
+ * Stop admitting new history fetches past this point in a single call.
+ *
+ * The count cap alone is not enough: the right number depends on FPL latency, which varies between
+ * 400ms and 800ms+ and which this code cannot know in advance. A wall-clock deadline is
+ * self-correcting — a slow FPL means fewer entrants this pass, not a killed function.
+ *
+ * Sized against maxDuration=60 with room for the inserts, the cursor update and freezeAwards after
+ * the fan-out returns.
+ */
+const SETTLE_DEADLINE_MS = 40_000;
 
 async function loadConfig(leagueId: string) {
   const [config] = await db.select().from(fplClassicConfig).where(eq(fplClassicConfig.leagueId, leagueId)).limit(1);
@@ -63,15 +87,17 @@ export async function syncRoster(leagueId: string): Promise<{ ok: boolean; entra
     const existingByFplId = new Map(existing.map((e) => [e.fplEntryId, e]));
     const seenFplIds = new Set<number>();
 
+    // One round-trip per CHANGED entrant, not per entrant. The settle sweep calls this on every
+    // pass, so on a 237-entrant league the old shape spent ~237 sequential libSQL round-trips
+    // re-writing identical rows before any real work began — a large slice of a 60s budget, paid
+    // five times over. Inserts are batched; updates only fire where a field actually moved.
+    const toInsert: (typeof fplClassicEntrants.$inferInsert)[] = [];
+
     for (const entry of fresh.entries) {
       seenFplIds.add(entry.entry);
       const row = existingByFplId.get(entry.entry);
-      if (row) {
-        await db.update(fplClassicEntrants)
-          .set({ entryName: entry.entryName, playerName: entry.playerName, totalPoints: entry.total, lastRank: entry.rank, isActive: true, updatedAt: new Date() })
-          .where(eq(fplClassicEntrants.id, row.id));
-      } else {
-        await db.insert(fplClassicEntrants).values({
+      if (!row) {
+        toInsert.push({
           id: generateId(),
           leagueId,
           fplEntryId: entry.entry,
@@ -82,7 +108,23 @@ export async function syncRoster(leagueId: string): Promise<{ ok: boolean; entra
           lastRank: entry.rank,
           isActive: true,
         });
+        continue;
       }
+      const unchanged =
+        row.entryName === entry.entryName &&
+        row.playerName === entry.playerName &&
+        row.totalPoints === entry.total &&
+        row.lastRank === entry.rank &&
+        row.isActive;
+      if (unchanged) continue;
+      await db.update(fplClassicEntrants)
+        .set({ entryName: entry.entryName, playerName: entry.playerName, totalPoints: entry.total, lastRank: entry.rank, isActive: true, updatedAt: new Date() })
+        .where(eq(fplClassicEntrants.id, row.id));
+    }
+
+    // Chunked: SQLite caps bound variables per statement, and these rows carry ~9 columns each.
+    for (let i = 0; i < toInsert.length; i += 50) {
+      await db.insert(fplClassicEntrants).values(toInsert.slice(i, i + 50));
     }
 
     // Present before, absent now — soft-deactivate. Never delete: their settled rows and any
@@ -137,6 +179,9 @@ export async function settleGameweeks(leagueId: string): Promise<SettleResult> {
     return { ok: false, done: false, settledThroughGw: config.settledThroughGw, remainingEntrants: -1, error: "A settle sweep is already in progress for this league" };
   }
 
+  // Clock starts once we hold the lock — everything before it is a couple of cheap queries.
+  const settleStartedAt = Date.now();
+
   try {
     const allActive = await db
       .select()
@@ -187,6 +232,11 @@ export async function settleGameweeks(leagueId: string): Promise<SettleResult> {
       await withFplBudget(
         { lane: "background", label: "fpl-classic settle", max: missingIds.length },
         () => mapWithConcurrency(missingIds, 4, async (fplId) => {
+          // Past the deadline we stop fetching rather than risk the platform killing us. A kill is
+          // strictly worse than a short pass: it skips the `finally` below, so the settle lock is
+          // never released and every retry for the next SETTLE_LOCK_SECONDS silently no-ops.
+          // Whoever we skip simply stays pending for the next call.
+          if (Date.now() - settleStartedAt > SETTLE_DEADLINE_MS) return;
           try {
             const history = await fetchTeamHistory(fplId, "background");
             await setCachedEntryHistory(fplId, history, CACHE_TTL);

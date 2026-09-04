@@ -92,7 +92,12 @@ export function FplClassicRules({
           A winner marked <span className="text-sky-200 font-semibold">Final</span> has been
           confirmed and will not change. One marked{" "}
           <span className="text-amber-400 font-semibold">Provisional</span> is computed from
-          settled data but not yet confirmed.
+          settled data but not yet confirmed. One marked{" "}
+          <span className="text-amber-400 font-semibold">Leading</span> is not a winner at all —
+          that period is still being played, and it simply shows who is ahead so far.
+        </p>
+        <p className="mt-3 text-gray-400">
+          All of them are listed on the <strong className="text-white">Winners</strong> page.
         </p>
         <p className="mt-3 text-gray-400">
           Prizes are announced separately and are never listed on this site.

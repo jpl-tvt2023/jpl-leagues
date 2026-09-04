@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback, Fragment } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { GwNavigator } from "@/components/GwNavigator";
 import { LiveFreshness } from "@/components/LiveFreshness";
 import { useLeague } from "@/lib/league-context";
+import { RankPill, type AwardGroup, type MonthOption } from "../fpl-classic/awards-shared";
 
 interface StandingsRow {
   entrantId: string;
@@ -28,29 +30,6 @@ interface BoardRow {
   isTied: boolean;
   netPoints: number;
 }
-interface MonthOption {
-  key: string;
-  label: string;
-  gws: number[];
-  isComplete: boolean;
-}
-interface AwardWinnerRow {
-  entrantId: string;
-  entryName: string;
-  playerName: string;
-  position: number;
-  value: number;
-  isTied: boolean;
-  detail: Record<string, unknown> | null;
-}
-interface AwardGroup {
-  key: string;
-  label: string;
-  scope: "season" | "gameweek" | "month" | "special";
-  scopeKey: string;
-  isFrozen: boolean;
-  winners: AwardWinnerRow[];
-}
 interface Payload {
   league: {
     slug: string; name: string; season: string; fplLeagueId: number; fplLeagueName: string | null;
@@ -66,26 +45,7 @@ interface Payload {
   sync: { entrantsSyncedAt: string | null; settledThroughGw: number; lastSyncError: string | null };
 }
 
-/** "gw:14" -> "GW14", "month:2025-11" -> the human label if given, else the raw key, "season" -> "Season". */
-function scopeLabel(group: AwardGroup, monthLabelByKey: Map<string, string>): string {
-  if (group.scope === "gameweek") return `GW${group.scopeKey.split(":")[1]}`;
-  if (group.scope === "month") {
-    const key = group.scopeKey.split(":").slice(1).join(":");
-    return monthLabelByKey.get(key) ?? key;
-  }
-  return "Season";
-}
-
 const ALL_GWS = Array.from({ length: 38 }, (_, i) => i + 1);
-
-function RankPill({ rank, isTied }: { rank: number; isTied: boolean }) {
-  return (
-    <span className="inline-flex items-center gap-0.5 font-mono text-sm text-gray-300">
-      {isTied && <span className="text-gray-500">T</span>}
-      {rank}
-    </span>
-  );
-}
 
 function RankDelta({ current, previous }: { current: number; previous: number | null }) {
   if (previous === null || previous === current) return <span className="text-gray-600 text-xs">–</span>;
@@ -145,7 +105,7 @@ export function FplClassicStandings() {
   if (isLoading) return <LoadingScreen variant="standings" fullScreen={false} />;
 
   return (
-    <div data-testid="fpl-classic-standings" className="min-h-screen bg-gradient-to-b from-slate-900 via-sky-900/40 to-slate-900">
+    <div data-testid="fpl-classic-standings" className="min-h-screen">
       <LeagueNav
         leagueSlug={leagueSlug}
         leagueName={league.name}
@@ -156,7 +116,10 @@ export function FplClassicStandings() {
         onSignOut={() => {}}
       />
 
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-12">
+      {/* Full-bleed: the league table is the widest thing on the site and the two boards sit
+          beside it, so a 1024px cap wasted most of a desktop screen. Capped generously rather than
+          unbounded so line lengths stay readable on an ultrawide. */}
+      <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-10 py-8 sm:py-12">
         <div className="text-center mb-8">
           <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">{data?.league.fplLeagueName ?? league.name}</h1>
           <p className="text-sm text-gray-400">
@@ -167,9 +130,13 @@ export function FplClassicStandings() {
         {error && <div className="text-center text-red-400 py-8">{error}</div>}
 
         {data && (
-          <>
+          /* League table on the left, the two boards stacked on the right.
+             `items-start` stops the right rail stretching to the league table's height (237 rows
+             here); `min-w-0` on each cell is required or the tables' own overflow-x-auto wrappers
+             widen the grid track instead of scrolling inside it. */
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6 items-start">
             {/* ── Live standings ─────────────────────────────────────────── */}
-            <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur mb-8">
+            <section className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <h2 className="text-lg sm:text-xl font-bold text-white">Standings</h2>
                 <div className="flex items-center gap-2">
@@ -187,9 +154,11 @@ export function FplClassicStandings() {
                   FPL is temporarily unreachable — showing the last known standings.
                 </p>
               )}
-              <div className="overflow-x-auto">
+              {/* Height-capped with a sticky header: a full league runs to hundreds of rows, which
+                  would leave the right-hand boards stranded at the top of a very long page. */}
+              <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
                 <table className="w-full text-sm">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur">
                     <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500 border-b border-white/10">
                       <th className="py-2 pr-2">Rank</th>
                       <th className="py-2 pr-2">Team</th>
@@ -249,10 +218,15 @@ export function FplClassicStandings() {
               )}
             </section>
 
-            {/* ── Gameweek leaderboard ───────────────────────────────────── */}
-            <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur mb-8">
+            {/* ── Right rail: Manager of the Gameweek, then Manager of the Month ── */}
+            <div className="min-w-0 space-y-6">
+            {/* ── Manager of the Gameweek ────────────────────────────────── */}
+            <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <h2 className="text-lg sm:text-xl font-bold text-white">Gameweek Leaderboard</h2>
+                <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                  Manager of the Gameweek
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-200 tracking-wide">MOTGW</span>
+                </h2>
                 <GwNavigator
                   gws={ALL_GWS}
                   value={data.gameweekBoard.gw}
@@ -269,10 +243,13 @@ export function FplClassicStandings() {
               } />
             </section>
 
-            {/* ── Monthly leaderboard ────────────────────────────────────── */}
+            {/* ── Manager of the Month ───────────────────────────────────── */}
             <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <h2 className="text-lg sm:text-xl font-bold text-white">Monthly Leaderboard</h2>
+                <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                  Manager of the Month
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-200 tracking-wide">MOTM</span>
+                </h2>
                 {data.monthlyBoard.months.length > 0 && (
                   <select
                     aria-label="Month"
@@ -295,73 +272,28 @@ export function FplClassicStandings() {
               />
             </section>
 
-            {/* ── Winners ────────────────────────────────────────────────── */}
+            {/* Winners moved to their own page — see _components/winners/FplClassicWinners.tsx.
+                A cramped strip here could only ever show the handful of already-decided awards;
+                the dedicated page also carries the ones still being led. */}
             {data.awards.length > 0 && (
-              <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur mt-8">
-                <h2 className="text-lg sm:text-xl font-bold text-white mb-1">Winners</h2>
-                <p className="text-xs text-gray-500 mb-4">
-                  Announced here as they're decided. No prizes are listed on this page.
+              <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                <h2 className="text-base font-bold text-white mb-1">Winners</h2>
+                <p className="text-xs text-gray-500 mb-3">
+                  Season, monthly and gameweek winners — including who is currently leading the ones
+                  still to be decided.
                 </p>
-                <AwardsList awards={data.awards} months={data.monthlyBoard.months} />
+                <Link
+                  href={`/${leagueSlug}/winners`}
+                  className="inline-block text-sm text-sky-300 hover:text-sky-200 underline underline-offset-4"
+                >
+                  View all winners →
+                </Link>
               </section>
             )}
-          </>
+            </div>
+          </div>
         )}
       </div>
-    </div>
-  );
-}
-
-/**
- * Season/special awards first (they matter most and there are only a few), then months and
- * gameweeks most-recent-first — a reader is far more likely to want last week's winner than
- * GW1's. Frozen and provisional are both shown; the badge is the only thing that tells them
- * apart, exactly as the API distinguishes them.
- */
-function AwardsList({ awards, months }: { awards: AwardGroup[]; months: MonthOption[] }) {
-  const monthLabelByKey = new Map(months.map((m) => [m.key, m.label]));
-
-  const scopeSortKey = (g: AwardGroup): number => {
-    if (g.scope === "season" || g.scope === "special") return -2;
-    if (g.scope === "month") return -1;
-    return Number(g.scopeKey.split(":")[1] ?? 0); // gameweek: higher gw sorts later, reversed below
-  };
-  const sorted = [...awards].sort((a, b) => {
-    const av = scopeSortKey(a);
-    const bv = scopeSortKey(b);
-    if (av < 0 || bv < 0) return av - bv; // season/special/month buckets first, in that order
-    return bv - av; // gameweeks: most recent first
-  });
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {sorted.map((group) => (
-        <div key={`${group.key}::${group.scopeKey}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <span className="text-[10px] uppercase tracking-wide text-sky-300">{scopeLabel(group, monthLabelByKey)}</span>
-            <span
-              className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
-                group.isFrozen ? "bg-sky-500/20 text-sky-200" : "border border-amber-400/40 text-amber-400"
-              }`}
-            >
-              {group.isFrozen ? "Final" : "Provisional"}
-            </span>
-          </div>
-          <div className="text-xs text-gray-400 mb-1">{group.label}</div>
-          {group.winners.map((w) => (
-            <div key={w.entrantId} className="flex items-center justify-between gap-2 text-sm">
-              <span className="text-white font-medium truncate">
-                {/* Only worth labelling the position when there's more than one winner (the
-                    season podium) — a single-winner award repeating "1st" everywhere is noise. */}
-                {group.winners.length > 1 && <span className="text-gray-500 mr-1">{w.position}.</span>}
-                {w.entryName}
-                {w.isTied && <span className="text-gray-500 text-[10px] ml-1">(tied)</span>}
-              </span>
-              <span className="text-gray-400 shrink-0">{w.value}</span>
-            </div>
-          ))}
-        </div>
-      ))}
     </div>
   );
 }
@@ -377,7 +309,9 @@ function Top10Table({ rows, emptyLabel }: { rows: BoardRow[]; emptyLabel: string
           <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500 border-b border-white/10">
             <th className="py-2 pr-2">Rank</th>
             <th className="py-2 pr-2">Team</th>
-            <th className="py-2 pr-2 hidden sm:table-cell">Manager</th>
+            {/* 2xl, not sm: these tables now live in the right rail, which is far narrower than
+                the viewport breakpoint implies. */}
+            <th className="py-2 pr-2 hidden 2xl:table-cell">Manager</th>
             <th className="py-2 pl-2 text-right">Points</th>
           </tr>
         </thead>
@@ -386,7 +320,7 @@ function Top10Table({ rows, emptyLabel }: { rows: BoardRow[]; emptyLabel: string
             <tr key={row.entrantId} className="border-b border-white/5">
               <td className="py-2 pr-2"><RankPill rank={row.rank} isTied={row.isTied} /></td>
               <td className="py-2 pr-2 text-white font-medium truncate max-w-[160px]">{row.entryName}</td>
-              <td className="py-2 pr-2 text-gray-400 hidden sm:table-cell truncate max-w-[160px]">{row.playerName}</td>
+              <td className="py-2 pr-2 text-gray-400 hidden 2xl:table-cell truncate max-w-[160px]">{row.playerName}</td>
               <td className="py-2 pl-2 text-right font-semibold text-white">{row.netPoints}</td>
             </tr>
           ))}

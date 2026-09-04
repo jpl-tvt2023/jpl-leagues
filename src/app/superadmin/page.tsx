@@ -677,9 +677,11 @@ export default function SuperAdminDashboard() {
   const [fplStatusLoading, setFplStatusLoading] = useState(false);
 
   // ── FPL Classic operations ──────────────────────────────────────────────
-  // Deliberately its own section and its own state: this format is invisible to the catch-up
-  // runner above (it creates no `gameweeks` rows, so computePlan never sees it), which is
-  // exactly how it stays isolated from the shared scoring orchestrator.
+  // Deliberately its own section and its own state, kept out of the shared scoring orchestrator by
+  // TWO independent facts — this comment used to claim only the first, which was not enough:
+  //   1. it creates no `gameweeks` rows, so it contributes nothing to computePlan's `dueGws`; and
+  //   2. computePlan's league query now excludes the format outright. Without (2) the league still
+  //      appeared in `plan.leagues` and still received a league-gw POST per due gameweek.
   const [fplClassicLeagues, setFplClassicLeagues] = useState<FplClassicOpsRow[] | null>(null);
   const [fplClassicLoading, setFplClassicLoading] = useState(false);
   const [fplClassicBusyId, setFplClassicBusyId] = useState<string | null>(null);
@@ -733,11 +735,18 @@ export default function SuperAdminDashboard() {
   /**
    * Drive one league's settle sweep to completion.
    *
-   * The same browser-loop shape the catch-up runner above uses, and for the same reason: one
-   * call is bounded (~250 entrants' histories) so it returns inside the function ceiling, and
-   * the browser keeps calling while `done` is false.
+   * The same browser-loop shape the catch-up runner above uses, and for the same reason: one call
+   * is bounded (ENTRANT_BATCH entrants, and a 40s in-function deadline) so it returns inside the
+   * function ceiling, and the browser keeps calling while `done` is false.
+   *
+   * Mirrors runLeagueGw's error handling deliberately. A 504 here is a Vercel kill, whose body is
+   * HTML — so `res.json()` rejects, `data.error` is undefined, and the old code showed a bare
+   * "Failed: 504" with no hint that pressing Process again would resume. Worse, it `return`ed past
+   * the counter refresh, so the row kept showing stale numbers even though the killed call had
+   * committed rows on its way out.
    */
   const processFplClassic = useCallback(async (leagueId: string) => {
+    const CALL_TIMEOUT_MS = 70_000; // just past the function's own 60s ceiling
     setFplClassicBusyId(leagueId);
     setFplClassicLog((prev) => ({ ...prev, [leagueId]: "Starting…" }));
     try {
@@ -746,10 +755,15 @@ export default function SuperAdminDashboard() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
+          signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          setFplClassicLog((prev) => ({ ...prev, [leagueId]: `Failed: ${data?.error ?? res.status}` }));
+          const detail =
+            res.status === 504 || res.status === 502
+              ? "the sweep timed out server-side. Press Process again — it resumes where it stopped, and each retry is cheaper as histories cache."
+              : data?.error ?? `HTTP ${res.status}`;
+          setFplClassicLog((prev) => ({ ...prev, [leagueId]: `Pass ${call} failed: ${detail}` }));
           return;
         }
         const frozen = Array.isArray(data.frozen) && data.frozen.length > 0 ? ` · froze ${data.frozen.join(", ")}` : "";
@@ -758,11 +772,27 @@ export default function SuperAdminDashboard() {
           [leagueId]: `Pass ${call}: settled through GW${data.settledThroughGw}${data.remainingEntrants > 0 ? ` · ${data.remainingEntrants} entrants pending` : ""}${frozen}`,
         }));
         if (data.done) break;
+        // A held lock returns 200/done:false with nothing accomplished. Without this the loop
+        // burns all 20 passes against it and then reports a settled-through figure that never moved.
+        if (typeof data.error === "string" && data.error.includes("already in progress")) {
+          setFplClassicLog((prev) => ({
+            ...prev,
+            [leagueId]: `Another sweep holds the lock. If none is running it will clear within 90s — then press Process again.`,
+          }));
+          return;
+        }
       }
-      await loadFplClassicLeagues();
     } catch (err) {
-      setFplClassicLog((prev) => ({ ...prev, [leagueId]: `Failed: ${err instanceof Error ? err.message : String(err)}` }));
+      const aborted = err instanceof DOMException && err.name === "TimeoutError";
+      setFplClassicLog((prev) => ({
+        ...prev,
+        [leagueId]: aborted
+          ? "Timed out waiting for the server. Press Process again — it resumes where it stopped."
+          : `Failed: ${err instanceof Error ? err.message : String(err)}`,
+      }));
     } finally {
+      // Always refresh: even a killed pass commits the rows it reached, so the counters move.
+      await loadFplClassicLeagues().catch(() => {});
       setFplClassicBusyId(null);
     }
   }, [loadFplClassicLeagues]);
@@ -1647,7 +1677,7 @@ This overwrites winners that have already been announced. The previous winners a
                     )}
 
                     {fplPreview && (
-                      <div className="mt-4 rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-3">
+                      <div data-testid="fpl-league-preview" className="mt-4 rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-3">
                         <div className="font-semibold text-white">{fplPreview.name}</div>
                         <div className="text-xs text-gray-400 mt-1">
                           {fplPreview.entrantCount} entrants · starts at GW{fplPreview.startEvent}
@@ -2009,12 +2039,19 @@ This overwrites winners that have already been announced. The previous winners a
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <Link
-                              href={`/admin/${league.slug}`}
-                              className="text-xs text-yellow-400 hover:text-yellow-300 transition border border-yellow-400/30 px-3 py-1.5 rounded-lg whitespace-nowrap"
-                            >
-                              Manage
-                            </Link>
+                            {/* No admin console for fpl-classic: it is public and read-only, has no
+                                league admins, and creates no gameweeks/fixtures rows. Following this
+                                link landed on a Scoring tab that loops GW1-38 against
+                                /api/gameweeks/{gw}, which 404s on the first call. Process this format
+                                from the FPL Classic section of the Operations tab instead. */}
+                            {league.format !== "fpl-classic" && (
+                              <Link
+                                href={`/admin/${league.slug}`}
+                                className="text-xs text-yellow-400 hover:text-yellow-300 transition border border-yellow-400/30 px-3 py-1.5 rounded-lg whitespace-nowrap"
+                              >
+                                Manage
+                              </Link>
+                            )}
                             <button
                               onClick={() => openEditLeague(league)}
                               className="text-xs text-blue-400 hover:text-blue-300 transition border border-blue-400/30 px-3 py-1.5 rounded-lg whitespace-nowrap"
@@ -2433,9 +2470,11 @@ This overwrites winners that have already been announced. The previous winners a
             )}
 
             {/* ── FPL Classic ────────────────────────────────────────────────
-                A separate section on purpose. These leagues create no `gameweeks`
-                rows, so the catch-up runner above cannot see them at all — which is
-                exactly what keeps this format out of the shared scoring orchestrator. */}
+                A separate section on purpose. These leagues create no `gameweeks` rows AND are
+                excluded by name from computePlan's league query, so the catch-up runner above
+                cannot see them — which is what keeps this format out of the shared scoring
+                orchestrator. The second half is load-bearing: `gameweeks` alone only removes them
+                from the due-gameweek maths, not from the league list. */}
             <div className="mt-10">
               <div className="mb-4">
                 <h3 className="text-xl font-bold text-white">FPL Classic leagues</h3>
