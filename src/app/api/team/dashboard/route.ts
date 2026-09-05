@@ -8,7 +8,7 @@ import { getTop2FromGroup, CHIP_GW1_POSITION_REASON } from "@/lib/formats/tvt/ch
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { chipsUsedInSet } from "@/lib/formats/tvt/chip-usage";
 import { computeLeagueStageStandings } from "@/lib/standings/league-stage";
-import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
+import { chipCode, chipName, isChipImplemented } from "@/lib/formats/tvt/chip-labels";
 import { buildChallengeMatches } from "@/lib/formats/tvt/challenge-match-query";
 import {
   buildLeagueCaptains,
@@ -64,12 +64,21 @@ export async function GET(request: NextRequest) {
     const teamBasic = await db.select({ leagueId: teams.leagueId }).from(teams).where(eq(teams.id, teamId)).limit(1);
     const teamLeagueId = teamBasic[0]?.leagueId;
     const leagueSlugRow = teamLeagueId
-      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount, format: leagues.format, playoffStartGw: leagues.playoffStartGw }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
+      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount, format: leagues.format, playoffStartGw: leagues.playoffStartGw, enabledChips: leagues.enabledChips }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
       : [];
     const leagueSlug = leagueSlugRow[0]?.slug ?? "";
     const leagueGroupCount = leagueSlugRow[0]?.groupCount ?? 1;
     const leagueFormat = leagueSlugRow[0]?.format ?? "tvt";
     const leaguePlayoffStartGw = leagueSlugRow[0]?.playoffStartGw ?? 31;
+    // Which three of the six chips this league runs. The picker is built from this, so a
+    // league on SL/CB/UD is no longer shown a D/C/W picker whose every option the submit
+    // route rejects as not enabled.
+    let leagueEnabledChips: string[] = ["D", "W", "C"];
+    try {
+      leagueEnabledChips = JSON.parse(leagueSlugRow[0]?.enabledChips ?? '["D","W","C"]');
+    } catch {
+      /* keep default on malformed JSON */
+    }
 
     // ===== Auction format: separate dashboard payload =====
     if (leagueFormat === "auction" && teamLeagueId) {
@@ -484,18 +493,17 @@ export async function GET(request: NextRequest) {
     const usedSet2 = chipsUsedInSet(usageRows, 2, leaguePlayoffStartGw);
     const usedThisSet = chipSet === 1 ? usedSet1 : chipSet === 2 ? usedSet2 : new Set<string>();
 
+    // Keyed by chip code and covering only what this league enabled, so a league running
+    // SL/CB/UD reports its own chips instead of three it does not play.
+    const setStatus = (used: Set<string>) =>
+      Object.fromEntries(
+        leagueEnabledChips.map((code) => [code, { used: used.has(code), name: chipName(code) }])
+      );
+
     const chipStatus = {
       currentSet: chipSet,
-      set1: {
-        doublePointer: { used: usedSet1.has("D"), name: "Double Pointer" },
-        challengeChip: { used: usedSet1.has("C"), name: "Challenge Chip" },
-        winWin: { used: usedSet1.has("W"), name: "Win-Win" },
-      },
-      set2: {
-        doublePointer: { used: usedSet2.has("D"), name: "Double Pointer" },
-        challengeChip: { used: usedSet2.has("C"), name: "Challenge Chip" },
-        winWin: { used: usedSet2.has("W"), name: "Win-Win" },
-      },
+      set1: setStatus(usedSet1),
+      set2: setStatus(usedSet2),
     };
 
     // ============================================
@@ -603,59 +611,54 @@ export async function GET(request: NextRequest) {
     // for Double Pointer, the same rank-eligibility helper the chips POST
     // route enforces server-side — so the UI and the enforcement can never
     // drift apart.
-    const buildUsedReason = (used: boolean, set: 1 | 2 | "playoffs") =>
-      used && set !== "playoffs" ? `Already used in Set ${set}` : null;
+    const buildUsedReason = (set: 1 | 2 | "playoffs") =>
+      set !== "playoffs" ? `Already used in Set ${set}` : null;
 
     const awaitingReason = `Waiting for FPL to finalise GW${submissionWindow.awaitingGw}`;
 
-    let dpEligible = true;
-    let dpReason: string | null = null;
-    const dpUsed = usedThisSet.has("D");
-    if (dpUsed) {
-      dpReason = buildUsedReason(true, chipSet);
-      dpEligible = false;
-    } else if (awaitingResults) {
-      dpEligible = false;
-      dpReason = awaitingReason;
-    } else if (submissionGw && chipSet !== "playoffs" && team.groupId) {
-      const groupId = team.groupId;
+    // Double Pointer is the one chip whose eligibility needs a query (its rank rule), so it
+    // is resolved once up front rather than inside the loop below.
+    let dpRank: { eligible: boolean; reason: string | null } = { eligible: true, reason: null };
+    if (leagueEnabledChips.includes("D") && submissionGw && chipSet !== "playoffs" && team.groupId) {
       const homeFixture = team.homeFixtures.find(f => f.gameweek.id === submissionGw.id);
       const awayFixture = team.awayFixtures.find(f => f.gameweek.id === submissionGw.id);
       const opponentTeamId = homeFixture?.awayTeam.id ?? awayFixture?.homeTeam.id ?? null;
-      const dp = await getDoublePointerEligibility(
-        teamId, groupId, opponentTeamId, submissionGw.number, leaguePlayoffStartGw
+      dpRank = await getDoublePointerEligibility(
+        teamId, team.groupId, opponentTeamId, submissionGw.number, leaguePlayoffStartGw
       );
-      dpEligible = dp.eligible;
-      dpReason = dp.reason;
     }
 
-    const ccUsed = usedThisSet.has("C");
-    const wwUsed = usedThisSet.has("W");
+    // One rule chain for every chip the league enabled, in precedence order. Built from
+    // enabledChips rather than a hardcoded D/C/W so a league running SL/CB/UD gets its own
+    // chips — and gated on isChipImplemented so it cannot offer one the scorer would ignore,
+    // which would burn the team's slot for nothing.
+    const chipEligibility: Record<string, { used: boolean; eligible: boolean; reason: string | null }> = {};
+    for (const code of leagueEnabledChips) {
+      const used = usedThisSet.has(code);
+      let eligible = true;
+      let reason: string | null = null;
 
-    // Challenge Chip's "top 2 from opposite group" target is just as
-    // position-dependent as Double Pointer's rank check — block it in GW1
-    // for the same reason (see CHIP_GW1_POSITION_REASON).
-    const ccGw1Blocked = submissionGw?.number === 1;
+      if (used) {
+        eligible = false;
+        reason = buildUsedReason(chipSet);
+      } else if (!isChipImplemented(code)) {
+        eligible = false;
+        reason = `${chipName(code)} is not available yet`;
+      } else if (awaitingResults) {
+        eligible = false;
+        reason = awaitingReason;
+      } else if (code === "C" && submissionGw?.number === 1) {
+        // The Challenge Chip's "top 2 from opposite group" target is as position-dependent
+        // as Double Pointer's rank check, so GW1 is blocked for the same reason.
+        eligible = false;
+        reason = CHIP_GW1_POSITION_REASON;
+      } else if (code === "D") {
+        eligible = dpRank.eligible;
+        reason = dpRank.reason;
+      }
 
-    const chipEligibility = {
-      D: { used: !!dpUsed, eligible: dpEligible, reason: dpReason },
-      C: {
-        used: !!ccUsed,
-        eligible: !ccUsed && !ccGw1Blocked && !awaitingResults,
-        reason: ccUsed
-          ? buildUsedReason(true, chipSet)
-          : ccGw1Blocked
-          ? CHIP_GW1_POSITION_REASON
-          : awaitingResults
-          ? awaitingReason
-          : null,
-      },
-      W: {
-        used: !!wwUsed,
-        eligible: !wwUsed && !awaitingResults,
-        reason: wwUsed ? buildUsedReason(true, chipSet) : awaitingResults ? awaitingReason : null,
-      },
-    };
+      chipEligibility[code] = { used, eligible, reason };
+    }
 
     // ============================================
     // LEAGUE POSITION
@@ -1203,6 +1206,8 @@ export async function GET(request: NextRequest) {
       upcomingCaptain,
       upcomingChip,
       chipEligibility,
+      // The picker and the badge row are built from this, not from a fixed D/C/W list.
+      enabledChips: leagueEnabledChips,
       leagueCaptains,
       // Drives the card's gameweek navigator. availableGws stops at defaultGw — see the
       // disclosure note in lib/dashboard/league-captains.ts.

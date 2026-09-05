@@ -700,30 +700,82 @@ export async function clearLiveCache(gameweek: number, leagueId?: string | null)
 // Bump when the standings response shape or values change so the next deploy invalidates the cache
 // automatically (old `standings:` entries become orphaned and expire on TTL).
 const STANDINGS_CACHE_VERSION = 2;
-const standingsKey = (leagueId: string) => `standings:v${STANDINGS_CACHE_VERSION}:${leagueId}`;
+/**
+ * Keyed by the disclosure epoch as well as the league — same reason as the fixtures payload.
+ *
+ * The response embeds each team's CP/BP tooltip, which only names a chip once that gameweek's
+ * deadline has passed. That verdict is computed per request, but caching the finished payload
+ * froze it: a chip stayed hidden for the full TTL after its deadline, because nothing
+ * invalidates when a deadline passes.
+ */
+const standingsKey = (leagueId: string, disclosedGwCount: number) =>
+  `standings:v${STANDINGS_CACHE_VERSION}:${leagueId}:d${disclosedGwCount}`;
 
-export async function getCachedStandings(leagueId: string): Promise<unknown | null> {
+export async function getCachedStandings(
+  leagueId: string,
+  disclosedGwCount: number,
+): Promise<unknown | null> {
   const r = getRedis();
   if (!r) return null;
-  return await r.get(standingsKey(leagueId));
+  return await r.get(standingsKey(leagueId, disclosedGwCount));
 }
 
-export async function setCachedStandings(leagueId: string, data: unknown): Promise<void> {
+export async function setCachedStandings(
+  leagueId: string,
+  disclosedGwCount: number,
+  data: unknown,
+): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(standingsKey(leagueId), data, { ex: PAGE_CACHE_TTL });
+  await r.set(standingsKey(leagueId, disclosedGwCount), data, { ex: PAGE_CACHE_TTL });
 }
 
-export async function getCachedFixtures(leagueId: string): Promise<unknown | null> {
+/** Every epoch of a league's standings payload. Must be swept, not deleted by name. */
+export async function invalidateStandings(leagueId: string): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  const keys = await r.keys(`standings:v${STANDINGS_CACHE_VERSION}:${leagueId}:*`);
+  if (keys.length > 0) await r.del(...keys);
+}
+
+/**
+ * Keyed by the disclosure epoch as well as the league.
+ *
+ * The payload embeds `chipsByGameweek`, which is gated on each gameweek's deadline having
+ * passed. That verdict is computed at write time, and nothing invalidates when a deadline
+ * passes — a deadline is not a write, and there is no cron. So a flat key served chip-less
+ * payloads for the full 25h TTL after a gameweek went live. `disclosedGwCount` changes the
+ * moment a deadline passes, which misses the old key and forces a recompute.
+ */
+function fixturesKey(leagueId: string, disclosedGwCount: number): string {
+  return `fixtures:${leagueId}:d${disclosedGwCount}`;
+}
+
+export async function getCachedFixtures(
+  leagueId: string,
+  disclosedGwCount: number,
+): Promise<unknown | null> {
   const r = getRedis();
   if (!r) return null;
-  return await r.get(`fixtures:${leagueId}`);
+  return await r.get(fixturesKey(leagueId, disclosedGwCount));
 }
 
-export async function setCachedFixtures(leagueId: string, data: unknown): Promise<void> {
+export async function setCachedFixtures(
+  leagueId: string,
+  disclosedGwCount: number,
+  data: unknown,
+): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(`fixtures:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+  await r.set(fixturesKey(leagueId, disclosedGwCount), data, { ex: PAGE_CACHE_TTL });
+}
+
+/** Every epoch of a league's fixtures payload. Must be swept, not deleted by name. */
+export async function invalidateFixtures(leagueId: string): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  const keys = await r.keys(`fixtures:${leagueId}:*`);
+  if (keys.length > 0) await r.del(...keys);
 }
 
 export async function getCachedPlayoffBracket(leagueId: string): Promise<unknown | null> {
@@ -749,9 +801,13 @@ export async function invalidateLeaguePageCache(leagueId: string): Promise<void>
   // Must match the versioned key getCachedStandings/setCachedStandings actually use — an earlier,
   // unversioned `standings:{leagueId}` here silently deleted a key nothing reads or writes, leaving
   // every caller's invalidation a no-op for the standings cache.
-  await r.del(standingsKey(leagueId), `fixtures:${leagueId}`, `playoffs:${leagueId}`);
+  await r.del(`playoffs:${leagueId}`);
+  await invalidateStandings(leagueId);
   // Computed standings rows are keyed per (league, throughGw) — one entry per historical
-  // cut, so they must be swept by pattern rather than deleted by name.
+  // cut, so they must be swept by pattern rather than deleted by name. The fixtures payload
+  // is now keyed per disclosure epoch for the same reason and needs the same treatment: a
+  // `del("fixtures:{id}")` here would silently stop invalidating anything at all.
+  await invalidateFixtures(leagueId);
   await invalidateLeagueStageRows(leagueId);
 }
 

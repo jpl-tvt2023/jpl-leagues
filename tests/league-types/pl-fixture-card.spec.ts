@@ -138,12 +138,18 @@ test.describe.serial("dashboard PL fixture card (TVT)", () => {
 
     for (const side of [body.fixture.home, body.fixture.away]) {
       expect(side.tvtChips).toBeTruthy();
-      // Only used/available booleans — never which chip the opponent has
-      // declared for an upcoming gameweek.
+      // Only spent/available state — never which chip the opponent has declared for an
+      // upcoming gameweek.
       expect(Object.keys(side.tvtChips).sort()).toEqual(
-        ["challengeChip", "doublePointer", "set", "usedGws", "winWin"],
+        ["enabled", "set", "spent", "usedGws"],
       );
-      expect(typeof side.tvtChips.doublePointer).toBe("boolean");
+      // Driven by the league's own chips, not a fixed D/C/W trio.
+      expect(side.tvtChips.enabled.sort()).toEqual(["C", "D", "W"]);
+      expect(Array.isArray(side.tvtChips.spent)).toBe(true);
+      // Nothing may be reported spent that the league does not even run.
+      for (const code of side.tvtChips.spent) {
+        expect(side.tvtChips.enabled).toContain(code);
+      }
     }
     await apiSignOut(request);
   });

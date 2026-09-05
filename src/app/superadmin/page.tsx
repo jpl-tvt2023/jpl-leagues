@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { FeedbackTab } from "../admin/[leagueId]/FeedbackTab";
 import { Logo } from "@/components/Logo";
+import { isChipImplemented } from "@/lib/formats/tvt/chip-labels";
 
 interface League {
   id: string;
@@ -1105,11 +1106,18 @@ This overwrites winners that have already been announced. The previous winners a
               <div>
                 <label className="block text-sm text-gray-300 mb-2">Enabled Chips</label>
                 <div className="space-y-2 max-h-52 overflow-y-auto">
-                  {CHIP_OPTIONS.map(chip => (
-                    <label key={chip.code} className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 cursor-pointer hover:bg-white/10 transition">
+                  {CHIP_OPTIONS.map(chip => {
+                    // Same gate as the wizard: scoring does not handle these yet. Only
+                    // SELECTING is blocked — a league already carrying one must stay able to
+                    // switch off, or it would be stuck with a chip nobody can play.
+                    const alreadyOn = editLeagueForm.enabledChips.includes(chip.code);
+                    const isUnimplemented = !isChipImplemented(chip.code) && !alreadyOn;
+                    return (
+                    <label key={chip.code} className={`flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 transition ${isUnimplemented ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:bg-white/10"}`}>
                       <input
                         type="checkbox"
-                        checked={editLeagueForm.enabledChips.includes(chip.code)}
+                        disabled={isUnimplemented}
+                        checked={alreadyOn}
                         onChange={() => setEditLeagueForm(prev => ({
                           ...prev,
                           enabledChips: prev.enabledChips.includes(chip.code)
@@ -1121,9 +1129,13 @@ This overwrites winners that have already been announced. The previous winners a
                       <div className="min-w-0">
                         <p className="text-white text-sm font-medium">{chip.name}</p>
                         <p className="text-gray-500 text-xs">{chip.description}</p>
+                        {isUnimplemented && (
+                          <p className="text-red-400 text-xs mt-1">Not available yet — scoring not implemented</p>
+                        )}
                       </div>
                     </label>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               <div>
@@ -1574,8 +1586,12 @@ This overwrites winners that have already been announced. The previous winners a
                       {CHIP_OPTIONS.map(chip => {
                         const selected = leagueForm.enabledChips.includes(chip.code);
                         const isCcUnavailable = chip.code === "C" && leagueForm.teamSize !== 32;
+                        // The scorer does not process these yet, so a team playing one would
+                        // burn its set slot for no points — and a league enabling all three
+                        // would have no usable chip at all.
+                        const isUnimplemented = !isChipImplemented(chip.code);
                         const atMax = leagueForm.enabledChips.length >= 3 && !selected;
-                        const disabled = isCcUnavailable || atMax;
+                        const disabled = isCcUnavailable || isUnimplemented || atMax;
                         return (
                           <button
                             key={chip.code}
@@ -1603,6 +1619,9 @@ This overwrites winners that have already been announced. The previous winners a
                             <p className="text-gray-400 text-xs leading-relaxed">{chip.description}</p>
                             {isCcUnavailable && (
                               <p className="text-red-400 text-xs mt-1">32-team only — requires 2 groups</p>
+                            )}
+                            {isUnimplemented && (
+                              <p className="text-red-400 text-xs mt-1">Not available yet — scoring not implemented</p>
                             )}
                           </button>
                         );

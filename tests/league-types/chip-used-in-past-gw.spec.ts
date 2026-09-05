@@ -79,14 +79,14 @@ test.describe.serial("Chip used in a past gameweek", () => {
     const dash = await request.get("/api/team/dashboard").then((r) => r.json());
 
     // The reported symptom.
-    expect(dash.chipStatus.set1.doublePointer.used).toBe(true);
+    expect(dash.chipStatus.set1.D.used).toBe(true);
     // And the picker must refuse it, with the reason a player can act on.
     expect(dash.chipEligibility.D.used).toBe(true);
     expect(dash.chipEligibility.D.eligible).toBe(false);
     expect(dash.chipEligibility.D.reason).toMatch(/already used in set 1/i);
 
     // Untouched chips in the same set stay available — the fix must not over-report.
-    expect(dash.chipStatus.set1.winWin.used).toBe(false);
+    expect(dash.chipStatus.set1.W.used).toBe(false);
     expect(dash.chipEligibility.W.used).toBe(false);
     await apiSignOut(request);
   });
