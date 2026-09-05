@@ -46,9 +46,10 @@ interface SideInfo {
   players: { name: string; fplId: string; fplUrl: string; fplChips: FplChipStatus | null }[];
   tvtChips: {
     set: 1 | 2 | "playoffs";
-    doublePointer: boolean;
-    challengeChip: boolean;
-    winWin: boolean;
+    /** The chip codes this league runs — any three of D/W/C/SL/CB/UD. */
+    enabled: string[];
+    /** Which of those this side has spent in the set. */
+    spent: string[];
     /**
      * Which gameweek each spent chip was played in, so the UI can distinguish a
      * chip burned weeks ago from one in play right now. Past deadlines only —
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
     if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
 
     const leagueRow = await db
-      .select({ id: leagues.id, slug: leagues.slug, playoffStartGw: leagues.playoffStartGw })
+      .select({ id: leagues.id, slug: leagues.slug, playoffStartGw: leagues.playoffStartGw, enabledChips: leagues.enabledChips })
       .from(leagues)
       .where(eq(leagues.id, team.leagueId))
       .limit(1);
@@ -258,6 +259,12 @@ export async function GET(request: NextRequest) {
     for (const list of usedGwsByTeam.values()) list.sort((a, b) => a.gw - b.gw);
 
     const chipSet = getChipSet(gw, league.playoffStartGw ?? 31);
+    let leagueEnabledChips: string[] = ["D", "W", "C"];
+    try {
+      leagueEnabledChips = JSON.parse(league.enabledChips ?? '["D","W","C"]');
+    } catch {
+      /* keep default on malformed JSON */
+    }
 
     const usedFor = (teamRowId: string) =>
       chipsUsedInSet(usageRowsByTeam.get(teamRowId) ?? [], chipSet, league.playoffStartGw ?? 31);
@@ -279,9 +286,10 @@ export async function GET(request: NextRequest) {
       // their Double Pointer before choosing their own captain.
       tvtChips: {
         set: chipSet,
-        doublePointer: usedFor(t.id).has("D"),
-        challengeChip: usedFor(t.id).has("C"),
-        winWin: usedFor(t.id).has("W"),
+        // Codes this league runs, and which of them this side has spent in the set. Was
+        // three fixed D/C/W booleans, which said nothing about an SL/CB/UD league.
+        enabled: leagueEnabledChips,
+        spent: leagueEnabledChips.filter((code) => usedFor(t.id).has(code)),
         usedGws: usedGwsByTeam.get(t.id) ?? [],
       },
       playersLeft,

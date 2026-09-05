@@ -7,6 +7,8 @@ import { calculateFMV } from "@/lib/formats/auction/economy";
 import { getClubOwnershipsByTeam, computeClubResultBonus } from "@/lib/formats/auction/club-auction";
 import { backfillClubSummaries } from "@/lib/formats/auction/club-summary-backfill";
 import { computeLeagueStageStandings, type LeagueStageRow } from "@/lib/standings/league-stage";
+import { isChipDisclosable } from "@/lib/formats/tvt/chip-waste";
+import { disclosedGwCount } from "@/lib/gameweeks/disclosure";
 import { getActiveFplGameweek } from "@/lib/fpl/event-status";
 
 interface ChipTooltipEntry {
@@ -89,6 +91,18 @@ export async function GET(request: NextRequest) {
     // Continental Championship runs PL all 38 GWs; TVT league stage ends at playoffStartGw - 1
     const leagueStageEnd = leagueFormat === "continental-championship" ? 38 : playoffStartGw - 1;
 
+    // Deadlines drive chip disclosure in the CP/BP tooltip below, and the disclosure epoch
+    // keys the cache. Read fresh and read early: the cached payload embeds the tooltip, so a
+    // flat key froze a chip as hidden for the whole TTL after its deadline passed — nothing
+    // invalidates when a deadline passes. FPL also moves deadlines, so the cached rows' own
+    // copy cannot be trusted either.
+    const leagueGwRows = await db
+      .select({ number: gameweeks.number, deadline: gameweeks.deadline })
+      .from(gameweeks)
+      .where(eq(gameweeks.leagueId, leagueId));
+    const deadlineByGw = new Map(leagueGwRows.map((g) => [g.number, g.deadline.getTime()]));
+    const disclosedGws = disclosedGwCount(leagueGwRows);
+
     // Check if groups have been revealed to teams
     const groupsRevealedRows = await db
       .select({ value: settings.value })
@@ -103,7 +117,7 @@ export async function GET(request: NextRequest) {
     // for the same reason — a group-filtered response must not poison the slot.
     if (!group) {
       try {
-        const cached = await getCachedStandings(leagueId);
+        const cached = await getCachedStandings(leagueId, disclosedGws);
         if (cached) {
           // The auction payload embeds `currentGwNumber`, which moves every week while
           // this entry lives for 25 hours. Serving it verbatim froze the club tooltip on
@@ -237,7 +251,7 @@ export async function GET(request: NextRequest) {
       };
 
       // Skip cache write during the live in-progress branch — TTL would make the live scoreline stale.
-      if (!liveBranch) setCachedStandings(leagueId, responseData).catch(() => {});
+      if (!liveBranch) setCachedStandings(leagueId, disclosedGws, responseData).catch(() => {});
       return NextResponse.json(responseData);
     }
 
@@ -275,6 +289,26 @@ export async function GET(request: NextRequest) {
     // Stored chip code -> display name.
     const CHIP_DISPLAY_NAMES: Record<string, string> = { W: "WW", D: "DP", C: "CC", SL: "SL", CB: "CB", UD: "UD" };
 
+    // ⚠️ DISCLOSURE. This tooltip is public and names the chip, its gameweek and the Challenge
+    // Chip's target. A gameweek_chips row exists from the moment a chip is DECLARED, so without
+    // this gate the standings page told the whole league what their next opponent had lined up,
+    // in time to pick a captain against it — the very leak /api/fixtures guards at its own
+    // `deadline > now` check. Two rules, same as there: past deadline only, and never a
+    // declaration that was rejected and never played.
+    //
+    // Evaluated here, at read time, rather than inside computeLeagueStageStandings: those rows
+    // are cached for hours, and baking a time-dependent verdict into a cache is what hid the
+    // fixtures page's chips for a full TTL. Deadlines come from deadlineByGw above, read fresh
+    // this request rather than from the cached rows' own stale copy.
+    const nowMs = Date.now();
+    const isDisclosable = (c: LeagueStageRow["rawChips"][number]): boolean => {
+      const gwNumber = c.gameweek?.number;
+      if (gwNumber === undefined) return false;
+      const deadlineMs = deadlineByGw.get(gwNumber);
+      if (deadlineMs === undefined || deadlineMs > nowMs) return false;
+      return isChipDisclosable(c);
+    };
+
     const buildCbpTooltip = (row: LeagueStageRow): CbpTooltip => {
       const chipTooltipEntries: ChipTooltipEntry[] = [];
       for (const [set, gwMin, gwMax] of chipSets) {
@@ -282,7 +316,8 @@ export async function GET(request: NextRequest) {
           const name = CHIP_DISPLAY_NAMES[type] ?? type;
           const label = `${name}${set}`;
           const chip = row.rawChips.find(
-            (c) => c.chipType === type && (c.gameweek?.number ?? 0) >= gwMin && (c.gameweek?.number ?? 0) <= gwMax,
+            (c) => c.chipType === type && (c.gameweek?.number ?? 0) >= gwMin && (c.gameweek?.number ?? 0) <= gwMax
+              && isDisclosable(c),
           );
           if (!chip) {
             chipTooltipEntries.push({ label, status: "available", points: 0 });
@@ -391,7 +426,7 @@ export async function GET(request: NextRequest) {
     // under the unfiltered key would leak group-A teams to group-B callers
     // (mirror of the read-side guard above for DEF-STAND-003).
     if (leagueId && !group) {
-      setCachedStandings(leagueId, responseData).catch(() => {});
+      setCachedStandings(leagueId, disclosedGws, responseData).catch(() => {});
     }
 
     return NextResponse.json(responseData);

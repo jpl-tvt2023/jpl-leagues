@@ -17,6 +17,7 @@ import { PlFixtureCard } from "./_components/PlFixtureCard";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
 import { EligibilitySelect } from "@/app/dashboard/_components/EligibilitySelect";
 import { WishlistManager } from "@/components/WishlistManager";
+import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 
 // Format an ISO timestamp as a short local clock time, e.g. "6:30 PM" — used
 // for "reopens at ..." messaging when the submission window is locked.
@@ -127,24 +128,15 @@ interface DashboardData {
     /** Ranks were elided between the leaders and the viewer's row. */
     truncated: boolean;
   }[];
+  // Both maps are keyed by chip code (D/W/C/SL/CB/UD) and carry only the three this
+  // league enabled, so nothing here assumes a fixed D/C/W trio.
   chipStatus: {
     currentSet: 1 | 2 | "playoffs";
-    set1: {
-      doublePointer: { used: boolean; name: string };
-      challengeChip: { used: boolean; name: string };
-      winWin: { used: boolean; name: string };
-    };
-    set2: {
-      doublePointer: { used: boolean; name: string };
-      challengeChip: { used: boolean; name: string };
-      winWin: { used: boolean; name: string };
-    };
+    set1: Record<string, { used: boolean; name: string }>;
+    set2: Record<string, { used: boolean; name: string }>;
   };
-  chipEligibility: {
-    D: { used: boolean; eligible: boolean; reason: string | null };
-    C: { used: boolean; eligible: boolean; reason: string | null };
-    W: { used: boolean; eligible: boolean; reason: string | null };
-  };
+  chipEligibility: Record<string, { used: boolean; eligible: boolean; reason: string | null }>;
+  enabledChips: string[];
   captaincyStatus: {
     cap: number;
     player1: { id: string; name: string; chipsUsed: number; chipsRemaining: number; reason: string | null };
@@ -1968,26 +1960,13 @@ export default function DashboardPage() {
                           disabled={isSubmitting || data.submission.state !== "open"}
                           placeholder="No Chip"
                           accentClass="focus:border-purple-400"
-                          options={[
-                            {
-                              value: "D",
-                              label: "Double Pointer (DP)",
-                              disabled: !data.chipEligibility.D.eligible && data.upcomingChip?.type !== "D",
-                              reason: data.chipEligibility.D.reason,
-                            },
-                            {
-                              value: "C",
-                              label: "Challenge Chip (CC)",
-                              disabled: !data.chipEligibility.C.eligible && data.upcomingChip?.type !== "C",
-                              reason: data.chipEligibility.C.reason,
-                            },
-                            {
-                              value: "W",
-                              label: "Win-Win (WW)",
-                              disabled: !data.chipEligibility.W.eligible && data.upcomingChip?.type !== "W",
-                              reason: data.chipEligibility.W.reason,
-                            },
-                          ]}
+                          options={(data.enabledChips ?? []).map((code) => ({
+                            value: code,
+                            label: `${chipName(code)} (${chipCode(code)})`,
+                            // An already-submitted chip stays selectable so it can be switched away from.
+                            disabled: !data.chipEligibility[code]?.eligible && data.upcomingChip?.type !== code,
+                            reason: data.chipEligibility[code]?.reason ?? null,
+                          }))}
                         />
                       </div>
                       {(selectedChip ?? data.upcomingChip?.type) === "C" && (
@@ -2035,9 +2014,9 @@ export default function DashboardPage() {
                   )}
 
                   <div className="mt-3 space-y-2">
-                    <ChipBadge used={currentChipSet.doublePointer.used} name="DP" />
-                    <ChipBadge used={currentChipSet.challengeChip.used} name="CC" />
-                    <ChipBadge used={currentChipSet.winWin.used} name="WW" />
+                    {(data.enabledChips ?? []).map((code) => (
+                      <ChipBadge key={code} used={currentChipSet[code]?.used ?? false} name={chipCode(code)} />
+                    ))}
                   </div>
                 </div>}
               </div>

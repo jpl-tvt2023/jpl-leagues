@@ -38,9 +38,18 @@ type TeamWithRelations = Team & {
   awayFixtures: FixtureWithResult[];
 };
 
-/** A chip row joined to its gameweek — what the CP/BP tooltip is built from. */
+/**
+ * A chip row joined to its gameweek — what the CP/BP tooltip is built from.
+ *
+ * `deadline` rides along because disclosure is gated on it: the tooltip is public, and a chip
+ * row exists from the moment it is DECLARED. The `with: { gameweek: true }` that loads these
+ * already returns it; the type simply used to narrow it away.
+ */
 export type RawChip = Awaited<ReturnType<typeof db.query.gameweekChips.findMany>>[number] & {
-  gameweek?: { number: number };
+  // `Date | string` is not sloppiness: these rows go through Redis, and JSON has no Date, so a
+  // cache hit hands back an ISO string where a cold read hands back a Date. Anything comparing
+  // this must normalise first.
+  gameweek?: { number: number; deadline?: Date | string };
 };
 
 export interface LeagueStageRow {
@@ -293,6 +302,12 @@ export async function computeLeagueStageStandings(
         chipPointsByTeam.set(chip.teamId, (chipPointsByTeam.get(chip.teamId) || 0) + pts);
       }
     }
+
+    // NOTE: `rawChips` deliberately carries every chip, disclosable or not. These rows are
+    // cached for hours, so gating them here would freeze a time-dependent verdict into the
+    // cache — the bug that hid the fixtures page's chips for a full TTL. The disclosure gate
+    // lives at read time in buildCbpTooltip (api/standings/route.ts), which is the only thing
+    // that turns these into public output.
     const arr = teamChipsRawMap.get(chip.teamId) || [];
     arr.push(chip);
     teamChipsRawMap.set(chip.teamId, arr);

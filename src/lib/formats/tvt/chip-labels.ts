@@ -44,3 +44,21 @@ export function chipCode(chipType: string): string {
 export function chipName(chipType: string): string {
   return TVT_CHIP_NAMES[chipType] ?? chipType;
 }
+
+/**
+ * The chips the scoring engine actually processes today.
+ *
+ * A league may enable any three of the six codes above, but only these are handled in
+ * api/gameweeks/[gw] (W and D inline, C in the challenge pass). Score Lock, Comeback and
+ * Underdog exist as enable-able codes, teams columns and import parsing, and score nothing
+ * — so a team that played one would burn its slot for no points.
+ *
+ * Offering a chip is therefore gated on this, not just on the league's enabledChips. Delete
+ * a code from here the moment the scorer learns to process it.
+ */
+export const IMPLEMENTED_TVT_CHIPS: readonly string[] = ["W", "D", "C"];
+
+/** Does the scoring engine process this chip? */
+export function isChipImplemented(chipType: string): boolean {
+  return IMPLEMENTED_TVT_CHIPS.includes(chipType);
+}

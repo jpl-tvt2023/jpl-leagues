@@ -3,6 +3,7 @@ import { db, fixtures, teams, gameweeks, groups, results, leagues } from "@/lib/
 import { gameweekChips } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getCachedFixtures, setCachedFixtures } from "@/lib/fpl-cache";
+import { disclosedGwCount } from "@/lib/gameweeks/disclosure";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 import { buildChallengeMatches } from "@/lib/formats/tvt/challenge-match-query";
 import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
@@ -73,25 +74,31 @@ export async function GET(request: NextRequest) {
     let enabledChips: string[] = ["D", "W", "C"];
     try { enabledChips = JSON.parse(league[0].enabledChips ?? '["D","W","C"]'); } catch { /* keep default */ }
 
+    // Pre-fetch this league's gameweeks. Two jobs: scoping the fixtures query below via
+    // inArray (without it we'd load EVERY fixture across every league and filter in memory),
+    // and deriving the disclosure epoch for the cache key.
+    //
+    // This runs BEFORE the cache read on purpose. `chipsByGameweek` further down is gated on
+    // `deadline > now`, and that verdict used to be baked into the cached blob — so a gameweek's
+    // chips stayed hidden for the full 25h TTL after their deadline passed, because nothing
+    // invalidates when a deadline passes (it is not a write). Keying on the count of disclosed
+    // gameweeks means the key changes the moment one passes, and the payload is recomputed.
+    const leagueGwRows = await db
+      .select({ id: gameweeks.id, number: gameweeks.number, deadline: gameweeks.deadline })
+      .from(gameweeks)
+      .where(eq(gameweeks.leagueId, leagueId));
+    const leagueGwIds = leagueGwRows.map(g => g.id);
+    const disclosedGws = disclosedGwCount(leagueGwRows);
+
     // Return cached fixtures if available — only for unfiltered league requests
     if (leagueId && !gameweekParam && !groupParam) {
       try {
-        const cached = await getCachedFixtures(leagueId);
+        const cached = await getCachedFixtures(leagueId, disclosedGws);
         if (cached) return NextResponse.json(cached);
       } catch {
         // Cache miss or Redis error — fall through to DB computation
       }
     }
-
-    // Pre-fetch this league's gameweek IDs so the fixtures query can be scoped
-    // server-side via inArray. Without this we'd load EVERY fixture across every
-    // league and filter in memory — slow on multi-league setups, especially when
-    // the fixtures-cache is cold.
-    const leagueGwRows = await db
-      .select({ id: gameweeks.id })
-      .from(gameweeks)
-      .where(eq(gameweeks.leagueId, leagueId));
-    const leagueGwIds = leagueGwRows.map(g => g.id);
 
     let allFixtures = leagueGwIds.length === 0 ? [] : await db.query.fixtures.findMany({
       where: inArray(fixtures.gameweekId, leagueGwIds),
@@ -145,11 +152,8 @@ export async function GET(request: NextRequest) {
     const chipsByGameweek: Record<number, Record<string, FixtureChip>> = {};
     if (format === "tvt" && leagueGwIds.length > 0) {
       const now = new Date();
-      const gwRows = await db
-        .select({ id: gameweeks.id, number: gameweeks.number, deadline: gameweeks.deadline })
-        .from(gameweeks)
-        .where(eq(gameweeks.leagueId, leagueId));
-      const gwById = new Map(gwRows.map((g) => [g.id, g]));
+      // Reuses the rows already fetched for the cache key — this used to re-query the same table.
+      const gwById = new Map(leagueGwRows.map((g) => [g.id, g]));
 
       // Deliberately NOT filtered on isValid in SQL. A wasted chip is stored with isValid false
       // by the admin import/override path, and the whole point of this payload now is to SHOW
@@ -253,7 +257,7 @@ export async function GET(request: NextRequest) {
 
     // Fire-and-forget cache write
     if (leagueId && !gameweekParam && !groupParam) {
-      setCachedFixtures(leagueId, responseData).catch(() => {});
+      setCachedFixtures(leagueId, disclosedGws, responseData).catch(() => {});
     }
 
     return NextResponse.json(responseData);

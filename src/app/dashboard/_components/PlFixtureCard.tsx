@@ -10,6 +10,7 @@ import {
   type LiveFixtureScore,
 } from "@/app/[leagueSlug]/_components/fixtures/shared";
 import { chipState, type ChipState, type FplChipStatus } from "@/lib/fpl-league/chips";
+import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 
 /**
  * The dashboard's PL Fixture card.
@@ -25,21 +26,15 @@ interface SideInfo {
   players: { name: string; fplId: string; fplUrl: string; fplChips: FplChipStatus | null }[];
   tvtChips: {
     set: 1 | 2 | "playoffs";
-    doublePointer: boolean;
-    challengeChip: boolean;
-    winWin: boolean;
+    /** The chip codes this league runs — any three of D/W/C/SL/CB/UD. */
+    enabled: string[];
+    /** Which of those this side has spent in the set. */
+    spent: string[];
     /** Gameweek each spent chip was played in. Past deadlines only. */
     usedGws: { code: string; gw: number }[];
   };
   playersLeft: { leftToPlay: number; total: number } | null;
 }
-
-/** TVT chips in display order, with the flag on SideInfo that marks each spent. */
-const TVT_CHIPS: { code: string; label: string; flag: keyof SideInfo["tvtChips"] }[] = [
-  { code: "DP", label: "Double Pointer", flag: "doublePointer" },
-  { code: "CC", label: "Challenge Chip", flag: "challengeChip" },
-  { code: "WW", label: "Win-Win", flag: "winWin" },
-];
 
 /**
  * Fold one side's chip state into the shape the points breakdown renders.
@@ -57,11 +52,14 @@ function buildChips(side: SideInfo, gwNumber: number | null): BreakdownChips {
   return {
     byFplId: Object.fromEntries(side.players.map((p) => [p.fplId, p.fplChips])),
     tvtLabel: side.tvtChips.set === "playoffs" ? "playoffs" : `Set ${side.tvtChips.set}`,
-    tvt: TVT_CHIPS.map(({ code, label, flag }) => {
+    // Driven by the league's own chip list. usedGws and `spent` both speak stored codes
+    // (D/C/W/...), while the pill shows the display code (DP/CC/WW/...).
+    tvt: side.tvtChips.enabled.map((stored) => {
+      const code = chipCode(stored);
       const gw = playedIn.get(code) ?? null;
-      const spent = side.tvtChips[flag] === true;
+      const spent = side.tvtChips.spent.includes(stored);
       const state: ChipState = gw != null ? chipState(gw, gwNumber) : spent ? "past" : "available";
-      return { code, label, state, gw };
+      return { code, label: chipName(stored), state, gw };
     }),
   };
 }
