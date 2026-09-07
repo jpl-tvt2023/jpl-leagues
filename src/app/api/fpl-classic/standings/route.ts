@@ -12,7 +12,8 @@
  * why this is safe to leave open to anyone with the URL.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonNoStore } from "@/lib/http/no-store";
 import { db, leagues } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { FPL_CLASSIC_FORMAT } from "@/lib/format-palette";
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const leagueSlug = searchParams.get("leagueSlug");
     if (!leagueSlug) {
-      return NextResponse.json({ error: "leagueSlug parameter is required" }, { status: 400 });
+      return jsonNoStore({ error: "leagueSlug parameter is required" }, { status: 400 });
     }
 
     const [league] = await db
@@ -35,11 +36,11 @@ export async function GET(request: NextRequest) {
       .limit(1);
 
     if (!league) {
-      return NextResponse.json({ error: "League not found" }, { status: 404 });
+      return jsonNoStore({ error: "League not found" }, { status: 404 });
     }
     // Never serve another format's league through this route, even if someone guesses the slug.
     if (league.format !== FPL_CLASSIC_FORMAT) {
-      return NextResponse.json({ error: "Not an FPL Classic league" }, { status: 404 });
+      return jsonNoStore({ error: "Not an FPL Classic league" }, { status: 404 });
     }
 
     const gwParam = searchParams.get("gw");
@@ -58,12 +59,12 @@ export async function GET(request: NextRequest) {
     if (!payload) {
       // Config row missing — an fpl-classic league row exists but its config never landed
       // (a partially-failed creation, or a migration gap). Render as not-yet-ready, not a 500.
-      return NextResponse.json({ error: "League configuration not found" }, { status: 404 });
+      return jsonNoStore({ error: "League configuration not found" }, { status: 404 });
     }
 
-    return NextResponse.json(payload);
+    return jsonNoStore(payload);
   } catch (error) {
     console.error("Error fetching FPL Classic standings:", error);
-    return NextResponse.json({ error: "Failed to fetch standings" }, { status: 500 });
+    return jsonNoStore({ error: "Failed to fetch standings" }, { status: 500 });
   }
 }

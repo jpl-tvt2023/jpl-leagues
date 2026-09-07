@@ -133,10 +133,20 @@ test.describe.serial("Redis-backed paths (TVT)", () => {
     const winners = bodies.filter((b) => !b.stale);
     expect(winners.length, "exactly one caller should sweep; the rest serve cache").toBe(1);
 
-    // computeLiveFixtureScores fetches the live element map once per sweep, so
-    // this counter IS the number of sweeps.
+    // A sweep is one picks fetch per manager, so a whole gameweek is exactly
+    // `teamSize * 2 * fixtures` of them — i.e. one per manager in the league.
+    //
+    // This used to assert on `event/live`, on the stated basis that
+    // computeLiveFixtureScores "fetches the live element map once per sweep". It no
+    // longer does: the live-scoring rewrite dropped that shared fetch in favour of
+    // taking picks.entry_history.points verbatim, so the counter has been pinned at 0
+    // and this assertion has been failing — the coalescing it names went unverified.
+    const managersInLeague = league.teamSize * 2;
     const after = await counts(request);
-    expect(after["event/live"] ?? 0, "three concurrent refreshes must produce one sweep").toBe(1);
+    expect(
+      after["entry/picks"] ?? 0,
+      "three concurrent refreshes must produce one sweep, i.e. one pass over the league",
+    ).toBe(managersInLeague);
   });
 
   test("a scoring run blocks background FPL calls but still serves the page", async ({

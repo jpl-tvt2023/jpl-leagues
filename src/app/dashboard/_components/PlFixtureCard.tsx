@@ -52,8 +52,10 @@ function buildChips(side: SideInfo, gwNumber: number | null): BreakdownChips {
   return {
     byFplId: Object.fromEntries(side.players.map((p) => [p.fplId, p.fplChips])),
     tvtLabel: side.tvtChips.set === "playoffs" ? "playoffs" : `Set ${side.tvtChips.set}`,
-    // Driven by the league's own chip list. usedGws and `spent` both speak stored codes
-    // (D/C/W/...), while the pill shows the display code (DP/CC/WW/...).
+    // Driven by the league's own chip list. `spent` speaks STORED codes (D/C/W/...);
+    // usedGws speaks DISPLAY codes (DP/CC/WW/...), which is why it is looked up by
+    // chipCode(stored) rather than by `stored` directly. Both are scoped to the chip
+    // set this card is showing, so `gw != null` taking precedence over `spent` is safe.
     tvt: side.tvtChips.enabled.map((stored) => {
       const code = chipCode(stored);
       const gw = playedIn.get(code) ?? null;
@@ -90,6 +92,8 @@ export function PlFixtureCard() {
   const [gw, setGw] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  /** Why a click produced no new numbers. Null when the last refresh genuinely succeeded. */
+  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
   // A refresh the reader did not ask for. Kept separate from isRefreshing so it
   // does not disable the button or relabel it "Refreshing…".
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
@@ -163,11 +167,21 @@ export function PlFixtureCard() {
   const handleRefresh = async () => {
     if (!data?.isLive || isRefreshing) return;
     setIsRefreshing(true);
+    setRefreshNotice(null);
     try {
-      setData(await load(gw, true));
+      const fresh = await load(gw, true);
+      setData(fresh);
+      // A 200 whose live section is empty is not a successful refresh. The route
+      // returns that when the gateway refuses (breaker open, scoring run, budget
+      // spent), and treating it as success meant the button appeared to work while
+      // nothing changed — the same silent failure the fixtures page had.
+      if (!fresh.live) {
+        setRefreshNotice("Live scores are briefly unavailable — try again shortly.");
+      }
     } catch {
       // Leave the current numbers on screen — a failed refresh should not
       // blank a card that is already showing valid data.
+      setRefreshNotice("Could not refresh — try again shortly.");
     } finally {
       setIsRefreshing(false);
     }
@@ -228,6 +242,9 @@ export function PlFixtureCard() {
             updatedAt={data.liveCachedAt ?? null}
             isRefreshing={isBackgroundRefreshing}
           />
+          {refreshNotice && (
+            <span className="text-[10px] text-amber-300">{refreshNotice}</span>
+          )}
           {data.isLive && (
             <span className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-semibold flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />

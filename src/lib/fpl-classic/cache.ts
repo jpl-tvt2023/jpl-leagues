@@ -51,8 +51,16 @@ const SYNC_LOCK_SECONDS = 60;
 const ROSTER_LOCK_SECONDS = 90;
 const SETTLE_LOCK_SECONDS = 90;
 
-function liveKey(leagueId: string): string {
-  return `fplc:live:v1:${leagueId}`;
+/**
+ * Keyed by gameweek as well as league.
+ *
+ * Without the gw segment one key held whichever gameweek was current when it was
+ * written, and resolveLiveBlock served it back without checking the payload's own
+ * `gw`. Across a rollover the board therefore rendered the previous gameweek's
+ * `eventTotal` under the new gameweek's header for a full fresh window.
+ */
+function liveKey(leagueId: string, gw: number): string {
+  return `fplc:live:v2:${leagueId}:gw${gw}`;
 }
 function syncLockKey(leagueId: string): string {
   return `fplc:sync:lock:${leagueId}`;
@@ -85,16 +93,16 @@ export interface ClassicLivePayload {
   cachedAt: string;
 }
 
-export async function getCachedClassicLive(leagueId: string): Promise<ClassicLivePayload | null> {
+export async function getCachedClassicLive(leagueId: string, gw: number): Promise<ClassicLivePayload | null> {
   const r = getRedis();
   if (!r) return null;
-  return (await r.get<ClassicLivePayload>(liveKey(leagueId))) ?? null;
+  return (await r.get<ClassicLivePayload>(liveKey(leagueId, gw))) ?? null;
 }
 
 export async function setCachedClassicLive(leagueId: string, data: ClassicLivePayload): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(liveKey(leagueId), data, { ex: CLASSIC_RETENTION_SECONDS });
+  await r.set(liveKey(leagueId, data.gw), data, { ex: CLASSIC_RETENTION_SECONDS });
 }
 
 /** True when `data.cachedAt` is within the fresh window for its live/settled state. */

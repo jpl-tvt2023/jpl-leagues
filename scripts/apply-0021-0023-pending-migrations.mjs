@@ -1,10 +1,17 @@
-// One-shot: apply migrations 0022 + 0023 directly, bypassing the out-of-sync drizzle tracker
-// (drizzle/meta/_journal.json stops at 0020, so 0021-0023 are unjournaled hand-written files and
-// `drizzle-kit migrate` will not see them; `drizzle-kit push` diffs schema.ts against the live DB
-// and can propose table recreations, which is not something to run against prod unattended).
+// One-shot: apply migrations 0021 + 0022 + 0023 directly, bypassing the out-of-sync drizzle
+// tracker (drizzle/meta/_journal.json stops at 0020, so 0021-0023 are unjournaled hand-written
+// files and `drizzle-kit migrate` will not see them; `drizzle-kit push` diffs schema.ts against
+// the live DB and can propose table recreations, which is not something to run against prod
+// unattended).
 //
 // Idempotent — every statement is guarded by an existence check, so it is safe to run against
 // test, dev and prod in turn, and safe to re-run.
+//
+//   0021  leagues.start_gameweek, leagues.release_cycle_gws
+//         Nothing applied these — the original script covered only 0022/0023. Both columns are
+//         NOT NULL with defaults and are read by full-table selects (api/admin/my-leagues,
+//         api/playoffs/winners, api/superadmin/league-assignments), so on a DB without them
+//         those routes throw. The dashboard survives only because it projects columns explicitly.
 //
 //   0022  gameweek_chips.wasted_reason
 //         MISSING THIS BREAKS /api/fixtures ENTIRELY. That route does
@@ -20,9 +27,16 @@
 // which the row-count assertions at the end verify.
 //
 // Run with:
-//   npx dotenv -e .env.test  -- node scripts/apply-0022-0023-fpl-classic.mjs
-//   npx dotenv -e .env.dev   -- node scripts/apply-0022-0023-fpl-classic.mjs
-//   npx dotenv -e .env.local -- node scripts/apply-0022-0023-fpl-classic.mjs
+//   npx dotenv -e .env.test  -- node scripts/apply-0021-0023-pending-migrations.mjs
+//   npx dotenv -e .env.dev   -- node scripts/apply-0021-0023-pending-migrations.mjs
+//   npx dotenv -e .env.local -- node scripts/apply-0021-0023-pending-migrations.mjs
+//
+// THEN, on each target, mark them applied so `npm run db:migrate` does not try to re-run them:
+//
+//   npx dotenv -e .env.local -- node scripts/seed-drizzle-migrations-table.mjs
+//
+// 0021-0023 are now registered in drizzle/meta/_journal.json, so that seeder covers them and
+// drizzle-kit stops being blind to this range. Run it AFTER this script, never before.
 
 import { createClient } from "@libsql/client";
 
@@ -61,6 +75,23 @@ const chipsBefore = await count("gameweek_chips");
 const leaguesBefore = await count("leagues");
 console.log("gameweek_chips rows before: " + chipsBefore);
 console.log("leagues rows before:        " + leaguesBefore + "\n");
+
+// ---------------------------------------------------------------------------
+// 0021_league_start_gameweek
+// ---------------------------------------------------------------------------
+console.log("-- 0021_league_start_gameweek --");
+for (const [col, ddl] of [
+  ["start_gameweek", "ALTER TABLE leagues ADD start_gameweek integer DEFAULT 1 NOT NULL"],
+  ["release_cycle_gws", "ALTER TABLE leagues ADD release_cycle_gws text DEFAULT '[10,20,30]' NOT NULL"],
+]) {
+  if (await columnExists("leagues", col)) {
+    console.log("[skip] leagues." + col + " already exists");
+  } else {
+    console.log("[apply] leagues." + col);
+    await client.execute(ddl);
+    console.log("[done] column added");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 0022_gameweek_chip_wasted_reason

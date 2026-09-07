@@ -14,7 +14,8 @@
  * formats/tvt/fpl-chip-clash.ts, which refuses to declare a chip wasted on that basis.
  */
 
-import { getCachedEntryHistories, setCachedEntryHistory, CACHE_TTL } from "@/lib/fpl-cache";
+import { getCachedEntryHistories, setCachedEntryHistory } from "@/lib/fpl-cache";
+import { entryHistoryTtl } from "@/lib/fpl/event-status";
 import { fetchTeamHistory } from "@/lib/fpl";
 import { withFplBudget, FplUnavailableError, type FplLane } from "@/lib/fpl/gateway";
 import { mapWithConcurrency } from "@/lib/concurrency";
@@ -40,6 +41,10 @@ export async function resolveFplChipStatuses(
   if (topUp > 0) {
     const missing = ids.filter((id) => !histories.has(id)).slice(0, topUp);
     if (missing.length > 0) {
+      // fpl:history is a shared key and the last writer sets its expiry for
+      // everyone. Writing CACHE_TTL unconditionally here froze the live
+      // gameweek's points for every reader of that key for 24 hours.
+      const ttl = await entryHistoryTtl(opts.lane);
       try {
         await withFplBudget(
           { lane: opts.lane, label: opts.label, max: missing.length },
@@ -47,7 +52,7 @@ export async function resolveFplChipStatuses(
             mapWithConcurrency(missing, 4, async (fplId) => {
               try {
                 const history = await fetchTeamHistory(fplId, opts.lane);
-                await setCachedEntryHistory(fplId, history, CACHE_TTL);
+                await setCachedEntryHistory(fplId, history, ttl);
                 histories.set(fplId, { ...history, cachedAt: new Date().toISOString() });
               } catch {
                 // One unreadable manager must not fail the batch. They stay absent from the map,

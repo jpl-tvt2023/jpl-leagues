@@ -578,10 +578,19 @@ export async function finishRun(
   input: FetchInput,
 ): Promise<void> {
   // Live cache populate for whichever GW FPL says is in-progress (best-effort).
+  // Once per league that this run touched — the cache key is league-scoped, so a
+  // single call could only ever warm one of them.
   try {
     const { liveGw } = await detectLiveGameweek();
     if (liveGw && liveGw >= 31 && liveGw <= 38) {
-      await fetchAndCacheLiveScores(liveGw);
+      for (const league of results) {
+        if (league.format === "auction") continue; // different scoring model, no live cache
+        try {
+          await fetchAndCacheLiveScores(liveGw, league.leagueId);
+        } catch (e) {
+          console.error(`finishRun: live-cache fetch failed for ${league.slug}:`, e);
+        }
+      }
     }
   } catch (e) {
     console.error("finishRun: live-cache fetch failed:", e);
@@ -655,8 +664,21 @@ export async function processAllLeagues(input: FetchInput): Promise<Summary> {
 /*  Live-score caching helpers (lifted from the old cron route)               */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-async function fetchAndCacheLiveScores(gameweek: number): Promise<void> {
-  const gwRecord = await db.query.gameweeks.findFirst({ where: eq(gameweeks.number, gameweek) });
+/**
+ * Pre-warm the live-score cache for one league's playoff gameweek.
+ *
+ * League-scoped throughout, for the same reason the clearLiveCache call above is:
+ * every reader passes a leagueId, so the key they hit is live:gw{N}:{leagueId}.
+ * This used to take only a gameweek — it resolved `gameweeks.number = N` with no
+ * league filter (an arbitrary league's row on a multi-league deployment) and
+ * wrote the result to the bare live:gw{N}:all, which nothing reads. The warm
+ * never landed, so every reader still paid a cold 64-call sweep, and a request
+ * with no leagueSlug could be served another league's playoff scores.
+ */
+async function fetchAndCacheLiveScores(gameweek: number, leagueId: string): Promise<void> {
+  const gwRecord = await db.query.gameweeks.findFirst({
+    where: and(eq(gameweeks.number, gameweek), eq(gameweeks.leagueId, leagueId)),
+  });
   if (!gwRecord) return;
 
   const gwFixtures = await db.query.fixtures.findMany({
@@ -722,11 +744,15 @@ async function fetchAndCacheLiveScores(gameweek: number): Promise<void> {
   }
 
   if (gwLiveScores.length > 0) {
-    await setLiveCachedScores(gameweek, {
+    await setLiveCachedScores(
       gameweek,
-      fixtures: gwLiveScores as never,
-      cachedAt: new Date().toISOString(),
-    });
+      {
+        gameweek,
+        fixtures: gwLiveScores as never,
+        cachedAt: new Date().toISOString(),
+      },
+      leagueId,
+    );
   }
 }
 

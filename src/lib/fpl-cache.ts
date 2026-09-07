@@ -536,7 +536,22 @@ export async function claimFplLeagueWarm(leagueId: string): Promise<boolean> {
 // ============================================
 
 const REFRESH_LOCK_TTL = 120; // seconds — outlives a slow sweep
-const REFRESH_RESULT_TTL = 60;
+/**
+ * Cooldown held after a sweep finishes, so a burst of near-simultaneous clicks
+ * coalesces onto the result the first one just produced.
+ *
+ * Was 60s — far longer than the burst it exists to absorb, and long enough to span an
+ * entire human interaction. The effect: for a minute after ANY sweep, including the
+ * automatic background one the fixtures page fires on a stale poll, a manual Refresh
+ * lost the claim and got the same cached payload back. Because the client treated
+ * `stale: true` as success, it rendered that as a completed forced refresh. That is
+ * the "clicking refresh does nothing" report.
+ *
+ * 10s still coalesces a double-click and the tail of a concurrent burst, while a
+ * reader who looks at the numbers and clicks again always gets a real sweep. The
+ * client now also states when a refresh was coalesced instead of silently succeeding.
+ */
+const REFRESH_RESULT_TTL = 10;
 
 function getRefreshLockKey(gameweek: number, leagueId?: string | null): string {
   return `live:refresh:lock:gw${gameweek}:${leagueId ?? "all"}`;
@@ -561,15 +576,13 @@ export async function claimRefreshSlot(
   return claimed !== null;
 }
 
-/** Release the refresh claim early once the sweep finishes. */
+/** Release the refresh claim, leaving REFRESH_RESULT_TTL of cooldown behind it. */
 export async function releaseRefreshSlot(
   gameweek: number,
   leagueId?: string | null
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  // Keep a short cooldown rather than deleting outright, so a burst of clicks
-  // right after a sweep still coalesces onto the fresh cached result.
   await r.set(getRefreshLockKey(gameweek, leagueId), "1", { ex: REFRESH_RESULT_TTL });
 }
 
@@ -825,8 +838,15 @@ export async function invalidateLeaguePageCache(leagueId: string): Promise<void>
  */
 const LEAGUE_STAGE_ROWS_TTL = 60 * 10;
 
+/**
+ * Bump on every change to the cached row SHAPE, same convention as
+ * STANDINGS_CACHE_VERSION above. v2: RawChip.gameweek widened from a bare number to
+ * { number, deadline? } so read-time disclosure can be evaluated per request.
+ */
+const LEAGUE_STAGE_ROWS_VERSION = 2;
+
 function leagueStageRowsKey(leagueId: string, throughGw: number): string {
-  return `standings:rows:v1:${leagueId}:${throughGw}`;
+  return `standings:rows:v${LEAGUE_STAGE_ROWS_VERSION}:${leagueId}:${throughGw}`;
 }
 
 export async function getCachedLeagueStageRows(leagueId: string, throughGw: number): Promise<unknown | null> {
@@ -844,6 +864,6 @@ export async function setCachedLeagueStageRows(leagueId: string, throughGw: numb
 export async function invalidateLeagueStageRows(leagueId: string): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  const keys = await r.keys(`standings:rows:v1:${leagueId}:*`);
+  const keys = await r.keys(`standings:rows:v${LEAGUE_STAGE_ROWS_VERSION}:${leagueId}:*`);
   if (keys.length > 0) await r.del(...keys);
 }

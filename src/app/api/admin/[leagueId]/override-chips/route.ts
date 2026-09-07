@@ -141,9 +141,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get current state
+    // Get current state.
+    //
+    // `wasUsed` is resolved from gameweek_chips further down, not from this column.
+    // teams.<chip>Set<N>Used is explicitly no longer the source of truth (see the
+    // warning above it in schema.ts) and was never written on the player path, so the
+    // audit log's "changed from available" was frequently untrue. The column is still
+    // written below because the admin import path continues to read it.
     const column = chipToColumn[chipType as ChipType];
-    const wasUsed = team[column as keyof typeof team];
 
     // For "used" and "wasted", the chip counts as used in the teams table
     // For "available", reset to false
@@ -195,6 +200,23 @@ export async function POST(request: NextRequest) {
         ? gwNum <= setMidpoint
         : gwNum > setMidpoint && gwNum < playoffStartGw;
     });
+
+    // A chip is spendable once per set, so an override for this set necessarily
+    // replaces whatever else occupies it. That is the intent — but it can also remove
+    // a declaration the team made for a gameweek that has not closed yet, and doing
+    // that silently left no trace anywhere. Record them so the audit row says so.
+    const now = new Date();
+    const removed = chipsInSet.map((c) => ({
+      gw: c.gameweeks.number,
+      pending: c.gameweeks.deadline > now,
+    }));
+    const removedPending = removed.filter((r) => r.pending).map((r) => r.gw);
+
+    // True state before this override, derived from the rows rather than the
+    // deprecated teams column.
+    const wasUsed = chipsInSet.some(
+      (c) => c.gameweek_chips.isValid || c.gameweek_chips.isProcessed
+    );
 
     // Delete any existing chip records for this chip type/set
     for (const chip of chipsInSet) {
@@ -254,7 +276,11 @@ export async function POST(request: NextRequest) {
     await db.insert(auditLogs).values({
       id: generateId(),
       type: "ADMIN_OVERRIDE",
-      description: `Admin override: ${chipDisplayNames[chipType as ChipType]} changed from ${previousStatusText} to ${statusText} for ${team.name}. Reason: ${reason || "Not specified"}`,
+      description:
+        `Admin override: ${chipDisplayNames[chipType as ChipType]} changed from ${previousStatusText} to ${statusText} for ${team.name}. Reason: ${reason || "Not specified"}` +
+        (removedPending.length > 0
+          ? ` | Removed pending declaration(s) for GW${removedPending.join(", GW")}`
+          : ""),
       teamId: teamId,
       pointsAffected: 0,
     });
@@ -269,6 +295,8 @@ export async function POST(request: NextRequest) {
         chipDisplayName: chipDisplayNames[chipType as ChipType],
         previousState: previousStatusText,
         newState: statusText,
+        /** Gameweeks whose deadline had not passed whose declaration this override removed. */
+        removedPendingGws: removedPending,
       },
     });
   } catch (error) {

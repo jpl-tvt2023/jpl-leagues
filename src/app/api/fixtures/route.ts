@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, fixtures, teams, gameweeks, groups, results, leagues } from "@/lib/db";
+import { db, fixtures, teams, gameweeks, leagues } from "@/lib/db";
 import { gameweekChips } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getCachedFixtures, setCachedFixtures } from "@/lib/fpl-cache";
 import { disclosedGwCount } from "@/lib/gameweeks/disclosure";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
@@ -43,6 +43,25 @@ export interface FixtureChip {
  * GET /api/fixtures
  * Get all fixtures, optionally filtered by gameweek
  */
+/**
+ * Every manager's FPL chip history, CACHE-ONLY.
+ *
+ * `topUp: 0` is load-bearing: this route is public and unauthenticated, so it must
+ * never fan out to FPL — a crawler would otherwise walk the league into a 429 that
+ * also takes down live scoring. Managers with no cached history are simply absent
+ * from the map, which the client renders as nothing at all rather than as
+ * "no chips played".
+ */
+async function readCachedFplChips(fplIds: string[]): Promise<Record<string, FplChipStatus>> {
+  if (fplIds.length === 0) return {};
+  const statuses = await resolveFplChipStatuses(fplIds, {
+    lane: "background",
+    topUp: 0,
+    label: "fixtures chips",
+  });
+  return Object.fromEntries(statuses);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -88,13 +107,27 @@ export async function GET(request: NextRequest) {
       .from(gameweeks)
       .where(eq(gameweeks.leagueId, leagueId));
     const leagueGwIds = leagueGwRows.map(g => g.id);
-    const disclosedGws = disclosedGwCount(leagueGwRows);
+    // ONE clock for both the cache key and the chip filter below. They used to take
+    // separate `new Date()` readings, so a deadline crossing between them produced a
+    // correctly-disclosed payload written under the PREVIOUS epoch's key — orphaning
+    // the work at exactly the instant the epoch key exists to catch.
+    const now = new Date();
+    const disclosedGws = disclosedGwCount(leagueGwRows, now);
 
     // Return cached fixtures if available — only for unfiltered league requests
     if (leagueId && !gameweekParam && !groupParam) {
       try {
         const cached = await getCachedFixtures(leagueId, disclosedGws);
-        if (cached) return NextResponse.json(cached);
+        if (cached) {
+          // fplChipsByFplId is resolved fresh on every request rather than served
+          // from the blob — see the comment on the cache write below.
+          const c = cached as { playersByTeamId?: Record<string, { fplId: string }[]> };
+          const cachedFplIds = Object.values(c.playersByTeamId ?? {}).flat().map((p) => p.fplId);
+          return NextResponse.json({
+            ...cached,
+            fplChipsByFplId: await readCachedFplChips(cachedFplIds),
+          });
+        }
       } catch {
         // Cache miss or Redis error — fall through to DB computation
       }
@@ -151,7 +184,6 @@ export async function GET(request: NextRequest) {
     // pl-fixture route.
     const chipsByGameweek: Record<number, Record<string, FixtureChip>> = {};
     if (format === "tvt" && leagueGwIds.length > 0) {
-      const now = new Date();
       // Reuses the rows already fetched for the cache key — this used to re-query the same table.
       const gwById = new Map(leagueGwRows.map((g) => [g.id, g]));
 
@@ -237,12 +269,7 @@ export async function GET(request: NextRequest) {
         return acc;
       }, {});
 
-      const statuses = await resolveFplChipStatuses(rosterRows.map((r) => r.fplId), {
-        lane: "background",
-        topUp: 0,
-        label: "fixtures chips",
-      });
-      fplChipsByFplId = Object.fromEntries(statuses);
+      fplChipsByFplId = await readCachedFplChips(rosterRows.map((r) => r.fplId));
     }
 
     const responseData = {
@@ -251,16 +278,25 @@ export async function GET(request: NextRequest) {
       playoffStartGw,
       format,
       chipsByGameweek,
-      fplChipsByFplId,
       playersByTeamId,
     };
 
-    // Fire-and-forget cache write
+    // Fire-and-forget cache write.
+    //
+    // ⚠️ fplChipsByFplId is deliberately NOT in here. The blob lives for
+    // PAGE_CACHE_TTL (25h) and its key only changes when a DEADLINE passes — once
+    // per gameweek. Baking the chip map in meant it was computed at the first
+    // request after the deadline and then frozen for the rest of the week: a Bench
+    // Boost played on Saturday never appeared, and `tvtChipWasteReasonFor` on the
+    // client saw an all-null map, so the amber "May waste" badge could not fire at
+    // all. It is a pure Redis read (topUp: 0), so resolving it per request is cheap
+    // — the same read-time-derivation the standings route already does for its own
+    // time-dependent verdict.
     if (leagueId && !gameweekParam && !groupParam) {
       setCachedFixtures(leagueId, disclosedGws, responseData).catch(() => {});
     }
 
-    return NextResponse.json(responseData);
+    return NextResponse.json({ ...responseData, fplChipsByFplId });
   } catch (error) {
     console.error("Error fetching fixtures:", error);
     // Return empty fixtures instead of error — likely no fixtures generated yet

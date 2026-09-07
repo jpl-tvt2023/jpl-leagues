@@ -10,6 +10,7 @@ import {
   CACHE_TTL,
   LIVE_CACHE_TTL,
   getLiveCachedScores,
+  setLiveCachedScores,
   isLiveCacheFresh,
   type LiveFixtureScore,
 } from "@/lib/fpl-cache";
@@ -161,11 +162,20 @@ export async function GET(request: NextRequest) {
     let liveCachedAt: string | null = null;
     const wantsRefresh = request.nextUrl.searchParams.get("refresh") === "1";
     if (isLive) {
-      const cached = wantsRefresh ? null : await getLiveCachedScores(gw, league.id);
-      live = cached?.fixtures.find((f) => f.fixtureId === fixtureRow.id) ?? null;
-      if (live) {
-        liveIsStale = !isLiveCacheFresh(cached);
-        liveCachedAt = cached?.cachedAt ?? null;
+      // Always READ the cache, even on a forced refresh. Nulling it up front
+      // meant a refusal below (breaker open, scoring run holding the lock, budget
+      // spent) shipped live:null and blanked the card's live section, discarding a
+      // perfectly serviceable twelve-minute-old payload the reader was already
+      // looking at. `wantsRefresh` now decides whether to RECOMPUTE, not whether
+      // to have a fallback.
+      const cached = await getLiveCachedScores(gw, league.id);
+      const cachedLive = cached?.fixtures.find((f) => f.fixtureId === fixtureRow.id) ?? null;
+      if (!wantsRefresh) {
+        live = cachedLive;
+        if (live) {
+          liveIsStale = !isLiveCacheFresh(cached);
+          liveCachedAt = cached?.cachedAt ?? null;
+        }
       }
       if (!live) {
         try {
@@ -184,10 +194,40 @@ export async function GET(request: NextRequest) {
               })
           );
           live = computed[0] ?? null;
-          if (live) liveCachedAt = new Date().toISOString();
+          if (live) {
+            liveCachedAt = new Date().toISOString();
+            liveIsStale = false;
+            // Merge this one fixture back into the gameweek's cached payload.
+            //
+            // The refresh route is right that a FILTERED sweep must not replace the
+            // whole blob — that would blank every other fixture for everyone. Merging
+            // into what is already there has neither problem, and without it a
+            // dashboard-only user population never warms live:gw{N}:{leagueId}: every
+            // card load paid a cold sweep and then reported `stale`, firing a second
+            // one behind it.
+            try {
+              const merged = (cached?.fixtures ?? []).filter(
+                (f) => f.fixtureId !== fixtureRow.id
+              );
+              merged.push(live);
+              await setLiveCachedScores(
+                gw,
+                { gameweek: gw, fixtures: merged, cachedAt: liveCachedAt },
+                league.id
+              );
+            } catch {
+              // A cache write must never fail the response.
+            }
+          }
         } catch (err) {
           if (!(err instanceof FplUnavailableError)) throw err;
-          // Breaker open or scoring in progress — fall back to stored data.
+          // Breaker open or scoring in progress — fall back to whatever was cached,
+          // then to stored data. Refusing is not a reason to blank the card.
+          if (cachedLive) {
+            live = cachedLive;
+            liveIsStale = true;
+            liveCachedAt = cached?.cachedAt ?? null;
+          }
         }
       }
     }
@@ -225,6 +265,13 @@ export async function GET(request: NextRequest) {
     // Including a pending row would let a team see their opponent's Double
     // Pointer before choosing their own captain: precisely the leak that the
     // used/available booleans below were introduced to prevent.
+    //
+    // Deliberately TEAM-AGNOSTIC, and worth keeping that way. Exempting the viewer's
+    // own rows would make this card agree with the Submissions card about a chip you
+    // just declared (they currently disagree, which is a real cosmetic wart) — but it
+    // trades a filter anyone can verify at a glance for one whose correctness depends
+    // on the requesting team id being threaded correctly forever after. The
+    // pl-fixture-card spec asserts the team-agnostic property for exactly this reason.
     const chipRows = await db
       .select({
         teamId: gameweekChips.teamId,
@@ -238,12 +285,23 @@ export async function GET(request: NextRequest) {
       .from(gameweekChips)
       .where(inArray(gameweekChips.teamId, [fixtureRow.homeTeamId, fixtureRow.awayTeamId]));
 
+    const playoffStartGw = league.playoffStartGw ?? 31;
+    const chipSet = getChipSet(gw, playoffStartGw);
+
     const usedGwsByTeam = new Map<string, { code: string; gw: number }[]>();
     const usageRowsByTeam = new Map<string, ChipUsageRow[]>();
     for (const row of chipRows) {
       const chipGw = gwById.get(row.gameweekId);
       if (!chipGw || chipGw.deadline > now) continue; // not public yet
       if (!isChipDisclosable(row)) continue; // rejected declaration, never played
+      // Every chip is spendable once per SET, so only plays from the set this
+      // card is showing say anything about what is still available. usedGws was
+      // unscoped while `spent` below was scoped, and the card prefers usedGws
+      // (`gw != null` short-circuits `spent`), so a Double Pointer played in
+      // Set 1 GW5 rendered greyed-out "past" while viewing Set 2 — where it was
+      // in fact available. A chip played in BOTH sets was worse: the Map keeps
+      // one entry per code, so Set 1's view named Set 2's gameweek.
+      if (getChipSet(chipGw.number, playoffStartGw) !== chipSet) continue;
       const list = usedGwsByTeam.get(row.teamId) ?? [];
       list.push({ code: TVT_CHIP_CODES[row.chipType] ?? row.chipType, gw: chipGw.number });
       usedGwsByTeam.set(row.teamId, list);
@@ -258,7 +316,6 @@ export async function GET(request: NextRequest) {
     }
     for (const list of usedGwsByTeam.values()) list.sort((a, b) => a.gw - b.gw);
 
-    const chipSet = getChipSet(gw, league.playoffStartGw ?? 31);
     let leagueEnabledChips: string[] = ["D", "W", "C"];
     try {
       leagueEnabledChips = JSON.parse(league.enabledChips ?? '["D","W","C"]');
@@ -267,7 +324,7 @@ export async function GET(request: NextRequest) {
     }
 
     const usedFor = (teamRowId: string) =>
-      chipsUsedInSet(usageRowsByTeam.get(teamRowId) ?? [], chipSet, league.playoffStartGw ?? 31);
+      chipsUsedInSet(usageRowsByTeam.get(teamRowId) ?? [], chipSet, playoffStartGw);
 
     const buildSide = (
       t: { id: string; name: string; players: { name: string; fplId: string }[] },

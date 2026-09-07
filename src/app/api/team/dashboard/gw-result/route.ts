@@ -175,9 +175,25 @@ export async function GET(request: NextRequest) {
     const completedGwNumbers = plFixturesSorted.map(f => f.gameweek.number);
     const minCompletedGw = Math.min(...completedGwNumbers);
     const maxCompletedGw = Math.max(...completedGwNumbers);
+    // The exact set, not just its bounds. min/max describe a RANGE, and an unscored
+    // gameweek sitting inside that range is navigable but has no fixture to show —
+    // which the fallback below used to answer with the latest result instead, so the
+    // arrow appeared to teleport. Same shape as completedCupGws.
+    const completedGws = [...new Set(completedGwNumbers)].sort((a, b) => a - b);
 
-    // Find the requested PL fixture
-    const lastF: any = plFixturesSorted.find(f => f.gameweek.number === requestedGw) || plFixturesSorted[0];
+    // Find the requested PL fixture. An explicitly requested gameweek that has no
+    // scored fixture is an error, NOT a reason to substitute a different one.
+    const requested = requestedGw !== null
+      ? plFixturesSorted.find(f => f.gameweek.number === requestedGw)
+      : plFixturesSorted[0];
+    if (!requested) {
+      return NextResponse.json(
+        { error: `No result for GW${requestedGw}`, completedGws, minCompletedGw, maxCompletedGw },
+        { status: 404 }
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lastF: any = requested;
 
     const isHome = lastF.homeTeamId === teamId;
     const myScore = isHome ? lastF.result!.homeScore : lastF.result!.awayScore;
@@ -371,7 +387,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ lastGwResult, cupGwResult, minCompletedGw, maxCompletedGw, minCompletedCupGw, maxCompletedCupGw, completedCupGws });
+    return NextResponse.json({ lastGwResult, cupGwResult, minCompletedGw, maxCompletedGw, completedGws, minCompletedCupGw, maxCompletedCupGw, completedCupGws });
   } catch (error) {
     console.error("GW result error:", error);
     return NextResponse.json({ error: "Failed to fetch GW result" }, { status: 500 });

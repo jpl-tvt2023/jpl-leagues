@@ -27,12 +27,22 @@ import { resolveSubmissionWindow } from "@/lib/gameweek-window";
 import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
 
-const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
+import { DOUBLE_HEADER_GWS } from "@/lib/gameweeks/double-headers";
 
 // ⚠️ TEST OVERRIDE: set to null to use live GW detection
 const TEST_GW_OVERRIDE: number | null = null;
 
-async function getAnnouncementSettings(leagueId: string) {
+/**
+ * Both announcement toggles for a league, defaulting to enabled.
+ *
+ * Accepts null so the call site does not have to non-null assert `teamLeagueId`,
+ * which is legitimately undefined for a team with no league — the assertion pushed
+ * that case into drizzle's `eq()` builder instead of handling it here.
+ */
+async function getAnnouncementSettings(leagueId: string | null | undefined) {
+  if (!leagueId) {
+    return { captainAnnouncementEnabled: true, chipAnnouncementEnabled: true };
+  }
   const [captainSetting, chipSetting] = await Promise.all([
     db.select().from(settings)
       .where(and(eq(settings.key, "captainAnnouncementEnabled"), eq(settings.leagueId, leagueId)))
@@ -558,7 +568,12 @@ export async function GET(request: NextRequest) {
           ? `No captaincy chips remaining (${CAPTAIN_CAP}/${CAPTAIN_CAP} used this League Stage)`
           : null,
       },
+      // Past deadlines only. captainHistory is unbounded, so the captain a manager
+      // just submitted for the still-open gameweek appeared in "Captain History"
+      // with a score of 0 — a pick that has not been played yet, listed alongside
+      // ones that have, and indistinguishable from a genuine blank.
       recentCaptains: [...captainHistory]
+        .filter(c => c.gameweek.deadline <= new Date())
         .sort((a, b) => b.gameweek.number - a.gameweek.number)
         .map(c => ({
           gameweek: c.gameweek.number,
@@ -1250,7 +1265,7 @@ export async function GET(request: NextRequest) {
       upcomingFixtures,
       teamMembers,
       oppositeGroupTeams,
-      announcementSettings: await getAnnouncementSettings(teamLeagueId!),
+      announcementSettings: await getAnnouncementSettings(teamLeagueId),
       leagueSlug,
       leagueGroupCount,
       leagueFormat,
