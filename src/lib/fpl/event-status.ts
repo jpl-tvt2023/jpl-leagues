@@ -32,10 +32,13 @@ import { fplRequest, FPL_BASE_URL, FplUnavailableError, type FplLane } from "./g
 import {
   getCachedLiveEventStatus,
   setCachedLiveEventStatus,
+  CACHE_TTL,
+  LIVE_CACHE_TTL,
   type FplEventStatusPayload,
   type FplEventStatusRow,
 } from "@/lib/fpl-cache";
 import { getFplFixturesForGw, getAllFplFixtures } from "@/lib/fpl-live/players-left";
+import { fetchGameweekDeadlines } from "@/lib/fpl/gw-calendar";
 import { fetchBootstrapEventFlags } from "@/lib/fpl";
 
 export type GwStatusSource = "event-status" | "bootstrap-fallback" | "unavailable";
@@ -216,6 +219,66 @@ export async function getGameweekConclusion(
 /** Convenience boolean wrapper around {@link getGameweekConclusion}. */
 export async function isGameweekConcluded(gw: number, lane: FplLane = "background"): Promise<boolean> {
   return (await getGameweekConclusion(gw, lane)).concluded;
+}
+
+/**
+ * TTL for an `fpl:history:{entryId}` write.
+ *
+ * `fpl:history:{id}` is ONE key whose payload contains `current[].points` — the
+ * live gameweek's running score. Every writer shares that key, so the last write
+ * sets the expiry for everyone. Two callers used to pass CACHE_TTL (24h)
+ * unconditionally; a single mid-gameweek call from either froze the FPL League
+ * table and the PL fixture card's chip badges for the rest of the day. Warming
+ * could not repair it, because the entries were present, not missing.
+ *
+ * Resolved here rather than at each call site so there is exactly one answer.
+ *
+ * "In flight" is deadline-passed AND not concluded — deliberately NOT merely
+ * "the season is not over". The active gameweek is by definition unconcluded, so
+ * keying off that alone would hold the 10-minute TTL through international breaks
+ * and every Monday-to-Thursday, refetching constantly while nothing moves.
+ * Between gameweeks the active GW has not kicked off, its `current[]` row does
+ * not exist yet, and a long TTL is correct.
+ *
+ * Fails toward the SHORT window: an unnecessary refetch is cheap; a day-long
+ * freeze during live play is the bug this exists to prevent.
+ */
+export async function entryHistoryTtl(lane: FplLane = "background"): Promise<number> {
+  try {
+    const active = await getActiveFplGameweek(lane);
+    // null only once every gameweek has concluded — nothing moves again this season.
+    if (active.gw === null) return CACHE_TTL;
+    return (await hasGameweekStarted(active.gw, lane)) ? LIVE_CACHE_TTL : CACHE_TTL;
+  } catch {
+    return LIVE_CACHE_TTL;
+  }
+}
+
+/**
+ * Whether a gameweek's deadline has passed — i.e. it is under way rather than merely next.
+ *
+ * The distinction the codebase kept losing: `getActiveFplGameweek().gw` is non-null
+ * from August to May, so treating it as "a gameweek is live" is true all season and
+ * collapses every live/settled cache decision into the live branch. Between
+ * gameweeks the active GW has not kicked off and its numbers cannot move.
+ *
+ * Fails toward TRUE (treat as started): over-refreshing costs a request, while
+ * wrongly declaring a live gameweek settled freezes it behind a long TTL.
+ */
+export async function hasGameweekStarted(
+  gw: number,
+  lane: FplLane = "background"
+): Promise<boolean> {
+  try {
+    const deadlines = await fetchGameweekDeadlines(lane);
+    const row = deadlines.find((d) => d.gw === gw);
+    if (!row) return true;
+    const deadline = new Date(row.deadlineTime).getTime();
+    if (!Number.isFinite(deadline)) return true;
+    return Date.now() >= deadline;
+  } catch {
+    return true;
+  }
 }
 
 /**

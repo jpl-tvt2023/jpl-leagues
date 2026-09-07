@@ -11,6 +11,7 @@ import {
   PL_STANDINGS_SEED_MID,
   PL_STANDINGS_SEED_PROMOTED,
 } from "@/lib/data/pl-standings-seed";
+import { invalidateStandingsConfigCache } from "@/lib/formats/auction/lot-meta";
 
 type BootstrapTeam = { id: number; name: string; short_name: string };
 
@@ -181,6 +182,11 @@ export async function PUT(request: NextRequest) {
       updatedAt: now,
     })
     .where(eq(plStandingsConfig.id, PL_STANDINGS_SEED_ID));
+
+  // lot-meta memoises this row for 5 minutes, so without a bust the auction room would
+  // keep resolving lots against the old tiers. Best-effort: it clears only the instance
+  // that served this write, and the TTL remains the backstop for the others.
+  invalidateStandingsConfigCache();
 
   return NextResponse.json({
     success: true,

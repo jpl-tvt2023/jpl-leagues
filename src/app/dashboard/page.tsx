@@ -7,6 +7,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { NotificationBell } from "@/components/NotificationBell";
 import { TierChip } from "@/components/TierChip";
 import { GwNavigator } from "@/components/GwNavigator";
+import { DOUBLE_HEADER_GWS } from "@/lib/gameweeks/double-headers";
 import { Logo } from "@/components/Logo";
 import { HelpTip } from "@/components/HelpTip";
 import { ChallengeTip } from "../[leagueSlug]/_components/fixtures/ChallengeTip";
@@ -172,6 +173,10 @@ interface DashboardData {
      * past gameweek and empty on the current one.
      */
     challenge: ChallengeMatch | null;
+    /** The chip produced nothing — an FPL chip clash, or an admin override. */
+    isWasted: boolean;
+    /** Why, when a reason was recorded. Null for a chip wasted before the column existed. */
+    wastedReason: string | null;
   }[];
   /** Gameweek the Captains & Chips card lands on: the lowest UNCONCLUDED one. */
   captainsDefaultGw: number | null;
@@ -403,7 +408,6 @@ function ChipBadge({ used, name }: { used: boolean; name: string }) {
   );
 }
 
-const DOUBLE_HEADER_GWS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 29, 33, 35, 38];
 
 // Bifurcated expense rows for the dashboard "Expenses" card popover. Rendered in this order; rows
 // with zero amount are hidden so a team that hasn't traded sees just Purchase / Club / Forfeit etc.
@@ -905,7 +909,6 @@ export default function DashboardPage() {
   const [submitMessage, setSubmitMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showOpponentPlayers, setShowOpponentPlayers] = useState(false);
   const [showAllCaptains, setShowAllCaptains] = useState(false);
-  const [cupExpanded, setCupExpanded] = useState(false);
   const [cupViewedGw, setCupViewedGw] = useState<number | null>(null);
   const [cupRefreshing, setCupRefreshing] = useState(false);
   const [liveRefreshing, setLiveRefreshing] = useState(false);
@@ -914,6 +917,8 @@ export default function DashboardPage() {
   const [captainsGw, setCaptainsGw] = useState<number | null>(null);
   const [captainsByGw, setCaptainsByGw] = useState<Record<number, DashboardData["leagueCaptains"]>>({});
   const [captainsLoading, setCaptainsLoading] = useState(false);
+  /** Set when a gameweek could not be loaded, so the card says so instead of silently showing another GW. */
+  const [captainsError, setCaptainsError] = useState<string | null>(null);
   const [liveScoreOverride, setLiveScoreOverride] = useState<{
     myScore: number;
     oppScore: number;
@@ -941,22 +946,32 @@ export default function DashboardPage() {
    * button, which must re-read even a gameweek it has already seen.
    */
   const loadCaptainsGw = useCallback(async (gw: number, opts?: { force?: boolean }) => {
-    setCaptainsGw(gw);
     // The default gameweek's rows are seeded into the cache when the dashboard payload lands
     // (see the effect below), so stepping away and back never costs a request.
-    if (!opts?.force && captainsByGw[gw]) return;
+    if (!opts?.force && captainsByGw[gw]) {
+      setCaptainsGw(gw);
+      setCaptainsError(null);
+      return;
+    }
     setCaptainsLoading(true);
     try {
       const res = await fetch(`/api/team/dashboard/captains?gw=${gw}`, { credentials: "include" });
       if (res.ok) {
         const payload = await res.json();
         setCaptainsByGw((prev) => ({ ...prev, [gw]: payload.leagueCaptains }));
+        // Only move the navigator once rows for that gameweek are actually in hand.
+        //
+        // It used to move first. On a failure nothing was cached, so the render fell
+        // back to `data.leagueCaptains` — the DEFAULT gameweek's rows, not the ones
+        // previously on screen — and the header read "GW 2" above GW 5's captains
+        // with no error anywhere.
+        setCaptainsGw(gw);
+        setCaptainsError(null);
+      } else {
+        setCaptainsError(`Could not load GW ${gw}.`);
       }
-      // A non-OK response leaves the previous rows on screen rather than blanking the card.
-      // The only expected failure is a gameweek past the disclosure edge, which the navigator
-      // does not offer in the first place.
     } catch {
-      // Same: keep what is showing.
+      setCaptainsError(`Could not load GW ${gw}.`);
     } finally {
       setCaptainsLoading(false);
     }
@@ -982,6 +997,11 @@ export default function DashboardPage() {
           credentials: "include", // Ensure cookies are sent
         });
         if (response.status === 401) { router.push("/signin"); return; }
+        // A gameweek inside the min/max range with no scored fixture. The route now
+        // says so rather than substituting the latest result (which made the arrow
+        // look like it teleported). Leave what is on screen; do not blank the whole
+        // dashboard over one unavailable gameweek.
+        if (response.status === 404) return;
         if (!response.ok) throw new Error("Failed to fetch GW result");
         const gwData = await response.json();
         setData(prev => prev ? {
@@ -1366,6 +1386,9 @@ export default function DashboardPage() {
               selectLabel="Captains gameweek"
             />
           )}
+          {captainsError && (
+            <span className="text-xs text-amber-300">{captainsError}</span>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -1455,6 +1478,10 @@ export default function DashboardPage() {
                         chipName: c.chipName,
                         challengedTeamName: c.challengedTeamName,
                         challenge: c.challenge,
+                        // Without these the card was the one surface that showed a
+                        // wasted chip as if it had counted.
+                        isWasted: c.isWasted,
+                        wastedReason: c.wastedReason,
                       }}
                       align="right"
                       className="min-w-0"
@@ -1721,9 +1748,15 @@ export default function DashboardPage() {
                 {/* Deadline Timer */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
                   <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                    <span className="text-yellow-400">⏱</span> Deadline
+                    <span className="text-yellow-400">⏱</span> GW{data.submission.gameweek} Deadline
                   </h2>
-                  <DeadlineTimer deadline={data.deadline.timestamp} gameweek={data.deadline.gameweek} serverTime={data.serverTime} />
+                  {/* `submission`, not `deadline`. The two are different notions of
+                      "current gameweek": submission is DEADLINE-driven, deadline is
+                      RESULTS-driven. When admin result entry lags they diverge, and this
+                      card rendered "GW3 Deadline Passed — Waiting for results…" directly
+                      above a "GW5 Submissions" card on the same screen. The Continental
+                      Championship branch above already uses submission; this one did not. */}
+                  <DeadlineTimer deadline={data.submission.timestamp} gameweek={data.submission.gameweek} serverTime={data.serverTime} />
                 </div>
 
                 {/* PL Fixture — gameweek navigation, points breakdown, chip
@@ -2013,11 +2046,18 @@ export default function DashboardPage() {
                     <div className="text-gray-400 text-sm">No chips available in playoffs</div>
                   )}
 
-                  <div className="mt-3 space-y-2">
-                    {(data.enabledChips ?? []).map((code) => (
-                      <ChipBadge key={code} used={currentChipSet[code]?.used ?? false} name={chipCode(code)} />
-                    ))}
-                  </div>
+                  {/* Only when a set is actually in play. `currentSet === 1 ? set1 : set2`
+                      lands "playoffs" in set2, so during the playoffs this row sat outside
+                      the picker's own guard and printed Set 2's used/available flags under
+                      a "TVT Chips (Set Playoffs)" heading. No chips exist in the playoffs;
+                      there is nothing correct to render here. */}
+                  {data.chipStatus.currentSet !== "playoffs" && (
+                    <div className="mt-3 space-y-2">
+                      {(data.enabledChips ?? []).map((code) => (
+                        <ChipBadge key={code} used={currentChipSet[code]?.used ?? false} name={chipCode(code)} />
+                      ))}
+                    </div>
+                  )}
                 </div>}
               </div>
               </>

@@ -17,11 +17,11 @@ import { db } from "@/lib/db";
 import { fplClassicConfig, fplClassicEntrants, fplClassicEntryGws, fplClassicAwards, auditLogs } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "@/lib/id";
-import { getActiveFplGameweek } from "@/lib/fpl/event-status";
+import { getActiveFplGameweek, entryHistoryTtl } from "@/lib/fpl/event-status";
 import { fetchClassicLeagueStandings } from "@/lib/fpl/classic-league";
 import { fetchTeamHistory } from "@/lib/fpl";
 import { fetchGameweekDeadlines } from "@/lib/fpl/gw-calendar";
-import { getCachedEntryHistories, setCachedEntryHistory, CACHE_TTL } from "@/lib/fpl-cache";
+import { getCachedEntryHistories, setCachedEntryHistory } from "@/lib/fpl-cache";
 import { withFplBudget, FplUnavailableError } from "@/lib/fpl/gateway";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
@@ -229,6 +229,9 @@ export async function settleGameweeks(leagueId: string): Promise<SettleResult> {
 
     const missingIds = fplIds.filter((id) => !cached.has(id));
     if (missingIds.length > 0) {
+      // Shared key: a 24h write here also pins the live gameweek's points for the
+      // TVT FPL League table and the PL fixture card, which read the same entries.
+      const historyTtl = await entryHistoryTtl("background");
       await withFplBudget(
         { lane: "background", label: "fpl-classic settle", max: missingIds.length },
         () => mapWithConcurrency(missingIds, 4, async (fplId) => {
@@ -239,7 +242,7 @@ export async function settleGameweeks(leagueId: string): Promise<SettleResult> {
           if (Date.now() - settleStartedAt > SETTLE_DEADLINE_MS) return;
           try {
             const history = await fetchTeamHistory(fplId, "background");
-            await setCachedEntryHistory(fplId, history, CACHE_TTL);
+            await setCachedEntryHistory(fplId, history, historyTtl);
             cached.set(fplId, { ...history, cachedAt: new Date().toISOString() });
           } catch {
             // One unreadable manager must not fail the whole batch — they simply stay pending

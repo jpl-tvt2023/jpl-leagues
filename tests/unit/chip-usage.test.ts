@@ -12,6 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chipsUsedInSet, chipGameweekInSet, type ChipUsageRow } from "../../src/lib/formats/tvt/chip-usage";
+import { getChipSet } from "../../src/lib/formats/tvt/chip-set";
 
 // TVT-16/32 defaults: playoffs from GW31, so Set 1 = GW1-15 and Set 2 = GW16-30.
 const PLAYOFF_START = 31;
@@ -92,4 +93,36 @@ test("chipGameweekInSet reports the earliest gameweek if a chip somehow has two 
     row({ chipType: "D", gameweekNumber: 4 }),
   ];
   assert.equal(chipGameweekInSet(rows, 1, PLAYOFF_START).get("D"), 4);
+});
+
+/**
+ * Set boundaries, which the PL fixture card's `usedGws` filter now relies on.
+ *
+ * That list was built with no set filter while `spent` beside it WAS set-scoped, and the card
+ * prefers the gameweek when one exists — so a chip played in Set 1 rendered as spent while the
+ * card was showing Set 2, where it is actually available.
+ */
+test("a Set 1 gameweek and a Set 2 gameweek are different sets (playoffStartGw 31)", () => {
+  assert.equal(getChipSet(5, 31), 1);
+  assert.equal(getChipSet(20, 31), 2);
+  assert.notEqual(getChipSet(5, 31), getChipSet(20, 31));
+});
+
+test("set boundary sits at ceil((playoffStartGw-1)/2)", () => {
+  // TVT-32: playoffStartGw 31 -> midpoint 15, so set1 = GW1..15, set2 = GW16..30
+  assert.equal(getChipSet(15, 31), 1);
+  assert.equal(getChipSet(16, 31), 2);
+  // TVT-8: playoffStartGw 36 -> midpoint 18, so set1 = GW1..18, set2 = GW19..35.
+  //
+  // ⚠️ chip-set.ts's own docstring claims "Set1 GW1-17, Set2 GW18-35" for this case, which the
+  // formula directly above it does not produce. Asserted against the IMPLEMENTATION, because
+  // that is what has been deciding real chip eligibility; the comment is what is wrong. Changing
+  // the boundary would move which set an 8-team league's GW18 chip is spent from, so it is a
+  // deliberate decision, not a typo fix.
+  assert.equal(getChipSet(18, 36), 1);
+  assert.equal(getChipSet(19, 36), 2);
+});
+
+test("a playoff gameweek is neither set — no chips exist there", () => {
+  assert.equal(getChipSet(33, 31), "playoffs");
 });

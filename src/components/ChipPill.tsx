@@ -158,10 +158,21 @@ export function FplChipsPlayedInGw({
   status,
   gwNumber,
   interactive = false,
+  isGwLive = false,
 }: {
   status: FplChipStatus | null | undefined;
   gwNumber: number | null;
   interactive?: boolean;
+  /**
+   * Whether the gameweek on screen is actually in flight.
+   *
+   * Every pill this renders belongs to `gwNumber` by construction, but that says
+   * nothing about whether `gwNumber` is happening NOW. Without this the state was
+   * hardcoded to "current", so a Triple Captain on a gameweek scored two months
+   * ago rendered in the yellow reserved for "this changes how to read the score
+   * next to it" and its tooltip read "playing now".
+   */
+  isGwLive?: boolean;
 }) {
   if (!status || gwNumber == null) return null;
   const played = status.used.filter((u) => u.gw === gwNumber);
@@ -174,7 +185,7 @@ export function FplChipsPlayedInGw({
           key={`${u.code}-${u.gw}`}
           code={u.code}
           label={FPL_CHIP_LABELS[u.code as keyof typeof FPL_CHIP_LABELS] ?? u.code}
-          state="current"
+          state={isGwLive ? "current" : "past"}
           gw={null}
           interactive={interactive}
         />

@@ -20,6 +20,7 @@ import { teams, gameweekCaptains, gameweekChips, gameweeks } from "@/lib/db/sche
 import { and, asc, eq } from "drizzle-orm";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 import { buildChallengeMatches } from "@/lib/formats/tvt/challenge-match-query";
+import { isChipDisclosable, isChipWasted } from "@/lib/formats/tvt/chip-waste";
 import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
 import { getCurrentGameweekNumber } from "@/lib/gameweeks/current-gw";
 
@@ -46,6 +47,10 @@ export interface LeagueCaptainRow {
    * current one.
    */
   challenge: ChallengeMatch | null;
+  /** The chip produced nothing — an FPL chip clash, or an admin override. */
+  isWasted: boolean;
+  /** Why, when a reason was recorded. Null for a chip wasted before the column existed. */
+  wastedReason: string | null;
 }
 
 export interface CaptainsWindow {
@@ -129,7 +134,10 @@ export async function buildLeagueCaptains(opts: {
 
   // Chip announcements — only TVT has chips. Continental Championship skips the fetch entirely.
   // The Challenge Chip's target rides along so the card can name it.
-  const chipByTeam = new Map<string, { chipType: string; challengedTeamId: string | null }>();
+  const chipByTeam = new Map<
+    string,
+    { chipType: string; challengedTeamId: string | null; isWasted: boolean; wastedReason: string | null }
+  >();
   const challengeByTeam = new Map<string, ChallengeMatch>();
 
   if (leagueFormat !== "continental-championship") {
@@ -137,17 +145,22 @@ export async function buildLeagueCaptains(opts: {
       where: eq(gameweekChips.gameweekId, gameweekId),
     });
     for (const ch of chipsForGw) {
-      if (ch.teamId && ch.chipType) {
-        chipByTeam.set(ch.teamId, {
-          chipType: ch.chipType,
-          challengedTeamId: ch.challengedTeamId ?? null,
-        });
-      }
+      if (!ch.teamId || !ch.chipType) continue;
+      // A row that is invalid AND unprocessed is a declaration the submission gate
+      // rejected — it was never played. Every other surface filters it out
+      // (api/fixtures, pl-fixture); this card was rendering it as a live chip pill.
+      if (!isChipDisclosable(ch)) continue;
+      chipByTeam.set(ch.teamId, {
+        chipType: ch.chipType,
+        challengedTeamId: ch.challengedTeamId ?? null,
+        isWasted: isChipWasted(ch),
+        wastedReason: ch.wastedReason ?? null,
+      });
     }
 
     // Rebuild each Challenge Chip's match from the two teams' own results. Keyed off the chip's
     // OWN gameweek — which is this one — so navigating gameweeks moves the match with the card.
-    const ccRows = chipsForGw.filter((c) => c.chipType === "C");
+    const ccRows = chipsForGw.filter((c) => c.chipType === "C" && isChipDisclosable(c));
     if (ccRows.length > 0) {
       const matches = await buildChallengeMatches(
         ccRows.map((c) => ({
@@ -187,6 +200,8 @@ export async function buildLeagueCaptains(opts: {
       challengedTeamId,
       challengedTeamName: challengedTeamId ? teamNameById.get(challengedTeamId) ?? null : null,
       challenge: chipType === "C" ? challengeByTeam.get(t.id) ?? null : null,
+      isWasted: chip?.isWasted ?? false,
+      wastedReason: chip?.wastedReason ?? null,
     };
   });
 

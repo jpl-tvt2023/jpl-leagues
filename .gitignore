@@ -58,6 +58,9 @@ next-env.d.ts
 *.db
 *.db-shm
 *.db-wal
+# SQLite rollback-journal mode. Its absence is how a stray 16KB test.db-journal
+# became the entire content of commit 19fdea2.
+*.db-journal
 
 # DB backups (may contain prod data — never commit)
 /backups/

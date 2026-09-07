@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonNoStore } from "@/lib/http/no-store";
 import { db } from "@/lib/db";
 import { leagues } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -31,18 +32,19 @@ import { withFplBudget, FplUnavailableError } from "@/lib/fpl/gateway";
 // gameweek's sweep off midway.
 export const maxDuration = 60;
 
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const gwParam = searchParams.get("gameweek");
 
     if (!gwParam) {
-      return NextResponse.json({ error: "gameweek parameter required" }, { status: 400 });
+      return jsonNoStore({ error: "gameweek parameter required" }, { status: 400 });
     }
 
     const gwNumber = parseInt(gwParam);
     if (isNaN(gwNumber) || gwNumber < 1 || gwNumber > 38) {
-      return NextResponse.json({ error: "Invalid gameweek" }, { status: 400 });
+      return jsonNoStore({ error: "Invalid gameweek" }, { status: 400 });
     }
 
     // Required. Resolving a gameweek by number alone picked an arbitrary
@@ -50,7 +52,7 @@ export async function GET(request: NextRequest) {
     // another league's fixtures entirely.
     const leagueSlug = searchParams.get("leagueSlug");
     if (!leagueSlug) {
-      return NextResponse.json({ error: "leagueSlug parameter required" }, { status: 400 });
+      return jsonNoStore({ error: "leagueSlug parameter required" }, { status: 400 });
     }
     const leagueRow = await db
       .select({ id: leagues.id })
@@ -58,7 +60,7 @@ export async function GET(request: NextRequest) {
       .where(eq(leagues.slug, leagueSlug))
       .limit(1);
     if (leagueRow.length === 0) {
-      return NextResponse.json({ error: "League not found" }, { status: 404 });
+      return jsonNoStore({ error: "League not found" }, { status: 404 });
     }
     const leagueId = leagueRow[0].id;
 
@@ -71,11 +73,11 @@ export async function GET(request: NextRequest) {
     if (!won) {
       const cached = await getLiveCachedScores(gwNumber, leagueId);
       if (cached) {
-        return NextResponse.json({ ...cached, stale: true });
+        return jsonNoStore({ ...cached, stale: true });
       }
       // Nothing cached yet and someone else is mid-sweep — tell the client to
       // retry rather than launching a second sweep.
-      return NextResponse.json(
+      return jsonNoStore(
         { gameweek: gwNumber, fixtures: [], cachedAt: null, stale: true, pending: true },
         { status: 202 }
       );
@@ -102,19 +104,19 @@ export async function GET(request: NextRequest) {
         await setLiveCachedScores(gwNumber, liveData, leagueId);
       }
 
-      return NextResponse.json(liveData);
+      return jsonNoStore(liveData);
     } finally {
       await releaseRefreshSlot(gwNumber, leagueId);
     }
   } catch (error) {
     if (error instanceof FplUnavailableError) {
       // Breaker open, or a scoring run holds the lock. Expected — not a fault.
-      return NextResponse.json(
+      return jsonNoStore(
         { error: "Live scores are briefly unavailable — try again shortly.", reason: error.reason },
         { status: 503 }
       );
     }
     console.error("Refresh error:", error);
-    return NextResponse.json({ error: "Failed to refresh scores" }, { status: 500 });
+    return jsonNoStore({ error: "Failed to refresh scores" }, { status: 500 });
   }
 }

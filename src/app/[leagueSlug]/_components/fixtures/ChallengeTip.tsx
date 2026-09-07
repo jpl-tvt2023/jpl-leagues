@@ -73,8 +73,11 @@ export function ChallengeTip({
 
   // Plain text whenever there is no rebuilt match: an unscored gameweek, or a side on a bye.
   // No "pending" wording — the chip simply names its target until there is a result to show.
-  const plainTip = isWasted && chip.wastedReason
-    ? chip.wastedReason
+  // `isWasted` alone, not `isWasted && chip.wastedReason` — the reason is nullable, and
+  // falling through on a missing one produced "Challenge Chip — challenging X" beside a
+  // pill already struck through and badged WASTED.
+  const plainTip = isWasted
+    ? chip.wastedReason ?? `${chip.chipName} — wasted, no chip points`
     : isPredictedWaste
     ? `${chip.chipName} — may be wasted: ${predictedWasteReason}. Confirmed once the gameweek is scored.`
     : isChallenge && chip.challengedTeamName
@@ -84,6 +87,7 @@ export function ChallengeTip({
   const tip = match ? (
     <ChallengeSummary
       match={match}
+      isWasted={isWasted}
       wastedReason={isWasted ? chip.wastedReason : null}
       predictedWasteReason={isPredictedWaste ? predictedWasteReason : null}
     />
@@ -130,11 +134,24 @@ export function ChallengeTip({
 /** The rich tooltip body: a header stating the chip outcome, then the standard breakdown. */
 function ChallengeSummary({
   match,
+  isWasted = false,
   wastedReason,
   predictedWasteReason,
 }: {
   match: ChallengeMatch;
-  /** Set → the Challenge Chip itself was wasted by an FPL chip clash. Overrides the outcome line: a wasted chip lost or won nothing, whatever the scoreline says. */
+  /**
+   * The Challenge Chip itself was wasted. Overrides the outcome line: a wasted chip
+   * lost or won nothing, whatever the scoreline says.
+   *
+   * Passed explicitly rather than inferred from `wastedReason`, which is nullable —
+   * a chip wasted before that column existed, and every chip an admin marks wasted
+   * via override-chips, carries no reason text. Inferring meant those rendered the
+   * red WASTED badge on the pill while this tooltip fell through to
+   * "Lost the challenge · no chip points": exactly the wrong-blame the outcome-line
+   * comment below forbids.
+   */
+  isWasted?: boolean;
+  /** Human-readable cause, when one was recorded. */
   wastedReason?: string | null;
   /** Set → not yet certain, shown as an added warning alongside whatever else is on screen. */
   predictedWasteReason?: string | null;
@@ -155,7 +172,6 @@ function ChallengeSummary({
   };
 
   const isLive = match.outcome === "live";
-  const isWasted = !!wastedReason;
 
   return (
     <div className="w-[min(88vw,392px)]">
@@ -179,7 +195,7 @@ function ChallengeSummary({
       >
         {/* A wasted chip never reads as won/lost/drew — the scoreline above is unrelated to why
             it produced nothing, and saying "lost" would blame the wrong thing. */}
-        {isWasted ? wastedReason : challengeOutcomeLabel(match)}
+        {isWasted ? wastedReason ?? "Chip wasted · no chip points" : challengeOutcomeLabel(match)}
       </div>
       {!isWasted && predictedWasteReason && (
         <div className="mt-1 text-[11px] font-semibold text-amber-400">
@@ -190,7 +206,10 @@ function ChallengeSummary({
           pills are not shown here either — the challenger and challenged team are DIFFERENT
           teams from two different groups, so a single BreakdownChips could not correctly label
           both sides without risking one team's chips being shown under the other's name. */}
-      <PlayerBreakdown fixture={challengeFixture} />
+      {/* noLinks: this breakdown is inside HelpTip's bubble, which is portalled with
+          pointer-events-none so a tap dismisses it. Anchors in there render as links and
+          then do nothing on click. */}
+      <PlayerBreakdown fixture={challengeFixture} noLinks />
       <div className="mt-1.5 text-[9px] leading-snug text-gray-500">
         {isWasted
           ? "Chip points only — the challenge does not count toward matches played or won."

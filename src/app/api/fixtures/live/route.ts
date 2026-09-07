@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonNoStore } from "@/lib/http/no-store";
 import { db } from "@/lib/db";
 import { fixtures, gameweeks, leagues } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -27,38 +28,43 @@ export async function GET(request: NextRequest) {
     const gwParam = searchParams.get("gameweek");
 
     if (!gwParam) {
-      return NextResponse.json({ error: "gameweek parameter required" }, { status: 400 });
+      return jsonNoStore({ error: "gameweek parameter required" }, { status: 400 });
     }
 
     const gwNumber = parseInt(gwParam);
     if (isNaN(gwNumber) || gwNumber < 1 || gwNumber > 38) {
-      return NextResponse.json({ error: "Invalid gameweek" }, { status: 400 });
+      return jsonNoStore({ error: "Invalid gameweek" }, { status: 400 });
     }
 
-    // Resolve leagueId from leagueSlug if provided
+    // Required, exactly as on the sibling refresh route. Falling back to an
+    // unscoped lookup resolved the gameweek by number across every league
+    // (gwRecords[0] is arbitrary), computed another league's fixtures, and then
+    // WROTE them to the bare live:gw{N}:all key below — so a slug typo could
+    // serve, and cache, one league's scores under another's.
     const leagueSlug = searchParams.get("leagueSlug");
-    let leagueId: string | null = null;
-    if (leagueSlug) {
-      const leagueRow = await db.select({ id: leagues.id }).from(leagues)
-        .where(eq(leagues.slug, leagueSlug)).limit(1);
-      if (leagueRow.length > 0) leagueId = leagueRow[0].id;
+    if (!leagueSlug) {
+      return jsonNoStore({ error: "leagueSlug parameter required" }, { status: 400 });
     }
+    const leagueRow = await db.select({ id: leagues.id }).from(leagues)
+      .where(eq(leagues.slug, leagueSlug)).limit(1);
+    if (leagueRow.length === 0) {
+      return jsonNoStore({ error: "League not found" }, { status: 404 });
+    }
+    const leagueId = leagueRow[0].id;
 
-    // Find the gameweek record (scoped to league if provided)
+    // Find the gameweek record, scoped to the league
     const gwRecords = await db.select().from(gameweeks).where(
-      leagueId
-        ? and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId))
-        : eq(gameweeks.number, gwNumber)
+      and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId))
     );
     if (gwRecords.length === 0) {
-      return NextResponse.json({ isLive: false, fixtures: [] });
+      return jsonNoStore({ isLive: false, fixtures: [] });
     }
     const gw = gwRecords[0];
 
     // Check if deadline has passed
     const now = new Date();
     if (gw.deadline > now) {
-      return NextResponse.json({ isLive: false, fixtures: [], reason: "deadline_not_passed" });
+      return jsonNoStore({ isLive: false, fixtures: [], reason: "deadline_not_passed" });
     }
 
     // Check if results already exist for this GW (i.e. scores already processed)
@@ -72,7 +78,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (gwFixtures.length === 0) {
-      return NextResponse.json({ isLive: false, fixtures: [] });
+      return jsonNoStore({ isLive: false, fixtures: [] });
     }
 
     // If ALL fixtures have results, this GW is done — return stored data with player breakdowns
@@ -92,7 +98,21 @@ export async function GET(request: NextRequest) {
           homePlayers: normalizeStoredPlayerScores(f.result!.homePlayerScores),
           awayPlayers: normalizeStoredPlayerScores(f.result!.awayPlayerScores),
         }));
-      return NextResponse.json({ isLive: false, fixtures: storedFixtures, reason: "already_processed", cachedAt: new Date().toISOString() });
+      // The most recent time any of these results was written — NOT now().
+      // LiveFreshness renders this as "Updated <time>", so stamping the current
+      // clock on a gameweek scored three days ago made settled data look like it
+      // had just been fetched, which is the exact confusion that component was
+      // added to remove.
+      const settledAt = gwFixtures
+        .map((f) => f.result?.updatedAt)
+        .filter((d): d is Date => d instanceof Date)
+        .reduce<Date | null>((latest, d) => (!latest || d > latest ? d : latest), null);
+      return jsonNoStore({
+        isLive: false,
+        fixtures: storedFixtures,
+        reason: "already_processed",
+        cachedAt: settledAt ? settledAt.toISOString() : null,
+      });
     }
 
     // Serve whatever is cached, fresh or stale.
@@ -104,7 +124,7 @@ export async function GET(request: NextRequest) {
     // is precisely the problem. The client refreshes behind the numbers instead.
     const cached = await getLiveCachedScores(gwNumber, leagueId);
     if (cached && cached.fixtures && cached.fixtures.length > 0) {
-      return NextResponse.json({
+      return jsonNoStore({
         isLive: true,
         ...cached,
         stale: !isLiveCacheFresh(cached),
@@ -130,14 +150,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If we have DB results, return those (fallback when Redis is empty)
+    // If we have DB results, return those (fallback when Redis is empty).
+    // cachedAt is the write time of the stored results, not now() — see the
+    // already_processed branch above for why.
     if (dbFixtures.length > 0) {
-      return NextResponse.json({
+      const storedAt = gwFixtures
+        .map((f) => f.result?.updatedAt)
+        .filter((d): d is Date => d instanceof Date)
+        .reduce<Date | null>((latest, d) => (!latest || d > latest ? d : latest), null);
+      return jsonNoStore({
         isLive: false,
         gameweek: gwNumber,
         fixtures: dbFixtures,
         source: "database",
-        cachedAt: new Date().toISOString(),
+        cachedAt: storedAt ? storedAt.toISOString() : null,
       });
     }
 
@@ -161,7 +187,7 @@ export async function GET(request: NextRequest) {
         // Cache for 10 minutes
         await setLiveCachedScores(gwNumber, liveData, leagueId);
 
-        return NextResponse.json({ isLive: true, ...liveData });
+        return jsonNoStore({ isLive: true, ...liveData });
       }
     } catch (error) {
       if (error instanceof FplUnavailableError) {
@@ -175,7 +201,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Ultimate fallback - return empty
-    return NextResponse.json({
+    return jsonNoStore({
       isLive: false,
       gameweek: gwNumber,
       fixtures: [],
@@ -183,7 +209,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Live fixtures error:", error);
-    return NextResponse.json(
+    return jsonNoStore(
       { error: "Failed to fetch live scores" },
       { status: 500 }
     );

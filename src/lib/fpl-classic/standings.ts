@@ -15,7 +15,7 @@
 import { db } from "@/lib/db";
 import { fplClassicConfig, fplClassicEntrants, fplClassicEntryGws, fplClassicAwards } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { getActiveFplGameweek } from "@/lib/fpl/event-status";
+import { getActiveFplGameweek, hasGameweekStarted } from "@/lib/fpl/event-status";
 import { fetchClassicLeagueStandings } from "@/lib/fpl/classic-league";
 import { withFplBudget, FplUnavailableError } from "@/lib/fpl/gateway";
 import {
@@ -132,7 +132,7 @@ async function resolveLiveBlock(
   gw: number,
   isLive: boolean,
 ): Promise<{ payload: ClassicLivePayload | null; source: "fpl" | "db"; isStale: boolean; truncated: boolean }> {
-  const cached = await getCachedClassicLive(leagueId);
+  const cached = await getCachedClassicLive(leagueId, gw);
   if (cached && isClassicLiveFresh(cached)) {
     return { payload: cached, source: "fpl", isStale: false, truncated: false };
   }
@@ -193,7 +193,12 @@ export async function buildClassicStandingsPayload(opts: {
   // (started or not) worth treating as "live"; null means the whole season has concluded.
   const active = await getActiveFplGameweek().catch(() => null);
   const currentGw = active?.gw ?? active?.lastConcludedGw ?? config.settledThroughGw ?? config.startGameweek;
-  const isCurrentGwLive = active?.gw != null;
+  // "Live" means the gameweek has actually STARTED, not merely that the season is
+  // unfinished. `active.gw != null` is true from August to May, so it pinned the
+  // 300s fresh window all season and made CLASSIC_SETTLED_FRESH_SECONDS dead code —
+  // every classic league re-swept FPL every five minutes through international
+  // breaks and every Monday-to-Thursday, when nothing moves.
+  const isCurrentGwLive = active?.gw != null && (await hasGameweekStarted(active.gw));
 
   const entrants = await db
     .select()

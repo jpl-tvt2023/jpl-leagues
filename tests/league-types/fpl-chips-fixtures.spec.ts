@@ -47,6 +47,33 @@ async function setFplChips(request: APIRequestContext, overrides: Record<string,
   expect(res.ok(), await res.text()).toBe(true);
 }
 
+/**
+ * Re-populate the `fpl:history` Redis cache for this league's managers, and wait until it took.
+ *
+ * /api/fixtures is cache-only (topUp: 0) and can never warm the cache itself — that is deliberate,
+ * since it is public and unauthenticated. The FPL League page is the endpoint that warms, and one
+ * pass covers a league this size (WARM_BATCH is 80; this league has TEAMS * 2 = 16 managers).
+ *
+ * Polled rather than fired once, because `claimFplLeagueWarm` single-flights per league for 10s:
+ * two warms close together would silently no-op the second one. The signal is the API's own
+ * output, so this waits for the state the assertions actually depend on rather than for a delay.
+ */
+async function warmFplHistory(request: APIRequestContext, fplId: string) {
+  await expect
+    .poll(
+      async () => {
+        await request.get(`/api/fpl-league?warm=1&leagueSlug=${slug}`);
+        const data = await request
+          .get(`/api/fixtures?leagueSlug=${slug}`)
+          .then((r) => r.json())
+          .catch(() => ({}));
+        return !!data.fplChipsByFplId?.[fplId];
+      },
+      { timeout: 30_000, intervals: [500, 1000, 2000], message: "fpl:history never warmed" },
+    )
+    .toBe(true);
+}
+
 async function scoreGw(request: APIRequestContext) {
   await apiSignInSuperadmin(request);
   const res = await request.post(`/api/gameweeks/${GW}?leagueId=${leagueId}`, { failOnStatusCode: false });
@@ -196,6 +223,18 @@ test.describe.serial("FPL chips on the fixtures page", () => {
       ],
     });
 
+    // setFplChips invalidates fpl:history, and /api/fixtures reads that cache with topUp:0 —
+    // it never fetches, by design (public, unauthenticated). So the chip map is empty until
+    // something warms it, and an empty map renders as absence, which is the documented contract
+    // (see the "never fetched" test below). Without this warm the BB assertion below is a
+    // positive control that can never pass.
+    //
+    // It used to pass anyway, for the wrong reason: fplChipsByFplId was baked into the 25h
+    // `fixtures:{id}:d{N}` blob, whose key only changes when a DEADLINE passes. The blob kept
+    // serving a snapshot taken BEFORE the invalidation — so this test was asserting on data the
+    // suite had explicitly thrown away. That staleness is now fixed, which is what exposed this.
+    await warmFplHistory(request, chipTeamFplIds[0]);
+
     await page.goto("/" + slug + "/fixtures");
     await selectGw(page, GW);
     const card = page.getByTestId(`fixture-card-${chipFixtureId}`);
@@ -209,8 +248,11 @@ test.describe.serial("FPL chips on the fixtures page", () => {
     await expect(card.getByText("TC", { exact: false })).toHaveCount(0);
     await expect(card.getByText("FH", { exact: false })).toHaveCount(0);
 
-    // Restore the fixture's expected chip state for the tests that follow.
+    // Restore the fixture's expected chip state for the tests that follow — and re-warm, for the
+    // same reason as above: setFplChips wipes fpl:history, and the tests that follow assert on a
+    // BB pill that only renders when it is populated.
     await setFplChips(request, { [chipTeamFplIds[0]]: [{ name: "bboost", event: GW }] });
+    await warmFplHistory(request, chipTeamFplIds[0]);
   });
 
   test("page: tapping the FPL chip pill names it", async ({ page }) => {

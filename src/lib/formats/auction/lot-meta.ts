@@ -42,6 +42,19 @@ async function getStandingsConfig() {
 }
 
 /**
+ * Drop the memoised standings config.
+ *
+ * Called by the superadmin write that changes it. Without this an admin's tier edit
+ * took up to CONFIG_TTL_MS to appear — and, because the memo is module-level and each
+ * serverless instance holds its own copy, appeared at a different time on each one.
+ * Still best-effort: it only clears the instance that served the write, so the TTL
+ * remains the backstop for the rest.
+ */
+export function invalidateStandingsConfigCache(): void {
+  configCache = null;
+}
+
+/**
  * Build a resolver for one session. Both lookups behind it are cached (`fetchElementInfo` for 24h,
  * standings config for 5 min), so this is safe to call on the SSE stream's 2s poll.
  *

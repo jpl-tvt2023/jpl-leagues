@@ -61,6 +61,34 @@ export interface BreakdownChips {
    * we cannot tell them apart.
    */
   playedOnly?: boolean;
+  /**
+   * Whether the gameweek on screen is in flight right now.
+   *
+   * Only consumed by the played-this-gameweek pills, which otherwise cannot tell a chip being
+   * played from one played months ago — every pill they draw belongs to the displayed gameweek
+   * either way. Defaults to false, so a card with no opinion says "played" rather than
+   * overclaiming "playing now".
+   */
+  isGwLive?: boolean;
+}
+
+/**
+ * Stored per-player scores, parsed defensively.
+ *
+ * This runs inside render, so an unguarded JSON.parse on one malformed row took out
+ * the entire fixtures route rather than the single card that owned it. The server
+ * already treats this column as untrusted — see normalizeStoredPlayerScores in
+ * api/fixtures/live/route.ts — and the client has more reason to, not less: it also
+ * reads the column back out of a synthetic ChallengeMatch fixture.
+ */
+function parseStoredPlayerScores(raw: string | null | undefined): LivePlayerScore[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as LivePlayerScore[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 export interface LivePlayerScore {
@@ -127,6 +155,7 @@ export function PlayerBreakdownSide({
   playersLeft,
   chips,
   linkGw,
+  noLinks,
 }: {
   players: LivePlayerScore[];
   /**
@@ -142,6 +171,16 @@ export function PlayerBreakdownSide({
   playersLeft?: { leftToPlay: number; total: number } | null;
   /** Omit to render the breakdown without any chip rows, as the fixtures page does. */
   chips?: BreakdownChips;
+  /**
+   * Render manager names as plain text instead of links to their FPL entry.
+   *
+   * For callers that draw this inside a tooltip bubble. HelpTip's bubble is portalled with
+   * `pointer-events-none` so that tapping it dismisses it, which means every anchor inside
+   * renders underlined and blue and then does nothing on click. A link that cannot be
+   * followed is worse than no link, and an anchor nested in a role="button" is also an
+   * accessibility problem.
+   */
+  noLinks?: boolean;
   /**
    * Gameweek the manager links should point at, when that differs from the one
    * being displayed. FPL only resolves /entry/{id}/event/{n} once gameweek n has
@@ -186,14 +225,18 @@ export function PlayerBreakdownSide({
           <div key={i} className="py-1">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1 min-w-0">
-                <FplEntryLink
-                  fplId={p.fplId}
-                  gw={hrefGw}
-                  className="text-blue-400 hover:text-blue-300 underline truncate"
-                  stopPropagation
-                >
-                  {p.name}
-                </FplEntryLink>
+                {noLinks ? (
+                  <span className="truncate text-gray-200">{p.name}</span>
+                ) : (
+                  <FplEntryLink
+                    fplId={p.fplId}
+                    gw={hrefGw}
+                    className="text-blue-400 hover:text-blue-300 underline truncate"
+                    stopPropagation
+                  >
+                    {p.name}
+                  </FplEntryLink>
+                )}
                 {p.isCaptain && p.isTempCaptain && (
                   <span
                     className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 shrink-0"
@@ -211,6 +254,7 @@ export function PlayerBreakdownSide({
                     status={chips.byFplId[p.fplId]}
                     gwNumber={gwNumber}
                     interactive={chips.interactive}
+                    isGwLive={chips.isGwLive}
                   />
                 )}
               </div>
@@ -246,14 +290,18 @@ export function PlayerBreakdownSide({
         roster.map((p, i) => (
           <div key={i} className="py-1">
             <div className="flex items-center justify-between gap-1">
-              <FplEntryLink
-                fplId={p.fplId}
-                gw={hrefGw}
-                className="text-blue-400 hover:text-blue-300 underline truncate"
-                stopPropagation
-              >
-                {p.name}
-              </FplEntryLink>
+              {noLinks ? (
+                <span className="truncate text-gray-200">{p.name}</span>
+              ) : (
+                <FplEntryLink
+                  fplId={p.fplId}
+                  gw={hrefGw}
+                  className="text-blue-400 hover:text-blue-300 underline truncate"
+                  stopPropagation
+                >
+                  {p.name}
+                </FplEntryLink>
+              )}
               {/* The link points at the last gameweek that started, not the one
                   on screen — FPL cannot render a gameweek that has not kicked
                   off. Say which, so the destination is not a surprise. */}
@@ -277,6 +325,7 @@ export function PlayerBreakdownSide({
                   status={chips.byFplId[p.fplId]}
                   gwNumber={gwNumber}
                   interactive={chips.interactive}
+                  isGwLive={chips.isGwLive}
                 />
               </div>
             )}
@@ -318,6 +367,7 @@ export function PlayerBreakdown({
   awayRoster,
   linkGw,
   hidePlayersLeft,
+  noLinks,
 }: {
   fixture: Fixture;
   liveData?: LiveFixtureScore;
@@ -340,19 +390,17 @@ export function PlayerBreakdown({
    * would print the same figure twice on expand.
    */
   hidePlayersLeft?: boolean;
+  /** See PlayerBreakdownSide: render names as plain text, for use inside a tooltip bubble. */
+  noLinks?: boolean;
 }) {
   const homePlayers: LivePlayerScore[] =
     (liveData?.homePlayers?.length ?? 0) > 0
       ? liveData!.homePlayers
-      : fixture.result?.homePlayerScores
-      ? (JSON.parse(fixture.result.homePlayerScores) as LivePlayerScore[])
-      : [];
+      : parseStoredPlayerScores(fixture.result?.homePlayerScores);
   const awayPlayers: LivePlayerScore[] =
     (liveData?.awayPlayers?.length ?? 0) > 0
       ? liveData!.awayPlayers
-      : fixture.result?.awayPlayerScores
-      ? (JSON.parse(fixture.result.awayPlayerScores) as LivePlayerScore[])
-      : [];
+      : parseStoredPlayerScores(fixture.result?.awayPlayerScores);
   const gwNumber = liveData?.gameweek ?? fixture.gameweek.number;
 
   const hasRoster = (homeRoster?.length ?? 0) > 0 || (awayRoster?.length ?? 0) > 0;
@@ -399,6 +447,7 @@ export function PlayerBreakdown({
           playersLeft={hidePlayersLeft ? undefined : liveData?.homePlayersLeft}
           chips={homeChips}
           linkGw={linkGw}
+          noLinks={noLinks}
         />
         <PlayerBreakdownSide
           players={awayPlayers}
@@ -410,6 +459,7 @@ export function PlayerBreakdown({
           playersLeft={hidePlayersLeft ? undefined : liveData?.awayPlayersLeft}
           chips={awayChips}
           linkGw={linkGw}
+          noLinks={noLinks}
         />
       </div>
       {hasTempCaptain && (

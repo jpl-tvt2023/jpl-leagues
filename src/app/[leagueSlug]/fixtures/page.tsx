@@ -3,7 +3,7 @@
 import { GwNavigator } from "@/components/GwNavigator";
 import { LiveFreshness } from "@/components/LiveFreshness";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -78,6 +78,8 @@ function FixtureCard({
     silentWhenUnknown: true,
     // Only what was played in the gameweek on screen — see BreakdownChips.playedOnly.
     playedOnly: true,
+    // So a chip on a scored gameweek reads "played", not "playing now".
+    isGwLive: isLive,
   } : undefined;
   const awayBreakdownChips: BreakdownChips | undefined = awayPlayers.length > 0 ? {
     byFplId: Object.fromEntries(awayPlayers.map((p) => [p.fplId, fplChipsByFplId[p.fplId] ?? null])),
@@ -87,6 +89,8 @@ function FixtureCard({
     silentWhenUnknown: true,
     // Only what was played in the gameweek on screen — see BreakdownChips.playedOnly.
     playedOnly: true,
+    // So a chip on a scored gameweek reads "played", not "playing now".
+    isGwLive: isLive,
   } : undefined;
 
   /**
@@ -244,6 +248,12 @@ function FixtureCard({
   );
 }
 
+/**
+ * Live-score poll interval. Must stay BELOW the server's LIVE_CACHE_TTL (10 min,
+ * src/lib/fpl-cache.ts) — see the comment at the interval's call site.
+ */
+const LIVE_POLL_MS = 3 * 60 * 1000;
+
 export default function LeagueFixturesPage() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
@@ -266,6 +276,12 @@ export default function LeagueFixturesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedGW, setSelectedGW] = useState<number | null>(null);
+  // Read inside the async refresh handlers so a response that lands after the
+  // reader moved to another gameweek can be discarded. A ref rather than the
+  // state value: the handlers close over the value at call time, which is
+  // exactly the stale one we need to detect.
+  const selectedGWRef = useRef<number | null>(null);
+  selectedGWRef.current = selectedGW;
   const [availableGWs, setAvailableGWs] = useState<number[]>([]);
   const [liveScores, setLiveScores] = useState<LiveFixtureScore[]>([]);
   const [isLive, setIsLive] = useState(false);
@@ -279,6 +295,11 @@ export default function LeagueFixturesPage() {
   // A refresh the reader did not ask for, triggered because the served copy was
   // past its fresh window.
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
+  // Why a click did not produce new numbers. A forced refresh can legitimately
+  // decline — another caller holds the single-flight claim, or the gateway is
+  // refusing background calls — and saying nothing was indistinguishable from
+  // the button being broken.
+  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
 
   /**
    * Re-sweep FPL behind the numbers already on screen.
@@ -296,7 +317,13 @@ export default function LeagueFixturesPage() {
       );
       if (res.ok) {
         const data = await res.json();
-        if (data.fixtures?.length) {
+        // A stale/pending body is the cached copy handed back because another
+        // caller holds the claim — it is what is already on screen, so applying
+        // it is a no-op. Only a genuine sweep is worth rendering.
+        if (data.fixtures?.length && !data.stale && !data.pending) {
+          // The sweep is ~64 FPL calls; the reader can change gameweek while it
+          // runs. Applying it then would stamp another GW's scores onto this one.
+          if (gw !== selectedGWRef.current) return;
           setLiveScores(data.fixtures);
           setIsLive(true);
           setLiveCachedAt(data.cachedAt || null);
@@ -328,22 +355,52 @@ export default function LeagueFixturesPage() {
     }
   }, [leagueSlug, refreshInBackground]);
 
+  /**
+   * Forced refresh behind the button.
+   *
+   * The route can legitimately decline in three ways, and this used to treat all
+   * three as success — re-rendering the identical cached payload and turning the
+   * badge amber to claim the reader had forced a sweep. That is the whole of the
+   * "clicking Refresh does nothing" report: it was not doing nothing, it was
+   * doing nothing *and saying it worked*.
+   *
+   *   stale:true   — another caller holds the single-flight claim; body is cache
+   *   pending:true — same, and there was no cache to hand back (202)
+   *   503          — gateway refused: breaker open, scoring run, or budget spent
+   */
   const handleRefresh = async () => {
-    if (!selectedGW || isRefreshing) return;
+    const gw = selectedGW;
+    if (!gw || isRefreshing) return;
     setIsRefreshing(true);
+    setRefreshNotice(null);
     try {
-      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${selectedGW}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.fixtures?.length) {
-          setLiveScores(data.fixtures);
-          setIsLive(true);
-          setLiveCachedAt(data.cachedAt || null);
-          setIsManuallyRefreshed(true);
-        }
+      const res = await fetch(`/api/fixtures/live/refresh?gameweek=${gw}&leagueSlug=${encodeURIComponent(leagueSlug)}`);
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setRefreshNotice(
+          data?.reason === "scoring"
+            ? "Scores are being processed — try again in a moment."
+            : "Live scores are briefly unavailable — try again shortly."
+        );
+        return;
       }
+      if (data?.stale || data?.pending) {
+        setRefreshNotice("Someone else is refreshing — showing the latest available.");
+        return;
+      }
+      if (!data?.fixtures?.length) {
+        setRefreshNotice("No live scores available for this gameweek yet.");
+        return;
+      }
+      // A full sweep is ~64 FPL calls. Discard it if the reader has since moved on.
+      if (gw !== selectedGWRef.current) return;
+      setLiveScores(data.fixtures);
+      setIsLive(true);
+      setLiveCachedAt(data.cachedAt || null);
+      setIsManuallyRefreshed(true);
     } catch {
-      // Silently fail
+      setRefreshNotice("Could not reach the server — check your connection.");
     } finally {
       setIsRefreshing(false);
     }
@@ -352,8 +409,13 @@ export default function LeagueFixturesPage() {
   useEffect(() => {
     if (!selectedGW) return;
     setIsLoadingLive(true);
+    setRefreshNotice(null);
     fetchLiveScores(selectedGW);
-    const interval = setInterval(() => fetchLiveScores(selectedGW), 10 * 60 * 1000);
+    // Deliberately shorter than LIVE_CACHE_TTL (10 min). Polling *at* the fresh
+    // window meant almost every poll landed on or past the boundary, came back
+    // stale, and kicked off a full 64-call sweep. Polling inside it means most
+    // polls hit fresh cache and cost nothing — fewer FPL calls, not more.
+    const interval = setInterval(() => fetchLiveScores(selectedGW), LIVE_POLL_MS);
     return () => clearInterval(interval);
   }, [selectedGW, fetchLiveScores]);
 
@@ -450,8 +512,13 @@ export default function LeagueFixturesPage() {
   const groupBFixtures = displayFixtures.filter((f: Fixture) => f.group?.name === "B");
   const hasGroupB = !isContinentalChampionship && Object.values(fixtures).flat().some((f: Fixture) => f.group?.name === "B");
 
-  const hasResults = selectedFixtures.some((f: Fixture) => f.result);
-  const deadline = selectedFixtures[0]?.gameweek?.deadline;
+  // Read from displayFixtures, not selectedFixtures. A Continental Championship
+  // gameweek carries cup/knockout fixtures this page deliberately hides, and
+  // counting them meant a scored JCL leg turned the badge green ("Results
+  // Available"), suppressed the deadline line, and disabled Refresh with
+  // "this gameweek is finished" — over a screen of JPL cards all reading "VS".
+  const hasResults = displayFixtures.some((f: Fixture) => f.result);
+  const deadline = displayFixtures[0]?.gameweek?.deadline;
 
   const formatDeadline = (deadline: Date) => {
     const date = new Date(deadline);
@@ -570,6 +637,14 @@ export default function LeagueFixturesPage() {
                 isRefreshing={isBackgroundRefreshing}
               />
             </div>
+
+            {refreshNotice && (
+              <div className="mb-6 flex justify-center">
+                <span className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300">
+                  {refreshNotice}
+                </span>
+              </div>
+            )}
 
             {hasGroupB ? (
               /* Two-Column Layout: Group A | Group B */
