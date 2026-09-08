@@ -5,31 +5,23 @@ import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useLeague, useEnforceFormat } from "@/lib/league-context";
-import { fplEntryUrl } from "@/lib/fpl-links";
-import { FplChipRow } from "@/components/ChipPill";
-import { type FplChipStatus } from "@/lib/fpl-league/chips";
-
-interface Row {
-  rank: number;
-  teamId: string;
-  teamName: string;
-  playerName: string;
-  fplId: string;
-  gwPoints: number | null;
-  gwTransferCost: number;
-  totalPoints: number;
-  chips: FplChipStatus;
-  pending?: true;
-}
+import { FplLeagueTable, type ManagerRowData } from "./_components/FplLeagueTable";
+import type { FplLeagueTeam } from "@/lib/fpl-league/team-stats";
 
 interface Payload {
-  rows: Row[];
+  rows: ManagerRowData[];
   gw: number | null;
   isLive: boolean;
   warming: number;
   /** False when the server has no cache, so polling cannot make progress. */
   cacheEnabled: boolean;
   cachedAt: string;
+  /* Team-level stats. Sent on every response — including warm polls, which replace this
+     payload wholesale — so the team rows never blank out mid-warm. */
+  teams: FplLeagueTeam[];
+  groupNames: string[];
+  hasHiddenGroups: boolean;
+  currentSet: 1 | 2 | "playoffs" | null;
 }
 
 /** How often to re-ask while the table is still filling in. */
@@ -142,6 +134,21 @@ export default function FplLeaguePage() {
     bestRef.current = Number.POSITIVE_INFINITY;
   }, [leagueSlug]);
 
+  // Split into per-group tables when the league has more than one revealed group. Teams and
+  // their manager rows are partitioned together so each table is self-contained.
+  //
+  // Ranks stay LEAGUE-WIDE: this page ranks by official FPL season total across everyone, so
+  // Group B's first row can read #3. Renumbering per group would contradict the page's whole
+  // premise (and the ordering the API pins).
+  const groupTables = (() => {
+    if (!data || data.groupNames.length < 2) return [];
+    return data.groupNames.map((label) => {
+      const teams = data.teams.filter((t) => t.group === label);
+      const ids = new Set(teams.map((t) => t.teamId));
+      return { label, teams, rows: data.rows.filter((r) => ids.has(r.teamId)) };
+    });
+  })();
+
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
     window.location.href = "/signin";
@@ -170,7 +177,10 @@ export default function FplLeaguePage() {
             total — individual standings rather than team-vs-team.
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            Tap a row to open that manager&rsquo;s page on the FPL site.
+            Tap a manager to open their page on the FPL site.
+            {(data?.teams.length ?? 0) > 0 && (
+              <> Ranks are league-wide, so a group table may not start at #1.</>
+            )}
           </p>
         </div>
 
@@ -208,103 +218,54 @@ export default function FplLeaguePage() {
               )
             )}
 
-            <div className="rounded-2xl border border-purple-500/20 bg-purple-950/20 backdrop-blur overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs sm:text-sm">
-                  <thead>
-                    <tr className="border-b border-purple-500/20 bg-purple-900/30 text-[10px] sm:text-xs text-gray-300">
-                      <th className="px-2 py-2 sm:px-3 text-left font-medium w-10">#</th>
-                      <th className="px-2 py-2 sm:px-3 text-left font-medium">Player</th>
-                      <th className="px-2 py-2 sm:px-3 text-left font-medium hidden sm:table-cell">
-                        Team
-                      </th>
-                      <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-20">
-                        {data.gw ? `GW${data.gw}` : "GW"} Pts
-                        {data.isLive && (
-                          <span className="ml-1 inline-flex items-center gap-1 text-green-400">
-                            <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-                            LIVE
-                          </span>
-                        )}
-                      </th>
-                      <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-16">Total</th>
-                      <th className="px-2 py-2 sm:px-3 text-left font-medium">FPL Chips</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.rows.map((row) => (
-                      <tr
-                        key={`${row.teamId}-${row.fplId}`}
-                        className={`border-b border-white/5 transition ${
-                          row.pending ? "opacity-60" : "hover:bg-white/5 cursor-pointer"
-                        }`}
-                        onClick={
-                          row.pending
-                            ? undefined
-                            : () =>
-                                window.open(
-                                  fplEntryUrl(row.fplId, data.gw),
-                                  "_blank",
-                                  "noopener,noreferrer"
-                                )
-                        }
-                      >
-                        <td className="px-2 py-2 sm:px-3 text-gray-400 font-medium">{row.rank}</td>
-                        <td className="px-2 py-2 sm:px-3">
-                          {/* A real anchor as well as the row click, so keyboard
-                              and middle-click both work. */}
-                          <a
-                            href={fplEntryUrl(row.fplId, data.gw)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="font-medium text-white hover:text-blue-300 transition"
-                          >
-                            {row.playerName}
-                          </a>
-                          <div className="text-[10px] text-gray-500 sm:hidden truncate">
-                            {row.teamName}
-                          </div>
-                        </td>
-                        <td className="px-2 py-2 sm:px-3 text-gray-300 hidden sm:table-cell truncate">
-                          {row.teamName}
-                        </td>
-                        <td className="px-1.5 py-2 sm:px-2 text-center text-white">
-                          {row.gwPoints == null ? (
-                            <span className="text-gray-600">—</span>
-                          ) : (
-                            <>
-                              {row.gwPoints}
-                              {row.gwTransferCost > 0 && (
-                                <span className="text-red-400 text-[10px]">
-                                  {" "}
-                                  (−{row.gwTransferCost})
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </td>
-                        <td className="px-1.5 py-2 sm:px-2 text-center font-bold text-white">
-                          {row.pending ? <span className="text-gray-600">—</span> : row.totalPoints}
-                        </td>
-                        <td className="px-2 py-2 sm:px-3">
-                          <div className="flex flex-wrap gap-1">
-                            {/* Coloured against the gameweek this table is showing, so a
-                                chip being played right now reads differently from one
-                                spent weeks ago. */}
-                            <FplChipRow status={row.chips} gwNumber={data.gw} />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {data.hasHiddenGroups && (
+              <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-center">
+                <p className="text-yellow-300 text-sm font-semibold">
+                  Groups have not been revealed yet
+                </p>
+                <p className="text-yellow-400/70 text-xs mt-1">
+                  Group assignments will be announced by the admin before the season starts.
+                </p>
               </div>
-            </div>
+            )}
+
+            {groupTables.length > 1 ? (
+              <div className="grid gap-6 sm:gap-8 lg:grid-cols-2">
+                {groupTables.map(({ label, teams, rows }) => (
+                  <FplLeagueTable
+                    key={label}
+                    groupLabel={label}
+                    compact
+                    teams={teams}
+                    rows={rows}
+                    gw={data.gw}
+                    isLive={data.isLive}
+                    currentSet={data.currentSet}
+                  />
+                ))}
+              </div>
+            ) : (
+              <FplLeagueTable
+                teams={data.teams}
+                rows={data.rows}
+                gw={data.gw}
+                isLive={data.isLive}
+                currentSet={data.currentSet}
+              />
+            )}
 
             <p className="mt-4 text-[10px] sm:text-xs text-gray-500">
               Totals come straight from the official FPL API. Gameweek points show the gameweek in
               progress while one is live, otherwise the most recently completed one.
+              {data.teams.length > 0 && (
+                <>
+                  {" "}
+                  Team rows carry this league&rsquo;s own TVT chips (DP/WW/CC) per set and each
+                  manager&rsquo;s captaincies used; the FPL Chips column is the official FPL ones.
+                  Both appear only once their gameweek deadline has passed, so a team&rsquo;s own
+                  dashboard may show a pick this page does not yet.
+                </>
+              )}
             </p>
           </>
         )}
