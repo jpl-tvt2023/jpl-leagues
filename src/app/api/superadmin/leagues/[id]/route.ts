@@ -11,6 +11,7 @@ import { isSuperAdmin } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 import { validateEnabledChipsArray } from "@/lib/formats/tvt/chip-validation";
+import { findEnabledChipsLock } from "@/lib/formats/tvt/enabled-chips-lock";
 
 export async function PATCH(
   request: NextRequest,
@@ -51,6 +52,22 @@ export async function PATCH(
     if (!chipCheck.ok) {
       return NextResponse.json({ error: chipCheck.error }, { status: 400 });
     }
+
+    // A league's chip set is fixed for the season — agreed before kick-off and never swapped.
+    // See enabled-chips-lock.ts for why this has to be enforced rather than trusted. Before the
+    // season starts there is nothing to orphan, so a genuine setup mistake is still correctable.
+    const blocker = await findEnabledChipsLock(id);
+    if (blocker) {
+      return NextResponse.json(
+        {
+          error:
+            `A league's chips are fixed for the season once it has started, and this one has: ${blocker}. ` +
+            `Chips can only be changed before kick-off.`,
+        },
+        { status: 409 }
+      );
+    }
+
     updates.enabledChips = JSON.stringify(chipCheck.chips);
   }
 
