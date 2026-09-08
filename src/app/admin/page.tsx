@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 
 interface League {
   id: string;
@@ -27,7 +27,10 @@ export default function AdminLeaguePicker() {
     fetchLeagues();
     fetch("/api/auth/me")
       .then(r => r.json())
-      .then(data => { if (data.role === "superadmin") setIsSuperadmin(true); })
+      // `role` lives under `user.role` in /api/auth/me — the top-level field is `type`,
+      // which is what every other admin page checks. Reading `data.role` here meant the
+      // "← Superadmin" link never rendered.
+      .then(data => { if (data.type === "superadmin") setIsSuperadmin(true); })
       .catch(() => {});
   }, []);
 
@@ -69,26 +72,13 @@ export default function AdminLeaguePicker() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Logo />
-            <span className="text-xl font-bold text-white hidden sm:inline">Admin</span>
-          </div>
-          {isSuperadmin && (
-            <Link href="/superadmin" className="text-gray-400 hover:text-white transition text-sm">
-              ← Superadmin
-            </Link>
-          )}
-        </div>
-        <button
-          onClick={handleSignOut}
-          className="text-gray-300 hover:text-white transition text-sm"
-        >
-          Sign Out
-        </button>
-      </nav>
+      <AppNav
+        context={{ surface: "admin-leagues", isSuperadmin }}
+        activeKey="admin-leagues"
+        brandHref="/admin"
+        brandLabel="Admin"
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-10">
         <div className="mb-6 sm:mb-10">

@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 
 type TabType = "faqs" | "scenarios";
 
@@ -292,23 +291,14 @@ export default function SuperadminHelpPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <Link href="/superadmin" className="flex items-center gap-2">
-            <Logo />
-          </Link>
-          <div>
-            <span className="text-xl font-bold text-white">Platform Admin</span>
-            <span className="ml-2 text-xs bg-yellow-400/20 text-yellow-400 px-2 py-0.5 rounded-full">Superadmin</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <Link href="/superadmin" className="text-gray-300 hover:text-white transition">Dashboard</Link>
-          <span className="text-yellow-400 font-semibold">Help</span>
-          <button onClick={handleSignOut} className="text-gray-400 hover:text-white transition">Sign Out</button>
-        </div>
-      </nav>
+      <AppNav
+        context={{ surface: "superadmin" }}
+        activeKey="superadmin-help"
+        brandHref="/superadmin"
+        brandLabel="Platform Admin"
+        brandBadge={{ label: "Superadmin", bgClass: "bg-yellow-400/20", textClass: "text-yellow-400" }}
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-12">
         <div className="text-center mb-10">

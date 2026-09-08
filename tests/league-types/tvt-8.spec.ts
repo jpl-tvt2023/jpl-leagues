@@ -108,10 +108,11 @@ test.describe.serial("TVT-8 (admin + user)", () => {
   });
 
   test("user: the dashboard nav links to every league page, FPL League included", async ({ page }) => {
-    // The dashboard does NOT use the shared LeagueNav — it keeps its own copy of
-    // the link list. That duplication is exactly how FPL League ended up
-    // reachable from every league page but not from here, so this asserts the
-    // dashboard's own nav rather than trusting the two stay in step.
+    // The dashboard now renders the shared LeagueNav, whose links come from
+    // `src/lib/nav-links.ts`. It used to keep its own copy of the list, which is
+    // exactly how FPL League ended up reachable from every league page but not
+    // from here — this keeps asserting the rendered nav rather than trusting the
+    // model, so a regression in either layer still fails.
     await uiSignIn(page, teams[0].loginId, TEAM_RESET_PASSWORD);
     await expect.poll(() => page.url(), { timeout: 15_000 }).not.toContain("/signin");
     await page.goto("/dashboard");

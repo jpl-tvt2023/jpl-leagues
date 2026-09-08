@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { Logo } from "@/components/Logo";
-import { useEnforceFormat } from "@/lib/league-context";
+import { LeagueNav } from "@/components/LeagueNav";
+import { useEnforceFormat, useLeague } from "@/lib/league-context";
 
 interface CupGroupStanding {
   rank: number;
@@ -32,31 +31,19 @@ interface CupStandingsData {
 
 export default function JplCupStandingsPage() {
   useEnforceFormat(["continental-championship"]);
+  // The layout already resolved both of these server-side, so the nav needs no
+  // /api/auth/me round-trip of its own.
+  const { league, viewer } = useLeague();
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
 
   const [isLoading, setIsLoading] = useState(true);
-  const [leagueName, setLeagueName] = useState<string>("");
   const [leagueSeason, setLeagueSeason] = useState<string>("");
   const [leagueId, setLeagueId] = useState<string | null>(null);
   const [cupStandings, setCupStandings] = useState<CupStandingsData>({});
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [dashboardHref, setDashboardHref] = useState("/dashboard");
   const [isStandingsSeeded, setIsStandingsSeeded] = useState(false);
 
-  // Auth check
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => {
-        setIsLoggedIn(d.authenticated && (d.type === "team" || d.type === "admin" || d.type === "superadmin"));
-        if (d.type === "admin" && d.adminLeagueId) setDashboardHref(`/admin/${d.adminLeagueId}`);
-        else if (d.type === "superadmin") setDashboardHref("/admin");
-      })
-      .catch(() => setIsLoggedIn(false));
-  }, []);
-
-  // Resolve leagueName + leagueId
+  // Resolve leagueId
   useEffect(() => {
     if (!leagueSlug) return;
     fetch("/api/leagues")
@@ -64,7 +51,6 @@ export default function JplCupStandingsPage() {
       .then((data) => {
         const league = (data.leagues || []).find((l: { slug: string; name: string; id: string }) => l.slug === leagueSlug);
         if (league) {
-          setLeagueName(league.name);
           setLeagueSeason((league as { season?: string }).season ?? "");
           setLeagueId(league.id);
         } else {
@@ -104,55 +90,17 @@ export default function JplCupStandingsPage() {
   const groupOrder = ["A", "B", "C", "D"];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#061a33] via-[#08213d] to-[#040f1e]">
-      {/* Navigation */}
-      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-[#061a33]/80 backdrop-blur">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">{leagueName || "League"}</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href={isLoggedIn ? dashboardHref : "/"} className="text-gray-300 hover:text-white transition">
-            {isLoggedIn ? "Dashboard" : "All Leagues"}
-          </Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">
-            JPL Standings
-          </Link>
-          <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">
-            JPL Fixtures
-          </Link>
-          <Link href={`/${leagueSlug}/jpl-cup-standings`} className="text-yellow-400 font-semibold transition">
-            JPL Cup Standings
-          </Link>
-          <Link href={`/${leagueSlug}/jpl-cup-fixtures`} className="text-gray-300 hover:text-white transition">
-            JPL Cup Fixtures
-          </Link>
-          <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">
-            Playoffs
-          </Link>
-          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">
-            Winners
-          </Link>
-          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">
-            Rules
-          </Link>
-          {isLoggedIn ? (
-            <button
-              onClick={handleSignOut}
-              className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition"
-            >
-              Sign Out
-            </button>
-          ) : (
-            <Link
-              href="/signin"
-              className="rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-2 font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
-            >
-              Sign In
-            </Link>
-          )}
-        </div>
-      </nav>
+    <div className="min-h-screen">
+      <LeagueNav
+        leagueSlug={leagueSlug}
+        leagueName={league.name}
+        currentPage="jpl-cup-standings"
+        format="continental-championship"
+        teamSize={league.teamSize}
+        isLoggedIn={viewer.authenticated}
+        dashboardHref={viewer.dashboardHref}
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
         {/* Hero */}

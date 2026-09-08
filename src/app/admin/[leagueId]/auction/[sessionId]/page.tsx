@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 import { TierChip } from "@/components/TierChip";
 import { AuctionTimerRing } from "@/components/AuctionTimerRing";
 import { formatCurrency } from "@/lib/format/currency";
@@ -680,15 +680,18 @@ export default function AdminAuctionRoomPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/admin" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">Admin Dashboard</span>
-        </Link>
-        <Link href={`/admin/${leagueSlug}`} className="text-yellow-400 font-semibold transition">
-          ← Back to {leagueSlug}
-        </Link>
-      </nav>
+      <AppNav
+        context={{
+          surface: "admin-league",
+          leagueId: leagueSlug,
+          format: "auction",
+          isSuperadminViewer: false,
+          variant: "minimal",
+        }}
+        activeKey=""
+        brandHref="/admin"
+        brandLabel="Admin Dashboard"
+      />
 
       <div className="mx-auto max-w-[1600px] px-4 sm:px-6 py-6 sm:py-8">
         {message && (

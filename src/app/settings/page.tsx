@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 
 interface PlayerInfo {
   name: string;
@@ -21,6 +21,11 @@ export default function SettingsPage() {
   const [teamLoginId, setTeamLoginId] = useState("");
   const [teamName, setTeamName] = useState("");
   const [players, setPlayers] = useState<PlayerInfo[]>([]);
+
+  const handleSignOut = async () => {
+    await fetch("/api/auth/signout", { method: "POST" });
+    window.location.href = "/signin";
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -86,15 +91,13 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">Settings</span>
-        </Link>
-        <Link href="/dashboard" className="text-gray-300 hover:text-white transition">
-          Back to Dashboard
-        </Link>
-      </nav>
+      <AppNav
+        context={{ surface: "account", backHref: "/dashboard" }}
+        activeKey="settings"
+        brandHref="/dashboard"
+        brandLabel="Settings"
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-md px-4 sm:px-6 py-10 sm:py-16">
         <div className="text-center mb-8 sm:mb-10">

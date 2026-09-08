@@ -74,11 +74,14 @@ export async function GET(request: NextRequest) {
     const teamBasic = await db.select({ leagueId: teams.leagueId }).from(teams).where(eq(teams.id, teamId)).limit(1);
     const teamLeagueId = teamBasic[0]?.leagueId;
     const leagueSlugRow = teamLeagueId
-      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount, format: leagues.format, playoffStartGw: leagues.playoffStartGw, enabledChips: leagues.enabledChips }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
+      ? await db.select({ slug: leagues.slug, groupCount: leagues.groupCount, format: leagues.format, teamSize: leagues.teamSize, playoffStartGw: leagues.playoffStartGw, enabledChips: leagues.enabledChips }).from(leagues).where(eq(leagues.id, teamLeagueId)).limit(1)
       : [];
     const leagueSlug = leagueSlugRow[0]?.slug ?? "";
     const leagueGroupCount = leagueSlugRow[0]?.groupCount ?? 1;
     const leagueFormat = leagueSlugRow[0]?.format ?? "tvt";
+    // Needed by the nav to tell TVT-8 / TVT-16 / TVT-32 apart in the format chip —
+    // without it the dashboard silently falls back to the TVT-32 palette.
+    const leagueTeamSize = leagueSlugRow[0]?.teamSize ?? null;
     const leaguePlayoffStartGw = leagueSlugRow[0]?.playoffStartGw ?? 31;
     // Which three of the six chips this league runs. The picker is built from this, so a
     // league on SL/CB/UD is no longer shown a D/C/W picker whose every option the submit
@@ -1269,6 +1272,7 @@ export async function GET(request: NextRequest) {
       leagueSlug,
       leagueGroupCount,
       leagueFormat,
+      leagueTeamSize,
       plPosition,
       cupProgress,
     });
@@ -1470,6 +1474,7 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     return NextResponse.json({
       leagueSlug,
       leagueFormat: "auction",
+      leagueTeamSize: null,
       auctionTier: leagueRow[0]?.auctionTier ?? "complete",
       clubAuctionEnabled: !!leagueRow[0]?.clubAuctionEnabled,
       team: {

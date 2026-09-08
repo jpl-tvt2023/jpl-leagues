@@ -29,10 +29,20 @@ export default defineConfig({
     navigationTimeout: 45_000,
   },
 
+  // The mobile project is scoped to one file on purpose. With `fullyParallel: false` and
+  // `workers: 1`, an unscoped second project would re-run every spec at a phone viewport
+  // and roughly double an already-slow suite — so `mobile` runs only the drawer spec, and
+  // `chromium` skips it.
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      testIgnore: /mobile-nav\.spec\.ts/,
+    },
+    {
+      name: "mobile",
+      use: { ...devices["Pixel 5"] },
+      testMatch: /mobile-nav\.spec\.ts/,
     },
   ],
 
