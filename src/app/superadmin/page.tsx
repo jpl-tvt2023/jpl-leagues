@@ -18,6 +18,15 @@ interface League {
   createdAt: string;
   teamCount: number;
   currentGameweek: number | null;
+  /** TVT only. The league's three chips, as stored. */
+  enabledChips?: string | null;
+  /**
+   * Why the chip set can no longer be edited, or null while it still can.
+   *
+   * Resolved server-side by the same helper the PATCH guard uses, so this cannot disagree with
+   * whether the write will actually be accepted.
+   */
+  chipsLockedReason?: string | null;
 }
 
 interface Admin {
@@ -473,11 +482,21 @@ export default function SuperAdminDashboard() {
 
   const openEditLeague = (league: League) => {
     setEditingLeague(league);
-    // Parse enabledChips from the league data (it may not be in the League interface, so we'll set it to empty)
+    // Seed from the league's ACTUAL chips. This used to open with an empty selection and the
+    // note "will be loaded from API if needed" — it never was. So the dialog showed no chips
+    // ticked regardless of what the league had, and any three the superadmin ticked was a blind
+    // write over a value they could not see. The list endpoint already returns enabledChips.
+    let currentChips: string[] = [];
+    try {
+      const parsed = JSON.parse(league.enabledChips ?? "[]");
+      if (Array.isArray(parsed)) currentChips = parsed as string[];
+    } catch {
+      /* malformed config — fall back to an empty selection rather than crashing the dialog */
+    }
     setEditLeagueForm({
       name: league.name,
       season: league.season,
-      enabledChips: [] as string[] // Will be loaded from API if needed
+      enabledChips: currentChips,
     });
     const currentAdminIds = admins.filter(a => a.assignedLeagueIds.includes(league.id)).map(a => a.id);
     setEditLeagueAdminIds(currentAdminIds);
@@ -489,17 +508,38 @@ export default function SuperAdminDashboard() {
     setIsSubmitting(true);
     setMessage(null);
     try {
-      if (editLeagueForm.name !== editingLeague.name || editLeagueForm.season !== editingLeague.season || editLeagueForm.enabledChips.length > 0) {
+      // Send enabledChips only when it actually CHANGED. The form is now seeded with the
+      // league's real chips, so a "length > 0" test would send them on every edit — and the
+      // server rejects any chip write once the season has started, so renaming a live league
+      // would fail for a field the superadmin never touched.
+      const originalChips = (() => {
+        try {
+          const parsed = JSON.parse(editingLeague.enabledChips ?? "[]");
+          return Array.isArray(parsed) ? (parsed as string[]) : [];
+        } catch { return []; }
+      })();
+      const chipsChanged =
+        editLeagueForm.enabledChips.length > 0 &&
+        (editLeagueForm.enabledChips.length !== originalChips.length ||
+          [...editLeagueForm.enabledChips].sort().join() !== [...originalChips].sort().join());
+
+      if (editLeagueForm.name !== editingLeague.name || editLeagueForm.season !== editingLeague.season || chipsChanged) {
         const res = await fetch(`/api/superadmin/leagues/${editingLeague.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: editLeagueForm.name,
             season: editLeagueForm.season,
-            ...(editLeagueForm.enabledChips.length > 0 && { enabledChips: editLeagueForm.enabledChips }),
+            ...(chipsChanged && { enabledChips: editLeagueForm.enabledChips }),
           }),
         });
-        if (!res.ok) { setMessage({ type: "error", text: "Failed to update league details" }); return; }
+        if (!res.ok) {
+          // Surface the server's own reason — it names the blocker (played chips, or the
+          // gameweek whose deadline has passed), which "Failed to update" did not.
+          const body = await res.json().catch(() => null);
+          setMessage({ type: "error", text: body?.error ?? "Failed to update league details" });
+          return;
+        }
       }
 
       const originalAdminIds = admins.filter(a => a.assignedLeagueIds.includes(editingLeague.id)).map(a => a.id);
@@ -1105,6 +1145,15 @@ This overwrites winners that have already been announced. The previous winners a
               </div>
               <div>
                 <label className="block text-sm text-gray-300 mb-2">Enabled Chips</label>
+                {/* A league's chips are fixed for the season once it starts. The server rejects
+                    the write; saying so here means the control does not offer an action that
+                    cannot succeed. */}
+                {editingLeague.chipsLockedReason && (
+                  <p className="mb-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                    Locked for the season — {editingLeague.chipsLockedReason}. Chips can only be
+                    changed before kick-off.
+                  </p>
+                )}
                 <div className="space-y-2 max-h-52 overflow-y-auto">
                   {CHIP_OPTIONS.map(chip => {
                     // Same gate as the wizard: scoring does not handle these yet. Only
@@ -1112,11 +1161,13 @@ This overwrites winners that have already been announced. The previous winners a
                     // switch off, or it would be stuck with a chip nobody can play.
                     const alreadyOn = editLeagueForm.enabledChips.includes(chip.code);
                     const isUnimplemented = !isChipImplemented(chip.code) && !alreadyOn;
+                    const isLocked = !!editingLeague.chipsLockedReason;
+                    const isDisabled = isUnimplemented || isLocked;
                     return (
-                    <label key={chip.code} className={`flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 transition ${isUnimplemented ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:bg-white/10"}`}>
+                    <label key={chip.code} className={`flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 transition ${isDisabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:bg-white/10"}`}>
                       <input
                         type="checkbox"
-                        disabled={isUnimplemented}
+                        disabled={isDisabled}
                         checked={alreadyOn}
                         onChange={() => setEditLeagueForm(prev => ({
                           ...prev,

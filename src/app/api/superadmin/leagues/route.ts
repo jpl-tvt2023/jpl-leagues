@@ -6,6 +6,7 @@ import { isSuperAdmin } from "@/lib/auth";
 import { generateId } from "@/lib/id";
 import { getCurrentGameweekNumber } from "@/lib/gameweeks/current-gw";
 import { validateEnabledChipsArray } from "@/lib/formats/tvt/chip-validation";
+import { findEnabledChipsLock } from "@/lib/formats/tvt/enabled-chips-lock";
 import { DEFAULT_RELEASE_CYCLE_GWS, validateReleaseCycleGws } from "@/lib/formats/auction/cycle";
 import { FPL_CLASSIC_FORMAT } from "@/lib/format-palette";
 import {
@@ -66,10 +67,18 @@ export async function GET(request: NextRequest) {
 
       const currentGameweek = await getCurrentGameweekNumber(league.id);
 
+      // Why the chip set can no longer be edited, or null while it still can. Only TVT has a
+      // chip set at all, so the other formats skip the two queries. Served from here rather
+      // than inferred client-side from `currentGameweek` so the UI and the PATCH guard that
+      // actually rejects the write share one answer.
+      const chipsLockedReason =
+        league.format === "tvt" ? await findEnabledChipsLock(league.id) : null;
+
       return {
         ...league,
         teamCount: teamCountRow?.count ?? 0,
         currentGameweek,
+        chipsLockedReason,
       };
     })
   );

@@ -200,6 +200,12 @@ export async function GET(request: NextRequest) {
         const gw = gwById.get(c.gameweekId);
         if (!gw || gw.deadline > now) return false;      // not public yet
         if (!isChipDisclosable(c)) return false;         // rejected declaration, never played
+        // Filtering HISTORY by the league's CURRENT chip set is safe only because the set cannot
+        // change once a season is under way — see lib/formats/tvt/enabled-chips-lock.ts, which
+        // enforces that on the superadmin write path. Without that guard this line would hide
+        // chips that were already played and scored while lib/standings/league-stage.ts kept
+        // their points in the table, leaving points on screen with nothing explaining them.
+        // If the lock is ever relaxed, this filter has to go with it.
         return enabledChips.includes(c.chipType);
       });
 
