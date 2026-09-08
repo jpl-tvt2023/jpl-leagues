@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 
 type ActiveTab = "faqs" | "scenarios";
 
@@ -66,6 +66,7 @@ export default function AdminHelpPage() {
   const [enabledChips, setEnabledChips] = useState<string[]>(["D", "W", "C"]);
   const [playoffStartGw, setPlayoffStartGw] = useState<number>(31);
   const [leagueName, setLeagueName] = useState<string>("");
+  const [leagueFormat, setLeagueFormat] = useState<string>("tvt");
   const [activeTab, setActiveTab] = useState<ActiveTab>("faqs");
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
@@ -94,6 +95,7 @@ export default function AdminHelpPage() {
         const league = leagues.find((l: { slug: string }) => l.slug === leagueId);
         if (!league) return;
         if (league.name) setLeagueName(league.name);
+        if (league.format) setLeagueFormat(league.format);
         if (league.teamSize) setTeamSize(league.teamSize);
         if (league.playoffStartGw) setPlayoffStartGw(league.playoffStartGw);
         if (league.enabledChips) {
@@ -383,24 +385,19 @@ export default function AdminHelpPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/admin" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">Admin Dashboard</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          {isSuperadminViewer && (
-            <Link href="/superadmin" className="text-orange-400 font-semibold transition">
-              ← Platform Admin
-            </Link>
-          )}
-          <Link href="/admin" className="text-yellow-400 font-semibold transition">← Leagues</Link>
-          <Link href={`/admin/${leagueId}`} className="text-gray-300 hover:text-white transition">Dashboard</Link>
-          <Link href={`/admin/${leagueId}/help`} className="text-yellow-400 font-semibold transition">Help</Link>
-          <button onClick={handleSignOut} className="text-gray-300 hover:text-white transition">Sign Out</button>
-        </div>
-      </nav>
+      <AppNav
+        context={{
+          surface: "admin-league",
+          leagueId,
+          format: leagueFormat,
+          isSuperadminViewer,
+          variant: "full",
+        }}
+        activeKey="admin-help"
+        brandHref="/admin"
+        brandLabel="Admin Dashboard"
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-12">
         {/* Header */}

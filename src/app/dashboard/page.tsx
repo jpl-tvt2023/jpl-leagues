@@ -4,11 +4,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { NotificationBell } from "@/components/NotificationBell";
+import { LeagueNav } from "@/components/LeagueNav";
 import { TierChip } from "@/components/TierChip";
 import { GwNavigator } from "@/components/GwNavigator";
 import { DOUBLE_HEADER_GWS } from "@/lib/gameweeks/double-headers";
-import { Logo } from "@/components/Logo";
 import { HelpTip } from "@/components/HelpTip";
 import { ChallengeTip } from "../[leagueSlug]/_components/fixtures/ChallengeTip";
 import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
@@ -190,6 +189,7 @@ interface DashboardData {
     captaincyChipsUsed: number;
   }[];
   leagueGroupCount?: number;
+  leagueTeamSize?: number | null;
   plPosition?: {
     rank: number;
     totalTeams: number;
@@ -432,6 +432,7 @@ const INCOME_ROWS: Array<{ key: keyof AuctionDashboardData["incomeBreakdown"]["b
 interface AuctionDashboardData {
   leagueSlug: string;
   leagueFormat: "auction";
+  leagueTeamSize?: number | null;
   auctionTier?: "primary" | "complete";
   clubAuctionEnabled?: boolean;
   team: {
@@ -520,36 +521,17 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">{headerName}</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/dashboard" className="text-yellow-400 font-semibold transition">Dashboard</Link>
-          <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
-          <Link href={`/${leagueSlug}/gw-results`} className="text-gray-300 hover:text-white transition">GW Results</Link>
-          <Link href={`/${leagueSlug}/teams`} className="text-gray-300 hover:text-white transition">Teams</Link>
-          <Link href={`/${leagueSlug}/auction`} className="text-gray-300 hover:text-white transition">Auction</Link>
-          <Link href="/dashboard#wishlist" className="text-gray-300 hover:text-white transition">Wishlist</Link>
-          <Link href={`/${leagueSlug}/squad`} className="text-gray-300 hover:text-white transition">Squad</Link>
-          <Link href={`/${leagueSlug}/players`} className="text-gray-300 hover:text-white transition">Players</Link>
-          {/* Marketplace hidden in Primary tier (trades disabled) and during a live auction (trade freeze) — mirrors LeagueNav. */}
-          {data.auctionTier !== "primary" && !data.auctionSession && (
-            <Link href={`/${leagueSlug}/marketplace`} className="text-gray-300 hover:text-white transition">Marketplace</Link>
-          )}
-          <Link href={`/${leagueSlug}/finance`} className="text-gray-300 hover:text-white transition">Finance</Link>
-          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
-          <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
-          <Link href={`/${leagueSlug}/feedback`} className="text-gray-300 hover:text-white transition">Feedback</Link>
-          <Link href="/settings" className="text-gray-300 hover:text-white transition">Settings</Link>
-          <NotificationBell />
-          <button onClick={onSignOut} className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition">
-            Sign Out
-          </button>
-        </div>
-      </nav>
+      <LeagueNav
+        leagueSlug={leagueSlug}
+        leagueName={headerName}
+        currentPage="dashboard"
+        format="auction"
+        teamSize={data.leagueTeamSize ?? null}
+        auctionTier={data.auctionTier ?? null}
+        isLoggedIn
+        dashboardHref="/dashboard"
+        onSignOut={onSignOut}
+      />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
         {/* Header */}
@@ -894,6 +876,7 @@ export default function DashboardPage() {
   const [viewedGw, setViewedGw] = useState<number | null>(null);
   const [leagueSlug, setLeagueSlug] = useState<string>("");
   const [leagueFormat, setLeagueFormat] = useState<string>("tvt");
+  const [leagueTeamSize, setLeagueTeamSize] = useState<number | null>(null);
   // Shared JPL / Cup toggle for Continental Championship — governs both the Last Result
   // card and the Standings card so switching "which competition am I looking at" is one
   // consistent action instead of two separately-scrolled cards.
@@ -1027,6 +1010,7 @@ export default function DashboardPage() {
         setData(dashboardData);
         if (dashboardData.leagueSlug) setLeagueSlug(dashboardData.leagueSlug);
         if (dashboardData.leagueFormat) setLeagueFormat(dashboardData.leagueFormat);
+        setLeagueTeamSize(dashboardData.leagueTeamSize ?? null);
         if (dashboardData.lastGwResult) setViewedGw(dashboardData.lastGwResult.gameweek);
         if (dashboardData.cupProgress?.lastCupResult) setCupViewedGw(dashboardData.cupProgress.lastCupResult.gameweek);
       }
@@ -1569,49 +1553,16 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">{data?.team?.name || "Dashboard"}</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/dashboard" className="text-yellow-400 font-semibold transition">
-            Dashboard
-          </Link>
-          {leagueFormat === "continental-championship" ? (
-            <>
-              <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">JPL Standings</Link>
-              <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">JPL Fixtures</Link>
-              <Link href={`/${leagueSlug}/jpl-cup-standings`} className="text-gray-300 hover:text-white transition">JPL Cup Standings</Link>
-              <Link href={`/${leagueSlug}/jpl-cup-fixtures`} className="text-gray-300 hover:text-white transition">JPL Cup Fixtures</Link>
-              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
-            </>
-          ) : (
-            <>
-              <Link href={`/${leagueSlug}/standings`} className="text-gray-300 hover:text-white transition">Standings</Link>
-              <Link href={`/${leagueSlug}/fixtures`} className="text-gray-300 hover:text-white transition">Fixtures</Link>
-              {/* Kept in step with LeagueNav, which this nav duplicates rather
-                  than reuses — that duplication is why this link was reachable
-                  from every league page but not from here. */}
-              <Link href={`/${leagueSlug}/fpl-league`} className="text-gray-300 hover:text-white transition">FPL League</Link>
-              <Link href={`/${leagueSlug}/playoffs`} className="text-gray-300 hover:text-white transition">Playoffs</Link>
-            </>
-          )}
-          <Link href={`/${leagueSlug}/winners`} className="text-gray-300 hover:text-white transition">Winners</Link>
-          <Link href={`/${leagueSlug}/rules`} className="text-gray-300 hover:text-white transition">Rules</Link>
-          <Link href={`/${leagueSlug}/help`} className="text-gray-300 hover:text-white transition">Help</Link>
-          <Link href={`/${leagueSlug}/feedback`} className="text-gray-300 hover:text-white transition">Feedback</Link>
-          <Link href="/settings" className="text-gray-300 hover:text-white transition">Settings</Link>
-          <NotificationBell />
-          <button
-            onClick={handleSignOut}
-            className="rounded-full bg-white/10 px-6 py-2 font-semibold text-white hover:bg-white/20 transition"
-          >
-            Sign Out
-          </button>
-        </div>
-      </nav>
+      <LeagueNav
+        leagueSlug={leagueSlug}
+        leagueName={data?.team?.name || "Dashboard"}
+        currentPage="dashboard"
+        format={leagueFormat as "tvt" | "continental-championship"}
+        teamSize={leagueTeamSize}
+        isLoggedIn
+        dashboardHref="/dashboard"
+        onSignOut={handleSignOut}
+      />
 
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Header */}

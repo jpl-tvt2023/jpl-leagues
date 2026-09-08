@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { FeedbackTab } from "../admin/[leagueId]/FeedbackTab";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 import { isChipImplemented } from "@/lib/formats/tvt/chip-labels";
 
 interface League {
@@ -1427,20 +1427,14 @@ This overwrites winners that have already been announced. The previous winners a
         </div>
       )}
 
-      {/* Nav */}
-      <nav className="flex items-center justify-between px-6 py-4 lg:px-12 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <Logo />
-          <div>
-            <span className="text-xl font-bold text-white">Platform Admin</span>
-            <span className="ml-2 text-xs bg-yellow-400/20 text-yellow-400 px-2 py-0.5 rounded-full">Superadmin</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <Link href="/superadmin/help" className="text-gray-400 hover:text-white transition">Help</Link>
-          <button onClick={handleSignOut} className="text-gray-400 hover:text-white transition">Sign Out</button>
-        </div>
-      </nav>
+      <AppNav
+        context={{ surface: "superadmin" }}
+        activeKey="superadmin"
+        brandHref="/superadmin"
+        brandLabel="Platform Admin"
+        brandBadge={{ label: "Superadmin", bgClass: "bg-yellow-400/20", textClass: "text-yellow-400" }}
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-5xl px-6 py-10">
         {/* Message */}

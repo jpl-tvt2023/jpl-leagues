@@ -6,7 +6,7 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TierChip } from "@/components/TierChip";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 import { formatCurrency } from "@/lib/format/currency";
 import { FeedbackTab } from "./FeedbackTab";
 import { DEFAULT_RELEASE_CYCLE_GWS, formatReleaseCycleGws, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
@@ -2053,69 +2053,19 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/admin" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">Admin Dashboard</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          {isSuperadminViewer && (
-            <Link href="/superadmin" className="text-orange-400 font-semibold transition">
-              ← Platform Admin
-            </Link>
-          )}
-          <Link href="/admin" className="text-yellow-400 font-semibold transition">
-            ← Leagues
-          </Link>
-          {leagueConfig.format === "continental-championship" ? (
-            <>
-              <Link href={`/${leagueId}/standings`} className="text-gray-300 hover:text-white transition">
-                JPL Standings
-              </Link>
-              <Link href={`/${leagueId}/fixtures`} className="text-gray-300 hover:text-white transition">
-                JPL Fixtures
-              </Link>
-              <Link href={`/${leagueId}/jpl-cup-standings`} className="text-gray-300 hover:text-white transition">
-                JPL Cup Standings
-              </Link>
-              <Link href={`/${leagueId}/jpl-cup-fixtures`} className="text-gray-300 hover:text-white transition">
-                JPL Cup Fixtures
-              </Link>
-              <Link href={`/${leagueId}/playoffs`} className="text-gray-300 hover:text-white transition">
-                Playoffs
-              </Link>
-            </>
-          ) : isAuctionFormat ? (
-            <>
-              <Link href={`/${leagueId}/standings`} className="text-gray-300 hover:text-white transition">
-                Standings
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link href={`/${leagueId}/standings`} className="text-gray-300 hover:text-white transition">
-                Standings
-              </Link>
-              <Link href={`/${leagueId}/fixtures`} className="text-gray-300 hover:text-white transition">
-                Fixtures
-              </Link>
-              <Link href={`/${leagueId}/playoffs`} className="text-gray-300 hover:text-white transition">
-                Playoffs
-              </Link>
-            </>
-          )}
-          <Link href={`/admin/${leagueId}/help`} className="text-gray-300 hover:text-white transition">
-            Help
-          </Link>
-          <button
-            onClick={handleSignOut}
-            className="text-gray-300 hover:text-white transition"
-          >
-            Sign Out
-          </button>
-        </div>
-      </nav>
+      <AppNav
+        context={{
+          surface: "admin-league",
+          leagueId,
+          format: leagueConfig.format ?? "tvt",
+          isSuperadminViewer,
+          variant: "full",
+        }}
+        activeKey="admin-dashboard"
+        brandHref="/admin"
+        brandLabel="Admin Dashboard"
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
         {/* Tabs */}

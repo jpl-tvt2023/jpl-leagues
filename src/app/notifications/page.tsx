@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 
 interface NotificationItem {
   id: string;
@@ -99,23 +98,13 @@ export default function NotificationsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      <nav className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10 bg-slate-900/80 backdrop-blur">
-        <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
-          <Logo className="h-8 w-8 sm:h-10 sm:w-10" />
-          <span className="text-base sm:text-xl font-bold text-white">Notifications</span>
-        </Link>
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="text-sm text-gray-300 hover:text-white transition">
-            ← Back to Dashboard
-          </Link>
-          <button
-            onClick={handleSignOut}
-            className="rounded-full bg-white/10 px-4 sm:px-6 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white hover:bg-white/20 transition"
-          >
-            Sign Out
-          </button>
-        </div>
-      </nav>
+      <AppNav
+        context={{ surface: "account", backHref: "/dashboard" }}
+        activeKey="notifications"
+        brandHref="/dashboard"
+        brandLabel="Notifications"
+        onSignOut={handleSignOut}
+      />
 
       <div className="mx-auto max-w-3xl px-4 sm:px-6 py-8 sm:py-12">
         <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
