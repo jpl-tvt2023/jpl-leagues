@@ -14,13 +14,68 @@ import {
   apiSignInSuperadmin,
   apiSignOut,
   createTvtLeague,
+  createContinentalChampionshipLeague,
   generateFixtures,
   setupAllTeams,
   ensureGameweeks,
   expireGameweek,
   expectPageLoads,
+  testDb,
+  schema,
   type LeagueRef,
 } from "../harness";
+import { and, eq } from "drizzle-orm";
+
+/** A gameweek far enough out that beforeAll has not expired it. */
+const FUTURE_GW = 6;
+
+/**
+ * Captaincies allowed per manager across the League Stage: ceil((playoffStartGw - 1) / 2).
+ * This spec's league has 8 teams, which defaults to playoffStartGw 36 -> 18. A 16- or
+ * 32-team league starts playoffs at GW31 and gets 15.
+ */
+const CAPTAIN_CAP = 18;
+
+interface ChipSlot {
+  code: string;
+  displayCode: string;
+  set: 1 | 2;
+  used: boolean;
+  gw: number | null;
+  wasted: boolean;
+}
+interface TeamStat {
+  teamId: string;
+  teamName: string;
+  group: string | null;
+  chips: ChipSlot[] | null;
+  captains: { playerId: string; playerName: string; used: number; cap: number }[];
+}
+interface StatsPayload {
+  rows: { teamId: string }[];
+  teams: TeamStat[];
+  groupNames: string[];
+  groupsRevealed: boolean;
+  hasHiddenGroups: boolean;
+  chipsSupported: boolean;
+  currentSet: 1 | 2 | "playoffs" | null;
+}
+
+/** A plain (non-warming) read — team stats are DB-sourced and never pend. */
+async function statsFor(request: APIRequestContext, slug: string): Promise<StatsPayload> {
+  const res = await request.get(`/api/fpl-league?leagueSlug=${encodeURIComponent(slug)}`);
+  expect(res.ok(), `fpl-league returned ${res.status()}`).toBeTruthy();
+  return res.json();
+}
+
+async function gwId(leagueId: string, number: number): Promise<string> {
+  const db = testDb();
+  const [row] = await db
+    .select({ id: schema.gameweeks.id })
+    .from(schema.gameweeks)
+    .where(and(eq(schema.gameweeks.leagueId, leagueId), eq(schema.gameweeks.number, number)));
+  return row.id;
+}
 
 let league: LeagueRef;
 
@@ -190,9 +245,243 @@ test.describe.serial("FPL League (TVT)", () => {
     await expect(page.getByRole("heading", { name: "FPL League" })).toBeVisible();
   });
 
+  /* ── team-level stats ────────────────────────────────────────────────── */
+
+  test("carries one stat block per team, alphabetical, with a full chip grid", async ({ request }) => {
+    const stats = await statsFor(request, league.slug);
+
+    expect(stats.teams.length).toBe(league.teamSize);
+    expect(stats.chipsSupported).toBe(true);
+    expect(stats.currentSet).toBe(1);
+
+    const names = stats.teams.map((t) => t.teamName);
+    expect(names, "teams are ordered alphabetically").toEqual(
+      [...names].sort((a, b) => a.localeCompare(b)),
+    );
+
+    for (const team of stats.teams) {
+      // 3 enabled chips x 2 sets. Nothing has been played yet, so all six read available.
+      expect(team.chips, `${team.teamName} has no chip grid`).not.toBeNull();
+      expect(team.chips!.length).toBe(6);
+      expect(team.chips!.every((c) => !c.used && c.gw === null)).toBeTruthy();
+      expect(team.captains.length, `${team.teamName} should have 2 managers`).toBe(2);
+      // An 8-team league runs its League Stage to GW35 (playoffStartGw 36), so the captaincy
+      // cap is ceil(35/2) = 18 — not the 15 a 16/32-team league gets.
+      expect(team.captains.every((c) => c.cap === CAPTAIN_CAP && c.used === 0)).toBeTruthy();
+    }
+  });
+
+  test("every manager row belongs to a team in the stats block", async ({ request }) => {
+    const body = await statsFor(request, league.slug);
+    const known = new Set(body.teams.map((t) => t.teamId));
+    for (const row of body.rows) {
+      expect(known.has(row.teamId), `orphan row for team ${row.teamId}`).toBeTruthy();
+    }
+  });
+
+  test("a chip declared for a still-open gameweek is NOT disclosed", async ({ request }) => {
+    const db = testDb();
+    const before = await statsFor(request, league.slug);
+    const team = before.teams[0];
+
+    // A live declaration whose deadline has not passed. The row exists the moment a team
+    // submits, so this is exactly the state the gate has to withhold.
+    await db.insert(schema.gameweekChips).values({
+      id: `chip-open-${Date.now()}`,
+      teamId: team.teamId,
+      gameweekId: await gwId(league.id, FUTURE_GW),
+      chipType: "D",
+      isValid: true,
+      isProcessed: false,
+    });
+    // And one that was rejected and never played, on an already-expired gameweek — showing it
+    // would tell the league a team spent something it did not.
+    await db.insert(schema.gameweekChips).values({
+      id: `chip-rejected-${Date.now()}`,
+      teamId: team.teamId,
+      gameweekId: await gwId(league.id, 2),
+      chipType: "W",
+      isValid: false,
+      isProcessed: false,
+    });
+
+    const after = await statsFor(request, league.slug);
+    const mine = after.teams.find((t) => t.teamId === team.teamId)!;
+    const dp = mine.chips!.find((c) => c.code === "D" && c.set === 1)!;
+    const ww = mine.chips!.find((c) => c.code === "W" && c.set === 1)!;
+
+    expect(dp.used, "an open-gameweek declaration must not read as spent").toBe(false);
+    expect(dp.gw, "and must not name the gameweek it is queued for").toBeNull();
+    expect(ww.used, "a rejected declaration must never show").toBe(false);
+    expect(JSON.stringify(mine)).not.toContain(`"gw":${FUTURE_GW}`);
+  });
+
+  test("once the deadline passes the chip IS disclosed — with no cache invalidation", async ({ request }) => {
+    await expireGameweek(league.id, FUTURE_GW);
+    // Deliberately no invalidation: the gate runs at read time. If this payload is ever
+    // cached, a warm cache would keep the chip hidden and this assertion is what catches it.
+    const stats = await statsFor(request, league.slug);
+    const dp = stats.teams
+      .flatMap((t) => t.chips ?? [])
+      .find((c) => c.code === "D" && c.set === 1 && c.used);
+
+    expect(dp, "the now-expired chip should be disclosed").toBeTruthy();
+    expect(dp!.gw).toBe(FUTURE_GW);
+    expect(dp!.wasted).toBe(false);
+  });
+
+  test("captaincies are counted from announcements, and gated on the deadline too", async ({ request }) => {
+    const db = testDb();
+    const before = await statsFor(request, league.slug);
+    const target = before.teams.find((t) => t.captains.length === 2)!;
+    const player = target.captains[0];
+
+    // GW1-3 are expired by beforeAll; GW7 is not.
+    for (const gw of [1, 2, 3, 7]) {
+      await db.insert(schema.gameweekCaptains).values({
+        id: `cap-${gw}-${Date.now()}`,
+        gameweekId: await gwId(league.id, gw),
+        playerId: player.playerId,
+      });
+    }
+
+    const gated = await statsFor(request, league.slug);
+    const counted = gated.teams
+      .find((t) => t.teamId === target.teamId)!
+      .captains.find((c) => c.playerId === player.playerId)!;
+    expect(counted.used, "GW7 is still open, so it must not be counted publicly").toBe(3);
+    expect(counted.cap).toBe(CAPTAIN_CAP);
+
+    await expireGameweek(league.id, 7);
+    const after = await statsFor(request, league.slug);
+    const now = after.teams
+      .find((t) => t.teamId === target.teamId)!
+      .captains.find((c) => c.playerId === player.playerId)!;
+    expect(now.used).toBe(4);
+  });
+
+  test("a single-group league reports its group without a reveal gate", async ({ request }) => {
+    // An 8-team TVT league defaults to groupCount 1, so there is nothing to withhold: one
+    // group is not a grouping. Only 32-team leagues default to two.
+    const stats = await statsFor(request, league.slug);
+    expect(stats.hasHiddenGroups).toBe(false);
+    expect(stats.groupNames).toEqual(["A"]);
+    expect(stats.teams.every((t) => t.group === "A")).toBeTruthy();
+  });
+
+  test("with two groups, assignments are withheld until the admin reveals them", async ({ request }) => {
+    const db = testDb();
+    // Split the league in two rather than standing up a 32-team one: this exercises the same
+    // branch for a fraction of the ~90s a second league costs under workers:1.
+    const groupBId = `grp-b-${Date.now()}`;
+    await db.insert(schema.groups).values({ id: groupBId, name: "B", leagueId: league.id });
+    const teamRows = await db
+      .select({ id: schema.teams.id })
+      .from(schema.teams)
+      .where(eq(schema.teams.leagueId, league.id));
+    for (const t of teamRows.slice(0, 4)) {
+      await db.update(schema.teams).set({ groupId: groupBId }).where(eq(schema.teams.id, t.id));
+    }
+
+    const before = await statsFor(request, league.slug);
+    expect(before.groupsRevealed).toBe(false);
+    expect(before.hasHiddenGroups).toBe(true);
+    expect(before.groupNames).toEqual([]);
+    // The route is public, so hiding this client-side would not be hiding it at all — the
+    // assertion is against the raw payload, which anyone can read.
+    for (const team of before.teams) {
+      expect(team.group, `${team.teamName} leaked its group before reveal`).toBeNull();
+    }
+
+    await apiSignInSuperadmin(request);
+    const res = await request.post(`/api/admin/${league.id}/settings`, {
+      data: { key: "groupsRevealed", value: true },
+    });
+    expect(res.ok(), `settings returned ${res.status()}`).toBeTruthy();
+    await apiSignOut(request);
+
+    const after = await statsFor(request, league.slug);
+    expect(after.groupsRevealed).toBe(true);
+    expect(after.hasHiddenGroups).toBe(false);
+    expect(after.groupNames).toEqual(["A", "B"]);
+    expect(after.teams.filter((t) => t.group === "B").length).toBe(4);
+    expect(after.teams.filter((t) => t.group === "A").length).toBe(4);
+  });
+
+  test("the page renders team rows, both group tables, and fits a phone", async ({ page }) => {
+    // Runs after the two-group test above, so groups are split and revealed by now.
+    await expectPageLoads(page, `/${league.slug}/fpl-league`);
+    await expect(page.getByRole("heading", { name: "FPL League" })).toBeVisible();
+
+    await expect(page.getByText("Group A", { exact: true })).toBeVisible();
+    await expect(page.getByText("Group B", { exact: true })).toBeVisible();
+
+    // A team banner row, with its TVT chip sets labelled so they cannot be read as FPL chips.
+    await expect(page.getByText("Team 1", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Set 1", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Set 2", { exact: true }).first()).toBeVisible();
+
+    // The header row adds no columns, so the table must still fit a phone without the page
+    // scrolling sideways.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(500);
+    const overflow = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".overflow-x-auto")].map(
+        (el) => el.scrollWidth - el.clientWidth,
+      ),
+    );
+    expect(Math.max(0, ...overflow), "the table overflows a 390px screen").toBeLessThanOrEqual(1);
+  });
+
   test.afterAll(async ({ request }) => {
     await request
       .post("/api/test-fpl-stub/control", { data: { finishedThrough: 0, liveGw: null } })
       .catch(() => {});
+  });
+});
+
+/**
+ * Continental Championship is the format most likely to be got wrong here, for two reasons
+ * that only exist once cup groups are generated: teams' `groupId` is REASSIGNED to a cup
+ * group (so a naive join splits the page into Cup-A…Cup-D), and Ghost teams appear carrying
+ * a group but no players (so they would render as empty team rows). Neither is reachable
+ * from a TVT league, which is why this pays for its own league.
+ */
+test.describe.serial("FPL League (Continental Championship)", () => {
+  let ccLeague: LeagueRef;
+
+  test.beforeAll(async ({ request }) => {
+    test.setTimeout(180_000);
+    await apiSignInSuperadmin(request);
+    ccLeague = await createContinentalChampionshipLeague(request);
+    await setupAllTeams(request, ccLeague.slug, ccLeague.teamSize, "continental-championship");
+    await apiSignInSuperadmin(request);
+    await ensureGameweeks(ccLeague.id);
+    // The reassignment + Ghost teams only exist after this runs.
+    const res = await request.post(`/api/admin/${ccLeague.slug}/generate-cup-groups`, { data: {} });
+    expect(res.ok(), `generate-cup-groups returned ${res.status()}`).toBeTruthy();
+    await apiSignOut(request);
+  });
+
+  test("carries captaincies but no chip grid, and is never split by cup group", async ({ request }) => {
+    const stats = await statsFor(request, ccLeague.slug);
+
+    expect(stats.chipsSupported, "Continental Championship has no TVT chips").toBe(false);
+    expect(stats.teams.every((t) => t.chips === null)).toBeTruthy();
+
+    // Cup groups must not leak into the page's grouping — otherwise this reads Cup-A..Cup-D.
+    expect(stats.groupNames.some((g) => g.toLowerCase().startsWith("cup"))).toBe(false);
+    expect(stats.teams.every((t) => !t.group?.toLowerCase().startsWith("cup"))).toBeTruthy();
+
+    // Its League Stage runs all 38 gameweeks, so the cap is ceil(38/2) = 19, not TVT's 15.
+    expect(stats.teams.every((t) => t.captains.every((c) => c.cap === 19))).toBeTruthy();
+  });
+
+  test("Ghost teams are excluded — every team row has managers behind it", async ({ request }) => {
+    const stats = await statsFor(request, ccLeague.slug);
+    expect(stats.teams.length).toBe(ccLeague.teamSize);
+    for (const team of stats.teams) {
+      expect(team.captains.length, `${team.teamName} has no managers`).toBeGreaterThan(0);
+    }
   });
 });
