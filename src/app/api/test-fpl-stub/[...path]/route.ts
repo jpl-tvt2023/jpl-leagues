@@ -155,8 +155,45 @@ function elementPoints(elementId: number, gw: number): number {
   return hashed(elementId * 97 + gw * 31, 13);
 }
 
+/**
+ * An entry's 15 picks for a gameweek. Deterministic from (entryId, gw).
+ *
+ * Extracted so `entryGwPoints` can be DERIVED from it rather than being an unrelated hash.
+ * While those two disagreed, the stub could not express the one property that matters here:
+ * that a manager's live score and their settled score are the same number.
+ */
+function entryPicksList(entryId: number, gw: number) {
+  return Array.from({ length: 15 }, (_, i) => {
+    const position = i + 1;
+    const element = 1 + hashed(entryId * 31 + position * 13 + gw, TOTAL_ELEMENTS);
+    return {
+      element,
+      position,
+      multiplier: position <= 11 ? (position === 1 ? 2 : 1) : 0,
+      is_captain: position === 1,
+      is_vice_captain: position === 2,
+    };
+  });
+}
+
+/**
+ * An entry's SETTLED gameweek total: the sum of their active picks' element points.
+ *
+ * Computed the same way the app recomputes a live gameweek, so the two agree and a spec can
+ * assert that a score does not move when the gameweek settles. It used to be an independent
+ * hash (`30 + hashed(...)`), unrelated to anything `/event/{gw}/live/` served.
+ */
 function entryGwPoints(entryId: number, gw: number): number {
-  return 30 + hashed(entryId * 13 + gw * 7, 60);
+  let total = 0;
+  for (const pick of entryPicksList(entryId, gw)) {
+    if (pick.multiplier > 0) total += elementPoints(pick.element, gw) * pick.multiplier;
+  }
+  return total;
+}
+
+/** Whether FPL has processed this gameweek, in the stub's model of the world. */
+function isGwSettled(gw: number): boolean {
+  return gw <= state.finishedThrough;
 }
 
 function entryTransferCost(entryId: number, gw: number): number {
@@ -318,28 +355,39 @@ function classicLeagueStandings(
   };
 }
 
+/**
+ * GET /entry/{id}/event/{gw}/picks/
+ *
+ * `entry_history.points` is 0, and `rank` null, until the gameweek is settled — because that
+ * is what the real API does, and the stub pretending otherwise is how a change that read this
+ * field for live scores passed the whole suite while showing every fixture 0-0 in production.
+ *
+ * Verified against fantasy.premierleague.com on 2026-09-12 with GW4 in flight, for three
+ * entries whose true running totals were 69, 61 and 51:
+ *
+ *   /entry/{id}/event/4/picks/  ->  { points: 0, rank: null, total_points: <through GW3> }
+ *   /entry/{id}/event/3/picks/  ->  { points: 74, rank: 217413 }
+ *
+ * `event_transfers_cost` is deliberately NOT zeroed: it is fixed at the deadline and correct
+ * throughout, which is why a transfer hit was the one number the broken live page got right.
+ */
 function entryPicks(entryId: number, gw: number) {
-  const picks = Array.from({ length: 15 }, (_, i) => {
-    const position = i + 1;
-    const element = 1 + hashed(entryId * 31 + position * 13 + gw, TOTAL_ELEMENTS);
-    return {
-      element,
-      position,
-      multiplier: position <= 11 ? (position === 1 ? 2 : 1) : 0,
-      is_captain: position === 1,
-      is_vice_captain: position === 2,
-    };
-  });
+  const picks = entryPicksList(entryId, gw);
+  const settled = isGwSettled(gw);
 
-  const points = entryGwPoints(entryId, gw);
+  // Settled total through the previous gameweek, matching real FPL: an in-flight gameweek's
+  // points are not yet part of the running total either.
+  let totalPoints = 0;
+  for (let g = 1; g <= (settled ? gw : gw - 1); g++) totalPoints += entryGwPoints(entryId, g);
+
   return {
     active_chip: null,
     automatic_subs: [],
     entry_history: {
       event: gw,
-      points,
-      total_points: points * gw,
-      rank: 1 + hashed(entryId + gw, 500_000),
+      points: settled ? entryGwPoints(entryId, gw) : 0,
+      total_points: totalPoints,
+      rank: settled ? 1 + hashed(entryId + gw, 500_000) : null,
       event_transfers: hashed(entryId + gw * 2, 3),
       event_transfers_cost: entryTransferCost(entryId, gw),
     },

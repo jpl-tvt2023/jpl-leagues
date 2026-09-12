@@ -40,6 +40,18 @@ export const LIVE_CACHE_TTL = 60 * 10; // 10 minutes
  * hour means it can be served instantly and refreshed behind the reader.
  */
 export const LIVE_CACHE_STALE_TTL = 60 * 60; // 1 hour
+/**
+ * TTL for per-element live stats during an in-flight gameweek.
+ *
+ * Deliberately shorter than LIVE_CACHE_TTL. These stats are an INPUT to the live fixture
+ * scores, which are themselves cached for ten minutes, so matching the two would compound
+ * to a twenty-minute worst case and leave the Refresh button recomputing new totals from
+ * old element points — indistinguishable, to a user, from Refresh doing nothing.
+ *
+ * 60s is what `fpl:fixtures:all` already uses to drive the same screens. The cost is one
+ * ~460KB fetch a minute shared by every reader, not one per reader.
+ */
+export const ELEMENT_STATS_LIVE_TTL = 60; // 1 minute
 const PAGE_CACHE_TTL = 60 * 60 * 25; // 25 hours (slightly longer than daily cron interval)
 
 interface CachedScore {
@@ -73,11 +85,17 @@ export async function getCachedScore(
 /**
  * Set cached score for a team in a gameweek
  */
+/**
+ * `ttlSeconds` defaults to 24h for the settled case. A caller scoring a gameweek that is
+ * still in flight MUST pass LIVE_CACHE_TTL instead: this key holds a running score, and
+ * pinning one for a day freezes that manager past the point FPL settles the week.
+ */
 export async function setCachedScore(
   fplId: string,
   gameweek: number,
   score: { points: number; transferHits: number; netScore: number },
-  leagueId?: string | null
+  leagueId?: string | null,
+  ttlSeconds: number = CACHE_TTL
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
@@ -85,7 +103,7 @@ export async function setCachedScore(
     ...score,
     cachedAt: new Date().toISOString(),
   };
-  await r.set(getKey(fplId, gameweek, leagueId), value, { ex: CACHE_TTL });
+  await r.set(getKey(fplId, gameweek, leagueId), value, { ex: ttlSeconds });
 }
 
 /**
@@ -290,6 +308,52 @@ export async function clearCachedElementPoints(gameweek: number): Promise<void> 
   const r = getRedis();
   if (!r) return;
   await r.del(getElementPointsKey(gameweek));
+  await r.del(getElementStatsKey(gameweek));
+}
+
+/** One PL player's live figures for a gameweek — the subset the live scorer needs. */
+export interface CachedElementStat {
+  points: number;
+  minutes: number;
+}
+
+/**
+ * Cache key for per-element live stats (points AND minutes) in a gameweek.
+ *
+ * Deliberately a separate key from `fpl:elements:gw{N}` above rather than widening that
+ * one in place: a deploy would otherwise hand an in-flight `Record<number, number>`
+ * payload to a reader expecting objects, and every element would silently read as
+ * `undefined` — the same shape of failure this whole change exists to remove.
+ *
+ * `minutes` is what the vice-captain handover gate needs and points alone cannot supply.
+ * A captain on 0 points has not necessarily blanked: a substitute who appears and is
+ * booked scores exactly 0.
+ */
+function getElementStatsKey(gameweek: number): string {
+  return `fpl:elements:stats:gw${gameweek}`;
+}
+
+export async function getCachedElementStats(
+  gameweek: number
+): Promise<Record<number, CachedElementStat> | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<Record<number, CachedElementStat>>(getElementStatsKey(gameweek));
+  return data || null;
+}
+
+/**
+ * Same TTL contract as `setCachedElementPoints`: a concluded gameweek's stats never move
+ * and keep the 24h default, an in-flight one is passed LIVE_CACHE_TTL by the caller.
+ */
+export async function setCachedElementStats(
+  gameweek: number,
+  data: Record<number, CachedElementStat>,
+  ttlSeconds: number = CACHE_TTL
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.set(getElementStatsKey(gameweek), data, { ex: ttlSeconds });
 }
 
 /**

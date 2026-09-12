@@ -7,29 +7,21 @@
  * Refresh, and as the dashboard and the fixtures page disagreeing about the
  * same fixture.
  *
- * A manager's gameweek score is whatever FPL says it is.
+ * How many points a manager has scored is delegated to `managerGameweekPoints`,
+ * which is also what the cron pre-warm, the playoff bracket and
+ * `calculateTeamGameweekScore` call — see manager-points.ts for why a live
+ * gameweek has to be recomputed from /event/{gw}/live/ and a settled one must
+ * not be. Reading `entry_history.points` unconditionally, as this module did
+ * between 2026-08-30 and 2026-09-13, is what made every live fixture show 0-0.
  *
- * We take `picks.entry_history.points` verbatim off the payload we already
- * fetch, rather than recomputing it from /event/{gw}/live/ and the pick
- * multipliers. FPL has already applied the captain, the vice-captain handover,
- * Triple Captain, Bench Boost and the bench auto-substitutions before handing
- * us that number — reproducing all of it here only creates a second answer that
- * can be wrong.
+ * What this module owns is the part FPL knows nothing about: which of a team's
+ * two *managers* is the JPL captain, and the doubling of their net score.
  *
- * It was. The recompute this replaced treated a captain on zero minutes as
- * having blanked, which is also true of a captain whose match has not kicked
- * off yet, and handed the armband to the vice-captain early: 23 of 64 managers
- * were inflated on a live gameweek. FPL's own figure was correct in every one
- * of those cases. Gating the handover on the captain's fixtures being finished
- * fixed it, but the right lesson was that we should not be computing this at
- * all — the final, cron and playoff scoring paths had always read
- * `entry_history.points`, and now the live path agrees with them by construction.
- *
- * What this module still owns is the part FPL knows nothing about: which of a
- * team's two *managers* is the JPL captain, and the doubling of their net score.
- *
- * Cost: one picks fetch per manager and nothing else. A 16-fixture TVT-32
- * gameweek is 64 calls, down from 65 — the shared live-elements fetch is gone.
+ * Cost: one picks fetch per manager, plus one shared context per request — a
+ * 16-fixture TVT-32 gameweek measured at 67 calls against the route's budget of
+ * 80. The live-elements payload in that context is behind a 60-second Redis
+ * window shared by every reader, so it is one fetch a minute app-wide, not one
+ * per sweep.
  */
 
 import { db } from "@/lib/db";
@@ -39,13 +31,25 @@ import { fetchTeamGameweekPicks } from "@/lib/fpl";
 import type { LiveFixtureScore } from "@/lib/fpl-cache";
 import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
-import { FplUnavailableError } from "@/lib/fpl/gateway";
+import { managerGameweekPoints, type ManagerPointsContext } from "@/lib/fpl-live/manager-points";
+import { buildManagerPointsContext } from "@/lib/fpl-live/manager-points-context";
+import { FplUnavailableError, type FplLane } from "@/lib/fpl/gateway";
 
 export interface TvtLiveOptions {
   leagueId: string | null;
   gwNumber: number;
   /** Restrict to these fixtures. Null/undefined computes the whole gameweek. */
   fixtureIds?: string[] | null;
+  /**
+   * Gateway lane. Defaults to "background" — user-facing code vastly outnumbers the
+   * scoring pipeline, and defaulting to "critical" would let a new caller silently bypass
+   * the breaker and the scoring lock.
+   *
+   * The cron pre-warm must pass "critical": it runs inside `processAllLeagues`, which holds
+   * `fpl:scoring-active` for its whole duration, and every background call is refused while
+   * that is set.
+   */
+  lane?: FplLane;
 }
 
 type TeamPlayer = { id: string; name: string; fplId: string };
@@ -67,7 +71,7 @@ interface SideResult {
 export async function computeLiveFixtureScores(
   opts: TvtLiveOptions
 ): Promise<LiveFixtureScore[]> {
-  const { leagueId, gwNumber, fixtureIds } = opts;
+  const { leagueId, gwNumber, fixtureIds, lane = "background" } = opts;
 
   const gwRecords = await db
     .select()
@@ -122,6 +126,11 @@ export async function computeLiveFixtureScores(
     }
   }
 
+  // One live/settled context for the whole sweep rather than one per manager. A gateway
+  // refusal surfaces here as FplUnavailableError and is deliberately not caught: scoring
+  // every fixture 0-0 and caching it is far worse than briefly showing the last numbers.
+  const pointsCtx = await buildManagerPointsContext(gwNumber, lane);
+
   const results: LiveFixtureScore[] = [];
 
   for (const fixture of gwFixtures) {
@@ -140,14 +149,18 @@ export async function computeLiveFixtureScores(
         captainByTeam.get(fixture.homeTeamId),
         prevCaptainByTeam.get(fixture.homeTeamId) ?? null,
         gwNumber,
-        autoAssignedByTeam.get(fixture.homeTeamId) ?? false
+        autoAssignedByTeam.get(fixture.homeTeamId) ?? false,
+        pointsCtx,
+        lane
       );
       const away = await scoreSide(
         fixture.awayTeam.players,
         captainByTeam.get(fixture.awayTeamId),
         prevCaptainByTeam.get(fixture.awayTeamId) ?? null,
         gwNumber,
-        autoAssignedByTeam.get(fixture.awayTeamId) ?? false
+        autoAssignedByTeam.get(fixture.awayTeamId) ?? false,
+        pointsCtx,
+        lane
       );
 
       const [homePlayersLeft, awayPlayersLeft] = await Promise.all([
@@ -223,7 +236,9 @@ async function scoreSide(
   captainPlayerId: string | undefined,
   prevCaptainPlayerId: string | null,
   gameweek: number,
-  captainWasAutoAssigned: boolean
+  captainWasAutoAssigned: boolean,
+  pointsCtx: ManagerPointsContext,
+  lane: FplLane
 ): Promise<SideResult> {
   const rawScores: {
     id: string;
@@ -237,7 +252,7 @@ async function scoreSide(
 
   for (const player of teamPlayers) {
     try {
-      const picks = await fetchTeamGameweekPicks(player.fplId, gameweek);
+      const picks = await fetchTeamGameweekPicks(player.fplId, gameweek, lane);
       const transferHits = picks.entry_history.event_transfers_cost;
 
       // Which elements are actually featuring, for the players-left counter.
@@ -246,10 +261,10 @@ async function scoreSide(
         if (pick.multiplier > 0) activeElements.push(pick.element);
       }
 
-      // FPL's own figure for this manager's gameweek, gross of transfer hits.
-      // Captain, vice-captain handover and every chip are already baked in — see
-      // the file header for why we no longer recompute any of it.
-      const teamScore = picks.entry_history.points;
+      // Gross of transfer hits. Recomputed from the live elements while the gameweek
+      // is in flight, read off entry_history once FPL has settled it — manager-points.ts
+      // carries the evidence for why those have to be two different answers.
+      const teamScore = managerGameweekPoints(picks, pointsCtx);
 
       rawScores.push({
         id: player.id,

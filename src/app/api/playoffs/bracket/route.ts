@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, leagues } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { fetchTeamGameweekPicks, detectLiveGameweek } from "@/lib/fpl";
 import { getLiveCachedScores, getCachedPlayoffBracket, setCachedPlayoffBracket } from "@/lib/fpl-cache";
-import { pickTempCaptain } from "@/lib/scoring/temp-captain";
 import {
   CHAMP_GA_MATCHES,
   CHAMP_GB_MATCHES,
@@ -234,14 +232,14 @@ async function fetchLiveScoresForAllPlayoffGws(leagueId: string | null, playoffS
       } else if (someHaveResults) {
         // In-progress GW — try Redis cache, fall back to FPL API
         try {
-          const cachedData = await getLiveCachedScores(gwNumber);
+          const cachedData = await getLiveCachedScores(gwNumber, leagueId);
           if (cachedData && cachedData.fixtures && cachedData.fixtures.length > 0) {
             liveScoresByGw[gwNumber] = cachedData.fixtures;
             console.log(`Bracket: Using cached live scores for GW${gwNumber}`);
           } else {
             console.warn(`Bracket: No cached data for live GW${gwNumber}, falling back to FPL API`);
             await fetchAndCacheLiveScoresForGw(gwNumber, leagueId);
-            const retryData = await getLiveCachedScores(gwNumber);
+            const retryData = await getLiveCachedScores(gwNumber, leagueId);
             liveScoresByGw[gwNumber] = retryData?.fixtures ?? [];
           }
         } catch (err) {
@@ -252,7 +250,7 @@ async function fetchLiveScoresForAllPlayoffGws(leagueId: string | null, playoffS
         // Deadline passed but no results yet — fetch live from FPL API
         try {
           await fetchAndCacheLiveScoresForGw(gwNumber, leagueId);
-          const liveData = await getLiveCachedScores(gwNumber);
+          const liveData = await getLiveCachedScores(gwNumber, leagueId);
           liveScoresByGw[gwNumber] = liveData?.fixtures ?? [];
           console.log(`Bracket: Fetched live scores for unprocessed GW${gwNumber} (${liveScoresByGw[gwNumber].length} fixtures)`);
         } catch (err) {
@@ -393,8 +391,13 @@ async function getFinishedGwScoresFromDb(gameweek: number, leagueId: string | nu
 }
 
 /**
- * Fetch live scores from FPL API for a specific GW and cache in Redis
- * Used as fallback if Redis cache miss for live GW
+ * Fetch live scores from FPL API for a specific GW and cache in Redis.
+ * Used as fallback if Redis cache miss for live GW.
+ *
+ * Delegates to the shared scorer. The local copy this replaces read
+ * `entry_history.points`, which FPL holds at 0 for the whole of a live gameweek — the very
+ * gameweek this path exists to serve — so a bracket that missed the cache rendered every tie
+ * 0-0 and then cached that.
  */
 async function fetchAndCacheLiveScoresForGw(gameweek: number, leagueId: string | null): Promise<void> {
   try {
@@ -403,155 +406,34 @@ async function fetchAndCacheLiveScoresForGw(gameweek: number, leagueId: string |
         ? and(eq(gameweeks.number, gameweek), eq(gameweeks.leagueId, leagueId))
         : eq(gameweeks.number, gameweek),
     });
-
     if (!gwRecord) return;
 
-    // Get all playoff fixtures for this GW
-    const gwFixtures = await db.query.fixtures.findMany({
-      where: and(
-        eq(fixtures.gameweekId, gwRecord.id),
-        eq(fixtures.isPlayoff, true)
-      ),
-      with: {
-        homeTeam: { with: { players: true } },
-        awayTeam: { with: { players: true } },
-      },
+    // Guard only — the sweep below is not filtered to these. setLiveCachedScores replaces
+    // the whole gameweek blob, so caching a playoff-only subset would blank every other
+    // fixture in the gameweek for every reader of that key.
+    const playoffFixtures = await db.query.fixtures.findMany({
+      where: and(eq(fixtures.gameweekId, gwRecord.id), eq(fixtures.isPlayoff, true)),
+      columns: { id: true },
     });
+    if (playoffFixtures.length === 0) return;
 
-    if (gwFixtures.length === 0) return;
+    const { computeLiveFixtureScores } = await import("@/lib/fpl-live/tvt-live-scores");
+    const liveFixtures = await computeLiveFixtureScores({ leagueId, gwNumber: gameweek });
+    if (liveFixtures.length === 0) return;
 
-    // Get captain picks for this GW
-    const captainPicks = await db.query.gameweekCaptains.findMany({
-      where: eq(gameweekCaptains.gameweekId, gwRecord.id),
-      with: { player: true },
-    });
-
-    const captainByTeamId = new Map<string, string>();
-    const autoAssignedByTeamId = new Map<string, boolean>();
-    for (const pick of captainPicks) {
-      captainByTeamId.set(pick.player.teamId, pick.player.id);
-      autoAssignedByTeamId.set(pick.player.teamId, pick.isValid === false);
-    }
-
-    // Previous-GW captains for temp-cap tiebreak rotation
-    const prevCaptainByTeamId = new Map<string, string>();
-    if (gameweek > 1) {
-      const prevGw = await db.query.gameweeks.findFirst({
-        where: leagueId
-          ? and(eq(gameweeks.number, gameweek - 1), eq(gameweeks.leagueId, leagueId))
-          : eq(gameweeks.number, gameweek - 1),
-      });
-      if (prevGw) {
-        const prevPicks = await db.query.gameweekCaptains.findMany({
-          where: eq(gameweekCaptains.gameweekId, prevGw.id),
-          with: { player: true },
-        });
-        for (const p of prevPicks) prevCaptainByTeamId.set(p.player.teamId, p.player.id);
-      }
-    }
-
-    // Calculate live scores for each fixture from FPL API
-    const gwLiveScores = [];
-    for (const fixture of gwFixtures) {
-      try {
-        const homeScore = await calculateLiveTeamScore(
-          fixture.homeTeam.players,
-          captainByTeamId.get(fixture.homeTeamId),
-          prevCaptainByTeamId.get(fixture.homeTeamId) ?? null,
-          gameweek,
-          autoAssignedByTeamId.get(fixture.homeTeamId) ?? false,
-        );
-        const awayScore = await calculateLiveTeamScore(
-          fixture.awayTeam.players,
-          captainByTeamId.get(fixture.awayTeamId),
-          prevCaptainByTeamId.get(fixture.awayTeamId) ?? null,
-          gameweek,
-          autoAssignedByTeamId.get(fixture.awayTeamId) ?? false,
-        );
-
-        gwLiveScores.push({
-          fixtureId: fixture.id,
-          gameweek: gameweek,  // Track which GW this score is from
-          homeTeamName: fixture.homeTeam.name,
-          awayTeamName: fixture.awayTeam.name,
-          homeTeamId: fixture.homeTeamId,
-          awayTeamId: fixture.awayTeamId,
-          homeScore: homeScore.total,
-          awayScore: awayScore.total,
-          homePlayers: homeScore.players,
-          awayPlayers: awayScore.players,
-        });
-      } catch (err) {
-        console.error(`Live score error for fixture ${fixture.id}:`, err);
-      }
-    }
-
-    if (gwLiveScores.length > 0) {
-      const { setLiveCachedScores } = await import("@/lib/fpl-cache");
-      await setLiveCachedScores(gameweek, {
+    const { setLiveCachedScores } = await import("@/lib/fpl-cache");
+    await setLiveCachedScores(
+      gameweek,
+      {
         gameweek,
-        fixtures: gwLiveScores,
+        fixtures: liveFixtures,
         cachedAt: new Date().toISOString(),
-      });
-    }
+      },
+      leagueId,
+    );
   } catch (error) {
     console.error(`Error fetching live scores for GW${gameweek}:`, error);
   }
-}
-
-/**
- * Calculate live score for a TVT team (2 FPL players + captaincy doubling)
- * Fetches always from FPL API (never cached)
- */
-async function calculateLiveTeamScore(
-  teamPlayers: { id: string; name: string; fplId: string }[],
-  captainPlayerId: string | undefined,
-  prevCaptainPlayerId: string | null,
-  gameweek: number,
-  captainWasAutoAssigned: boolean = false,
-): Promise<{
-  total: number;
-  players: { name: string; fplId: string; fplScore: number; transferHits: number; isCaptain: boolean; isTempCaptain?: boolean; finalScore: number }[];
-}> {
-  const rawScores: { id: string; name: string; fplId: string; fplScore: number; transferHits: number; netScore: number }[] = [];
-  for (const player of teamPlayers) {
-    try {
-      const picks = await fetchTeamGameweekPicks(player.fplId, gameweek);
-      const fplScore = picks.entry_history.points;
-      const transferHits = picks.entry_history.event_transfers_cost;
-      rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore, transferHits, netScore: fplScore - transferHits });
-    } catch (err) {
-      console.error(`Failed to fetch FPL data for player ${player.fplId} in GW${gameweek}:`, err);
-      rawScores.push({ id: player.id, name: player.name, fplId: player.fplId, fplScore: 0, transferHits: 0, netScore: 0 });
-    }
-  }
-
-  let resolvedCaptainId: string | null = captainPlayerId ?? null;
-  let isTemp = captainWasAutoAssigned;
-  if (!resolvedCaptainId) {
-    // Live preview only — no capContext, so wouldExceedCap is irrelevant here.
-    const picked = pickTempCaptain(rawScores, prevCaptainPlayerId);
-    resolvedCaptainId = picked?.playerId ?? null;
-    isTemp = !!resolvedCaptainId;
-  }
-
-  let total = 0;
-  const players = rawScores.map(r => {
-    const isCaptain = resolvedCaptainId === r.id;
-    const finalScore = isCaptain ? r.netScore * 2 : r.netScore;
-    total += finalScore;
-    return {
-      name: r.name,
-      fplId: r.fplId,
-      fplScore: r.fplScore,
-      transferHits: r.transferHits,
-      isCaptain,
-      ...(isCaptain && isTemp ? { isTempCaptain: true } : {}),
-      finalScore,
-    };
-  });
-
-  return { total, players };
 }
 
 /**
