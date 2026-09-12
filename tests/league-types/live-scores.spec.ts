@@ -66,20 +66,38 @@ test.describe.serial("live scores (TVT)", () => {
     expect(fx.awayPlayers.length).toBeGreaterThan(0);
   });
 
-  test("players-left rides along in the live payload and is non-zero mid-gameweek", async ({ request }) => {
+  test("a live gameweek scores something (entry_history.points is 0 while it is in flight)", async ({
+    request,
+  }) => {
+    // The regression this exists for: the scorer read `entry_history.points`, which FPL holds
+    // at 0 for the whole of an in-progress gameweek, so every fixture on the site rendered
+    // 0-0 with a LIVE badge for three gameweeks. `typeof score === "number"` above was the
+    // only assertion on the value, and 0 satisfies it — this one does not.
     const res = await request.get(
       `/api/fixtures/live?gameweek=1&leagueSlug=${encodeURIComponent(league.slug)}`,
     );
     const body = await res.json();
-    const fx = body.fixtures[0];
 
-    // The stub marks half of a live GW's fixtures as still to come, so both
-    // sides should have players yet to feature.
-    expect(fx.homePlayersLeft, "homePlayersLeft should be present").toBeTruthy();
-    expect(fx.awayPlayersLeft, "awayPlayersLeft should be present").toBeTruthy();
-    expect(fx.homePlayersLeft.total).toBeGreaterThan(0);
-    expect(fx.homePlayersLeft.leftToPlay).toBeGreaterThan(0);
-    expect(fx.homePlayersLeft.leftToPlay).toBeLessThanOrEqual(fx.homePlayersLeft.total);
+    const scored = body.fixtures.filter(
+      (f: { homeScore: number; awayScore: number }) => f.homeScore !== 0 || f.awayScore !== 0,
+    );
+    expect(
+      scored.length,
+      "every fixture scored 0-0 on a live gameweek — the live path is reading a settled field",
+    ).toBe(body.fixtures.length);
+
+    // And the per-manager breakdown must carry real numbers too, not just the totals.
+    const everyPlayer = body.fixtures.flatMap(
+      (f: { homePlayers: { fplScore: number }[]; awayPlayers: { fplScore: number }[] }) => [
+        ...f.homePlayers,
+        ...f.awayPlayers,
+      ],
+    );
+    expect(everyPlayer.length).toBeGreaterThan(0);
+    expect(
+      everyPlayer.some((p: { fplScore: number }) => p.fplScore > 0),
+      "no manager in the whole gameweek scored a point",
+    ).toBe(true);
   });
 
   test("refresh and live agree on every score (one shared scorer)", async ({ request }) => {

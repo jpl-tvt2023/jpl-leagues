@@ -41,10 +41,17 @@ export interface FPLGameweekPicks {
   automatic_subs: unknown[];
   entry_history: {
     event: number;
+    /**
+     * SETTLED points only. FPL holds this at 0 for the whole of an in-progress gameweek and
+     * fills it in when it processes the week — do not read it as a running score. Use
+     * `managerGameweekPoints`, which switches source on whether the gameweek has concluded.
+     */
     points: number;
     total_points: number;
-    rank: number;
+    /** Null until FPL settles the gameweek — the cheapest signal that `points` is not live. */
+    rank: number | null;
     event_transfers: number;
+    /** Fixed at the deadline, and correct throughout the gameweek. */
     event_transfers_cost: number;
   };
   picks: {
@@ -201,19 +208,33 @@ export async function fetchTeamHistory(
 import {
   getCachedScore, setCachedScore,
   getCachedElementPoints, setCachedElementPoints,
+  getCachedElementStats, setCachedElementStats,
   getCachedBootstrap, setCachedBootstrap,
   getCachedEventStatus, setCachedEventStatus,
-  CACHE_TTL, LIVE_CACHE_TTL,
+  CACHE_TTL, LIVE_CACHE_TTL, ELEMENT_STATS_LIVE_TTL,
   type CachedElementInfo,
+  type CachedElementStat,
   type FplEventStatus,
 } from "./fpl-cache";
 import { db, gameweeks, fixtures, results } from "./db";
 import { eq, and, isNull, asc, inArray } from "drizzle-orm";
 
 /**
- * Calculate total gameweek score for an FPL team
- * Returns the points minus transfer hits
- * Uses cache to avoid hitting FPL API rate limits
+ * Calculate total gameweek score for an FPL team.
+ * Returns the points minus transfer hits.
+ *
+ * Live-aware in both of the ways it needs to be:
+ *
+ *   - The points come from `managerGameweekPoints`, so an in-flight gameweek is recomputed
+ *     from the live elements rather than read off `entry_history.points`, which FPL holds at
+ *     0 until it settles the week.
+ *   - The cache TTL follows the gameweek. This used to be CACHE_TTL unconditionally, so a
+ *     single call during live play pinned that manager at 0 for a further 24 hours — outliving
+ *     the gameweek actually settling, and unrepairable by warming because the key was present
+ *     rather than missing. Exactly the failure 52ac27d fixed for `fpl:history`.
+ *
+ * That second point is load-bearing beyond display: `autoAssignDefaultCaptain` picks the
+ * LOWEST scorer, so a stuck zero does not merely look wrong, it hands over the armband.
  */
 export async function calculateTeamGameweekScore(
   teamId: string,
@@ -230,17 +251,31 @@ export async function calculateTeamGameweekScore(
     };
   }
 
+  // Imported lazily: manager-points-context.ts imports this module, and a static import
+  // here would close the cycle.
+  const { buildManagerPointsContext } = await import("./fpl-live/manager-points-context");
+  const { managerGameweekPoints } = await import("./fpl-live/manager-points");
+
   // Fetch from FPL API
-  const picks = await fetchTeamGameweekPicks(teamId, gameweek);
+  const [picks, pointsCtx] = await Promise.all([
+    fetchTeamGameweekPicks(teamId, gameweek),
+    buildManagerPointsContext(gameweek),
+  ]);
 
-  const score = {
-    points: picks.entry_history.points,
-    transferHits: picks.entry_history.event_transfers_cost,
-    netScore: picks.entry_history.points - picks.entry_history.event_transfers_cost,
-  };
+  const points = managerGameweekPoints(picks, pointsCtx);
+  const transferHits = picks.entry_history.event_transfers_cost;
+  const score = { points, transferHits, netScore: points - transferHits };
 
-  // Cache the result
-  await setCachedScore(teamId, gameweek, score, leagueId);
+  // Cache the result — for a day once the gameweek is settled, for the live window while it
+  // is still moving. `pointsCtx.settled` is the same answer the score above was computed
+  // from, so the value and its lifetime can never disagree.
+  await setCachedScore(
+    teamId,
+    gameweek,
+    score,
+    leagueId,
+    pointsCtx.settled ? CACHE_TTL : LIVE_CACHE_TTL
+  );
 
   return score;
 }
@@ -363,11 +398,6 @@ export async function detectLiveGameweek(): Promise<{
 // ============================================
 
 /**
- * Fetch all PL player GW points in a single API call.
- * Returns a map of elementId -> total_points for the gameweek.
- * Uses cache (24hr TTL) to avoid rate limits.
- */
-/**
  * In-flight dedupe, keyed by gameweek + lane.
  *
  * Without this, N concurrent callers all miss the Redis cache (none has written it
@@ -381,8 +411,72 @@ export async function detectLiveGameweek(): Promise<{
  * background caller must not ride along on a critical request it would have been
  * refused, nor vice versa.
  */
-const inFlightElementPoints = new Map<string, Promise<Record<number, number>>>();
+const inFlightElementStats = new Map<string, Promise<Record<number, CachedElementStat>>>();
 
+/**
+ * Per-element live points AND minutes for a gameweek.
+ *
+ * The one fetch both live-score readers share. `fetchElementGameweekPoints` below is a
+ * projection of this, so a request that wants points and a request that wants minutes
+ * cost one /event/{gw}/live/ call between them rather than two.
+ *
+ * Minutes exist here for the vice-captain handover gate in the TVT live scorer. Points
+ * alone cannot answer "did this player turn out?": a substitute who appears and is booked
+ * scores exactly 0, which is indistinguishable from not playing.
+ */
+export async function fetchElementGameweekStats(
+  gameweek: number,
+  lane: FplLane = "background"
+): Promise<Record<number, CachedElementStat>> {
+  const cached = await getCachedElementStats(gameweek);
+  if (cached) return cached;
+
+  const key = `${lane}:${gameweek}`;
+  const existing = inFlightElementStats.get(key);
+  if (existing) return existing;
+
+  const pending = (async () => {
+    // Fetch from FPL API — one call returns all ~700 players
+    const liveData = await fetchLiveGameweek(gameweek, lane);
+    const statsMap: Record<number, CachedElementStat> = {};
+    const pointsMap: Record<number, number> = {};
+    for (const element of liveData.elements) {
+      statsMap[element.id] = {
+        points: element.stats.total_points,
+        minutes: element.stats.minutes,
+      };
+      pointsMap[element.id] = element.stats.total_points;
+    }
+
+    // Cache the result. A finished GW's points never move, so it keeps the long TTL; an in-flight
+    // GW gets the short one so live scores actually refresh during matches.
+    const final = await isGameweekFinal(gameweek, lane);
+    // Both keys, from the one payload: a points-only caller arriving next should not have
+    // to re-fetch merely because a stats caller warmed the other key. Their live TTLs differ
+    // on purpose — see ELEMENT_STATS_LIVE_TTL. A concluded gameweek's numbers never move,
+    // so both take the long one.
+    await Promise.all([
+      setCachedElementStats(gameweek, statsMap, final ? CACHE_TTL : ELEMENT_STATS_LIVE_TTL),
+      setCachedElementPoints(gameweek, pointsMap, final ? CACHE_TTL : LIVE_CACHE_TTL),
+    ]);
+    return statsMap;
+  })();
+
+  inFlightElementStats.set(key, pending);
+  void pending.catch(() => undefined).finally(() => {
+    if (inFlightElementStats.get(key) === pending) inFlightElementStats.delete(key);
+  });
+
+  return pending;
+}
+
+/**
+ * Fetch all PL player GW points in a single API call.
+ * Returns a map of elementId -> total_points for the gameweek.
+ *
+ * Cached for 24h once the gameweek has concluded and for 10 minutes while it is in flight
+ * — see `setCachedElementPoints`. Auction scoring is the main caller.
+ */
 export async function fetchElementGameweekPoints(
   gameweek: number,
   lane: FplLane = "background"
@@ -391,31 +485,13 @@ export async function fetchElementGameweekPoints(
   const cached = await getCachedElementPoints(gameweek);
   if (cached) return cached;
 
-  const key = `${lane}:${gameweek}`;
-  const existing = inFlightElementPoints.get(key);
-  if (existing) return existing;
-
-  const pending = (async () => {
-    // Fetch from FPL API — one call returns all ~700 players
-    const liveData = await fetchLiveGameweek(gameweek, lane);
-    const pointsMap: Record<number, number> = {};
-    for (const element of liveData.elements) {
-      pointsMap[element.id] = element.stats.total_points;
-    }
-
-    // Cache the result. A finished GW's points never move, so it keeps the long TTL; an in-flight
-    // GW gets the short one so live scores actually refresh during matches.
-    const final = await isGameweekFinal(gameweek);
-    await setCachedElementPoints(gameweek, pointsMap, final ? CACHE_TTL : LIVE_CACHE_TTL);
-    return pointsMap;
-  })();
-
-  inFlightElementPoints.set(key, pending);
-  void pending.catch(() => undefined).finally(() => {
-    if (inFlightElementPoints.get(key) === pending) inFlightElementPoints.delete(key);
-  });
-
-  return pending;
+  // Falls through to the stats fetch, which writes both keys. Sharing the in-flight map
+  // matters as much as sharing the cache: auction scoring fans out over every team at
+  // once, and the two readers overlapping is the normal case, not the rare one.
+  const stats = await fetchElementGameweekStats(gameweek, lane);
+  const pointsMap: Record<number, number> = {};
+  for (const [id, stat] of Object.entries(stats)) pointsMap[Number(id)] = stat.points;
+  return pointsMap;
 }
 
 /**
@@ -459,12 +535,15 @@ export async function fetchBootstrapEventFlags(): Promise<FplEventStatus[]> {
  * too often is always recoverable; erring toward a 24h freeze is what this whole change exists
  * to prevent.
  */
-export async function isGameweekFinal(gameweek: number): Promise<boolean> {
+export async function isGameweekFinal(
+  gameweek: number,
+  lane: FplLane = "background"
+): Promise<boolean> {
   try {
     // Imported lazily: fpl/event-status.ts imports this module for its bootstrap
     // fallback, and a static import here would close that cycle.
     const { isGameweekConcluded } = await import("./fpl/event-status");
-    return await isGameweekConcluded(gameweek);
+    return await isGameweekConcluded(gameweek, lane);
   } catch (error) {
     console.warn(`[fpl] event status lookup failed for GW${gameweek}; treating as not final`, error);
     return false;
