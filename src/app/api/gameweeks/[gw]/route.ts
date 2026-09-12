@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, gameweeks, fixtures, teams, players, groups, results, gameweekCaptains, gameweekChips, auditLogs, type Gameweek, type Fixture, type Team, type Player, type Group, type Result, type GameweekCaptain, type GameweekChip } from "@/lib/db";
+import { db, gameweeks, teams, players, groups, results, gameweekCaptains, gameweekChips, auditLogs, type Gameweek, type Fixture, type Team, type Player, type Group, type Result, type GameweekCaptain, type GameweekChip } from "@/lib/db";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { calculateTVTTeamScore, determineMatchResult } from "@/lib/formats/tvt/scoring";
+import { computeGameweekAwards, type AwardFixtureInput } from "@/lib/formats/tvt/gameweek-awards";
 import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { leagues, challengerSurvivalEntries } from "@/lib/db/schema";
 import { processContinentalChampionshipGameweek } from "@/lib/formats/continental-championship/process-gameweek";
@@ -563,9 +564,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         tvtChipName(chipType),
       );
 
-    // Track margins for bonus point calculation per group
-    // Key: groupId, Value: array of { teamId, margin, fixtureId, usedDoublePointer }
-    const groupMargins: Map<string, { teamId: string; margin: number; fixtureId: string; resultId: string; usedDoublePointer: boolean }[]> = new Map();
 
     // Process each fixture
     for (const fixture of unprocessedFixtures) {
@@ -884,36 +882,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           awayPlayerScores,
         });
 
-        // Track margin for bonus calculation (only winning teams with 75+ margin)
-        // Only track if fixture has a group assigned
-        const groupId = fixture.groupId;
-        if (groupId) {
-          if (!groupMargins.has(groupId)) {
-            groupMargins.set(groupId, []);
-          }
-
-          if (margin >= 75) {
-            if (effectiveHomeScore > effectiveAwayScore) {
-              // Home team won by 75+
-              groupMargins.get(groupId)!.push({
-                teamId: fixture.homeTeamId,
-                margin,
-                fixtureId: fixture.id,
-                resultId,
-                usedDoublePointer: homeUsedDoublePointer,
-              });
-            } else if (effectiveAwayScore > effectiveHomeScore) {
-              // Away team won by 75+
-              groupMargins.get(groupId)!.push({
-                teamId: fixture.awayTeamId,
-                margin,
-                fixtureId: fixture.id,
-                resultId,
-                usedDoublePointer: awayUsedDoublePointer,
-              });
-            }
-          }
-        }
 
         // Update home team league points (with chip adjustments, no bonus yet)
         const homeTeam = await db.select().from(teams).where(eq(teams.id, fixture.homeTeamId));
@@ -996,59 +964,110 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // ============================================
     // BONUS POINT CALCULATION (Per Group - Highest Margin)
     // ============================================
+    //
+    // Decided over the WHOLE gameweek, not over the fixtures this pass happened to score.
+    //
+    // The processor skips fixtures that already have a result, so a gameweek can reach here
+    // having scored only part of itself — whenever an earlier run errored on some fixtures, and
+    // routinely once an automatic daily run exists. Ranking margins within the batch then handed
+    // the group bonus out a second time, to whoever happened to be the best of the remainder.
+    //
+    // So every fixture in the gameweek is weighed: the ones scored just now, and the ones
+    // settled earlier, the latter carrying their recorded Double Pointer flag because their
+    // chips are already decided. Then the stored flags are RECONCILED to that answer rather
+    // than incremented, which makes a re-run land on the same numbers instead of accumulating.
     const bonusResults: { teamId: string; margin: number; group: string; usedDoublePointer?: boolean; bonusPointsAwarded?: number }[] = [];
-    
-    for (const [groupId, margins] of groupMargins) {
-      if (margins.length === 0) continue;
-      
-      // Find the highest margin in this group
-      const highestMargin = Math.max(...margins.map(m => m.margin));
-      
-      // Get all teams with the highest margin (could be tied)
-      const bonusWinners = margins.filter(m => m.margin === highestMargin);
-      
-      // Get group name for logging
-      const groupRecord = await db.select().from(groups).where(eq(groups.id, groupId));
-      const groupName = groupRecord[0]?.name || groupId;
-      
-      for (const winner of bonusWinners) {
-        // Update result to mark bonus
-        const resultRecord = await db.select().from(results).where(eq(results.id, winner.resultId));
-        if (resultRecord[0]) {
-          const fixtureRecord = await db.select().from(fixtures).where(eq(fixtures.id, resultRecord[0].fixtureId));
-          const isHomeTeam = fixtureRecord[0]?.homeTeamId === winner.teamId;
-          
-          await db.update(results)
-            .set({
-              homeGotBonus: isHomeTeam ? true : resultRecord[0].homeGotBonus,
-              awayGotBonus: !isHomeTeam ? true : resultRecord[0].awayGotBonus,
-            })
-            .where(eq(results.id, winner.resultId));
-        }
-        
-        // Calculate bonus points (doubled if using Double Pointer)
-        // Double Pointer: (2+1)*2 = 6 points total, so bonus is also doubled
-        const bonusPointsToAward = winner.usedDoublePointer ? 2 : 1;
-        
-        // Update team league points (bonus as league points, not separate)
-        // And update bonusPoints count for display
-        const teamRecord = await db.select().from(teams).where(eq(teams.id, winner.teamId));
-        if (teamRecord[0]) {
+
+    // Read the gameweek's results back from the database rather than trusting the copies
+    // loaded before the loop ran. Those are stale in two ways that matter: a force reprocess
+    // has already DELETED the rows they point at, and the fixtures just scored are not in them
+    // at all. Reconciling against stale rows would revert points for a result that no longer
+    // exists.
+    const gwFixtureIds = gameweek.fixtures.map((f: FixtureWithRelations) => f.id);
+    const currentResults = gwFixtureIds.length > 0
+      ? await db.select().from(results).where(inArray(results.fixtureId, gwFixtureIds))
+      : [];
+    const resultByFixtureId = new Map(currentResults.map((r) => [r.fixtureId, r]));
+
+    // Every fixture that now HAS a result competes, whichever pass produced it. Scores and
+    // Double Pointer flags come off the stored row, so a fixture settled last week weighs in
+    // on exactly the terms it was settled on.
+    const awardFixtures: AwardFixtureInput[] = [];
+    for (const fx of gameweek.fixtures) {
+      const row = resultByFixtureId.get(fx.id);
+      if (!row) continue;
+      awardFixtures.push({
+        fixtureId: fx.id,
+        groupId: fx.groupId,
+        homeTeamId: fx.homeTeamId,
+        awayTeamId: fx.awayTeamId,
+        homeScore: row.homeScore,
+        awayScore: row.awayScore,
+        // Hits are irrelevant to the bonus, and these fixtures are already chip-adjusted.
+        homeHits: 0,
+        awayHits: 0,
+        homeUsedDoublePointer: row.homeUsedDoublePointer,
+        awayUsedDoublePointer: row.awayUsedDoublePointer,
+      });
+    }
+
+    // No chips passed: this call decides the bonus alone. Match points and chip points were
+    // written in the fixture loop above.
+    const { byTeam: bonusByTeam } = computeGameweekAwards({ fixtures: awardFixtures, chips: [] });
+
+    // Reconcile toward that answer, so a bonus awarded on an earlier pass to a team that no
+    // longer deserves it is taken back instead of standing alongside the new one.
+    for (const fx of gameweek.fixtures) {
+      const row = resultByFixtureId.get(fx.id);
+      if (!row) continue;
+
+      const wantHome = bonusByTeam.get(fx.homeTeamId)?.gotBonus === true
+        && bonusByTeam.get(fx.homeTeamId)?.fixtureId === fx.id;
+      const wantAway = bonusByTeam.get(fx.awayTeamId)?.gotBonus === true
+        && bonusByTeam.get(fx.awayTeamId)?.fixtureId === fx.id;
+
+      if (row.homeGotBonus === wantHome && row.awayGotBonus === wantAway) continue;
+
+      await db.update(results)
+        .set({ homeGotBonus: wantHome, awayGotBonus: wantAway })
+        .where(eq(results.id, row.id));
+
+      for (const side of [
+        { teamId: fx.homeTeamId, stored: row.homeGotBonus, want: wantHome, usedDp: row.homeUsedDoublePointer },
+        { teamId: fx.awayTeamId, stored: row.awayGotBonus, want: wantAway, usedDp: row.awayUsedDoublePointer },
+      ]) {
+        if (side.stored === side.want) continue;
+        // Double Pointer doubles the bonus, so it must also double the reversal.
+        const points = side.usedDp ? 2 : 1;
+        const teamRecord = await db.select().from(teams).where(eq(teams.id, side.teamId));
+        if (!teamRecord[0]) continue;
+
+        if (side.want) {
           await db.update(teams)
             .set({
-              leaguePoints: teamRecord[0].leaguePoints + bonusPointsToAward,
-              bonusPoints: teamRecord[0].bonusPoints + 1, // Count of bonuses earned (not points)
+              leaguePoints: teamRecord[0].leaguePoints + points,
+              bonusPoints: teamRecord[0].bonusPoints + 1,
             })
-            .where(eq(teams.id, winner.teamId));
+            .where(eq(teams.id, side.teamId));
+
+          const groupRecord = fx.groupId
+            ? await db.select().from(groups).where(eq(groups.id, fx.groupId))
+            : [];
+          bonusResults.push({
+            teamId: side.teamId,
+            margin: Math.abs(row.homeScore - row.awayScore),
+            group: groupRecord[0]?.name || fx.groupId || "",
+            usedDoublePointer: side.usedDp,
+            bonusPointsAwarded: points,
+          });
+        } else {
+          await db.update(teams)
+            .set({
+              leaguePoints: Math.max(0, teamRecord[0].leaguePoints - points),
+              bonusPoints: Math.max(0, teamRecord[0].bonusPoints - 1),
+            })
+            .where(eq(teams.id, side.teamId));
         }
-        
-        bonusResults.push({
-          teamId: winner.teamId,
-          margin: winner.margin,
-          group: groupName,
-          usedDoublePointer: winner.usedDoublePointer,
-          bonusPointsAwarded: bonusPointsToAward,
-        });
       }
     }
 
