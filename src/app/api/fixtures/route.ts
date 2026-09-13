@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { db, fixtures, teams, gameweeks, leagues } from "@/lib/db";
+import { dailyTick } from "@/lib/cron/daily-tick";
 import { gameweekChips } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { getCachedFixtures, setCachedFixtures } from "@/lib/fpl-cache";
@@ -64,6 +65,11 @@ async function readCachedFplChips(fplIds: string[]): Promise<Record<string, FplC
 
 export async function GET(request: NextRequest) {
   try {
+    // Second entry point for the daily run, alongside /api/standings. Two routes rather than one
+    // because the queue advances one item per request, so the more ordinary traffic it can ride
+    // on, the sooner a day's work drains.
+    after(() => dailyTick(request.nextUrl.origin));
+
     const { searchParams } = new URL(request.url);
     const gameweekParam = searchParams.get("gameweek");
     const groupParam = searchParams.get("group");

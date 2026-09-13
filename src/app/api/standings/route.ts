@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { db, teams, gameweeks, leagues, settings, auctionScores, auctionOwnership } from "@/lib/db";
+import { dailyTick } from "@/lib/cron/daily-tick";
 import { eq, and } from "drizzle-orm";
 import { getCachedStandings, setCachedStandings } from "@/lib/fpl-cache";
 import { computeAuctionStandings } from "@/lib/formats/auction/standings";
@@ -63,6 +64,10 @@ interface TeamStanding {
  */
 export async function GET(request: NextRequest) {
   try {
+    // Drive the daily processing run off ordinary traffic. Runs after the response is sent, so
+    // it cannot delay this page, and is a couple of Redis reads once the day's work is done.
+    after(() => dailyTick(request.nextUrl.origin));
+
     const { searchParams } = new URL(request.url);
     const group = searchParams.get("group");
     const leagueSlug = searchParams.get("leagueSlug");
