@@ -310,12 +310,23 @@ export async function GET(request: NextRequest) {
     // Just the same computation cut one gameweek earlier. Deriving it this way is what
     // guarantees the arrows are honest: the hand-rolled snapshot this replaces sorted by
     // a DIFFERENT rule than the live table, so tied teams sprouted phantom movement.
-    const prevRankByTeam = new Map<string, number>();
+    //
+    // The baseline for the SETTLED table: one processed gameweek earlier.
+    const settledPrevRanks = new Map<string, number>();
     if (maxPlayedGw > 1) {
       const prev = await computeLeagueStageStandings(leagueId, { throughGw: maxPlayedGw - 1 });
       for (const members of prev.byGroup.values()) {
-        for (const row of members) prevRankByTeam.set(row.teamId, row.groupRank);
+        for (const row of members) settledPrevRanks.set(row.teamId, row.groupRank);
       }
+    }
+
+    // The baseline for the LIVE table is the settled table itself, which we already have.
+    // Comparing a provisional table against maxPlayedGw - 1 spans TWO gameweeks — the one
+    // in flight plus the last processed one — so the arrows claimed movement that had
+    // already happened. Against `settled`, ▲/▼ means "moved during the gameweek in flight".
+    const livePrevRanks = new Map<string, number>();
+    for (const members of settled.byGroup.values()) {
+      for (const row of members) livePrevRanks.set(row.teamId, row.groupRank);
     }
 
     // Layer the CP/BP tooltip onto each ranked row. The tooltip is presentation detail
@@ -394,8 +405,8 @@ export async function GET(request: NextRequest) {
       rankDelta: number | null;
     };
 
-    const toResponseRow = (row: LeagueStageRow): RankedStanding => {
-      const prevRank = maxPlayedGw > 1 ? prevRankByTeam.get(row.teamId) ?? null : null;
+    const toResponseRow = (row: LeagueStageRow, prevRanks: Map<string, number> | null): RankedStanding => {
+      const prevRank = prevRanks?.get(row.teamId) ?? null;
       return {
         teamId: row.teamId,
         name: row.name,
@@ -424,12 +435,37 @@ export async function GET(request: NextRequest) {
     };
 
     // A `group` filter narrows what is returned, never how it was ranked.
-    const groupMap: Record<string, RankedStanding[]> = {};
-    for (const [gName, members] of byGroup.entries()) {
-      if (group && gName !== group) continue;
-      groupMap[gName] = members.map(toResponseRow);
-    }
+    const buildGroupMap = (
+      src: Map<string, LeagueStageRow[]>,
+      prevRanks: Map<string, number> | null,
+    ): Record<string, RankedStanding[]> => {
+      const out: Record<string, RankedStanding[]> = {};
+      for (const [gName, members] of src.entries()) {
+        if (group && gName !== group) continue;
+        out[gName] = members.map((row) => toResponseRow(row, prevRanks));
+      }
+      return out;
+    };
+
+    const groupMap = buildGroupMap(byGroup, liveCtx ? livePrevRanks : (maxPlayedGw > 1 ? settledPrevRanks : null));
     const standings = rows;
+
+    // ===== The settled table, offered alongside the provisional one =====
+    // While a gameweek is in flight the table above is provisional, so the page lets the
+    // reader flip back to where things stood when the last gameweek was processed. That
+    // table is already computed — `settled` — so serialising it costs nothing but bytes,
+    // and only while live. `maxPlayedGw > 0` because during GW1 the fallback would be an
+    // all-zero table, which is not a view worth offering.
+    const settledView = liveCtx != null && maxPlayedGw > 0
+      ? (() => {
+          const settledMap = buildGroupMap(settled.byGroup, maxPlayedGw > 1 ? settledPrevRanks : null);
+          return {
+            groupA: settledMap["A"] ?? [],
+            groupB: settledMap["B"] ?? [],
+            gameweek: maxPlayedGw,
+          };
+        })()
+      : null;
 
     // Format-aware legend. The previous hard-coded 8/14/16 keys were wrong for
     // 8-team leagues (no rank 9..14 exists; cutoff is top-4 for playoffs).
@@ -465,6 +501,12 @@ export async function GET(request: NextRequest) {
       liveCachedAt: liveCtx?.cachedAt ?? null,
       /** The gameweek being shown live, so the header can name it. */
       liveGameweek: liveCtx?.gameweek ?? null,
+      /**
+       * The table as it stood before the in-flight gameweek, for the live/settled toggle.
+       * Null unless a live overlay is applied — when nothing is provisional there is only
+       * one table and the toggle has nothing to switch between.
+       */
+      settled: settledView,
     };
 
     // Fire-and-forget cache write — must not block or break the response.

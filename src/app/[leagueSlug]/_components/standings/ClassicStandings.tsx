@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { StandingsTable } from "@/components/StandingsTable";
@@ -15,6 +15,13 @@ import type { TeamStanding } from "@/types/standings";
  */
 const LIVE_POLL_MS = 3 * 60 * 1000;
 
+type SettledView = {
+  groupA: TeamStanding[];
+  groupB: TeamStanding[];
+  /** The last processed gameweek — what this table is "as of". */
+  gameweek: number;
+};
+
 export function ClassicStandings() {
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
@@ -25,17 +32,24 @@ export function ClassicStandings() {
   const isLoggedIn = viewer.authenticated;
   const dashboardHref = viewer.dashboardHref;
 
-  const [groupA, setGroupA] = useState<TeamStanding[]>([]);
-  const [groupB, setGroupB] = useState<TeamStanding[]>([]);
+  const [liveGroupA, setLiveGroupA] = useState<TeamStanding[]>([]);
+  const [liveGroupB, setLiveGroupB] = useState<TeamStanding[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [latestGameweek, setLatestGameweek] = useState<number>(0);
   const [teamSize, setTeamSize] = useState<number>(league.teamSize);
   const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
   const [leagueStageEnd, setLeagueStageEnd] = useState<number>(0);
   const [isLive, setIsLive] = useState(false);
   const [liveGameweek, setLiveGameweek] = useState<number | null>(null);
   const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
+
+  /**
+   * The table as it stood before the in-flight gameweek. The API sends it only while the
+   * main table is provisional, so its presence is exactly the condition for offering the
+   * toggle — there is nothing to switch to once the gameweek has been processed.
+   */
+  const [settledView, setSettledView] = useState<SettledView | null>(null);
+  const [view, setView] = useState<"live" | "settled">("live");
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -53,8 +67,8 @@ export function ClassicStandings() {
         const data = await response.json();
         // A poll that lands after the user has navigated away must not write into a dead tree.
         if (cancelled) return;
-        setGroupA(data.groupA || []);
-        setGroupB(data.groupB || []);
+        setLiveGroupA(data.groupA || []);
+        setLiveGroupB(data.groupB || []);
         if (data.teamSize) setTeamSize(data.teamSize);
         setGroupsRevealed(data.groupsRevealed === true);
         setIsLive(data.isLive === true);
@@ -62,15 +76,13 @@ export function ClassicStandings() {
         setLiveCachedAt(typeof data.liveCachedAt === "string" ? data.liveCachedAt : null);
         const stageEnd: number = data.leagueStageEnd ?? 30;
         setLeagueStageEnd(stageEnd);
-        const maxPlayed = Math.min(
-          Math.max(
-            ...(data.groupA ?? []).map((t: TeamStanding) => t.played),
-            ...(data.groupB ?? []).map((t: TeamStanding) => t.played),
-            0
-          ),
-          stageEnd
-        );
-        setLatestGameweek(maxPlayed);
+
+        // A poll can land the moment the gameweek is processed, which retires the settled
+        // view mid-session. Drop back to the live table rather than stranding the reader on
+        // a table the server no longer has anything to say about.
+        const settled = data.settled ?? null;
+        setSettledView(settled);
+        if (!settled) setView("live");
       } catch (err) {
         if (cancelled) return;
         console.error("Error fetching standings:", err);
@@ -90,10 +102,29 @@ export function ClassicStandings() {
     };
   }, [leagueSlug]);
 
+  // Which of the two tables is on screen. `settledView` going away (gameweek processed)
+  // collapses this to the live table on its own, so no stale branch can render.
+  const showingSettled = view === "settled" && settledView != null;
+  const groupA = showingSettled ? settledView.groupA : liveGroupA;
+  const groupB = showingSettled ? settledView.groupB : liveGroupB;
+
   const totalTeams = groupA.length + groupB.length;
   const isContinentalChampionship = leagueFormat === "continental-championship";
-  // `latestGameweek` is already clamped to the stage end when it is loaded, so this
-  // flips exactly when the final league-stage gameweek has been played.
+
+  // Derived from whichever table is displayed, so the settled view's header falls back a
+  // gameweek on its own. Clamped to the stage end, as the header and the zone wording both
+  // read it as "the last league-stage gameweek played".
+  const latestGameweek = useMemo(() => {
+    const maxPlayed = Math.max(
+      ...groupA.map((t) => t.played),
+      ...groupB.map((t) => t.played),
+      0
+    );
+    return leagueStageEnd > 0 ? Math.min(maxPlayed, leagueStageEnd) : maxPlayed;
+  }, [groupA, groupB, leagueStageEnd]);
+
+  // `latestGameweek` is already clamped to the stage end, so this flips exactly when the
+  // final league-stage gameweek has been played.
   const leagueStageComplete = leagueStageEnd > 0 && latestGameweek >= leagueStageEnd;
 
   return (
@@ -125,7 +156,7 @@ export function ClassicStandings() {
               )}
               {!isContinentalChampionship && (
                 <p className="text-gray-400">
-                  {isLive && liveGameweek != null
+                  {isLive && !showingSettled && liveGameweek != null
                     ? `Gameweek ${liveGameweek} in progress · League Stage`
                     : latestGameweek > 0
                       ? `After Gameweek ${latestGameweek} · League Stage`
@@ -135,7 +166,7 @@ export function ClassicStandings() {
                   }
                 </p>
               )}
-              {isLive && (
+              {isLive && !showingSettled && (
                 <div className="mt-3 flex flex-col items-center gap-1.5">
                   <div className="flex items-center gap-3">
                     <span
@@ -147,16 +178,49 @@ export function ClassicStandings() {
                     </span>
                     <LiveFreshness updatedAt={liveCachedAt} isRefreshing={false} />
                   </div>
-                  <p className="text-[11px] text-gray-500">
-                    Provisional — includes in-progress fixtures, and settles when the gameweek is
-                    processed.
+                  {/* Loud on purpose. This is the only thing telling the reader the table
+                      below is not the real one, and as fine print it went unread. */}
+                  <p className="mt-1 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-left text-xs sm:text-sm text-amber-200">
+                    <svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                      />
+                    </svg>
+                    Provisional table — includes in-progress fixtures, and settles when the gameweek is processed.
                   </p>
                 </div>
               )}
-              {latestGameweek > 0 && !isLive && (
+              {latestGameweek > 0 && (!isLive || showingSettled) && (
                 <p className="text-[11px] text-gray-500 mt-2">▲/▼ shows league rank change vs previous GW</p>
               )}
             </div>
+
+            {/* Only offered while the main table is provisional: the settled table is what
+                the standings were before the in-flight gameweek started moving them. Both
+                tables arrive in the same response, so switching costs no round trip. */}
+            {isLive && settledView != null && (
+              <div className="mx-auto mb-6 flex w-fit gap-1 rounded-lg bg-slate-800/50 p-1">
+                <button
+                  onClick={() => setView("live")}
+                  className={`rounded-md px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition ${
+                    !showingSettled ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  Live · GW{liveGameweek}
+                </button>
+                <button
+                  onClick={() => setView("settled")}
+                  className={`rounded-md px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition ${
+                    showingSettled ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  After GW{settledView.gameweek}
+                </button>
+              </div>
+            )}
 
             {!isContinentalChampionship && (
               <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mb-6 sm:mb-8 text-xs sm:text-sm">
