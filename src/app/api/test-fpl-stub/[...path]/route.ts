@@ -248,22 +248,37 @@ function bootstrap() {
   };
 }
 
+/**
+ * GET /entry/{id}/history/
+ *
+ * `current[]` carries a row for the in-flight gameweek, but with `points: 0`, `rank: null` and
+ * `total_points` frozen at the previous gameweek's cumulative — because that is what the real API
+ * does. `current[gw]` is the same record as `entry_history` in the picks payload, and FPL fills
+ * neither until it processes the week.
+ *
+ * This used to fabricate real points for the live gameweek, which is why the FPL League page's
+ * "GW n Pts" column could read 0 for every manager in production while the whole suite stayed
+ * green — the same blind spot, in the sibling endpoint, that let the original 0-0 live-score
+ * regression ship.
+ */
 function entryHistory(entryId: number) {
   const throughGw = Math.max(state.finishedThrough, state.liveGw ?? 0);
   let running = 0;
   const current = [];
   for (let gw = 1; gw <= throughGw; gw++) {
-    const points = entryGwPoints(entryId, gw);
+    const settled = isGwSettled(gw);
+    const points = settled ? entryGwPoints(entryId, gw) : 0;
     running += points;
     current.push({
       event: gw,
       points,
       total_points: running,
-      rank: 1 + hashed(entryId + gw, 500_000),
-      overall_rank: 1 + hashed(entryId * 2 + gw, 500_000),
+      rank: settled ? 1 + hashed(entryId + gw, 500_000) : null,
+      overall_rank: settled ? 1 + hashed(entryId * 2 + gw, 500_000) : null,
       event_transfers: hashed(entryId + gw * 2, 3),
+      // Fixed at the deadline, so correct throughout — not zeroed.
       event_transfers_cost: entryTransferCost(entryId, gw),
-      points_on_bench: hashed(entryId * 7 + gw, 15),
+      points_on_bench: settled ? hashed(entryId * 7 + gw, 15) : 0,
       value: 1000,
       bank: 5,
     });
@@ -571,21 +586,35 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ path: s
  * Here the world genuinely changes the instant a spec says so, so the derived
  * state has to go with it.
  *
- * Deliberately NOT cleared here: `fpl:history:*`. Entry history is keyed per entry rather than
- * per gameweek, and the caching specs assert that a second page load makes zero FPL calls — they
- * call /control to reset counters immediately beforehand, so wiping history on every world change
- * would break the very behaviour under test. fpl-league.spec.ts's "gameweek column" test relies
- * on exactly this: entryHistory's content depends only on max(finishedThrough, liveGw), and a
- * /control call that leaves that max unchanged must leave the cached history untouched too, or
- * the test's warm single-flight has nothing to serve. See `invalidateHistoryCache` below for the
- * one case that DOES need history swept.
+ * `fpl:history:*` is swept too, but only when the gameweek watermarks actually move.
+ *
+ * It did not used to be, on the reasoning that entryHistory's content depended solely on
+ * max(finishedThrough, liveGw). That stopped being true once the stub started reporting a live
+ * gameweek honestly: `current[gw].points` is now 0 and `total_points` frozen until that gameweek
+ * is SETTLED, so the same max with a different finishedThrough is a different payload. Leaving
+ * the old copy cached made the app serve fabricated live points that the endpoint itself no
+ * longer returns — a disagreement between the stub and its own cache, which is worse than either
+ * behaviour alone.
+ *
+ * A bare `resetCounts` still sweeps nothing, which is what the caching specs depend on: they
+ * reset counters immediately before asserting that a warm page makes zero FPL calls.
  */
 async function invalidateWorldDerivedCaches(): Promise<void> {
   const redis = await connectStubRedis();
   if (!redis) return;
 
   await redis.del("fpl:events:latest", "fpl:bootstrap:latest", "fpl:event-status:latest", "fpl:fixtures:all");
-  for (const pattern of ["fpl:elements:gw*", "live:gw*", "fpl:deadline-sync:*"]) {
+  // `fpl-league:warm:*` goes with them. That claim is a 10-second cooldown meant to coalesce a
+  // burst of readers, not to outlive the world it warmed against — leaving it set after a sweep
+  // means the next `?warm=1` is refused and the table has nothing to serve but empty rows.
+  for (const pattern of [
+    "fpl:elements:gw*",
+    "live:gw*",
+    "fpl:deadline-sync:*",
+    "fpl:history:*",
+    "fpl:*:gw*",
+    "fpl-league:warm:*",
+  ]) {
     const keys = await redis.keys(pattern);
     if (keys.length > 0) await redis.del(...keys);
   }
