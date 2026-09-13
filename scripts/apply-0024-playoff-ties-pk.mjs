@@ -64,9 +64,18 @@ async function main() {
 
   console.log("playoff_ties is empty; rebuilding with a composite primary key…");
 
-  await client.execute("PRAGMA foreign_keys=OFF");
-  await client.execute(`
-    CREATE TABLE __new_playoff_ties (
+  // One transaction, not four statements.
+  //
+  // Sequentially, a failure between DROP and RENAME would leave the database with no
+  // playoff_ties table at all. The table being empty means no data is at risk, but a missing
+  // table breaks every playoff read until someone notices and repairs it by hand. batch(…,
+  // "write") wraps these in a transaction so the rebuild either lands whole or not at all.
+  //
+  // No PRAGMA foreign_keys toggle: PRAGMA cannot change inside a transaction, and it is not
+  // needed here — nothing FK-references playoff_ties (fixtures.tie_id is a soft link with no
+  // constraint), so the DROP cannot cascade.
+  await client.batch([
+    `CREATE TABLE __new_playoff_ties (
       tie_id text NOT NULL,
       league_id text NOT NULL,
       round_name text NOT NULL,
@@ -88,13 +97,13 @@ async function main() {
       FOREIGN KEY (away_team_id) REFERENCES teams(id) ON UPDATE no action ON DELETE set null,
       FOREIGN KEY (winner_id) REFERENCES teams(id) ON UPDATE no action ON DELETE set null,
       FOREIGN KEY (loser_id) REFERENCES teams(id) ON UPDATE no action ON DELETE set null
-    )
-  `);
-  // Empty by the check above, but copy anyway so the script stays honest about its own intent.
-  await client.execute("INSERT INTO __new_playoff_ties SELECT * FROM playoff_ties");
-  await client.execute("DROP TABLE playoff_ties");
-  await client.execute("ALTER TABLE __new_playoff_ties RENAME TO playoff_ties");
-  await client.execute("PRAGMA foreign_keys=ON");
+    )`,
+    // Empty by the guard above, but copied anyway so the script stays honest about its intent.
+    "INSERT INTO __new_playoff_ties SELECT * FROM playoff_ties",
+    "DROP TABLE playoff_ties",
+    "ALTER TABLE __new_playoff_ties RENAME TO playoff_ties",
+  ], "write");
+
 
   if (!(await alreadyApplied())) {
     console.error("rebuild finished but the composite key is not in place — inspect manually");
