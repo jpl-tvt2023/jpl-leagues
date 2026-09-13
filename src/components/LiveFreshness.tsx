@@ -26,7 +26,7 @@ export function LiveFreshness({
   if (isRefreshing) {
     return (
       <span
-        className={`inline-flex items-center gap-1 text-[10px] sm:text-xs text-gray-400 ${className}`}
+        className={`inline-flex items-center gap-1 text-xs text-gray-400 ${className}`}
         title="Fetching the latest scores from FPL"
       >
         <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -49,7 +49,7 @@ export function LiveFreshness({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[10px] sm:text-xs text-gray-500 ${className}`}
+      className={`inline-flex items-center gap-1 text-xs text-gray-400 ${className}`}
       title={`Scores as of ${when.toLocaleString()}`}
     >
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
