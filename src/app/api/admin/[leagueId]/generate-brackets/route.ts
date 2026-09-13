@@ -401,7 +401,20 @@ export async function DELETE(request: NextRequest) {
 
     const { results, fixtures: fixturesTable } = await import("@/lib/db/schema");
 
-    const fxRows = await db.select({ id: fixturesTable.id }).from(fixturesTable).where(inArray(fixturesTable.tieId, tieIds));
+    // Both lookups below must be league-scoped. Tie ids are bracket-position LABELS, unique only
+    // within a league, so matching on them alone reaches into every other league that has a tie
+    // of the same name — and this is a DELETE path, so an unscoped match destroys their data.
+    const leagueGwRows = await db.select({ id: gameweeks.id })
+      .from(gameweeks)
+      .where(eq(gameweeks.leagueId, leagueId));
+    const leagueGwIds = leagueGwRows.map(g => g.id);
+
+    const fxRows = leagueGwIds.length > 0
+      ? await db.select({ id: fixturesTable.id }).from(fixturesTable).where(and(
+          inArray(fixturesTable.tieId, tieIds),
+          inArray(fixturesTable.gameweekId, leagueGwIds),
+        ))
+      : [];
     const fixtureIds = fxRows.map(f => f.id);
 
     await db.transaction(async (tx) => {
@@ -409,7 +422,10 @@ export async function DELETE(request: NextRequest) {
         await tx.delete(results).where(inArray(results.fixtureId, fixtureIds));
         await tx.delete(fixturesTable).where(inArray(fixturesTable.id, fixtureIds));
       }
-      await tx.delete(playoffTies).where(inArray(playoffTies.tieId, tieIds));
+      await tx.delete(playoffTies).where(and(
+        eq(playoffTies.leagueId, leagueId),
+        inArray(playoffTies.tieId, tieIds),
+      ));
     });
 
     await invalidateLeaguePageCache(leagueId);

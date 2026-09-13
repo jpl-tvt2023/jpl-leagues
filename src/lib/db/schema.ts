@@ -322,8 +322,23 @@ export const gameweekChips = sqliteTable("gameweek_chips", {
 // ============================================
 
 // Playoff ties — one row per matchup (links 2-legged or single-leg encounters)
+/**
+ * A playoff tie: one bracket position within one league.
+ *
+ * `tie_id` is a bracket-position LABEL ("RO16-A", "16T-SF-A", "JCL-SF-1"), taken from the seeding
+ * tables in `lib/formats/tvt/playoffs.ts`. It carries no league component, so it is unique only
+ * within a league — hence the composite primary key.
+ *
+ * It used to be the primary key on its own, which meant the first league to generate playoffs
+ * claimed every label and every other league's generation died on a UNIQUE violation. Because the
+ * label is also rendered to users and parsed back to derive a round name, namespacing the VALUE
+ * was the wrong fix; scoping the KEY is the right one.
+ *
+ * ⚠️ Every query against this table must filter on `leagueId`. A `where` on `tieId` alone now
+ * matches one row per league.
+ */
 export const playoffTies = sqliteTable("playoff_ties", {
-  tieId: text("tie_id").primaryKey(), // e.g. "RO16-A", "C-31-A", "QF-B"
+  tieId: text("tie_id").notNull(), // e.g. "RO16-A", "C-31-A", "QF-B" — unique per league, not globally
   leagueId: text("league_id").notNull().references(() => leagues.id, { onDelete: "cascade" }),
   roundName: text("round_name").notNull(), // Display label: "RO16", "QF", "SF", "Final", "C-31", etc.
   roundType: text("round_type").notNull(), // "tvt" | "challenger-ko" | "challenger-survival"
@@ -338,7 +353,9 @@ export const playoffTies = sqliteTable("playoff_ties", {
   gw3: integer("gw3"), // Third leg GW number (null for 1-leg/2-leg ties; used by 16T triple-leg Final/3rd)
   status: text("status").notNull().default("pending"), // "pending" | "leg1_done" | "leg2_done" | "complete"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.leagueId, table.tieId] }),
+}));
 
 // Challenger Survival entries (GW33) — individual team scores, not head-to-head
 export const challengerSurvivalEntries = sqliteTable("challenger_survival_entries", {

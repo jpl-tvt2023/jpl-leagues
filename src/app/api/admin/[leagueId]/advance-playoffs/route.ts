@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { fixtures, playoffTies, gameweeks, gameweekCaptains, results, groups, challengerSurvivalEntries, leagues } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
+import { generateId } from "@/lib/id";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -17,7 +18,30 @@ function getGameweekId(gwNumber: number, leagueId: string): Promise<string | nul
     .then(g => g?.id ?? null);
 }
 
-// Get tie by ID, filtered to the correct league (tieId is a global PK but filtering by leagueId ensures correctness)
+/**
+ * A tie's playoff fixtures, scoped to its league.
+ *
+ * `fixtures.tieId` holds the same bracket-position label the tie does, and labels repeat across
+ * leagues — so a lookup on `tieId` alone returns another league's legs too, and the aggregate
+ * built from them is silently wrong. Fixtures reach their league through their gameweek, which is
+ * why this filters on the league's gameweek ids rather than on the fixture directly.
+ */
+async function getTieFixtures(tieId: string, leagueId: string) {
+  const leagueGws = await db.select({ id: gameweeks.id })
+    .from(gameweeks)
+    .where(eq(gameweeks.leagueId, leagueId));
+  const gwIds = leagueGws.map((g) => g.id);
+  if (gwIds.length === 0) return [];
+
+  return db.select().from(fixtures).where(and(
+    eq(fixtures.tieId, tieId),
+    eq(fixtures.isPlayoff, true),
+    inArray(fixtures.gameweekId, gwIds),
+  ));
+}
+
+// Get tie by ID within its league. `tieId` is a bracket-position label, unique only per league —
+// the primary key is (leagueId, tieId) — so the leagueId filter is required, not defensive.
 async function getTie(tieId: string, leagueId: string) {
   return db.query.playoffTies.findFirst({
     where: and(eq(playoffTies.tieId, tieId), eq(playoffTies.leagueId, leagueId)),
@@ -35,9 +59,10 @@ async function createFixture(params: {
   roundType: string;
   leg?: number | null;
 }) {
-  const fixtureId = params.leg
-    ? `playoff-${params.tieId}-leg${params.leg}`
-    : `playoff-${params.tieId}`;
+  // A random id, like every other row. This used to be `playoff-${tieId}`, which made it a
+  // second copy of the tie-id collision: `fixtures.id` is a primary key too, and tie ids repeat
+  // across leagues. Readers find these through `fixtures.tieId` plus the fixture's gameweek.
+  const fixtureId = generateId();
 
   // For TC knockouts, mirror roundType into competitionType so the TC processor's
   // Pass 3 filter (which historically expected competitionType) matches these rows
@@ -87,7 +112,7 @@ async function create2LegTie(params: {
     gw1: params.gw1Num,
     gw2: params.gw2Num,
     status: "pending",
-  }).onConflictDoNothing({ target: playoffTies.tieId });
+  }).onConflictDoNothing({ target: [playoffTies.leagueId, playoffTies.tieId] });
 
   await createFixture({
     tieId: params.tieId,
@@ -139,7 +164,7 @@ async function create3LegTie(params: {
     gw2: params.gw2Num,
     gw3: params.gw3Num,
     status: "pending",
-  }).onConflictDoNothing({ target: playoffTies.tieId });
+  }).onConflictDoNothing({ target: [playoffTies.leagueId, playoffTies.tieId] });
 
   await createFixture({
     tieId: params.tieId,
@@ -199,7 +224,7 @@ async function create1LegTie(params: {
     gw1: params.gwNum,
     gw2: null,
     status: "pending",
-  }).onConflictDoNothing({ target: playoffTies.tieId });
+  }).onConflictDoNothing({ target: [playoffTies.leagueId, playoffTies.tieId] });
 
   await createFixture({
     tieId: params.tieId,
@@ -221,8 +246,7 @@ async function resolve2LegTie(tieId: string, leagueId: string): Promise<{ winner
     return { winnerId: tie.winnerId, loserId: tie.loserId };
   }
 
-  const tieFixtures = await db.select().from(fixtures)
-    .where(and(eq(fixtures.tieId, tieId), eq(fixtures.isPlayoff, true)));
+  const tieFixtures = await getTieFixtures(tieId, leagueId);
 
   const leg1 = tieFixtures.find(f => f.leg === 1);
   const leg2 = tieFixtures.find(f => f.leg === 2);
@@ -247,7 +271,7 @@ async function resolve2LegTie(tieId: string, leagueId: string): Promise<{ winner
       loserId: homeAgg >= awayAgg ? awayTeamId : homeTeamId,
       status: "complete",
     })
-    .where(eq(playoffTies.tieId, tieId));
+    .where(and(eq(playoffTies.tieId, tieId), eq(playoffTies.leagueId, leagueId)));
 
   return {
     winnerId: homeAgg >= awayAgg ? homeTeamId : awayTeamId,
@@ -263,8 +287,7 @@ async function resolve1LegTie(tieId: string, leagueId: string): Promise<{ winner
     return { winnerId: tie.winnerId, loserId: tie.loserId };
   }
 
-  const tieFixture = await db.select().from(fixtures)
-    .where(and(eq(fixtures.tieId, tieId), eq(fixtures.isPlayoff, true)));
+  const tieFixture = await getTieFixtures(tieId, leagueId);
 
   if (tieFixture.length === 0) return null;
 
@@ -282,7 +305,7 @@ async function resolve1LegTie(tieId: string, leagueId: string): Promise<{ winner
       loserId,
       status: "complete",
     })
-    .where(eq(playoffTies.tieId, tieId));
+    .where(and(eq(playoffTies.tieId, tieId), eq(playoffTies.leagueId, leagueId)));
 
   return { winnerId, loserId };
 }
@@ -295,8 +318,7 @@ async function resolve3LegTie(tieId: string, leagueId: string): Promise<{ winner
     return { winnerId: tie.winnerId, loserId: tie.loserId };
   }
 
-  const tieFixtures = await db.select().from(fixtures)
-    .where(and(eq(fixtures.tieId, tieId), eq(fixtures.isPlayoff, true)));
+  const tieFixtures = await getTieFixtures(tieId, leagueId);
 
   const leg1 = tieFixtures.find(f => f.leg === 1);
   const leg2 = tieFixtures.find(f => f.leg === 2);
@@ -323,7 +345,7 @@ async function resolve3LegTie(tieId: string, leagueId: string): Promise<{ winner
       loserId: homeAgg >= awayAgg ? awayTeamId : homeTeamId,
       status: "complete",
     })
-    .where(eq(playoffTies.tieId, tieId));
+    .where(and(eq(playoffTies.tieId, tieId), eq(playoffTies.leagueId, leagueId)));
 
   return {
     winnerId: homeAgg >= awayAgg ? homeTeamId : awayTeamId,
@@ -332,17 +354,17 @@ async function resolve3LegTie(tieId: string, leagueId: string): Promise<{ winner
 }
 
 // Mark leg1 done for a 2-legged tie
-async function markLeg1Done(tieId: string) {
+async function markLeg1Done(tieId: string, leagueId: string) {
   await db.update(playoffTies)
     .set({ status: "leg1_done" })
-    .where(eq(playoffTies.tieId, tieId));
+    .where(and(eq(playoffTies.tieId, tieId), eq(playoffTies.leagueId, leagueId)));
 }
 
 // Mark leg2 done for a triple-legged tie
-async function markLeg2Done(tieId: string) {
+async function markLeg2Done(tieId: string, leagueId: string) {
   await db.update(playoffTies)
     .set({ status: "leg2_done" })
-    .where(eq(playoffTies.tieId, tieId));
+    .where(and(eq(playoffTies.tieId, tieId), eq(playoffTies.leagueId, leagueId)));
 }
 
 // ── POST handler ──────────────────────────────────────────────────────────────
@@ -432,7 +454,7 @@ export async function advancePlayoffsImpl(
           .from(playoffTies)
           .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"), eq(playoffTies.roundName, "JCL-QF")));
         for (const tie of jclQfTies) {
-          await markLeg1Done(tie.tieId);
+          await markLeg1Done(tie.tieId, leagueId);
           actions.push(`${tie.tieId}: QF leg 1 recorded`);
         }
 
@@ -440,7 +462,7 @@ export async function advancePlayoffsImpl(
           .from(playoffTies)
           .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"), eq(playoffTies.roundName, "JEL-QF")));
         for (const tie of jelQfTies) {
-          await markLeg1Done(tie.tieId);
+          await markLeg1Done(tie.tieId, leagueId);
           actions.push(`${tie.tieId}: QF leg 1 recorded`);
         }
       } else if (gwNumber === 29) {
@@ -587,7 +609,7 @@ export async function advancePlayoffsImpl(
           .from(playoffTies)
           .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jcl-knockout"), eq(playoffTies.roundName, "JCL-SF")));
         for (const tie of jclSfTies) {
-          await markLeg1Done(tie.tieId);
+          await markLeg1Done(tie.tieId, leagueId);
           actions.push(`${tie.tieId}: SF leg 1 recorded`);
         }
 
@@ -595,7 +617,7 @@ export async function advancePlayoffsImpl(
           .from(playoffTies)
           .where(and(eq(playoffTies.leagueId, leagueId), eq(playoffTies.roundType, "jel-knockout"), eq(playoffTies.roundName, "JEL-SF")));
         for (const tie of jelSfTies) {
-          await markLeg1Done(tie.tieId);
+          await markLeg1Done(tie.tieId, leagueId);
           actions.push(`${tie.tieId}: SF leg 1 recorded`);
         }
       } else if (gwNumber === 35) {
@@ -672,9 +694,9 @@ export async function advancePlayoffsImpl(
         }
       } else if (gwNumber === 37) {
         // Final Leg 1 played — mark leg 1 done for JCL/JEL Finals
-        await markLeg1Done("JCL-FINAL");
+        await markLeg1Done("JCL-FINAL", leagueId);
         actions.push("JCL-FINAL: Final leg 1 recorded");
-        await markLeg1Done("JEL-FINAL");
+        await markLeg1Done("JEL-FINAL", leagueId);
         actions.push("JEL-FINAL: Final leg 1 recorded");
       } else if (gwNumber === 38) {
         // Final Leg 2 — Resolve 2-leg aggregate Finals (JCL + JEL)
@@ -706,8 +728,8 @@ export async function advancePlayoffsImpl(
       if (gwNumber === playoffStartGw) {
         await advanceSF8(playoffsGroupId, leagueId, playoffStartGw, actions);
       } else if (gwNumber === playoffStartGw + 1) {
-        await markLeg1Done("8T-FINAL");
-        await markLeg1Done("8T-3RD");
+        await markLeg1Done("8T-FINAL", leagueId);
+        await markLeg1Done("8T-3RD", leagueId);
         actions.push("8T-FINAL: leg 1 recorded", "8T-3RD: leg 1 recorded");
       } else {
         const finalResult = await resolve2LegTie("8T-FINAL", leagueId);
@@ -737,7 +759,7 @@ export async function advancePlayoffsImpl(
         case 3: await advanceGW34_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW34: SF leg1 + resolve QFs/WS, create CSF/WSSF
         case 4: await advanceGW35_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW35: resolve SFs, create 3-leg Final/3rd (GW36+37+38), CSF/WSSF leg1
         case 5: await advanceGW36_16T(playoffsGroupId, leagueId, playoffStartGw, actions); break; // GW36: resolve CSFs/WSSFs, create CFINAL/CW3RD/WSFINAL/WS3RD; Final/3rd leg1
-        case 6: await advanceGW37_16T(actions); break;                       // GW37: 2-leg finals leg1; 3-leg Final/3rd leg2
+        case 6: await advanceGW37_16T(leagueId, actions); break;                       // GW37: 2-leg finals leg1; 3-leg Final/3rd leg2
         case 7: await advanceGW38_16T(leagueId, actions); break;             // GW38: resolve all (3-leg + 2-leg)
       }
 
@@ -956,8 +978,8 @@ async function advanceGW33_16T(groupId: string, leagueId: string, playoffStartGw
 // GW34: SF leg 1 done; resolve 1-leg Challenger QFs + 1-leg WS Seeding; create CSF/WSSF (2-leg, GW35+36)
 async function advanceGW34_16T(groupId: string, leagueId: string, playoffStartGw: number, actions: string[]) {
   // Championship SFs played leg 1 in GW34
-  await markLeg1Done("16T-SF-A");
-  await markLeg1Done("16T-SF-B");
+  await markLeg1Done("16T-SF-A", leagueId);
+  await markLeg1Done("16T-SF-B", leagueId);
   actions.push("16T-SF-A / 16T-SF-B: leg 1 recorded");
 
   // Resolve 1-leg Challenger QFs
@@ -1037,7 +1059,7 @@ async function advanceGW35_16T(groupId: string, leagueId: string, playoffStartGw
 
   // CSF/WSSF leg 1 played in GW35; leg 2 will be GW36
   for (const tieId of ["16T-CSF-A", "16T-CSF-B", "16T-WSSF-A", "16T-WSSF-B"]) {
-    await markLeg1Done(tieId);
+    await markLeg1Done(tieId, leagueId);
     actions.push(`${tieId}: leg 1 recorded`);
   }
 
@@ -1082,8 +1104,8 @@ async function advanceGW36_16T(groupId: string, leagueId: string, playoffStartGw
   }
 
   // Championship triple-leg finals played leg 1 in GW36
-  await markLeg1Done("16T-FINAL");
-  await markLeg1Done("16T-3RD");
+  await markLeg1Done("16T-FINAL", leagueId);
+  await markLeg1Done("16T-3RD", leagueId);
   actions.push("16T-FINAL / 16T-3RD: leg 1 recorded");
 
   const gw37Id = await getGameweekId(playoffStartGw + 6, leagueId);
@@ -1112,13 +1134,13 @@ async function advanceGW36_16T(groupId: string, leagueId: string, playoffStartGw
 }
 
 // GW37: 2-leg Challenger/WS finals leg 1 done; 3-leg Championship Final/3rd leg 2 done
-async function advanceGW37_16T(actions: string[]) {
+async function advanceGW37_16T(leagueId: string, actions: string[]) {
   for (const tieId of ["16T-CFINAL", "16T-C3RD", "16T-WSFINAL", "16T-WS3RD"]) {
-    await markLeg1Done(tieId);
+    await markLeg1Done(tieId, leagueId);
     actions.push(`${tieId}: leg 1 recorded`);
   }
   for (const tieId of ["16T-FINAL", "16T-3RD"]) {
-    await markLeg2Done(tieId);
+    await markLeg2Done(tieId, leagueId);
     actions.push(`${tieId}: leg 2 recorded`);
   }
 }
@@ -1214,7 +1236,7 @@ async function advanceGW31(groupId: string, leagueId: string, actions: string[])
   }
 
   for (const suffix of ["A", "B", "C", "D", "E", "F", "G", "H"]) {
-    await markLeg1Done(`RO16-${suffix}`);
+    await markLeg1Done(`RO16-${suffix}`, leagueId);
     actions.push(`RO16-${suffix}: leg 1 recorded`);
   }
 
@@ -1306,7 +1328,7 @@ async function advanceGW32(groupId: string, leagueId: string, actions: string[])
 
 async function advanceGW33(groupId: string, leagueId: string, actions: string[]) {
   for (const suffix of ["A", "B", "C", "D"]) {
-    await markLeg1Done(`QF-${suffix}`);
+    await markLeg1Done(`QF-${suffix}`, leagueId);
     actions.push(`QF-${suffix}: leg 1 recorded`);
   }
 
@@ -1467,7 +1489,7 @@ async function advanceGW34(groupId: string, leagueId: string, actions: string[])
 
 async function advanceGW35(groupId: string, leagueId: string, actions: string[]) {
   for (const suffix of ["A", "B"]) {
-    await markLeg1Done(`SF-${suffix}`);
+    await markLeg1Done(`SF-${suffix}`, leagueId);
     actions.push(`SF-${suffix}: leg 1 recorded`);
   }
 
@@ -1552,7 +1574,7 @@ async function advanceGW36(groupId: string, leagueId: string, actions: string[])
 }
 
 async function advanceGW37(groupId: string, leagueId: string, actions: string[]) {
-  await markLeg1Done("Final");
+  await markLeg1Done("Final", leagueId);
   actions.push("Final: leg 1 recorded");
 
   for (const suffix of ["A", "B"]) {

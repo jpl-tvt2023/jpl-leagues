@@ -531,7 +531,7 @@
       },
       {
         "id": "BR-PLAYOFF-054",
-        "rule": "playoff_ties.tieId is the primary key (global, not scoped by leagueId); generation/advancement queries always co-filter on leagueId so two leagues can hold their own ties for the same tieId values, but a row insert with an existing tieId is silently no-op'd via onConflictDoNothing in 1-leg/2-leg/3-leg create helpers.",
+        "rule": "playoff_ties uses a COMPOSITE primary key (leagueId, tieId). tieId is a bracket-position label such as RO16-A or 16T-SF-A, unique only within a league, so two leagues legitimately hold their own ties under the same tieId. Every query must co-filter on leagueId - a where on tieId alone now matches one row per league. Previously tieId was the sole primary key, which meant the first league to generate playoffs claimed every label and every later league failed with UNIQUE constraint failed: playoff_ties.tie_id; the 1-leg/2-leg/3-leg create helpers swallowed that collision via onConflictDoNothing, leaving no tie row and a bracket that stalled with no error. Their conflict target is now the composite key.",
         "sourceRefs": [
           "src/lib/db/schema.ts:286-288",
           "src/app/api/admin/[leagueId]/advance-playoffs/route.ts:79-90",
