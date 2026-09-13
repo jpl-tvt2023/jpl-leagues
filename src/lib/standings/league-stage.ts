@@ -135,6 +135,28 @@ function regroup(rows: LeagueStageRow[]): Map<string, LeagueStageRow[]> {
   return byGroup;
 }
 
+/**
+ * Stamp rank and zone per group, then partition. Rank is positional, so callers must sort with
+ * `compareTiebreaker` first.
+ *
+ * Exported so the live overlay re-ranks through exactly this code rather than a second copy of
+ * it. A provisional table that ordered teams by its own rules — or drew the playoff cutoff at a
+ * different place — would be a different table, not a preview of this one.
+ */
+export function rankAndZone(
+  rows: LeagueStageRow[],
+  teamSize: number,
+): Map<string, LeagueStageRow[]> {
+  const byGroup = regroup(rows);
+  for (const members of byGroup.values()) {
+    members.forEach((row, i) => {
+      row.groupRank = i + 1;
+      row.zone = getQualificationZone(row.groupRank, teamSize);
+    });
+  }
+  return byGroup;
+}
+
 /** A fixture counts toward league points only if it is in-window and not a cup tie. */
 function countsForLeagueStage(f: FixtureWithResult, throughGw: number): boolean {
   if (f.gameweek.number > throughGw) return false;
@@ -413,14 +435,7 @@ export async function computeLeagueStageStandings(
   // The canonical order. Everything downstream is positional off this one sort.
   rows.sort(compareTiebreaker);
 
-  // Stamp rank + zone per group, then partition. Rank is positional off the sort above.
-  const byGroup = regroup(rows);
-  for (const members of byGroup.values()) {
-    members.forEach((row, i) => {
-      row.groupRank = i + 1;
-      row.zone = getQualificationZone(row.groupRank, teamSize);
-    });
-  }
+  const byGroup = rankAndZone(rows, teamSize);
 
   setCachedLeagueStageRows(leagueId, throughGw, { rows, maxPlayedGw }).catch(() => {});
 

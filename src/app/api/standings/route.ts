@@ -6,10 +6,13 @@ import { computeAuctionStandings } from "@/lib/formats/auction/standings";
 import { calculateFMV } from "@/lib/formats/auction/economy";
 import { getClubOwnershipsByTeam, computeClubResultBonus } from "@/lib/formats/auction/club-auction";
 import { backfillClubSummaries } from "@/lib/formats/auction/club-summary-backfill";
-import { computeLeagueStageStandings, type LeagueStageRow } from "@/lib/standings/league-stage";
+import { computeLeagueStageStandings, rankAndZone, type LeagueStageRow } from "@/lib/standings/league-stage";
 import { isChipDisclosable } from "@/lib/formats/tvt/chip-waste";
 import { disclosedGwCount } from "@/lib/gameweeks/disclosure";
 import { getActiveFplGameweek } from "@/lib/fpl/event-status";
+import { applyLiveFixtures } from "@/lib/standings/live-overlay";
+import { resolveLiveStandingsContext } from "@/lib/standings/live-context";
+import { getInFlightGameweekNumber } from "@/lib/gameweeks/in-flight";
 
 interface ChipTooltipEntry {
   label: string;      // "WW1", "DP1", "CC1", "WW2", "DP2", "CC2"
@@ -110,12 +113,23 @@ export async function GET(request: NextRequest) {
       .where(and(eq(settings.leagueId, leagueId), eq(settings.key, "groupsRevealed")));
     const groupsRevealed = groupsRevealedRows[0]?.value === "true";
 
+    // Is a gameweek under way? Resolved here rather than after the compute because it decides
+    // two things: whether the settled cache may be served at all, and whether to build the live
+    // overlay below. Cheap — one indexed lookup.
+    const inFlightGw = await getInFlightGameweekNumber(leagueId);
+
     // Return cached standings if available (populated by cron or previous request).
     // Skip the cache when a `group` filter is present: the cache stores the full
     // (unfiltered) payload, so returning it verbatim to a group-filtered request
     // would leak the other group's teams (DEF-STAND-003). Writes are gated below
     // for the same reason — a group-filtered response must not poison the slot.
-    if (!group) {
+    //
+    // Skipped again while a gameweek is in flight: the cached entry is a SETTLED payload, and
+    // serving it would short-circuit before the overlay ever ran — the table would sit on last
+    // gameweek while the fixtures tab beside it showed live scores, which is the whole problem
+    // the overlay exists to fix. The expensive part is still cached underneath, in
+    // `standings:rows:v2:{leagueId}:{throughGw}`.
+    if (!group && inFlightGw == null) {
       try {
         const cached = await getCachedStandings(leagueId, disclosedGws);
         if (cached) {
@@ -258,7 +272,28 @@ export async function GET(request: NextRequest) {
     // The canonical ranked table. Every consumer of standings order — this route, the
     // dashboard, playoff seeding, chip eligibility, the Winners page — comes through
     // this one function, so they cannot disagree about who is where.
-    const { rows, byGroup, maxPlayedGw } = await computeLeagueStageStandings(leagueId);
+    const settled = await computeLeagueStageStandings(leagueId);
+    const { maxPlayedGw } = settled;
+
+    // ===== Live overlay =====
+    // Fold an in-progress gameweek into the settled table so the standings move with the
+    // fixtures tab instead of waiting for someone to process the gameweek. Cache-only: this
+    // never triggers an FPL sweep, so a cold live cache simply renders the settled table.
+    const liveCtx = inFlightGw == null
+      ? null
+      : await resolveLiveStandingsContext(leagueId, leagueFormat, inFlightGw, settled.rows);
+
+    let rows = settled.rows;
+    let byGroup = settled.byGroup;
+    if (liveCtx) {
+      rows = applyLiveFixtures(rows, liveCtx.fixtures, liveCtx.awards, {
+        gameweek: liveCtx.gameweek,
+        leagueFormat,
+      });
+      // Re-rank through the settled path's own code, so a provisional table is ordered and
+      // zoned by exactly the rules the real one uses.
+      byGroup = rankAndZone(rows, leagueTeamSize);
+    }
 
     // Team id -> name, for naming a Challenge Chip's target in the CP/BP tooltip.
     const teamNameMap = new Map<string, string>(rows.map((r) => [r.teamId, r.name]));
@@ -419,13 +454,24 @@ export async function GET(request: NextRequest) {
       teamSize: leagueTeamSize,
       groupsRevealed,
       legend,
+      /** True while an in-progress gameweek is folded in. The table is provisional. */
+      isLive: liveCtx != null,
+      /** When those live scores were computed, for the freshness stamp. */
+      liveCachedAt: liveCtx?.cachedAt ?? null,
+      /** The gameweek being shown live, so the header can name it. */
+      liveGameweek: liveCtx?.gameweek ?? null,
     };
 
     // Fire-and-forget cache write — must not block or break the response.
     // Skip the write when a `group` filter is active: caching a filtered payload
     // under the unfiltered key would leak group-A teams to group-B callers
     // (mirror of the read-side guard above for DEF-STAND-003).
-    if (leagueId && !group) {
+    //
+    // And never when the payload is provisional. This key lives for 25 hours; a live table
+    // written into it would outlast the gameweek it describes and be served as settled long
+    // after processing had moved the real numbers. The auction branch above guards its own live
+    // path the same way.
+    if (leagueId && !group && !liveCtx) {
       setCachedStandings(leagueId, disclosedGws, responseData).catch(() => {});
     }
 
