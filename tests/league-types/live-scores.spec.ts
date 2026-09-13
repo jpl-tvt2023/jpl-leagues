@@ -10,6 +10,7 @@
  */
 
 import { test, expect } from "@playwright/test";
+import { scoreGameweek } from "../harness/scores";
 import {
   apiSignInSuperadmin,
   createTvtLeague,
@@ -21,6 +22,20 @@ import {
 } from "../harness";
 
 let league: LeagueRef;
+
+/**
+ * Fill the live-score cache the way the fixtures tab does.
+ *
+ * Necessary because the standings overlay reads that cache and never fetches FPL itself, and
+ * because /api/test-fpl-stub/control deletes every `live:gw*` key on each call — so any spec that
+ * moves the simulated world has to warm it again afterwards.
+ */
+async function warmLiveCache(request: import("@playwright/test").APIRequestContext) {
+  const res = await request.get(
+    `/api/fixtures/live?gameweek=1&leagueSlug=${encodeURIComponent(league.slug)}`,
+  );
+  expect(res.ok()).toBeTruthy();
+}
 
 /** Point the FPL stub at a given live gameweek. */
 async function setStubLiveGw(
@@ -149,6 +164,80 @@ test.describe.serial("live scores (TVT)", () => {
     const body = await res.json();
     expect(body.isLive).toBe(false);
     expect(body.reason).toBe("deadline_not_passed");
+  });
+
+  test("the standings table folds the live gameweek in", async ({ request }) => {
+    // The table used to sit on the last processed gameweek while the fixtures tab beside it
+    // showed live scores, because scoring is triggered by hand.
+    await warmLiveCache(request);
+    const settledRes = await request.get(
+      `/api/standings?leagueSlug=${encodeURIComponent(league.slug)}`,
+    );
+    expect(settledRes.ok()).toBeTruthy();
+    const live = await settledRes.json();
+
+    expect(live.isLive, "GW1 is in flight, so the table is provisional").toBe(true);
+    expect(live.liveGameweek).toBe(1);
+    expect(typeof live.liveCachedAt).toBe("string");
+
+    const rows = [...(live.groupA ?? []), ...(live.groupB ?? [])];
+    expect(rows.length).toBeGreaterThan(0);
+    expect(
+      rows.some((r: { played: number }) => r.played > 0),
+      "every team should have played the live gameweek",
+    ).toBe(true);
+    expect(
+      rows.some((r: { leaguePoints: number }) => r.leaguePoints > 0),
+      "a live gameweek with real scores must move somebody's points",
+    ).toBe(true);
+  });
+
+  test("processing the gameweek replaces the provisional table with the settled one", async ({
+    request,
+  }) => {
+    // The overlay only ever folds in fixtures with NO result row, which is what makes an admin's
+    // processing win without any coordination between the two paths. Score the gameweek and the
+    // live numbers must give way to the real ones.
+    await warmLiveCache(request);
+    const beforeRes = await request.get(
+      `/api/standings?leagueSlug=${encodeURIComponent(league.slug)}`,
+    );
+    expect((await beforeRes.json()).isLive, "provisional before scoring").toBe(true);
+
+    await scoreGameweek(league.id, 1, () => ({ home: 120, away: 60 }));
+
+    const afterRes = await request.get(
+      `/api/standings?leagueSlug=${encodeURIComponent(league.slug)}`,
+    );
+    const after = await afterRes.json();
+
+    // `isLive` is derived from whether any fixture still lacks a result, so it is the honest
+    // signal that the overlay has stood down. The row numbers are deliberately NOT asserted
+    // here: this harness writes results straight to the database and never calls
+    // `invalidateLeaguePageCache`, so `computeLeagueStageStandings` legitimately still serves
+    // its 10-minute rows cache. Real scoring goes through the API, which does invalidate.
+    expect(after.isLive, "nothing is in flight once every fixture has a result").toBe(false);
+    expect(after.liveGameweek).toBeNull();
+    expect(after.liveCachedAt).toBeNull();
+  });
+
+  test("the standings page marks itself live rather than quietly showing provisional numbers", async ({
+    page,
+    request,
+  }) => {
+    // Scoring above retired the live gameweek, so put one back in flight for the UI check.
+    await expireGameweek(league.id, 2);
+    await setStubLiveGw(request, 2);
+    const warm = await request.get(
+      `/api/fixtures/live?gameweek=2&leagueSlug=${encodeURIComponent(league.slug)}`,
+    );
+    expect(warm.ok()).toBeTruthy();
+
+    await page.goto(`/${league.slug}/standings`);
+
+    await expect(page.getByTestId("standings-live-badge")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Gameweek \d+ in progress/)).toBeVisible();
+    await expect(page.getByText(/Provisional/)).toBeVisible();
   });
 
   test.afterAll(async ({ request }) => {

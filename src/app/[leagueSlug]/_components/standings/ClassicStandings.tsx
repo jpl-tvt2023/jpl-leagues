@@ -5,8 +5,15 @@ import { useParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { StandingsTable } from "@/components/StandingsTable";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { LiveFreshness } from "@/components/LiveFreshness";
 import { useLeague } from "@/lib/league-context";
 import type { TeamStanding } from "@/types/standings";
+
+/**
+ * Same cadence as the fixtures tab. The two screens describe the same gameweek, so polling them
+ * at different rates is how they come to disagree in front of a user.
+ */
+const LIVE_POLL_MS = 3 * 60 * 1000;
 
 export function ClassicStandings() {
   const params = useParams();
@@ -26,6 +33,9 @@ export function ClassicStandings() {
   const [teamSize, setTeamSize] = useState<number>(league.teamSize);
   const [groupsRevealed, setGroupsRevealed] = useState<boolean>(false);
   const [leagueStageEnd, setLeagueStageEnd] = useState<number>(0);
+  const [isLive, setIsLive] = useState(false);
+  const [liveGameweek, setLiveGameweek] = useState<number | null>(null);
+  const [liveCachedAt, setLiveCachedAt] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -33,15 +43,23 @@ export function ClassicStandings() {
   };
 
   useEffect(() => {
+    if (!leagueSlug) return;
+    let cancelled = false;
+
     const fetchStandings = async () => {
       try {
         const response = await fetch(`/api/standings?leagueSlug=${encodeURIComponent(leagueSlug)}`);
         if (!response.ok) throw new Error("Failed to fetch standings");
         const data = await response.json();
+        // A poll that lands after the user has navigated away must not write into a dead tree.
+        if (cancelled) return;
         setGroupA(data.groupA || []);
         setGroupB(data.groupB || []);
         if (data.teamSize) setTeamSize(data.teamSize);
         setGroupsRevealed(data.groupsRevealed === true);
+        setIsLive(data.isLive === true);
+        setLiveGameweek(typeof data.liveGameweek === "number" ? data.liveGameweek : null);
+        setLiveCachedAt(typeof data.liveCachedAt === "string" ? data.liveCachedAt : null);
         const stageEnd: number = data.leagueStageEnd ?? 30;
         setLeagueStageEnd(stageEnd);
         const maxPlayed = Math.min(
@@ -54,13 +72,22 @@ export function ClassicStandings() {
         );
         setLatestGameweek(maxPlayed);
       } catch (err) {
+        if (cancelled) return;
         console.error("Error fetching standings:", err);
         setError("Failed to load standings. Please try again later.");
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
-    if (leagueSlug) fetchStandings();
+
+    fetchStandings();
+    // Poll unconditionally rather than only once a gameweek is live: the whole point is to pick
+    // up the moment one starts, and by then the first response has long since been rendered.
+    const id = setInterval(fetchStandings, LIVE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [leagueSlug]);
 
   const totalTeams = groupA.length + groupB.length;
@@ -98,15 +125,35 @@ export function ClassicStandings() {
               )}
               {!isContinentalChampionship && (
                 <p className="text-gray-400">
-                  {latestGameweek > 0
-                    ? `After Gameweek ${latestGameweek} · League Stage`
-                    : totalTeams > 0
-                      ? "League Stage · No matches played yet"
-                      : "League Stage · Awaiting teams"
+                  {isLive && liveGameweek != null
+                    ? `Gameweek ${liveGameweek} in progress · League Stage`
+                    : latestGameweek > 0
+                      ? `After Gameweek ${latestGameweek} · League Stage`
+                      : totalTeams > 0
+                        ? "League Stage · No matches played yet"
+                        : "League Stage · Awaiting teams"
                   }
                 </p>
               )}
-              {latestGameweek > 0 && (
+              {isLive && (
+                <div className="mt-3 flex flex-col items-center gap-1.5">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-red-300"
+                      data-testid="standings-live-badge"
+                    >
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
+                      Live
+                    </span>
+                    <LiveFreshness updatedAt={liveCachedAt} isRefreshing={false} />
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Provisional — includes in-progress fixtures, and settles when the gameweek is
+                    processed.
+                  </p>
+                </div>
+              )}
+              {latestGameweek > 0 && !isLive && (
                 <p className="text-[11px] text-gray-500 mt-2">▲/▼ shows league rank change vs previous GW</p>
               )}
             </div>

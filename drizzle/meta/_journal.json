@@ -169,6 +169,13 @@
       "when": 1780700000000,
       "tag": "0023_fpl_classic",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1789279952915,
+      "tag": "0024_playoff_ties_league_scoped_pk",
+      "breakpoints": true
     }
   ]
 }

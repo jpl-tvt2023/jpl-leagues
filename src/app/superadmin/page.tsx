@@ -57,6 +57,12 @@ const STANDINGS_TIER_META: Record<"top8" | "mid" | "promoted", { label: string; 
   promoted: { label: "Promoted (3 new from Championship)", pillCls: "bg-emerald-500/20 text-emerald-200 border-emerald-500/30", expected: 3 },
 };
 
+import {
+  emptyLeagueResult,
+  foldLeagueGwResult,
+  finalizeLeagueResult,
+} from "@/lib/cron/league-result";
+
 // ── Operations: process-all run summary ──
 type ProcessAllLeagueResult = {
   leagueId: string;
@@ -1007,14 +1013,9 @@ This overwrites winners that have already been announced. The previous winners a
       setProcessCurrentSlug(lg.slug);
       setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...row, uiStatus: "processing" } : row));
 
-      // Build the per-league aggregate as GW results stream in.
-      const agg: ProcessAllLeagueResult = {
-        leagueId: lg.id, slug: lg.slug, format: lg.format,
-        status: "skipped",
-        scoredGws: [], advancedGws: [], generatedFor: [],
-        generatedAlready: [], advanceWindowFuture: [],
-        errors: [],
-      };
+      // Build the per-league aggregate as GW results stream in, through the same helpers the
+      // server-side daily run uses — one definition of how gameweeks roll up into a league.
+      const agg: ProcessAllLeagueResult = emptyLeagueResult(lg);
 
       for (const gw of plan.dueGws) {
         // mark this GW as in-flight
@@ -1027,20 +1028,12 @@ This overwrites winners that have already been announced. The previous winners a
         // Aggregate into the league row + update the chip state.
         let chipState: GwChipState;
         let tooltip: string;
+        foldLeagueGwResult(agg, gw, { result: gwResult, error: gwError });
+
         if (gwError) {
           chipState = "error";
           tooltip = `GW${gw} — ${gwError}`;
-          // step: "request" — the call never produced a result, so we do NOT know which
-          // stage failed. Labelling every transport failure as "score" is what made an
-          // auction league that never reached scoring report "GW1 score: Network error".
-          agg.errors.push({ gw, step: "request", message: gwError });
         } else if (gwResult) {
-          if (gwResult.scored || gwResult.scoreSkipped) agg.scoredGws.push(gw);
-          if (gwResult.advanced) agg.advancedGws.push(gw);
-          if (gwResult.generated) agg.generatedFor.push(gw);
-          if (gwResult.generatedAlready) agg.generatedAlready.push(gw);
-          for (const e of gwResult.errors) agg.errors.push({ gw, step: e.step, message: e.message });
-
           chipState = gwResult.status;
           // Build a compact tooltip from the per-stage flags.
           const parts: string[] = [];
@@ -1070,15 +1063,11 @@ This overwrites winners that have already been announced. The previous winners a
         } : row));
       }
 
-      // After all GWs for this league: compute advanceWindowFuture (window ∖ dueGws ∖ advanced).
-      // We don't know the advance window client-side, so we skip this here — the existing
-      // server-aggregated wrapper handles it for the cron path; for the UI we just leave it empty.
-      const errorCount = agg.errors.length;
-      const didAnyWork = agg.scoredGws.length + agg.advancedGws.length + agg.generatedFor.length + agg.generatedAlready.length > 0;
-      const finalStatus: ProcessAllLeagueResult["status"] = errorCount === 0
-        ? (didAnyWork ? "ok" : "skipped")
-        : (didAnyWork ? "partial" : "error");
-      agg.status = finalStatus;
+      // advanceWindowFuture now fills in too: each /league-gw result carries that flag, so the
+      // shared fold populates the "not yet concluded on FPL" line this page already renders and
+      // previously always left empty.
+      finalizeLeagueResult(agg);
+      const finalStatus = agg.status;
 
       completedResults.push(agg);
       setProcessLeagues(prev => prev.map((row, idx) => idx === i ? { ...row, uiStatus: finalStatus } : row));

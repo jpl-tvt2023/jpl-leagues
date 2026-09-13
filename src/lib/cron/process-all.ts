@@ -70,6 +70,12 @@ async function callHandlerDirect<T>(
   return { status: res.status, body: parsed };
 }
 
+export {
+  emptyLeagueResult,
+  foldLeagueGwResult,
+  finalizeLeagueResult,
+} from "@/lib/cron/league-result";
+
 export type LeaguePlanItem = {
   id: string;
   slug: string;

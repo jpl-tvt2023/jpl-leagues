@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { playoffTies, challengerSurvivalEntries, fixtures, results, gameweeks, teams, groups, gameweekCaptains, leagues } from "@/lib/db/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { getLiveCachedScores, getCachedPlayoffBracket, setCachedPlayoffBracket } from "@/lib/fpl-cache";
 import {
   CHAMP_GA_MATCHES,
@@ -969,21 +969,38 @@ async function buildTentativeBracket(latestCompletedGw: number, mode: "tentative
 // LIVE MODE
 // ============================================
 async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | null, teamSize = 32, playoffStartGw = 31) {
-  // Fetch playoff ties for this league
-  const allTiesRaw = await db.query.playoffTies.findMany({
+  // Without a league there is no bracket to build.
+  //
+  // This used to load EVERY league's ties and filter in JS, and when leagueId was absent the
+  // filter was skipped entirely — so every league's ties merged into one bracket. Tie ids are
+  // bracket-position labels that repeat across leagues, so the merge was not merely extra rows:
+  // the maps below are keyed by those labels, and duplicates silently overwrote each other.
+  if (!leagueId) return [];
+
+  const allTies = await db.query.playoffTies.findMany({
+    where: eq(playoffTies.leagueId, leagueId),
     with: { homeTeam: true, awayTeam: true, winner: true, loser: true },
   });
-  const allTies = leagueId ? allTiesRaw.filter(t => t.leagueId === leagueId) : allTiesRaw;
 
   // Build team name map for quick lookup
   const teamMap = new Map<string, { name: string }>();
   const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams);
   for (const t of allTeams) teamMap.set(t.id, { name: t.name });
 
-  // Fetch all playoff fixture results in one query
-  const playoffFixtures = await db.select()
-    .from(fixtures)
-    .where(eq(fixtures.isPlayoff, true));
+  // Playoff fixtures for THIS league only, reached through its gameweeks. Unscoped, another
+  // league's fixture for the same tie label would land in fixtureByTieLeg and its scores would
+  // be served here as though they were this league's.
+  const leagueGwRows = await db.select({ id: gameweeks.id })
+    .from(gameweeks)
+    .where(eq(gameweeks.leagueId, leagueId));
+  const leagueGwIds = leagueGwRows.map((g) => g.id);
+
+  const playoffFixtures = leagueGwIds.length > 0
+    ? await db.select().from(fixtures).where(and(
+        eq(fixtures.isPlayoff, true),
+        inArray(fixtures.gameweekId, leagueGwIds),
+      ))
+    : [];
 
   const fixtureResults = new Map<string, { homeScore: number; awayScore: number }>();
   // Secondary index by (tieId, leg) for TC fixtures that use random generated IDs
@@ -1009,27 +1026,28 @@ async function buildLiveBracket(latestCompletedGw: number, leagueId?: string | n
 
     if (tie.gw3) {
       // Triple-legged: leg1 H/A original, leg2 swapped, leg3 original
-      const leg1FixId = fixtureByTieLeg.get(`${tie.tieId}-leg1`) ?? `playoff-${tie.tieId}-leg1`;
-      const leg2FixId = fixtureByTieLeg.get(`${tie.tieId}-leg2`) ?? `playoff-${tie.tieId}-leg2`;
-      const leg3FixId = fixtureByTieLeg.get(`${tie.tieId}-leg3`) ?? `playoff-${tie.tieId}-leg3`;
-      const l1 = fixtureResults.get(leg1FixId);
-      const l2 = fixtureResults.get(leg2FixId);
-      const l3 = fixtureResults.get(leg3FixId);
+      // Playoff fixtures carry random ids and are found through this (tieId, leg) index.
+      const leg1FixId = fixtureByTieLeg.get(`${tie.tieId}-leg1`);
+      const leg2FixId = fixtureByTieLeg.get(`${tie.tieId}-leg2`);
+      const leg3FixId = fixtureByTieLeg.get(`${tie.tieId}-leg3`);
+      const l1 = leg1FixId ? fixtureResults.get(leg1FixId) : undefined;
+      const l2 = leg2FixId ? fixtureResults.get(leg2FixId) : undefined;
+      const l3 = leg3FixId ? fixtureResults.get(leg3FixId) : undefined;
       if (l1) { homeLeg1 = l1.homeScore; awayLeg1 = l1.awayScore; }
       if (l2) { homeLeg2 = l2.awayScore; awayLeg2 = l2.homeScore; } // Swapped in leg2
       if (l3) { homeLeg3 = l3.homeScore; awayLeg3 = l3.awayScore; }
     } else if (tie.gw2) {
-      // 2-legged: try tieId+leg index first (TC), fall back to playoff-tieId-legN pattern (TVT)
-      const leg1FixId = fixtureByTieLeg.get(`${tie.tieId}-leg1`) ?? `playoff-${tie.tieId}-leg1`;
-      const leg2FixId = fixtureByTieLeg.get(`${tie.tieId}-leg2`) ?? `playoff-${tie.tieId}-leg2`;
-      const l1 = fixtureResults.get(leg1FixId);
-      const l2 = fixtureResults.get(leg2FixId);
+      // 2-legged, found through the (tieId, leg) index — every playoff fixture id is random.
+      const leg1FixId = fixtureByTieLeg.get(`${tie.tieId}-leg1`);
+      const leg2FixId = fixtureByTieLeg.get(`${tie.tieId}-leg2`);
+      const l1 = leg1FixId ? fixtureResults.get(leg1FixId) : undefined;
+      const l2 = leg2FixId ? fixtureResults.get(leg2FixId) : undefined;
       if (l1) { homeLeg1 = l1.homeScore; awayLeg1 = l1.awayScore; }
       if (l2) { homeLeg2 = l2.awayScore; awayLeg2 = l2.homeScore; } // Swapped in leg2
     } else {
-      // Single-leg: try tieId+single index first (TC), fall back to playoff-tieId pattern (TVT)
-      const singFixId = fixtureByTieLeg.get(`${tie.tieId}-single`) ?? `playoff-${tie.tieId}`;
-      const r = fixtureResults.get(singFixId);
+      // Single-leg, found through the (tieId, single) index.
+      const singFixId = fixtureByTieLeg.get(`${tie.tieId}-single`);
+      const r = singFixId ? fixtureResults.get(singFixId) : undefined;
       if (r) { homeLeg1 = r.homeScore; awayLeg1 = r.awayScore; }
     }
 

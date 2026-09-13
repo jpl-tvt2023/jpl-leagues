@@ -174,20 +174,16 @@ test.describe.serial("FPL League (TVT)", () => {
     }
   });
 
-  test("the gameweek column is that gameweek alone, never a running total", async ({ request }) => {
-    // The distinction only becomes visible from GW2 onwards: at GW1 a manager's
-    // gameweek score and their season total are the same number, so a column
-    // that had been quietly summing every gameweek would look perfectly correct.
+  test("a live gameweek's column shows live points, not the 0 FPL reports until it settles", async ({
+    request,
+  }) => {
+    // The regression this exists for. `history.current[gw].points` is a SETTLED field: FPL holds
+    // it at 0 for the whole time a gameweek is being played. This column read it directly, so
+    // every manager showed 0 while the LIVE pill pulsed, and Total sat on the previous gameweek.
     //
-    // GW3, not GW2: "in flight" is decided from OUR gameweek rows (deadline
-    // passed, no result yet) and beforeAll already expired GW1-3, so the app
-    // considers GW3 live whatever the stub says. Pointing the stub at GW2 would
-    // only create a disagreement between the two, which is not what this tests.
-    //
-    // The cached histories are reused deliberately. entryHistory depends only on
-    // max(finishedThrough, liveGw), which is 3 both before and after this change,
-    // so their contents are identical -- and discarding them would leave every
-    // row pending behind the warm single-flight, with nothing to assert on.
+    // GW3, not GW2: "in flight" is decided from OUR gameweek rows (deadline passed, no result
+    // yet) and beforeAll already expired GW1-3, so the app considers GW3 live whatever the stub
+    // says. Pointing the stub at GW2 would only create a disagreement between the two.
     await request.post("/api/test-fpl-stub/control", {
       data: { finishedThrough: 2, liveGw: 3 },
     });
@@ -200,20 +196,63 @@ test.describe.serial("FPL League (TVT)", () => {
     expect(body.gw).toBe(3);
     expect(body.isLive, "GW3 is in flight").toBe(true);
 
+    // What the old implementation would have rendered, straight from the source it read.
     const row = body.rows.find((r) => r.gwPoints != null);
     expect(row, "at least one manager should have GW3 points").toBeTruthy();
-
     const history = await (
       await request.get(`/api/test-fpl-stub/entry/${row!.fplId}/history`)
     ).json();
-    const liveGw = history.current.find((c: { event: number }) => c.event === 3);
+    const settledField = history.current.find((c: { event: number }) => c.event === 3);
+    expect(
+      settledField.points,
+      "the stub must report what real FPL does: 0 for a gameweek still in play",
+    ).toBe(0);
+
+    // And what it renders now.
+    expect(
+      row!.gwPoints,
+      "the GW column must carry live points, not the settled field's 0",
+    ).toBeGreaterThan(0);
+    expect(
+      body.rows.every((r) => r.gwPoints === 0),
+      "a whole table of zeros is the bug, not a valid gameweek",
+    ).toBe(false);
+
+    // Total has to move with it, or a ticking GW column sits beside a frozen season total.
+    const settledTotal = history.current[history.current.length - 1].total_points;
+    expect(row!.totalPoints, "Total includes the live gameweek").toBe(
+      settledTotal + row!.gwPoints!,
+    );
+  });
+
+  test("a settled gameweek's column still comes from FPL's own figure", async ({ request }) => {
+    // The other half of the switch: once FPL has processed a gameweek its number is
+    // authoritative — it includes bonus and auto-substitutions the live recompute never saw —
+    // so the column must go back to reading it verbatim.
+    await request.post("/api/test-fpl-stub/control", {
+      data: { finishedThrough: 3, liveGw: null },
+    });
+
+    const body = (await loadUntilWarm(request, league.slug)) as unknown as {
+      gw: number;
+      isLive: boolean;
+      rows: { fplId: string; gwPoints: number | null; totalPoints: number }[];
+    };
+    expect(body.gw).toBe(3);
+    expect(body.isLive, "nothing in flight once GW3 is settled").toBe(false);
+
+    const row = body.rows.find((r) => r.gwPoints != null);
+    expect(row).toBeTruthy();
+    const history = await (
+      await request.get(`/api/test-fpl-stub/entry/${row!.fplId}/history`)
+    ).json();
+    const gwRow = history.current.find((c: { event: number }) => c.event === 3);
     const cumulative = history.current[history.current.length - 1].total_points;
 
-    // Guards the guard: if these two were equal the assertion below would pass
-    // for a cumulative column as well, and prove nothing.
-    expect(liveGw.points, "GW3 alone must differ from the season total").not.toBe(cumulative);
-
-    expect(row!.gwPoints, "GW column is GW3 alone").toBe(liveGw.points);
+    // Guards the guard: if these were equal the assertion below would pass for a cumulative
+    // column too, and prove nothing.
+    expect(gwRow.points, "GW3 alone must differ from the season total").not.toBe(cumulative);
+    expect(row!.gwPoints, "GW column is GW3 alone").toBe(gwRow.points);
     expect(row!.totalPoints, "Total column carries the cumulative figure").toBe(cumulative);
   });
 

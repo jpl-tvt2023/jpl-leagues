@@ -188,7 +188,8 @@ export async function POST(request: NextRequest) {
       });
       createdTies.push(tieId);
 
-      const fixtureId = `playoff-${tieId}`;
+      // Random, not `playoff-${tieId}`: fixtures.id is a primary key and tie ids repeat across leagues.
+      const fixtureId = generateId();
       await db.insert(fixtures).values({
         id: fixtureId,
         gameweekId: gwSfId,
@@ -260,7 +261,8 @@ export async function POST(request: NextRequest) {
         });
         createdTies.push(tieId);
 
-        const fixtureId = `playoff-${tieId}`;
+        // Random, not `playoff-${tieId}`: fixtures.id is a primary key and tie ids repeat across leagues.
+      const fixtureId = generateId();
         await db.insert(fixtures).values({
           id: fixtureId,
           gameweekId: gwId,
@@ -303,7 +305,8 @@ export async function POST(request: NextRequest) {
       });
       createdTies.push(tieId);
 
-      const leg1Id = `playoff-${tieId}-leg1`;
+      // Random, not `playoff-${tieId}`: fixtures.id is a primary key and tie ids repeat across leagues.
+      const leg1Id = generateId();
       await db.insert(fixtures).values({
         id: leg1Id,
         gameweekId: gw1Id,
@@ -319,7 +322,8 @@ export async function POST(request: NextRequest) {
       });
       createdFixtures.push(leg1Id);
 
-      const leg2Id = `playoff-${tieId}-leg2`;
+      // Random, not `playoff-${tieId}`: fixtures.id is a primary key and tie ids repeat across leagues.
+      const leg2Id = generateId();
       await db.insert(fixtures).values({
         id: leg2Id,
         gameweekId: gw2Id,
@@ -355,7 +359,8 @@ export async function POST(request: NextRequest) {
       });
       createdTies.push(tieId);
 
-      const fixtureId = `playoff-${tieId}`;
+      // Random, not `playoff-${tieId}`: fixtures.id is a primary key and tie ids repeat across leagues.
+      const fixtureId = generateId();
       await db.insert(fixtures).values({
         id: fixtureId,
         gameweekId: gw1Id,
