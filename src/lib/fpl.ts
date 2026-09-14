@@ -152,7 +152,14 @@ export async function fetchLiveGameweek(
   lane: FplLane = "background"
 ): Promise<FPLLiveData> {
   const res = await fplFetch(`${FPL_BASE_URL}/event/${gameweek}/live/`, lane);
-  if (!res.ok) throw new Error(`Failed to fetch live data for GW${gameweek}`);
+  // The status is in the message on purpose. This throw is the one that takes
+  // down a whole gameweek's live scores — it propagates out of
+  // buildManagerPointsContext, past computeLiveFixtureScores, and lands in a
+  // catch that can only report "something failed". Without the status there is
+  // no way to tell an FPL rate-limit from an outage without reproducing it.
+  if (!res.ok) {
+    throw new Error(`Failed to fetch live data for GW${gameweek} (HTTP ${res.status})`);
+  }
   return res.json();
 }
 

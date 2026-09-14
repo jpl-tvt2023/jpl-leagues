@@ -205,6 +205,47 @@ test.describe.serial("dashboard PL fixture card (TVT)", () => {
     await apiSignOut(request);
   });
 
+  test("a failed live sweep degrades the card instead of failing the request", async ({ request }) => {
+    // The regression: /event/{gw}/live/ returning non-2xx threw a plain Error,
+    // which the route rethrew into its 500 handler. The card has no way to
+    // render a 500 except "Could not load your fixture." — so one failed FPL
+    // call blanked the teams, chips, links and stored result alongside it,
+    // while the fixtures page degraded gracefully for the very same failure.
+    //
+    // GW2, not GW1, on purpose. buildManagerPointsContext memoises a SUCCESSFUL
+    // context per gameweek for 60s in-process, and the earlier tests in this file
+    // drive GW1 live — so a GW1 run here could be served that memo, never reach
+    // /event/{gw}/live/ at all, and pass for the wrong reason. No test builds a
+    // context for GW2, because GW2 is never live before this point.
+    await request.post("/api/test-fpl-stub/control", {
+      data: { finishedThrough: 0, liveGw: 2, failRoutes: ["event/live"] },
+    });
+    await expireGameweek(league.id, 2);
+    await apiSignInTeam(request, league.slug, 1);
+
+    try {
+      // `card()` asserts res.ok(), so a 500 fails here — which is the point.
+      const body = await card(request, 2);
+
+      // The live section is the only part allowed to be missing.
+      expect(body.live, "live scores should be absent when the sweep failed").toBeNull();
+      expect(body.liveError, "the failure must be reported, not silently empty").toBe(true);
+
+      // Everything not derived from the failed call must survive.
+      expect(body.fixture, "fixture must still render").toBeTruthy();
+      expect(body.fixture.home.name).toBeTruthy();
+      expect(body.fixture.away.name).toBeTruthy();
+      expect(body.fixture.home.players.length).toBeGreaterThan(0);
+      expect(body.fixture.home.tvtChips).toBeTruthy();
+      expect(body.availableGws.length).toBeGreaterThan(0);
+    } finally {
+      await request.post("/api/test-fpl-stub/control", {
+        data: { liveGw: null, failRoutes: [] },
+      });
+      await apiSignOut(request);
+    }
+  });
+
   test("a team only ever sees its own fixture", async ({ request }) => {
     await apiSignInTeam(request, league.slug, 1);
     const mine = await card(request, 3);
@@ -222,7 +263,7 @@ test.describe.serial("dashboard PL fixture card (TVT)", () => {
 
   test.afterAll(async ({ request }) => {
     await request
-      .post("/api/test-fpl-stub/control", { data: { finishedThrough: 0, liveGw: null } })
+      .post("/api/test-fpl-stub/control", { data: { finishedThrough: 0, liveGw: null, failRoutes: [] } })
       .catch(() => {});
   });
 });

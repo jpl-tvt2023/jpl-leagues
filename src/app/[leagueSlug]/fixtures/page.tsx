@@ -46,10 +46,16 @@ function FixtureCard({
   awayLiveChallenge,
   playersByTeamId,
   fplChipsByFplId,
+  deadlinePassed,
 }: {
   fixture: Fixture;
   liveData?: LiveFixtureScore;
   isFreshlyRefreshed?: boolean;
+  /**
+   * This gameweek's deadline is in the past. Only used to pick the empty-breakdown
+   * copy: "once the gameweek begins" is plainly false two days after kickoff.
+   */
+  deadlinePassed?: boolean;
   /** Chip that side played in THIS fixture's gameweek, if any. */
   homeChip?: ChipDisplay;
   awayChip?: ChipDisplay;
@@ -240,7 +246,9 @@ function FixtureCard({
               />
             )
             : <div className="mt-2 p-3 rounded-lg bg-white/5 border border-white/10 text-center text-xs text-gray-400">
-                Player breakdown not yet available — FPL data will appear once the gameweek begins.
+                {deadlinePassed
+                  ? "Player breakdown unavailable — live FPL data could not be loaded. Try Refresh."
+                  : "Player breakdown not yet available — FPL data will appear once the gameweek begins."}
               </div>
         )}
       </div>
@@ -300,6 +308,14 @@ export default function LeagueFixturesPage() {
   // refusing background calls — and saying nothing was indistinguishable from
   // the button being broken.
   const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
+  /**
+   * Why the last live fetch came back with nothing — "sweep_failed",
+   * "fpl_unavailable" or "no_data" (see /api/fixtures/live).
+   *
+   * Without it, a gameweek whose sweep crashed is indistinguishable from one
+   * that has not kicked off, and the page confidently renders the latter.
+   */
+  const [liveReason, setLiveReason] = useState<string | null>(null);
 
   /**
    * Re-sweep FPL behind the numbers already on screen.
@@ -327,6 +343,7 @@ export default function LeagueFixturesPage() {
           setLiveScores(data.fixtures);
           setIsLive(true);
           setLiveCachedAt(data.cachedAt || null);
+          setLiveReason(null);
         }
       }
     } catch {
@@ -344,6 +361,7 @@ export default function LeagueFixturesPage() {
         setLiveScores(data.fixtures || []);
         setIsLive(data.isLive ?? false);
         setLiveCachedAt(data.cachedAt || null);
+        setLiveReason(data.reason ?? null);
         setIsManuallyRefreshed(false);
         // Served past its fresh window: show it now, replace it shortly.
         if (data.stale) void refreshInBackground(gw);
@@ -398,6 +416,7 @@ export default function LeagueFixturesPage() {
       setLiveScores(data.fixtures);
       setIsLive(true);
       setLiveCachedAt(data.cachedAt || null);
+      setLiveReason(null);
       setIsManuallyRefreshed(true);
     } catch {
       setRefreshNotice("Could not reach the server — check your connection.");
@@ -410,6 +429,7 @@ export default function LeagueFixturesPage() {
     if (!selectedGW) return;
     setIsLoadingLive(true);
     setRefreshNotice(null);
+    setLiveReason(null);
     fetchLiveScores(selectedGW);
     // Deliberately shorter than LIVE_CACHE_TTL (10 min). Polling *at* the fresh
     // window meant almost every poll landed on or past the boundary, came back
@@ -520,6 +540,26 @@ export default function LeagueFixturesPage() {
   const hasResults = displayFixtures.some((f: Fixture) => f.result);
   const deadline = displayFixtures[0]?.gameweek?.deadline;
 
+  // Has this gameweek actually kicked off? The page had no notion of this at
+  // all, which is why it printed a two-day-old deadline as though it were
+  // upcoming and disabled Refresh with "this gameweek has not started yet".
+  const deadlinePassed = !!deadline && new Date(deadline).getTime() <= Date.now();
+
+  /**
+   * Started, unscored, and the live sweep failed — as opposed to genuinely
+   * having nothing to show yet.
+   *
+   * `isLive` alone cannot express this: the route returns `isLive: false` both
+   * when a gameweek has not begun and when its sweep crashed, and the page
+   * rendered the friendly "Upcoming" badge for both.
+   */
+  const sweepFailed =
+    !isLive &&
+    !hasResults &&
+    !isLoadingLive &&
+    deadlinePassed &&
+    (liveReason === "sweep_failed" || liveReason === "fpl_unavailable");
+
   const formatDeadline = (deadline: Date) => {
     const date = new Date(deadline);
     return date.toLocaleDateString("en-US", {
@@ -599,6 +639,13 @@ export default function LeagueFixturesPage() {
                   }`}></span>
                   Live Scores
                 </span>
+              ) : sweepFailed ? (
+                /* Started, unscored, and the sweep failed. "Upcoming" here was
+                   actively misleading — the gameweek was two days old. */
+                <span className="px-4 py-1 rounded-full bg-amber-500/20 text-amber-300 text-sm font-medium flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-amber-400"></span>
+                  Scores unavailable
+                </span>
               ) : (
                 <span className="px-4 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-sm font-medium flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-yellow-400 animate-pulse"></span>
@@ -607,18 +654,22 @@ export default function LeagueFixturesPage() {
               )}
               {/* Refresh button. Disabled unless the gameweek is actually live —
                   a click on a finished or not-yet-started GW costs a full FPL
-                  sweep (one picks fetch per manager) to return identical numbers. */}
+                  sweep (one picks fetch per manager) to return identical numbers.
+                  A failed sweep is the exception: retrying is the whole point,
+                  and leaving it disabled left the reader with no way out. */}
               <button
                 onClick={handleRefresh}
-                disabled={isRefreshing || !isLive}
+                disabled={isRefreshing || (!isLive && !sweepFailed)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                  isRefreshing || !isLive
+                  isRefreshing || (!isLive && !sweepFailed)
                     ? "bg-white/5 text-gray-500 cursor-not-allowed"
                     : "bg-white/10 text-gray-300 hover:bg-white/20"
                 }`}
                 title={
                   isLive
                     ? "Refresh scores"
+                    : sweepFailed
+                    ? "Live scores failed to load — try again"
                     : hasResults
                     ? "This gameweek is finished — scores will not change"
                     : "This gameweek has not started yet"
@@ -629,7 +680,11 @@ export default function LeagueFixturesPage() {
                 </svg>
                 {isRefreshing ? "Refreshing..." : "Refresh"}
               </button>
-              {deadline && !hasResults && !isLive && !isLoadingLive && (
+              {/* `!deadlinePassed` is the fix for "Deadline: Sat, Sep 12" still
+                  being shown on Sep 14 — there was no time check here at all,
+                  so any gameweek without results advertised its deadline as
+                  though it were still ahead. */}
+              {deadline && !deadlinePassed && !hasResults && !isLive && !isLoadingLive && (
                 <span className="text-sm text-gray-400">Deadline: {formatDeadline(deadline)}</span>
               )}
               <LiveFreshness
@@ -668,6 +723,7 @@ export default function LeagueFixturesPage() {
                           awayLiveChallenge={liveChallenges[fixture.awayTeam.id ?? ""]}
                           playersByTeamId={playersByTeamId}
                           fplChipsByFplId={fplChipsByFplId}
+                          deadlinePassed={deadlinePassed}
                         />
                       ))
                     ) : (
@@ -695,6 +751,7 @@ export default function LeagueFixturesPage() {
                           awayLiveChallenge={liveChallenges[fixture.awayTeam.id ?? ""]}
                           playersByTeamId={playersByTeamId}
                           fplChipsByFplId={fplChipsByFplId}
+                          deadlinePassed={deadlinePassed}
                         />
                       ))
                     ) : (
@@ -719,6 +776,7 @@ export default function LeagueFixturesPage() {
                       awayLiveChallenge={liveChallenges[fixture.awayTeam.id ?? ""]}
                       playersByTeamId={playersByTeamId}
                       fplChipsByFplId={fplChipsByFplId}
+                      deadlinePassed={deadlinePassed}
                     />
                   ))
                 ) : (

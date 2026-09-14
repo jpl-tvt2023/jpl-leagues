@@ -160,6 +160,14 @@ export async function GET(request: NextRequest) {
     let liveIsStale = false;
     /** When these numbers were computed, so the card can show their age. */
     let liveCachedAt: string | null = null;
+    /**
+     * The live sweep failed, as opposed to there being nothing to show yet.
+     *
+     * The card renders those two states differently — "no fixture scored yet"
+     * before kickoff, versus a retryable notice during a live gameweek — and
+     * a 200 with `live: null` cannot express the difference on its own.
+     */
+    let liveError = false;
     const wantsRefresh = request.nextUrl.searchParams.get("refresh") === "1";
     if (isLive) {
       // Always READ the cache, even on a forced refresh. Nulling it up front
@@ -220,9 +228,25 @@ export async function GET(request: NextRequest) {
             }
           }
         } catch (err) {
-          if (!(err instanceof FplUnavailableError)) throw err;
-          // Breaker open or scoring in progress — fall back to whatever was cached,
-          // then to stored data. Refusing is not a reason to blank the card.
+          // Deliberately catches EVERYTHING, not just FplUnavailableError.
+          //
+          // Rethrowing anything else sent the whole request to the 500 handler
+          // below, and the card has no way to render a 500 except as "Could not
+          // load your fixture." — discarding the teams, chip state, FPL links and
+          // any stored result, all of which were already resolved and correct,
+          // because one FPL call failed. The fixtures page degrades for exactly
+          // the same failure; there is no reason for this card to be stricter.
+          //
+          // A gateway refusal is routine and stays at warn. Anything else is a
+          // real fault and is logged as one, with the message, so it is findable.
+          if (err instanceof FplUnavailableError) {
+            console.warn(`[pl-fixture] FPL unavailable for GW${gw} (${err.reason})`);
+          } else {
+            console.error(`[pl-fixture] live sweep failed for GW${gw}:`, err);
+          }
+          liveError = true;
+          // Fall back to whatever was cached, then to stored data. Failing is
+          // not a reason to blank the card.
           if (cachedLive) {
             live = cachedLive;
             liveIsStale = true;
@@ -253,7 +277,13 @@ export async function GET(request: NextRequest) {
             })
         );
       } catch (err) {
-        if (!(err instanceof FplUnavailableError)) throw err;
+        // Same reasoning as the live catch above, and the inner catch already
+        // says it: chip badges are decoration. A gateway refusal was already
+        // tolerated here; letting any other error through to the 500 handler
+        // contradicted that for no benefit.
+        if (!(err instanceof FplUnavailableError)) {
+          console.error("[pl-fixture] chip history fetch failed:", err);
+        }
       }
     }
 
@@ -360,6 +390,7 @@ export async function GET(request: NextRequest) {
       linkGw,
       isLive,
       stale: liveIsStale,
+      liveError,
       liveCachedAt,
       isHome: fixtureRow.homeTeamId === teamId,
       fixture: {

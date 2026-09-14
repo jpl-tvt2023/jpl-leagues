@@ -117,6 +117,15 @@ export async function GET(request: NextRequest) {
       );
     }
     console.error("Refresh error:", error);
-    return jsonNoStore({ error: "Failed to refresh scores" }, { status: 500 });
+    // Same `reason` vocabulary as /api/fixtures/live, so the Refresh button and
+    // the poll agree about what went wrong instead of reporting it two ways.
+    return jsonNoStore(
+      {
+        error: "Failed to refresh scores",
+        reason: "sweep_failed",
+        detail: error instanceof Error ? error.message : "unknown error",
+      },
+      { status: 500 }
+    );
   }
 }

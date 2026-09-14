@@ -691,6 +691,17 @@ export default function SuperAdminDashboard() {
     source: "event-status" | "bootstrap-fallback" | "unavailable";
     detail: string;
   };
+  /** Response of GET /api/admin/fpl-probe — one entry per dependency it exercises. */
+  type FplProbe = {
+    gw: number;
+    steps: Record<
+      string,
+      { ok: boolean; ms: number; status?: number; bytes?: number; error?: string; note?: string }
+    >;
+    gateway: { breakerOpen: boolean; scoringLocked: boolean; refusingBackgroundCalls: boolean };
+    failed: string[];
+    verdict: string;
+  };
   type LeagueRow = ProcessAllLeagueResult & {
     uiStatus: "queued" | "processing" | "ok" | "partial" | "error" | "skipped";
     gwStates: Record<number, GwChipState>;
@@ -722,6 +733,8 @@ export default function SuperAdminDashboard() {
   const [fplStatus, setFplStatus] = useState<FplStatus | null>(null);
   const [fplStatusCheckedAt, setFplStatusCheckedAt] = useState<number | null>(null);
   const [fplStatusLoading, setFplStatusLoading] = useState(false);
+  const [fplProbe, setFplProbe] = useState<FplProbe | null>(null);
+  const [fplProbeLoading, setFplProbeLoading] = useState(false);
 
   // ── FPL Classic operations ──────────────────────────────────────────────
   // Deliberately its own section and its own state, kept out of the shared scoring orchestrator by
@@ -758,6 +771,31 @@ export default function SuperAdminDashboard() {
       void loadFplStatus();
     }
   }, [activeTab, fplStatus, fplStatusLoading, loadFplStatus]);
+
+  /**
+   * Probe each FPL/Redis dependency the live-score sweep needs.
+   *
+   * Deliberately on-demand rather than on mount: it makes four real FPL calls
+   * plus a Redis round-trip, which is not something a tab load should spend.
+   */
+  const runFplProbe = useCallback(async () => {
+    setFplProbeLoading(true);
+    try {
+      const res = await fetch("/api/admin/fpl-probe", { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setFplProbe((await res.json()) as FplProbe);
+    } catch (e) {
+      setFplProbe({
+        gw: 0,
+        steps: {},
+        gateway: { breakerOpen: false, scoringLocked: false, refusingBackgroundCalls: false },
+        failed: ["probe"],
+        verdict: `Probe request failed: ${e instanceof Error ? e.message : "unknown error"}`,
+      });
+    } finally {
+      setFplProbeLoading(false);
+    }
+  }, []);
 
   const loadFplClassicLeagues = useCallback(async () => {
     setFplClassicLoading(true);
@@ -2306,6 +2344,64 @@ This overwrites winners that have already been announced. The previous winners a
                   </div>
                 );
               })()}
+            </div>
+
+            {/* Dependency probe — which single piece is broken when live scores vanish. */}
+            <div className="mb-4 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <span className="text-gray-500">FPL dependencies:</span>
+                {fplProbe ? (
+                  <>
+                    <span
+                      className={
+                        fplProbe.failed.length === 0
+                          ? "font-semibold text-green-400"
+                          : "font-semibold text-red-300"
+                      }
+                    >
+                      {fplProbe.verdict}
+                    </span>
+                    <span className="text-gray-600">·</span>
+                    <span className="text-xs text-gray-500">GW{fplProbe.gw}</span>
+                    {fplProbe.gateway.refusingBackgroundCalls && (
+                      <span className="text-xs text-yellow-500/80">
+                        gateway refusing background calls
+                        {fplProbe.gateway.breakerOpen ? " (breaker open)" : " (scoring run)"}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-gray-500">
+                    not checked — run this when live scores are missing
+                  </span>
+                )}
+                <button
+                  onClick={runFplProbe}
+                  disabled={fplProbeLoading}
+                  className="ml-auto text-xs text-gray-400 hover:text-white underline disabled:opacity-50"
+                >
+                  {fplProbeLoading ? "probing…" : "run probe"}
+                </button>
+              </div>
+              {fplProbe && (
+                <div className="mt-2 grid gap-1 border-t border-white/10 pt-2">
+                  {Object.entries(fplProbe.steps).map(([name, s]) => (
+                    <div key={name} className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className={s.ok ? "text-green-400" : "text-red-400"}>
+                        {s.ok ? "✓" : "✗"}
+                      </span>
+                      <span className="w-28 text-gray-300">{name}</span>
+                      <span className="text-gray-500">{s.ms}ms</span>
+                      {s.status != null && <span className="text-gray-500">HTTP {s.status}</span>}
+                      {s.bytes != null && (
+                        <span className="text-gray-600">{Math.round(s.bytes / 1024)}KB</span>
+                      )}
+                      {s.note && <span className="text-gray-600">{s.note}</span>}
+                      {s.error && <span className="text-red-300">{s.error}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
