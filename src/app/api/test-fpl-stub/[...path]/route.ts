@@ -71,6 +71,19 @@ interface StubState {
    * other exactly the way it did before Part 4's fplBase fix in fpl-chips-fixtures.spec.ts.
    */
   classicLeagues: Record<string, { name: string; startEvent: number; entryIds: number[] }>;
+  /**
+   * Route shapes (as `countKey` spells them) that should answer with an HTTP
+   * error instead of data — e.g. `["event/live"]`.
+   *
+   * Exists because FPL failing is a state the app has to render, not merely
+   * survive: a failed `/event/{gw}/live/` propagates out of the live sweep and
+   * used to 500 the dashboard card while the fixtures page silently claimed the
+   * gameweek had not started. Both are behaviours worth pinning, and neither is
+   * reachable while every stubbed endpoint always succeeds.
+   */
+  failRoutes: string[];
+  /** Status the routes above answer with. 503 by default. */
+  failStatus: number;
 }
 
 /**
@@ -104,6 +117,8 @@ const state: StubState = (globalForStub.__fplStubState ??= {
   counts: {},
   chipOverrides: {},
   classicLeagues: defaultClassicLeagues(),
+  failRoutes: [],
+  failStatus: 503,
 });
 // A server that was already running before counts existed keeps its old
 // globalThis object, so the field can be genuinely absent here.
@@ -526,6 +541,14 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ path: s
   if (joined !== "control") {
     const key = countKey(segments);
     state.counts[key] = (state.counts[key] ?? 0) + 1;
+
+    // Counted first, so a spec asserting on call volume still sees the attempt.
+    if ((state.failRoutes ?? []).includes(key)) {
+      return NextResponse.json(
+        { detail: `stub: forced failure for ${key}` },
+        { status: state.failStatus ?? 503 }
+      );
+    }
   }
 
   if (joined === "bootstrap-static") return NextResponse.json(bootstrap());
@@ -693,6 +716,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ path: 
   if (body.classicLeagues && typeof body.classicLeagues === "object") {
     state.classicLeagues = body.classicLeagues;
   }
+  // Treated as a world change: a route that starts or stops failing must not be
+  // masked by a payload cached while it was healthy.
+  if (Array.isArray(body.failRoutes)) {
+    state.failRoutes = body.failRoutes;
+    worldChanged = true;
+  }
+  if (typeof body.failStatus === "number") state.failStatus = body.failStatus;
   if (body.resetCounts) state.counts = {};
 
   if (worldChanged) await invalidateWorldDerivedCaches();

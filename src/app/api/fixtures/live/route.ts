@@ -167,6 +167,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Why the fallback below is empty. Without this every failure mode — a
+    // gateway refusal, a crash mid-sweep, and a gameweek with genuinely nothing
+    // to compute — produced a byte-identical `{isLive:false, fixtures:[]}`, so
+    // the page rendered "Upcoming" for a gameweek that had been under way for
+    // two days and no one could tell from outside whether anything was wrong.
+    let failureReason: "fpl_unavailable" | "sweep_failed" | "no_data" = "no_data";
+    let failureDetail: string | null = null;
+
     // Try to fetch fresh from FPL API
     try {
       // Shared with /api/fixtures/live/refresh so the cached number and the
@@ -194,17 +202,28 @@ export async function GET(request: NextRequest) {
         // Breaker open, or a scoring run holds the lock. Expected — fall
         // through to the empty response rather than logging a fault.
         console.warn(`[live] FPL unavailable for GW${gwNumber} (${error.reason})`);
+        failureReason = "fpl_unavailable";
+        failureDetail = error.reason;
       } else {
         console.error(`Error fetching live scores for GW${gwNumber}:`, error);
+        failureReason = "sweep_failed";
+        failureDetail = error instanceof Error ? error.message : "unknown error";
       }
       // Fallback already handled above with DB results
     }
 
-    // Ultimate fallback - return empty
+    // Ultimate fallback - return empty.
+    //
+    // Still a 200: this is a degraded render, not a bad request. The client
+    // needs to distinguish "this gameweek has nothing yet" from "we tried and
+    // failed", because those want opposite things on screen — the first is
+    // genuinely Upcoming, the second must offer a retry.
     return jsonNoStore({
       isLive: false,
       gameweek: gwNumber,
       fixtures: [],
+      reason: failureReason,
+      detail: failureDetail,
       cachedAt: new Date().toISOString(),
     });
   } catch (error) {

@@ -3,26 +3,33 @@
 import { useState } from "react";
 import type { TeamStanding } from "@/types/standings";
 
+/** Which cell opened the tooltip. Both share one positioned bubble; only the body differs. */
+type TooltipKind = "cbp" | "scores";
+
 export function StandingsTable({ teams, group, isContinentalChampionship }: { teams: TeamStanding[]; group?: string; isContinentalChampionship?: boolean }) {
   const [tooltip, setTooltip] = useState<{
     team: TeamStanding;
+    kind: TooltipKind;
     x: number;
     y: number;
   } | null>(null);
 
-  const handleMouseEnter = (e: React.MouseEvent, team: TeamStanding) => {
+  const handleMouseEnter = (e: React.MouseEvent, team: TeamStanding, kind: TooltipKind) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setTooltip({ team, x: rect.left, y: rect.top + rect.height / 2 });
+    setTooltip({ team, kind, x: rect.left, y: rect.top + rect.height / 2 });
   };
 
   const handleMouseLeave = () => setTooltip(null);
 
-  const handleClick = (e: React.MouseEvent, team: TeamStanding) => {
-    if (tooltip?.team.teamId === team.teamId) {
+  const handleClick = (e: React.MouseEvent, team: TeamStanding, kind: TooltipKind) => {
+    // Both the row AND the cell have to match to count as a re-tap. Comparing teamId alone
+    // would close the bubble when tapping Scores straight after CP/BP on the same row, so the
+    // second breakdown could never be opened in one tap on touch.
+    if (tooltip?.team.teamId === team.teamId && tooltip.kind === kind) {
       setTooltip(null);
     } else {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setTooltip({ team, x: rect.left, y: rect.top + rect.height / 2 });
+      setTooltip({ team, kind, x: rect.left, y: rect.top + rect.height / 2 });
     }
   };
 
@@ -37,73 +44,9 @@ export function StandingsTable({ teams, group, isContinentalChampionship }: { te
             left: Math.max(8, Math.min(tooltip.x - 268, window.innerWidth - 280)),
           }}
         >
-          <p className="text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wide">CP/BP Breakdown</p>
-          {/* Chips */}
-          <div className="space-y-1 mb-2">
-            {tooltip.team.cbpTooltip.chips.map((chip, i) => {
-              const detail = chip.gameweek
-                ? (chip.opponent ? ` vs ${chip.opponent} GW${chip.gameweek}` : ` GW${chip.gameweek}`)
-                : "";
-              let valueText: string;
-              let valueClass: string;
-              if (chip.status === "available") {
-                valueText = "Available"; valueClass = "text-gray-500";
-              } else if (chip.status === "pending") {
-                valueText = `Pending${detail}`; valueClass = "text-yellow-400";
-              } else if (chip.points > 0) {
-                valueText = `+${chip.points}${detail}`; valueClass = "text-green-400 font-bold";
-              } else {
-                valueText = `0${detail}`;
-                valueClass = "text-gray-500";
-              }
-              return (
-                <div key={i} className="flex justify-between gap-2 text-xs">
-                  <span className="text-gray-400 w-9 shrink-0 font-mono">{chip.label}</span>
-                  <span className={`${valueClass} text-right`}>{valueText}</span>
-                </div>
-              );
-            })}
-          </div>
-          {/* BPS entries */}
-          {tooltip.team.cbpTooltip.bps.length > 0 && (
-            <div className="pt-2 border-t border-white/10 mb-2">
-              <p className="text-gray-500 text-xs mb-1 uppercase tracking-wide">BPS</p>
-              <div className="space-y-1">
-                {tooltip.team.cbpTooltip.bps.map((b, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="text-gray-400">GW{b.gameweek}</span>
-                    <span className="text-blue-400 font-bold">+{b.points}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {/* Hit Penalty entries */}
-          {tooltip.team.cbpTooltip.hitPenalty.penaltyGws.length > 0 && (
-            <div className="pt-2 border-t border-white/10 mb-2">
-              <p className="text-gray-500 text-xs mb-1 uppercase tracking-wide">Hit Penalty</p>
-              <div className="space-y-1">
-                {tooltip.team.cbpTooltip.hitPenalty.penaltyGws.map((p, i) => (
-                  <div key={i} className="flex justify-between gap-2 text-xs">
-                    <span className="text-gray-400">GW{p.gameweek} {p.playerName} ({p.hits} hits)</span>
-                    <span className="text-red-400 font-bold shrink-0">-1 pt</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="pt-2 border-t border-white/10 flex justify-between text-xs">
-            <span className="text-gray-400">Total CP/BP</span>
-            <span className="text-purple-300 font-bold">+{tooltip.team.cbpPoints}</span>
-          </div>
-          {tooltip.team.cbpTooltip.hitPenalty.totalDeduction > 0 && (
-            <div className="flex justify-between text-xs mt-1">
-              <span className="text-gray-400">Hit Deduction</span>
-              <span className="text-red-400 font-bold">
-                -{tooltip.team.cbpTooltip.hitPenalty.totalDeduction} pt{tooltip.team.cbpTooltip.hitPenalty.totalDeduction > 1 ? "s" : ""}
-              </span>
-            </div>
-          )}
+          {tooltip.kind === "cbp"
+            ? <CbpTooltipBody team={tooltip.team} />
+            : <ScoresTooltipBody team={tooltip.team} />}
         </div>
       )}
 
@@ -184,9 +127,9 @@ export function StandingsTable({ teams, group, isContinentalChampionship }: { te
                     {!isContinentalChampionship && (
                       <td
                         className="px-1.5 py-2 sm:px-2 text-center text-purple-400"
-                        onMouseEnter={(e) => handleMouseEnter(e, team)}
+                        onMouseEnter={(e) => handleMouseEnter(e, team, "cbp")}
                         onMouseLeave={handleMouseLeave}
-                        onClick={(e) => handleClick(e, team)}
+                        onClick={(e) => handleClick(e, team, "cbp")}
                       >
                         <span className="cursor-help underline decoration-dotted underline-offset-2">
                           {team.cbpPoints}
@@ -194,12 +137,132 @@ export function StandingsTable({ teams, group, isContinentalChampionship }: { te
                       </td>
                     )}
                     <td className="px-1.5 py-2 sm:px-2 text-center font-bold text-white">{team.leaguePoints}</td>
-                    <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.pointsFor}</td>
+                    <td
+                      className="px-1.5 py-2 sm:px-2 text-center text-gray-400"
+                      onMouseEnter={(e) => handleMouseEnter(e, team, "scores")}
+                      onMouseLeave={handleMouseLeave}
+                      onClick={(e) => handleClick(e, team, "scores")}
+                    >
+                      <span className="cursor-help underline decoration-dotted underline-offset-2">
+                        {team.pointsFor}
+                      </span>
+                    </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The CP/BP column's breakdown. Lifted out of StandingsTable unchanged when the Scores column
+ * gained a breakdown of its own: one bubble, two bodies, rather than a fragment nested inside
+ * the positioning wrapper.
+ */
+function CbpTooltipBody({ team }: { team: TeamStanding }) {
+  return (
+    <>
+        <p className="text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wide">CP/BP Breakdown</p>
+        {/* Chips */}
+        <div className="space-y-1 mb-2">
+          {team.cbpTooltip.chips.map((chip, i) => {
+            const detail = chip.gameweek
+              ? (chip.opponent ? ` vs ${chip.opponent} GW${chip.gameweek}` : ` GW${chip.gameweek}`)
+              : "";
+            let valueText: string;
+            let valueClass: string;
+            if (chip.status === "available") {
+              valueText = "Available"; valueClass = "text-gray-500";
+            } else if (chip.status === "pending") {
+              valueText = `Pending${detail}`; valueClass = "text-yellow-400";
+            } else if (chip.points > 0) {
+              valueText = `+${chip.points}${detail}`; valueClass = "text-green-400 font-bold";
+            } else {
+              valueText = `0${detail}`;
+              valueClass = "text-gray-500";
+            }
+            return (
+              <div key={i} className="flex justify-between gap-2 text-xs">
+                <span className="text-gray-400 w-9 shrink-0 font-mono">{chip.label}</span>
+                <span className={`${valueClass} text-right`}>{valueText}</span>
+              </div>
+            );
+          })}
+        </div>
+        {/* BPS entries */}
+        {team.cbpTooltip.bps.length > 0 && (
+          <div className="pt-2 border-t border-white/10 mb-2">
+            <p className="text-gray-500 text-xs mb-1 uppercase tracking-wide">BPS</p>
+            <div className="space-y-1">
+              {team.cbpTooltip.bps.map((b, i) => (
+                <div key={i} className="flex justify-between text-xs">
+                  <span className="text-gray-400">GW{b.gameweek}</span>
+                  <span className="text-blue-400 font-bold">+{b.points}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* Hit Penalty entries */}
+        {team.cbpTooltip.hitPenalty.penaltyGws.length > 0 && (
+          <div className="pt-2 border-t border-white/10 mb-2">
+            <p className="text-gray-500 text-xs mb-1 uppercase tracking-wide">Hit Penalty</p>
+            <div className="space-y-1">
+              {team.cbpTooltip.hitPenalty.penaltyGws.map((p, i) => (
+                <div key={i} className="flex justify-between gap-2 text-xs">
+                  <span className="text-gray-400">GW{p.gameweek} {p.playerName} ({p.hits} hits)</span>
+                  <span className="text-red-400 font-bold shrink-0">-1 pt</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span className="text-gray-400">Total CP/BP</span>
+          <span className="text-purple-300 font-bold">+{team.cbpPoints}</span>
+        </div>
+        {team.cbpTooltip.hitPenalty.totalDeduction > 0 && (
+          <div className="flex justify-between text-xs mt-1">
+            <span className="text-gray-400">Hit Deduction</span>
+            <span className="text-red-400 font-bold">
+              -{team.cbpTooltip.hitPenalty.totalDeduction} pt{team.cbpTooltip.hitPenalty.totalDeduction > 1 ? "s" : ""}
+            </span>
+          </div>
+        )}
+    </>
+  );
+}
+
+/**
+ * The Scores column's breakdown.
+ *
+ * Exists because the standings table shows one score but the tiebreaker compares two, and they
+ * are not the same number. `pointsFor` is the match score with the captain doubled; `fplNetScore`
+ * is the flat sum of each player's points net of hits. A reader comparing two level teams cannot
+ * otherwise tell which of the two settled it.
+ */
+function ScoresTooltipBody({ team }: { team: TeamStanding }) {
+  return (
+    <>
+      <p className="text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wide">Score Breakdown</p>
+      <div className="space-y-2">
+        <div>
+          <div className="flex justify-between gap-2 text-xs">
+            <span className="text-gray-400">Total Overall Score</span>
+            <span className="text-white font-bold">{team.pointsFor}</span>
+          </div>
+          <p className="text-gray-500 text-[10px] mt-0.5">With captain doubled &middot; tiebreaker 2</p>
+        </div>
+        <div className="pt-2 border-t border-white/10">
+          <div className="flex justify-between gap-2 text-xs">
+            <span className="text-gray-400">Total FPL Score</span>
+            <span className="text-white font-bold">{team.fplNetScore}</span>
+          </div>
+          <p className="text-gray-500 text-[10px] mt-0.5">Net of hits, no captain doubling &middot; tiebreaker 6</p>
         </div>
       </div>
     </>

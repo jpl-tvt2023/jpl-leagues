@@ -54,7 +54,7 @@ export function ContinentalChampionshipRules() {
         <SectionHeader letter="E" color="yellow" title="Transfer Hits & Tiebreakers" />
         <ul className="space-y-4 text-gray-300">
           <RuleItem><strong>Transfer Hits:</strong> Each FPL transfer beyond the free allowance costs −4 points. These are deducted from the player&apos;s score before captain doubling.</RuleItem>
-          <RuleItem><strong>JPL Tiebreaker:</strong> Total FPL score (higher is better), then head-to-head record.</RuleItem>
+          <RuleItem><strong>JPL Tiebreaker:</strong> League points, then Total Overall Score (the Scores column), then most wins, then head-to-head record, then CP/BP, then Total FPL Score (net of hits, no captain doubling).</RuleItem>
           <RuleItem><strong>Cup Group Tiebreaker:</strong> Goal difference (total points scored for minus against), then total points scored.</RuleItem>
           <RuleItem><strong>Knockout Tiebreaker:</strong> If aggregate is tied after 2 legs, the team with the higher single-leg score wins. If still tied, the higher-seeded team advances.</RuleItem>
         </ul>

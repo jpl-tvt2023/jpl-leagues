@@ -27,6 +27,7 @@ function row(teamId: string, over: Partial<LeagueStageRow> = {}): LeagueStageRow
     pointsFor: 300,
     pointsAgainst: 300,
     pointsDiff: 0,
+    fplNetScore: 280,
     leaguePoints: 3,
     bonusPoints: 0,
     chipPoints: 0,
@@ -110,7 +111,7 @@ test("played, points for/against and goal difference all move", () => {
   assert.equal(home.pointsDiff, 30);
 });
 
-test("head-to-head records the live result, so tier 3 can separate two level teams", () => {
+test("head-to-head records the live result, so tier 4 can separate two level teams", () => {
   // Level on league points and wins after the live gameweek; only the head-to-head they just
   // played can split them. If the overlay skipped it, the pair would stay tied.
   const out = applyLiveFixtures(
@@ -254,30 +255,84 @@ test("a fixture whose side is missing from the table is skipped whole", () => {
 });
 
 test("the result is ordered by the shared tiebreaker, not by points alone", () => {
-  // Level on 5 points after the live gameweek. Tier 2 is wins, and "wins" prefers the team
-  // with two wins over the one with one win and two draws — which points-only ordering,
-  // or leaving the order alone, would both get wrong.
+  // A live DRAW, so both sides take one point and the same score. That leaves them level on
+  // league points (tier 1) and on overall score (tier 2), and lets tier 3 -- wins -- be the
+  // thing actually under test: two wins beats one win and two draws. Points-only ordering,
+  // or leaving the order alone, would both get this wrong.
   const out = applyLiveFixtures(
     [
-      row("fewerWins", { leaguePoints: 4, wins: 1, draws: 2, played: 3 }),
-      row("moreWins", { leaguePoints: 3, wins: 1, draws: 1, played: 3 }),
+      row("fewerWins", { leaguePoints: 3, wins: 1, draws: 2, played: 3 }),
+      row("moreWins", { leaguePoints: 3, wins: 2, draws: 0, played: 3 }),
     ],
     [
       fixture({
         fixtureId: "f2",
         homeTeamId: "moreWins",
         awayTeamId: "fewerWins",
-        homeScore: 150,
-        awayScore: 100,
+        homeScore: 120,
+        awayScore: 120,
       }),
     ],
     new Map(),
     { gameweek: 4, leagueFormat: "tvt" },
   );
 
-  assert.equal(byId(out, "moreWins").leaguePoints, 5);
+  assert.equal(byId(out, "moreWins").leaguePoints, 4);
   assert.equal(byId(out, "fewerWins").leaguePoints, 4);
+  assert.equal(byId(out, "moreWins").pointsFor, byId(out, "fewerWins").pointsFor, "tier 2 level");
   assert.equal(out[0].teamId, "moreWins");
+});
+
+test("a higher overall score outranks more wins, even live", () => {
+  // The live mirror of the tier 2/3 order. `fewerWins` outscores `moreWins` on the day by
+  // enough to lead on overall score, and must therefore finish above it despite the win
+  // column. This is the ordering the standings page was getting wrong.
+  const out = applyLiveFixtures(
+    [
+      row("fewerWins", { leaguePoints: 4, wins: 1, draws: 2, played: 3, pointsFor: 300 }),
+      row("moreWins", { leaguePoints: 6, wins: 3, draws: 0, played: 3, pointsFor: 300 }),
+    ],
+    [
+      fixture({
+        fixtureId: "f2",
+        homeTeamId: "moreWins",
+        awayTeamId: "fewerWins",
+        homeScore: 100,
+        awayScore: 140,
+      }),
+    ],
+    new Map(),
+    { gameweek: 4, leagueFormat: "tvt" },
+  );
+
+  assert.equal(byId(out, "moreWins").leaguePoints, 6, "lost, so no change");
+  assert.equal(byId(out, "fewerWins").leaguePoints, 6, "won, so +2");
+  assert.equal(out[0].teamId, "fewerWins");
+});
+
+test("tier 6 accumulates from live player scores, without doubling the captain", () => {
+  // `homeScore` is captain-doubled; tier 6 must not be. Two players on 50 and 40 with one
+  // transfer hit sum to 89, whatever the match score says.
+  const out = applyLiveFixtures(
+    [row("home", { fplNetScore: 1000 }), row("away", { fplNetScore: 1000 })],
+    [
+      fixture({
+        homeScore: 139,
+        awayScore: 90,
+        homePlayers: [
+          { name: "A", fplScore: 50, transferHits: 0 },
+          { name: "B", fplScore: 40, transferHits: 1 },
+        ],
+      }),
+    ],
+    new Map(),
+    { gameweek: 4, leagueFormat: "tvt" },
+  );
+
+  assert.equal(byId(out, "home").fplNetScore, 1089);
+  // No breakdown for the away side, so it falls back to the match score rather than
+  // contributing nothing -- the same fallback the settled path makes for legacy results.
+  assert.equal(byId(out, "away").fplNetScore, 1090);
 });
 
 test("a Continental Championship table takes natural points only", () => {

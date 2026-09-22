@@ -27,6 +27,30 @@ export function isFplCacheEnabled(): boolean {
   return getRedis() !== null;
 }
 
+/**
+ * Run a cache WRITE, swallowing any backend failure.
+ *
+ * A write-through cache must never fail the read that populated it. These
+ * setters are called immediately after an expensive FPL fetch that has already
+ * succeeded, so letting Upstash throw discards good data and takes the caller
+ * down with it — `fetchElementGameweekStats` writes two keys straight after
+ * fetching `/event/{gw}/live/`, and an exception there propagates out through
+ * `buildManagerPointsContext` and blanks live scores for an entire league.
+ *
+ * Deliberately NOT used for the lock/claim helpers below (`claimRefreshSlot`,
+ * `setScoringActive`, `shouldSyncDeadlines`) or for the invalidation helpers.
+ * Those return a value the caller acts on, or exist to stop stale data being
+ * served; silently reporting success when nothing was written would be worse
+ * than throwing.
+ */
+async function safeCacheWrite(label: string, write: () => Promise<unknown>): Promise<void> {
+  try {
+    await write();
+  } catch (e) {
+    console.warn(`[fpl-cache] write failed for ${label}`, e);
+  }
+}
+
 export const CACHE_TTL = 60 * 60 * 24; // 24 hours
 /** How long a live payload is considered FRESH. */
 export const LIVE_CACHE_TTL = 60 * 10; // 10 minutes
@@ -103,7 +127,9 @@ export async function setCachedScore(
     ...score,
     cachedAt: new Date().toISOString(),
   };
-  await r.set(getKey(fplId, gameweek, leagueId), value, { ex: ttlSeconds });
+  await safeCacheWrite(getKey(fplId, gameweek, leagueId), () =>
+    r.set(getKey(fplId, gameweek, leagueId), value, { ex: ttlSeconds })
+  );
 }
 
 /**
@@ -301,7 +327,9 @@ export async function setCachedElementPoints(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getElementPointsKey(gameweek), data, { ex: ttlSeconds });
+  await safeCacheWrite(getElementPointsKey(gameweek), () =>
+    r.set(getElementPointsKey(gameweek), data, { ex: ttlSeconds })
+  );
 }
 
 export async function clearCachedElementPoints(gameweek: number): Promise<void> {
@@ -353,7 +381,9 @@ export async function setCachedElementStats(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getElementStatsKey(gameweek), data, { ex: ttlSeconds });
+  await safeCacheWrite(getElementStatsKey(gameweek), () =>
+    r.set(getElementStatsKey(gameweek), data, { ex: ttlSeconds })
+  );
 }
 
 /**
@@ -385,7 +415,7 @@ export async function getCachedBootstrap(): Promise<CachedElementInfo[] | null> 
 export async function setCachedBootstrap(data: CachedElementInfo[]): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getBootstrapKey(), data, { ex: CACHE_TTL });
+  await safeCacheWrite(getBootstrapKey(), () => r.set(getBootstrapKey(), data, { ex: CACHE_TTL }));
 }
 
 /**
@@ -417,7 +447,9 @@ export async function getCachedEventStatus(): Promise<FplEventStatus[] | null> {
 export async function setCachedEventStatus(data: FplEventStatus[]): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getEventStatusKey(), data, { ex: LIVE_CACHE_TTL });
+  await safeCacheWrite(getEventStatusKey(), () =>
+    r.set(getEventStatusKey(), data, { ex: LIVE_CACHE_TTL })
+  );
 }
 
 // ============================================
@@ -463,7 +495,9 @@ export async function getCachedLiveEventStatus(): Promise<FplEventStatusPayload 
 export async function setCachedLiveEventStatus(data: FplEventStatusPayload): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getLiveEventStatusKey(), data, { ex: EVENT_STATUS_TTL });
+  await safeCacheWrite(getLiveEventStatusKey(), () =>
+    r.set(getLiveEventStatusKey(), data, { ex: EVENT_STATUS_TTL })
+  );
 }
 
 // ============================================
@@ -537,10 +571,12 @@ export async function setCachedEntryHistory(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(
-    getEntryHistoryKey(fplId),
-    { ...data, cachedAt: new Date().toISOString() },
-    { ex: ttlSeconds }
+  await safeCacheWrite(getEntryHistoryKey(fplId), () =>
+    r.set(
+      getEntryHistoryKey(fplId),
+      { ...data, cachedAt: new Date().toISOString() },
+      { ex: ttlSeconds }
+    )
   );
 }
 
@@ -756,7 +792,9 @@ export async function setLiveCachedScores(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_STALE_TTL });
+  await safeCacheWrite(getLiveKey(gameweek, leagueId), () =>
+    r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_STALE_TTL })
+  );
 }
 
 /**
@@ -776,7 +814,7 @@ export async function clearLiveCache(gameweek: number, leagueId?: string | null)
 
 // Bump when the standings response shape or values change so the next deploy invalidates the cache
 // automatically (old `standings:` entries become orphaned and expire on TTL).
-const STANDINGS_CACHE_VERSION = 2;
+const STANDINGS_CACHE_VERSION = 3;
 /**
  * Keyed by the disclosure epoch as well as the league — same reason as the fixtures payload.
  *
@@ -804,7 +842,9 @@ export async function setCachedStandings(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(standingsKey(leagueId, disclosedGwCount), data, { ex: PAGE_CACHE_TTL });
+  await safeCacheWrite(standingsKey(leagueId, disclosedGwCount), () =>
+    r.set(standingsKey(leagueId, disclosedGwCount), data, { ex: PAGE_CACHE_TTL })
+  );
 }
 
 /** Every epoch of a league's standings payload. Must be swept, not deleted by name. */
@@ -844,7 +884,9 @@ export async function setCachedFixtures(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(fixturesKey(leagueId, disclosedGwCount), data, { ex: PAGE_CACHE_TTL });
+  await safeCacheWrite(fixturesKey(leagueId, disclosedGwCount), () =>
+    r.set(fixturesKey(leagueId, disclosedGwCount), data, { ex: PAGE_CACHE_TTL })
+  );
 }
 
 /** Every epoch of a league's fixtures payload. Must be swept, not deleted by name. */
@@ -864,7 +906,9 @@ export async function getCachedPlayoffBracket(leagueId: string): Promise<unknown
 export async function setCachedPlayoffBracket(leagueId: string, data: unknown): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(`playoffs:${leagueId}`, data, { ex: PAGE_CACHE_TTL });
+  await safeCacheWrite(`playoffs:${leagueId}`, () =>
+    r.set(`playoffs:${leagueId}`, data, { ex: PAGE_CACHE_TTL })
+  );
 }
 
 /**
@@ -905,9 +949,14 @@ const LEAGUE_STAGE_ROWS_TTL = 60 * 10;
 /**
  * Bump on every change to the cached row SHAPE, same convention as
  * STANDINGS_CACHE_VERSION above. v2: RawChip.gameweek widened from a bare number to
- * { number, deadline? } so read-time disclosure can be evaluated per request.
+ * { number, deadline? } so read-time disclosure can be evaluated per request. v3: rows gained
+ * `fplNetScore` (tiebreaker tier 6). That bump is load-bearing, not hygiene: the cached path
+ * returns rows without re-sorting, but the live overlay DOES re-sort them, and a v2 row has no
+ * `fplNetScore`, so `b.fplNetScore - a.fplNetScore` would yield NaN. Array.sort treats NaN as
+ * "equal" rather than throwing, so the damage would have been a quietly mis-ordered live table
+ * for the whole TTL.
  */
-const LEAGUE_STAGE_ROWS_VERSION = 2;
+const LEAGUE_STAGE_ROWS_VERSION = 3;
 
 function leagueStageRowsKey(leagueId: string, throughGw: number): string {
   return `standings:rows:v${LEAGUE_STAGE_ROWS_VERSION}:${leagueId}:${throughGw}`;
@@ -922,7 +971,9 @@ export async function getCachedLeagueStageRows(leagueId: string, throughGw: numb
 export async function setCachedLeagueStageRows(leagueId: string, throughGw: number, data: unknown): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await r.set(leagueStageRowsKey(leagueId, throughGw), data, { ex: LEAGUE_STAGE_ROWS_TTL });
+  await safeCacheWrite(leagueStageRowsKey(leagueId, throughGw), () =>
+    r.set(leagueStageRowsKey(leagueId, throughGw), data, { ex: LEAGUE_STAGE_ROWS_TTL })
+  );
 }
 
 export async function invalidateLeagueStageRows(leagueId: string): Promise<void> {

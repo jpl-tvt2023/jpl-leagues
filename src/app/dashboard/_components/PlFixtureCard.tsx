@@ -74,6 +74,11 @@ interface Payload {
   isLive: boolean;
   /** The live numbers are past their fresh window; a refresh is worth making. */
   stale?: boolean;
+  /**
+   * The live sweep failed rather than there being nothing to show. Distinct
+   * from `live === null`, which is also what a gameweek before kickoff returns.
+   */
+  liveError?: boolean;
   /** When those numbers were computed. */
   liveCachedAt?: string | null;
   isHome?: boolean;
@@ -87,12 +92,36 @@ interface Payload {
   } | null;
 }
 
+/** A non-2xx from the card's own endpoint, carrying the status for the message. */
+class HttpError extends Error {
+  constructor(readonly status: number) {
+    super(`HTTP ${status}`);
+    this.name = "HttpError";
+  }
+}
+
+/**
+ * What to tell the reader when the card's own request failed.
+ *
+ * A signed-out session is the one case they can actually act on, so it is worth
+ * separating from a server fault they can only wait out.
+ */
+function loadErrorMessage(err: unknown): string {
+  if (err instanceof HttpError && (err.status === 401 || err.status === 403)) {
+    return "Your session has expired — sign in again.";
+  }
+  return "Could not load your fixture.";
+}
+
 export function PlFixtureCard() {
   const [data, setData] = useState<Payload | null>(null);
   const [gw, setGw] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  /** Why a click produced no new numbers. Null when the last refresh genuinely succeeded. */
+  /**
+   * Why there are no fresh numbers — either a click produced none, or the
+   * initial load came back with its live section failed. Null when all is well.
+   */
   const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
   // A refresh the reader did not ask for. Kept separate from isRefreshing so it
   // does not disable the button or relabel it "Refreshing…".
@@ -112,7 +141,10 @@ export function PlFixtureCard() {
     if (targetGw != null) params.set("gw", String(targetGw));
     if (refresh) params.set("refresh", "1");
     const res = await fetch(`/api/team/dashboard/pl-fixture?${params}`);
-    if (!res.ok) throw new Error("failed");
+    // The status used to be discarded here, which made a 401 (session expired)
+    // and a 500 render the same sentence. Carry it so the caller can say
+    // something true about which one happened.
+    if (!res.ok) throw new HttpError(res.status);
     return (await res.json()) as Payload;
   }, []);
 
@@ -125,6 +157,11 @@ export function PlFixtureCard() {
         setData(body);
         setGw(body.gw);
         setError(null);
+        // The card loaded; only its live section failed. Say so here rather
+        // than letting the reader wonder why a live gameweek shows no score.
+        if (body.liveError && !body.live) {
+          setRefreshNotice("Live scores are briefly unavailable — try again shortly.");
+        }
         // Shown immediately, replaced shortly — the reader never waits on the
         // sweep, and never sees a stale number without it being updated.
         if (body.stale) {
@@ -140,8 +177,8 @@ export function PlFixtureCard() {
               if (!cancelled) setIsBackgroundRefreshing(false);
             });
         }
-      } catch {
-        if (!cancelled) setError("Could not load your fixture.");
+      } catch (err) {
+        if (!cancelled) setError(loadErrorMessage(err));
       } finally {
         if (!cancelled) setIsLoading(false);
       }

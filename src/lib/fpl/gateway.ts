@@ -113,6 +113,27 @@ function noteSuccess(): void {
   consecutiveRejections = 0;
 }
 
+/**
+ * Read-only view of the breaker for diagnostics.
+ *
+ * Per-process state, so this describes the lambda instance serving the request
+ * and nothing else — which is the point: a breaker that has tripped here is
+ * exactly what would be refusing this instance's background calls.
+ */
+export function getFplGatewayState(): {
+  breakerOpen: boolean;
+  breakerOpensInMs: number;
+  consecutiveRejections: number;
+  activeRequests: number;
+} {
+  return {
+    breakerOpen: breakerIsOpen(),
+    breakerOpensInMs: Math.max(0, breakerOpenUntil - Date.now()),
+    consecutiveRejections,
+    activeRequests: active,
+  };
+}
+
 /** Test/ops escape hatch — resets breaker and pacing state. */
 export function __resetFplGatewayState(): void {
   active = 0;
