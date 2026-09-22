@@ -186,7 +186,7 @@ export function HitsAndBonusSection() {
           <strong>Bonus Point (BP):</strong> Awarded if a team wins by 75+ points AND has the highest winning margin in their group for that GW.
         </RuleItem>
         <RuleItem>
-          <strong>Tiebreaker fallback:</strong> BP is included in the CP/BP column and used as the second tiebreaker after league points.
+          <strong>Tiebreaker fallback:</strong> BP is included in the CP/BP column, which is the fifth tiebreaker.
         </RuleItem>
       </ul>
     </section>
@@ -203,11 +203,18 @@ export function TiebreakerSection() {
           <h3 className="text-base font-semibold text-green-400 mb-3">League Stage</h3>
           <ol className="space-y-2 text-gray-300 text-sm list-decimal list-inside">
             <li>Total League Points</li>
+            <li>Total Overall Score (the Scores column)</li>
             <li>Most Wins</li>
             <li>Head-to-Head result</li>
             <li>CP/BP (Chip &amp; Bonus Points)</li>
-            <li>Total FPL Score (Points For)</li>
+            <li>Total FPL Score (net of hits, no captain doubling)</li>
           </ol>
+          <p className="text-gray-500 text-xs mt-3">
+            The two score tiers are different numbers. <strong>Total Overall Score</strong> is the
+            Scores column: your match score, with the captain doubled. <strong>Total FPL Score</strong>
+            adds up each manager&apos;s points after transfer hits with no captain doubling. Hover the
+            Scores column on the standings table to see both.
+          </p>
         </div>
         <div className="p-4 rounded-lg bg-white/5 border border-white/10">
           <h3 className="text-base font-semibold text-purple-400 mb-3">Play-offs (aggregate tie)</h3>

@@ -69,9 +69,19 @@ export interface LeagueStageRow {
    *  it is NOT a tiebreaker tier (it is a count of bonuses, not points). */
   bonusPoints: number;
   chipPoints: number;
-  /** Chips + bonus — the value the CP/BP column renders and tier 4 compares. */
+  /** Chips + bonus — the value the CP/BP column renders and tier 5 compares. */
   cbpPoints: number;
-  /** teamId -> match points earned against them. Tier 3. */
+  /**
+   * Tier 6 "Total FPL Score": every player's FPL points net of transfer hits, summed over
+   * counted league-stage fixtures, with NO captain doubling.
+   *
+   * Deliberately NOT `pointsFor` (tier 2), which is captain-doubled. Build it from the stored
+   * breakdown's `fplScore - transferHits`, never from `finalScore`: `finalScore` already has
+   * the captain multiplier applied, which would silently make this tier a copy of tier 2 --
+   * exactly the defect this field was added to fix.
+   */
+  fplNetScore: number;
+  /** teamId -> match points earned against them. Tier 4. */
   headToHeadRecord: Record<string, number>;
   /** Tooltip ingredients, so consumers can render detail without recomputing. */
   bpsEntries: { gameweek: number; points: number }[];
@@ -162,6 +172,38 @@ function countsForLeagueStage(f: FixtureWithResult, throughGw: number): boolean 
   if (f.gameweek.number > throughGw) return false;
   if (f.competitionType && f.competitionType !== "jpl") return false;
   return true;
+}
+
+/**
+ * Sum `fplScore - transferHits` across a stored per-player breakdown. Tier 6 of the tiebreaker.
+ *
+ * The column is untrusted JSON written by the gameweek processor, and this runs inside the
+ * standings computation, so an unguarded `JSON.parse` on one malformed row would take out the
+ * whole table rather than one team's sixth-tier value. Same defensive posture as
+ * `normalizeStoredPlayerScores` (api/fixtures/live/route.ts) and `parseStoredPlayerScores`
+ * (_components/fixtures/shared.tsx).
+ *
+ * Returns null, not 0, when there is nothing usable, so the caller can tell "no breakdown
+ * stored" apart from "a breakdown that genuinely sums to zero" and fall back accordingly.
+ */
+function sumNetPlayerScores(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  let total = 0;
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const p = entry as { fplScore?: unknown; transferHits?: unknown };
+    const score = typeof p.fplScore === "number" && Number.isFinite(p.fplScore) ? p.fplScore : 0;
+    const hits = typeof p.transferHits === "number" && Number.isFinite(p.transferHits) ? p.transferHits : 0;
+    total += score - hits;
+  }
+  return total;
 }
 
 /**
@@ -344,6 +386,7 @@ export async function computeLeagueStageStandings(
     let losses = 0;
     let pointsFor = 0;
     let pointsAgainst = 0;
+    let fplNetScore = 0;
     let bonusPtsTotal = 0;
     const bpsEntries: { gameweek: number; points: number }[] = [];
     const headToHeadRecord: Record<string, number> = {};
@@ -360,6 +403,13 @@ export async function computeLeagueStageStandings(
       if (f.gameweek.number > maxPlayedGw) maxPlayedGw = f.gameweek.number;
       pointsFor += own;
       pointsAgainst += opp;
+
+      // Tier 6. Results predating the per-player breakdown, and those written by the
+      // Continental Championship processor, have no JSON to read; fall back to the match score
+      // rather than contributing 0. A zero would quietly sink those teams on a tier that is
+      // never displayed, which is the harder bug to notice.
+      const netOwn = sumNetPlayerScores(isHome ? f.result.homePlayerScores : f.result.awayPlayerScores);
+      fplNetScore += netOwn ?? own;
 
       // Raw FPL scores decide W/D/L — deliberately NOT the chip-adjusted match points.
       let matchPts = 0;
@@ -413,6 +463,7 @@ export async function computeLeagueStageStandings(
       pointsFor,
       pointsAgainst,
       pointsDiff: pointsFor - pointsAgainst,
+      fplNetScore,
       leaguePoints,
       bonusPoints: team.bonusPoints,
       chipPoints: chipPts,

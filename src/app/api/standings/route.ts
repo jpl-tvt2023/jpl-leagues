@@ -50,9 +50,15 @@ interface TeamStanding {
   bonusPoints: number;
   chipPoints: number;
   cbpPoints: number;
+  /**
+   * Tiebreaker tier 6: every player's FPL points net of hits, NO captain doubling.
+   * Sent to the client so the Scores tooltip can show it beside `pointsFor` (tier 2),
+   * which is the same scoring with the captain doubled.
+   */
+  fplNetScore: number;
   cbpTooltip: CbpTooltip;
-  // Match points (W=2, D=1, L=0) earned vs each opponent — tier 3 of the canonical
-  // tiebreaker in src/lib/formats/tvt/scoring.ts.
+  // Match points (W=2, D=1, L=0) earned vs each opponent — tier 4 of the canonical
+  // tiebreaker in src/lib/formats/tvt/tiebreaker.ts (scoring.ts only re-exports it).
   // Internal-only; stripped before responding to the client (see toResponseRow).
   headToHeadRecord: Record<string, number>;
   players: { name: string; fplId: string; captaincyChipsUsed: number }[];
@@ -416,6 +422,7 @@ export async function GET(request: NextRequest) {
         draws: row.draws,
         losses: row.losses,
         pointsFor: row.pointsFor,
+        fplNetScore: row.fplNetScore,
         pointsAgainst: row.pointsAgainst,
         pointsDiff: row.pointsDiff,
         leaguePoints: row.leaguePoints,

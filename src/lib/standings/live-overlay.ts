@@ -40,8 +40,8 @@ export interface LiveFixtureLike {
   awayTeamId: string;
   homeScore: number;
   awayScore: number;
-  homePlayers?: { name?: string; transferHits: number }[];
-  awayPlayers?: { name?: string; transferHits: number }[];
+  homePlayers?: { name?: string; transferHits: number; fplScore?: number }[];
+  awayPlayers?: { name?: string; transferHits: number; fplScore?: number }[];
 }
 
 export interface ApplyLiveOptions {
@@ -137,11 +137,19 @@ export function applyLiveFixtures(
       row.pointsAgainst += side.opp;
       row.pointsDiff = row.pointsFor - row.pointsAgainst;
 
+      // Tier 6: net of hits, NO captain doubling, so it cannot be read off `side.own` (which
+      // is captain-doubled). The live cache carries `fplScore` per player already. With no
+      // per-player detail there is nothing to sum, so fall back to the match score, matching
+      // the settled path's fallback for results with no stored breakdown.
+      row.fplNetScore += side.players.length > 0
+        ? side.players.reduce((sum, p) => sum + (p.fplScore ?? 0) - p.transferHits, 0)
+        : side.own;
+
       if (side.own > side.opp) row.wins += 1;
       else if (side.own === side.opp) row.draws += 1;
       else row.losses += 1;
 
-      // Tier 3 compares match points earned against a specific opponent, and it is the
+      // Tier 4 compares match points earned against a specific opponent, and it is the
       // NATURAL result that counts there — the settled path does the same. Omit this and two
       // teams level on points and wins are separated by a head-to-head that pretends this
       // gameweek has not happened.

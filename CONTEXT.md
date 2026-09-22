@@ -435,7 +435,8 @@ determineMatchResult(homeScore, awayScore, isDP_home, isDP_away)
 // Bonus: win by 75+ points
 getChipSet(gameweek, playoffStartGw): 1|2|"playoffs"
 compareTiebreaker(a, b): number   // re-exported from ./tiebreaker.ts
-// Order: leaguePoints > wins > h2h > cbpPoints > pointsFor
+// Order: leaguePoints > pointsFor > wins > h2h > cbpPoints > fplNetScore
+// pointsFor is captain-doubled; fplNetScore is not. They are different numbers.
 // Canonical for /api/standings, playoff seeding and the bracket preview.
 // Lives in tiebreaker.ts (zero imports) so it stays unit-testable without a DB.
 ```

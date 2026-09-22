@@ -302,10 +302,11 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
       answer: (
         <ol className="list-decimal list-inside space-y-1.5">
           <li><strong className="text-white">Total league points</strong> — higher total wins.</li>
+          <li><strong className="text-white">Total Overall Score</strong> — the Scores column: your match score, captain doubled.</li>
           <li><strong className="text-white">Most wins</strong> — more wins beats more draws on the same points.</li>
           <li><strong className="text-white">Head-to-head record</strong> — points earned between the tied teams specifically.</li>
           <li><strong className="text-white">CP/BP</strong> — chip &amp; bonus points, as shown in the standings column.</li>
-          <li><strong className="text-white">Total FPL score</strong> — combined FPL points across all gameweeks.</li>
+          <li><strong className="text-white">Total FPL score</strong> — each manager&apos;s points after transfer hits, with no captain doubling.</li>
         </ol>
       ),
     },
@@ -336,11 +337,11 @@ export function TvtHelp({ userRole, teamSize, enabledChips, leagueStageEnd }: Pr
       number: 2,
       title: "Reading the standings table (zones and tiebreakers)",
       steps: [
-        "Each row represents one team. Columns show: Played (MP), Wins (W), Draws (D), Losses (L), Chips & Bonus Points (CP/BP), Total League Points (Pts), Total FPL Score (Scores).",
+        "Each row represents one team. Columns show: Played (MP), Wins (W), Draws (D), Losses (L), Chips & Bonus Points (CP/BP), Total League Points (Pts), Total Overall Score (Scores).",
         `Green rows (Rank 1–${topCutoff}) are heading to the Title Play-offs.`,
         teamSize !== 8 ? "Yellow rows (Rank 9–14) are heading to the Challenger Series." : null,
         `Red rows (Rank ${eliminatedRange}) are eliminated after the league stage.`,
-        "If two teams are tied on points, the tiebreaker order is: most wins → head-to-head record → CP/BP → total FPL score.",
+        "If two teams are tied on points, the tiebreaker order is: total overall score → most wins → head-to-head record → CP/BP → total FPL score. The last one is scored differently from the Scores column: no captain doubling.",
       ].filter(Boolean) as string[],
     },
     {

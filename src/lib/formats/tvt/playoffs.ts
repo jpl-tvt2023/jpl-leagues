@@ -95,10 +95,12 @@ export interface RankedTeam {
   groupRank: number;
   leaguePoints: number;
   wins: number;
-  /** Match points earned vs each opponent — tier 3 of `compareTiebreaker`. */
+  /** Match points earned vs each opponent — tier 4 of `compareTiebreaker`. */
   headToHeadRecord: Record<string, number>;
   pointsFor: number;
   cbpPoints: number;
+  /** Tier 6. Narrowed projections must carry every tier or the sort silently compares NaN. */
+  fplNetScore: number;
 }
 
 /**
@@ -125,6 +127,7 @@ export async function getGroupStandings(leagueId: string, leagueStageEnd: number
         headToHeadRecord: r.headToHeadRecord,
         pointsFor: r.pointsFor,
         cbpPoints: r.cbpPoints,
+        fplNetScore: r.fplNetScore,
       }));
 
     const groupA = toRanked(byGroup.get("A") ?? [], "A");

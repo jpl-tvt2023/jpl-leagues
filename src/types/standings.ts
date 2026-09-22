@@ -15,6 +15,11 @@ export interface TeamStanding {
   draws: number;
   losses: number;
   pointsFor: number;
+  /**
+   * Tiebreaker tier 6: each player's FPL points net of hits, with NO captain doubling.
+   * `pointsFor` (tier 2) is the same scoring WITH the captain doubled, so the two differ.
+   */
+  fplNetScore: number;
   pointsAgainst: number;
   pointsDiff: number;
   leaguePoints: number;

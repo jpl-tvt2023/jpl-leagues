@@ -814,7 +814,7 @@ export async function clearLiveCache(gameweek: number, leagueId?: string | null)
 
 // Bump when the standings response shape or values change so the next deploy invalidates the cache
 // automatically (old `standings:` entries become orphaned and expire on TTL).
-const STANDINGS_CACHE_VERSION = 2;
+const STANDINGS_CACHE_VERSION = 3;
 /**
  * Keyed by the disclosure epoch as well as the league — same reason as the fixtures payload.
  *
@@ -949,9 +949,14 @@ const LEAGUE_STAGE_ROWS_TTL = 60 * 10;
 /**
  * Bump on every change to the cached row SHAPE, same convention as
  * STANDINGS_CACHE_VERSION above. v2: RawChip.gameweek widened from a bare number to
- * { number, deadline? } so read-time disclosure can be evaluated per request.
+ * { number, deadline? } so read-time disclosure can be evaluated per request. v3: rows gained
+ * `fplNetScore` (tiebreaker tier 6). That bump is load-bearing, not hygiene: the cached path
+ * returns rows without re-sorting, but the live overlay DOES re-sort them, and a v2 row has no
+ * `fplNetScore`, so `b.fplNetScore - a.fplNetScore` would yield NaN. Array.sort treats NaN as
+ * "equal" rather than throwing, so the damage would have been a quietly mis-ordered live table
+ * for the whole TTL.
  */
-const LEAGUE_STAGE_ROWS_VERSION = 2;
+const LEAGUE_STAGE_ROWS_VERSION = 3;
 
 function leagueStageRowsKey(leagueId: string, throughGw: number): string {
   return `standings:rows:v${LEAGUE_STAGE_ROWS_VERSION}:${leagueId}:${throughGw}`;

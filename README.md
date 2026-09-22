@@ -415,10 +415,17 @@ Defined once in `src/lib/formats/tvt/tiebreaker.ts` (`compareTiebreaker`) and sh
 generated bracket always resolve ties identically.
 
 1. Most **league points**
-2. Most **wins**
-3. **Head-to-head** match points between the tied teams
-4. Most **CP/BP points** (chips + bonus)
-5. Highest **total FPL score** (Points For)
+2. Highest **total overall score** (`pointsFor`, the Scores column)
+3. Most **wins**
+4. **Head-to-head** match points between the tied teams
+5. Most **CP/BP points** (chips + bonus)
+6. Highest **total FPL score** (`fplNetScore`)
+
+Tiers 2 and 6 are both scores and are not the same number. `pointsFor` is the match score, with
+the captain doubled and carry-forward hits deducted. `fplNetScore` is the flat sum of each
+player's FPL points net of transfer hits, with no captain doubling, summed from the per-player
+breakdown stored on each result. Because `pointsFor` is a four-figure cumulative total, tier 2
+settles nearly every tie in practice and tiers 3-6 are rarely reached.
 
 ### Hit Penalty System
 
