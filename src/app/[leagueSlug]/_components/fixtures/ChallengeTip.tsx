@@ -124,7 +124,7 @@ export function ChallengeTip({
     // No default margin: the dashboard's chip column and the fixture card want different
     // spacing, and a hardcoded one here would collide with whatever the caller passes.
     <span className={`flex ${align === "right" ? "justify-end" : "justify-start"} ${className}`}>
-      <HelpTip tip={tip} wide={!!match} className="no-underline flex min-w-0">
+      <HelpTip tip={tip} width={match ? 420 : undefined} className="no-underline flex min-w-0">
         {pill}
       </HelpTip>
     </span>
@@ -173,8 +173,10 @@ function ChallengeSummary({
 
   const isLive = match.outcome === "live";
 
+  // No width of its own: HelpTip sizes the bubble (`width` above) and this fills it. A width here
+  // used to be set in vw, which cannot see the bubble's padding and spilled out of it on phones.
   return (
-    <div className="w-[min(88vw,392px)]">
+    <div>
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-gray-400">
         <span>Challenge Chip · GW{match.gameweek}</span>
         {isLive && !isWasted && (
@@ -206,9 +208,9 @@ function ChallengeSummary({
           pills are not shown here either — the challenger and challenged team are DIFFERENT
           teams from two different groups, so a single BreakdownChips could not correctly label
           both sides without risking one team's chips being shown under the other's name. */}
-      {/* noLinks: this breakdown is inside HelpTip's bubble, which is portalled with
-          pointer-events-none so a tap dismisses it. Anchors in there render as links and
-          then do nothing on click. */}
+      {/* noLinks: this breakdown is a peek inside HelpTip's bubble. Taps in there are meant for
+          reading and scrolling it, so a manager name must not double as a link out of the page;
+          the full fixture card is where the FPL links live. */}
       <PlayerBreakdown fixture={challengeFixture} noLinks />
       <div className="mt-1.5 text-[9px] leading-snug text-gray-500">
         {isWasted

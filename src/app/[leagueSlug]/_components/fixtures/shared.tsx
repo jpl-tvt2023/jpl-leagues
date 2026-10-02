@@ -174,11 +174,10 @@ export function PlayerBreakdownSide({
   /**
    * Render manager names as plain text instead of links to their FPL entry.
    *
-   * For callers that draw this inside a tooltip bubble. HelpTip's bubble is portalled with
-   * `pointer-events-none` so that tapping it dismisses it, which means every anchor inside
-   * renders underlined and blue and then does nothing on click. A link that cannot be
-   * followed is worse than no link, and an anchor nested in a role="button" is also an
-   * accessibility problem.
+   * For callers that draw this inside a tooltip bubble. Taps inside HelpTip's bubble are for
+   * reading and scrolling it, so a name there must not also navigate away; and the bubble is
+   * a React child of a role="button" trigger, where a nested anchor is an accessibility
+   * problem.
    */
   noLinks?: boolean;
   /**

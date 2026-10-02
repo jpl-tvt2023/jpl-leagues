@@ -232,6 +232,41 @@ test.describe.serial("Challenge Chip tooltip", () => {
     await expect(page.getByRole("tooltip")).toHaveCount(0);
   });
 
+  test("on a 360px phone the bubble stays on screen and its content fits inside it", async ({ page }) => {
+    // The regression: the breakdown sized itself in vw, which cannot see the bubble's padding
+    // and border, so the right-hand column ran into the bubble's edge on every phone.
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto("/" + slug + "/fixtures");
+    await selectGw(page, GW);
+    const pill = page.getByText("CC", { exact: true }).first();
+    await expect(pill).toBeVisible({ timeout: 60_000 });
+    await pill.tap();
+
+    // toBeVisible also waits out the hidden measuring pass before the bubble is placed.
+    const tip = page.getByRole("tooltip");
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText(challengedName);
+
+    const box = (await tip.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(8);
+    expect(box.x + box.width).toBeLessThanOrEqual(360 - 8);
+    expect(box.y).toBeGreaterThanOrEqual(8);
+    expect(box.y + box.height).toBeLessThanOrEqual(780 - 8);
+
+    // Content pushed into the bubble's right padding counts toward scrollWidth.
+    const { scrollWidth, clientWidth } = await tip.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+    expect(scrollWidth, "challenge content is wider than its bubble").toBeLessThanOrEqual(clientWidth);
+
+    // A tap inside the bubble (e.g. to scroll it) must not close it.
+    await tip.tap();
+    await expect(tip).toBeVisible();
+    // ...nor fire the fixture card underneath.
+    await expect(page.getByText("Hide breakdown")).toHaveCount(0);
+  });
+
   test("the GW2 challenge still reads GW2 after moving to another gameweek and back", async ({ page }) => {
     // The regression this guards: rendering the chip against the CURRENT gameweek (or live
     // data) instead of the one the chip was actually played in.

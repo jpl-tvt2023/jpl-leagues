@@ -1,55 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import type { TeamStanding } from "@/types/standings";
+import { HelpTip } from "@/components/HelpTip";
 
-/** Which cell opened the tooltip. Both share one positioned bubble; only the body differs. */
-type TooltipKind = "cbp" | "scores";
+/** Both breakdowns are a short list of label/value rows; 320px reads them without wrapping. */
+const BREAKDOWN_WIDTH = 320;
 
 export function StandingsTable({ teams, group, isContinentalChampionship }: { teams: TeamStanding[]; group?: string; isContinentalChampionship?: boolean }) {
-  const [tooltip, setTooltip] = useState<{
-    team: TeamStanding;
-    kind: TooltipKind;
-    x: number;
-    y: number;
-  } | null>(null);
-
-  const handleMouseEnter = (e: React.MouseEvent, team: TeamStanding, kind: TooltipKind) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setTooltip({ team, kind, x: rect.left, y: rect.top + rect.height / 2 });
-  };
-
-  const handleMouseLeave = () => setTooltip(null);
-
-  const handleClick = (e: React.MouseEvent, team: TeamStanding, kind: TooltipKind) => {
-    // Both the row AND the cell have to match to count as a re-tap. Comparing teamId alone
-    // would close the bubble when tapping Scores straight after CP/BP on the same row, so the
-    // second breakdown could never be opened in one tap on touch.
-    if (tooltip?.team.teamId === team.teamId && tooltip.kind === kind) {
-      setTooltip(null);
-    } else {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setTooltip({ team, kind, x: rect.left, y: rect.top + rect.height / 2 });
-    }
-  };
-
   return (
     <>
-      {/* Fixed-position tooltip — outside any overflow container */}
-      {tooltip && (
-        <div
-          className="fixed z-50 bg-slate-900 border border-white/20 rounded-lg p-3 shadow-xl w-[90vw] max-w-xs text-left pointer-events-none"
-          style={{
-            top: Math.max(8, Math.min(tooltip.y - 120, window.innerHeight - 320)),
-            left: Math.max(8, Math.min(tooltip.x - 268, window.innerWidth - 280)),
-          }}
-        >
-          {tooltip.kind === "cbp"
-            ? <CbpTooltipBody team={tooltip.team} />
-            : <ScoresTooltipBody team={tooltip.team} />}
-        </div>
-      )}
-
       <div className="rounded-2xl border border-purple-500/20 bg-purple-950/20 backdrop-blur overflow-hidden">
         {group && (
           <div className="bg-gradient-to-r from-purple-700/40 to-purple-900/40 px-3 py-2 sm:px-4 sm:py-3 border-b border-purple-500/20">
@@ -135,27 +94,19 @@ export function StandingsTable({ teams, group, isContinentalChampionship }: { te
                     <td className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.draws}</td>
                     <td className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center text-red-400">{team.losses}</td>
                     {!isContinentalChampionship && (
-                      <td
-                        className="px-1.5 py-2 sm:px-2 text-center text-purple-400"
-                        onMouseEnter={(e) => handleMouseEnter(e, team, "cbp")}
-                        onMouseLeave={handleMouseLeave}
-                        onClick={(e) => handleClick(e, team, "cbp")}
-                      >
-                        <span className="cursor-help underline decoration-dotted underline-offset-2">
+                      <td className="px-1.5 py-2 sm:px-2 text-center text-purple-400">
+                        {/* Padded so the tap target is bigger than a one-digit number; the negative margins cancel
+                            the padding so the table is no wider on a 360px phone. */}
+                        <HelpTip tip={<CbpTooltipBody team={team} />} width={BREAKDOWN_WIDTH} className="inline-block -mx-1 -my-0.5 px-1 py-0.5">
                           {team.cbpPoints}
-                        </span>
+                        </HelpTip>
                       </td>
                     )}
                     <td className="px-1.5 py-2 sm:px-2 text-center font-bold text-white">{team.leaguePoints}</td>
-                    <td
-                      className="px-1.5 py-2 sm:px-2 text-center text-gray-400"
-                      onMouseEnter={(e) => handleMouseEnter(e, team, "scores")}
-                      onMouseLeave={handleMouseLeave}
-                      onClick={(e) => handleClick(e, team, "scores")}
-                    >
-                      <span className="cursor-help underline decoration-dotted underline-offset-2">
+                    <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">
+                      <HelpTip tip={<ScoresTooltipBody team={team} />} width={BREAKDOWN_WIDTH} className="inline-block -mx-1 -my-0.5 px-1 py-0.5">
                         {team.pointsFor}
-                      </span>
+                      </HelpTip>
                     </td>
                   </tr>
                 ))
