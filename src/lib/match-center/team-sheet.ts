@@ -278,6 +278,19 @@ export function projectAutoSubs(
   return subs;
 }
 
+/**
+ * Display order inside the Playing XI and inside the bench: who has scored most first.
+ *
+ * Points desc, then the bigger multiplier (the one that matters more to this team), then players
+ * who have played ahead of those yet to — a 0 that is final reads before a 0 still to come — then
+ * name. The bench uses the same order; FPL's bench order stays visible on the owner tags (B1–B3).
+ */
+export function compareRowsForDisplay(a: SheetRow, b: SheetRow): number {
+  const yetA = a.minutes === 0 && a.leftToPlay > 0 ? 1 : 0;
+  const yetB = b.minutes === 0 && b.leftToPlay > 0 ? 1 : 0;
+  return b.points - a.points || b.multiplier - a.multiplier || yetA - yetB || a.name.localeCompare(b.name);
+}
+
 // ── Builder ────────────────────────────────────────────────────────────────
 
 export function buildTeamSheet(input: BuildTeamSheetInput): TeamSheet {
@@ -389,11 +402,8 @@ export function buildTeamSheet(input: BuildTeamSheetInput): TeamSheet {
     row.section = row.owners.some((o) => o.role !== "BENCH" || o.fplMultiplier > 0) ? "xi" : "bench";
   }
 
-  const byPosition = (a: SheetRow, b: SheetRow) =>
-    a.position - b.position || b.multiplier - a.multiplier || b.contribution - a.contribution || a.name.localeCompare(b.name);
-  const benchOrder = (r: SheetRow) => Math.min(...r.owners.map((o) => o.benchOrder ?? 9));
-  const rows = all.filter((r) => r.section === "xi").sort(byPosition);
-  const bench = all.filter((r) => r.section === "bench").sort((a, b) => benchOrder(a) - benchOrder(b) || byPosition(a, b));
+  const rows = all.filter((r) => r.section === "xi").sort(compareRowsForDisplay);
+  const bench = all.filter((r) => r.section === "bench").sort(compareRowsForDisplay);
 
   return {
     rows,

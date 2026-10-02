@@ -280,3 +280,24 @@ test("compareSheets: common players only cancel when the multipliers match", () 
   );
   assert.equal(cmp.bEdges.length, 0, "B never out-multiplies A on an identical squad");
 });
+
+test("display order: points high to low, players yet to play last, bench sorted the same way", () => {
+  const sheet = buildTeamSheet({
+    managers: [manager("A", picks(standardSquad()))],
+    settled: false,
+    // 20 and 5 scored; clubs 1 and 2 have finished, clubs 3 and 4 kick off tomorrow.
+    detail: detail({ 20: [10, 90], 5: [7, 90], 2: [0, 90], 13: [3, 90], 14: [1, 90] }),
+    elements: ELEMENTS, clubs: CLUBS, gwFixtures: FIXTURES, now: NOW,
+  });
+  assert.deepEqual(sheet.rows.slice(0, 2).map((r) => r.element), [20, 5]);
+
+  const yetToPlay = sheet.rows.filter((r) => r.minutes === 0 && r.leftToPlay > 0).map((r) => r.element);
+  assert.deepEqual(
+    sheet.rows.slice(-yetToPlay.length).map((r) => r.element),
+    yetToPlay,
+    "every 0 that is still to come sits below every 0 that is final",
+  );
+  assert.ok(yetToPlay.length > 0);
+
+  assert.deepEqual(sheet.bench.map((r) => r.element), [13, 14, 12, 15], "bench by points, not FPL bench order");
+});

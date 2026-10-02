@@ -12,6 +12,37 @@ export interface RowComparison {
   common: boolean;
 }
 
+/** How a row stands in the head-to-head; drives the inline highlight. */
+type Standing = "diff" | "edge" | "behind" | "cancels" | "none";
+
+function standingOf(row: SheetRow, cmp: RowComparison | undefined): Standing {
+  if (!cmp) return "none";
+  // A ×0 bench player only matters if the OTHER team counts him.
+  if (row.multiplier === 0 && (!cmp.common || cmp.theirs === 0)) return "none";
+  if (!cmp.common) return cmp.mine > 0 ? "diff" : "none";
+  if (cmp.mine === cmp.theirs) return "cancels";
+  return cmp.mine > cmp.theirs ? "edge" : "behind";
+}
+
+const ROW_CLASSES: Record<Standing, string> = {
+  diff: "border-l-violet-400 bg-violet-500/10",
+  edge: "border-l-emerald-400 bg-emerald-500/[0.07]",
+  behind: "border-l-rose-400/60",
+  cancels: "border-l-transparent opacity-50",
+  none: "border-l-transparent",
+};
+
+/**
+ * Grid columns, in one place so the header row and every player row line up.
+ *
+ * Container queries, not viewport breakpoints: the table is half the screen on a desktop and the
+ * whole screen on a phone, so what decides "one line or two" is the table's own width. Below
+ * `@xl` (36rem) the owners and the match drop to a second line under the name.
+ */
+export const ROW_GRID =
+  "grid grid-cols-[2.1rem_minmax(0,1fr)_auto] gap-x-2 " +
+  "@xl:grid-cols-[2.1rem_minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1fr)_2rem_2.4rem_2.6rem] @xl:items-center";
+
 const ROLE_WORDS: Record<SheetOwner["role"], string> = {
   C: "Captain",
   TC: "Triple Captain",
@@ -34,7 +65,7 @@ function ownerTagText(o: SheetOwner, short: string): string {
     : o.role === "BENCH" ? `B${o.benchOrder ?? ""}`
     : o.role === "XI" ? "✓"
     : o.role;
-  return `${o.jplCaptain ? "★ " : ""}${short} ${role}`;
+  return `${o.jplCaptain ? "★" : ""}${short} ${role}`;
 }
 
 function ownerExplanation(o: SheetOwner): string {
@@ -44,7 +75,7 @@ function ownerExplanation(o: SheetOwner): string {
 }
 
 function MatchLine({ row }: { row: SheetRow }) {
-  if (row.matches.length === 0) return <span className="text-gray-500">No fixture (blank)</span>;
+  if (row.matches.length === 0) return <span className="text-gray-500">Blank GW</span>;
   return (
     <>
       {row.matches.map((m, i) => (
@@ -64,6 +95,21 @@ function MatchLine({ row }: { row: SheetRow }) {
   );
 }
 
+/** The column titles, shown only when the table is wide enough for one-line rows. */
+export function PlayerRowHeader() {
+  return (
+    <div className={`${ROW_GRID} hidden @xl:grid px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500`}>
+      <span />
+      <span>Player</span>
+      <span>Owned by</span>
+      <span>Match</span>
+      <span className="text-right">Pts</span>
+      <span className="text-center">×</span>
+      <span className="text-right">=</span>
+    </div>
+  );
+}
+
 export function PlayerRow({
   row,
   managerNames,
@@ -78,6 +124,7 @@ export function PlayerRow({
   const pos = positionLabel(row.position) ?? "";
   const played = row.minutes > 0;
   const yetToPlay = row.leftToPlay > 0;
+  const standing = standingOf(row, comparison);
 
   const breakdown = (
     <div className="text-xs">
@@ -104,14 +151,20 @@ export function PlayerRow({
         <div className="text-gray-400">{yetToPlay ? "Yet to play." : "Did not play."}</div>
       )}
       <div className="mt-2 pt-2 border-t border-white/10 space-y-0.5">
-        {row.owners.map((o) => (
-          <div key={o.fplId} className="text-gray-300">
+        {row.owners.map((o, i) => (
+          <div key={`${o.fplId}-${i}`} className="text-gray-300">
             <span className="text-white">{o.managerName}:</span> {ownerExplanation(o)}
           </div>
         ))}
         <div className="text-white font-semibold">
           {row.points} pts × {row.multiplier} = {row.contribution}
         </div>
+        {comparison?.common && (
+          <div className="text-gray-400">
+            The other team has him at ×{comparison.theirs}
+            {comparison.mine === comparison.theirs ? " — his points cancel out." : "."}
+          </div>
+        )}
         {!settled && played && !row.breakdown.some(([id]) => id === "bonus") && (
           <div className="text-[10px] text-gray-500">Bonus is added once FPL confirms it.</div>
         )}
@@ -123,33 +176,37 @@ export function PlayerRow({
     <div
       data-testid={`mc-row-${row.element}`}
       data-multiplier={row.multiplier}
-      className="flex items-start gap-2 py-1.5 border-b border-white/5 last:border-b-0"
+      data-points={row.points}
+      data-section={row.section}
+      data-standing={standing}
+      className={`${ROW_GRID} border-l-2 px-2 py-1.5 border-b border-b-white/5 last:border-b-0 ${ROW_CLASSES[standing]}`}
     >
       <span
-        className={`mt-0.5 w-9 shrink-0 rounded border px-1 py-0.5 text-center text-[9px] font-bold ${POSITION_COLORS[row.position] ?? ""}`}
+        className={`row-span-2 @xl:row-span-1 self-start @xl:self-center mt-0.5 @xl:mt-0 rounded border px-0.5 py-0.5 text-center text-[9px] font-bold ${POSITION_COLORS[row.position] ?? ""}`}
       >
         {pos}
       </span>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <HelpTip tip={breakdown} width={300} className="min-w-0">
-            <span className="truncate text-sm font-medium text-white underline decoration-dotted decoration-white/30 underline-offset-2">
-              {row.name}
-            </span>
-          </HelpTip>
-          <span className="shrink-0 text-[10px] text-gray-500">{row.club}</span>
-          {comparison && <DiffBadge cmp={comparison} />}
-        </div>
-        <div className="text-[10px] text-gray-400 truncate">
-          <MatchLine row={row} />
-        </div>
-        <div className="mt-0.5 flex flex-wrap gap-1">
-          {row.owners.map((o) => (
+      {/* Name, club, and how this player stands against the other team. */}
+      <div className="flex min-w-0 items-center gap-1.5">
+        <HelpTip tip={breakdown} width={300} className="min-w-0">
+          <span className="truncate text-sm font-medium text-white underline decoration-dotted decoration-white/30 underline-offset-2">
+            {row.name}
+          </span>
+        </HelpTip>
+        <span className="shrink-0 text-[10px] text-gray-500">{row.club}</span>
+        <StandingBadge standing={standing} cmp={comparison} />
+      </div>
+
+      {/* Second line on a narrow table; their own two columns on a wide one. */}
+      <div className="col-start-2 row-start-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 @xl:contents">
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {/* Index in the key: an owner is per pick, and nothing guarantees one per manager. */}
+          {row.owners.map((o, i) => (
             <span
-              key={o.fplId}
+              key={`${o.fplId}-${i}`}
               title={`${o.managerName}: ${ownerExplanation(o)}`}
-              className={`rounded px-1 py-px text-[9px] font-semibold ${
+              className={`rounded px-1 py-px text-[9px] font-semibold whitespace-nowrap ${
                 o.role === "BENCH" && o.fplMultiplier === 0
                   ? "bg-white/5 text-gray-500"
                   : o.jplCaptain
@@ -177,45 +234,53 @@ export function PlayerRow({
             <span className="rounded px-1 py-px text-[9px] font-semibold bg-emerald-500/15 text-emerald-300">↑ subbed on</span>
           )}
         </div>
+        <div className="min-w-0 truncate text-[10px] text-gray-400">
+          <MatchLine row={row} />
+        </div>
       </div>
 
-      <div className="shrink-0 text-right leading-tight">
-        <div className={`text-sm font-bold ${played || row.points !== 0 ? "text-white" : "text-gray-500"}`}>
+      {/* Points, multiplier, contribution: one cluster on a narrow table, three columns on a wide one. */}
+      <div className="col-start-3 row-start-1 row-span-2 flex items-center gap-1.5 self-center @xl:contents">
+        <span className={`text-right text-sm font-bold ${played || row.points !== 0 ? "text-white" : "text-gray-500"}`}>
           {played || !yetToPlay ? row.points : "–"}
-        </div>
-        <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px]">
-          <span className={`rounded px-1 font-bold ${multiplierClass(row.multiplier)}`}>×{row.multiplier}</span>
-          <span className="text-gray-300">{row.contribution}</span>
-        </div>
+        </span>
+        <span className={`justify-self-center rounded px-1 text-center text-[10px] font-bold ${multiplierClass(row.multiplier)}`}>
+          ×{row.multiplier}
+        </span>
+        <span className="text-right text-xs font-semibold text-gray-200">
+          {played || !yetToPlay ? row.contribution : "–"}
+        </span>
       </div>
     </div>
   );
 }
 
-/** How this player sits against the other team: shared and cancelling, an edge, or a differential. */
-function DiffBadge({ cmp }: { cmp: RowComparison }) {
-  if (cmp.common) {
-    if (cmp.mine === cmp.theirs) {
-      return (
-        <span className="shrink-0 rounded px-1 text-[9px] font-semibold bg-white/5 text-gray-400" title={`Both teams have him at ×${cmp.mine}: his points cancel out.`}>
-          = both
-        </span>
-      );
-    }
+function StandingBadge({ standing, cmp }: { standing: Standing; cmp?: RowComparison }) {
+  if (!cmp) return null;
+  if (standing === "diff") {
+    return (
+      <span className="shrink-0 rounded px-1 text-[9px] font-bold bg-violet-500/25 text-violet-200" title="Only this team owns him — every point he scores is a swing.">
+        DIFF
+      </span>
+    );
+  }
+  if (standing === "edge" || standing === "behind") {
     const net = cmp.mine - cmp.theirs;
     return (
       <span
-        className={`shrink-0 rounded px-1 text-[9px] font-semibold ${net > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}
+        className={`shrink-0 rounded px-1 text-[9px] font-bold ${net > 0 ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}
         title={`Both teams own him: ×${cmp.mine} here vs ×${cmp.theirs} for them, a net ${net > 0 ? "+" : ""}${net}× in this head-to-head.`}
       >
         {net > 0 ? `+${net}×` : `${net}×`}
       </span>
     );
   }
-  if (cmp.mine === 0) return null;
-  return (
-    <span className="shrink-0 rounded px-1 text-[9px] font-semibold bg-violet-500/20 text-violet-300" title="Only this team owns him — every point he scores is a swing.">
-      DIFF
-    </span>
-  );
+  if (standing === "cancels") {
+    return (
+      <span className="shrink-0 text-[10px] font-bold text-gray-400" title={`Both teams have him at ×${cmp.mine}: his points cancel out.`}>
+        ═
+      </span>
+    );
+  }
+  return null;
 }

@@ -39,7 +39,7 @@ export function StatList({
   testId?: string;
 }) {
   return (
-    <section data-testid={testId} className="rounded-xl border border-white/10 bg-white/5 p-3">
+    <section data-testid={testId} className="h-full rounded-xl border border-white/10 bg-white/5 p-3">
       <h3 className="text-xs font-semibold text-white">{title}</h3>
       {hint && <p className="text-[10px] text-gray-500">{hint}</p>}
       {lines.length === 0 ? (
