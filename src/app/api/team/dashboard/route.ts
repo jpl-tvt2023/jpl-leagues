@@ -293,7 +293,10 @@ export async function GET(request: NextRequest) {
       const oppScore = isHome ? lastF.result!.awayScore : lastF.result!.homeScore;
       const myPoints = isHome ? lastF.result!.homeMatchPoints : lastF.result!.awayMatchPoints;
       const gotBonus = isHome ? lastF.result!.homeGotBonus : lastF.result!.awayGotBonus;
-      
+      // Double Pointer doubles the bonus too (gameweek-awards.ts), so the badge must not say +1.
+      const usedDoublePointer = isHome ? lastF.result!.homeUsedDoublePointer : lastF.result!.awayUsedDoublePointer;
+      const bonusPoints = gotBonus ? (usedDoublePointer ? 2 : 1) : 0;
+
       let result: "W" | "D" | "L";
       if (myPoints === 2) result = "W";
       else if (myPoints === 1) result = "D";
@@ -416,6 +419,7 @@ export async function GET(request: NextRequest) {
         myScore,
         oppScore,
         gotBonus,
+        bonusPoints,
         isHome,
         myTeamId: teamId,
         myTeamName: team.name,

@@ -27,9 +27,9 @@
 import { db } from "@/lib/db";
 import { fixtures, gameweeks, gameweekCaptains } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { fetchTeamGameweekPicks } from "@/lib/fpl";
+import { getManagerPicks } from "@/lib/fpl-live/picks-cache";
 import type { LiveFixtureScore } from "@/lib/fpl-cache";
-import { pickTempCaptain } from "@/lib/scoring/temp-captain";
+import { resolveJplCaptain } from "@/lib/scoring/jpl-captain";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
 import { managerGameweekPoints, type ManagerPointsContext } from "@/lib/fpl-live/manager-points";
 import { buildManagerPointsContext } from "@/lib/fpl-live/manager-points-context";
@@ -252,7 +252,9 @@ async function scoreSide(
 
   for (const player of teamPlayers) {
     try {
-      const picks = await fetchTeamGameweekPicks(player.fplId, gameweek, lane);
+      // Through the picks cache: picks are fixed after the deadline, so a refresh only needs new
+      // element points, and the Match Center and stats sidebar read these same picks back.
+      const picks = await getManagerPicks(player.fplId, gameweek, { lane, settled: pointsCtx.settled });
       const transferHits = picks.entry_history.event_transfers_cost;
 
       // Which elements are actually featuring, for the players-left counter.
@@ -290,14 +292,12 @@ async function scoreSide(
 
   // Resolve captain: announced > temp (lowest net, rotate on tie). Treated as
   // temp if no announcement existed, or the row was auto-assigned post-deadline.
-  let resolvedCaptainId: string | null = captainPlayerId ?? null;
-  let isTemp = captainWasAutoAssigned;
-  if (!resolvedCaptainId) {
-    // Live preview only — no capContext, so wouldExceedCap is irrelevant here.
-    const picked = pickTempCaptain(rawScores, prevCaptainPlayerId);
-    resolvedCaptainId = picked?.playerId ?? null;
-    isTemp = !!resolvedCaptainId;
-  }
+  const { captainId: resolvedCaptainId, isTemp } = resolveJplCaptain(
+    rawScores,
+    captainPlayerId,
+    captainWasAutoAssigned,
+    prevCaptainPlayerId
+  );
 
   let total = 0;
   const players = rawScores.map((r) => {

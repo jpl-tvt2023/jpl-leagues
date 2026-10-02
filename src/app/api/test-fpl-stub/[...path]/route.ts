@@ -425,6 +425,35 @@ function entryPicks(entryId: number, gw: number) {
   };
 }
 
+/**
+ * GET /entry/{id}/transfers/ — every transfer this season, newest first like FPL.
+ *
+ * Deterministic from (entryId, gw): 0-2 transfers per started gameweek, bringing in players from
+ * that gameweek's picks. The stub's picks are independent per gameweek, so these do not reconcile
+ * squad to squad; they exist so "most transferred in/out" has stable, assertable data.
+ */
+function entryTransfers(entryId: number) {
+  const throughGw = Math.max(state.finishedThrough, state.liveGw ?? 0);
+  const out = [];
+  for (let gw = 1; gw <= throughGw; gw++) {
+    const count = hashed(entryId * 7 + gw, 3);
+    const now = entryPicksList(entryId, gw);
+    const before = gw > 1 ? entryPicksList(entryId, gw - 1) : now;
+    for (let i = 0; i < count; i++) {
+      out.push({
+        element_in: now[i + 2].element,
+        element_in_cost: 60,
+        element_out: before[i + 5].element,
+        element_out_cost: 60,
+        entry: entryId,
+        event: gw,
+        time: stubDeadline(gw).toISOString(),
+      });
+    }
+  }
+  return out.reverse();
+}
+
 function liveGameweek(gw: number) {
   return {
     elements: Array.from({ length: TOTAL_ELEMENTS }, (_, i) => {
@@ -519,6 +548,7 @@ function allFixtures() {
 function countKey(segments: string[]): string {
   if (segments[0] === "entry") {
     if (segments[2] === "history") return "entry/history";
+    if (segments[2] === "transfers") return "entry/transfers";
     if (segments[4] === "picks") return "entry/picks";
     if (segments.length === 2) return "entry";
   }
@@ -566,6 +596,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ path: s
       return NextResponse.json({ detail: "Not found." }, { status: 404 });
     }
     if (segments[2] === "history") return NextResponse.json(entryHistory(entryId));
+    if (segments[2] === "transfers") return NextResponse.json(entryTransfers(entryId));
     if (segments[2] === "event" && segments[4] === "picks") {
       return NextResponse.json(entryPicks(entryId, Number(segments[3])));
     }
@@ -637,6 +668,9 @@ async function invalidateWorldDerivedCaches(): Promise<void> {
     "fpl:history:*",
     "fpl:*:gw*",
     "fpl-league:warm:*",
+    // Transfers and the fixtures-page stats built from them follow the simulated world too.
+    "fpl:transfers:*",
+    "fx-stats:*",
   ]) {
     const keys = await redis.keys(pattern);
     if (keys.length > 0) await redis.del(...keys);

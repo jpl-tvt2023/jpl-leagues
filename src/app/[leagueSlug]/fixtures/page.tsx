@@ -16,7 +16,10 @@ import {
   type LiveFixtureScore,
   type BreakdownChips,
   PlayerBreakdown,
+  bonusPointsFor,
 } from "../_components/fixtures/shared";
+import { BonusPill } from "../_components/fixtures/BonusPill";
+import { GwStatsPanel } from "../_components/fixtures/stats/GwStatsPanel";
 import { ChallengeTip, type ChipDisplay } from "../_components/fixtures/ChallengeTip";
 import {
   buildLiveChallengeMatch,
@@ -47,8 +50,11 @@ function FixtureCard({
   playersByTeamId,
   fplChipsByFplId,
   deadlinePassed,
+  matchCenterHref,
 }: {
   fixture: Fixture;
+  /** Where the "Match Center" link goes. */
+  matchCenterHref: string;
   liveData?: LiveFixtureScore;
   isFreshlyRefreshed?: boolean;
   /**
@@ -132,6 +138,13 @@ function FixtureCard({
   const awayWin = hasScore && awayScore! > homeScore!;
   const draw = hasScore && homeScore === awayScore;
 
+  // The group Bonus Point, straight off the stored result. Only a processed gameweek can carry
+  // one: it is decided across the whole group, so no live score can claim it early.
+  const homeBonus = isResult ? bonusPointsFor(result, "home") : 0;
+  const awayBonus = isResult ? bonusPointsFor(result, "away") : 0;
+  const hasBonus = homeBonus > 0 || awayBonus > 0;
+  const margin = hasScore ? Math.abs(homeScore! - awayScore!) : 0;
+
   const homeScoreClass = isResult
     ? homeWin ? "text-green-400" : "text-gray-400"
     : isLive && isFreshlyRefreshed
@@ -149,8 +162,11 @@ function FixtureCard({
   return (
     <div
       data-testid={`fixture-card-${fixture.id}`}
+      data-bonus={hasBonus ? "true" : undefined}
       className={`rounded-xl border p-4 backdrop-blur transition ${
-        isLive ? "border-green-500/30 bg-green-500/5" : "border-white/10 bg-white/5"
+        hasBonus
+          ? "border-amber-400/50 bg-amber-500/[0.06] shadow-[0_0_24px_-6px_rgba(251,191,36,0.55)]"
+          : isLive ? "border-green-500/30 bg-green-500/5" : "border-white/10 bg-white/5"
       } cursor-pointer`}
       onClick={() => setExpanded(!expanded)}
     >
@@ -179,6 +195,9 @@ function FixtureCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0 text-left text-white">
           <div className="font-semibold text-xs sm:text-sm truncate">{fixture.homeTeam.name}</div>
+          {homeBonus > 0 && (
+            <BonusPill points={homeBonus} margin={margin} groupName={fixture.group?.name} className="mt-0.5" />
+          )}
           {homeChip && (
             <ChallengeTip
               chip={homeChip}
@@ -204,6 +223,9 @@ function FixtureCard({
 
         <div className="flex-1 min-w-0 text-right text-white">
           <div className="font-semibold text-xs sm:text-sm truncate">{fixture.awayTeam.name}</div>
+          {awayBonus > 0 && (
+            <BonusPill points={awayBonus} margin={margin} groupName={fixture.group?.name} align="right" className="mt-0.5" />
+          )}
           {awayChip && (
             <ChallengeTip
               chip={awayChip}
@@ -229,12 +251,22 @@ function FixtureCard({
       )}
 
       <div className="mt-2">
-        <button
-          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-          className="w-full text-center text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
-        >
-          {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
-        </button>
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            className="text-[10px] text-gray-500 hover:text-gray-300 transition py-1"
+          >
+            {expanded ? "▲ Hide breakdown" : "▼ Player breakdown"}
+          </button>
+          <Link
+            href={matchCenterHref}
+            onClick={(e) => e.stopPropagation()}
+            data-testid={`match-center-link-${fixture.id}`}
+            className="text-[11px] font-semibold text-sky-300 hover:text-sky-200 transition py-1"
+          >
+            Match Center →
+          </Link>
+        </div>
         {expanded && (
           hasPlayerData
             ? (
@@ -523,6 +555,18 @@ export default function LeagueFixturesPage() {
 
   const isContinentalChampionship = leagueFormat === "continental-championship";
 
+  /**
+   * The Match Center opens on this fixture's own teams and gameweek. They are put in the URL as
+   * well as the fixture id so the page can render its picker immediately, and so a comparison the
+   * reader then changes is shareable as-is.
+   */
+  const matchCenterHref = (fixture: Fixture) => {
+    const qs = new URLSearchParams({ gw: String(fixture.gameweek.number) });
+    if (fixture.homeTeam.id) qs.set("a", fixture.homeTeam.id);
+    if (fixture.awayTeam.id) qs.set("b", fixture.awayTeam.id);
+    return `/${leagueSlug}/fixtures/${fixture.id}?${qs.toString()}`;
+  };
+
   // Continental Championship: only show JPL fixtures on this page (cup/knockout live on JCL/JEL pages)
   const displayFixtures = isContinentalChampionship
     ? selectedFixtures.filter((f: Fixture) => !f.competitionType || f.competitionType === "jpl")
@@ -585,7 +629,8 @@ export default function LeagueFixturesPage() {
         onSignOut={handleSignOut}
       />
 
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
+      {/* max-w-7xl rather than 6xl: from xl up the fixtures share the row with the stats column. */}
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
         <div className="text-center mb-8">
           <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2 sm:mb-4">Fixtures &amp; Results</h1>
           <p className="text-sm sm:text-base text-gray-400">View upcoming matches and past results</p>
@@ -701,6 +746,24 @@ export default function LeagueFixturesPage() {
               </div>
             )}
 
+            {/* Fixtures left, GW stats right from xl up. Below xl the stats are a collapsible
+                panel ABOVE the fixtures — below sixteen cards nobody would find them. The panel
+                comes first in the DOM so reading order matches that phone layout; CSS order moves
+                it to the right-hand column on wide screens. */}
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+            <div className="xl:order-2 min-w-0">
+              <GwStatsPanel
+                leagueSlug={leagueSlug}
+                gw={selectedGW}
+                fixtures={displayFixtures}
+                liveScores={liveScores}
+                chipsForGw={chipsForGw}
+                isLive={isLive}
+                deadlinePassed={deadlinePassed}
+                showBonusRace={!isContinentalChampionship}
+              />
+            </div>
+            <div className="xl:order-1 min-w-0">
             {hasGroupB ? (
               /* Two-Column Layout: Group A | Group B */
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
@@ -724,6 +787,7 @@ export default function LeagueFixturesPage() {
                           playersByTeamId={playersByTeamId}
                           fplChipsByFplId={fplChipsByFplId}
                           deadlinePassed={deadlinePassed}
+                          matchCenterHref={matchCenterHref(fixture)}
                         />
                       ))
                     ) : (
@@ -732,8 +796,8 @@ export default function LeagueFixturesPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                  <h2 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4 flex items-center gap-2">
                     <span className="h-3 w-3 rounded-full bg-purple-500"></span>
                     Group B
                   </h2>
@@ -752,6 +816,7 @@ export default function LeagueFixturesPage() {
                           playersByTeamId={playersByTeamId}
                           fplChipsByFplId={fplChipsByFplId}
                           deadlinePassed={deadlinePassed}
+                          matchCenterHref={matchCenterHref(fixture)}
                         />
                       ))
                     ) : (
@@ -761,8 +826,10 @@ export default function LeagueFixturesPage() {
                 </div>
               </div>
             ) : (
-              /* Single-Group Layout: no group label, centred */
-              <div className="max-w-2xl mx-auto space-y-3">
+              /* Single-Group Layout: no group label. Two columns from md up — one narrow centred
+                 column left most of a wide screen empty. items-start so an expanded breakdown
+                 does not stretch its neighbour. */
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
                 {groupAFixtures.length > 0 ? (
                   groupAFixtures.map((fixture: Fixture) => (
                     <FixtureCard
@@ -777,6 +844,7 @@ export default function LeagueFixturesPage() {
                       playersByTeamId={playersByTeamId}
                       fplChipsByFplId={fplChipsByFplId}
                       deadlinePassed={deadlinePassed}
+                      matchCenterHref={matchCenterHref(fixture)}
                     />
                   ))
                 ) : (
@@ -784,6 +852,8 @@ export default function LeagueFixturesPage() {
                 )}
               </div>
             )}
+            </div>
+            </div>
           </>
         )}
       </div>
