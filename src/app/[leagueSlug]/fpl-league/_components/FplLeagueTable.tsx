@@ -61,6 +61,10 @@ function ManagerRow({
         {!grouped && (
           <div className="text-[10px] text-gray-500 sm:hidden truncate">{row.teamName}</div>
         )}
+        {/* Phones: the FPL Chips column folds under the name so the name keeps its width. */}
+        <div className="sm:hidden mt-1 flex flex-wrap gap-1">
+          <FplChipRow status={row.chips} gwNumber={gw} />
+        </div>
       </td>
       {!grouped && (
         <td className="px-2 py-2 sm:px-3 text-gray-300 hidden sm:table-cell truncate">
@@ -82,7 +86,7 @@ function ManagerRow({
       <td className="px-1.5 py-2 sm:px-2 text-center font-bold text-white">
         {row.pending ? <span className="text-gray-600">—</span> : row.totalPoints}
       </td>
-      <td className="px-2 py-2 sm:px-3">
+      <td className="hidden sm:table-cell px-2 py-2 sm:px-3">
         <div className="flex flex-wrap gap-1">
           {/* Coloured against the gameweek this table is showing, so a chip being played right
               now reads differently from one spent weeks ago. */}
@@ -251,7 +255,7 @@ export function FplLeagueTable({
                 )}
               </th>
               <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-16">Total</th>
-              <th className="px-2 py-2 sm:px-3 text-left font-medium">FPL Chips</th>
+              <th className="hidden sm:table-cell px-2 py-2 sm:px-3 text-left font-medium">FPL Chips</th>
             </tr>
           </thead>
 

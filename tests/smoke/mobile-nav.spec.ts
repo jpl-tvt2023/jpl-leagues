@@ -40,7 +40,9 @@ test.describe.serial("Mobile nav drawer", () => {
     await page.goto(`/${league.slug}/standings`);
     await expect(hamburger(page)).toBeVisible();
     // The desktop row is `hidden lg:flex`, so its links are out of the a11y tree entirely.
-    await expect(page.getByRole("link", { name: "Fixtures", exact: true })).toHaveCount(0);
+    // Scoped to the top bar: the bottom navigation bar ("Primary") carries its own Fixtures link.
+    const topBar = page.getByRole("navigation", { name: "Main" });
+    await expect(topBar.getByRole("link", { name: "Fixtures", exact: true })).toHaveCount(0);
     await expect(hamburger(page)).toHaveAttribute("aria-expanded", "false");
   });
 

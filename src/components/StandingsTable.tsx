@@ -56,16 +56,18 @@ export function StandingsTable({ teams, group, isContinentalChampionship }: { te
             <h2 className="text-base sm:text-lg font-bold text-white">Group {group}</h2>
           </div>
         )}
+        {/* Phones fold MP/W/D/L into a sub-line under the team name (see ExpandableRow.tsx for
+            the pattern), leaving Rank · Team · CP/BP · Pts · Scores — which fits 360px. */}
         <div className="overflow-x-auto">
           <table className="w-full text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-purple-500/20 bg-purple-900/30 text-[10px] sm:text-xs text-gray-300">
                 <th className="px-2 py-2 sm:px-3 text-left font-medium w-10">Rank</th>
                 <th className="px-2 py-2 text-left font-medium">Team</th>
-                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-9">MP</th>
-                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">W</th>
-                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">D</th>
-                <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-8">L</th>
+                <th className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center font-medium w-9">MP</th>
+                <th className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center font-medium w-8">W</th>
+                <th className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center font-medium w-8">D</th>
+                <th className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center font-medium w-8">L</th>
                 {!isContinentalChampionship && <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-12" title="Chips and Bonus Points">CP/BP</th>}
                 <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-14">Pts</th>
                 <th className="px-1.5 py-2 sm:px-2 text-center font-medium w-16">Scores</th>
@@ -119,11 +121,19 @@ export function StandingsTable({ teams, group, isContinentalChampionship }: { te
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-2 py-2 font-medium text-white leading-tight min-w-0 max-w-[140px] sm:max-w-none truncate">{team.name}</td>
-                    <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.played}</td>
-                    <td className="px-1.5 py-2 sm:px-2 text-center text-green-400">{team.wins}</td>
-                    <td className="px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.draws}</td>
-                    <td className="px-1.5 py-2 sm:px-2 text-center text-red-400">{team.losses}</td>
+                    <td className="px-2 py-2 font-medium text-white leading-tight min-w-0 max-w-[140px] sm:max-w-none">
+                      <div className="truncate">{team.name}</div>
+                      <div className="sm:hidden mt-0.5 text-[10px] font-normal text-gray-400 whitespace-nowrap">
+                        {team.played}P ·{" "}
+                        <span className="text-green-400">{team.wins}W</span>{" "}
+                        <span>{team.draws}D</span>{" "}
+                        <span className="text-red-400">{team.losses}L</span>
+                      </div>
+                    </td>
+                    <td className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.played}</td>
+                    <td className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center text-green-400">{team.wins}</td>
+                    <td className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center text-gray-400">{team.draws}</td>
+                    <td className="hidden sm:table-cell px-1.5 py-2 sm:px-2 text-center text-red-400">{team.losses}</td>
                     {!isContinentalChampionship && (
                       <td
                         className="px-1.5 py-2 sm:px-2 text-center text-purple-400"

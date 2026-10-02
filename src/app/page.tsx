@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { AppNav } from "@/components/AppNav";
+import { InstallBanner } from "@/components/pwa/InstallBanner";
 
 interface League {
   id: string;
@@ -63,23 +65,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
-      {/* Nav */}
-      <nav className="sticky top-0 z-50 border-b border-white/10 bg-slate-900/80 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 font-extrabold text-slate-900 text-sm">
-              JPL
-            </div>
-            <span className="hidden text-lg font-bold text-white sm:inline">JPL Sports</span>
-          </div>
-          <Link
-            href="/signin"
-            className="rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-5 py-2 text-sm font-bold text-slate-900 transition hover:from-yellow-300 hover:to-orange-400"
-          >
-            Sign In
-          </Link>
-        </div>
-      </nav>
+      <AppNav context={{ surface: "public", page: "home" }} activeKey="" brandHref="/" brandLabel="JPL Sports" />
 
       {/* Hero */}
       <section className="mx-auto max-w-4xl px-4 sm:px-6 py-12 sm:py-20 text-center">
@@ -96,6 +82,7 @@ export default function Home() {
 
       {/* League Cards */}
       <section className="mx-auto max-w-5xl px-4 pb-12 sm:pb-24 sm:px-6">
+        <InstallBanner className="mb-6" />
         {isLoading ? (
           <div className="grid gap-6 sm:grid-cols-2">
             {[1, 2].map((i) => (

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { AppNav } from "@/components/AppNav";
 
 interface SetupState {
   teamLoginId: string;
@@ -252,8 +253,9 @@ export default function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 px-4 py-6 sm:py-8 sm:px-6 lg:px-12">
-      <div className="mx-auto max-w-md w-full">
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
+      <AppNav context={{ surface: "public", page: "flow" }} activeKey="" brandHref="/" brandLabel="JPL Sports" title="Team setup" />
+      <div className="mx-auto max-w-md w-full px-4 py-6 sm:py-8 sm:px-6">
         {/* Header */}
         <div className="text-center mb-6 sm:mb-8">
           <h1 className="text-xl sm:text-3xl font-bold text-white mb-2">Complete Your Profile</h1>

@@ -376,11 +376,11 @@ function SideHeader({
   return (
     <div className={`flex-1 min-w-0 text-center ${align === "right" ? "order-3" : ""}`}>
       <div className="text-xs text-gray-400 mb-1">{label}</div>
-      {/* One line, whole name. The fixed 10rem cap clipped "Differential Disaster"
-          to "Differential Disa…"; letting it wrap instead made the two sides
-          different heights and pushed the score down. Each side now takes half
-          the row, which fits these names outright. */}
-      <div className="text-base sm:text-lg font-bold text-white whitespace-nowrap">{side.name}</div>
+      {/* One line. Wrapping made the two sides different heights and pushed the score
+          down, and the old fixed 10rem cap clipped names that fit. Each side takes half
+          the row, which fits these names outright from `sm`; on the narrowest phones a
+          very long name ellipsizes rather than pushing the card wider than the screen. */}
+      <div className="text-base sm:text-lg font-bold text-white truncate" title={side.name}>{side.name}</div>
       {score !== undefined && <div className="text-xl font-bold text-white">{score}</div>}
       {/* Kept in the header, not only in the breakdown: this is a live figure and
           the breakdown is collapsed by default. */}

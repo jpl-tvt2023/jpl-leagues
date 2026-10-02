@@ -46,7 +46,7 @@ export function ContinentalChampionshipPlayoffs() {
         onSignOut={handleSignOut}
       />
 
-      <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 sm:py-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
         <div className="mb-4 sm:mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Knockout Stage</h1>
           <p className="text-gray-400 text-xs sm:text-sm">JPL Champions League &amp; JPL Europa League · Continental Championship</p>
@@ -93,8 +93,8 @@ export function ContinentalChampionshipPlayoffs() {
               </div>
             </div>
             {(data.tvt.qf?.length || data.tvt.sf?.length || data.tvt.final?.length) ? (
-              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
+              <div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
                   <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-blue-500/30 pl-3" />
                   <RoundColumn title="JCL Final 🏆" ties={data.tvt.final ?? []}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-yellow-500/50 pl-3" />
@@ -123,8 +123,8 @@ export function ContinentalChampionshipPlayoffs() {
               const jelFinal = data.challenger.c36 ?? data.challenger.c38 ?? [];
               const hasData = jelQF.length > 0 || jelSF.length > 0 || jelFinal.length > 0;
               return hasData ? (
-                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-[480px]">
+                <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <RoundColumn title="Quarter-Finals" ties={jelQF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
                     <RoundColumn title="Semi-Finals" ties={jelSF}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-500/30 pl-3" />
                     <RoundColumn title="JEL Final 🏆" ties={jelFinal}liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} className="border-l-2 border-orange-400/50 pl-3" />

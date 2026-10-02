@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { Tabs } from "@/components/ui/Tabs";
 import { useLeague } from "@/lib/league-context";
 import {
   GroupStageView,
@@ -16,6 +17,7 @@ import {
 } from "./shared";
 
 type TabType = "tvt" | "challenger" | "groupStage";
+type Ro32Round = "ro16" | "qf" | "sf" | "final";
 
 export function ClassicPlayoffs() {
   const params = useParams();
@@ -35,6 +37,8 @@ export function ClassicPlayoffs() {
   const autoDefaultTab: TabType = data && data.teamSize === 16 && data.latestCompletedGw < 34 ? "groupStage" : "tvt";
   const activeTab: TabType = tabOverride ?? autoDefaultTab;
   const setActiveTab = (t: TabType) => setTabOverride(t);
+  // Phones show the 32-team main draw one round at a time; wider screens show all four columns.
+  const [ro32Round, setRo32Round] = useState<Ro32Round | null>(null);
 
   const handleSignOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -64,7 +68,7 @@ export function ClassicPlayoffs() {
         onSignOut={handleSignOut}
       />
 
-      <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 sm:py-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
         <div className="mb-4 sm:mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Playoffs Bracket</h1>
           {data.mode === "tentative" && (
@@ -81,53 +85,19 @@ export function ClassicPlayoffs() {
           )}
         </div>
 
-        {data.teamSize === 16 && (
-          <div className="flex gap-1 mb-4 sm:mb-6 bg-slate-800/50 rounded-lg p-1 w-full sm:w-fit overflow-x-auto whitespace-nowrap [&>*]:shrink-0">
-            <button
-              onClick={() => setActiveTab("groupStage")}
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
-                activeTab === "groupStage" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              Group Stage
-            </button>
-            <button
-              onClick={() => setActiveTab("tvt")}
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
-                activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              TVT Main Draw
-            </button>
-            <button
-              onClick={() => setActiveTab("challenger")}
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
-                activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              Challenger Series
-            </button>
-          </div>
-        )}
-        {data.teamSize === 32 && (
-          <div className="flex gap-1 mb-4 sm:mb-6 bg-slate-800/50 rounded-lg p-1 w-full sm:w-fit overflow-x-auto whitespace-nowrap [&>*]:shrink-0">
-            <button
-              onClick={() => setActiveTab("tvt")}
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
-                activeTab === "tvt" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              TVT Main Draw
-            </button>
-            <button
-              onClick={() => setActiveTab("challenger")}
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition ${
-                activeTab === "challenger" ? "bg-yellow-500 text-slate-900" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              Challenger Series
-            </button>
-          </div>
+        {(data.teamSize === 16 || data.teamSize === 32) && (
+          <Tabs<TabType>
+            variant="pill"
+            ariaLabel="Bracket"
+            className="mb-4 sm:mb-6 sm:w-fit"
+            value={activeTab}
+            onChange={setActiveTab}
+            items={[
+              ...(data.teamSize === 16 ? [{ id: "groupStage" as const, label: "Group Stage" }] : []),
+              { id: "tvt", label: "TVT Main Draw" },
+              { id: "challenger", label: "Challenger Series" },
+            ]}
+          />
         )}
 
         {activeTab === "groupStage" && data.teamSize === 16 && data.groupStage && (
@@ -143,9 +113,9 @@ export function ClassicPlayoffs() {
         )}
 
         {(activeTab === "tvt" || data.teamSize === 8) && (
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div>
             {data.teamSize === 8 ? (
-              <div className="space-y-8 min-w-[320px]">
+              <div className="space-y-8">
                 <div>
                   <h2 className="text-xs font-bold text-yellow-400 uppercase tracking-wider mb-3">GW36 — Semi-Finals</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -161,7 +131,7 @@ export function ClassicPlayoffs() {
                 </div>
               </div>
             ) : data.teamSize === 16 ? (
-              <div className="space-y-8 min-w-[320px]">
+              <div className="space-y-8">
                 <div>
                   <h2 className="text-xs font-bold text-yellow-400 uppercase tracking-wider mb-3">GW34–35 — Semi-Finals</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -177,12 +147,51 @@ export function ClassicPlayoffs() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-4 gap-3 sm:gap-4 min-w-[700px] min-h-[600px]">
-                <RoundColumn title="Round of 16" ties={data.tvt.ro16 ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Quarter-Finals" ties={data.tvt.qf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Semi-Finals" ties={data.tvt.sf ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-                <RoundColumn title="Grand Finale" ties={data.tvt.final ?? []} liveScores={data.liveScores} refreshingGw={refreshing} tempLiveScores={tempLiveScores} onRefreshRound={handleRefreshRound} />
-              </div>
+              (() => {
+                const rounds: { id: Ro32Round; title: string; short: string; ties: TieDisplay[] }[] = [
+                  { id: "ro16", title: "Round of 16", short: "R16", ties: data.tvt.ro16 ?? [] },
+                  { id: "qf", title: "Quarter-Finals", short: "QF", ties: data.tvt.qf ?? [] },
+                  { id: "sf", title: "Semi-Finals", short: "SF", ties: data.tvt.sf ?? [] },
+                  { id: "final", title: "Grand Finale", short: "Final", ties: data.tvt.final ?? [] },
+                ];
+                const played = rounds.filter((r) => r.ties.length > 0);
+                // Default to the latest round whose matchups are known (both teams decided) — the
+                // one people are following. A tentative bracket fills later rounds with
+                // "Winner of …" placeholders, so it opens on the first round instead.
+                // A side with no teamId is a placeholder (same test MatchCard uses).
+                const decided = played.filter((r) => r.ties.some((t) => t.home?.teamId && t.away?.teamId));
+                const current =
+                  played.find((r) => r.id === ro32Round)?.id ??
+                  decided[decided.length - 1]?.id ??
+                  played[0]?.id;
+                return (
+                  <>
+                    {played.length > 1 && (
+                      <Tabs<Ro32Round>
+                        ariaLabel="Round"
+                        className="mb-4 md:hidden"
+                        value={current ?? "ro16"}
+                        onChange={setRo32Round}
+                        items={played.map((r) => ({ id: r.id, label: r.short }))}
+                      />
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 sm:gap-4 md:min-h-[600px]">
+                      {rounds.map((r) => (
+                        <RoundColumn
+                          key={r.id}
+                          title={r.title}
+                          ties={r.ties}
+                          className={r.id === current ? "" : "hidden md:flex"}
+                          liveScores={data.liveScores}
+                          refreshingGw={refreshing}
+                          tempLiveScores={tempLiveScores}
+                          onRefreshRound={handleRefreshRound}
+                        />
+                      ))}
+                    </div>
+                  </>
+                );
+              })()
             )}
           </div>
         )}

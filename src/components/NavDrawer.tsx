@@ -1,50 +1,62 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Logo } from "./Logo";
+import { NavIcon } from "./icons/NavIcon";
+import { usePwa } from "./pwa/PwaProvider";
 import type { NavGroup } from "@/lib/nav-links";
+import { useIsClient, useModalOverlay, usePresence } from "@/hooks/useModalOverlay";
 
 /**
- * Exit-animation fallback. `prefers-reduced-motion` suppresses the transition entirely,
- * so `transitionend` never fires and the drawer would stay mounted forever without this.
+ * Exit-animation length. `prefers-reduced-motion` suppresses the transition entirely, so
+ * unmounting is timer-driven (see `usePresence`), never `transitionend`.
  */
 const CLOSE_ANIMATION_MS = 250;
+/** Fraction of the panel width a leftward swipe must cover to dismiss on release. */
+const SWIPE_DISMISS_RATIO = 0.35;
 
 export interface NavDrawerProps {
-  /** Drives the slide: false starts the exit, which ends in `onExited`. */
+  /** Drives the slide in and out; the drawer unmounts itself once the exit has played. */
   open: boolean;
   groups: NavGroup[];
   activeKey: string;
   brandHref: string;
   brandLabel: string;
   brandBadge?: { label: string; bgClass: string; textClass: string } | null;
-  /** Palette classes for the active row. Falls back to a neutral highlight. */
+  /** Palette classes for the active row's pill. Falls back to a neutral highlight. */
   activeBgClass?: string;
   activeTextClass?: string;
+  /** Present when the viewer is signed in: renders "Sign out" in the drawer footer. */
+  onSignOut?: () => void;
+  /** Account switcher slotted under the header (signed-in surfaces only). */
+  accountSection?: ReactNode;
   onClose: () => void;
-  /** Called once the exit animation has finished; the parent unmounts the drawer here. */
-  onExited: () => void;
 }
 
 function toneClass(tone: string | undefined): string {
   if (tone === "accent") return "text-orange-400 font-semibold";
   if (tone === "back") return "text-yellow-400 font-semibold";
-  return "text-gray-300";
+  return "text-gray-200";
 }
 
+const ROW =
+  "flex min-h-12 items-center gap-4 rounded-full px-4 text-sm transition active:bg-white/15";
+
 /**
- * The mobile/tablet navigation drawer.
+ * The phone/tablet navigation drawer, styled after Android's Material navigation drawer:
+ * icon + label rows, a pill behind the current page, section headings, account actions in the
+ * footer. Swipe it left to close. There is deliberately no edge-swipe to *open* — with Android
+ * gesture navigation the screen's left edge is the system Back gesture.
  *
- * Portalled to `document.body` rather than rendered inside `<nav>`: the nav has
- * `backdrop-blur` (which creates a stacking context) and its desktop link row has
- * `overflow-x-auto` — the exact clipping trap `NotificationBell` documents and works
- * around. Portalling sidesteps both.
+ * Portalled to `document.body` rather than rendered inside `<nav>`: the nav has `backdrop-blur`
+ * (which creates a stacking context) and its desktop link row has `overflow-x-auto` — the exact
+ * clipping trap `NotificationBell` documents and works around. Portalling sidesteps both.
  *
- * Mounted only while open. An always-mounted-but-hidden drawer would put a second copy
- * of every link in the accessibility tree, which both breaks link-count assertions in
- * the e2e suite and makes screen-reader navigation ambiguous.
+ * Mounted only while open (or closing). An always-mounted-but-hidden drawer would put a second
+ * copy of every link in the accessibility tree, which both breaks link-count assertions in the
+ * e2e suite and makes screen-reader navigation ambiguous.
  */
 export function NavDrawer({
   open,
@@ -55,82 +67,41 @@ export function NavDrawer({
   brandBadge = null,
   activeBgClass = "bg-white/10",
   activeTextClass = "text-white",
+  onSignOut,
+  accountSection,
   onClose,
-  onExited,
 }: NavDrawerProps) {
-  const [mounted, setMounted] = useState(false);
-  const [painted, setPainted] = useState(false);
+  const isClient = useIsClient();
+  const { rendered, shown } = usePresence(open, CLOSE_ANIMATION_MS);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const trapTab = useModalOverlay({ active: rendered, onClose, panelRef, initialFocusRef: closeRef });
+  const { canInstall, install } = usePwa();
 
-  // Portals need a DOM; render nothing on the server pass. Same guard as HelpTip/EconomyCard.
-  useEffect(() => setMounted(true), []);
+  const [swipe, setSwipe] = useState<{ startX: number; startY: number; dx: number; locked: boolean } | null>(null);
 
-  // The browser has to paint the off-screen position once before the transition to it has
-  // anything to animate from, so the slide-in waits a frame past mount.
-  useEffect(() => {
-    if (!mounted) return;
-    const raf = requestAnimationFrame(() => setPainted(true));
-    return () => cancelAnimationFrame(raf);
-  }, [mounted]);
+  if (!isClient || !rendered) return null;
 
-  // Closing: `open` goes false, the panel slides back out, and the parent unmounts us.
-  useEffect(() => {
-    if (open) return;
-    const t = setTimeout(onExited, CLOSE_ANIMATION_MS);
-    return () => clearTimeout(t);
-  }, [open, onExited]);
-
-  const entered = open && painted;
-
-  useEffect(() => {
-    if (!mounted) return;
-    closeRef.current?.focus();
-  }, [mounted]);
-
-  // Escape to dismiss — same listener shape as HelpTip. Outside clicks are handled by the
-  // scrim's own onClick, so no pointerdown capture is needed here.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  // Scroll lock. No scrollbar-width compensation: the drawer only exists below `lg`,
-  // where overlay scrollbars are the norm.
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, []);
-
-  /**
-   * `aria-modal="true"` promises the rest of the page is unreachable, so keyboard focus is
-   * cycled inside the panel. Background `inert` is deliberately skipped: the page content
-   * is not reachable from a body-portalled node, so a screen-reader virtual cursor can
-   * still wander out. Accepted trade-off — keyboard is the common case.
-   */
-  const trapTab = (e: React.KeyboardEvent) => {
-    if (e.key !== "Tab") return;
-    const selector = "a[href], button:not([disabled])";
-    const focusable = panelRef.current?.querySelectorAll<HTMLElement>(selector);
-    if (!focusable?.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
+  const onTouchStart = (e: React.TouchEvent) =>
+    setSwipe({ startX: e.touches[0].clientX, startY: e.touches[0].clientY, dx: 0, locked: false });
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!swipe) return;
+    const dx = e.touches[0].clientX - swipe.startX;
+    const dy = e.touches[0].clientY - swipe.startY;
+    // Decide once whether this gesture is a horizontal swipe or the list scrolling.
+    if (!swipe.locked && Math.abs(dy) > Math.abs(dx)) {
+      setSwipe(null);
+      return;
     }
+    setSwipe({ ...swipe, dx: Math.min(0, dx), locked: true });
+  };
+  const onTouchEnd = () => {
+    const width = panelRef.current?.offsetWidth ?? 320;
+    if (swipe && -swipe.dx > width * SWIPE_DISMISS_RATIO) onClose();
+    setSwipe(null);
   };
 
-  if (!mounted) return null;
+  const dragging = swipe !== null && swipe.dx < 0;
 
   return createPortal(
     <>
@@ -138,7 +109,7 @@ export function NavDrawer({
         aria-hidden="true"
         onClick={onClose}
         className={`fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm transition-opacity duration-200 motion-reduce:transition-none ${
-          entered ? "opacity-100" : "opacity-0 pointer-events-none"
+          shown ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       />
 
@@ -149,46 +120,45 @@ export function NavDrawer({
         aria-label="Site navigation"
         ref={panelRef}
         onKeyDown={trapTab}
-        className={`fixed inset-y-0 left-0 z-[71] flex h-full w-[86vw] max-w-xs flex-col overflow-y-auto overscroll-contain border-r border-white/10 bg-slate-900 shadow-2xl transition-transform duration-200 ease-out motion-reduce:transition-none ${
-          entered ? "translate-x-0" : "-translate-x-full"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
+        style={dragging ? { transform: `translateX(${swipe.dx}px)`, transition: "none" } : undefined}
+        className={`fixed inset-y-0 left-0 z-[71] flex h-full w-[86vw] max-w-xs flex-col overflow-y-auto overscroll-contain rounded-r-3xl border-r border-white/10 bg-slate-900 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-2xl transition-transform duration-200 ease-out motion-reduce:transition-none ${
+          shown ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <header className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
-          <Link href={brandHref} onClick={onClose} className="flex min-w-0 items-center gap-2">
-            <Logo className="h-8 w-8 shrink-0" />
-            <span className="truncate text-base font-bold text-white">{brandLabel}</span>
-            {brandBadge && (
-              <span
-                className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${brandBadge.bgClass} ${brandBadge.textClass}`}
-              >
-                {brandBadge.label}
-              </span>
-            )}
+        <header className="flex items-center justify-between gap-2 px-4 pb-2 pt-4">
+          <Link href={brandHref} onClick={onClose} className="flex min-w-0 items-center gap-3">
+            <Logo className="h-10 w-10 shrink-0" />
+            <span className="min-w-0">
+              <span className="block truncate text-base font-bold text-white">{brandLabel}</span>
+              {brandBadge && (
+                <span
+                  className={`mt-0.5 inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${brandBadge.bgClass} ${brandBadge.textClass}`}
+                >
+                  {brandBadge.label}
+                </span>
+              )}
+            </span>
           </Link>
           <button
             ref={closeRef}
             onClick={onClose}
             aria-label="Close menu"
-            className="shrink-0 rounded-full p-2 text-gray-400 transition hover:bg-white/10 hover:text-white"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-400 transition hover:bg-white/10 hover:text-white active:bg-white/15"
           >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
+            <NavIcon name="close" className="h-5 w-5" />
           </button>
         </header>
 
-        <div className="flex-1 py-2">
-          {groups.map((group) => (
-            <section key={group.id}>
-              <h2 className="px-4 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+        {accountSection}
+
+        <div className="flex-1 px-3 py-1">
+          {groups.map((group, gi) => (
+            <section key={group.id} className={gi > 0 ? "mt-1 border-t border-white/5 pt-1" : ""}>
+              <h2 className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
                 {group.heading}
               </h2>
               <ul>
@@ -202,11 +172,12 @@ export function NavDrawer({
                         aria-current={active ? "page" : undefined}
                         className={
                           active
-                            ? `block border-l-2 border-current px-4 py-3 text-sm font-semibold ${activeBgClass} ${activeTextClass}`
-                            : `block border-l-2 border-transparent px-4 py-3 text-sm transition hover:bg-white/5 hover:text-white ${toneClass(item.tone)}`
+                            ? `${ROW} font-semibold ${activeBgClass} ${activeTextClass}`
+                            : `${ROW} hover:bg-white/5 hover:text-white ${toneClass(item.tone)}`
                         }
                       >
-                        {item.label}
+                        {item.icon && <NavIcon name={item.icon} className="h-5 w-5 shrink-0" />}
+                        <span className="truncate">{item.label}</span>
                       </Link>
                     </li>
                   );
@@ -216,6 +187,33 @@ export function NavDrawer({
           ))}
         </div>
 
+        {(canInstall || onSignOut) && (
+          <footer className="border-t border-white/10 px-3 py-2">
+            {canInstall && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  install();
+                }}
+                className={`${ROW} w-full text-sky-300 hover:bg-white/5`}
+              >
+                <NavIcon name="install" className="h-5 w-5 shrink-0" />
+                Install app
+              </button>
+            )}
+            {onSignOut && (
+              <button
+                type="button"
+                onClick={onSignOut}
+                className={`${ROW} w-full text-gray-200 hover:bg-white/5 hover:text-white`}
+              >
+                <NavIcon name="logout" className="h-5 w-5 shrink-0" />
+                Sign Out
+              </button>
+            )}
+          </footer>
+        )}
       </div>
     </>,
     document.body,

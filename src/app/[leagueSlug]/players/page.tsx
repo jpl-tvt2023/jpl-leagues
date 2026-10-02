@@ -330,7 +330,7 @@ export default function PlayersPage() {
             </div>
 
             {/* Search */}
-            <div className="flex-1 min-w-[160px]">
+            <div className="w-full sm:w-auto sm:flex-1 sm:min-w-[160px]">
               <input
                 type="text"
                 placeholder="Search player..."
@@ -354,10 +354,10 @@ export default function PlayersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-left">
-                  <SortableTh label="Player" k="webName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-4" tip="The FPL player's name." />
-                  <SortableTh label="Owned By" k="ownerTeamName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" tip="Which league team currently owns this player. Blank = free agent (available to nominate)." />
-                  <SortableTh label="Pos" k="position" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" tip="Playing position: GKP, DEF, MID or FWD." />
-                  <SortableTh label="PL Team" k="plTeamShort" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" tip="The player's Premier League club." />
+                  <SortableTh label="Player" k="webName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3 sm:px-4" tip="The FPL player's name." />
+                  <SortableTh label="Owned By" k="ownerTeamName" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="hidden sm:table-cell px-3" tip="Which league team currently owns this player. Blank = free agent (available to nominate)." />
+                  <SortableTh label="Pos" k="position" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="hidden sm:table-cell px-3" tip="Playing position: GKP, DEF, MID or FWD." />
+                  <SortableTh label="PL Team" k="plTeamShort" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="hidden sm:table-cell px-3" tip="The player's Premier League club." />
                   <SortableTh label="Season" k="seasonPoints" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" align="right" tip="Total FPL points the player has scored this season." />
                   <SortableTh label="Price" k="purchasePrice" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} className="px-3" align="right" tip="What the owning team paid for this player at auction. Blank for free agents." />
                 </tr>
@@ -378,12 +378,24 @@ export default function PlayersPage() {
                         className={`border-b border-white/5 hover:bg-white/[0.03] transition ${isMine ? "bg-yellow-500/[0.04]" : ""}`}
                       >
                         {/* Player name */}
-                        <td className="px-4 py-2.5">
+                        <td className="px-3 sm:px-4 py-2.5">
                           <span className="text-white font-semibold">{p.webName}</span>
+                          {/* Phones: position, club and owner fold under the name. */}
+                          <div className="sm:hidden mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-gray-400">
+                            <span className={`font-bold px-1.5 py-px rounded border ${POSITION_COLORS[p.position] ?? ""}`}>
+                              {POSITION_LABELS[p.position] ?? "?"}
+                            </span>
+                            <span>{p.plTeamShort}</span>
+                            {p.ownerTeamName ? (
+                              <span className={`truncate font-semibold ${isMine ? "text-yellow-300" : "text-purple-300"}`}>· {p.ownerTeamName}</span>
+                            ) : (
+                              <span className="text-gray-500">· Free agent</span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Owned by */}
-                        <td className="px-3 py-2.5">
+                        <td className="hidden sm:table-cell px-3 py-2.5">
                           {p.ownerTeamName ? (
                             <span
                               className={`text-xs font-semibold ${isMine ? "text-yellow-300" : "text-purple-300"}`}
@@ -397,14 +409,14 @@ export default function PlayersPage() {
                         </td>
 
                         {/* Position */}
-                        <td className="px-3 py-2.5">
+                        <td className="hidden sm:table-cell px-3 py-2.5">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${POSITION_COLORS[p.position] ?? ""}`}>
                             {POSITION_LABELS[p.position] ?? "?"}
                           </span>
                         </td>
 
                         {/* PL Team */}
-                        <td className="px-3 py-2.5 text-gray-300 text-xs">
+                        <td className="hidden sm:table-cell px-3 py-2.5 text-gray-300 text-xs">
                           {p.plTeamShort}
                         </td>
 

@@ -239,13 +239,13 @@ function WinnersSection({ title, rows }: { title: string; rows: Winner[] }) {
     <div>
       <h2 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">{title}</h2>
       <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="w-full min-w-[500px]">
+        <table className="w-full">
           <thead>
             <tr className="border-b border-white/10 bg-white/5">
               <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Rank</th>
               <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Position</th>
               <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Team</th>
-              <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Players</th>
+              <th className="hidden sm:table-cell px-2 sm:px-4 py-2 sm:py-3 text-left text-gray-400 text-xs font-semibold">Players</th>
             </tr>
           </thead>
           <tbody>
@@ -281,10 +281,26 @@ function WinnerRow({ winner }: { winner: Winner }) {
         {winner.pending ? (
           <span className="text-gray-500 italic">TBD — {winner.placeholder}</span>
         ) : (
-          <span className="text-white font-semibold">{winner.teamName}</span>
+          <>
+            <span className="text-white font-semibold">{winner.teamName}</span>
+            {/* Phones: the Players column folds under the team name. */}
+            <span className="sm:hidden mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+              {winner.players.map((p, i) => (
+                <a
+                  key={i}
+                  href={fplEntryUrl(p.fplId, 38)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-blue-400 underline"
+                >
+                  {p.name}
+                </a>
+              ))}
+            </span>
+          </>
         )}
       </td>
-      <td className="px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
+      <td className="hidden sm:table-cell px-2 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm">
         {winner.pending ? (
           <span className="text-gray-600">—</span>
         ) : (

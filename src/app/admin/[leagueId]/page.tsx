@@ -1883,7 +1883,7 @@ export default function AdminDashboard() {
       {/* Delete Team Confirmation Modal */}
       {deletingTeam && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-5 sm:p-8 w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <div className="text-center">
               <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-red-500/20 flex items-center justify-center">
                 <span className="text-2xl">⚠️</span>
@@ -1921,7 +1921,7 @@ export default function AdminDashboard() {
       {/* Edit Team Modal */}
       {editingTeam && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-5 sm:p-8 w-full max-w-2xl max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white">{isAuctionFormat ? "Edit Manager" : "Edit Team"}</h2>
               <button
@@ -2069,8 +2069,8 @@ export default function AdminDashboard() {
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
         {/* Tabs */}
-        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-8 border-b border-white/10 pb-4">
-          <div className="flex gap-2 sm:gap-4 min-w-max">
+        <div className="mb-8 border-b border-white/10 pb-4">
+          <div className="flex flex-wrap gap-2 sm:gap-4">
           <button
             onClick={() => { setActiveTab("teams"); setMessage(null); }}
             className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition ${
@@ -4061,7 +4061,7 @@ export default function AdminDashboard() {
             {/* Create Session Modal (with optional scheduled start time) */}
             {showCreateSessionModal && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => !auctionSessionCreating && setShowCreateSessionModal(null)}>
-                <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+                <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-5 sm:p-6" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-3 mb-4">
                     <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-slate-900 text-lg">📅</div>
                     <div>
@@ -4455,7 +4455,7 @@ export default function AdminDashboard() {
             {/* Reset Auction Modal */}
             {showAuctionResetConfirm && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowAuctionResetConfirm(false)}>
-                <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+                <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-red-500/30 bg-slate-900 p-5 sm:p-6" onClick={(e) => e.stopPropagation()}>
                   <h3 className="text-xl font-bold text-red-400 mb-4">Reset Auction</h3>
                   <p className="text-sm text-gray-400 mb-4">This will permanently delete auction data. This action cannot be undone.</p>
                   <div className="mb-4">
@@ -4635,7 +4635,7 @@ export default function AdminDashboard() {
             any destructive operation; the UI just dispatches to the right /restore-{format} route. */}
         {showRestoreModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => !restoringAuction && setShowRestoreModal(false)}>
-            <div className="w-full max-w-lg rounded-2xl border border-purple-500/30 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl border border-purple-500/30 bg-slate-900 p-5 sm:p-6" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-xl font-bold text-purple-300 mb-3">Restore from Backup</h3>
               <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 text-[11px] text-purple-200/90 mb-4 space-y-1">
                 {isAuctionFormat ? (

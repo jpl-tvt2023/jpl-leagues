@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { AppNav } from "@/components/AppNav";
+import { AccountsOnDevice } from "@/components/AccountsOnDevice";
 
 interface PlayerInfo {
   name: string;
@@ -186,6 +187,8 @@ export default function SettingsPage() {
             Change Password
           </Link>
         </div>
+
+        <AccountsOnDevice />
       </div>
     </div>
   );

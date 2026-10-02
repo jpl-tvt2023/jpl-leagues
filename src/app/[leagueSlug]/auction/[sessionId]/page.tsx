@@ -1269,6 +1269,9 @@ export default function AuctionRoomPage() {
         isLoggedIn={true}
         dashboardHref="/dashboard"
         onSignOut={handleSignOut}
+        title="Live auction"
+        // The bidding room needs the full height; the drawer still reaches every page.
+        hideBottomNav
       />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-10">
@@ -1664,11 +1667,11 @@ export default function AuctionRoomPage() {
                         <tr className="text-gray-400 uppercase tracking-wider border-b border-white/10">
                           <th className="text-left py-2 px-2 w-8">#</th>
                           <th className="text-left py-2 px-2">Team</th>
-                          <th className="text-right py-2 px-2">Purse</th>
-                          <th className="text-center py-2 px-1">GKP</th>
-                          <th className="text-center py-2 px-1">DEF</th>
-                          <th className="text-center py-2 px-1">MID</th>
-                          <th className="text-center py-2 px-1">FWD</th>
+                          <th className="hidden sm:table-cell text-right py-2 px-2">Purse</th>
+                          <th className="hidden sm:table-cell text-center py-2 px-1">GKP</th>
+                          <th className="hidden sm:table-cell text-center py-2 px-1">DEF</th>
+                          <th className="hidden sm:table-cell text-center py-2 px-1">MID</th>
+                          <th className="hidden sm:table-cell text-center py-2 px-1">FWD</th>
                           <th className="text-center py-2 px-1">Tot</th>
                         </tr>
                       </thead>
@@ -1705,7 +1708,7 @@ export default function AuctionRoomPage() {
                                   {isCurrent ? <span className="text-yellow-400 font-bold">►</span> : <span>{idx + 1}</span>}
                                 </td>
                                 <td className={`py-1.5 px-2 font-semibold ${isCurrent ? "text-yellow-300" : isMe ? "text-purple-300" : "text-white"}`}>
-                                  <span className="inline-flex items-center gap-1.5">
+                                  <span className="inline-flex flex-wrap items-center gap-1.5">
                                     <span title={team?.teamLoginId ? `Manager: ${team.teamLoginId}` : undefined}>{displayTeamName(team) ?? tid}</span>
                                     {team?.ownedClub && (
                                       <span
@@ -1729,14 +1732,23 @@ export default function AuctionRoomPage() {
                                       </span>
                                     )}
                                   </span>
+                                  {/* Phones: purse and position quotas fold under the name. */}
+                                  <div className="sm:hidden mt-0.5 flex flex-wrap gap-x-2 font-mono text-[10px] font-normal">
+                                    <span className="text-green-300">{summary ? formatCurrency(summary.purse) : "—"}</span>
+                                    {(["GKP", "DEF", "MID", "FWD"] as const).map((pos) => (
+                                      <span key={pos} className={cellClass(pos)}>
+                                        {pos[0]} {counts[pos]}<span className="text-gray-500">/{MIN_QUOTA[pos]}</span>
+                                      </span>
+                                    ))}
+                                  </div>
                                 </td>
-                                <td className="py-1.5 px-2 text-right font-mono text-green-300">
+                                <td className="hidden sm:table-cell py-1.5 px-2 text-right font-mono text-green-300">
                                   {summary ? formatCurrency(summary.purse) : "—"}
                                 </td>
-                                <td className={`py-1.5 px-1 text-center font-mono ${cellClass("GKP")}`}>{counts.GKP}<span className="text-gray-500">/{MIN_QUOTA.GKP}</span></td>
-                                <td className={`py-1.5 px-1 text-center font-mono ${cellClass("DEF")}`}>{counts.DEF}<span className="text-gray-500">/{MIN_QUOTA.DEF}</span></td>
-                                <td className={`py-1.5 px-1 text-center font-mono ${cellClass("MID")}`}>{counts.MID}<span className="text-gray-500">/{MIN_QUOTA.MID}</span></td>
-                                <td className={`py-1.5 px-1 text-center font-mono ${cellClass("FWD")}`}>{counts.FWD}<span className="text-gray-500">/{MIN_QUOTA.FWD}</span></td>
+                                <td className={`hidden sm:table-cell py-1.5 px-1 text-center font-mono ${cellClass("GKP")}`}>{counts.GKP}<span className="text-gray-500">/{MIN_QUOTA.GKP}</span></td>
+                                <td className={`hidden sm:table-cell py-1.5 px-1 text-center font-mono ${cellClass("DEF")}`}>{counts.DEF}<span className="text-gray-500">/{MIN_QUOTA.DEF}</span></td>
+                                <td className={`hidden sm:table-cell py-1.5 px-1 text-center font-mono ${cellClass("MID")}`}>{counts.MID}<span className="text-gray-500">/{MIN_QUOTA.MID}</span></td>
+                                <td className={`hidden sm:table-cell py-1.5 px-1 text-center font-mono ${cellClass("FWD")}`}>{counts.FWD}<span className="text-gray-500">/{MIN_QUOTA.FWD}</span></td>
                                 <td className="py-1.5 px-1 text-center text-white font-semibold" title="Players filled / effective squad cap (15 + unlocked bonus − lost penalty slots)">
                                   {players.length}<span className="text-gray-500">/{effectiveMaxSquadSize(summary?.penaltySlots ?? 0, summary?.bonusSlots ?? 0)}</span>
                                 </td>
