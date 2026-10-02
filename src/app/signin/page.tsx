@@ -1,8 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { Logo } from "@/components/Logo";
+import { useRef, useState, useSyncExternalStore } from "react";
+import { AppNav } from "@/components/AppNav";
+import { AccountAvatar } from "@/components/AccountSwitcher";
+import { NavIcon } from "@/components/icons/NavIcon";
+import {
+  announceAuthChange,
+  forgetLogin,
+  rememberLogin,
+  switchAccount,
+  useDeviceAccounts,
+  useRememberedLogins,
+} from "@/lib/accounts-client";
+
+const noopSubscribe = () => () => {};
+/** `/signin?add=1` — reached from "Add another account"; the current accounts stay signed in. */
+const readIsAdding = () => new URLSearchParams(window.location.search).has("add");
 
 /**
  * Eye / eye-off, inlined rather than pulled from an icon package — this repo
@@ -49,6 +62,31 @@ export default function SignInPage() {
   // real password input for browsers, password managers and the E2E helper.
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  const isAdding = useSyncExternalStore(noopSubscribe, readIsAdding, () => false);
+  // Accounts still signed in on this device — one tap to continue as any of them.
+  const { accounts } = useDeviceAccounts();
+  const [switchingKey, setSwitchingKey] = useState<string | null>(null);
+  // Login IDs used here before (never passwords) whose session has since ended.
+  const remembered = useRememberedLogins();
+  const signedInIds = new Set((accounts ?? []).map((a) => a.loginId?.toLowerCase()).filter(Boolean));
+  const recent = remembered.filter((r) => !signedInIds.has(r.loginId.toLowerCase()));
+
+  const onContinue = async (key: string) => {
+    setSwitchingKey(key);
+    setMessage(null);
+    const result = await switchAccount(key);
+    if (result?.error) {
+      setMessage({ type: "error", text: result.error });
+      setSwitchingKey(null);
+    }
+  };
+
+  const fillRemembered = (loginId: string) => {
+    setFormData((f) => ({ ...f, identifier: loginId }));
+    passwordRef.current?.focus();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,6 +109,12 @@ export default function SignInPage() {
 
       setMessage({ type: "success", text: "Signed in successfully!" });
 
+      // Offer this login ID next time (never the password — that is the password manager's job),
+      // and tell other open tabs that the active account just changed under them.
+      const label: string = data.team?.name ?? data.user?.name ?? formData.identifier;
+      rememberLogin({ loginId: formData.identifier.trim(), label });
+      announceAuthChange({ type: "account-switched", label });
+
       // Trust the server's `redirectTo` for both admin and team flows. The server is the single
       // source of truth (it knows mustChangePassword, isProfileComplete, role). Falling back to
       // local conditionals would only re-introduce divergence between paths.
@@ -88,26 +132,80 @@ export default function SignInPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">JPL Sports</span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm sm:text-base">
-          <Link href="/" className="text-gray-300 hover:text-white transition">
-            All Leagues
-          </Link>
-        </div>
-      </nav>
+      <AppNav context={{ surface: "public", page: "signin" }} activeKey="" brandHref="/" brandLabel="JPL Sports" title="Sign in" />
 
       <div className="mx-auto max-w-md px-4 sm:px-6 py-10 sm:py-24">
         <div className="text-center mb-8 sm:mb-12">
-          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2 sm:mb-4">Welcome Back</h1>
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2 sm:mb-4">
+            {isAdding ? "Add another account" : "Welcome Back"}
+          </h1>
           <p className="text-sm sm:text-base text-gray-400">
-            Sign in with your team ID or admin email.
+            {isAdding
+              ? "Your other accounts stay signed in on this device — switch between them from the menu."
+              : "Sign in with your team ID or admin email."}
           </p>
         </div>
+
+        {accounts && accounts.length > 0 && (
+          <section aria-labelledby="signed-in-accounts" className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur">
+            <h2 id="signed-in-accounts" className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              Signed in on this device
+            </h2>
+            <ul>
+              {accounts.map((account) => (
+                <li key={account.key}>
+                  <button
+                    type="button"
+                    onClick={() => onContinue(account.key)}
+                    disabled={switchingKey !== null}
+                    aria-label={`Continue as ${account.label}`}
+                    className="flex w-full items-center gap-3 rounded-xl p-3 text-left transition hover:bg-white/5 active:bg-white/10 disabled:opacity-60"
+                  >
+                    <AccountAvatar account={account} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-white">{account.label}</span>
+                      {account.sublabel && <span className="block truncate text-xs text-gray-400">{account.sublabel}</span>}
+                    </span>
+                    <span className="shrink-0 text-xs font-semibold text-yellow-400">
+                      {switchingKey === account.key ? "Opening…" : "Continue"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {recent.length > 0 && (
+          <section aria-labelledby="recent-logins" className="mb-6">
+            <h2 id="recent-logins" className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              Used on this device before
+            </h2>
+            <ul className="flex flex-wrap gap-2">
+              {recent.map((r) => (
+                <li key={r.loginId} className="flex max-w-full items-center rounded-full border border-white/10 bg-white/5">
+                  <button
+                    type="button"
+                    onClick={() => fillRemembered(r.loginId)}
+                    aria-label={`Use ${r.loginId}`}
+                    className="min-h-10 min-w-0 truncate rounded-l-full py-1.5 pl-3 pr-1 text-left text-xs text-gray-200 transition hover:text-white"
+                  >
+                    <span className="font-semibold">{r.label}</span>
+                    {r.label !== r.loginId && <span className="text-gray-500"> · {r.loginId}</span>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => forgetLogin(r.loginId)}
+                    aria-label={`Forget ${r.loginId}`}
+                    className="flex h-10 w-9 shrink-0 items-center justify-center rounded-r-full text-gray-500 transition hover:text-white"
+                  >
+                    <NavIcon name="close" className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
@@ -125,11 +223,19 @@ export default function SignInPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="signin-identifier" className="block text-sm font-medium text-gray-300 mb-2">
                   Team ID or Admin Email
                 </label>
+                {/* `name` + `autoComplete` let the browser / OS password manager save each login
+                    and offer them as a chooser — the safe way to keep credentials on a device. */}
                 <input
+                  id="signin-identifier"
+                  name="username"
                   type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                   value={formData.identifier}
                   onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
@@ -139,12 +245,16 @@ export default function SignInPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="signin-password" className="block text-sm font-medium text-gray-300 mb-2">
                   Password
                 </label>
                 <div className="relative">
                   <input
+                    id="signin-password"
+                    name="password"
+                    ref={passwordRef}
                     type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
                     required
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}

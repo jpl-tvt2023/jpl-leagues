@@ -21,15 +21,17 @@ interface EconomyCardProps {
 
 export function EconomyCard({ label, value, valueClass, caption, tooltip, tooltipWidth = 288 }: EconomyCardProps) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   const show = () => {
     if (!ref.current || !tooltip) return;
     const r = ref.current.getBoundingClientRect();
+    // Never wider than the screen minus an 8px gutter each side.
+    const width = Math.min(tooltipWidth, window.innerWidth - 16);
     // Anchor below the card, right-aligned to the card's right edge; clamp to viewport on the left.
-    setPos({ top: r.bottom + 6, left: Math.max(8, r.right - tooltipWidth) });
+    setPos({ top: r.bottom + 6, left: Math.max(8, r.right - width), width });
   };
   const hide = () => setPos(null);
 
@@ -46,7 +48,7 @@ export function EconomyCard({ label, value, valueClass, caption, tooltip, toolti
       {mounted && pos && tooltip && createPortal(
         <div
           className="fixed z-50 rounded-xl border border-white/10 bg-slate-800/95 backdrop-blur-xl shadow-xl p-3 pointer-events-none"
-          style={{ top: pos.top, left: pos.left, width: tooltipWidth }}
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
         >
           {tooltip}
         </div>,

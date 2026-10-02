@@ -152,3 +152,81 @@ test("the admin league index shows Superadmin only to a superadmin", () => {
   assert.ok(labels({ surface: "admin-leagues", isSuperadmin: true }).includes("← Superadmin"));
   assert.deepEqual(labels({ surface: "admin-leagues", isSuperadmin: false }), ["Your Leagues"]);
 });
+
+/* ── bottom navigation bar ──────────────────────────────────────────────── */
+
+const bottomLabels = (ctx: NavContext, runtime = {}) =>
+  buildNavModel(ctx, runtime).bottom.map((i) => i.shortLabel ?? i.label);
+
+test("each league format gets its four most-used pages in the bottom bar", () => {
+  assert.deepEqual(bottomLabels(league({ format: "tvt" })), ["Home", "Standings", "Fixtures", "Playoffs"]);
+  assert.deepEqual(bottomLabels(league({ format: "continental-championship" })), [
+    "Home", "Standings", "Fixtures", "JPL Cup",
+  ]);
+  assert.deepEqual(bottomLabels(league({ format: "auction", auctionTier: "complete" })), [
+    "Home", "Standings", "Auction", "Squad",
+  ]);
+  assert.deepEqual(bottomLabels(league({ format: "fpl-classic", isLoggedIn: false })), [
+    "Leagues", "Standings", "Winners", "Rules",
+  ]);
+});
+
+test("signed out, the auction bottom bar swaps Squad for Teams and Home for Leagues", () => {
+  assert.deepEqual(bottomLabels(league({ format: "auction", auctionTier: "complete", isLoggedIn: false })), [
+    "Leagues", "Standings", "Auction", "Teams",
+  ]);
+});
+
+test("every bottom item is the same object as a flat item, at most four, no duplicates", () => {
+  const contexts: NavContext[] = [
+    league({ format: "tvt" }),
+    league({ format: "tvt", isLoggedIn: false }),
+    league({ format: "auction", auctionTier: "primary", isLoggedIn: false }),
+    league({ format: "continental-championship" }),
+    league({ format: "fpl-classic", isLoggedIn: false }),
+  ];
+  for (const ctx of contexts) {
+    const m = buildNavModel(ctx, { auctionLive: true });
+    assert.ok(m.bottom.length > 0 && m.bottom.length <= 4, `${JSON.stringify(ctx)} bottom size`);
+    for (const item of m.bottom) {
+      assert.ok(m.flat.includes(item), `${item.key} is in the bottom bar but not the model`);
+    }
+    const keys = m.bottom.map((i) => i.key);
+    assert.equal(new Set(keys).size, keys.length);
+  }
+});
+
+test("admin, superadmin, account and public surfaces get no bottom bar", () => {
+  const contexts: NavContext[] = [
+    { surface: "admin-league", leagueId: "demo", format: "tvt", isSuperadminViewer: false, variant: "full" },
+    { surface: "admin-leagues", isSuperadmin: true },
+    { surface: "superadmin" },
+    { surface: "account", backHref: "/dashboard" },
+    { surface: "public", page: "home" },
+    { surface: "public", page: "signin" },
+  ];
+  for (const ctx of contexts) assert.deepEqual(buildNavModel(ctx).bottom, [], `${ctx.surface} has a bottom bar`);
+});
+
+test("every league link has an icon for the drawer and bottom bar", () => {
+  for (const format of ["tvt", "auction", "continental-championship", "fpl-classic"] as const) {
+    const m = buildNavModel(league({ format, auctionTier: "complete" }));
+    for (const item of m.flat) assert.ok(item.icon, `${format}: ${item.key} has no icon`);
+  }
+});
+
+/* ── public surface ─────────────────────────────────────────────────────── */
+
+test("public pages: home offers Sign In, sign-in links back to the leagues, mid-flow pages offer nothing", () => {
+  const home = buildNavModel({ surface: "public", page: "home" });
+  assert.deepEqual(home.flat, []);
+  assert.deepEqual(home.auth, { kind: "signIn", href: "/signin" });
+
+  const signin = buildNavModel({ surface: "public", page: "signin" });
+  assert.deepEqual(signin.flat.map((i) => i.label), ["All Leagues"]);
+  assert.deepEqual(signin.auth, { kind: "none" });
+
+  const flow = buildNavModel({ surface: "public", page: "flow" });
+  assert.deepEqual(flow.flat, []);
+  assert.deepEqual(flow.auth, { kind: "none" });
+});

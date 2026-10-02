@@ -735,16 +735,16 @@ export function GroupStageView({
                 </div>
                 <div className="p-3">
                   <div className="mb-4 rounded-lg overflow-x-auto border border-blue-500/10">
-                    <table className="w-full text-xs min-w-[300px]">
+                    <table className="w-full table-fixed text-xs">
                       <thead>
                         <tr className="text-blue-300 bg-slate-900/50 border-b border-blue-500/10">
-                          <th className="text-left px-2 py-1.5">Pos</th>
+                          <th className="w-9 text-left px-2 py-1.5">Pos</th>
                           <th className="text-left px-2 py-1.5">Team</th>
-                          <th className="text-center px-1 py-1.5">P</th>
-                          <th className="text-center px-1 py-1.5">W</th>
-                          <th className="text-center px-1 py-1.5">D</th>
-                          <th className="text-center px-1 py-1.5">L</th>
-                          <th className="text-right px-2 py-1.5">Pts</th>
+                          <th className="w-6 text-center px-1 py-1.5">P</th>
+                          <th className="w-6 text-center px-1 py-1.5">W</th>
+                          <th className="w-6 text-center px-1 py-1.5">D</th>
+                          <th className="w-6 text-center px-1 py-1.5">L</th>
+                          <th className="w-10 text-right px-2 py-1.5">Pts</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -820,16 +820,16 @@ export function GroupStageView({
                 </div>
                 <div className="p-3">
                   <div className="mb-4 rounded-lg overflow-x-auto border border-purple-500/10">
-                    <table className="w-full text-xs min-w-[300px]">
+                    <table className="w-full table-fixed text-xs">
                       <thead>
                         <tr className="text-purple-300 bg-slate-900/50 border-b border-purple-500/10">
-                          <th className="text-left px-2 py-1.5">Pos</th>
+                          <th className="w-9 text-left px-2 py-1.5">Pos</th>
                           <th className="text-left px-2 py-1.5">Team</th>
-                          <th className="text-center px-1 py-1.5">P</th>
-                          <th className="text-center px-1 py-1.5">W</th>
-                          <th className="text-center px-1 py-1.5">D</th>
-                          <th className="text-center px-1 py-1.5">L</th>
-                          <th className="text-right px-2 py-1.5">Pts</th>
+                          <th className="w-6 text-center px-1 py-1.5">P</th>
+                          <th className="w-6 text-center px-1 py-1.5">W</th>
+                          <th className="w-6 text-center px-1 py-1.5">D</th>
+                          <th className="w-6 text-center px-1 py-1.5">L</th>
+                          <th className="w-10 text-right px-2 py-1.5">Pts</th>
                         </tr>
                       </thead>
                       <tbody>

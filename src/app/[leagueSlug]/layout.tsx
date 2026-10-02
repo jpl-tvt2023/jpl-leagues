@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
-import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
-import { db, leagues, leagueAdmins, teams } from "@/lib/db";
+import { db, leagues } from "@/lib/db";
 import { fplClassicConfig } from "@/lib/db/schema";
-import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
-import { LeagueProvider, type LeagueInfo, type ViewerInfo } from "@/lib/league-context";
+import { LeagueProvider, type LeagueInfo } from "@/lib/league-context";
+import { resolveViewer } from "@/lib/viewer";
 import { getFormatPalette, FPL_CLASSIC_FORMAT } from "@/lib/format-palette";
 import { DEFAULT_RELEASE_CYCLE_GWS, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
 
@@ -15,56 +14,6 @@ function parseEnabledChips(raw: string): string[] {
   } catch {
     return [];
   }
-}
-
-async function resolveViewer(): Promise<ViewerInfo> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  if (!token) return { authenticated: false, type: null, dashboardHref: "/signin" };
-  const session = await verifySession(token);
-  if (!session) return { authenticated: false, type: null, dashboardHref: "/signin" };
-
-  if (session.type === "superadmin") {
-    return {
-      authenticated: true,
-      type: "superadmin",
-      userId: session.id,
-      dashboardHref: "/admin",
-    };
-  }
-
-  if (session.type === "admin") {
-    const rows = await db
-      .select({ leagueId: leagueAdmins.leagueId })
-      .from(leagueAdmins)
-      .where(eq(leagueAdmins.userId, session.id))
-      .limit(2);
-    const adminLeagueId = rows[0]?.leagueId ?? null;
-    return {
-      authenticated: true,
-      type: "admin",
-      userId: session.id,
-      adminLeagueId,
-      dashboardHref: adminLeagueId ? `/admin/${adminLeagueId}` : "/admin",
-    };
-  }
-
-  if (session.type === "team") {
-    const teamRow = await db
-      .select({ id: teams.id })
-      .from(teams)
-      .where(eq(teams.id, session.id))
-      .limit(1);
-    const teamId = teamRow[0]?.id;
-    return {
-      authenticated: true,
-      type: "team",
-      teamId,
-      dashboardHref: "/dashboard",
-    };
-  }
-
-  return { authenticated: false, type: null, dashboardHref: "/signin" };
 }
 
 export default async function LeagueLayout({

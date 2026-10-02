@@ -270,7 +270,7 @@ export default function TeamsPage() {
               <div>
                 <h1 className="text-2xl sm:text-4xl font-bold text-white">League Teams</h1>
                 <p className="text-sm text-gray-400 mt-1">
-                  {teamList.length} {teamList.length === 1 ? "team" : "teams"} competing · click a row to view squad
+                  {teamList.length} {teamList.length === 1 ? "team" : "teams"} competing · tap a row to view squad
                 </p>
               </div>
               {teamList.length > 0 && (
@@ -295,16 +295,16 @@ export default function TeamsPage() {
 
             <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden backdrop-blur">
               <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[760px]">
+                <table className="w-full text-left">
                   <thead className="bg-white/10 text-xs uppercase tracking-wider">
                     <tr>
                       <SortableTh label="#" k="rank" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} tip="Overall league rank by total points." />
                       <SortableTh label="Team" k="name" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} tip="The league team (and owned PL club, if any). Click a row to see its squad." />
                       <SortableTh label="Points" k="totalPoints" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" tip="Cumulative total points across all gameweeks." />
-                      <SortableTh label="Purse" k="purse" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" tip="Cash the team has available to bid and trade." />
-                      <SortableTh label="Squad Value" k="squadValue" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" tip="Combined fair-market value of the team's players." />
-                      <SortableTh label="Squad" k="squadSize" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" tip="Number of active players in the squad (out of the team's cap)." />
-                      <th className="px-2 py-2 sm:px-4 sm:py-3 text-xs uppercase tracking-wider font-semibold text-right text-gray-300">Top Scorer</th>
+                      <SortableTh label="Purse" k="purse" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" className="hidden sm:table-cell" tip="Cash the team has available to bid and trade." />
+                      <SortableTh label="Squad Value" k="squadValue" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" className="hidden sm:table-cell" tip="Combined fair-market value of the team's players." />
+                      <SortableTh label="Squad" k="squadSize" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} align="right" className="hidden sm:table-cell" tip="Number of active players in the squad (out of the team's cap)." />
+                      <th className="hidden sm:table-cell px-2 py-2 sm:px-4 sm:py-3 text-xs uppercase tracking-wider font-semibold text-right text-gray-300">Top Scorer</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -336,11 +336,26 @@ export default function TeamsPage() {
                                   <span className="rounded-full bg-yellow-400 text-slate-900 text-[10px] font-bold px-2 py-0.5">YOU</span>
                                 )}
                               </div>
+                              {/* Phones: the columns hidden below `sm`, folded under the name. */}
+                              <div className="sm:hidden mt-1 space-y-0.5 text-[10px] text-gray-400">
+                                <div className="font-mono">
+                                  <span className="text-green-300">{formatCurrency(t.purse)}</span> purse
+                                  {" · "}
+                                  <span className="text-blue-300">{formatCurrency(t.squadValue)}</span> value
+                                  {" · "}
+                                  {t.squadSize}/{t.effectiveMax ?? 15}
+                                </div>
+                                {t.topPerformer && (
+                                  <div className="truncate">
+                                    Top: {t.topPerformer.name} <span className="text-yellow-300">({t.topPerformer.points})</span>
+                                  </div>
+                                )}
+                              </div>
                             </td>
                             <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono font-bold text-[#00ff85]">{t.totalPoints}</td>
-                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-green-300">{formatCurrency(t.purse)}</td>
-                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-blue-300">{formatCurrency(t.squadValue)}</td>
-                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-white">
+                            <td className="hidden sm:table-cell px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-green-300">{formatCurrency(t.purse)}</td>
+                            <td className="hidden sm:table-cell px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-blue-300">{formatCurrency(t.squadValue)}</td>
+                            <td className="hidden sm:table-cell px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-white">
                               <span className="inline-flex items-center gap-1.5">
                                 <span title={`${t.squadSize} active · effective max ${t.effectiveMax ?? 15}`}>
                                   {t.squadSize} / {t.effectiveMax ?? 15}
@@ -353,7 +368,7 @@ export default function TeamsPage() {
                                 )}
                               </span>
                             </td>
-                            <td className="px-2 py-2 sm:px-4 sm:py-3 text-right text-xs text-gray-200 truncate max-w-[180px]">
+                            <td className="hidden sm:table-cell px-2 py-2 sm:px-4 sm:py-3 text-right text-xs text-gray-200 truncate max-w-[180px]">
                               {t.topPerformer ? (
                                 <>
                                   {t.topPerformer.name}{" "}
@@ -366,7 +381,7 @@ export default function TeamsPage() {
                           </tr>
                           {isExpanded && (
                             <tr className="bg-black/30 border-t border-white/5">
-                              <td colSpan={7} className="px-4 py-3">
+                              <td colSpan={7} className="px-3 py-3 sm:px-4">
                                 {isLoadingSquad ? (
                                   <div className="text-xs text-gray-400 italic">Loading squad…</div>
                                 ) : !squad ? (

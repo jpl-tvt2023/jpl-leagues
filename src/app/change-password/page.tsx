@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { Logo } from "@/components/Logo";
+import { AppNav } from "@/components/AppNav";
 
 export default function ChangePasswordPage() {
   const [formData, setFormData] = useState({
@@ -71,13 +70,7 @@ export default function ChangePasswordPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 lg:px-12 border-b border-white/10">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo />
-          <span className="text-xl font-bold text-white hidden sm:inline">Fantasy Super League</span>
-        </Link>
-      </nav>
+      <AppNav context={{ surface: "public", page: "flow" }} activeKey="" brandHref="/" brandLabel="Fantasy Super League" title="Change password" />
 
       <div className="mx-auto max-w-md px-4 sm:px-6 py-10 sm:py-24">
         <div className="text-center mb-8 sm:mb-12">

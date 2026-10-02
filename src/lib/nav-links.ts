@@ -8,7 +8,8 @@
  *
  * The model is *grouped* because the mobile drawer renders section headings; the
  * desktop bar renders `flat`, which is derived from `groups` and therefore can never
- * drift from it.
+ * drift from it. `bottom` — the phone's bottom navigation bar — is picked out of `flat` by
+ * key, so it can't drift either.
  *
  * This file deliberately imports nothing from `react` or `next` so it stays unit-testable
  * under `tsx --test` and usable from a server component if the nav is ever hoisted into
@@ -22,6 +23,65 @@ export type LeagueFormat = "auction" | "continental-championship" | "tvt" | "fpl
 /** `accent` = the orange "← Platform Admin" treatment; `back` = the yellow "← Leagues" treatment. */
 export type NavTone = "default" | "accent" | "back";
 
+/** Glyph ids drawn by `src/components/icons/NavIcon.tsx`. */
+export type NavIconName =
+  | "home"
+  | "leagues"
+  | "standings"
+  | "fixtures"
+  | "results"
+  | "teams"
+  | "auction"
+  | "wishlist"
+  | "squad"
+  | "players"
+  | "marketplace"
+  | "finance"
+  | "playoffs"
+  | "winners"
+  | "cup"
+  | "fpl"
+  | "rules"
+  | "help"
+  | "feedback"
+  | "settings"
+  | "notifications"
+  | "admin"
+  | "dashboard"
+  | "back";
+
+/** Default glyph per key, so the group tables below don't each have to name one. */
+const ICON_BY_KEY: Record<string, NavIconName> = {
+  dashboard: "home",
+  standings: "standings",
+  fixtures: "fixtures",
+  "fpl-league": "fpl",
+  playoffs: "playoffs",
+  winners: "winners",
+  rules: "rules",
+  help: "help",
+  feedback: "feedback",
+  settings: "settings",
+  notifications: "notifications",
+  "gw-results": "results",
+  teams: "teams",
+  auction: "auction",
+  wishlist: "wishlist",
+  squad: "squad",
+  players: "players",
+  marketplace: "marketplace",
+  finance: "finance",
+  "jpl-cup-standings": "cup",
+  "jpl-cup-fixtures": "fixtures",
+  "admin-dashboard": "dashboard",
+  "admin-leagues": "leagues",
+  "admin-help": "help",
+  superadmin: "admin",
+  "superadmin-help": "help",
+  "platform-admin": "admin",
+  leagues: "leagues",
+};
+
 export type NavItem = {
   /**
    * Stable identity for active-state matching. League keys are byte-identical to the
@@ -32,6 +92,10 @@ export type NavItem = {
   label: string;
   href: string;
   tone?: NavTone;
+  /** Drawer / bottom-bar glyph. Filled in from `ICON_BY_KEY` when omitted. */
+  icon?: NavIconName;
+  /** Bottom-bar label when `label` is too long for a ~72px slot ("JPL Cup Standings" → "JPL Cup"). */
+  shortLabel?: string;
 };
 
 export type NavGroup = {
@@ -50,6 +114,11 @@ export type NavModel = {
   groups: NavGroup[];
   /** `groups.flatMap(g => g.items)` — the desktop bar renders exactly this, in order. */
   flat: NavItem[];
+  /**
+   * The phone/tablet bottom navigation bar: at most `MAX_BOTTOM_ITEMS` of the most-used pages,
+   * each one an item from `flat`. Empty on surfaces that get no bottom bar (admin, account).
+   */
+  bottom: NavItem[];
   showNotificationBell: boolean;
   auth: NavAuth;
 };
@@ -73,7 +142,13 @@ export type NavContext =
     }
   | { surface: "admin-leagues"; isSuperadmin: boolean }
   | { surface: "superadmin" }
-  | { surface: "account"; backHref: string };
+  | { surface: "account"; backHref: string }
+  /**
+   * Pages outside any league and outside the signed-in area. `home` is the league list itself;
+   * `signin` links back to it; `flow` is a mid-flow screen (change password, team setup) that
+   * offers no way out until it is finished.
+   */
+  | { surface: "public"; page: "home" | "signin" | "flow" };
 
 /**
  * Live-auction state is a *runtime* input, not part of the context identity — keeping it
@@ -82,14 +157,38 @@ export type NavContext =
  */
 export type NavRuntime = { auctionLive?: boolean };
 
+/** Bottom-bar slots for pages; the bar adds a "Menu" slot after these when the drawer has more. */
+export const MAX_BOTTOM_ITEMS = 4;
+
 /** Drops empty groups so the drawer never renders an orphan heading. */
 function compact(groups: NavGroup[]): NavGroup[] {
   return groups.filter((g) => g.items.length > 0);
 }
 
-function model(groups: NavGroup[], showNotificationBell: boolean, auth: NavAuth): NavModel {
-  const kept = compact(groups);
-  return { groups: kept, flat: kept.flatMap((g) => g.items), showNotificationBell, auth };
+function withIcon(item: NavItem): NavItem {
+  if (item.icon) return item;
+  const icon = item.tone === "back" ? "back" : ICON_BY_KEY[item.key];
+  return icon ? { ...item, icon } : item;
+}
+
+/**
+ * @param bottomKeys keys of `flat` items for the bottom bar, in slot order. A key that the gating
+ *   above removed (e.g. Squad when signed out) is simply skipped, so callers can list fallbacks.
+ */
+function model(
+  groups: NavGroup[],
+  showNotificationBell: boolean,
+  auth: NavAuth,
+  bottomKeys: string[] = [],
+): NavModel {
+  const kept = compact(groups).map((g) => ({ ...g, items: g.items.map(withIcon) }));
+  const flat = kept.flatMap((g) => g.items);
+  const byKey = new Map(flat.map((i) => [i.key, i]));
+  const bottom = bottomKeys
+    .map((k) => byKey.get(k))
+    .filter((i): i is NavItem => i !== undefined)
+    .slice(0, MAX_BOTTOM_ITEMS);
+  return { groups: kept, flat, bottom, showNotificationBell, auth };
 }
 
 /** `cond ? [item] : []` spread helper — keeps the group tables readable. */
@@ -107,6 +206,8 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
     key: "dashboard",
     label: isLoggedIn ? "Dashboard" : "All Leagues",
     href: isLoggedIn ? dashboardHref : "/",
+    icon: isLoggedIn ? "home" : "leagues",
+    shortLabel: isLoggedIn ? "Home" : "Leagues",
   };
   const settings: NavItem[] = when(isLoggedIn, { key: "settings", label: "Settings", href: "/settings" });
   const feedback: NavItem[] = when(isLoggedIn, { key: "feedback", label: "Feedback", href: p("feedback") });
@@ -157,6 +258,8 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
       ],
       isLoggedIn,
       isLoggedIn ? { kind: "signOut" } : { kind: "signIn", href: "/signin" },
+      // Squad is signed-in only; Teams takes its slot for visitors.
+      ["dashboard", "standings", "auction", isLoggedIn ? "squad" : "teams"],
     );
   }
 
@@ -168,15 +271,15 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
           heading: "League",
           items: [
             home,
-            { key: "standings", label: "JPL Standings", href: p("standings") },
-            { key: "fixtures", label: "JPL Fixtures", href: p("fixtures") },
+            { key: "standings", label: "JPL Standings", href: p("standings"), shortLabel: "Standings" },
+            { key: "fixtures", label: "JPL Fixtures", href: p("fixtures"), shortLabel: "Fixtures" },
           ],
         },
         {
           id: "cup",
           heading: "JPL Cup",
           items: [
-            { key: "jpl-cup-standings", label: "JPL Cup Standings", href: p("jpl-cup-standings") },
+            { key: "jpl-cup-standings", label: "JPL Cup Standings", href: p("jpl-cup-standings"), shortLabel: "JPL Cup" },
             { key: "jpl-cup-fixtures", label: "JPL Cup Fixtures", href: p("jpl-cup-fixtures") },
           ],
         },
@@ -201,6 +304,7 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
       ],
       isLoggedIn,
       isLoggedIn ? { kind: "signOut" } : { kind: "signIn", href: "/signin" },
+      ["dashboard", "standings", "fixtures", "jpl-cup-standings"],
     );
   }
 
@@ -213,7 +317,7 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
           id: "league",
           heading: "League",
           items: [
-            { key: "dashboard", label: "All Leagues", href: "/" },
+            { key: "dashboard", label: "All Leagues", href: "/", icon: "leagues", shortLabel: "Leagues" },
             { key: "standings", label: "Standings", href: p("standings") },
             { key: "winners", label: "Winners", href: p("winners") },
           ],
@@ -222,6 +326,7 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
       ],
       false,
       { kind: "none" },
+      ["dashboard", "standings", "winners", "rules"],
     );
   }
 
@@ -259,6 +364,7 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
     ],
     isLoggedIn,
     isLoggedIn ? { kind: "signOut" } : { kind: "signIn", href: "/signin" },
+    ["dashboard", "standings", "fixtures", "playoffs"],
   );
 }
 
@@ -374,6 +480,16 @@ export function buildNavModel(ctx: NavContext, runtime: NavRuntime = {}): NavMod
         false,
         { kind: "signOut" },
       );
+
+    case "public":
+      if (ctx.page === "signin") {
+        return model(
+          [{ id: "public", heading: "JPL", items: [{ key: "leagues", label: "All Leagues", href: "/" }] }],
+          false,
+          { kind: "none" },
+        );
+      }
+      return model([], false, ctx.page === "home" ? { kind: "signIn", href: "/signin" } : { kind: "none" });
 
     case "account":
       return model(

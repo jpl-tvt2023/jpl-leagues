@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
+import { InstallBanner } from "@/components/pwa/InstallBanner";
 import { TierChip } from "@/components/TierChip";
 import { GwNavigator } from "@/components/GwNavigator";
 import { DOUBLE_HEADER_GWS } from "@/lib/gameweeks/double-headers";
@@ -682,10 +683,12 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           <WishlistManager leagueSlug={leagueSlug} teamId={data.team.id} />
         </section>
 
+        <InstallBanner className="mb-6" />
+
         {/* Main Grid */}
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Left column: Squad + GW History */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-6 min-w-0">
             {/* Squad summary */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
               {data.squad.length === 0 ? (
@@ -764,7 +767,7 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
           </div>
 
           {/* Right column: Deadline + Standings */}
-          <div className="space-y-6">
+          <div className="space-y-6 min-w-0">
             {/* Deadline — only render for a scheduled-but-not-started auction; a live/paused one is
                 already covered by the "Active Auction Alert" banner above. */}
             {data.nextAuction && (
@@ -1495,13 +1498,12 @@ export default function DashboardPage() {
         }
         const orderedGroups = Array.from(byGroup.keys()).sort();
         return (
-          <div className="flex gap-4 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0">
-            {/* Column min-width is 280px, not 220: this container already scrolls
-                horizontally on mobile, so the extra width is free and lets the longest
-                team names render in full alongside an announced captain. sm:min-w-0
-                hands control back to the 2-column grid on desktop. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Phones stack the groups vertically, so each gets the card's full width and
+                nothing scrolls sideways; from `sm` they sit side by side. `min-w-0` lets the
+                rows' minmax(0,1fr) team-name track truncate instead of widening the grid. */}
             {orderedGroups.map((groupName) => (
-              <div key={groupName} className={`${hasAnyChip ? "min-w-[310px]" : "min-w-[280px]"} flex-shrink-0 sm:min-w-0 sm:flex-shrink`}>
+              <div key={groupName} className="min-w-0">
                 <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Group {groupName}</div>
                 {headerRow}
                 <ul className="divide-y divide-white/5">
@@ -1593,10 +1595,12 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        <InstallBanner className="mb-6" />
+
         {/* Main Grid */}
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-6 min-w-0">
             {/* Deadline + Fixture — 2-up for both formats; Continental Championship's Fixture
                 card spans full width instead when the GW is a Double Header (two fixtures). */}
             {leagueFormat === "continental-championship" ? (
@@ -2448,9 +2452,9 @@ export default function DashboardPage() {
           </div>
 
           {/* Right Column */}
-          {/* min-w-0 overrides the grid item's default min-width:auto — without it, the
-              Captains & Chips card's horizontal-scroll region below forces this whole
-              grid track (and the page) wider than the viewport instead of scrolling internally. */}
+          {/* min-w-0 overrides the grid item's default min-width:auto — without it, any
+              wide child (a long team name, a chip pill) forces this whole grid track (and
+              the page) wider than the viewport on a phone. */}
           <div className="space-y-6 min-w-0">
             {/* Captain Announcements — league-wide list, same right-column slot for every format */}
             {captainAnnouncementsCard}

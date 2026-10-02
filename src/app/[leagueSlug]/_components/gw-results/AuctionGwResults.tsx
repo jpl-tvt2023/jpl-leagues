@@ -252,24 +252,24 @@ export function AuctionGwResults() {
                     )}
                   </div>
                   <div className="text-xs text-gray-400">
-                    {rows.length} teams · click a row to view scoring players · ▲/▼ shows league rank change vs previous GW
+                    {rows.length} teams · tap a row to view scoring players · ▲/▼ shows league rank change vs previous GW
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden backdrop-blur">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left min-w-[560px]">
+                    <table className="w-full text-left">
                       <thead className="bg-white/10 text-xs uppercase tracking-wider text-gray-300">
                         <tr>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm cursor-help" title="Rank for this gameweek (by total GW score).">#</th>
                           <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm cursor-help" title="League team. Click a row to expand each player's score for this gameweek.">Team</th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Raw FPL points">Raw</th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="+50% bonus on owned-club players. Hover the value to see per-player breakdown.">Syn <span className="text-gray-500" aria-hidden>ⓘ</span></th>
-                          <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Per-fixture bonus when owned club wins/draws. Hover the value to see the fixture scoreline.">Club <span className="text-gray-500" aria-hidden>ⓘ</span></th>
+                          <th className="hidden sm:table-cell px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Raw FPL points">Raw</th>
+                          <th className="hidden sm:table-cell px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="+50% bonus on owned-club players. Hover the value to see per-player breakdown.">Syn <span className="text-gray-500" aria-hidden>ⓘ</span></th>
+                          <th className="hidden sm:table-cell px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Per-fixture bonus when owned club wins/draws. Hover the value to see the fixture scoreline.">Club <span className="text-gray-500" aria-hidden>ⓘ</span></th>
                           <th className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Total = Raw + Synergy + Club">Total</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Purse credited to this team for its rank this gameweek.">Payout</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="This team's finishing rank for the gameweek.">Rank</th>
-                          <th className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Fixtures still left to play for this team's active roster in this gameweek.">Left</th>
+                          <th className="hidden sm:table-cell px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Purse credited to this team for its rank this gameweek.">Payout</th>
+                          <th className="hidden sm:table-cell px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="This team's finishing rank for the gameweek.">Rank</th>
+                          <th className="hidden sm:table-cell px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right cursor-help" title="Fixtures still left to play for this team's active roster in this gameweek.">Left</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -302,10 +302,33 @@ export function AuctionGwResults() {
                                       )}
                                       {isMine && <span className="ml-1 text-[10px] uppercase tracking-wider text-yellow-400">you</span>}
                                     </div>
+                                    {/* Phones: every column hidden below `sm`, folded under the name. */}
+                                    <div className="sm:hidden mt-1 space-y-0.5 font-mono text-[10px] text-gray-400">
+                                      <div>
+                                        Raw {row.rawPoints}
+                                        {" · "}
+                                        <span className={row.synergyBonus > 0 ? "text-yellow-300" : ""}>Syn {row.synergyBonus > 0 ? `+${formatPts(row.synergyBonus)}` : "0"}</span>
+                                        {" · "}
+                                        <span className={row.clubResultBonus > 0 ? "text-emerald-300" : ""}>Club {row.clubResultBonus > 0 ? `+${row.clubResultBonus}` : "0"}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-green-300">{formatCurrency(row.payout)}</span>
+                                        <span>· League {row.leagueRank != null ? `#${row.leagueRank}` : "—"}</span>
+                                        {row.rankDelta != null && row.rankDelta !== 0 && (
+                                          <span className={row.rankDelta > 0 ? "text-green-400" : "text-red-400"}>
+                                            {row.rankDelta > 0 ? `▲${row.rankDelta}` : `▼${Math.abs(row.rankDelta)}`}
+                                          </span>
+                                        )}
+                                        {row.playersLeftToPlay != null && row.playersLeftToPlay > 0 && (
+                                          <span className="text-yellow-400">· {row.playersLeftToPlay} left</span>
+                                        )}
+                                        <span className="ml-auto text-gray-500" aria-hidden>{isExpanded ? "▲" : "▼"}</span>
+                                      </div>
+                                    </div>
                                   </td>
-                                  <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{row.rawPoints}</td>
+                                  <td className="hidden sm:table-cell px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono text-gray-200">{row.rawPoints}</td>
                                   <td
-                                    className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.synergyBonus > 0 ? "text-yellow-300 font-bold cursor-help" : "text-gray-600"}`}
+                                    className={`hidden sm:table-cell px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.synergyBonus > 0 ? "text-yellow-300 font-bold cursor-help" : "text-gray-600"}`}
                                     title={
                                       row.synergyBonus > 0
                                         ? row.players
@@ -320,7 +343,7 @@ export function AuctionGwResults() {
                                     {row.synergyBonus > 0 ? `+${formatPts(row.synergyBonus)}` : "0"}
                                   </td>
                                   <td
-                                    className={`px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : row.clubResultSummary ? "text-gray-400 cursor-help" : "text-gray-600"}`}
+                                    className={`hidden sm:table-cell px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${row.clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : row.clubResultSummary ? "text-gray-400 cursor-help" : "text-gray-600"}`}
                                     title={
                                       row.clubResultSummary
                                         ? `${normalizeClubSummary(row.clubResultSummary)} → +${row.clubResultBonus}`
@@ -334,10 +357,10 @@ export function AuctionGwResults() {
                                   <td className="px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono font-bold text-[#00ff85]">
                                     {formatPts(row.totalPoints)}
                                   </td>
-                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">
+                                  <td className="hidden sm:table-cell px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-300">
                                     {formatCurrency(row.payout)}
                                   </td>
-                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">
+                                  <td className="hidden sm:table-cell px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">
                                     <span className="inline-flex items-center justify-end gap-2">
                                       <span className="font-mono font-bold text-white">
                                         {row.leagueRank != null ? `#${row.leagueRank}` : "—"}
@@ -358,7 +381,7 @@ export function AuctionGwResults() {
                                       ) : null}
                                     </span>
                                   </td>
-                                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">
+                                  <td className="hidden sm:table-cell px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-right">
                                     <span className="inline-flex items-center justify-end gap-2">
                                       <span
                                         className={`font-mono ${
@@ -378,7 +401,7 @@ export function AuctionGwResults() {
                                 </tr>
                                 {isExpanded && (
                                   <tr className="bg-black/30 border-t border-white/5">
-                                    <td colSpan={9} className="px-4 py-3">
+                                    <td colSpan={9} className="px-3 py-3 sm:px-4">
                                       {row.players.length === 0 ? (
                                         <div className="text-xs text-gray-500 italic">No player breakdown recorded for this gameweek.</div>
                                       ) : (
@@ -447,7 +470,7 @@ export function AuctionGwResults() {
                 </div>
 
                 <div className="mt-4 text-center text-xs text-gray-500">
-                  <span className="block mb-1">💡 Hover the Syn or Club value to see the per-player / fixture breakdown.</span>
+                  <span className="hidden sm:block mb-1">💡 Hover the Syn or Club value to see the per-player / fixture breakdown.</span>
                   Showing GW{selectedGw} · {processedGws.length} gameweek{processedGws.length === 1 ? "" : "s"} processed so far
                 </div>
               </div>

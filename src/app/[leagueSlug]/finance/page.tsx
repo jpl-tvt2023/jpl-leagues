@@ -205,12 +205,12 @@ export default function FinancePage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/10 text-xs uppercase text-gray-400 bg-white/5">
-                      <th className="text-left py-3 px-3 cursor-help" title="The gameweek this transaction is tied to (— for pre-season).">GW</th>
-                      <th className="text-left py-3 px-3 cursor-help" title="When the transaction happened.">Date</th>
-                      <th className="text-left py-3 px-3 cursor-help" title="What kind of transaction it was — purchase, release, GW payout, trade, etc.">Type</th>
+                      <th className="hidden sm:table-cell text-left py-3 px-3 cursor-help" title="The gameweek this transaction is tied to (— for pre-season).">GW</th>
+                      <th className="hidden sm:table-cell text-left py-3 px-3 cursor-help" title="When the transaction happened.">Date</th>
+                      <th className="hidden sm:table-cell text-left py-3 px-3 cursor-help" title="What kind of transaction it was — purchase, release, GW payout, trade, etc.">Type</th>
                       <th className="text-left py-3 px-3 cursor-help" title="Details of the transaction.">Description</th>
                       <th className="text-right py-3 px-3 cursor-help" title="How much your purse changed — green is money in, red is money out.">Amount</th>
-                      <th className="text-right py-3 px-3 cursor-help" title="Your running purse balance after this transaction.">Balance</th>
+                      <th className="hidden sm:table-cell text-right py-3 px-3 cursor-help" title="Your running purse balance after this transaction.">Balance</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -228,24 +228,33 @@ export default function FinancePage() {
                             key={e.id}
                             className={`border-b border-white/5 ${e.isPending ? "opacity-60 border-dashed" : ""}`}
                           >
-                            <td className="py-2 px-3 text-gray-400 font-mono">{e.gw ?? "—"}</td>
-                            <td className="py-2 px-3 text-gray-400 text-xs whitespace-nowrap">
+                            <td className="hidden sm:table-cell py-2 px-3 text-gray-400 font-mono">{e.gw ?? "—"}</td>
+                            <td className="hidden sm:table-cell py-2 px-3 text-gray-400 text-xs whitespace-nowrap">
                               {new Date(e.date).toLocaleDateString()}
                             </td>
-                            <td className="py-2 px-3">
+                            <td className="hidden sm:table-cell py-2 px-3">
                               <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${style.badge}`}>
                                 {style.label}
                               </span>
                             </td>
-                            <td className="py-2 px-3 text-white">{e.description}</td>
+                            <td className="py-2 px-3 text-white">
+                              {/* Phones: type, gameweek and date fold above the description. */}
+                              <div className="sm:hidden mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-gray-400">
+                                <span className={`font-bold uppercase px-1.5 py-px rounded border ${style.badge}`}>{style.label}</span>
+                                <span className="font-mono">{e.gw != null ? `GW${e.gw}` : "Pre-season"}</span>
+                                <span>· {new Date(e.date).toLocaleDateString()}</span>
+                              </div>
+                              {e.description}
+                            </td>
                             <td
                               className={`py-2 px-3 text-right font-mono ${
                                 e.amount > 0 ? "text-green-300" : e.amount < 0 ? "text-red-300" : "text-gray-500"
                               }`}
                             >
                               {e.amount === 0 ? "—" : `${e.amount > 0 ? "+" : ""}${formatCurrency(e.amount)}`}
+                              <div className="sm:hidden mt-1 text-[10px] text-gray-400">bal {formatCurrency(e.runningBalance)}</div>
                             </td>
-                            <td className="py-2 px-3 text-right font-mono text-white">
+                            <td className="hidden sm:table-cell py-2 px-3 text-right font-mono text-white">
                               {formatCurrency(e.runningBalance)}
                             </td>
                           </tr>

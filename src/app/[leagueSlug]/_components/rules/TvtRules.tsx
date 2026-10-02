@@ -6,6 +6,7 @@ import {
   HitsAndBonusSection,
   type LeagueConfig,
   RuleItem,
+  ScheduleTable,
   SectionHeader,
   TiebreakerSection,
   getChipSetLabel,
@@ -64,17 +65,12 @@ function Tvt32({ config }: { config: LeagueConfig }) {
         </div>
         <div>
           <h3 className="text-lg font-semibold text-yellow-400 mb-3">Phase 2: Play-offs (GW31 – GW38)</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-gray-300 min-w-[560px]">
-              <thead>
-                <tr className="border-b border-white/10 text-xs text-gray-400">
-                  <th className="px-3 py-2 text-left">GW</th>
-                  <th className="px-3 py-2 text-left">Title Path</th>
-                  <th className="px-3 py-2 text-left">Challenger Path</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
+          <ScheduleTable
+            columns={[
+              { label: "Title Path", className: "text-green-300" },
+              { label: "Challenger Path", className: "text-yellow-300" },
+            ]}
+            rows={[
                   ["GW31", "RO16 — Leg 1", "C-31: 6 single-leg KO ties (ranks 9–14 cross-group, 12 teams)"],
                   ["GW32", "RO16 — Leg 2 (resolve aggregate)", "C-32: 3 single-leg KO ties (6 C-31 winners)"],
                   ["GW33", "QF — Leg 1", "C-33 Survival: 8 RO16 losers + 3 C-32 winners ranked by FPL points; top 8 advance"],
@@ -83,16 +79,8 @@ function Tvt32({ config }: { config: LeagueConfig }) {
                   ["GW36", "SF — Leg 2 (resolve aggregate)", "C-36: 2 single-leg KO ties (4 C-35 winners)"],
                   ["GW37", "Final — Leg 1", "C-37: 2 single-leg KO ties (2 SF losers vs 2 C-36 winners)"],
                   ["GW38", "Final — Leg 2 (Champion crowned)", "C-38: Challenger Final — single-leg (2 C-37 winners)"],
-                ].map(([gw, title, chal]) => (
-                  <tr key={gw} className="border-b border-white/5">
-                    <td className="px-3 py-2 text-yellow-400 font-mono text-xs whitespace-nowrap">{gw}</td>
-                    <td className="px-3 py-2 text-green-300">{title}</td>
-                    <td className="px-3 py-2 text-yellow-300">{chal}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            ]}
+          />
           <ul className="mt-4 space-y-2 text-gray-300 ml-2">
             <RuleItem accent="purple"><strong>RO16 Seeding (cross-group):</strong> A1 vs B8, A2 vs B7 … A8 vs B1, plus the mirror B1 vs A8 … B8 vs A1 — 8 ties total.</RuleItem>
             <RuleItem accent="purple"><strong>QF Seeding:</strong> Follows RO16 bracket positions — RO16-A winner vs RO16-H winner, B vs G, C vs F, D vs E (4 ties, 2-legged across GW33–34).</RuleItem>
@@ -157,35 +145,21 @@ function Tvt16({ config }: { config: LeagueConfig }) {
         </div>
         <div>
           <h3 className="text-lg font-semibold text-yellow-400 mb-3">Phase 2: Play-offs (GW31 – GW38)</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-gray-300 min-w-[640px]">
-              <thead>
-                <tr className="border-b border-white/10 text-xs text-gray-400">
-                  <th className="px-3 py-2 text-left">GW</th>
-                  <th className="px-3 py-2 text-left">Championship</th>
-                  <th className="px-3 py-2 text-left">Challenger</th>
-                  <th className="px-3 py-2 text-left">Wooden Spoon</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
+          <ScheduleTable
+            columns={[
+              { label: "Championship", className: "text-green-300" },
+              { label: "Challenger", className: "text-yellow-300" },
+              { label: "Wooden Spoon", className: "text-red-300" },
+            ]}
+            rows={[
                   ["GW31–33", "Playoff Groups — CA (1,4,5,8) & CB (2,3,6,7), single-leg round-robin", "Playoff Groups — XA (9,12,13,16) & XB (10,11,14,15), single-leg round-robin", "—"],
                   ["GW34", "Semi-Finals Leg 1 (CA1 v CB2, CB1 v CA2)", "Challenger QFs (Champ 3rd/4th vs Chall 1st/2nd)", "WS Seeding (bottom 2 of XA & XB)"],
                   ["GW35", "Semi-Finals Leg 2 (2-legged aggregate)", "Semi-Finals Leg 1 — QF winners", "Semi-Finals Leg 1 — #1 v #4, #2 v #3"],
                   ["GW36", "Final + 3rd Place — Leg 1 (triple-legged)", "Semi-Finals Leg 2 (2-legged aggregate)", "Semi-Finals Leg 2 (2-legged aggregate)"],
                   ["GW37", "Final + 3rd Place — Leg 2 (triple-legged)", "Final (5th) + 3rd (7th) Leg 1", "Final (13th) + 3rd (15th) Leg 1"],
                   ["GW38", "Final + 3rd Place — Leg 3 (triple aggregate decides)", "Final + 3rd Leg 2 (2-legged)", "Final + 3rd Leg 2 (2-legged)"],
-                ].map(([gw, champ, chal, ws]) => (
-                  <tr key={gw} className="border-b border-white/5">
-                    <td className="px-3 py-2 text-yellow-400 font-mono text-xs whitespace-nowrap">{gw}</td>
-                    <td className="px-3 py-2 text-green-300">{champ}</td>
-                    <td className="px-3 py-2 text-yellow-300">{chal}</td>
-                    <td className="px-3 py-2 text-red-300">{ws}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            ]}
+          />
           <ul className="mt-4 space-y-2 text-gray-300 ml-2">
             <RuleItem accent="purple"><strong>Snake-seeded playoff groups:</strong> Each track is split into two sub-groups so the top of the track meets the bottom inside the same playoff group (e.g. Championship A = ranks 1, 4, 5, 8).</RuleItem>
             <RuleItem accent="purple"><strong>The Great Cut (GW34):</strong> Top 2 of each Championship group go straight into the Championship Semi-Finals — positionally seeded (Group A 1st vs Group B 2nd, Group B 1st vs Group A 2nd) over GW34–35 (2-legged). Bottom 2 of each Championship group drop down and play the top 2 of each Challenger group in the Challenger QFs. Bottom 2 of each Challenger group play the Wooden Spoon Seeding.</RuleItem>
@@ -249,32 +223,19 @@ function Tvt8({ config }: { config: LeagueConfig }) {
         </div>
         <div>
           <h3 className="text-lg font-semibold text-yellow-400 mb-3">Phase 2: Play-offs (GW36 – GW38)</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-gray-300 min-w-[400px]">
-              <thead>
-                <tr className="border-b border-white/10 text-xs text-gray-400">
-                  <th className="px-3 py-2 text-left">GW</th>
-                  <th className="px-3 py-2 text-left">Match</th>
-                  <th className="px-3 py-2 text-left">Format</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
+          <ScheduleTable
+            columns={[
+              { label: "Match", className: "text-green-300" },
+              { label: "Format", className: "text-gray-400" },
+            ]}
+            rows={[
                   ["GW36", "Semi-Final A (1 vs 4)", "Single-leg"],
                   ["GW36", "Semi-Final B (2 vs 3)", "Single-leg"],
                   ["GW37", "3rd Place Match (SF losers)", "Single-leg"],
                   ["GW37", "Final — Leg 1 (SF winners)", "First leg"],
                   ["GW38", "Final — Leg 2", "Second leg (aggregate)"],
-                ].map(([gw, match, fmt], i) => (
-                  <tr key={i} className="border-b border-white/5">
-                    <td className="px-3 py-2 text-yellow-400 font-mono text-xs">{gw}</td>
-                    <td className="px-3 py-2 text-green-300">{match}</td>
-                    <td className="px-3 py-2 text-gray-400">{fmt}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            ]}
+          />
           <ul className="mt-4 space-y-2 text-gray-300 ml-2">
             <RuleItem accent="purple"><strong>Semi-Finals:</strong> Single-leg — higher score advances.</RuleItem>
             <RuleItem accent="purple"><strong>Final:</strong> 2-legged — higher aggregate wins. On aggregate draw, higher Leg 2 score wins.</RuleItem>

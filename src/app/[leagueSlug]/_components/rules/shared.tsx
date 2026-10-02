@@ -87,6 +87,60 @@ export function SectionHeader({ letter, color, title }: { letter: string; color:
   );
 }
 
+export interface ScheduleColumn {
+  label: string;
+  /** Text colour for this column's cells. */
+  className: string;
+}
+
+/**
+ * A gameweek-by-gameweek schedule: the first cell of each row is the gameweek label, the rest
+ * line up with `columns`. From `sm` it is an ordinary table; on phones — where three or four
+ * columns of sentences can't sit side by side — each gameweek becomes a small card with the
+ * column names as labels, so nothing scrolls sideways.
+ */
+export function ScheduleTable({ columns, rows }: { columns: ScheduleColumn[]; rows: string[][] }) {
+  return (
+    <>
+      <table className="hidden sm:table w-full text-sm text-gray-300">
+        <thead>
+          <tr className="border-b border-white/10 text-xs text-gray-400">
+            <th className="px-3 py-2 text-left">GW</th>
+            {columns.map((c) => (
+              <th key={c.label} className="px-3 py-2 text-left">{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([gw, ...cells], i) => (
+            <tr key={i} className="border-b border-white/5">
+              <td className="px-3 py-2 text-yellow-400 font-mono text-xs whitespace-nowrap">{gw}</td>
+              {cells.map((cell, j) => (
+                <td key={j} className={`px-3 py-2 ${columns[j]?.className ?? ""}`}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <ol className="sm:hidden space-y-2">
+        {rows.map(([gw, ...cells], i) => (
+          <li key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
+            <div className="mb-1.5 font-mono text-xs font-semibold text-yellow-400">{gw}</div>
+            <dl className="space-y-1.5">
+              {cells.map((cell, j) => (
+                <div key={j}>
+                  <dt className="text-[10px] uppercase tracking-wider text-gray-500">{columns[j]?.label}</dt>
+                  <dd className={columns[j]?.className ?? "text-gray-300"}>{cell}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
 export function RuleItem({ children, accent = "yellow" }: { children: ReactNode; accent?: string }) {
   const dotColors: Record<string, string> = {
     yellow: "text-yellow-400",

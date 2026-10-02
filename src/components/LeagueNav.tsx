@@ -15,6 +15,10 @@ export interface LeagueNavProps {
   isLoggedIn: boolean;
   dashboardHref: string;
   onSignOut: () => void;
+  /** Phone app-bar title override; defaults to the active link's label. */
+  title?: string;
+  /** Hide the phone bottom navigation bar on this page (e.g. the live auction room). */
+  hideBottomNav?: boolean;
 }
 
 /**
@@ -35,6 +39,8 @@ export function LeagueNav({
   isLoggedIn,
   dashboardHref,
   onSignOut,
+  title,
+  hideBottomNav,
 }: LeagueNavProps) {
   const palette = getFormatPalette(format, teamSize);
 
@@ -54,6 +60,8 @@ export function LeagueNav({
       brandBadge={{ label: palette.label, bgClass: palette.badgeBg, textClass: palette.badgeText }}
       activeTextClass={palette.badgeText}
       activeBgClass={palette.badgeBg}
+      title={title}
+      hideBottomNav={hideBottomNav}
       onSignOut={onSignOut}
     />
   );

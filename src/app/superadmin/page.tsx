@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { FeedbackTab } from "../admin/[leagueId]/FeedbackTab";
 import { AppNav } from "@/components/AppNav";
+import { Tabs } from "@/components/ui/Tabs";
 import { isChipImplemented } from "@/lib/formats/tvt/chip-labels";
 
 interface League {
@@ -1146,7 +1147,7 @@ This overwrites winners that have already been announced. The previous winners a
       {/* ── Edit League Modal ── */}
       {editingLeague && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-lg">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-5 sm:p-8 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white">Edit League</h2>
               <button onClick={() => setEditingLeague(null)} className="text-gray-400 hover:text-white text-2xl">×</button>
@@ -1255,7 +1256,7 @@ This overwrites winners that have already been announced. The previous winners a
       {/* ── Delete League Confirmation Modal ── */}
       {deletingLeague && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-5 sm:p-8 w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <h2 className="text-xl font-bold text-white mb-2">Delete League</h2>
             <p className="text-gray-400 mb-1">
               You are about to permanently delete{" "}
@@ -1299,7 +1300,7 @@ This overwrites winners that have already been announced. The previous winners a
       {/* ── Delete Admin Confirmation Modal ── */}
       {deletingAdmin && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-5 sm:p-8 w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <h2 className="text-xl font-bold text-white mb-3">Delete Admin</h2>
             <p className="text-gray-400 mb-6">
               Are you sure you want to delete <span className="text-white font-semibold">{deletingAdmin.name}</span>?
@@ -1318,7 +1319,7 @@ This overwrites winners that have already been announced. The previous winners a
       {/* ── Edit Admin Modal ── */}
       {editingAdmin && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-5 sm:p-8 w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white">Edit Admin</h2>
               <button onClick={() => setEditingAdmin(null)} className="text-gray-400 hover:text-white text-2xl">×</button>
@@ -1370,7 +1371,7 @@ This overwrites winners that have already been announced. The previous winners a
       {/* ── Assign Leagues Modal ── */}
       {assigningAdmin && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-5 sm:p-8 w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white">Assign Leagues</h2>
               <button onClick={() => setAssigningAdmin(null)} className="text-gray-400 hover:text-white text-2xl">×</button>
@@ -1409,7 +1410,7 @@ This overwrites winners that have already been announced. The previous winners a
       {/* ── Create Admin Modal ── */}
       {showCreateAdmin && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-white/10 p-8 w-full max-w-md">
+          <div className="bg-slate-800 rounded-2xl border border-white/10 p-5 sm:p-8 w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white">Create Admin</h2>
               <button onClick={() => setShowCreateAdmin(false)} className="text-gray-400 hover:text-white text-2xl">×</button>
@@ -1463,7 +1464,7 @@ This overwrites winners that have already been announced. The previous winners a
         onSignOut={handleSignOut}
       />
 
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-10">
         {/* Message */}
         {message && (
           <div className={`mb-6 rounded-lg p-4 ${
@@ -1476,22 +1477,14 @@ This overwrites winners that have already been announced. The previous winners a
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-8 border-b border-white/10 pb-0">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-2.5 rounded-t-lg font-medium text-sm transition ${
-                activeTab === tab.id
-                  ? "bg-yellow-400 text-slate-900"
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* Tabs — a section picker on phones (six never fit in a row), the row from `sm`. */}
+        <Tabs<TabType>
+          ariaLabel="Section"
+          className="mb-8"
+          value={activeTab}
+          onChange={setActiveTab}
+          items={tabs}
+        />
 
         {/* ── Leagues Tab ── */}
         {activeTab === "leagues" && (
@@ -2889,7 +2882,7 @@ This overwrites winners that have already been announced. The previous winners a
             </div>
 
             {adjRows.length > 0 && (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-white/5 text-xs uppercase tracking-wide text-gray-400">
                     <tr>

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
+import { Sheet } from "@/components/ui/Sheet";
+import { Tabs } from "@/components/ui/Tabs";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { isPrimary } from "@/lib/formats/auction/tier";
@@ -462,35 +464,23 @@ export default function MarketplacePage() {
               </button>
             </div>
 
-            <div className="mb-6 flex gap-1 sm:gap-2 overflow-x-auto whitespace-nowrap border-b border-white/10 [&>*]:shrink-0">
-              {(["incoming", "outgoing", "live", "releases", "history"] as Tab[]).map((t) => {
-                const tabTip: Record<Tab, string> = {
-                  incoming: "Trade offers other teams have sent you, awaiting your response.",
-                  outgoing: "Trade offers you've sent, awaiting the other team's response.",
-                  live: "Open offers currently available across the league.",
-                  releases: "Players other teams have marked for release and the refund they'll get.",
-                  history: "Completed and rejected trades.",
-                };
-                return (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  title={tabTip[t]}
-                  className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold capitalize transition ${tab === t ? "text-yellow-400 border-b-2 border-yellow-400" : "text-gray-400 hover:text-white"}`}
-                >
-                  {t === "releases"
-                    ? `Pending Releases (${pendingReleases.length})`
-                    : t === "live"
-                      ? `Live Offers (${liveOffers.length})`
-                      : t === "incoming"
-                        ? `Incoming (${tabCounts.incoming})`
-                        : t === "outgoing"
-                          ? `Outgoing (${tabCounts.outgoing})`
-                          : t}
-                </button>
-                );
-              })}
-            </div>
+            {/* Five sections: phones get a section picker (bottom sheet) rather than a strip
+                that scrolls sideways; wider screens show them all in a row. */}
+            <Tabs<Tab>
+              ariaLabel="Section"
+              className="mb-6"
+              value={tab}
+              onChange={setTab}
+              items={(
+                [
+                  ["incoming", `Incoming (${tabCounts.incoming})`],
+                  ["outgoing", `Outgoing (${tabCounts.outgoing})`],
+                  ["live", `Live Offers (${liveOffers.length})`],
+                  ["releases", `Pending Releases (${pendingReleases.length})`],
+                  ["history", "History"],
+                ] as [Tab, string][]
+              ).map(([id, label]) => ({ id, label }))}
+            />
 
             {actionError && <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{actionError}</div>}
 
@@ -520,10 +510,10 @@ export default function MarketplacePage() {
                       <thead>
                         <tr className="border-b border-white/10 text-xs uppercase text-gray-400">
                           <th className="text-left py-2 px-2 cursor-help" title="The player marked for release.">Player</th>
-                          <th className="text-left py-2 px-2 cursor-help" title="The team currently releasing this player.">Owning Team</th>
-                          <th className="text-right py-2 px-2 cursor-help" title="What the owning team originally paid for the player.">Purchase Price</th>
+                          <th className="hidden sm:table-cell text-left py-2 px-2 cursor-help" title="The team currently releasing this player.">Owning Team</th>
+                          <th className="hidden sm:table-cell text-right py-2 px-2 cursor-help" title="What the owning team originally paid for the player.">Purchase Price</th>
                           <th className="text-right py-2 px-2 cursor-help" title="Cash the team gets back when the release finalizes (50% of purchase price).">Projected Refund</th>
-                          <th className="text-right py-2 px-2 cursor-help" title="The portion of the purchase price not refunded (the other 50%).">Forfeit</th>
+                          <th className="hidden sm:table-cell text-right py-2 px-2 cursor-help" title="The portion of the purchase price not refunded (the other 50%).">Forfeit</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -532,11 +522,19 @@ export default function MarketplacePage() {
                           const forfeit = p.purchasePrice - refund;
                           return (
                             <tr key={p.ownershipId} className="border-b border-white/5">
-                              <td className="py-2 px-2 text-white font-semibold">{p.playerName}</td>
-                              <td className="py-2 px-2 text-gray-300">{teamName(p.teamId)}</td>
-                              <td className="py-2 px-2 text-right font-mono text-white">{formatCurrency(p.purchasePrice)}</td>
-                              <td className="py-2 px-2 text-right font-mono text-green-300">+{formatCurrency(refund)}</td>
-                              <td className="py-2 px-2 text-right font-mono text-red-300">-{formatCurrency(forfeit)}</td>
+                              <td className="py-2 px-2 text-white font-semibold">
+                                {p.playerName}
+                                <div className="sm:hidden mt-0.5 text-[10px] font-normal text-gray-400">{teamName(p.teamId)}</div>
+                              </td>
+                              <td className="hidden sm:table-cell py-2 px-2 text-gray-300">{teamName(p.teamId)}</td>
+                              <td className="hidden sm:table-cell py-2 px-2 text-right font-mono text-white">{formatCurrency(p.purchasePrice)}</td>
+                              <td className="py-2 px-2 text-right font-mono text-green-300">
+                                +{formatCurrency(refund)}
+                                <div className="sm:hidden mt-0.5 text-[10px] text-gray-400">
+                                  of {formatCurrency(p.purchasePrice)} · <span className="text-red-300">-{formatCurrency(forfeit)}</span>
+                                </div>
+                              </td>
+                              <td className="hidden sm:table-cell py-2 px-2 text-right font-mono text-red-300">-{formatCurrency(forfeit)}</td>
                             </tr>
                           );
                         })}
@@ -557,14 +555,31 @@ export default function MarketplacePage() {
               </div>
             )}
 
-            {/* Create Proposal Modal */}
-            {showCreate && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowCreate(false)}>
-                <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-slate-900 p-4 sm:p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold text-white">New Trade Proposal</h3>
-                    <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-white">✕</button>
-                  </div>
+            {/* Create Proposal — bottom sheet on phones, dialog on wider screens. */}
+            <Sheet
+              open={showCreate}
+              onClose={() => setShowCreate(false)}
+              title="New Trade Proposal"
+              size="3xl"
+              footer={
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowCreate(false)}
+                    className="flex-1 min-h-11 rounded-lg bg-white/10 border border-white/20 text-white py-2 hover:bg-white/20 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreate}
+                    disabled={creating || !targetId || (offeredIds.size === 0 && requestedIds.size === 0)}
+                    title="Send this trade offer to the selected team. They must accept, then an admin approves before it executes."
+                    className="flex-1 min-h-11 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-4 py-2 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
+                  >
+                    {creating ? "Submitting..." : "Submit Proposal"}
+                  </button>
+                </div>
+              }
+            >
 
                   <div className="mb-4">
                     <label className="block text-xs uppercase text-gray-400 mb-1">Target Team</label>
@@ -689,27 +704,8 @@ export default function MarketplacePage() {
                     <div>You receive: <span className="text-white font-mono">{formatCurrency(requestedFMVPreview + Math.max(0, -(parseInt(cashOffered, 10) || 0)))}</span></div>
                   </div>
 
-                  {createError && <div className="mb-3 text-sm text-red-400">{createError}</div>}
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setShowCreate(false)}
-                      className="flex-1 rounded-lg bg-white/10 border border-white/20 text-white py-2 hover:bg-white/20 transition"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleCreate}
-                      disabled={creating || !targetId || (offeredIds.size === 0 && requestedIds.size === 0)}
-                      title="Send this trade offer to the selected team. They must accept, then an admin approves before it executes."
-                      className="flex-1 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 px-4 py-2 font-bold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition disabled:opacity-50"
-                    >
-                      {creating ? "Submitting..." : "Submit Proposal"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+                  {createError && <div className="mb-1 text-sm text-red-400">{createError}</div>}
+            </Sheet>
           </>
         )}
       </div>
