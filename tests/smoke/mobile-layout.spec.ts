@@ -205,7 +205,53 @@ test.describe.serial("Phone layout (360px)", () => {
   test("the last row of a page is not hidden behind the bottom bar", async ({ page }) => {
     await visit(page, `/${tvt.slug}/rules`, "tvt-rules-bottom");
     const padding = await page.evaluate(() => parseFloat(getComputedStyle(document.body).paddingBottom));
-    expect(padding).toBeGreaterThanOrEqual(64);
+    const bar = await bottomNav(page).boundingBox();
+    expect(bar?.height ?? 0, "Material's navigation bar is 80px").toBeGreaterThanOrEqual(80);
+    expect(padding).toBeGreaterThanOrEqual(bar?.height ?? 80);
+  });
+
+  test("phone touch targets: the bell and app-bar buttons are at least 48px", async ({ page }) => {
+    await uiSignIn(page, teamLoginId(tvt.slug, 2), TEAM_RESET_PASSWORD);
+    await expect.poll(() => page.url(), { timeout: 15_000 }).not.toContain("/signin");
+    await visit(page, `/${tvt.slug}/standings`, "tvt-touch-targets");
+    for (const name of ["Notifications", "Open menu"]) {
+      const box = await page.getByRole("button", { name, exact: true }).boundingBox();
+      expect(box?.height ?? 0, `${name} button height`).toBeGreaterThanOrEqual(48);
+      expect(box?.width ?? 0, `${name} button width`).toBeGreaterThanOrEqual(48);
+    }
+  });
+
+  /** Synthesise a vertical drag on the page — Playwright's touchscreen only taps. */
+  async function drag(page: Page, fromY: number, toY: number) {
+    await page.evaluate(
+      ([from, to]) => {
+        const touch = (y: number) => new Touch({ identifier: 1, target: document.body, clientX: 180, clientY: y });
+        window.dispatchEvent(new TouchEvent("touchstart", { touches: [touch(from)], bubbles: true }));
+        const step = Math.sign(to - from) * 20;
+        for (let y = from + step; step > 0 ? y <= to : y >= to; y += step) {
+          window.dispatchEvent(new TouchEvent("touchmove", { touches: [touch(y)], bubbles: true }));
+        }
+        window.dispatchEvent(new TouchEvent("touchend", { touches: [], bubbles: true }));
+      },
+      [fromY, toY] as const,
+    );
+  }
+
+  test("pulling down from the top of a page reloads it", async ({ page }) => {
+    await visit(page, `/${tvt.slug}/standings`, "tvt-pull-refresh");
+    await page.evaluate(() => ((window as unknown as { __beforePull?: boolean }).__beforePull = true));
+    const reloaded = page.waitForEvent("load");
+    await drag(page, 150, 420);
+    await reloaded;
+    expect(await page.evaluate(() => (window as unknown as { __beforePull?: boolean }).__beforePull)).toBeUndefined();
+  });
+
+  test("a short pull springs back without reloading", async ({ page }) => {
+    await visit(page, `/${tvt.slug}/standings`, "tvt-short-pull");
+    await page.evaluate(() => ((window as unknown as { __beforePull?: boolean }).__beforePull = true));
+    await drag(page, 150, 230);
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => (window as unknown as { __beforePull?: boolean }).__beforePull)).toBe(true);
   });
 
   test("no bottom bar on pages outside a league", async ({ page }) => {

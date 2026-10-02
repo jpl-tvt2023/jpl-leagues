@@ -40,8 +40,10 @@ summary {
   touch-action: manipulation;
 }
 
-/* Installed app: no browser-style rubber-band / pull-to-refresh glow on the page itself. */
-@media (display-mode: standalone) {
+/* Touch screens: the app draws its own pull-to-refresh (src/components/pwa/PullToRefresh.tsx), in
+   the browser and the installed app alike, so the browser's own — and its rubber-band glow — is
+   switched off rather than firing alongside it. */
+@media (pointer: coarse) {
   html,
   body {
     overscroll-behavior-y: none;
@@ -52,7 +54,8 @@ summary {
    height on <body> keeps every page's last row and footer clear of it without per-page edits. */
 @media (width < 64rem) {
   body:has(#app-bottom-nav) {
-    --app-bottom-offset: calc(4rem + env(safe-area-inset-bottom, 0px));
+    /* 80px bar + its 1px top border. */
+    --app-bottom-offset: calc(5rem + 1px + env(safe-area-inset-bottom, 0px));
     padding-bottom: var(--app-bottom-offset);
   }
 }
