@@ -388,12 +388,13 @@ export function GwStatsPanel({
                 <button
                   type="button"
                   onClick={() => openDrill({ title: `Transfer hits — ${agg.hits.total} points`, managers: agg.hits.takers })}
-                  className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-white/10"
+                  className="flex w-full min-w-0 flex-col items-start gap-0.5 rounded px-1 py-0.5 text-left text-xs hover:bg-white/10"
                 >
+                  {/* Stacked, not side by side: beside the fixtures this card is ~15% of the screen. */}
                   <span className="text-gray-300">
                     <span className="font-semibold text-rose-300">−{agg.hits.total}</span> from {agg.hits.takers.length} manager{agg.hits.takers.length === 1 ? "" : "s"}
                   </span>
-                  <span className="truncate text-[10px] text-gray-400">
+                  <span className="max-w-full truncate text-[10px] text-gray-400">
                     Biggest: {agg.hits.takers[0].name} −{agg.hits.takers[0].hits}
                   </span>
                 </button>
