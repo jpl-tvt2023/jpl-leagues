@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useLeague } from "@/lib/league-context";
 import { TierChip } from "@/components/TierChip";
+import { HelpTip } from "@/components/HelpTip";
 import type { TeamClubOwnership } from "@/lib/teams/display-name";
 import { getTeamDisplayName } from "@/lib/teams/display-name";
 import { formatPts } from "@/lib/format-points";
@@ -22,96 +22,98 @@ interface ClubTooltipCellProps {
   className?: string;
 }
 
-// Cell + popover for the per-team Club column. The popover is portalled to body and positioned via
-// the cell's bounding rect so it escapes the table's `overflow-x-auto` clipping context.
+// Cell + tooltip for the per-team Club column. One row per gameweek, so late in the season the
+// list is taller than most screens — HelpTip caps the bubble to the viewport and scrolls it.
 function ClubTooltipCell({ clubResultBonus, gwHistory, currentGwNumber, liveResult, clubName, className = "" }: ClubTooltipCellProps) {
-  const ref = useRef<HTMLTableCellElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  const show = () => {
-    if (!ref.current) return;
-    const r = ref.current.getBoundingClientRect();
-    // Anchor below the cell, right-aligned to the cell's right edge.
-    setPos({ top: r.bottom + 6, left: r.right });
-  };
-  const hide = () => setPos(null);
-
-  const hasPopover = currentGwNumber > 0 && (gwHistory.length > 0 || liveResult);
-  // Never wider than the screen minus an 8px gutter each side.
-  const popoverWidth = typeof window === "undefined" ? 320 : Math.min(320, window.innerWidth - 16);
+  const hasPopover = currentGwNumber > 0 && (gwHistory.length > 0 || !!liveResult);
+  const value = clubResultBonus > 0 ? `+${clubResultBonus}` : "0";
 
   return (
     <td
-      ref={ref}
-      onMouseEnter={hasPopover ? show : undefined}
-      onMouseLeave={hide}
-      onFocus={hasPopover ? show : undefined}
-      onBlur={hide}
-      className={`${className} px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono relative ${clubResultBonus > 0 ? "text-emerald-300 font-bold cursor-help" : "text-gray-600"}`}
+      className={`${className} px-2 py-2 sm:px-3 sm:py-3 text-xs sm:text-sm text-right font-mono ${clubResultBonus > 0 ? "text-emerald-300 font-bold" : "text-gray-600"}`}
     >
-      {clubResultBonus > 0 ? `+${clubResultBonus}` : "0"}
-      {mounted && pos && hasPopover && createPortal(
-        <div
-          className="fixed z-50 rounded-xl border border-white/10 bg-slate-800/95 backdrop-blur-xl shadow-xl p-3 text-left pointer-events-none"
-          style={{ top: pos.top, left: Math.max(8, pos.left - popoverWidth), width: popoverWidth }}
+      {hasPopover ? (
+        <HelpTip
+          tip={
+            <ClubHistoryBody
+              gwHistory={gwHistory}
+              currentGwNumber={currentGwNumber}
+              liveResult={liveResult}
+              clubName={clubName}
+            />
+          }
+          width={320}
+          className="no-underline"
         >
-          <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-2">
-            {clubName} — Club result by GW
-          </div>
-          <table className="w-full text-xs">
-            <tbody>
-              {Array.from({ length: currentGwNumber }, (_, i) => i + 1).map((gwN) => {
-                const h = gwHistory.find((x) => x.gw === gwN);
-                const scored = !!h;
-                // `liveResult` describes only the in-progress current GW. Earlier unscored GWs
-                // (admin hasn't processed them yet) should render as "yet to play", not inherit
-                // the current GW's scoreline.
-                const live = !scored && gwN === currentGwNumber ? liveResult : null;
-                const hasLive = !scored && !!live;
-                const summary = scored
-                  ? (h!.clubResultSummary ? normalizeClubSummary(h!.clubResultSummary) : null)
-                  : (hasLive ? live!.summary : null);
-                const labelCls = scored || hasLive ? "text-gray-200" : "text-gray-500 italic";
-                const valueCls =
-                  (scored && h!.clubResultBonus > 0) || (hasLive && live!.bonus > 0)
-                    ? "text-emerald-300 font-bold"
-                    : "text-gray-500";
-                return (
-                  <tr key={gwN} className="border-t border-white/5 first:border-t-0 align-top">
-                    <td className="py-1 pr-2 text-gray-400 font-mono w-10">GW{gwN}</td>
-                    <td className={`py-1 ${labelCls}`}>
-                      {scored ? (
-                        // Scored GW. If we have a summary, render it. Otherwise — when bonus > 0
-                        // but the backfill couldn't recover the scoreline (FPL outage / pre-club-
-                        // auction league) — explain why instead of showing a bare "—".
-                        summary ?? (h!.clubResultBonus > 0 ? <span className="text-gray-500 italic">fixture detail unavailable</span> : "—")
-                      ) : hasLive ? (
-                        <>
-                          {summary}
-                          <span className="text-[10px] text-amber-300 font-semibold uppercase ml-1">live</span>
-                        </>
-                      ) : (
-                        "yet to play"
-                      )}
-                    </td>
-                    <td className={`py-1 pl-2 text-right font-mono whitespace-nowrap ${valueCls}`}>
-                      {scored
-                        ? (h!.clubResultBonus > 0 ? `+${h!.clubResultBonus}` : "0")
-                        : hasLive
-                          ? `+${live!.bonus}`
-                          : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>,
-        document.body
+          {value}
+        </HelpTip>
+      ) : (
+        value
       )}
     </td>
+  );
+}
+
+function ClubHistoryBody({
+  gwHistory,
+  currentGwNumber,
+  liveResult,
+  clubName,
+}: Pick<ClubTooltipCellProps, "gwHistory" | "currentGwNumber" | "liveResult" | "clubName">) {
+  return (
+    <>
+      <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-2">
+        {clubName} — Club result by GW
+      </div>
+      <table className="w-full text-xs">
+        <tbody>
+          {Array.from({ length: currentGwNumber }, (_, i) => i + 1).map((gwN) => {
+            const h = gwHistory.find((x) => x.gw === gwN);
+            const scored = !!h;
+            // `liveResult` describes only the in-progress current GW. Earlier unscored GWs
+            // (admin hasn't processed them yet) should render as "yet to play", not inherit
+            // the current GW's scoreline.
+            const live = !scored && gwN === currentGwNumber ? liveResult : null;
+            const hasLive = !scored && !!live;
+            const summary = scored
+              ? (h!.clubResultSummary ? normalizeClubSummary(h!.clubResultSummary) : null)
+              : (hasLive ? live!.summary : null);
+            const labelCls = scored || hasLive ? "text-gray-200" : "text-gray-500 italic";
+            const valueCls =
+              (scored && h!.clubResultBonus > 0) || (hasLive && live!.bonus > 0)
+                ? "text-emerald-300 font-bold"
+                : "text-gray-500";
+            return (
+              <tr key={gwN} className="border-t border-white/5 first:border-t-0 align-top">
+                <td className="py-1 pr-2 text-gray-400 font-mono w-10">GW{gwN}</td>
+                <td className={`py-1 ${labelCls}`}>
+                  {scored ? (
+                    // Scored GW. If we have a summary, render it. Otherwise — when bonus > 0
+                    // but the backfill couldn't recover the scoreline (FPL outage / pre-club-
+                    // auction league) — explain why instead of showing a bare "—".
+                    summary ?? (h!.clubResultBonus > 0 ? <span className="text-gray-500 italic">fixture detail unavailable</span> : "—")
+                  ) : hasLive ? (
+                    <>
+                      {summary}
+                      <span className="text-[10px] text-amber-300 font-semibold uppercase ml-1">live</span>
+                    </>
+                  ) : (
+                    "yet to play"
+                  )}
+                </td>
+                <td className={`py-1 pl-2 text-right font-mono whitespace-nowrap ${valueCls}`}>
+                  {scored
+                    ? (h!.clubResultBonus > 0 ? `+${h!.clubResultBonus}` : "0")
+                    : hasLive
+                      ? `+${live!.bonus}`
+                      : "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </>
   );
 }
 
