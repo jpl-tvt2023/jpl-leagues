@@ -772,9 +772,10 @@ export default function LeagueFixturesPage() {
               ))}
             </div>
 
-            {/* Two sections side by side from 2xl: fixtures (Group A | Group B) and the stats card
-                grid. Between lg and 2xl the stats sit below the fixtures, three cards across. */}
-            <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6 items-start">
+            {/* Two sections side by side from 2xl, 70/30: fixtures (Group A | Group B, ~35% each)
+                and the stats card grid (two columns, ~15% each). Between lg and 2xl the stats sit
+                below the fixtures, three cards across. */}
+            <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] gap-6 items-start">
             <section aria-label="Fixtures" className={`min-w-0 ${mobileView === "stats" ? "hidden lg:block" : ""}`}>
             {hasGroupB ? (
               /* Two-Column Layout: Group A | Group B */

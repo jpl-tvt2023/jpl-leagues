@@ -271,7 +271,7 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     page.on("pageerror", (e) => consoleErrors.push(`${page.url()} :: pageerror ${e.message}`));
     const [fx] = await fixturesFor(request, 1);
 
-    for (const width of [1920, 1440]) {
+    for (const width of [1920, 1600, 1440]) {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto(`/${league.slug}/fixtures`);
       await expect(page.getByTestId("stat-captained").getByRole("button").first()).toBeVisible();
