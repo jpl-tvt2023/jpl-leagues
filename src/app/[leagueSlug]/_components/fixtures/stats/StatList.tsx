@@ -39,7 +39,9 @@ export function StatList({
   testId?: string;
 }) {
   return (
-    <section data-testid={testId} className="h-full rounded-xl border border-white/10 bg-white/5 p-3">
+    // @container: beside the fixtures each card is only ~15% of the screen, so a narrow card moves
+    // the secondary figure (e.g. "EO 186%") under the name rather than squeezing the name out.
+    <section data-testid={testId} className="@container h-full rounded-xl border border-white/10 bg-white/5 p-3">
       <h3 className="text-xs font-semibold text-white">{title}</h3>
       {hint && <p className="text-[10px] text-gray-500">{hint}</p>}
       {lines.length === 0 ? (
@@ -56,9 +58,16 @@ export function StatList({
                 <span className="w-3 shrink-0 text-[10px] text-gray-500">{i + 1}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs text-white">{l.label}</span>
-                  {l.sub && <span className="block truncate text-[10px] text-gray-500">{l.sub}</span>}
+                  {(l.sub || l.extra) && (
+                    <span className="block truncate text-[10px] text-gray-500">
+                      {l.sub}
+                      {l.extra && (
+                        <span className="@[18rem]:hidden text-gray-400">{l.sub ? " · " : ""}{l.extra}</span>
+                      )}
+                    </span>
+                  )}
                 </span>
-                {l.extra && <span className="shrink-0 text-[10px] text-gray-400">{l.extra}</span>}
+                {l.extra && <span className="hidden @[18rem]:inline shrink-0 text-[10px] text-gray-400">{l.extra}</span>}
                 <span className="shrink-0 text-xs font-semibold text-sky-300">{l.value}</span>
               </button>
             </li>
