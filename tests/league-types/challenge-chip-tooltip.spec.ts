@@ -167,8 +167,9 @@ test.describe.serial("Challenge Chip tooltip", () => {
     // Visible with every breakdown still collapsed.
     await expect(page.getByText("Hide breakdown")).toHaveCount(0);
 
-    const card = page.locator("div").filter({ hasText: challengerName })
-      .filter({ hasText: challengerOpponentName }).last();
+    // Scoped to fixture cards: the stats section beside them lists team names too.
+    const card = page.locator("[data-testid^='fixture-card-']").filter({ hasText: challengerName })
+      .filter({ hasText: challengerOpponentName });
     await expect(card.getByText("CC", { exact: true })).toBeVisible();
   });
 

@@ -7,11 +7,9 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import type { MatchCenterPayload } from "@/lib/match-center/load";
-import { ComparePicker } from "../../_components/match-center/ComparePicker";
-import { Differentials } from "../../_components/match-center/Differentials";
-import { MatchHeader, matchStatus } from "../../_components/match-center/MatchHeader";
 import { PreDeadline } from "../../_components/match-center/PreDeadline";
-import { TeamSheetCard } from "../../_components/match-center/TeamSheetCard";
+import { Scoreboard, matchStatus, type CompareChoice } from "../../_components/match-center/Scoreboard";
+import { TeamTable } from "../../_components/match-center/TeamTable";
 
 /** Same cadence as the fixtures page, and for the same reason: inside the 10-minute live window. */
 const LIVE_POLL_MS = 3 * 60 * 1000;
@@ -51,6 +49,8 @@ export default function MatchCenterPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // Below lg the two squads cannot sit side by side; the reader picks one with a tab.
+  const [mobileSide, setMobileSide] = useState<"a" | "b">("a");
   // Only the newest request may land: switching teams while a slow load is in flight must not
   // let the older comparison overwrite the newer one.
   const requestSeq = useRef(0);
@@ -108,7 +108,7 @@ export default function MatchCenterPage() {
     return () => clearInterval(t);
   }, []);
 
-  const onCompareChange = (next: { a: string; b: string; gw: number }) => {
+  const onCompareChange = (next: CompareChoice) => {
     setQuery({ gw: next.gw, a: next.a, b: next.b });
     const sp = new URLSearchParams({ gw: String(next.gw), a: next.a, b: next.b });
     window.history.replaceState(null, "", `${window.location.pathname}?${sp.toString()}`);
@@ -136,27 +136,14 @@ export default function MatchCenterPage() {
         onSignOut={handleSignOut}
       />
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-10 space-y-4">
+      <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 py-4 sm:py-8 space-y-4">
         <div className="flex items-center justify-between gap-3">
           <Link href={`/${leagueSlug}/fixtures`} className="text-xs text-gray-400 hover:text-white transition">
             ← Fixtures
           </Link>
-          <h1 className="text-xl sm:text-3xl font-bold text-white">Match Center</h1>
+          <h1 className="text-lg sm:text-2xl font-bold text-white">Match Center</h1>
           <span className="w-16" aria-hidden />
         </div>
-
-        {data && (
-          <ComparePicker
-            teams={data.teams}
-            a={data.a.teamId}
-            b={data.b.teamId}
-            gws={data.gameweeks}
-            gw={data.gameweek.number}
-            onChange={onCompareChange}
-            accent={isContinental ? "continental" : "default"}
-            disabled={isLoading}
-          />
-        )}
 
         {isLoading && !data ? (
           <LoadingScreen variant="fixtures" fullScreen={false} label="Loading Match Center" />
@@ -167,7 +154,15 @@ export default function MatchCenterPage() {
             {error && (
               <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-300">{error}</div>
             )}
-            <MatchHeader data={data} status={status} isRefreshing={isRefreshing} now={now} />
+            <Scoreboard
+              data={data}
+              status={status}
+              onChange={onCompareChange}
+              disabled={isLoading}
+              isRefreshing={isRefreshing}
+              now={now}
+              accent={isContinental ? "continental" : "default"}
+            />
 
             {status === "upcoming" ? (
               <PreDeadline sides={[data.a, data.b]} gwNumber={data.gameweek.number} />
@@ -178,27 +173,58 @@ export default function MatchCenterPage() {
               </div>
             ) : (
               <>
-                {data.comparison && (
-                  <Differentials comparison={data.comparison} aName={data.a.teamName} bName={data.b.teamName} />
-                )}
+                {/* Phones: one squad at a time. Sticky just under the app bar, and carrying both
+                    scores, so the score stays in view while scrolling a squad. */}
+                <div
+                  role="tablist"
+                  aria-label="Choose team"
+                  className="lg:hidden sticky top-[calc(4rem+env(safe-area-inset-top))] z-30 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-slate-900/90 p-1 backdrop-blur"
+                >
+                  {(["a", "b"] as const).map((k) => {
+                    const side = data[k];
+                    return (
+                      <button
+                        key={k}
+                        role="tab"
+                        aria-selected={mobileSide === k}
+                        onClick={() => setMobileSide(k)}
+                        className={`flex min-w-0 items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                          mobileSide === k ? "bg-white/15 text-white" : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        <span className="truncate">{side.teamName}</span>
+                        <span className="shrink-0">{side.displayTotal ?? "–"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                  <TeamSheetCard
+                  <TeamTable
                     side={data.a}
                     perspective="a"
                     comparison={data.comparison}
-                    gwNumber={data.gameweek.number}
                     settled={data.gameweek.settled}
-                    accentClass="border-sky-400/20"
+                    accentClass="border-sky-400/25"
+                    className={mobileSide === "b" ? "hidden lg:block" : ""}
                   />
-                  <TeamSheetCard
+                  <TeamTable
                     side={data.b}
                     perspective="b"
                     comparison={data.comparison}
-                    gwNumber={data.gameweek.number}
                     settled={data.gameweek.settled}
-                    accentClass="border-rose-400/20"
+                    accentClass="border-rose-400/25"
+                    className={mobileSide === "a" ? "hidden lg:block" : ""}
                   />
                 </div>
+
+                <p className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+                  <span><span className="inline-block h-2.5 w-1 rounded-sm bg-violet-400 align-middle" /> DIFF — only this team owns him</span>
+                  <span><span className="inline-block h-2.5 w-1 rounded-sm bg-emerald-400 align-middle" /> +N× — counted more times than by the other team</span>
+                  <span>═ dimmed — shared at the same ×, cancels out</span>
+                  <span>★ JPL captain (counts double)</span>
+                  <span>Tap a name for the points breakdown</span>
+                </p>
               </>
             )}
           </div>

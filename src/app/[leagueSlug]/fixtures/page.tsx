@@ -20,6 +20,7 @@ import {
 } from "../_components/fixtures/shared";
 import { BonusPill } from "../_components/fixtures/BonusPill";
 import { GwStatsPanel } from "../_components/fixtures/stats/GwStatsPanel";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { ChallengeTip, type ChipDisplay } from "../_components/fixtures/ChallengeTip";
 import {
   buildLiveChallengeMatch,
@@ -348,6 +349,10 @@ export default function LeagueFixturesPage() {
    * that has not kicked off, and the page confidently renders the latter.
    */
   const [liveReason, setLiveReason] = useState<string | null>(null);
+  // Below lg the page shows one section at a time — see the Fixtures | Stats switch. From lg up
+  // both are on screen, so the stats are always "active" there.
+  const [mobileView, setMobileView] = useState<"fixtures" | "stats">("fixtures");
+  const isLg = useMediaQuery("(min-width: 1024px)");
 
   /**
    * Re-sweep FPL behind the numbers already on screen.
@@ -604,6 +609,8 @@ export default function LeagueFixturesPage() {
     deadlinePassed &&
     (liveReason === "sweep_failed" || liveReason === "fpl_unavailable");
 
+  const hasGameweeks = !isLoading && !error && availableGWs.length > 0;
+
   const formatDeadline = (deadline: Date) => {
     const date = new Date(deadline);
     return date.toLocaleDateString("en-US", {
@@ -629,38 +636,24 @@ export default function LeagueFixturesPage() {
         onSignOut={handleSignOut}
       />
 
-      {/* max-w-7xl rather than 6xl: from xl up the fixtures share the row with the stats column. */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2 sm:mb-4">Fixtures &amp; Results</h1>
-          <p className="text-sm sm:text-base text-gray-400">View upcoming matches and past results</p>
-        </div>
-
-        {isLoading ? (
-          <LoadingScreen variant="fixtures" fullScreen={false} />
-        ) : error ? (
-          <div className="text-center text-red-400 py-12">{error}</div>
-        ) : availableGWs.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
-              <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">No Fixtures Yet</h2>
-              <p className="text-sm sm:text-base text-gray-400">Fixtures will appear here once the league admin generates them.</p>
-            </div>
+      {/* Full width: from 2xl up the page is two sections, fixtures and stats, side by side. */}
+      <div className="mx-auto w-full max-w-[1920px] px-4 sm:px-6 2xl:px-8 py-6 sm:py-10">
+        {/* One row from lg up — title, gameweek picker, status — so the fixtures start higher. */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
+          <div className="text-center lg:text-left">
+            <h1 className="text-2xl sm:text-3xl 2xl:text-4xl font-bold text-white">Fixtures &amp; Results</h1>
+            <p className="mt-1 text-sm text-gray-400">View upcoming matches and past results</p>
           </div>
-        ) : (
-          <>
-            {/* Gameweek Filter */}
-            <div className="mb-6 sm:mb-8">
-              <GwNavigator
-                gws={availableGWs}
-                value={selectedGW}
-                onChange={setSelectedGW}
-                accent={isContinentalChampionship ? "continental" : "default"}
-              />
-            </div>
-
-            {/* Status Badge */}
-            <div className="flex flex-wrap items-center justify-center gap-4 mb-6">
+          {hasGameweeks && (
+            <GwNavigator
+              gws={availableGWs}
+              value={selectedGW}
+              onChange={setSelectedGW}
+              accent={isContinentalChampionship ? "continental" : "default"}
+            />
+          )}
+          {hasGameweeks && (
+            <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-end">
               {hasResults ? (
                 <span className="px-4 py-1 rounded-full bg-green-500/20 text-green-400 text-sm font-medium">
                   Results Available
@@ -737,7 +730,22 @@ export default function LeagueFixturesPage() {
                 isRefreshing={isBackgroundRefreshing}
               />
             </div>
+          )}
+        </div>
 
+        {isLoading ? (
+          <LoadingScreen variant="fixtures" fullScreen={false} />
+        ) : error ? (
+          <div className="text-center text-red-400 py-12">{error}</div>
+        ) : availableGWs.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8 backdrop-blur">
+              <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">No Fixtures Yet</h2>
+              <p className="text-sm sm:text-base text-gray-400">Fixtures will appear here once the league admin generates them.</p>
+            </div>
+          </div>
+        ) : (
+          <>
             {refreshNotice && (
               <div className="mb-6 flex justify-center">
                 <span className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300">
@@ -746,29 +754,33 @@ export default function LeagueFixturesPage() {
               </div>
             )}
 
-            {/* Fixtures left, GW stats right from xl up. Below xl the stats are a collapsible
-                panel ABOVE the fixtures — below sixteen cards nobody would find them. The panel
-                comes first in the DOM so reading order matches that phone layout; CSS order moves
-                it to the right-hand column on wide screens. */}
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
-            <div className="xl:order-2 min-w-0">
-              <GwStatsPanel
-                leagueSlug={leagueSlug}
-                gw={selectedGW}
-                fixtures={displayFixtures}
-                liveScores={liveScores}
-                chipsForGw={chipsForGw}
-                isLive={isLive}
-                deadlinePassed={deadlinePassed}
-                showBonusRace={!isContinentalChampionship}
-              />
+            {/* Phones and tablets: one section at a time, so the stats never push the fixtures
+                down and get a whole screen when chosen. */}
+            <div role="tablist" aria-label="Fixtures or stats" className="lg:hidden mb-4 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+              {(["fixtures", "stats"] as const).map((view) => (
+                <button
+                  key={view}
+                  role="tab"
+                  aria-selected={mobileView === view}
+                  onClick={() => setMobileView(view)}
+                  className={`rounded-lg py-2 text-sm font-semibold transition ${
+                    mobileView === view ? "bg-white/15 text-white" : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  {view === "fixtures" ? "Fixtures" : "📊 Stats"}
+                </button>
+              ))}
             </div>
-            <div className="xl:order-1 min-w-0">
+
+            {/* Two sections side by side from 2xl: fixtures (Group A | Group B) and the stats card
+                grid. Between lg and 2xl the stats sit below the fixtures, three cards across. */}
+            <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6 items-start">
+            <section aria-label="Fixtures" className={`min-w-0 ${mobileView === "stats" ? "hidden lg:block" : ""}`}>
             {hasGroupB ? (
               /* Two-Column Layout: Group A | Group B */
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                  <h2 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4 flex items-center gap-2">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4 backdrop-blur">
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-3 flex items-center gap-2">
                     <span className="h-3 w-3 rounded-full bg-blue-500"></span>
                     Group A
                   </h2>
@@ -796,8 +808,8 @@ export default function LeagueFixturesPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
-                  <h2 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4 flex items-center gap-2">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4 backdrop-blur">
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-3 flex items-center gap-2">
                     <span className="h-3 w-3 rounded-full bg-purple-500"></span>
                     Group B
                   </h2>
@@ -852,6 +864,19 @@ export default function LeagueFixturesPage() {
                 )}
               </div>
             )}
+            </section>
+            <div className={`min-w-0 ${mobileView === "fixtures" ? "hidden lg:block" : ""}`}>
+              <GwStatsPanel
+                leagueSlug={leagueSlug}
+                gw={selectedGW}
+                fixtures={displayFixtures}
+                liveScores={liveScores}
+                chipsForGw={chipsForGw}
+                isLive={isLive}
+                deadlinePassed={deadlinePassed}
+                showBonusRace={!isContinentalChampionship}
+                active={isLg || mobileView === "stats"}
+              />
             </div>
             </div>
           </>

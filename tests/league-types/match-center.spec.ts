@@ -10,6 +10,8 @@
 
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import {
   apiSignInSuperadmin,
   createTvtLeague,
@@ -25,6 +27,10 @@ import {
 } from "../harness";
 
 let league: LeagueRef;
+
+/** MC_SHOTS=1 also saves full-page screenshots for a visual review, as MOBILE_SHOTS does. */
+const SHOTS = process.env.MC_SHOTS === "1";
+const SHOT_DIR = path.join("test-results", "mc-shots");
 
 interface Fx {
   id: string;
@@ -139,15 +145,47 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     await page.getByTestId(`match-center-link-${fx.id}`).click();
     await expect(page).toHaveURL(new RegExp(`/fixtures/${fx.id}\\?gw=1&a=${fx.homeTeam.id}&b=${fx.awayTeam.id}`));
 
-    await expect(page.getByTestId("mc-header")).toContainText(fx.homeTeam.name);
+    // The team names ARE the pickers, so assert the selected value — text matching would hit
+    // every <option> in the list.
+    await expect(page.getByLabel("First team")).toHaveValue(fx.homeTeam.id);
+    await expect(page.getByLabel("Second team")).toHaveValue(fx.awayTeam.id);
     await expect(page.getByTestId("mc-side-a")).toBeVisible();
     await expect(page.getByTestId("mc-side-b")).toBeVisible();
     await expect(page.getByTestId("mc-side-a").locator("[data-testid^='mc-row-']").first()).toBeVisible();
+    await expect(page.getByTestId("mc-swing")).toBeVisible();
+
+    // Playing XI is ordered by points, high to low, and comes before the bench.
+    const rows = await page
+      .getByTestId("mc-side-a")
+      .locator("[data-testid^='mc-row-']")
+      .evaluateAll((els) => els.map((r) => [r.getAttribute("data-section"), Number(r.getAttribute("data-points"))] as const));
+    const xiPoints = rows.filter(([section]) => section === "xi").map(([, pts]) => pts);
+    expect(xiPoints.length).toBeGreaterThanOrEqual(11);
+    expect(xiPoints, "XI sorted by points, high to low").toEqual([...xiPoints].sort((x, y) => y - x));
+    const firstBench = rows.findIndex(([section]) => section === "bench");
+    if (firstBench >= 0) {
+      expect(rows.slice(firstBench).every(([section]) => section === "bench"), "bench rows come last").toBe(true);
+    }
 
     await page.getByLabel("Second team").selectOption(other.awayTeam.id);
     await expect(page).toHaveURL(new RegExp(`b=${other.awayTeam.id}`));
-    await expect(page.getByTestId("mc-header")).toContainText(other.awayTeam.name);
+    await expect(page.getByLabel("Second team")).toHaveValue(other.awayTeam.id);
     await expect(page.getByTestId("mc-header")).toContainText("Comparison only");
+  });
+
+  test("phone: one squad at a time behind team tabs", async ({ page, request }) => {
+    const [fx] = await fixturesFor(request, 1);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/${league.slug}/fixtures/${fx.id}`);
+
+    const tabs = page.getByRole("tablist", { name: "Choose team" });
+    await expect(tabs).toBeVisible();
+    await expect(page.getByTestId("mc-side-a")).toBeVisible();
+    await expect(page.getByTestId("mc-side-b")).toBeHidden();
+
+    await tabs.getByRole("tab").nth(1).click();
+    await expect(page.getByTestId("mc-side-b")).toBeVisible();
+    await expect(page.getByTestId("mc-side-a")).toBeHidden();
   });
 
   test("stats endpoint covers every manager, with transfers", async ({ request }) => {
@@ -172,13 +210,40 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     expect((await upcoming.json()).status).toBe("upcoming");
   });
 
-  test("stats sidebar renders, and an entry drills down to its managers", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+  test("wide screen: fixtures and stats side by side, and an entry drills down", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`/${league.slug}/fixtures`);
-    const captained = page.getByTestId("stat-captained");
-    await expect(captained).toBeVisible();
-    await captained.getByRole("button").first().click();
+    const fixtures = page.getByRole("region", { name: "Fixtures" });
+    const stats = page.getByTestId("gw-stats-panel");
+    await expect(stats.getByTestId("stat-captained").getByRole("button").first()).toBeVisible();
+
+    const f = (await fixtures.boundingBox())!;
+    const s = (await stats.boundingBox())!;
+    expect(s.x, "stats to the right of the fixtures").toBeGreaterThanOrEqual(f.x + f.width - 1);
+    expect(Math.abs(s.y - f.y), "both sections start on the same row").toBeLessThan(5);
+
+    // Most owned and most captained share the first row of the stats grid.
+    const owned = (await stats.getByTestId("stat-owned").boundingBox())!;
+    const captained = (await stats.getByTestId("stat-captained").boundingBox())!;
+    expect(Math.abs(owned.y - captained.y)).toBeLessThan(2);
+    expect(captained.x).toBeGreaterThan(owned.x);
+
+    await stats.getByTestId("stat-captained").getByRole("button").first().click();
     await expect(page.getByRole("dialog")).toContainText("captained by");
+  });
+
+  test("phone: Fixtures | Stats switch shows one section at a time", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/${league.slug}/fixtures`);
+    const switcher = page.getByRole("tablist", { name: "Fixtures or stats" });
+    await expect(switcher).toBeVisible();
+    await expect(page.getByRole("region", { name: "Fixtures" })).toBeVisible();
+    await expect(page.getByTestId("gw-stats-panel")).toBeHidden();
+
+    await switcher.getByRole("tab", { name: /Stats/ }).click();
+    await expect(page.getByTestId("gw-stats-panel")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Fixtures" })).toBeHidden();
+    await expect(page.getByTestId("stat-captained").getByRole("button").first()).toBeVisible();
   });
 
   test("a bonus win is highlighted with its value", async ({ page, request }) => {
@@ -194,5 +259,38 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     const card = page.getByTestId(`fixture-card-${fx.id}`);
     await expect(card).toHaveAttribute("data-bonus", "true");
     await expect(card.getByTestId("bonus-pill")).toHaveText("★ BONUS +2");
+  });
+
+  test("screenshots for visual review (MC_SHOTS=1)", async ({ page, request }) => {
+    test.skip(!SHOTS, "set MC_SHOTS=1 to capture");
+    mkdirSync(SHOT_DIR, { recursive: true });
+    const shot = (name: string) => page.screenshot({ path: path.join(SHOT_DIR, `${name}.png`), fullPage: true });
+    // Whatever the dev overlay would count as an issue, written out for the review.
+    const consoleErrors: string[] = [];
+    page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(`${page.url()} :: ${m.text()}`); });
+    page.on("pageerror", (e) => consoleErrors.push(`${page.url()} :: pageerror ${e.message}`));
+    const [fx] = await fixturesFor(request, 1);
+
+    for (const width of [1920, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(`/${league.slug}/fixtures`);
+      await expect(page.getByTestId("stat-captained").getByRole("button").first()).toBeVisible();
+      await shot(`fixtures-${width}`);
+    }
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/${league.slug}/fixtures`);
+    await expect(page.locator("[data-testid^='fixture-card-']").first()).toBeVisible();
+    await shot("fixtures-375");
+    await page.getByRole("tablist", { name: "Fixtures or stats" }).getByRole("tab", { name: /Stats/ }).click();
+    await expect(page.getByTestId("stat-captained").getByRole("button").first()).toBeVisible();
+    await shot("fixtures-375-stats");
+
+    for (const width of [1440, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/${league.slug}/fixtures/${fx.id}`);
+      await expect(page.getByTestId("mc-side-a").locator("[data-testid^='mc-row-']").first()).toBeVisible();
+      await shot(`match-center-${width}`);
+    }
+    writeFileSync(path.join(SHOT_DIR, "console-errors.txt"), consoleErrors.join("\n") || "(none)");
   });
 });
