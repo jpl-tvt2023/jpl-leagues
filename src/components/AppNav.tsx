@@ -126,7 +126,7 @@ export function AppNav({
     model.auth.kind === "signIn" ? (
       <Link
         href={model.auth.href}
-        className="inline-flex items-center rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-4 lg:px-6 py-1.5 lg:py-2 text-xs lg:text-sm font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
+        className="inline-flex min-h-10 items-center rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-5 lg:px-6 py-2 text-sm font-semibold text-slate-900 hover:from-yellow-300 hover:to-orange-400 transition"
       >
         Sign In
       </Link>
@@ -140,7 +140,7 @@ export function AppNav({
           scrolled ? "shadow-lg shadow-black/40 lg:shadow-none" : ""
         }`}
       >
-        <div className="flex min-h-14 items-center gap-1 px-1 sm:px-3 lg:justify-between lg:gap-2 lg:px-12 lg:py-4">
+        <div className="flex min-h-16 items-center gap-1 px-1 sm:px-3 lg:justify-between lg:gap-2 lg:px-12 lg:py-4">
           {showHamburger && (
             <button
               ref={hamburgerRef}
@@ -174,7 +174,7 @@ export function AppNav({
 
           {/* Phone/tablet title block (Material top app bar). */}
           <div className="min-w-0 flex-1 px-2 lg:hidden">
-            <div className="truncate text-[17px] font-semibold leading-tight text-white">{pageTitle}</div>
+            <div className="truncate text-lg font-semibold leading-tight text-white">{pageTitle}</div>
             {showSubtitle && (
               <p className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-gray-400">
                 <span className="truncate">{brandLabel}</span>

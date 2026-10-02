@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaProvider } from "@/components/pwa/PwaProvider";
 import { AccountSync } from "@/components/pwa/AccountSync";
+import { PullToRefresh } from "@/components/pwa/PullToRefresh";
 import { APP_THEME_COLOR } from "@/lib/app-theme";
 
 const geistSans = Geist({
@@ -52,6 +53,7 @@ export default function RootLayout({
       >
         <PwaProvider>{children}</PwaProvider>
         <AccountSync />
+        <PullToRefresh />
       </body>
     </html>
   );

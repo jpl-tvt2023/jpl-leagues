@@ -1259,7 +1259,7 @@ export default function AuctionRoomPage() {
   }, [isClubAuction]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]">
+    <div className="min-h-screen bg-gradient-to-b from-[#38003c] via-[#1a0021] to-[#0d001a]" data-pull-refresh="off">
       <LeagueNav
         leagueSlug={leagueSlug}
         leagueName={leagueSlug}

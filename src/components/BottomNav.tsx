@@ -17,13 +17,13 @@ export interface BottomNavProps {
 }
 
 const SLOT =
-  "flex h-full w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition active:opacity-70";
+  "flex h-full w-full flex-col items-center justify-center gap-1 text-xs font-medium transition active:opacity-70";
 
 function Indicator({ active, activeBgClass, children }: { active: boolean; activeBgClass: string; children: React.ReactNode }) {
   // Material 3 navigation bar: the active destination gets a pill behind its icon.
   return (
     <span
-      className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-200 ${
+      className={`flex h-8 w-16 items-center justify-center rounded-full transition-colors duration-200 ${
         active ? activeBgClass : ""
       }`}
     >
@@ -47,7 +47,7 @@ export function BottomNav({ items, activeKey, activeBgClass, activeTextClass, on
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-slate-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
     >
-      <ul className="mx-auto flex h-16 max-w-xl items-stretch">
+      <ul className="mx-auto flex h-20 max-w-xl items-stretch">
         {items.map((item) => {
           const active = item.key === activeKey;
           return (
@@ -58,7 +58,7 @@ export function BottomNav({ items, activeKey, activeBgClass, activeTextClass, on
                 className={`${SLOT} ${active ? `${activeTextClass} font-semibold` : "text-gray-400 hover:text-gray-200"}`}
               >
                 <Indicator active={active} activeBgClass={activeBgClass}>
-                  {item.icon && <NavIcon name={item.icon} className="h-[22px] w-[22px]" />}
+                  {item.icon && <NavIcon name={item.icon} className="h-6 w-6" />}
                 </Indicator>
                 <span className="max-w-full truncate px-1">{item.shortLabel ?? item.label}</span>
               </Link>
@@ -75,7 +75,7 @@ export function BottomNav({ items, activeKey, activeBgClass, activeTextClass, on
               className={`${SLOT} text-gray-400 hover:text-gray-200`}
             >
               <Indicator active={false} activeBgClass={activeBgClass}>
-                <NavIcon name="menu" className="h-[22px] w-[22px]" />
+                <NavIcon name="menu" className="h-6 w-6" />
               </Indicator>
               <span>More</span>
             </button>
