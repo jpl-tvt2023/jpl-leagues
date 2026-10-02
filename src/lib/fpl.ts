@@ -74,6 +74,14 @@ export interface FPLLiveData {
       clean_sheets: number;
       bonus: number;
     };
+    /**
+     * How the points were earned, per fixture: `[{ fixture, stats: [{ identifier, points, value }] }]`.
+     * Optional because the test stub and older payloads omit it.
+     */
+    explain?: {
+      fixture: number;
+      stats: { identifier: string; points: number; value: number }[];
+    }[];
   }[];
 }
 
@@ -216,11 +224,15 @@ import {
   getCachedScore, setCachedScore,
   getCachedElementPoints, setCachedElementPoints,
   getCachedElementStats, setCachedElementStats,
+  getCachedElementDetail, setCachedElementDetail,
   getCachedBootstrap, setCachedBootstrap,
+  getCachedClubs, setCachedClubs,
   getCachedEventStatus, setCachedEventStatus,
   CACHE_TTL, LIVE_CACHE_TTL, ELEMENT_STATS_LIVE_TTL,
   type CachedElementInfo,
   type CachedElementStat,
+  type CachedElementDetail,
+  type CachedClubInfo,
   type FplEventStatus,
 } from "./fpl-cache";
 import { db, gameweeks, fixtures, results } from "./db";
@@ -418,7 +430,93 @@ export async function detectLiveGameweek(): Promise<{
  * background caller must not ride along on a critical request it would have been
  * refused, nor vice versa.
  */
-const inFlightElementStats = new Map<string, Promise<Record<number, CachedElementStat>>>();
+const inFlightLiveMaps = new Map<string, Promise<LiveGameweekMaps>>();
+
+interface LiveGameweekMaps {
+  stats: Record<number, CachedElementStat>;
+  detail: Record<number, CachedElementDetail>;
+}
+
+/**
+ * The one /event/{gw}/live/ fetch, projected into every per-element cache that reads it.
+ *
+ * Points, stats and detail are three keys with three different consumers, but they are all
+ * views of the same response — so whichever reader misses first writes all three, and the
+ * others find them warm rather than paying for the ~460KB payload again.
+ */
+function loadLiveGameweekMaps(gameweek: number, lane: FplLane): Promise<LiveGameweekMaps> {
+  const key = `${lane}:${gameweek}`;
+  const existing = inFlightLiveMaps.get(key);
+  if (existing) return existing;
+
+  const pending = (async () => {
+    // Fetch from FPL API — one call returns all ~700 players
+    const liveData = await fetchLiveGameweek(gameweek, lane);
+    const statsMap: Record<number, CachedElementStat> = {};
+    const pointsMap: Record<number, number> = {};
+    const detailMap: Record<number, CachedElementDetail> = {};
+    for (const element of liveData.elements) {
+      statsMap[element.id] = {
+        points: element.stats.total_points,
+        minutes: element.stats.minutes,
+      };
+      pointsMap[element.id] = element.stats.total_points;
+      const detail = buildElementDetail(element);
+      if (detail) detailMap[element.id] = detail;
+    }
+
+    // Cache the result. A finished GW's points never move, so it keeps the long TTL; an in-flight
+    // GW gets the short one so live scores actually refresh during matches.
+    const final = await isGameweekFinal(gameweek, lane);
+    // All three keys, from the one payload: a points-only caller arriving next should not have
+    // to re-fetch merely because a stats caller warmed another key. Their live TTLs differ
+    // on purpose — see ELEMENT_STATS_LIVE_TTL. A concluded gameweek's numbers never move,
+    // so all take the long one.
+    await Promise.all([
+      setCachedElementStats(gameweek, statsMap, final ? CACHE_TTL : ELEMENT_STATS_LIVE_TTL),
+      setCachedElementPoints(gameweek, pointsMap, final ? CACHE_TTL : LIVE_CACHE_TTL),
+      setCachedElementDetail(gameweek, detailMap, final ? CACHE_TTL : ELEMENT_STATS_LIVE_TTL),
+    ]);
+    return { stats: statsMap, detail: detailMap };
+  })();
+
+  inFlightLiveMaps.set(key, pending);
+  void pending.catch(() => undefined).finally(() => {
+    if (inFlightLiveMaps.get(key) === pending) inFlightLiveMaps.delete(key);
+  });
+
+  return pending;
+}
+
+/**
+ * Fold one element's `explain` into `[identifier, value, points]` lines, summed across its
+ * fixtures. Null for an element that neither played nor scored — see CachedElementDetail.
+ *
+ * Falls back to the headline stats when `explain` is absent (the test stub, or a payload FPL
+ * served without it), so a breakdown always has at least minutes, goals and assists to show.
+ */
+function buildElementDetail(element: FPLLiveData["elements"][number]): CachedElementDetail | null {
+  const { total_points: p, minutes: m } = element.stats;
+  if (m === 0 && p === 0) return null;
+
+  const lines = new Map<string, [number, number]>();
+  if (element.explain && element.explain.length > 0) {
+    for (const fx of element.explain) {
+      for (const st of fx.stats ?? []) {
+        const prev = lines.get(st.identifier) ?? [0, 0];
+        lines.set(st.identifier, [prev[0] + (st.value ?? 0), prev[1] + (st.points ?? 0)]);
+      }
+    }
+  } else {
+    const st = element.stats;
+    if (st.minutes) lines.set("minutes", [st.minutes, 0]);
+    if (st.goals_scored) lines.set("goals_scored", [st.goals_scored, 0]);
+    if (st.assists) lines.set("assists", [st.assists, 0]);
+    if (st.clean_sheets) lines.set("clean_sheets", [st.clean_sheets, 0]);
+    if (st.bonus) lines.set("bonus", [st.bonus, st.bonus]);
+  }
+  return { p, m, b: [...lines].map(([id, [value, points]]) => [id, value, points]) };
+}
 
 /**
  * Per-element live points AND minutes for a gameweek.
@@ -437,44 +535,20 @@ export async function fetchElementGameweekStats(
 ): Promise<Record<number, CachedElementStat>> {
   const cached = await getCachedElementStats(gameweek);
   if (cached) return cached;
+  return (await loadLiveGameweekMaps(gameweek, lane)).stats;
+}
 
-  const key = `${lane}:${gameweek}`;
-  const existing = inFlightElementStats.get(key);
-  if (existing) return existing;
-
-  const pending = (async () => {
-    // Fetch from FPL API — one call returns all ~700 players
-    const liveData = await fetchLiveGameweek(gameweek, lane);
-    const statsMap: Record<number, CachedElementStat> = {};
-    const pointsMap: Record<number, number> = {};
-    for (const element of liveData.elements) {
-      statsMap[element.id] = {
-        points: element.stats.total_points,
-        minutes: element.stats.minutes,
-      };
-      pointsMap[element.id] = element.stats.total_points;
-    }
-
-    // Cache the result. A finished GW's points never move, so it keeps the long TTL; an in-flight
-    // GW gets the short one so live scores actually refresh during matches.
-    const final = await isGameweekFinal(gameweek, lane);
-    // Both keys, from the one payload: a points-only caller arriving next should not have
-    // to re-fetch merely because a stats caller warmed the other key. Their live TTLs differ
-    // on purpose — see ELEMENT_STATS_LIVE_TTL. A concluded gameweek's numbers never move,
-    // so both take the long one.
-    await Promise.all([
-      setCachedElementStats(gameweek, statsMap, final ? CACHE_TTL : ELEMENT_STATS_LIVE_TTL),
-      setCachedElementPoints(gameweek, pointsMap, final ? CACHE_TTL : LIVE_CACHE_TTL),
-    ]);
-    return statsMap;
-  })();
-
-  inFlightElementStats.set(key, pending);
-  void pending.catch(() => undefined).finally(() => {
-    if (inFlightElementStats.get(key) === pending) inFlightElementStats.delete(key);
-  });
-
-  return pending;
+/**
+ * Per-element points breakdown for a gameweek — the Match Center's "how did he score that".
+ * Shares the live fetch with `fetchElementGameweekStats`, so warming one warms the other.
+ */
+export async function fetchElementGameweekDetail(
+  gameweek: number,
+  lane: FplLane = "background"
+): Promise<Record<number, CachedElementDetail>> {
+  const cached = await getCachedElementDetail(gameweek);
+  if (cached) return cached;
+  return (await loadLiveGameweekMaps(gameweek, lane)).detail;
 }
 
 /**
@@ -585,4 +659,45 @@ export async function fetchElementInfo(lane: FplLane = "background"): Promise<Ca
   // Cache the result
   await setCachedBootstrap(elements);
   return elements;
+}
+
+/**
+ * PL clubs (id, name, short_name) from bootstrap-static, cached for a day.
+ *
+ * The element cache above carries a club id only. Anything that prints an opponent ("MCI v LIV")
+ * needs the names, and re-reading the whole bootstrap payload for twenty rows is what the auction
+ * routes do today — this is the cached way.
+ */
+export async function fetchClubInfo(lane: FplLane = "background"): Promise<CachedClubInfo[]> {
+  const cached = await getCachedClubs();
+  if (cached && cached.length > 0) return cached;
+
+  const bootstrap = await fetchBootstrapData(lane);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawTeams = (bootstrap.teams ?? []) as any[];
+  const clubs: CachedClubInfo[] = rawTeams.map((t) => ({
+    id: t.id as number,
+    name: t.name as string,
+    short_name: t.short_name as string,
+  }));
+  if (clubs.length > 0) await setCachedClubs(clubs);
+  return clubs;
+}
+
+/**
+ * Every transfer an entry has made this season: `[{ element_in, element_out, event, ... }]`.
+ * Raw and uncached — `getTransfersForGameweek` in fpl-live/transfers.ts adds the cache.
+ */
+export async function fetchEntryTransfers(
+  fplId: string,
+  lane: FplLane = "background"
+): Promise<{ element_in: number; element_out: number; event: number }[]> {
+  const res = await fplFetch(`${FPL_BASE_URL}/entry/${fplId}/transfers/`, lane);
+  if (!res.ok) throw new Error(`Failed to fetch transfers for team ${fplId}`);
+  const raw = await res.json();
+  return Array.isArray(raw)
+    ? raw
+        .filter((t) => typeof t?.element_in === "number" && typeof t?.element_out === "number")
+        .map((t) => ({ element_in: t.element_in, element_out: t.element_out, event: Number(t.event) }))
+    : [];
 }

@@ -77,6 +77,8 @@ interface DashboardData {
     myScore: number;
     oppScore: number;
     gotBonus: boolean;
+    /** 1, or 2 when Double Pointer was played. Absent on a payload cached before it existed. */
+    bonusPoints?: number;
     isHome: boolean;
     myTeamId: string;
     myTeamName: string;
@@ -2138,7 +2140,7 @@ export default function DashboardPage() {
                                   </span>
                                   {data.lastGwResult.gotBonus && !isLive && (
                                     <span className="px-2 py-0.5 rounded text-xs font-semibold bg-yellow-500/20 text-yellow-400">
-                                      BONUS +1
+                                      BONUS +{data.lastGwResult.bonusPoints || 1}
                                     </span>
                                   )}
                                 </div>

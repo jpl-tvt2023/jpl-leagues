@@ -71,6 +71,133 @@ export interface ManagerPointsContext {
 }
 
 /**
+ * One pick with the multiplier FPL will actually apply to it, given what is known right now.
+ *
+ * `managerGameweekPoints` is a sum over these, and the Match Center draws them row by row — one
+ * resolver for both, so a per-player breakdown can never disagree with the total beside it.
+ */
+export interface ResolvedPick {
+  element: number;
+  /** 1–11 starting XI, 12–15 bench in order. */
+  position: number;
+  /** As FPL published it: 2 captain, 3 Triple Captain, 0 bench (1 under Bench Boost). */
+  pickMultiplier: number;
+  /** What the score uses, after the vice-captain handover and any FPL auto-substitution. */
+  multiplier: number;
+  is_captain: boolean;
+  is_vice_captain: boolean;
+  /** This vice-captain inherited the armband because the captain demonstrably blanked. */
+  armbandInherited?: boolean;
+  /** FPL auto-substituted this player on (settled gameweeks only). */
+  autoSubIn?: boolean;
+  /** FPL auto-substituted this player off (settled gameweeks only). */
+  autoSubOut?: boolean;
+}
+
+/**
+ * Per-pick multipliers for an in-flight gameweek.
+ *
+ * Applies only the vice-captain handover, under the gate described at the top of this file.
+ * Auto-substitutions are deliberately NOT applied — FPL has not made them yet.
+ */
+export function resolveLiveMultipliers(
+  picks: FPLGameweekPicks,
+  ctx: Pick<ManagerPointsContext, "stats" | "concludedElements">
+): ResolvedPick[] {
+  const captainPick = picks.picks.find((p) => p.is_captain);
+
+  // Demonstrably blanked: played no part AND has no fixture left to play it in.
+  // `multiplier > 1` guards a payload in which FPL has already moved the armband itself
+  // (a settled week): handing over a captain multiplier of 0 would zero the vice-captain.
+  const captainBlanked =
+    captainPick !== undefined &&
+    captainPick.multiplier > 1 &&
+    (ctx.stats[captainPick.element]?.minutes ?? 0) === 0 &&
+    ctx.concludedElements.has(captainPick.element);
+
+  return picks.picks.map((pick) => {
+    let multiplier = pick.multiplier;
+    let armbandInherited = false;
+    if (captainBlanked) {
+      if (pick.is_captain) {
+        multiplier = 0;
+      } else if (pick.is_vice_captain) {
+        // Inherits the captain's own multiplier, so Triple Captain transfers as x3.
+        multiplier = captainPick.multiplier;
+        armbandInherited = true;
+      }
+    }
+    return {
+      element: pick.element,
+      position: pick.position,
+      pickMultiplier: pick.multiplier,
+      multiplier,
+      is_captain: pick.is_captain,
+      is_vice_captain: pick.is_vice_captain,
+      ...(armbandInherited ? { armbandInherited: true } : {}),
+    };
+  });
+}
+
+/** One entry of FPL's `automatic_subs`, as the picks payload carries it once a week settles. */
+interface FplAutoSub {
+  element_in: number;
+  element_out: number;
+}
+
+function isAutoSub(x: unknown): x is FplAutoSub {
+  return (
+    typeof x === "object" && x !== null &&
+    typeof (x as FplAutoSub).element_in === "number" &&
+    typeof (x as FplAutoSub).element_out === "number"
+  );
+}
+
+/**
+ * Per-pick multipliers for a SETTLED gameweek, for display.
+ *
+ * The settled score itself is `entry_history.points` and does not come from here. This exists
+ * so the Match Center can show which players those points came from: FPL's `automatic_subs`
+ * are applied (when the payload has not already swapped the multipliers itself), and the
+ * armband handover is re-derived from final minutes. Any remaining gap between the sum of
+ * these and `entry_history.points` is FPL's to explain, and the caller shows it as such.
+ */
+export function resolveSettledMultipliers(
+  picks: FPLGameweekPicks,
+  stats: Record<number, LiveElementStat>
+): ResolvedPick[] {
+  const byElement = new Map(picks.picks.map((p) => [p.element, { ...p }]));
+  const subbedIn = new Set<number>();
+  const subbedOut = new Set<number>();
+  for (const sub of (picks.automatic_subs ?? []).filter(isAutoSub)) {
+    const out = byElement.get(sub.element_out);
+    const into = byElement.get(sub.element_in);
+    if (!out || !into) continue;
+    subbedIn.add(into.element);
+    subbedOut.add(out.element);
+    // Only swap if FPL has not already reflected the substitution in the multipliers.
+    if (into.multiplier === 0 && out.multiplier > 0) {
+      into.multiplier = 1;
+      // A captain subbed off keeps the multiplier here so the handover below still sees it.
+      if (!out.is_captain) out.multiplier = 0;
+    }
+  }
+
+  // Every club has finished by the time a week settles, so every element is "concluded".
+  const concludedElements = new Set(picks.picks.map((p) => p.element));
+  const resolved = resolveLiveMultipliers(
+    { ...picks, picks: [...byElement.values()] },
+    { stats, concludedElements }
+  );
+  return resolved.map((r) => ({
+    ...r,
+    pickMultiplier: picks.picks.find((p) => p.element === r.element)?.multiplier ?? r.pickMultiplier,
+    ...(subbedIn.has(r.element) ? { autoSubIn: true } : {}),
+    ...(subbedOut.has(r.element) ? { autoSubOut: true } : {}),
+  }));
+}
+
+/**
  * A manager's gross gameweek points — before JPL transfer hits and before the JPL captain
  * doubling, both of which are the caller's business.
  */
@@ -80,27 +207,10 @@ export function managerGameweekPoints(
 ): number {
   if (ctx.settled) return picks.entry_history.points;
 
-  const captainPick = picks.picks.find((p) => p.is_captain);
-
-  // Demonstrably blanked: played no part AND has no fixture left to play it in.
-  const captainBlanked =
-    captainPick !== undefined &&
-    (ctx.stats[captainPick.element]?.minutes ?? 0) === 0 &&
-    ctx.concludedElements.has(captainPick.element);
-
   let total = 0;
-  for (const pick of picks.picks) {
-    let multiplier = pick.multiplier;
-    if (captainBlanked) {
-      if (pick.is_captain) {
-        multiplier = 0;
-      } else if (pick.is_vice_captain) {
-        // Inherits the captain's own multiplier, so Triple Captain transfers as x3.
-        multiplier = captainPick.multiplier;
-      }
-    }
-    if (multiplier <= 0) continue;
-    total += (ctx.stats[pick.element]?.points ?? 0) * multiplier;
+  for (const pick of resolveLiveMultipliers(picks, ctx)) {
+    if (pick.multiplier <= 0) continue;
+    total += (ctx.stats[pick.element]?.points ?? 0) * pick.multiplier;
   }
   return total;
 }

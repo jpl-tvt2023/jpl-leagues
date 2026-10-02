@@ -131,13 +131,32 @@ export interface FixtureResult {
   awayMatchPoints?: number;
   homePlayerScores?: string | null;
   awayPlayerScores?: string | null;
+  /**
+   * The group Bonus Point, as reconciled across the whole gameweek by the processor (75+ margin
+   * AND the biggest in the group). Optional because Continental Championship never sets it and
+   * older cached payloads may predate the client reading it.
+   */
+  homeGotBonus?: boolean;
+  awayGotBonus?: boolean;
+  /** Double Pointer doubles the bonus as well as the match points. */
+  homeUsedDoublePointer?: boolean;
+  awayUsedDoublePointer?: boolean;
+}
+
+/** League points the bonus was worth to one side: 0, 1, or 2 with Double Pointer. */
+export function bonusPointsFor(result: FixtureResult | null | undefined, side: "home" | "away"): number {
+  if (!result) return 0;
+  const got = side === "home" ? result.homeGotBonus : result.awayGotBonus;
+  if (!got) return 0;
+  const dp = side === "home" ? result.homeUsedDoublePointer : result.awayUsedDoublePointer;
+  return dp ? 2 : 1;
 }
 
 export interface Fixture {
   id: string;
   homeTeam: FixtureTeam;
   awayTeam: FixtureTeam;
-  group?: { name: string } | null;
+  group?: { id?: string; name: string } | null;
   competitionType?: string | null;
   gameweek: { number: number; deadline?: Date };
   result?: FixtureResult | null;

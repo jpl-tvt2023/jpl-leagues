@@ -2,6 +2,8 @@
 // Caches FPL data in Upstash Redis to avoid hitting rate limits
 
 import { Redis } from "@upstash/redis";
+// Type-only: fpl.ts imports this module at runtime, so a value import here would close a cycle.
+import type { FPLGameweekPicks } from "./fpl";
 
 let redis: Redis | null = null;
 
@@ -383,6 +385,132 @@ export async function setCachedElementStats(
   if (!r) return;
   await safeCacheWrite(getElementStatsKey(gameweek), () =>
     r.set(getElementStatsKey(gameweek), data, { ex: ttlSeconds })
+  );
+}
+
+/**
+ * One PL player's gameweek, in enough detail to explain the points — what the Match Center's
+ * per-player breakdown renders.
+ *
+ * Compact on purpose: one key holds every element that featured, and it is re-read on every
+ * Match Center request. `b` is FPL's `explain` summed per scoring identifier across the player's
+ * fixtures (a double gameweek folds into one line per identifier):
+ * `[identifier, value, points]`, e.g. `["goals_scored", 1, 4]`.
+ *
+ * Elements that neither played nor scored are omitted entirely; a reader treats absence as
+ * 0 points and 0 minutes.
+ */
+export interface CachedElementDetail {
+  p: number;
+  m: number;
+  b: [string, number, number][];
+}
+
+/**
+ * Its own key rather than a wider `fpl:elements:stats` payload, for the reason that key gives
+ * for not widening `fpl:elements:gw{N}`: a deploy must never hand a reader a shape it does not
+ * expect. Written from the same `/event/{gw}/live/` response as the other two, so it costs no
+ * extra FPL call.
+ */
+function getElementDetailKey(gameweek: number): string {
+  return `fpl:elements:detail:gw${gameweek}`;
+}
+
+export async function getCachedElementDetail(
+  gameweek: number
+): Promise<Record<number, CachedElementDetail> | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<Record<number, CachedElementDetail>>(getElementDetailKey(gameweek));
+  return data || null;
+}
+
+export async function setCachedElementDetail(
+  gameweek: number,
+  data: Record<number, CachedElementDetail>,
+  ttlSeconds: number = CACHE_TTL
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await safeCacheWrite(getElementDetailKey(gameweek), () =>
+    r.set(getElementDetailKey(gameweek), data, { ex: ttlSeconds })
+  );
+}
+
+/** A PL club as bootstrap-static describes it. */
+export interface CachedClubInfo {
+  id: number;
+  name: string;
+  short_name: string;
+}
+
+const CLUBS_KEY = "fpl:clubs:latest";
+
+export async function getCachedClubs(): Promise<CachedClubInfo[] | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<CachedClubInfo[]>(CLUBS_KEY);
+  return data || null;
+}
+
+export async function setCachedClubs(data: CachedClubInfo[]): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await safeCacheWrite(CLUBS_KEY, () => r.set(CLUBS_KEY, data, { ex: CACHE_TTL }));
+}
+
+/**
+ * A manager's raw picks for one gameweek.
+ *
+ * Picks are fixed at the deadline — the fifteen elements, the armband, the chip and the transfer
+ * cost cannot change afterwards. What does change is `entry_history.points` and `automatic_subs`,
+ * both filled in when FPL settles the week, so the entry records whether it was taken from a
+ * settled gameweek and a reader that needs settled figures refetches an unsettled copy once.
+ *
+ * The key matches the `fpl:*:gw*` pattern the test stub sweeps on a world change.
+ */
+export interface CachedPicks {
+  picks: FPLGameweekPicks;
+  settled: boolean;
+  cachedAt: string;
+}
+
+function getPicksKey(fplId: string, gameweek: number): string {
+  return `fpl:picks:v1:${fplId}:gw${gameweek}`;
+}
+
+export async function getCachedPicks(fplId: string, gameweek: number): Promise<CachedPicks | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<CachedPicks>(getPicksKey(fplId, gameweek));
+  return data || null;
+}
+
+/** Many managers' picks in one round-trip. Absent from the map = not cached. */
+export async function getCachedPicksMany(
+  fplIds: string[],
+  gameweek: number
+): Promise<Map<string, CachedPicks>> {
+  const out = new Map<string, CachedPicks>();
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return out;
+  const values = await r.mget<(CachedPicks | null)[]>(...fplIds.map((id) => getPicksKey(id, gameweek)));
+  values.forEach((v, i) => {
+    if (v && v.picks) out.set(fplIds[i], v);
+  });
+  return out;
+}
+
+export async function setCachedPicks(
+  fplId: string,
+  gameweek: number,
+  data: CachedPicks,
+  ttlSeconds: number
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await safeCacheWrite(getPicksKey(fplId, gameweek), () =>
+    r.set(getPicksKey(fplId, gameweek), data, { ex: ttlSeconds })
   );
 }
 
@@ -981,4 +1109,87 @@ export async function invalidateLeagueStageRows(leagueId: string): Promise<void>
   if (!r) return;
   const keys = await r.keys(`standings:rows:v${LEAGUE_STAGE_ROWS_VERSION}:${leagueId}:*`);
   if (keys.length > 0) await r.del(...keys);
+}
+
+// ============================================
+// Transfers + fixtures-page GW stats
+// ============================================
+
+/** One transfer as FPL's `entry/{id}/transfers/` lists it. */
+export interface CachedTransfer {
+  element_in: number;
+  element_out: number;
+  event: number;
+}
+
+/**
+ * A manager's whole season of transfers, and when it was read.
+ *
+ * Transfers for gameweek N are final once N's deadline has passed, so a copy fetched after that
+ * deadline answers every question about N and earlier forever. The reader decides validity from
+ * `fetchedAt` against the deadline it cares about; the TTL only bounds storage.
+ */
+export interface CachedTransfers {
+  fetchedAt: string;
+  transfers: CachedTransfer[];
+}
+
+export const TRANSFERS_TTL = 60 * 60 * 24 * 7;
+
+function getTransfersKey(fplId: string): string {
+  return `fpl:transfers:v1:${fplId}`;
+}
+
+export async function getCachedTransfersMany(fplIds: string[]): Promise<Map<string, CachedTransfers>> {
+  const out = new Map<string, CachedTransfers>();
+  const r = getRedis();
+  if (!r || fplIds.length === 0) return out;
+  const values = await r.mget<(CachedTransfers | null)[]>(...fplIds.map(getTransfersKey));
+  values.forEach((v, i) => {
+    if (v && Array.isArray(v.transfers)) out.set(fplIds[i], v);
+  });
+  return out;
+}
+
+export async function setCachedTransfers(fplId: string, data: CachedTransfers): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await safeCacheWrite(getTransfersKey(fplId), () => r.set(getTransfersKey(fplId), data, { ex: TRANSFERS_TTL }));
+}
+
+/** The fixtures-page stats payload for one league gameweek. Shape owned by api/fixtures/stats. */
+function getGwStatsKey(leagueId: string, gameweek: number): string {
+  return `fx-stats:v1:${leagueId}:gw${gameweek}`;
+}
+
+export async function getCachedGwStats<T>(leagueId: string, gameweek: number): Promise<T | null> {
+  const r = getRedis();
+  if (!r) return null;
+  return (await r.get<T>(getGwStatsKey(leagueId, gameweek))) ?? null;
+}
+
+export async function setCachedGwStats(leagueId: string, gameweek: number, data: unknown, ttlSeconds: number): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await safeCacheWrite(getGwStatsKey(leagueId, gameweek), () =>
+    r.set(getGwStatsKey(leagueId, gameweek), data, { ex: ttlSeconds })
+  );
+}
+
+/**
+ * Claim the right to BUILD a league gameweek's stats. A cold build can cost one transfers fetch
+ * per manager, so a burst of readers must not each start one. Losers get `pending` and retry.
+ * Like claimRefreshSlot, true when Redis is absent so local dev still works.
+ */
+export async function claimGwStatsBuild(leagueId: string, gameweek: number): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return true;
+  const claimed = await r.set(`fx-stats:lock:${leagueId}:gw${gameweek}`, "1", { ex: 90, nx: true });
+  return claimed !== null;
+}
+
+export async function releaseGwStatsBuild(leagueId: string, gameweek: number): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.del(`fx-stats:lock:${leagueId}:gw${gameweek}`);
 }

@@ -122,6 +122,13 @@ test.describe.serial("Redis-backed paths (TVT)", () => {
   test("concurrent refreshes coalesce into a single FPL sweep", async ({ request }) => {
     await request.post("/api/test-fpl-stub/control", { data: { finishedThrough: 0, liveGw: 1 } });
     await expireGameweek(league.id, 1);
+    // The sweep reads picks through fpl:picks:*, which an earlier test may have warmed — and a
+    // warm sweep fetches no picks at all, which would make the count below meaningless.
+    {
+      const redis = new Redis({ url: REDIS_URL!, token: REDIS_TOKEN! });
+      const warm = await redis.keys("fpl:picks:*");
+      if (warm.length > 0) await redis.del(...warm);
+    }
     await resetCounts(request);
 
     const url = leagueUrl("/api/fixtures/live/refresh?gameweek=1");
@@ -166,11 +173,15 @@ test.describe.serial("Redis-backed paths (TVT)", () => {
     //   whenever it loses the single-flight claim, returning before it ever
     //   reaches the gateway. This test would then sit in a 200 loop and never
     //   observe the refusal it is asserting on.
+    //
+    //   fpl:picks:* — the sweep reads picks through this cache, and the previous test warms
+    //   it. A warm sweep needs no FPL call at all, so it would never meet the lock.
     for (const pattern of [
       "fpl:history:*",
       "fpl-league:warm:*",
       "live:gw*",
       "live:refresh:lock:*",
+      "fpl:picks:*",
     ]) {
       const keys = await redis.keys(pattern);
       if (keys.length > 0) await redis.del(...keys);

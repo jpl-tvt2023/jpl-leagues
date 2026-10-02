@@ -69,6 +69,9 @@ const PUBLIC_ROUTES = [
   "/api/auth/signout",
   "/api/auth/me",
   "/api/fixtures",
+  // Two teams' merged FPL squads for a gameweek. Public like /api/fixtures; the loader itself
+  // withholds captain and TVT chip until the deadline.
+  "/api/match-center",
   "/api/standings",
   "/api/playoffs/bracket",
   "/api/playoffs/winners",

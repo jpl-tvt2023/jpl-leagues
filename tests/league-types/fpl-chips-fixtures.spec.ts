@@ -244,8 +244,9 @@ test.describe.serial("FPL chips on the fixtures page", () => {
     await expect(card.getByText("BB", { exact: true }).first()).toBeVisible();
     // Neither the bare code nor the old "WC1 5" form.
     await expect(card.getByText("WC1", { exact: false })).toHaveCount(0);
-    // And no inventory pills for chips that were never played at all.
-    await expect(card.getByText("TC", { exact: false })).toHaveCount(0);
+    // And no inventory pills for chips that were never played at all. Case-sensitive whole word:
+    // `exact: false` is a case-insensitive substring, and the card's "Match Center" link contains "tc".
+    await expect(card.getByText(/\bTC\b/)).toHaveCount(0);
     await expect(card.getByText("FH", { exact: false })).toHaveCount(0);
 
     // Restore the fixture's expected chip state for the tests that follow — and re-warm, for the
