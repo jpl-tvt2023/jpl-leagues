@@ -168,6 +168,17 @@ test.describe.serial("Phone layout (360px)", () => {
     await uiSignIn(page, teamLoginId(tvt.slug, 1), TEAM_RESET_PASSWORD);
     await expect.poll(() => page.url(), { timeout: 15_000 }).not.toContain("/signin");
     await expectFits(page, "/dashboard", "tvt-dashboard");
+
+    // Phone order: Captains & Chips sits directly under the GW Submissions card, ahead of the
+    // tables and fixtures that come before it in the desktop left column.
+    const top = async (name: RegExp) =>
+      (await page.getByRole("heading", { name }).first().boundingBox())?.y ?? Number.NaN;
+    const submissions = await top(/GW\d+ Submissions/);
+    const captains = await top(/Captains & Chips/);
+    const upcoming = await top(/Upcoming Fixtures/);
+    expect(captains, "Captains & Chips should follow Submissions").toBeGreaterThan(submissions);
+    expect(captains, "Captains & Chips should come before Upcoming Fixtures").toBeLessThan(upcoming);
+
     await expectFits(page, `/${tvt.slug}/feedback`, "tvt-feedback");
     await expectFits(page, "/settings", "account-settings");
     await expectFits(page, "/notifications", "account-notifications");
