@@ -1597,10 +1597,12 @@ export default function DashboardPage() {
 
         <InstallBanner className="mb-6" />
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Main Grid. Below `lg` the two column wrappers are `display: contents`, so their cards
+            form one stack and the `order-*` classes below decide the phone order:
+            deadline/fixture/submissions → Captains & Chips → results and tables → the rest. */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 [&>*>*]:min-w-0">
           {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6 min-w-0">
+          <div className="contents lg:block lg:col-span-2 lg:space-y-6 min-w-0">
             {/* Deadline + Fixture — 2-up for both formats; Continental Championship's Fixture
                 card spans full width instead when the GW is a Double Header (two fixtures). */}
             {leagueFormat === "continental-championship" ? (
@@ -2019,6 +2021,8 @@ export default function DashboardPage() {
               )}
             </div>}
 
+            {/* Phones: everything below the submissions card comes after Captains & Chips. */}
+            <div className="order-2 space-y-6 min-w-0 lg:order-none">
             {/* Last Result — Continental Championship gets a JPL/Cup tab toggle sharing one
                 card; TVT always shows its single (untabbed) result. */}
             {(() => {
@@ -2448,6 +2452,7 @@ export default function DashboardPage() {
                 {captainHistoryCard}
               </div>
             )}
+            </div>
 
           </div>
 
@@ -2455,10 +2460,13 @@ export default function DashboardPage() {
           {/* min-w-0 overrides the grid item's default min-width:auto — without it, any
               wide child (a long team name, a chip pill) forces this whole grid track (and
               the page) wider than the viewport on a phone. */}
-          <div className="space-y-6 min-w-0">
-            {/* Captain Announcements — league-wide list, same right-column slot for every format */}
-            {captainAnnouncementsCard}
+          <div className="contents lg:block lg:space-y-6 min-w-0">
+            {/* Captain Announcements — league-wide list, same right-column slot for every format.
+                Phones: directly under the GW Submissions card (order-1). */}
+            <div className="order-1 min-w-0 lg:order-none">{captainAnnouncementsCard}</div>
 
+            {/* Phones: the rest of this column comes last. */}
+            <div className="order-3 space-y-6 min-w-0 lg:order-none">
             {/* Recent Form & Stats */}
             <div className="space-y-6">
               {/* Recent Form */}
@@ -2588,6 +2596,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
