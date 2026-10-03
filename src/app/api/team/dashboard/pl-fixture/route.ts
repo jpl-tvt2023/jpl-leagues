@@ -20,6 +20,7 @@ import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { withFplBudget, FplUnavailableError } from "@/lib/fpl/gateway";
 import { buildFplChipStatus, type FplChipStatus } from "@/lib/fpl-league/chips";
+import { getSeasonChips } from "@/lib/fpl-league/season-chips";
 import { getChipSet } from "@/lib/formats/tvt/scoring";
 import { chipsUsedInSet, type ChipUsageRow } from "@/lib/formats/tvt/chip-usage";
 import { isChipDisclosable } from "@/lib/formats/tvt/chip-waste";
@@ -260,6 +261,7 @@ export async function GET(request: NextRequest) {
     const allPlayers = [...fixtureRow.homeTeam.players, ...fixtureRow.awayTeam.players];
     const fplIds = [...new Set(allPlayers.map((p) => p.fplId))];
     const histories = await getCachedEntryHistories(fplIds);
+    const seasonChips = await getSeasonChips();
     const missing = fplIds.filter((id) => !histories.has(id));
     if (missing.length > 0) {
       try {
@@ -366,7 +368,7 @@ export async function GET(request: NextRequest) {
         name: p.name,
         fplId: p.fplId,
         fplUrl: fplEntryUrl(p.fplId, linkGw),
-        fplChips: histories.has(p.fplId) ? buildFplChipStatus(histories.get(p.fplId)!.chips) : null,
+        fplChips: histories.has(p.fplId) ? buildFplChipStatus(histories.get(p.fplId)!.chips, seasonChips) : null,
       })),
       // Only used/available — never a pending declaration. Chip rows exist
       // before a deadline, and surfacing the opponent's would let a team see

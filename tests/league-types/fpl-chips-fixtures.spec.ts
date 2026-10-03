@@ -3,8 +3,8 @@
  *
  * Two things this pins:
  *
- *  1. A manager's official FPL chip (Wildcard, Bench Boost, Triple Captain, Free Hit, Assistant
- *     Manager) shows next to their name in the player breakdown, with an affordance telling the
+ *  1. A manager's official FPL chip (Wildcard, Bench Boost, Triple Captain, Free Hit — one of
+ *     each per half in 2026/27) shows next to their name in the player breakdown, with an affordance telling the
  *     reader to tap or hover it for details — the fixtures page had never shown these before.
  *  2. When that clashes with the team's TVT chip, the TVT chip pill reads WASTED with a reason,
  *     both in the raw API payload (which used to hide wasted chips outright) and on the page.
@@ -185,7 +185,8 @@ test.describe.serial("FPL chips on the fixtures page", () => {
 
     const status = data.fplChipsByFplId?.[chipTeamFplIds[0]];
     expect(status, "cached history for the manager who played BB").toBeTruthy();
-    expect(status.used).toEqual([{ code: "BB", gw: GW }]);
+    // Per-half slot code: a GW2 Bench Boost is the first-half one. The card itself still shows "BB".
+    expect(status.used).toEqual([{ code: "BB1", gw: GW }]);
 
     const roster = data.playersByTeamId?.[chipTeamId];
     expect(roster?.map((p: { fplId: string }) => p.fplId).sort()).toEqual([...chipTeamFplIds].sort());

@@ -20,6 +20,7 @@ import { fetchTeamHistory } from "@/lib/fpl";
 import { withFplBudget, FplUnavailableError, type FplLane } from "@/lib/fpl/gateway";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { buildFplChipStatus, type FplChipStatus } from "./chips";
+import { getSeasonChips } from "./season-chips";
 
 export async function resolveFplChipStatuses(
   fplIds: string[],
@@ -67,8 +68,9 @@ export async function resolveFplChipStatuses(
     }
   }
 
+  const season = await getSeasonChips();
   for (const [fplId, history] of histories) {
-    out.set(fplId, buildFplChipStatus(history.chips));
+    out.set(fplId, buildFplChipStatus(history.chips, season));
   }
   return out;
 }

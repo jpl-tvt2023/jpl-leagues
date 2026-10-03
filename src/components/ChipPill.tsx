@@ -2,8 +2,9 @@
 
 import {
   chipState,
-  FPL_CHIP_ORDER,
-  FPL_CHIP_LABELS,
+  fplChipBaseCode,
+  fplChipLabel,
+  seasonChipSlots,
   type ChipState,
   type FplChipStatus,
 } from "@/lib/fpl-league/chips";
@@ -26,12 +27,16 @@ const STATE_CLASSES: Record<ChipState, string> = {
   current: "border-yellow-400/50 bg-yellow-500/20 text-yellow-300",
   // Still to come.
   available: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
+  // Never played, and its half is over — FPL has taken it away. Struck through so it does not
+  // read as "played".
+  expired: "border-white/5 text-gray-600 line-through",
 };
 
 const STATE_WORDS: Record<ChipState, string> = {
   past: "played",
   current: "playing now",
   available: "available",
+  expired: "expired unused",
 };
 
 export function ChipPill({
@@ -62,8 +67,8 @@ export function ChipPill({
   interactive?: boolean;
 }) {
   const title =
-    state === "available"
-      ? `${label ?? code} — available`
+    state === "available" || state === "expired"
+      ? `${label ?? code} — ${STATE_WORDS[state]}`
       : `${label ?? code} — ${STATE_WORDS[state]}${gw != null ? ` (GW${gw})` : ""}`;
 
   const pill = (
@@ -72,7 +77,7 @@ export function ChipPill({
       className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border whitespace-nowrap ${STATE_CLASSES[state]} ${className}`}
     >
       {code}
-      {gw != null && state !== "available" && <span className="opacity-70"> {gw}</span>}
+      {gw != null && state !== "available" && state !== "expired" && <span className="opacity-70"> {gw}</span>}
     </span>
   );
 
@@ -86,7 +91,8 @@ export function ChipPill({
 }
 
 /**
- * One manager's six FPL chips, coloured by state relative to `gwNumber`.
+ * One manager's FPL chips for the season (one of each per half in 2026/27), coloured by state
+ * relative to `gwNumber` — including "expired" for a first-half chip left unplayed past its window.
  *
  * Exported because the FPL League table renders the same row and previously
  * kept its own copy of this markup.
@@ -112,28 +118,37 @@ export function FplChipRow({
     return silentWhenUnknown ? null : <span className="text-[8px] text-gray-600">FPL chips unavailable</span>;
   }
 
+  // The season's slots travel with the status; one built before they did falls back to the default.
+  const slots = status.slots ?? seasonChipSlots();
   const playedIn = new Map(status.used.map((u) => [u.code, u.gw]));
-  // A chip FPL added mid-season that we do not have a slot for still gets a
-  // pill rather than vanishing.
-  const extras = status.used.filter((u) => !FPL_CHIP_ORDER.includes(u.code as never));
+  // A chip the season's list does not know still gets a pill rather than vanishing.
+  const slotCodes = new Set(slots.map((s) => s.code));
+  const extras = status.used.filter((u) => !slotCodes.has(u.code));
 
   return (
     <>
-      {FPL_CHIP_ORDER.map((code) => {
-        const gw = playedIn.get(code) ?? null;
+      {slots.map((slot) => {
+        const gw = playedIn.get(slot.code) ?? null;
         return (
           <ChipPill
-            key={code}
-            code={code}
-            label={FPL_CHIP_LABELS[code]}
-            state={chipState(gw, gwNumber)}
+            key={slot.code}
+            code={slot.code}
+            label={slot.label}
+            state={chipState(gw, gwNumber, slot)}
             gw={gw}
             interactive={interactive}
           />
         );
       })}
       {extras.map((u) => (
-        <ChipPill key={u.code} code={u.code} state={chipState(u.gw, gwNumber)} gw={u.gw} interactive={interactive} />
+        <ChipPill
+          key={`${u.code}-${u.gw}`}
+          code={u.code}
+          label={fplChipLabel(u.code)}
+          state={chipState(u.gw, gwNumber)}
+          gw={u.gw}
+          interactive={interactive}
+        />
       ))}
     </>
   );
@@ -143,7 +158,7 @@ export function FplChipRow({
  * Only the chips this manager actually played in `gwNumber` — nothing when they played none.
  *
  * The counterpart to FplChipRow, not a variant of it: that one answers "what does this manager
- * still hold?" and so must show all six; this one answers "did a chip explain this gameweek?" and
+ * still hold?" and so must show every slot; this one answers "did a chip explain this gameweek?" and
  * so must show at most one or two. The filter also runs BEFORE the loop rather than inside it,
  * which is why this is a separate component rather than a flag.
  *
@@ -183,8 +198,9 @@ export function FplChipsPlayedInGw({
       {played.map((u) => (
         <ChipPill
           key={`${u.code}-${u.gw}`}
-          code={u.code}
-          label={FPL_CHIP_LABELS[u.code as keyof typeof FPL_CHIP_LABELS] ?? u.code}
+          // Which chip, not which half: "BB" on the card, "Bench Boost 2 …" in the tooltip.
+          code={fplChipBaseCode(u.code)}
+          label={fplChipLabel(u.code)}
           state={isGwLive ? "current" : "past"}
           gw={null}
           interactive={interactive}

@@ -2,7 +2,8 @@
  * TVT chip vs FPL chip — the clash rule.
  *
  * League rule: a team's TVT chip is WASTED if either of its two managers played any official FPL
- * chip (Wildcard, Bench Boost, Triple Captain, Free Hit, Assistant Manager) in the same gameweek.
+ * chip (Wildcard, Bench Boost, Triple Captain, Free Hit — whatever the season offers) in the same
+ * gameweek.
  * The TVT chip still counts as spent; it simply awards nothing.
  *
  * The rule is team-wide, not per-manager: one manager burning a Wildcard voids the team's chip
@@ -19,7 +20,7 @@
  * fpl-league/chips.ts has no runtime imports of its own.
  */
 
-import { FPL_CHIP_LABELS, type FplChipStatus } from "@/lib/fpl-league/chips";
+import { fplChipLabel, type FplChipStatus } from "@/lib/fpl-league/chips";
 
 /**
  * Which FPL chips a team's managers played in one gameweek.
@@ -43,7 +44,7 @@ export function fplChipsPlayedInGw(
 
 /** Human name for a chip code, falling back to the raw code for a chip FPL added mid-season. */
 function labelFor(code: string): string {
-  return FPL_CHIP_LABELS[code] ?? code;
+  return fplChipLabel(code);
 }
 
 /**
