@@ -715,6 +715,7 @@ export default function SuperAdminDashboard() {
     season: string;
     fplLeagueId: number | null;
     entrantCount: number;
+    startGameweek: number;
     settledThroughGw: number;
     lastConcludedGw: number;
     pendingGws: number;
@@ -747,6 +748,8 @@ export default function SuperAdminDashboard() {
   const [fplClassicLoading, setFplClassicLoading] = useState(false);
   const [fplClassicBusyId, setFplClassicBusyId] = useState<string | null>(null);
   const [fplClassicLog, setFplClassicLog] = useState<Record<string, string>>({});
+  // Per league: "all" = settle every pending gameweek; a number = re-fetch just that gameweek.
+  const [fplClassicGwChoice, setFplClassicGwChoice] = useState<Record<string, "all" | number>>({});
 
   // Which gameweek FPL is actually on. Shown in the Operations header so an operator
   // can tell whether a run is worth starting before starting one. Uses its own
@@ -830,17 +833,33 @@ export default function SuperAdminDashboard() {
    * "Failed: 504" with no hint that pressing Process again would resume. Worse, it `return`ed past
    * the counter refresh, so the row kept showing stale numbers even though the killed call had
    * committed rows on its way out.
+   *
+   * `gw` omitted = "All pending": the settle sweep. `gw` given = re-fetch that one gameweek for
+   * every entrant and overwrite its rows, paged by the `nextOffset` the server hands back.
    */
-  const processFplClassic = useCallback(async (leagueId: string) => {
+  const processFplClassic = useCallback(async (lg: FplClassicOpsRow, gw?: number) => {
+    const leagueId = lg.id;
     const CALL_TIMEOUT_MS = 70_000; // just past the function's own 60s ceiling
+    const log = (message: string) => setFplClassicLog((prev) => ({ ...prev, [leagueId]: message }));
+    const overwritesSettled = gw !== undefined && gw <= lg.settledThroughGw;
+    if (overwritesSettled && !confirm(`Re-fetch GW${gw} from FPL for all ${lg.entrantCount} entrants and overwrite the stored rows?
+
+Frozen awards will not change — use Recompute awards afterward if scores moved.`)) return;
+
     setFplClassicBusyId(leagueId);
-    setFplClassicLog((prev) => ({ ...prev, [leagueId]: "Starting…" }));
+    log("Starting…");
     try {
+      let offset = 0;
+      let refreshed = 0;
+      let changed = 0;
+      let failed = 0;
       for (let call = 1; call <= 20; call++) {
+        // The roster cannot usefully change between passes of one run; only the first syncs it.
+        const body = gw !== undefined ? { gw, offset } : call > 1 ? { skipRoster: true } : {};
         const res = await fetch(`/api/superadmin/fpl-classic/${leagueId}/process`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify(body),
           signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
         });
         const data = await res.json().catch(() => ({}));
@@ -849,24 +868,43 @@ export default function SuperAdminDashboard() {
             res.status === 504 || res.status === 502
               ? "the sweep timed out server-side. Press Process again — it resumes where it stopped, and each retry is cheaper as histories cache."
               : data?.error ?? `HTTP ${res.status}`;
-          setFplClassicLog((prev) => ({ ...prev, [leagueId]: `Pass ${call} failed: ${detail}` }));
+          log(`Pass ${call} failed: ${detail}`);
+          return;
+        }
+        // A held lock or a failed pass returns 200/done:false with nothing accomplished, reported
+        // as `settleError`. This used to check only `data.error`, which that path never sets — so
+        // the loop burned all 20 passes (each re-syncing the roster) and looked like a restart.
+        const stopReason: unknown = data.settleError ?? data.error;
+        if (typeof stopReason === "string" && stopReason) {
+          log(stopReason.includes("already in progress")
+            ? "Another sweep holds the lock. If none is running it will clear within 90s — then press Process again."
+            : `Pass ${call} stopped: ${stopReason}`);
           return;
         }
         const frozen = Array.isArray(data.frozen) && data.frozen.length > 0 ? ` · froze ${data.frozen.join(", ")}` : "";
-        setFplClassicLog((prev) => ({
-          ...prev,
-          [leagueId]: `Pass ${call}: settled through GW${data.settledThroughGw}${data.remainingEntrants > 0 ? ` · ${data.remainingEntrants} entrants pending` : ""}${frozen}`,
-        }));
-        if (data.done) break;
-        // A held lock returns 200/done:false with nothing accomplished. Without this the loop
-        // burns all 20 passes against it and then reports a settled-through figure that never moved.
-        if (typeof data.error === "string" && data.error.includes("already in progress")) {
-          setFplClassicLog((prev) => ({
-            ...prev,
-            [leagueId]: `Another sweep holds the lock. If none is running it will clear within 90s — then press Process again.`,
-          }));
-          return;
+
+        if (gw !== undefined) {
+          refreshed += data.refreshed ?? 0;
+          changed += data.changed ?? 0;
+          failed += data.failed ?? 0;
+          if (data.done) {
+            const hint = changed > 0 && overwritesSettled && lg.frozenScopeCount > 0
+              ? " — frozen awards unchanged; press Recompute awards to apply"
+              : "";
+            log(`GW${gw} refreshed: ${refreshed} entrants · ${changed} changed · ${failed} failed${frozen}${hint}`);
+            break;
+          }
+          if (typeof data.nextOffset !== "number" || data.nextOffset <= offset) {
+            log(`GW${gw} stopped at ${offset}/${data.total ?? "?"} entrants: no progress this pass. Press Process again.`);
+            return;
+          }
+          offset = data.nextOffset;
+          log(`GW${gw}: ${offset}/${data.total} entrants processed · ${changed} changed`);
+          continue;
         }
+
+        log(`Pass ${call}: settled through GW${data.settledThroughGw}${data.remainingEntrants > 0 ? ` · ${data.remainingEntrants} entrants pending` : ""}${frozen}`);
+        if (data.done) break;
       }
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "TimeoutError";
@@ -2621,10 +2659,12 @@ This overwrites winners that have already been announced. The previous winners a
               <div className="mb-4">
                 <h3 className="text-xl font-bold text-white">FPL Classic leagues</h3>
                 <p className="text-gray-400 text-sm mt-1 max-w-3xl">
-                  Public, read-only mini-leagues. Process fetches each entrant&apos;s history for any
-                  gameweek FPL has concluded, writes the settled rows, and freezes the winners for
-                  every period that is now complete. Idempotent — re-running once caught up does
-                  nothing and makes no FPL calls.
+                  Public, read-only mini-leagues. <span className="text-gray-300">All pending</span> settles
+                  every gameweek FPL has concluded since the last run, then freezes the winners for every
+                  period that is now complete. It is idempotent: once caught up, re-running it does nothing
+                  and makes no FPL calls. Pick a single <span className="text-gray-300">GW</span> to
+                  re-fetch just that gameweek for every entrant and overwrite its stored scores, e.g. after
+                  an FPL correction. Already-frozen winners are left alone; use Recompute awards for those.
                 </p>
               </div>
 
@@ -2641,6 +2681,16 @@ This overwrites winners that have already been announced. The previous winners a
               <div className="space-y-3">
                 {(fplClassicLeagues ?? []).map((lg) => {
                   const busy = fplClassicBusyId === lg.id;
+                  const choice = fplClassicGwChoice[lg.id] ?? "all";
+                  const chosenGw = choice === "all" ? undefined : choice;
+                  const pendingFrom = Math.max(lg.settledThroughGw + 1, lg.startGameweek);
+                  const pendingLabel = pendingFrom > lg.lastConcludedGw
+                    ? "up to date"
+                    : pendingFrom === lg.lastConcludedGw
+                      ? `GW${pendingFrom}`
+                      : `GW${pendingFrom}–GW${lg.lastConcludedGw}`;
+                  const gwOptions: number[] = [];
+                  for (let g = lg.lastConcludedGw; g >= lg.startGameweek; g--) gwOptions.push(g);
                   return (
                     <div key={lg.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2669,13 +2719,30 @@ This overwrites winners that have already been announced. The previous winners a
                             <div className="mt-2 text-[11px] text-gray-300">{fplClassicLog[lg.id]}</div>
                           )}
                         </div>
-                        <div className="flex shrink-0 gap-2">
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <select
+                            value={choice === "all" ? "all" : String(choice)}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setFplClassicGwChoice((prev) => ({ ...prev, [lg.id]: value === "all" ? "all" : Number(value) }));
+                            }}
+                            disabled={busy}
+                            aria-label={`Gameweeks to process for ${lg.name}`}
+                            className="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-xs text-gray-200 focus:border-sky-400 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <option value="all" className="bg-slate-800">All pending ({pendingLabel})</option>
+                            {gwOptions.map((g) => (
+                              <option key={g} value={g} className="bg-slate-800">
+                                GW{g} · {g <= lg.settledThroughGw ? "settled, re-fetch" : "pending"}
+                              </option>
+                            ))}
+                          </select>
                           <button
-                            onClick={() => void processFplClassic(lg.id)}
+                            onClick={() => void processFplClassic(lg, chosenGw)}
                             disabled={busy}
                             className="rounded-lg bg-sky-500/20 px-4 py-2 text-sm font-semibold text-sky-200 hover:bg-sky-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition"
                           >
-                            {busy ? "Processing…" : "Process"}
+                            {busy ? "Processing…" : chosenGw !== undefined ? `Process GW${chosenGw}` : "Process"}
                           </button>
                           <button
                             onClick={() => void recomputeFplClassicAwards(lg.id, lg.name)}
