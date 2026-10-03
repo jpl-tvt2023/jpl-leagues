@@ -27,6 +27,7 @@ let slug: string;
 let challengerName: string;
 let challengedName: string;
 let challengerOpponentName: string;
+let challengerId: string;
 
 /** Write a result WITH per-player JSON — the harness helper omits it, and the tooltip needs it. */
 async function scoreFixture(
@@ -114,6 +115,7 @@ test.describe.serial("Challenge Chip tooltip", () => {
     expect(fxB, "need a Group B fixture in GW2").toBeTruthy();
 
     challengerName = teamById.get(fxA!.homeTeamId)!.name;
+    challengerId = fxA!.homeTeamId;
     challengerOpponentName = teamById.get(fxA!.awayTeamId)!.name;
     challengedName = teamById.get(fxB!.homeTeamId)!.name;
 
@@ -171,6 +173,14 @@ test.describe.serial("Challenge Chip tooltip", () => {
     const card = page.locator("[data-testid^='fixture-card-']").filter({ hasText: challengerName })
       .filter({ hasText: challengerOpponentName });
     await expect(card.getByText("CC", { exact: true })).toBeVisible();
+  });
+
+  test("the stats card credits the won challenge with its +2", async ({ page }) => {
+    await page.goto("/" + slug + "/fixtures");
+    await selectGw(page, GW);
+    const gain = page.getByTestId("stat-chips-hits").getByTestId(`tvt-chip-${challengerId}`).getByTestId("tvt-chip-gain");
+    await expect(gain).toHaveText("+2", { timeout: 60_000 });
+    await expect(gain).toHaveAttribute("data-tone", "gain");
   });
 
   test("tapping the pill opens the challenge and does not toggle the breakdown", async ({ page }) => {

@@ -38,6 +38,11 @@ export interface FixtureChip {
   isWasted?: boolean;
   /** Why, in the words the scorer recorded. Null for a chip wasted before this field existed. */
   wastedReason?: string | null;
+  /**
+   * The EXTRA league points the scorer awarded (gameweek_chips.pointsAwarded) — null until the
+   * chip is processed. Feeds the stats card's "pts gained" (lib/formats/tvt/chip-gain.ts).
+   */
+  pointsAwarded?: number | null;
 }
 
 /**
@@ -246,6 +251,7 @@ export async function GET(request: NextRequest) {
           chipName: chipName(c.chipType),
           isWasted: wasted,
           wastedReason: wasted ? c.wastedReason ?? null : null,
+          pointsAwarded: c.isProcessed ? c.pointsAwarded ?? 0 : null,
         };
         if (c.chipType === "C") {
           const target = c.challengedTeamId ? targetNameById.get(c.challengedTeamId) : undefined;
