@@ -363,7 +363,7 @@ export function GwStatsPanel({
                     <span className="shrink-0 text-[10px] text-gray-400">
                       <span className="hidden @[18rem]:inline">{chip.chipName}</span>
                       <span className="@[18rem]:hidden" title={chip.chipName}>{chip.chipCode}</span>
-                      {chip.isWasted ? " · wasted" : ""}
+                      {chip.isWasted ? " · wasted" : gain?.note ? ` · ${gain.note}` : ""}
                     </span>
                     <ChipGainValue gain={gain} chipName={chip.chipName} />
                   </li>
@@ -438,7 +438,15 @@ function ChipGainValue({ gain, chipName }: { gain: TvtChipGain | null; chipName:
   }
   const tone = gain.points > 0 ? "gain" : "none";
   return (
-    <HelpTip tip={`${chipName}: ${gain.detail}`} className="shrink-0">
+    <HelpTip
+      tip={
+        <>
+          <span className="block font-semibold text-white">{chipName}</span>
+          {gain.detail}
+        </>
+      }
+      className="shrink-0"
+    >
       <span
         data-testid="tvt-chip-gain"
         data-gain={gain.points}

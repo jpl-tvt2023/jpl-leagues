@@ -267,7 +267,7 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     const [gw1] = await db.select().from(schema.gameweeks)
       .where(and(eq(schema.gameweeks.leagueId, league.id), eq(schema.gameweeks.number, 1))).limit(1);
     const [fx, fx2] = await fixturesFor(request, 1);
-    // fx: home won by 90 and took the group bonus on Double Pointer. fx2: home lost.
+    // fx: home won by 90 and took the group bonus on Double Pointer. fx2: home lost, away won.
     await setFixtureResult({ fixtureId: fx.id, homeScore: 180, awayScore: 90, homeTeamId: fx.homeTeam.id });
     await db.update(schema.results)
       .set({ homeGotBonus: true, homeUsedDoublePointer: true, homeMatchPoints: 4 })
@@ -284,6 +284,8 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
       chip(fx.awayTeam.id, "W", { pointsAwarded: 2 }),
       // Win-Win against transfer hits: spent, voided.
       chip(fx2.homeTeam.id, "W", { pointsAwarded: 0, hadNegativeHits: true }),
+      // Win-Win on a win: the win already earned the 2 points, so the chip added none.
+      chip(fx2.awayTeam.id, "W", { pointsAwarded: 0 }),
     ]);
     await invalidateLeagueCache(league.id);
 
@@ -298,6 +300,10 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     // Win-Win on a loss: 0 → 2.
     await expect(gain(fx.awayTeam.id)).toHaveText("+2");
     await expect(gain(fx.awayTeam.id)).toHaveAttribute("data-tone", "gain");
+    // Win-Win on a win: 0, in red, and the row says the match was won — as the standings count it.
+    await expect(gain(fx2.awayTeam.id)).toHaveText("0");
+    await expect(gain(fx2.awayTeam.id)).toHaveAttribute("data-tone", "none");
+    await expect(card.getByTestId(`tvt-chip-${fx2.awayTeam.id}`)).toContainText("match won");
     // Voided: nothing gained, in red.
     await expect(gain(fx2.homeTeam.id)).toHaveText("0");
     await expect(gain(fx2.homeTeam.id)).toHaveAttribute("data-tone", "none");
