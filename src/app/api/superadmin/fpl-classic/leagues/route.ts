@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
         season: league.season,
         fplLeagueId: config?.fplLeagueId ?? null,
         entrantCount: config?.entrantCount ?? 0,
+        startGameweek: config?.startGameweek ?? 1,
         settledThroughGw: config?.settledThroughGw ?? 0,
         lastConcludedGw,
         pendingGws: Math.max(0, lastConcludedGw - (config?.settledThroughGw ?? 0)),

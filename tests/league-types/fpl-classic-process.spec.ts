@@ -194,5 +194,65 @@ test.describe.serial("FPL Classic — settle sweep and award freezing", () => {
     expect(row.entrantCount).toBe(STUB_ENTRANT_COUNT);
     expect(row.settledThroughGw).toBe(3);
     expect(row.frozenScopeCount).toBeGreaterThanOrEqual(3); // at least gw:1, gw:2, gw:3
+    expect(row.startGameweek).toBe(1);
+  });
+
+  test("Process GWn re-fetches that one gameweek and overwrites its rows, leaving frozen awards alone", async ({ request }) => {
+    await apiSignInSuperadmin(request);
+    const db = testDb();
+    // By now GW1's rows are flattened to 99999 and gw:1 was force-recomputed from them — a stand-in
+    // for stored data that disagrees with FPL after the winners were already announced.
+    const awardsBefore = await db
+      .select()
+      .from(schema.fplClassicAwards)
+      .where(and(eq(schema.fplClassicAwards.leagueId, leagueId), eq(schema.fplClassicAwards.scopeKey, "gw:1")));
+    expect(awardsBefore.length).toBeGreaterThan(0);
+    await request.post("/api/test-fpl-stub/control", { data: { resetCounts: true } });
+
+    // Paged by offset: 120 entrants at 50 per call is three calls.
+    let offset = 0;
+    let changed = 0;
+    let failed = 0;
+    let last: { done: boolean; nextOffset: number; total: number; changed: number; failed: number; settledThroughGw: number } | undefined;
+    for (let call = 0; call < 10; call++) {
+      last = await process(request, leagueId, { gw: 1, offset });
+      changed += last!.changed;
+      failed += last!.failed;
+      if (last!.done) break;
+      expect(last!.nextOffset, "every pass must advance the offset").toBeGreaterThan(offset);
+      offset = last!.nextOffset;
+    }
+    expect(last?.done).toBe(true);
+    expect(last!.total).toBe(STUB_ENTRANT_COUNT);
+    expect(failed).toBe(0);
+    expect(changed, "every flattened row differs from FPL").toBe(STUB_ENTRANT_COUNT);
+    expect(last!.settledThroughGw).toBe(3);
+
+    // Fresh fetches, one per entrant — a refresh must not be satisfied from the history cache.
+    const counts = await request.get("/api/test-fpl-stub/control").then((r) => r.json());
+    expect(counts.counts["entry/history"] ?? 0).toBe(STUB_ENTRANT_COUNT);
+
+    const rows = await db.select().from(schema.fplClassicEntryGws).where(eq(schema.fplClassicEntryGws.leagueId, leagueId));
+    expect(rows.length, "overwritten in place — no duplicates").toBe(STUB_ENTRANT_COUNT * 3);
+    const gw1 = rows.filter((r) => r.gw === 1);
+    expect(gw1.length).toBe(STUB_ENTRANT_COUNT);
+    expect(gw1.every((r) => r.points !== 99999 && r.netPoints === r.points - r.transferCost)).toBe(true);
+
+    // Frozen winners are untouched, row for row.
+    const awardsAfter = await db
+      .select()
+      .from(schema.fplClassicAwards)
+      .where(and(eq(schema.fplClassicAwards.leagueId, leagueId), eq(schema.fplClassicAwards.scopeKey, "gw:1")));
+    const snapshot = (a: typeof awardsBefore) =>
+      a.map((r) => ({ id: r.id, entrantId: r.entrantId, value: r.value, recomputeCount: r.recomputeCount })).sort((x, y) => x.id.localeCompare(y.id));
+    expect(snapshot(awardsAfter)).toEqual(snapshot(awardsBefore));
+  });
+
+  test("Process GWn rejects a gameweek outside the league's concluded range", async ({ request }) => {
+    await apiSignInSuperadmin(request);
+    for (const gw of [0, 4]) { // stub has concluded GW1-3
+      const res = await request.post(`/api/superadmin/fpl-classic/${leagueId}/process`, { data: { gw }, failOnStatusCode: false });
+      expect(res.status(), `GW${gw}`).toBe(400);
+    }
   });
 });

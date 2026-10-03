@@ -15,7 +15,7 @@
 
 import { db } from "@/lib/db";
 import { fplClassicConfig, fplClassicEntrants, fplClassicEntryGws, fplClassicAwards, auditLogs } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, lte, asc, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { getActiveFplGameweek, entryHistoryTtl } from "@/lib/fpl/event-status";
 import { fetchClassicLeagueStandings } from "@/lib/fpl/classic-league";
@@ -57,9 +57,54 @@ const ENTRANT_BATCH = 50;
  */
 const SETTLE_DEADLINE_MS = 40_000;
 
+/**
+ * Rows per INSERT statement. One statement per chunk rather than per entrant: a 50-entrant batch
+ * used to cost 50 sequential libSQL round-trips just to write. ~13 bound columns per row keeps a
+ * chunk far under SQLite's variable cap.
+ */
+const ROW_CHUNK = 50;
+
 async function loadConfig(leagueId: string) {
   const [config] = await db.select().from(fplClassicConfig).where(eq(fplClassicConfig.leagueId, leagueId)).limit(1);
   return config ?? null;
+}
+
+/** The slice of an FPL entry history a settled row is built from — satisfied by both a fresh fetch and a cached copy. */
+interface HistoryLike {
+  current: { event: number; points: number; total_points: number; overall_rank: number | null; event_transfers_cost: number; points_on_bench: number }[];
+  chips: { name: string; event: number }[];
+}
+
+/**
+ * One settled row from one gameweek of an entrant's FPL history. Shared by the sweep and the
+ * single-gameweek refresh so the two can never map a column differently.
+ */
+function toEntryGwRow(
+  leagueId: string,
+  entrantId: string,
+  c: HistoryLike["current"][number],
+  history: HistoryLike,
+  monthKeyByGw: Map<number, string>,
+): typeof fplClassicEntryGws.$inferInsert {
+  return {
+    id: generateId(),
+    leagueId,
+    entrantId,
+    gw: c.event,
+    points: c.points,
+    transferCost: c.event_transfers_cost,
+    netPoints: c.points - c.event_transfers_cost,
+    totalPoints: c.total_points,
+    overallRank: c.overall_rank,
+    benchPoints: c.points_on_bench,
+    chip: history.chips.find((chip) => chip.event === c.event)?.name ?? null,
+    monthKey: monthKeyByGw.get(c.event) ?? monthKeyFromDeadline(new Date().toISOString()),
+  };
+}
+
+async function loadMonthKeyByGw(): Promise<Map<number, string>> {
+  const deadlines = await fetchGameweekDeadlines("background").catch(() => []);
+  return new Map(deadlines.map((d) => [d.gw, monthKeyFromDeadline(d.deadlineTime)]));
 }
 
 /**
@@ -224,8 +269,7 @@ export async function settleGameweeks(leagueId: string): Promise<SettleResult> {
     const fplIds = batch.map((e) => String(e.fplEntryId));
     const cached = await getCachedEntryHistories(fplIds);
 
-    const deadlines = await fetchGameweekDeadlines("background").catch(() => []);
-    const monthKeyByGw = new Map(deadlines.map((d) => [d.gw, monthKeyFromDeadline(d.deadlineTime)]));
+    const monthKeyByGw = await loadMonthKeyByGw();
 
     const missingIds = fplIds.filter((id) => !cached.has(id));
     if (missingIds.length > 0) {
@@ -256,32 +300,24 @@ export async function settleGameweeks(leagueId: string): Promise<SettleResult> {
       });
     }
 
+    const newRows: (typeof fplClassicEntryGws.$inferInsert)[] = [];
     for (const entrant of batch) {
       const history = cached.get(String(entrant.fplEntryId));
       if (!history) continue;
       const needed = new Set(neededGwsFor(entrant));
       const rows = history.current
         .filter((c) => needed.has(c.event))
-        .map((c) => ({
-          id: generateId(),
-          leagueId,
-          entrantId: entrant.id,
-          gw: c.event,
-          points: c.points,
-          transferCost: c.event_transfers_cost,
-          netPoints: c.points - c.event_transfers_cost,
-          totalPoints: c.total_points,
-          overallRank: c.overall_rank,
-          benchPoints: c.points_on_bench,
-          chip: history.chips.find((chip) => chip.event === c.event)?.name ?? null,
-          monthKey: monthKeyByGw.get(c.event) ?? monthKeyFromDeadline(new Date().toISOString()),
-        }));
-      if (rows.length > 0) {
-        await db.insert(fplClassicEntryGws).values(rows).onConflictDoNothing();
-        const set = settledGwsByEntrant.get(entrant.id) ?? new Set<number>();
-        for (const r of rows) set.add(r.gw);
-        settledGwsByEntrant.set(entrant.id, set);
-      }
+        .map((c) => toEntryGwRow(leagueId, entrant.id, c, history, monthKeyByGw));
+      if (rows.length === 0) continue;
+      newRows.push(...rows);
+      const set = settledGwsByEntrant.get(entrant.id) ?? new Set<number>();
+      for (const r of rows) set.add(r.gw);
+      settledGwsByEntrant.set(entrant.id, set);
+    }
+    // If a chunk throws, the catch below returns before the cursor moves, so the in-memory sets
+    // being ahead of the DB here cannot advance it past rows that were never written.
+    for (let i = 0; i < newRows.length; i += ROW_CHUNK) {
+      await db.insert(fplClassicEntryGws).values(newRows.slice(i, i + ROW_CHUNK)).onConflictDoNothing();
     }
 
     const newCursor = computeCursor(allActive, settledGwsByEntrant, config.settledThroughGw, lastConcludedGw);
@@ -295,6 +331,189 @@ export async function settleGameweeks(leagueId: string): Promise<SettleResult> {
     const message = err instanceof Error ? err.message : String(err);
     await db.update(fplClassicConfig).set({ lastSyncError: message, updatedAt: new Date() }).where(eq(fplClassicConfig.leagueId, leagueId));
     return { ok: false, done: false, settledThroughGw: config.settledThroughGw, remainingEntrants: -1, error: message };
+  } finally {
+    await releaseClassicSettleLock(leagueId);
+  }
+}
+
+export interface RefreshResult {
+  ok: boolean;
+  done: boolean;
+  gw: number;
+  /** Entrants this gameweek applies to: active, and in the league by `gw`. */
+  total: number;
+  /** Where the next call resumes. Reaches `total` on the final pass. */
+  nextOffset: number;
+  /** Rows written (inserted or overwritten) by this call. */
+  refreshed: number;
+  /** Of those, how many differ from what was stored — 0 means FPL had nothing new. */
+  changed: number;
+  /** Entrants FPL would not return a history for. Their stored row, if any, is left as it was. */
+  failed: number;
+  settledThroughGw: number;
+  /** The request itself is wrong (gameweek out of range) — retrying will not help. The route maps it to 400. */
+  invalid?: boolean;
+  error?: string;
+}
+
+/**
+ * Re-fetch ONE gameweek for every entrant it applies to and overwrite the stored rows — the
+ * Operations tab's "Process GWn". The sweep above can only fill gaps (`onConflictDoNothing`), so
+ * without this an FPL correction to a settled gameweek could never reach the boards.
+ *
+ * Paged by `offset` over a stable entrant order rather than by "who is missing", because when
+ * overwriting, every entrant already has a row and presence says nothing about progress. Bounded
+ * the same way as the sweep: ENTRANT_BATCH entrants and the SETTLE_DEADLINE_MS admission check.
+ *
+ * Always fetches fresh — a cached history is exactly the stale data a refresh exists to replace —
+ * and writes the result back to the shared cache. Never touches frozen awards; the caller decides
+ * whether to recompute them.
+ */
+export async function refreshGameweek(leagueId: string, gw: number, opts?: { offset?: number }): Promise<RefreshResult> {
+  const offset = Math.max(0, Math.floor(opts?.offset ?? 0));
+  const empty = { gw, total: 0, nextOffset: offset, refreshed: 0, changed: 0, failed: 0 };
+
+  const config = await loadConfig(leagueId);
+  if (!config) return { ...empty, ok: false, done: true, settledThroughGw: 0, invalid: true, error: "League configuration not found" };
+
+  const active = await getActiveFplGameweek().catch(() => null);
+  const lastConcludedGw = active?.lastConcludedGw ?? 0;
+  if (!Number.isInteger(gw) || gw < config.startGameweek || gw > lastConcludedGw) {
+    return {
+      ...empty, ok: false, done: true, settledThroughGw: config.settledThroughGw, invalid: true,
+      error: lastConcludedGw < config.startGameweek
+        ? "No gameweek has concluded yet for this league"
+        : `Gameweek must be between GW${config.startGameweek} and GW${lastConcludedGw}`,
+    };
+  }
+
+  // The same lock as the sweep: both write rows and move the cursor, so they must never overlap.
+  const won = await claimClassicSettleLock(leagueId);
+  if (!won) {
+    return { ...empty, ok: false, done: false, settledThroughGw: config.settledThroughGw, error: "A settle sweep is already in progress for this league" };
+  }
+
+  const startedAt = Date.now();
+
+  try {
+    const eligible = await db
+      .select()
+      .from(fplClassicEntrants)
+      .where(and(eq(fplClassicEntrants.leagueId, leagueId), eq(fplClassicEntrants.isActive, true), lte(fplClassicEntrants.firstSeenGw, gw)))
+      .orderBy(asc(fplClassicEntrants.fplEntryId));
+    const batch = eligible.slice(offset, offset + ENTRANT_BATCH);
+
+    const monthKeyByGw = await loadMonthKeyByGw();
+    const historyTtl = await entryHistoryTtl("background");
+
+    // "skipped" = never fetched (past the deadline, or the gateway refused). Only a skip stops the
+    // offset; a per-entrant failure is reported and passed over, or one bad entry would wedge the run.
+    const outcomes: ("ok" | "failed" | "skipped")[] = batch.map(() => "skipped");
+    const histories = new Map<string, HistoryLike>();
+    const refusal = { reason: null as string | null };
+
+    if (batch.length > 0) {
+      await withFplBudget(
+        { lane: "background", label: "fpl-classic refresh gw", max: batch.length },
+        () => mapWithConcurrency(batch, 4, async (entrant, i) => {
+          if (refusal.reason || Date.now() - startedAt > SETTLE_DEADLINE_MS) return;
+          try {
+            const history = await fetchTeamHistory(String(entrant.fplEntryId), "background");
+            histories.set(entrant.id, history);
+            outcomes[i] = "ok";
+            await setCachedEntryHistory(String(entrant.fplEntryId), history, historyTtl);
+          } catch (err) {
+            if (err instanceof FplUnavailableError) refusal.reason = err.message;
+            else outcomes[i] = "failed";
+          }
+        }),
+      );
+    }
+
+    // Admission is in index order, so skips form a tail — except a gateway refusal, which can land
+    // mid-batch while earlier calls are still in flight. Advance only past the leading run of
+    // finished entrants; anything after the first skip is re-fetched next pass, which is harmless.
+    let finished = 0;
+    while (finished < outcomes.length && outcomes[finished] !== "skipped") finished++;
+    if (batch.length > 0 && finished === 0) {
+      return {
+        ...empty, total: eligible.length, ok: false, done: false, settledThroughGw: config.settledThroughGw,
+        error: refusal.reason ? `FPL unavailable: ${refusal.reason}` : "FPL did not answer before the deadline",
+      };
+    }
+
+    const fresh: (typeof fplClassicEntryGws.$inferInsert)[] = [];
+    let failed = 0;
+    for (let i = 0; i < finished; i++) {
+      if (outcomes[i] === "failed") { failed++; continue; }
+      const history = histories.get(batch[i].id);
+      // No row for this gameweek means the FPL team did not exist yet — nothing to write.
+      const c = history?.current.find((row) => row.event === gw);
+      if (history && c) fresh.push(toEntryGwRow(leagueId, batch[i].id, c, history, monthKeyByGw));
+    }
+
+    const stored = fresh.length > 0
+      ? await db
+        .select()
+        .from(fplClassicEntryGws)
+        .where(and(eq(fplClassicEntryGws.gw, gw), inArray(fplClassicEntryGws.entrantId, fresh.map((r) => r.entrantId))))
+      : [];
+    const storedByEntrant = new Map(stored.map((r) => [r.entrantId, r]));
+    const changed = fresh.filter((r) => {
+      const s = storedByEntrant.get(r.entrantId);
+      return !s
+        || s.points !== r.points || s.transferCost !== r.transferCost || s.netPoints !== r.netPoints
+        || s.totalPoints !== r.totalPoints || s.overallRank !== (r.overallRank ?? null)
+        || s.benchPoints !== r.benchPoints || s.chip !== (r.chip ?? null);
+    }).length;
+
+    for (let i = 0; i < fresh.length; i += ROW_CHUNK) {
+      await db.insert(fplClassicEntryGws).values(fresh.slice(i, i + ROW_CHUNK)).onConflictDoUpdate({
+        target: [fplClassicEntryGws.entrantId, fplClassicEntryGws.gw],
+        // monthKey deliberately absent: a settled row keeps the month it was frozen with (see the
+        // schema). Only a row this call inserts takes the freshly derived one.
+        set: {
+          points: sql`excluded.points`,
+          transferCost: sql`excluded.transfer_cost`,
+          netPoints: sql`excluded.net_points`,
+          totalPoints: sql`excluded.total_points`,
+          overallRank: sql`excluded.overall_rank`,
+          benchPoints: sql`excluded.bench_points`,
+          chip: sql`excluded.chip`,
+        },
+      });
+    }
+
+    const nextOffset = offset + finished;
+    const done = nextOffset >= eligible.length;
+
+    let settledThroughGw = config.settledThroughGw;
+    if (done) {
+      // Refreshing a pending gameweek may have filled the gap right after the cursor. computeCursor
+      // only ever advances it, and only to a gameweek every active entrant has a row for.
+      const allActive = await db
+        .select({ id: fplClassicEntrants.id, firstSeenGw: fplClassicEntrants.firstSeenGw })
+        .from(fplClassicEntrants)
+        .where(and(eq(fplClassicEntrants.leagueId, leagueId), eq(fplClassicEntrants.isActive, true)));
+      const rows = await db
+        .select({ entrantId: fplClassicEntryGws.entrantId, gw: fplClassicEntryGws.gw })
+        .from(fplClassicEntryGws)
+        .where(eq(fplClassicEntryGws.leagueId, leagueId));
+      const gwsByEntrant = new Map<string, Set<number>>();
+      for (const r of rows) {
+        const set = gwsByEntrant.get(r.entrantId) ?? new Set<number>();
+        set.add(r.gw);
+        gwsByEntrant.set(r.entrantId, set);
+      }
+      settledThroughGw = computeCursor(allActive, gwsByEntrant, config.settledThroughGw, lastConcludedGw);
+      await db.update(fplClassicConfig).set({ settledThroughGw, lastSyncError: null, updatedAt: new Date() }).where(eq(fplClassicConfig.leagueId, leagueId));
+    }
+
+    return { ok: true, done, gw, total: eligible.length, nextOffset, refreshed: fresh.length, changed, failed, settledThroughGw };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await db.update(fplClassicConfig).set({ lastSyncError: message, updatedAt: new Date() }).where(eq(fplClassicConfig.leagueId, leagueId));
+    return { ...empty, ok: false, done: false, settledThroughGw: config.settledThroughGw, error: message };
   } finally {
     await releaseClassicSettleLock(leagueId);
   }

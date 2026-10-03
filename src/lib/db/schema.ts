@@ -775,8 +775,10 @@ export const fplClassicEntrants = sqliteTable("fpl_classic_entrants", {
 }));
 
 /**
- * One row per entrant per CONCLUDED gameweek. Written once by the settle sweep, never updated
- * afterward (the row is immutable — a correction is a superadmin force-recompute, not an edit).
+ * One row per entrant per CONCLUDED gameweek. Written once by the settle sweep. The only thing
+ * that ever rewrites one is a superadmin single-gameweek refresh ("Process GWn", refreshGameweek in
+ * lib/fpl-classic/sync.ts), which re-fetches from FPL and overwrites the score columns — never
+ * `monthKey`. Frozen awards built from the old values stay frozen until a force-recompute.
  */
 export const fplClassicEntryGws = sqliteTable("fpl_classic_entry_gws", {
   id: text("id").primaryKey(),
