@@ -4,6 +4,7 @@
 import { Redis } from "@upstash/redis";
 // Type-only: fpl.ts imports this module at runtime, so a value import here would close a cycle.
 import type { FPLGameweekPicks } from "./fpl";
+import type { FplSeasonChip } from "./fpl-league/chips";
 
 let redis: Redis | null = null;
 
@@ -1192,4 +1193,28 @@ export async function releaseGwStatsBuild(leagueId: string, gameweek: number): P
   const r = getRedis();
   if (!r) return;
   await r.del(`fx-stats:lock:${leagueId}:gw${gameweek}`);
+}
+
+// ============================================
+// Season chip list
+// ============================================
+
+/**
+ * bootstrap-static's `chips` — which FPL chips exist this season and when each can be played.
+ * Written whenever bootstrap is fetched anyway (element info, clubs), so reading it never costs
+ * an FPL call. It only changes pre-season, hence the week-long TTL.
+ */
+const SEASON_CHIPS_KEY = "fpl:chips:season";
+
+export async function getCachedSeasonChips(): Promise<FplSeasonChip[] | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const data = await r.get<FplSeasonChip[]>(SEASON_CHIPS_KEY);
+  return Array.isArray(data) && data.length > 0 ? data : null;
+}
+
+export async function setCachedSeasonChips(data: FplSeasonChip[]): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await safeCacheWrite(SEASON_CHIPS_KEY, () => r.set(SEASON_CHIPS_KEY, data, { ex: CACHE_TTL * 7 }));
 }

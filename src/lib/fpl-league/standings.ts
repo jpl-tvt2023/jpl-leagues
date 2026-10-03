@@ -17,6 +17,7 @@ import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { withFplBudget, FplUnavailableError } from "@/lib/fpl/gateway";
 import { buildFplChipStatus, type FplChipStatus } from "./chips";
+import { getSeasonChips } from "./season-chips";
 
 /**
  * Player-level FPL standings: every manager in the league, ranked by their
@@ -186,6 +187,7 @@ export async function buildFplLeagueStandings(
       ? await resolveLiveGwPoints(leagueId, headerGw, fplIds, claimedWarm)
       : new Map<string, { points: number; transferHits: number }>();
 
+  const seasonChips = await getSeasonChips();
   const built = rows.map((r) => {
     const history = cached.get(r.fplId);
     const gwRow =
@@ -206,7 +208,7 @@ export async function buildFplLeagueStandings(
       // Transfer cost is fixed at the deadline, so the history copy is right either way.
       gwTransferCost: live ? live.transferHits : (gwRow?.event_transfers_cost ?? 0),
       totalPoints: live ? settledTotal + live.points : settledTotal,
-      chips: buildFplChipStatus(history?.chips ?? []),
+      chips: buildFplChipStatus(history?.chips ?? [], seasonChips),
       overallRank: latestOverallRank(history),
       pending: history ? undefined : (true as const),
       /** Live gameweek, but this entry's score has not arrived yet — its GW cell reads "—". */

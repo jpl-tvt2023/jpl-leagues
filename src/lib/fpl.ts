@@ -227,6 +227,7 @@ import {
   getCachedElementDetail, setCachedElementDetail,
   getCachedBootstrap, setCachedBootstrap,
   getCachedClubs, setCachedClubs,
+  setCachedSeasonChips,
   getCachedEventStatus, setCachedEventStatus,
   CACHE_TTL, LIVE_CACHE_TTL, ELEMENT_STATS_LIVE_TTL,
   type CachedElementInfo,
@@ -643,6 +644,7 @@ export async function fetchElementInfo(lane: FplLane = "background"): Promise<Ca
   // Fetch from FPL API. `fetchBootstrapData` already dedupes in flight, so
   // concurrent callers here collapse onto one request.
   const bootstrap = await fetchBootstrapData(lane);
+  await cacheSeasonChipsFrom(bootstrap);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawElements = bootstrap.elements as any[];
   const elements: CachedElementInfo[] = rawElements.map((p) => ({
@@ -673,6 +675,7 @@ export async function fetchClubInfo(lane: FplLane = "background"): Promise<Cache
   if (cached && cached.length > 0) return cached;
 
   const bootstrap = await fetchBootstrapData(lane);
+  await cacheSeasonChipsFrom(bootstrap);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawTeams = (bootstrap.teams ?? []) as any[];
   const clubs: CachedClubInfo[] = rawTeams.map((t) => ({
@@ -700,4 +703,20 @@ export async function fetchEntryTransfers(
         .filter((t) => typeof t?.element_in === "number" && typeof t?.element_out === "number")
         .map((t) => ({ element_in: t.element_in, element_out: t.element_out, event: Number(t.event) }))
     : [];
+}
+
+/**
+ * Cache this season's chip list from a bootstrap payload already in hand — see
+ * getCachedSeasonChips. Skipped when the payload has none (the test stub, or a malformed reply),
+ * so readers keep falling back to DEFAULT_SEASON_CHIPS rather than an empty season.
+ */
+async function cacheSeasonChipsFrom(bootstrap: { chips?: unknown }): Promise<void> {
+  const raw = Array.isArray(bootstrap?.chips) ? bootstrap.chips : [];
+  const chips = raw
+    .filter(
+      (c): c is { name: string; start_event: number; stop_event: number } =>
+        typeof c?.name === "string" && Number.isInteger(c?.start_event) && Number.isInteger(c?.stop_event),
+    )
+    .map((c) => ({ name: c.name, start_event: c.start_event, stop_event: c.stop_event }));
+  if (chips.length > 0) await setCachedSeasonChips(chips);
 }
