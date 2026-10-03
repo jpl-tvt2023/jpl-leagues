@@ -10,6 +10,7 @@
 
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -261,6 +262,50 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     await expect(card.getByTestId("bonus-pill")).toHaveText("★ BONUS +2");
   });
 
+  test("TVT chips show the league points they gained: green above 0, red at 0", async ({ page, request }) => {
+    const db = testDb();
+    const [gw1] = await db.select().from(schema.gameweeks)
+      .where(and(eq(schema.gameweeks.leagueId, league.id), eq(schema.gameweeks.number, 1))).limit(1);
+    const [fx, fx2] = await fixturesFor(request, 1);
+    // fx: home won by 90 and took the group bonus on Double Pointer. fx2: home lost.
+    await setFixtureResult({ fixtureId: fx.id, homeScore: 180, awayScore: 90, homeTeamId: fx.homeTeam.id });
+    await db.update(schema.results)
+      .set({ homeGotBonus: true, homeUsedDoublePointer: true, homeMatchPoints: 4 })
+      .where(eq(schema.results.fixtureId, fx.id));
+    await setFixtureResult({ fixtureId: fx2.id, homeScore: 100, awayScore: 120, homeTeamId: fx2.homeTeam.id });
+
+    const chip = (teamId: string, chipType: string, over: { pointsAwarded: number; hadNegativeHits?: boolean }) => ({
+      id: randomUUID(), gameweekId: gw1.id, teamId, chipType, isValid: true, isProcessed: true, ...over,
+    });
+    await db.delete(schema.gameweekChips).where(eq(schema.gameweekChips.gameweekId, gw1.id));
+    await db.insert(schema.gameweekChips).values([
+      // Stored as the scorer stores them: EXTRA points only.
+      chip(fx.homeTeam.id, "D", { pointsAwarded: 2 }),
+      chip(fx.awayTeam.id, "W", { pointsAwarded: 2 }),
+      // Win-Win against transfer hits: spent, voided.
+      chip(fx2.homeTeam.id, "W", { pointsAwarded: 0, hadNegativeHits: true }),
+    ]);
+    await invalidateLeagueCache(league.id);
+
+    await page.goto(`/${league.slug}/fixtures`);
+    const card = page.getByTestId("stat-chips-hits");
+    const gain = (teamId: string) => card.getByTestId(`tvt-chip-${teamId}`).getByTestId("tvt-chip-gain");
+
+    // Double Pointer: the win's 2 again, plus the bonus point it doubled.
+    await expect(gain(fx.homeTeam.id)).toHaveText("+3", { timeout: 60_000 });
+    await expect(gain(fx.homeTeam.id)).toHaveAttribute("data-tone", "gain");
+    await expect(gain(fx.homeTeam.id)).toHaveClass(/text-emerald-400/);
+    // Win-Win on a loss: 0 → 2.
+    await expect(gain(fx.awayTeam.id)).toHaveText("+2");
+    await expect(gain(fx.awayTeam.id)).toHaveAttribute("data-tone", "gain");
+    // Voided: nothing gained, in red.
+    await expect(gain(fx2.homeTeam.id)).toHaveText("0");
+    await expect(gain(fx2.homeTeam.id)).toHaveAttribute("data-tone", "none");
+    await expect(gain(fx2.homeTeam.id)).toHaveClass(/text-rose-400/);
+    // Highest gain first.
+    await expect(card.getByTestId("tvt-chip-gain").first()).toHaveText("+3");
+  });
+
   test("screenshots for visual review (MC_SHOTS=1)", async ({ page, request }) => {
     test.skip(!SHOTS, "set MC_SHOTS=1 to capture");
     mkdirSync(SHOT_DIR, { recursive: true });
@@ -276,6 +321,8 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
       await page.goto(`/${league.slug}/fixtures`);
       await expect(page.getByTestId("stat-captained").getByRole("button").first()).toBeVisible();
       await shot(`fixtures-${width}`);
+      // The Chips & hits card alone, at the width it gets beside the fixtures.
+      await page.getByTestId("stat-chips-hits").screenshot({ path: path.join(SHOT_DIR, `chips-hits-${width}.png`) });
     }
     await page.setViewportSize({ width: 375, height: 800 });
     await page.goto(`/${league.slug}/fixtures`);
@@ -284,6 +331,7 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     await page.getByRole("tablist", { name: "Fixtures or stats" }).getByRole("tab", { name: /Stats/ }).click();
     await expect(page.getByTestId("stat-captained").getByRole("button").first()).toBeVisible();
     await shot("fixtures-375-stats");
+    await page.getByTestId("stat-chips-hits").screenshot({ path: path.join(SHOT_DIR, "chips-hits-375.png") });
 
     for (const width of [1440, 375]) {
       await page.setViewportSize({ width, height: 900 });

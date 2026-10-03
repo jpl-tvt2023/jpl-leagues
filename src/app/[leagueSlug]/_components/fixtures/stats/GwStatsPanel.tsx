@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
+import { HelpTip } from "@/components/HelpTip";
+import type { TvtChipGain } from "@/lib/formats/tvt/chip-gain";
 import {
   aggregateGwStats,
   type GwStatsPayload,
@@ -43,6 +45,7 @@ export function GwStatsPanel({
   fixtures,
   liveScores,
   chipsForGw,
+  tvtChipGains,
   isLive,
   deadlinePassed,
   showBonusRace,
@@ -53,6 +56,8 @@ export function GwStatsPanel({
   fixtures: Fixture[];
   liveScores: LiveFixtureScore[];
   chipsForGw: Record<string, ChipDisplay>;
+  /** League points each team's TVT chip gained, worked out by the page from what its cards show. */
+  tvtChipGains: Record<string, TvtChipGain | null>;
   isLive: boolean;
   deadlinePassed: boolean;
   /** TVT only — Continental Championship has no group bonus. */
@@ -198,7 +203,10 @@ export function GwStatsPanel({
         teamScores.find((t) => t.teamId === teamId)?.name ??
         fixtures.flatMap((f) => [f.homeTeam, f.awayTeam]).find((t) => t.id === teamId)?.name ??
         "Team",
-    }));
+      gain: tvtChipGains[teamId] ?? null,
+    }))
+    // Biggest gain first; chips with nothing to go on yet last.
+    .sort((a, b) => (b.gain?.points ?? -1) - (a.gain?.points ?? -1) || a.name.localeCompare(b.name));
 
   const openDrill = (d: DrillDown) => {
     if (d.managers.length > 0) setDrill(d);
@@ -339,20 +347,25 @@ export function GwStatsPanel({
           />
         )}
 
-        <section data-testid="stat-chips-hits" className="h-full rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
+        {/* @container: beside the fixtures this card is ~15% of the screen, so a narrow card names
+            the chip by its code (CC) rather than squeezing the team name out. */}
+        <section data-testid="stat-chips-hits" className="@container h-full rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
           <h3 className="text-xs font-semibold text-white">Chips &amp; hits</h3>
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-gray-500">TVT chips</div>
+            <div className="text-[10px] uppercase tracking-wide text-gray-500">TVT chips · pts gained</div>
             {tvtChips.length === 0 ? (
               <p className="text-[11px] text-gray-500">{deadlinePassed ? "None played" : "Revealed at the deadline"}</p>
             ) : (
               <ul className="mt-0.5 space-y-0.5">
-                {tvtChips.map(({ teamId, chip, name }) => (
-                  <li key={teamId} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate text-white">{name}</span>
+                {tvtChips.map(({ teamId, chip, name, gain }) => (
+                  <li key={teamId} data-testid={`tvt-chip-${teamId}`} className="flex items-center gap-2 text-xs">
+                    <span className="min-w-0 flex-1 truncate text-white">{name}</span>
                     <span className="shrink-0 text-[10px] text-gray-400">
-                      {chip.chipName}{chip.isWasted ? " · wasted" : ""}
+                      <span className="hidden @[18rem]:inline">{chip.chipName}</span>
+                      <span className="@[18rem]:hidden" title={chip.chipName}>{chip.chipCode}</span>
+                      {chip.isWasted ? " · wasted" : ""}
                     </span>
+                    <ChipGainValue gain={gain} chipName={chip.chipName} />
                   </li>
                 ))}
               </ul>
@@ -408,6 +421,35 @@ export function GwStatsPanel({
         {drill && <ManagerList managers={drill.managers} />}
       </Sheet>
     </section>
+  );
+}
+
+/**
+ * What a TVT chip gained, in league points: green when it added something, red when it added
+ * nothing. Tap or hover for how the figure was reached.
+ */
+function ChipGainValue({ gain, chipName }: { gain: TvtChipGain | null; chipName: string }) {
+  if (!gain) {
+    return (
+      <span data-testid="tvt-chip-gain" data-tone="unknown" className="w-7 shrink-0 text-right text-xs text-gray-500">
+        –
+      </span>
+    );
+  }
+  const tone = gain.points > 0 ? "gain" : "none";
+  return (
+    <HelpTip tip={`${chipName}: ${gain.detail}`} className="shrink-0">
+      <span
+        data-testid="tvt-chip-gain"
+        data-gain={gain.points}
+        data-tone={tone}
+        className={`inline-block w-7 text-right text-xs font-semibold tabular-nums ${
+          tone === "gain" ? "text-emerald-400" : "text-rose-400"
+        }`}
+      >
+        {gain.points > 0 ? `+${gain.points}` : gain.points}
+      </span>
+    </HelpTip>
   );
 }
 

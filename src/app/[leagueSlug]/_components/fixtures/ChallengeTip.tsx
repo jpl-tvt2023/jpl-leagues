@@ -38,6 +38,8 @@ export interface ChipDisplay {
   isWasted?: boolean;
   /** Why, once `isWasted` is true. Null for a chip wasted before this field existed. */
   wastedReason?: string | null;
+  /** The extra league points the scorer awarded; null until processed. See api/fixtures/route.ts. */
+  pointsAwarded?: number | null;
 }
 
 export function ChallengeTip({

@@ -28,6 +28,7 @@ import {
 } from "@/lib/formats/tvt/challenge-match-live";
 import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
 import { tvtChipWasteReasonFor } from "@/lib/formats/tvt/fpl-chip-clash";
+import { tvtChipGain, type TvtChipGain } from "@/lib/formats/tvt/chip-gain";
 import type { FplChipStatus } from "@/lib/fpl-league/chips";
 
 /** Chips played in a gameweek, keyed by gameweek number then team id. */
@@ -527,10 +528,14 @@ export default function LeagueFixturesPage() {
     if (leagueSlug) fetchFixtures();
   }, [leagueSlug, leagueFormat, league.playoffStartGw]);
 
-  const selectedFixtures = selectedGW ? fixtures[selectedGW] || [] : [];
+  // Memoised so the hooks below that read them only recompute when the gameweek or data changes.
+  const selectedFixtures = useMemo(() => (selectedGW ? fixtures[selectedGW] || [] : []), [selectedGW, fixtures]);
   // Chips belong to the gameweek on screen, not to whatever is live. Switching gameweeks
   // switches the chips (and each Challenge Chip's rebuilt match) with them.
-  const chipsForGw: Record<string, ChipDisplay> = selectedGW ? chipsByGameweek[selectedGW] ?? {} : {};
+  const chipsForGw = useMemo<Record<string, ChipDisplay>>(
+    () => (selectedGW ? chipsByGameweek[selectedGW] ?? {} : {}),
+    [selectedGW, chipsByGameweek],
+  );
 
   /**
    * In-progress challenge matches, assembled from the live scores already on this page.
@@ -557,6 +562,45 @@ export default function LeagueFixturesPage() {
     }
     return out;
   }, [isLive, selectedGW, liveScores, chipsForGw]);
+
+  /**
+   * League points each TVT chip gained this gameweek, for the stats card. A scored fixture reads
+   * the stored result and chip; a live one the same live scores, challenge matches and predicted
+   * FPL chip clash the fixture cards show — so the card never disagrees with the pill beside it.
+   */
+  const tvtChipGains = useMemo(() => {
+    const out: Record<string, TvtChipGain | null> = {};
+    if (!selectedGW) return out;
+    const live = liveScores[0]?.gameweek === selectedGW ? liveScores : [];
+    for (const [teamId, chip] of Object.entries(chipsForGw)) {
+      const fixture = selectedFixtures.find((f: Fixture) => f.homeTeam.id === teamId || f.awayTeam.id === teamId);
+      const home = fixture?.homeTeam.id === teamId;
+      const result = fixture?.result ?? null;
+      const l = fixture ? live.find((x) => x.fixtureId === fixture.id) : undefined;
+      const scores = result ?? l;
+      out[teamId] = tvtChipGain({
+        chipType: chip.chipType,
+        isWasted: chip.isWasted === true,
+        wastedReason: chip.wastedReason,
+        pointsAwarded: chip.pointsAwarded,
+        own: scores ? (home ? scores.homeScore : scores.awayScore) : null,
+        opp: scores ? (home ? scores.awayScore : scores.homeScore) : null,
+        settled: !!result,
+        hits: l ? (home ? l.homePlayers : l.awayPlayers).reduce((sum, p) => sum + (p.transferHits ?? 0), 0) : 0,
+        predictedWasteReason:
+          !result && !chip.isWasted
+            ? tvtChipWasteReasonFor(
+                (playersByTeamId[teamId] ?? []).map((p) => fplChipsByFplId[p.fplId] ?? null),
+                selectedGW,
+                chip.chipName,
+              )
+            : null,
+        doubledBonus: result ? bonusPointsFor(result, home ? "home" : "away") === 2 : false,
+        challenge: chip.challenge ?? liveChallenges[teamId] ?? null,
+      });
+    }
+    return out;
+  }, [selectedGW, liveScores, chipsForGw, selectedFixtures, playersByTeamId, fplChipsByFplId, liveChallenges]);
 
   const isContinentalChampionship = leagueFormat === "continental-championship";
 
@@ -873,6 +917,7 @@ export default function LeagueFixturesPage() {
                 fixtures={displayFixtures}
                 liveScores={liveScores}
                 chipsForGw={chipsForGw}
+                tvtChipGains={tvtChipGains}
                 isLive={isLive}
                 deadlinePassed={deadlinePassed}
                 showBonusRace={!isContinentalChampionship}
