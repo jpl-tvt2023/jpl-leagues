@@ -48,6 +48,7 @@ import type { FplChipStatus } from "@/lib/fpl-league/chips";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 import { isChipDisclosable, isChipWasted } from "@/lib/formats/tvt/chip-waste";
 import { resolveJplCaptain } from "@/lib/scoring/jpl-captain";
+import { pickDefaultMatchup, type DefaultMatchup } from "./defaults";
 import {
   buildTeamSheet,
   compareSheets,
@@ -147,12 +148,56 @@ function parseStored(raw: string | null | undefined): StoredPlayerScore[] {
   }
 }
 
+/** Every league fixture (no cup fixtures), reduced to what `pickDefaultMatchup` needs. */
+async function defaultMatchup(
+  leagueId: string,
+  gwRows: { id: string; number: number; deadline: Date }[],
+  opts: { gw: number | null; team: string | null; now: number },
+): Promise<DefaultMatchup | null> {
+  if (gwRows.length === 0) return null;
+  const gwById = new Map(gwRows.map((g) => [g.id, g]));
+  const rows = await db
+    .select({
+      gameweekId: fixtures.gameweekId,
+      homeTeamId: fixtures.homeTeamId,
+      awayTeamId: fixtures.awayTeamId,
+      isChallenge: fixtures.isChallenge,
+      competitionType: fixtures.competitionType,
+      groupName: groups.name,
+      resultId: results.id,
+    })
+    .from(fixtures)
+    .leftJoin(results, eq(results.fixtureId, fixtures.id))
+    .leftJoin(groups, eq(fixtures.groupId, groups.id))
+    .where(inArray(fixtures.gameweekId, [...gwById.keys()]))
+    .orderBy(fixtures.createdAt, fixtures.id);
+  return pickDefaultMatchup(
+    rows
+      .filter((f) => !f.competitionType || f.competitionType === "jpl")
+      .map((f) => {
+        const g = gwById.get(f.gameweekId)!;
+        return {
+          gw: g.number,
+          deadline: g.deadline.getTime(),
+          homeTeamId: f.homeTeamId,
+          awayTeamId: f.awayTeamId,
+          group: f.groupName ?? null,
+          isChallenge: f.isChallenge,
+          hasResult: f.resultId != null,
+        };
+      }),
+    opts,
+  );
+}
+
 export async function loadMatchCenter(opts: {
   leagueSlug: string;
   fixtureId?: string | null;
   gw?: number | null;
   teamA?: string | null;
   teamB?: string | null;
+  /** The viewer's own team: what to open on when the request names no fixture or teams. */
+  preferTeam?: string | null;
   now?: Date;
 }): Promise<MatchCenterPayload> {
   const now = opts.now ?? new Date();
@@ -174,27 +219,6 @@ export async function loadMatchCenter(opts: {
     .where(eq(gameweeks.leagueId, league.id));
   const gwByNumber = new Map(gwRows.map((g) => [g.number, g]));
 
-  // Defaults from the fixture, overridden by whatever the reader picked.
-  let gwNumber = opts.gw ?? null;
-  let teamA = opts.teamA ?? null;
-  let teamB = opts.teamB ?? null;
-  if (opts.fixtureId) {
-    const fx = await db.query.fixtures.findFirst({
-      where: eq(fixtures.id, opts.fixtureId),
-      with: { gameweek: true },
-    });
-    if (!fx || fx.gameweek.leagueId !== league.id) throw new MatchCenterError(404, "Fixture not found");
-    gwNumber ??= fx.gameweek.number;
-    teamA ??= fx.homeTeamId;
-    teamB ??= fx.awayTeamId;
-  }
-  if (gwNumber == null || !teamA || !teamB) {
-    throw new MatchCenterError(400, "A fixture, or a gameweek and two teams, is required");
-  }
-  const gw = gwByNumber.get(gwNumber);
-  if (!gw) throw new MatchCenterError(404, `Gameweek ${gwNumber} not found`);
-  const started = gw.deadline.getTime() <= now.getTime();
-
   // ── Teams ────────────────────────────────────────────────────────────
   const teamRows = await db
     .select({
@@ -213,6 +237,41 @@ export async function loadMatchCenter(opts: {
     .map((t) => ({ id: t.id, name: t.name, group: groupOf(t), isGhost: t.isGhost }))
     .sort((x, y) => (x.group ?? "").localeCompare(y.group ?? "") || x.name.localeCompare(y.name));
   const teamById = new Map(teamRows.map((t) => [t.id, t]));
+
+  // Defaults from the fixture, overridden by whatever the reader picked.
+  let gwNumber = opts.gw ?? null;
+  let teamA = opts.teamA ?? null;
+  let teamB = opts.teamB ?? null;
+  if (opts.fixtureId) {
+    const fx = await db.query.fixtures.findFirst({
+      where: eq(fixtures.id, opts.fixtureId),
+      with: { gameweek: true },
+    });
+    if (!fx || fx.gameweek.leagueId !== league.id) throw new MatchCenterError(404, "Fixture not found");
+    gwNumber ??= fx.gameweek.number;
+    teamA ??= fx.homeTeamId;
+    teamB ??= fx.awayTeamId;
+  } else if (gwNumber == null || !teamA || !teamB) {
+    // Opened from the nav: no fixture to start from, so open on the viewer's own match.
+    const matchup = await defaultMatchup(league.id, gwRows, {
+      gw: gwNumber,
+      // A viewer can be signed in to a team in another league; that team is no hint here.
+      team: [teamA, teamB, opts.preferTeam].find((t) => t != null && teamById.has(t)) ?? null,
+      now: now.getTime(),
+    });
+    if (!matchup) throw new MatchCenterError(404, "No fixtures yet");
+    gwNumber = matchup.gw;
+    if (!teamA || !teamB) {
+      teamA = matchup.a;
+      teamB = matchup.b;
+    }
+  }
+  if (gwNumber == null || !teamA || !teamB) {
+    throw new MatchCenterError(400, "A fixture, or a gameweek and two teams, is required");
+  }
+  const gw = gwByNumber.get(gwNumber);
+  if (!gw) throw new MatchCenterError(404, `Gameweek ${gwNumber} not found`);
+  const started = gw.deadline.getTime() <= now.getTime();
   if (!teamById.has(teamA) || !teamById.has(teamB)) throw new MatchCenterError(404, "Team not found");
 
   const rosterRows = await db

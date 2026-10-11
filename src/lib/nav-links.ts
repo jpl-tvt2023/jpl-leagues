@@ -30,6 +30,7 @@ export type NavIconName =
   | "standings"
   | "fixtures"
   | "results"
+  | "match"
   | "teams"
   | "auction"
   | "wishlist"
@@ -55,6 +56,7 @@ const ICON_BY_KEY: Record<string, NavIconName> = {
   dashboard: "home",
   standings: "standings",
   fixtures: "fixtures",
+  "match-center": "match",
   "fpl-league": "fpl",
   playoffs: "playoffs",
   winners: "winners",
@@ -211,6 +213,8 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
   };
   const settings: NavItem[] = when(isLoggedIn, { key: "settings", label: "Settings", href: "/settings" });
   const feedback: NavItem[] = when(isLoggedIn, { key: "feedback", label: "Feedback", href: p("feedback") });
+  // TVT and Continental only: the two formats with head-to-head fixtures to open.
+  const matchCenter: NavItem = { key: "match-center", label: "Match Center", href: p("match-center"), shortLabel: "Match" };
 
   if (format === "auction") {
     // Trades are gated by a live auction (mid-auction freeze) AND by tier (Primary disables them).
@@ -273,6 +277,7 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
             home,
             { key: "standings", label: "JPL Standings", href: p("standings"), shortLabel: "Standings" },
             { key: "fixtures", label: "JPL Fixtures", href: p("fixtures"), shortLabel: "Fixtures" },
+            matchCenter,
           ],
         },
         {
@@ -304,7 +309,7 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
       ],
       isLoggedIn,
       isLoggedIn ? { kind: "signOut" } : { kind: "signIn", href: "/signin" },
-      ["dashboard", "standings", "fixtures", "jpl-cup-standings"],
+      ["dashboard", "standings", "fixtures", "match-center"],
     );
   }
 
@@ -340,6 +345,7 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
           home,
           { key: "standings", label: "Standings", href: p("standings") },
           { key: "fixtures", label: "Fixtures", href: p("fixtures") },
+          matchCenter,
           { key: "fpl-league", label: "FPL League", href: p("fpl-league") },
         ],
       },
@@ -364,7 +370,7 @@ function buildLeague(ctx: Extract<NavContext, { surface: "league" }>, runtime: N
     ],
     isLoggedIn,
     isLoggedIn ? { kind: "signOut" } : { kind: "signIn", href: "/signin" },
-    ["dashboard", "standings", "fixtures", "playoffs"],
+    ["dashboard", "standings", "fixtures", "match-center"],
   );
 }
 

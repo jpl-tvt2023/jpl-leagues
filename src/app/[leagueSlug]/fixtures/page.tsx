@@ -605,15 +605,17 @@ export default function LeagueFixturesPage() {
   const isContinentalChampionship = leagueFormat === "continental-championship";
 
   /**
-   * The Match Center opens on this fixture's own teams and gameweek. They are put in the URL as
-   * well as the fixture id so the page can render its picker immediately, and so a comparison the
-   * reader then changes is shareable as-is.
+   * The Match Center opens on this fixture's own teams and gameweek. A gameweek and two teams are
+   * all it needs — it finds the fixture they played from those — and the same three are what a
+   * comparison the reader then changes writes back, so the link is shareable as-is.
    */
   const matchCenterHref = (fixture: Fixture) => {
     const qs = new URLSearchParams({ gw: String(fixture.gameweek.number) });
     if (fixture.homeTeam.id) qs.set("a", fixture.homeTeam.id);
     if (fixture.awayTeam.id) qs.set("b", fixture.awayTeam.id);
-    return `/${leagueSlug}/fixtures/${fixture.id}?${qs.toString()}`;
+    // Without both teams the page would open on the viewer's own fixture instead of this one.
+    if (!fixture.homeTeam.id || !fixture.awayTeam.id) qs.set("fixture", fixture.id);
+    return `/${leagueSlug}/match-center?${qs.toString()}`;
   };
 
   // Continental Championship: only show JPL fixtures on this page (cup/knockout live on JCL/JEL pages)

@@ -51,3 +51,15 @@ export function pickDefaultGameweek(
   // Every gameweek is played and scored: the season is over, stay on the last.
   return byNumber[byNumber.length - 1].gw;
 }
+
+/**
+ * Which gameweek a team's dashboard fixture card shows: the one after the team's latest scored
+ * league fixture. Results-driven, unlike `pickDefaultGameweek` — the card stays on a gameweek
+ * until its score is processed. The Match Center opens on the same fixture from the nav, so the
+ * two share this rule rather than each keeping a copy.
+ */
+export function teamFixtureGameweek(fixtures: { gw: number; scored: boolean }[]): number {
+  let latest = 0;
+  for (const f of fixtures) if (f.scored && f.gw > latest) latest = f.gw;
+  return latest + 1;
+}

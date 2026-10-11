@@ -6,10 +6,12 @@ import { loadMatchCenter, MatchCenterError } from "@/lib/match-center/load";
 export const maxDuration = 30;
 
 /**
- * GET /api/match-center?leagueSlug=&fixtureId=&gw=&a=&b=
+ * GET /api/match-center?leagueSlug=&fixtureId=&gw=&a=&b=&team=
  *
  * Two JPL teams' merged squads for one gameweek. `fixtureId` supplies defaults (its gameweek and
  * its two teams); `gw`, `a` and `b` override them, which is how the page's compare picker works.
+ * With neither, the current gameweek's fixture for `team` (the viewer's own team) is used, else
+ * that gameweek's first fixture — how the page opens from the nav.
  * Public, like /api/fixtures — nothing here is withheld from the FPL site itself, and anything
  * strategic (captain, TVT chip) is withheld until the deadline by the loader.
  */
@@ -31,6 +33,7 @@ export async function GET(request: NextRequest) {
       gw,
       teamA: sp.get("a"),
       teamB: sp.get("b"),
+      preferTeam: sp.get("team"),
     });
     return jsonNoStore(payload);
   } catch (err) {
