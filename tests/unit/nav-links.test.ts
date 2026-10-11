@@ -31,14 +31,14 @@ const labels = (ctx: NavContext, runtime = {}) => buildNavModel(ctx, runtime).fl
 
 test("tvt flat order matches the old LeagueNav", () => {
   assert.deepEqual(labels(league({ format: "tvt" })), [
-    "Dashboard", "Standings", "Fixtures", "FPL League", "Playoffs", "Winners",
+    "Dashboard", "Standings", "Fixtures", "Match Center", "FPL League", "Playoffs", "Winners",
     "Rules", "Help", "Feedback", "Settings",
   ]);
 });
 
 test("continental-championship flat order matches the old LeagueNav", () => {
   assert.deepEqual(labels(league({ format: "continental-championship" })), [
-    "Dashboard", "JPL Standings", "JPL Fixtures", "JPL Cup Standings", "JPL Cup Fixtures",
+    "Dashboard", "JPL Standings", "JPL Fixtures", "Match Center", "JPL Cup Standings", "JPL Cup Fixtures",
     "Playoffs", "Winners", "Rules", "Help", "Feedback", "Settings",
   ]);
 });
@@ -159,9 +159,9 @@ const bottomLabels = (ctx: NavContext, runtime = {}) =>
   buildNavModel(ctx, runtime).bottom.map((i) => i.shortLabel ?? i.label);
 
 test("each league format gets its four most-used pages in the bottom bar", () => {
-  assert.deepEqual(bottomLabels(league({ format: "tvt" })), ["Home", "Standings", "Fixtures", "Playoffs"]);
+  assert.deepEqual(bottomLabels(league({ format: "tvt" })), ["Home", "Standings", "Fixtures", "Match"]);
   assert.deepEqual(bottomLabels(league({ format: "continental-championship" })), [
-    "Home", "Standings", "Fixtures", "JPL Cup",
+    "Home", "Standings", "Fixtures", "Match",
   ]);
   assert.deepEqual(bottomLabels(league({ format: "auction", auctionTier: "complete" })), [
     "Home", "Standings", "Auction", "Squad",

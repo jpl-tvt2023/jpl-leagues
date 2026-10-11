@@ -81,8 +81,9 @@ export function Scoreboard({
           : "border-white/10 bg-white/5"
       }`}
     >
-      {/* Teams and score */}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-6">
+      {/* Teams and score. Phones: the score on its own row, the two pickers side by side under it.
+          sm and up: picker · score · picker, face to face. */}
+      <div className="grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start sm:items-center gap-x-2 gap-y-3 sm:gap-6">
         <SideTitle
           side={a}
           label="First team"
@@ -95,7 +96,7 @@ export function Scoreboard({
           group={fixture?.group ?? null}
           align="left"
         />
-        <div className="flex flex-col items-center gap-1">
+        <div className="order-first col-span-2 sm:order-none sm:col-span-1 flex flex-col items-center gap-1">
           <StatusPill status={status} deadline={data.gameweek.deadline} now={now} />
           {status === "upcoming" ? (
             <span className="text-sm font-medium text-gray-500">VS</span>
@@ -208,8 +209,10 @@ function StatusPill({ status, deadline, now }: { status: MatchStatus; deadline: 
 }
 
 /**
- * The team picker, styled as the team's name. A native select so it works with a keyboard, a
- * screen reader, and a phone's own picker.
+ * The team picker: a bordered pill with the team's name and a chevron, so it reads as something
+ * to press. The real control is a native select laid invisibly over the whole pill — it works with
+ * a keyboard, a screen reader, and a phone's own picker — while the pill sizes to the selected
+ * name rather than the longest option, as a visible select would.
  */
 function SideTitle({
   side,
@@ -246,28 +249,39 @@ function SideTitle({
 
   return (
     <div className={`min-w-0 ${right ? "text-right" : ""}`}>
-      <div className={`flex items-center gap-1 ${right ? "justify-end" : ""}`}>
-        {right && <span aria-hidden className="text-xs text-gray-500">▾</span>}
-        <select
-          aria-label={label}
-          value={side.teamId}
-          disabled={disabled}
-          onChange={(e) => onSelect(e.target.value)}
-          className={`min-w-0 max-w-full cursor-pointer appearance-none truncate rounded-md bg-transparent px-1 py-0.5 text-base sm:text-xl font-bold text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-sky-400/50 ${
-            right ? "text-right [text-align-last:right]" : ""
+      <div className={`flex ${right ? "justify-end" : ""}`}>
+        <div
+          className={`group relative flex w-full sm:w-auto max-w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-xl border border-white/15 bg-white/5 py-1.5 pl-3.5 pr-2.5 text-white transition hover:border-white/30 hover:bg-white/10 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/40 ${
+            disabled ? "opacity-60" : ""
           }`}
         >
-          {hasGroups
-            ? groups.map((g) => (
-                <optgroup key={g ?? "none"} label={g ? `Group ${g}` : "Other"} className="bg-slate-900">
-                  {visible.filter((t) => t.group === g).map(option)}
-                </optgroup>
-              ))
-            : visible.map(option)}
-        </select>
-        {!right && <span aria-hidden className="text-xs text-gray-500">▾</span>}
+          {/* Same side colours as the squad tables and the swing line below. */}
+          <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${right ? "bg-rose-400/70" : "bg-sky-400/70"}`} />
+          <span className="min-w-0 truncate text-left text-sm sm:text-xl font-bold">
+            {side.teamName}{side.isGhost ? " (ghost)" : ""}
+          </span>
+          <svg aria-hidden className="h-4 w-4 sm:h-5 sm:w-5 shrink-0 text-gray-400 transition group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+          <select
+            aria-label={label}
+            title="Change team"
+            value={side.teamId}
+            disabled={disabled}
+            onChange={(e) => onSelect(e.target.value)}
+            className="absolute inset-0 h-full w-full cursor-pointer appearance-none text-base text-white opacity-0 disabled:cursor-not-allowed"
+          >
+            {hasGroups
+              ? groups.map((g) => (
+                  <optgroup key={g ?? "none"} label={g ? `Group ${g}` : "Other"} className="bg-slate-900">
+                    {visible.filter((t) => t.group === g).map(option)}
+                  </optgroup>
+                ))
+              : visible.map(option)}
+          </select>
+        </div>
       </div>
-      <div className={`mt-0.5 flex flex-wrap items-center gap-1 px-1 ${right ? "justify-end" : ""}`}>
+      <div className={`mt-1 flex flex-wrap items-center gap-1 ${right ? "justify-end" : ""}`}>
         {side.group && <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-300">Group {side.group}</span>}
         {side.tvtChip && (
           <span
