@@ -61,7 +61,7 @@ test.describe.serial("Mobile nav drawer", () => {
     }
 
     // Same links the desktop bar carries, from the same model.
-    for (const label of ["Standings", "Fixtures", "FPL League", "Playoffs", "Winners", "Rules", "Help"]) {
+    for (const label of ["Standings", "Fixtures", "Match Center", "FPL League", "Playoffs", "Winners", "Rules", "Help"]) {
       await expect(
         panel.getByRole("link", { name: label, exact: true }),
         `drawer is missing ${label}`,

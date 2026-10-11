@@ -35,7 +35,7 @@ import {
 } from "@/lib/db/schema";
 import {
   fetchClubInfo,
-  fetchElementGameweekDetail,
+  fetchElementGameweekDetailOrLastGood,
   fetchElementInfo,
   isGameweekFinal,
 } from "@/lib/fpl";
@@ -122,6 +122,11 @@ export interface MatchCenterPayload {
   comparison: SheetComparison | null;
   /** Why the sheets are missing after the deadline. */
   degraded: "fpl_unavailable" | null;
+  /**
+   * Set when FPL could not be read and the sheets were built from the last points anyone
+   * fetched: when those points are from. Null for a fresh read.
+   */
+  pointsAsOf: string | null;
   generatedAt: string;
 }
 
@@ -340,26 +345,30 @@ export async function loadMatchCenter(opts: {
   // ── Sheets ───────────────────────────────────────────────────────────
   let settled = false;
   let degraded: MatchCenterPayload["degraded"] = null;
+  let pointsAsOf: string | null = null;
   const sheets = new Map<string, TeamSheet | null>();
 
   if (started) {
+    // Read before the FPL block, so that everything inside it is FPL I/O and its catch can
+    // treat any failure as FPL's — a database fault here should still surface as one.
+    const captains = await captainsFor(gw.id, gwNumber, league.id, [teamA, teamB]);
     try {
       await withFplBudget({ lane: "background", label: `match-center gw${gwNumber}`, max: 16 }, async () => {
         settled = await isGameweekFinal(gwNumber!, "background");
-        const [detail, elementInfo, clubInfo, gwPlFixtures] = await Promise.all([
-          fetchElementGameweekDetail(gwNumber!, "background"),
+        const [live, elementInfo, clubInfo, gwPlFixtures] = await Promise.all([
+          fetchElementGameweekDetailOrLastGood(gwNumber!, "background"),
           fetchElementInfo("background"),
           fetchClubInfo("background"),
           getFplFixturesForGw(gwNumber!),
         ]);
+        const detail = live.detail;
+        pointsAsOf = live.asOf;
         const elements = new Map<number, ElementMeta>(
           elementInfo.map((e) => [e.id, { id: e.id, name: e.web_name, position: e.element_type, clubId: e.team }]),
         );
         const clubs = new Map<number, ClubMeta>(
           clubInfo.map((c) => [c.id, { id: c.id, short: c.short_name, name: c.name }]),
         );
-
-        const captains = await captainsFor(gw.id, gwNumber!, league.id, [teamA!, teamB!]);
 
         for (const teamId of [teamA!, teamB!]) {
           if (sheets.has(teamId)) continue;
@@ -426,8 +435,13 @@ export async function loadMatchCenter(opts: {
         }
       });
     } catch (err) {
-      if (!(err instanceof FplUnavailableError)) throw err;
+      // A gateway refusal, or FPL itself answering with an error (a 403 to our server arrives
+      // as a plain HTTP error until the breaker trips): a degraded page either way, not a 500.
+      if (!(err instanceof FplUnavailableError)) {
+        console.warn(`[match-center] FPL read failed for GW${gwNumber}:`, err instanceof Error ? err.message : err);
+      }
       degraded = "fpl_unavailable";
+      pointsAsOf = null;
       sheets.clear();
     }
   }
@@ -490,6 +504,7 @@ export async function loadMatchCenter(opts: {
     b,
     comparison: a.sheet && b.sheet ? compareSheets(a.sheet, b.sheet) : null,
     degraded,
+    pointsAsOf,
     generatedAt: now.toISOString(),
   };
 }

@@ -197,7 +197,7 @@ test.describe.serial("Phone layout (360px)", () => {
     await visit(page, `/${tvt.slug}/fixtures`, "tvt-bottom-nav");
     const bar = bottomNav(page);
     await expect(bar).toBeVisible();
-    for (const label of ["Leagues", "Standings", "Fixtures", "Playoffs", "More"]) {
+    for (const label of ["Leagues", "Standings", "Fixtures", "Match", "More"]) {
       await expect(bar.getByText(label, { exact: true })).toBeVisible();
     }
     await expect(bar.getByRole("link", { name: "Fixtures" })).toHaveAttribute("aria-current", "page");
