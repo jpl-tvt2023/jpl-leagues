@@ -20,8 +20,10 @@ import {
   generateFixtures,
   setupAllTeams,
   ensureGameweeks,
+  expireElementDetail,
   expireGameweek,
   invalidateLeagueCache,
+  keepLastGoodElementDetail,
   setFixtureResult,
   testDb,
   schema,
@@ -121,6 +123,46 @@ test.describe.serial("Match Center, GW stats and bonus highlight (TVT)", () => {
     expect(body.a.displayTotal).toBe(live.find((l) => l.fixtureId === f1.id)!.homeScore);
     expect(body.b.displayTotal).toBe(live.find((l) => l.fixtureId === f2.id)!.homeScore);
     expect(body.comparison).toBeTruthy();
+  });
+
+  test("FPL refusing us: line-ups from the last good points, else a degraded page — never a 500", async ({ page, request }) => {
+    const [fx] = await fixturesFor(request, 1);
+    const url = `/${league.slug}/match-center?gw=1&a=${fx.homeTeam.id}&b=${fx.awayTeam.id}`;
+    // A healthy read first: it is what leaves the last-good copy behind.
+    const fresh = await matchCenter(request, { fixtureId: fx.id });
+    expect(fresh.pointsAsOf).toBeNull();
+
+    try {
+      // 503, not the 403 prod saw: a 403 trips the dev server's breaker for 5 minutes and would
+      // leak into later specs. Both take the same `!res.ok` path out of the live fetch.
+      await keepLastGoodElementDetail(1, async () => {
+        const res = await request.post("/api/test-fpl-stub/control", { data: { failRoutes: ["event/live"] } });
+        expect(res.ok()).toBeTruthy();
+      });
+
+      const stale = await matchCenter(request, { fixtureId: fx.id });
+      expect(stale.degraded).toBeNull();
+      expect(stale.pointsAsOf, "served from the last good copy").toBeTruthy();
+      for (const k of ["a", "b"] as const) {
+        expect(stale[k].sheet, `${stale[k].teamName} should still have a sheet`).toBeTruthy();
+        expect(stale[k].displayTotal).toBe(fresh[k].displayTotal);
+      }
+      await page.goto(url);
+      await expect(page.getByText(/points are as of/)).toBeVisible();
+      await expect(page.getByTestId("mc-side-a")).toBeVisible();
+
+      // Nothing to fall back on: a degraded 200 (matchCenter() asserts ok), not a 500.
+      await expireElementDetail(1, { lastGood: true });
+      const none = await matchCenter(request, { fixtureId: fx.id });
+      expect(none.degraded).toBe("fpl_unavailable");
+      expect(none.pointsAsOf).toBeNull();
+      expect(none.a.sheet).toBeNull();
+      await page.reload();
+      await expect(page.getByText(/Can't load line-ups from FPL/)).toBeVisible();
+      await expect(page.getByText(/scoring run/)).toHaveCount(0);
+    } finally {
+      await request.post("/api/test-fpl-stub/control", { data: { failRoutes: [] } });
+    }
   });
 
   test("before the deadline nothing strategic is disclosed", async ({ request }) => {

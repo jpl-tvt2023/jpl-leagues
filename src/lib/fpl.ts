@@ -224,7 +224,7 @@ import {
   getCachedScore, setCachedScore,
   getCachedElementPoints, setCachedElementPoints,
   getCachedElementStats, setCachedElementStats,
-  getCachedElementDetail, setCachedElementDetail,
+  getCachedElementDetail, setCachedElementDetail, getLastGoodElementDetail,
   getCachedBootstrap, setCachedBootstrap,
   getCachedClubs, setCachedClubs,
   setCachedSeasonChips,
@@ -550,6 +550,31 @@ export async function fetchElementGameweekDetail(
   const cached = await getCachedElementDetail(gameweek);
   if (cached) return cached;
   return (await loadLiveGameweekMaps(gameweek, lane)).detail;
+}
+
+/**
+ * `fetchElementGameweekDetail`, falling back to the last detail map anyone fetched.
+ *
+ * Falls back on any failure, not just a gateway refusal: FPL answering our server with a 403
+ * arrives first as a plain HTTP error and only becomes a refusal once the breaker trips, and the
+ * reader wants the same thing either way. `asOf` is null for a fresh read, else when the copy
+ * was fetched — the caller must say so on screen. With no copy at all, the original error.
+ */
+export async function fetchElementGameweekDetailOrLastGood(
+  gameweek: number,
+  lane: FplLane = "background"
+): Promise<{ detail: Record<number, CachedElementDetail>; asOf: string | null }> {
+  try {
+    return { detail: await fetchElementGameweekDetail(gameweek, lane), asOf: null };
+  } catch (err) {
+    const lastGood = await getLastGoodElementDetail(gameweek).catch(() => null);
+    if (!lastGood) throw err;
+    console.warn(
+      `[fpl] GW${gameweek} detail unavailable (${err instanceof Error ? err.message : err}); ` +
+        `serving the copy from ${lastGood.cachedAt}`
+    );
+    return { detail: lastGood.data, asOf: lastGood.cachedAt };
+  }
 }
 
 /**

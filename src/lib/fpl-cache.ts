@@ -426,6 +426,31 @@ export async function getCachedElementDetail(
   return data || null;
 }
 
+/**
+ * The newest detail map for a gameweek, kept for a day whatever the fresh key's TTL.
+ *
+ * The fresh key above lives 60s while a gameweek is in flight, and its reader treats presence
+ * as freshness — so the moment FPL starts refusing us it is gone, and the Match Center had
+ * nothing to draw. Picks, bootstrap and clubs all outlive an outage; this was the one input
+ * that did not. A separate key, so that reader's "present means fresh" contract is untouched.
+ */
+function getLastGoodElementDetailKey(gameweek: number): string {
+  return `fpl:elements:detail:last:gw${gameweek}`;
+}
+
+export interface LastGoodElementDetail {
+  data: Record<number, CachedElementDetail>;
+  /** When the `/event/{gw}/live/` response it came from was fetched. */
+  cachedAt: string;
+}
+
+export async function getLastGoodElementDetail(gameweek: number): Promise<LastGoodElementDetail | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const entry = await r.get<LastGoodElementDetail>(getLastGoodElementDetailKey(gameweek));
+  return entry?.data ? entry : null;
+}
+
 export async function setCachedElementDetail(
   gameweek: number,
   data: Record<number, CachedElementDetail>,
@@ -433,9 +458,26 @@ export async function setCachedElementDetail(
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
-  await safeCacheWrite(getElementDetailKey(gameweek), () =>
-    r.set(getElementDetailKey(gameweek), data, { ex: ttlSeconds })
-  );
+  const lastGood: LastGoodElementDetail = { data, cachedAt: new Date().toISOString() };
+  await Promise.all([
+    safeCacheWrite(getElementDetailKey(gameweek), () =>
+      r.set(getElementDetailKey(gameweek), data, { ex: ttlSeconds })
+    ),
+    safeCacheWrite(getLastGoodElementDetailKey(gameweek), () =>
+      r.set(getLastGoodElementDetailKey(gameweek), lastGood, { ex: Math.max(ttlSeconds, CACHE_TTL) })
+    ),
+  ]);
+}
+
+/** Drop the fresh detail key, and the last-good copy too when asked. */
+export async function clearCachedElementDetail(
+  gameweek: number,
+  opts: { lastGood?: boolean } = {}
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  await r.del(getElementDetailKey(gameweek));
+  if (opts.lastGood) await r.del(getLastGoodElementDetailKey(gameweek));
 }
 
 /** A PL club as bootstrap-static describes it. */

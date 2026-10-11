@@ -186,11 +186,20 @@ export default function MatchCenterPage() {
               <PreDeadline sides={[data.a, data.b]} gwNumber={data.gameweek.number} />
             ) : data.degraded ? (
               <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-center text-sm text-amber-200">
-                FPL is busy right now (a scoring run or a rate limit), so line-ups can&apos;t be loaded.
-                The scores above are still current — try again in a minute.
+                Can&apos;t load line-ups from FPL right now — try again in a few minutes.
+                {/* Only claim the score line when there is one to vouch for. */}
+                {data.a.displayTotal != null && data.b.displayTotal != null && " The scores above are still current."}
               </div>
             ) : (
               <>
+                {data.pointsAsOf && (
+                  <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-300">
+                    FPL isn&apos;t responding to us right now — points are as of{" "}
+                    {new Date(data.pointsAsOf).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.
+                    They&apos;ll update on their own once FPL is back.
+                  </div>
+                )}
+
                 {/* Phones: one squad at a time. Sticky just under the app bar, and carrying both
                     scores, so the score stays in view while scrolling a squad. */}
                 <div

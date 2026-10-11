@@ -14,7 +14,12 @@
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { testDb, schema } from "./db";
-import { invalidateLeaguePageCache } from "../../src/lib/fpl-cache";
+import {
+  clearCachedElementDetail,
+  getLastGoodElementDetail,
+  invalidateLeaguePageCache,
+  setCachedElementDetail,
+} from "../../src/lib/fpl-cache";
 
 /**
  * Ensure GW 1..38 exist for the league. Every deadline is set to +30 days
@@ -70,4 +75,29 @@ export async function expireGameweek(leagueId: string, gwNumber: number): Promis
  */
 export async function invalidateLeagueCache(leagueId: string): Promise<void> {
   await invalidateLeaguePageCache(leagueId);
+}
+
+/**
+ * Expire a gameweek's per-element points breakdown, as its 60s live TTL would.
+ *
+ * `lastGood` also drops the long-lived copy the Match Center falls back to when FPL refuses
+ * us — the state a gameweek is in when FPL was unreachable before anyone fetched it.
+ */
+export async function expireElementDetail(gwNumber: number, opts: { lastGood?: boolean } = {}): Promise<void> {
+  await clearCachedElementDetail(gwNumber, opts);
+}
+
+/**
+ * Run `change` (a stub control call) without losing the last-good detail copy.
+ *
+ * A stub world change sweeps every `fpl:*:gw*` key, so failing an FPL route also takes the copy
+ * the Match Center falls back on — production has no such sweep. This puts the copy back and
+ * leaves the fresh key expired: FPL refusing us after a healthy read.
+ */
+export async function keepLastGoodElementDetail(gwNumber: number, change: () => Promise<void>): Promise<void> {
+  const kept = await getLastGoodElementDetail(gwNumber);
+  if (!kept) throw new Error(`No last-good detail for GW${gwNumber} to keep — load the Match Center first`);
+  await change();
+  await setCachedElementDetail(gwNumber, kept.data);
+  await clearCachedElementDetail(gwNumber);
 }

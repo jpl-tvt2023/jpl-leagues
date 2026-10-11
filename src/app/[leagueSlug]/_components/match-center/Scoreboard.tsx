@@ -142,7 +142,10 @@ export function Scoreboard({
         >
           ⇄
         </button>
-        {status === "live" && <LiveFreshness updatedAt={data.generatedAt} isRefreshing={isRefreshing} />}
+        {/* When the points come from the last good copy, "Updated" is when that copy was fetched. */}
+        {status === "live" && (
+          <LiveFreshness updatedAt={data.pointsAsOf ?? data.generatedAt} isRefreshing={isRefreshing} />
+        )}
       </div>
 
       {/* Managers: how each one's FPL score becomes their share of the team score. */}
