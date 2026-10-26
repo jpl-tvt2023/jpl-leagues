@@ -13,7 +13,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { db, gameweeks, fixtures, leagues, auditLogs, results } from "@/lib/db";
+import { db, gameweeks, fixtures, leagues, auditLogs, results, gameweekChips } from "@/lib/db";
 import { playoffTies } from "@/lib/db/schema";
 import { asc, eq, and, isNull, ne, or } from "drizzle-orm";
 import { detectLiveGameweek } from "@/lib/fpl";
@@ -377,7 +377,22 @@ export async function processOneLeagueOneGw(
           isNull(results.id),
         ))
         .limit(1);
-      unscoredCount = rows.length;
+      // A Challenge Chip left unprocessed is work too. A run killed after its last fixture (the
+      // 60s ceiling) scores every fixture but never reaches the Challenge pass; checking fixtures
+      // alone skipped the scorer forever after, and the challenger never got their points.
+      const pendingChallenge = rows.length > 0 ? [] : await db
+        .select({ id: gameweekChips.id })
+        .from(gameweekChips)
+        .innerJoin(gameweeks, eq(gameweekChips.gameweekId, gameweeks.id))
+        .where(and(
+          eq(gameweeks.leagueId, league.id),
+          eq(gameweeks.number, gw),
+          eq(gameweekChips.chipType, "C"),
+          eq(gameweekChips.isValid, true),
+          eq(gameweekChips.isProcessed, false),
+        ))
+        .limit(1);
+      unscoredCount = rows.length + pendingChallenge.length;
     } catch (e) {
       result.errors.push({ step: "score", message: `Pre-flight failed: ${messageFrom(e)}` });
     }
@@ -392,13 +407,14 @@ export async function processOneLeagueOneGw(
           url,
           { params: Promise.resolve({ gw: String(gw) }) },
         );
-        const b = body as { processed?: number; failed?: number; errors?: unknown[]; error?: string };
+        const b = body as { processed?: number; failed?: number; errors?: unknown[]; error?: string; challengeResults?: unknown[] };
         if (status >= 400) {
           result.errors.push({ step: "score", message: `HTTP ${status}: ${b.error ?? "unknown"}` });
         } else {
           const processed = b.processed ?? 0;
           const failed = b.failed ?? b.errors?.length ?? 0;
-          if (processed > 0) {
+          // A resumed run can settle only Challenge Chips (processed: 0) — that still scored points.
+          if (processed > 0 || (b.challengeResults?.length ?? 0) > 0) {
             result.scored = true;
           } else if (failed === 0) {
             result.scoreSkipped = true;

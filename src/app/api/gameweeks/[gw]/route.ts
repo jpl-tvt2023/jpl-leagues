@@ -112,6 +112,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .where(eq(challengerSurvivalEntries.gameweekId, gameweek.id));
     const survivalRanked = survivalEntries.filter(e => e.rank != null).length;
 
+    // Challenge Chips not yet settled. Once every fixture has a result this is normally 0; anything
+    // left means a scoring run was killed before its Challenge pass, and the admin Scoring panel
+    // keeps the gameweek pending (with a plain Process, which resumes) until it is.
+    const pendingChallenges = await db.select({ id: gameweekChips.id }).from(gameweekChips)
+      .where(and(
+        eq(gameweekChips.gameweekId, gameweek.id),
+        eq(gameweekChips.chipType, "C"),
+        eq(gameweekChips.isValid, true),
+        eq(gameweekChips.isProcessed, false),
+      ));
+
     return NextResponse.json({
       gameweek: {
         number: gameweek.number,
@@ -121,6 +132,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         resultsProcessed: gameweek.fixtures.filter((f: FixtureWithRelations) => f.result).length,
         survivalCount: survivalEntries.length,
         survivalRanked,
+        challengesPending: pendingChallenges.length,
       },
       fixtures: gameweek.fixtures.map((f: FixtureWithRelations) => ({
         id: f.id,
@@ -503,7 +515,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Filter only unprocessed fixtures
     const unprocessedFixtures = gameweek.fixtures.filter(f => !f.result);
 
-    if (unprocessedFixtures.length === 0) {
+    // Challenge Chips still owed a result. Normally none by now — the Challenge pass below runs in
+    // the same request as the fixtures — but a run killed after its last fixture (the 60s ceiling)
+    // leaves them behind, and returning early here stranded them for good: nothing else ever
+    // selects them, short of a force reprocess of the whole gameweek. Same filter as that pass.
+    const pendingChallengeChips = await db
+      .select({ teamId: gameweekChips.teamId })
+      .from(gameweekChips)
+      .where(and(
+        eq(gameweekChips.gameweekId, gameweek.id),
+        eq(gameweekChips.chipType, "C"),
+        eq(gameweekChips.isValid, true),
+        eq(gameweekChips.isProcessed, false),
+      ));
+
+    if (unprocessedFixtures.length === 0 && pendingChallengeChips.length === 0) {
+      // Still invalidate: a run killed before its final invalidation left the pages cached as they
+      // were before scoring (results missing for up to the 25h TTL), and this is how it heals.
+      await invalidateLeaguePageCache(leagueId);
       return NextResponse.json(
         { message: "All fixtures already processed", processed: 0 },
         { status: 200 }
@@ -539,10 +568,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // The "critical" lane is used deliberately: this decides league points, so it is entitled to
     // fetch during a scoring run. A manager whose history cannot be read is simply absent from
     // the map, and tvtChipWasteReasonFor() then declines to declare waste — see below.
-    const scoringFplIds = unprocessedFixtures.flatMap((f: Fixture & { homeTeam: Team & { players: Player[] }; awayTeam: Team & { players: Player[] } }) => [
-      ...f.homeTeam.players.map((p: Player) => p.fplId),
-      ...f.awayTeam.players.map((p: Player) => p.fplId),
-    ]);
+    //
+    // Pending challengers are added explicitly. In a normal run they already sit in an unprocessed
+    // fixture, but a resumed run (see pendingChallengeChips) scores no fixtures at all, and without
+    // their managers here the Challenge pass could never detect a clash and void a wasted chip.
+    const pendingChallengerIds = new Set(pendingChallengeChips.map((c) => c.teamId));
+    const scoringFplIds = [...new Set([
+      ...unprocessedFixtures.flatMap((f: Fixture & { homeTeam: Team & { players: Player[] }; awayTeam: Team & { players: Player[] } }) => [
+        ...f.homeTeam.players.map((p: Player) => p.fplId),
+        ...f.awayTeam.players.map((p: Player) => p.fplId),
+      ]),
+      ...gameweek.fixtures
+        .flatMap((f: FixtureWithRelations) => [f.homeTeam, f.awayTeam])
+        .filter((t) => pendingChallengerIds.has(t.id))
+        .flatMap((t) => t.players.map((p: Player) => p.fplId)),
+    ])];
     const fplChipStatusByFplId = await resolveFplChipStatuses(scoringFplIds, {
       lane: "critical",
       topUp: scoringFplIds.length,
@@ -1069,6 +1109,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             .where(eq(teams.id, side.teamId));
         }
       }
+    }
+
+    // Results and bonuses are final from here, so publish them now rather than only at the end.
+    // The Challenge pass below runs last, once the fixtures have used most of the 60s budget; a run
+    // killed inside it (GW8 2026-27) used to leave every page cached as it was before scoring.
+    // The invalidation at the end still runs, for the Challenge points.
+    if (gameweek.leagueId) {
+      await invalidateLeaguePageCache(gameweek.leagueId);
     }
 
     // ============================================

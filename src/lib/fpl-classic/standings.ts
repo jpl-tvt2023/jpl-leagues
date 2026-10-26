@@ -102,10 +102,11 @@ export interface ClassicStandingsPayload {
     rows: ClassicBoardRow[];
   };
   awards: ClassicAwardGroup[];
+  // No lastSyncError: this payload is public, and that text is for the superadmin Operations tab
+  // (its own route serves it). It has held raw SQL with entrant ids before now.
   sync: {
     entrantsSyncedAt: string | null;
     settledThroughGw: number;
-    lastSyncError: string | null;
   };
 }
 
@@ -442,7 +443,6 @@ export async function buildClassicStandingsPayload(opts: {
     sync: {
       entrantsSyncedAt: config.entrantsSyncedAt ? config.entrantsSyncedAt.toISOString() : null,
       settledThroughGw: config.settledThroughGw,
-      lastSyncError: config.lastSyncError,
     },
   };
 }

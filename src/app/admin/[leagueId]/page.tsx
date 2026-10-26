@@ -520,11 +520,14 @@ export default function AdminDashboard() {
             const survivalRanked = data.gameweek.survivalRanked ?? 0;
             const fixturesPending = data.gameweek.resultsProcessed < data.gameweek.fixturesCount;
             const survivalPending = survivalCount > 0 && survivalRanked < survivalCount;
+            // Every fixture scored but a Challenge Chip unsettled = a run killed before its
+            // Challenge pass. Pending, so the plain Process (which resumes) is offered, not Reprocess.
+            const challengesPending = (data.gameweek.challengesPending ?? 0) > 0;
             statuses.push({
               number: data.gameweek.number,
               fixturesCount: data.gameweek.fixturesCount,
               resultsProcessed: data.gameweek.resultsProcessed,
-              isPending: fixturesPending || survivalPending,
+              isPending: fixturesPending || survivalPending || challengesPending,
               survivalCount,
               survivalRanked,
             });
@@ -591,7 +594,9 @@ export default function AdminDashboard() {
       setScoringResults(prev => [...prev, data as ScoringResult]);
       setMessage({ 
         type: "success", 
-        text: `GW${gwNumber}: Processed ${data.processed} fixtures, ${data.failed} failed` 
+        text: `GW${gwNumber}: Processed ${data.processed} fixtures, ${data.failed ?? 0} failed${
+          data.challengeResults?.length ? ` · ${data.challengeResults.length} Challenge Chip(s) settled` : ""
+        }`
       });
       
       // Refresh the gameweek statuses and cache stats

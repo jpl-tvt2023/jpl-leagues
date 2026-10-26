@@ -42,7 +42,7 @@ interface Payload {
   gameweekBoard: { gw: number; isLive: boolean; availableGws: number[]; source: "live" | "settled" | "none"; rows: BoardRow[] };
   monthlyBoard: { monthKey: string | null; label: string | null; months: MonthOption[]; rows: BoardRow[] };
   awards: AwardGroup[];
-  sync: { entrantsSyncedAt: string | null; settledThroughGw: number; lastSyncError: string | null };
+  sync: { entrantsSyncedAt: string | null; settledThroughGw: number };
 }
 
 const ALL_GWS = Array.from({ length: 38 }, (_, i) => i + 1);
