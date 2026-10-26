@@ -117,6 +117,48 @@ test.describe.serial("Challenge Chip reprocessing", () => {
     expect(chip.pointsAwarded).toBeLessThanOrEqual(2);
   });
 
+  // GW8 2026-27: the scoring run hit the 60s ceiling after its last fixture, so the Challenge pass
+  // never ran. A plain re-run then returned "All fixtures already processed" and the chip was
+  // stranded — only a force reprocess of the whole gameweek could reach it.
+  test("a run killed before the Challenge pass is resumed by a plain re-run", async ({ request }) => {
+    await apiSignInSuperadmin(request);
+    const before = await standingFor(request, challengerId);
+    const chipBefore = await chipRow();
+    expect(chipBefore.isProcessed).toBe(true);
+
+    // Put the database where the killed run left it: fixtures scored, challenge never settled.
+    const db = testDb();
+    await db.update(schema.gameweekChips)
+      .set({ isProcessed: false, pointsAwarded: 0 })
+      .where(eq(schema.gameweekChips.id, chipBefore.id));
+    const [team] = await db.select().from(schema.teams).where(eq(schema.teams.id, challengerId)).limit(1);
+    await db.update(schema.teams)
+      .set({ leaguePoints: team.leaguePoints - chipBefore.pointsAwarded })
+      .where(eq(schema.teams.id, challengerId));
+
+    // The admin Scoring panel reads this to keep the gameweek pending, with a plain Process.
+    const status = await request.get(`/api/gameweeks/${GW}?leagueId=${leagueId}`).then((r) => r.json());
+    expect(status.gameweek.challengesPending, "the stranded chip should be reported").toBe(1);
+    expect(status.gameweek.resultsProcessed).toBe(status.gameweek.fixturesCount);
+
+    const res = await request.post(`/api/gameweeks/${GW}?leagueId=${leagueId}`, { failOnStatusCode: false });
+    expect(res.status(), await res.text()).toBe(200);
+    const body = await res.json();
+    expect(body.processed, "no fixture should be re-scored").toBe(0);
+    expect(body.challengeResults?.length, "the resume should settle the challenge").toBe(1);
+
+    const chipAfter = await chipRow();
+    expect(chipAfter.isProcessed).toBe(true);
+    expect(chipAfter.pointsAwarded).toBe(chipBefore.pointsAwarded);
+
+    const after = await standingFor(request, challengerId);
+    expect(after.leaguePoints, "leaguePoints should be restored exactly").toBe(before.leaguePoints);
+    expect(after.cbpPoints, "cbpPoints should be restored exactly").toBe(before.cbpPoints);
+
+    const settled = await request.get(`/api/gameweeks/${GW}?leagueId=${leagueId}`).then((r) => r.json());
+    expect(settled.gameweek.challengesPending).toBe(0);
+  });
+
   test("reprocessing leaves the challenger's points exactly where they were", async ({ request }) => {
     await apiSignInSuperadmin(request);
 
