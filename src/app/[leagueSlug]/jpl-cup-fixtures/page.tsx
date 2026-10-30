@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { pickDefaultGameweek } from "@/lib/gameweeks/default-gw";
+import { pollWhileVisible } from "@/lib/poll-while-visible";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
@@ -131,12 +132,11 @@ export default function JplCupFixturesPage() {
       .finally(() => setIsLoading(false));
   }, [leagueSlug]);
 
-  // Auto-poll live scores every 10 minutes
+  // Auto-poll live scores every 10 minutes, while the tab is visible
   useEffect(() => {
     if (!selectedGW) return;
     fetchLiveScores(selectedGW);
-    const interval = setInterval(() => fetchLiveScores(selectedGW), 10 * 60 * 1000);
-    return () => clearInterval(interval);
+    return pollWhileVisible(() => fetchLiveScores(selectedGW), 10 * 60 * 1000);
   }, [selectedGW, fetchLiveScores]);
 
   const handleSignOut = async () => {

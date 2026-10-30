@@ -40,6 +40,7 @@ import {
   isGameweekFinal,
 } from "@/lib/fpl";
 import { getManagerPicks } from "@/lib/fpl-live/picks-cache";
+import { getCachedPicksMany } from "@/lib/fpl-cache";
 import { getFplFixturesForGw } from "@/lib/fpl-live/players-left";
 import { FplUnavailableError, withFplBudget } from "@/lib/fpl/gateway";
 import type { FPLGameweekPicks } from "@/lib/fpl";
@@ -369,6 +370,12 @@ export async function loadMatchCenter(opts: {
         const clubs = new Map<number, ClubMeta>(
           clubInfo.map((c) => [c.id, { id: c.id, short: c.short_name, name: c.name }]),
         );
+        // Both sides' cached picks in one MGET, rather than a GET per manager on every request
+        // and every live poll.
+        const cachedPicks = await getCachedPicksMany(
+          [teamA!, teamB!].flatMap((id) => (teamById.get(id)?.isGhost ? [] : rosterOf(id).map((p) => p.fplId))),
+          gwNumber!,
+        );
 
         for (const teamId of [teamA!, teamB!]) {
           if (sheets.has(teamId)) continue;
@@ -381,7 +388,14 @@ export async function loadMatchCenter(opts: {
           const picksByFplId = new Map<string, FPLGameweekPicks | null>();
           for (const p of roster) {
             try {
-              picksByFplId.set(p.fplId, await getManagerPicks(p.fplId, gwNumber!, { lane: "background", settled }));
+              picksByFplId.set(
+                p.fplId,
+                await getManagerPicks(p.fplId, gwNumber!, {
+                  lane: "background",
+                  settled,
+                  prefetched: cachedPicks.get(p.fplId) ?? null,
+                }),
+              );
             } catch (err) {
               if (err instanceof FplUnavailableError) throw err;
               picksByFplId.set(p.fplId, null);

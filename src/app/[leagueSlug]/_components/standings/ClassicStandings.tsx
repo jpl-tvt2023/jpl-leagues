@@ -7,6 +7,7 @@ import { StandingsTable } from "@/components/StandingsTable";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LiveFreshness } from "@/components/LiveFreshness";
 import { useLeague } from "@/lib/league-context";
+import { pollWhileVisible } from "@/lib/poll-while-visible";
 import type { TeamStanding } from "@/types/standings";
 
 /**
@@ -95,10 +96,12 @@ export function ClassicStandings() {
     fetchStandings();
     // Poll unconditionally rather than only once a gameweek is live: the whole point is to pick
     // up the moment one starts, and by then the first response has long since been rendered.
-    const id = setInterval(fetchStandings, LIVE_POLL_MS);
+    // Unconditionally while someone is looking, that is — a hidden tab skips its polls and is
+    // caught up the moment it is shown again.
+    const stopPolling = pollWhileVisible(fetchStandings, LIVE_POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      stopPolling();
     };
   }, [leagueSlug]);
 

@@ -10,6 +10,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { LeagueNav } from "@/components/LeagueNav";
 import { useLeague, useEnforceFormat } from "@/lib/league-context";
 import { pickDefaultGameweek } from "@/lib/gameweeks/default-gw";
+import { pollWhileVisible } from "@/lib/poll-while-visible";
 import {
   type Fixture,
   type GameweekFixtures,
@@ -472,9 +473,9 @@ export default function LeagueFixturesPage() {
     // Deliberately shorter than LIVE_CACHE_TTL (10 min). Polling *at* the fresh
     // window meant almost every poll landed on or past the boundary, came back
     // stale, and kicked off a full 64-call sweep. Polling inside it means most
-    // polls hit fresh cache and cost nothing — fewer FPL calls, not more.
-    const interval = setInterval(() => fetchLiveScores(selectedGW), LIVE_POLL_MS);
-    return () => clearInterval(interval);
+    // polls hit fresh cache and cost nothing — fewer FPL calls, not more. Paused while the tab is
+    // hidden; a returning reader is caught up at once.
+    return pollWhileVisible(() => fetchLiveScores(selectedGW), LIVE_POLL_MS);
   }, [selectedGW, fetchLiveScores]);
 
   const handleSignOut = async () => {
