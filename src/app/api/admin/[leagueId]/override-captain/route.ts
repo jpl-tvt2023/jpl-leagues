@@ -113,7 +113,10 @@ export async function POST(request: NextRequest) {
       // invalidateLeaguePageCache does not touch live:gw*, and the live cache
       // carries the captain flags the fixtures sheet and dashboard render — so
       // without this the old captain stays on screen for the retention window.
-      await clearLiveCache(gwNumber, leagueId);
+      // Non-fatal: the override has committed, and a live payload is only trusted for
+      // LIVE_CACHE_TTL before it is recomputed — failing here would report a save that happened
+      // as a failure.
+      try { await clearLiveCache(gwNumber, leagueId); } catch { /* non-fatal */ }
       return NextResponse.json({
         success: true,
         message: `Captain changed from ${existingCaptain.player.name} to ${player.name}`,
@@ -149,7 +152,8 @@ export async function POST(request: NextRequest) {
       // invalidateLeaguePageCache does not touch live:gw*, and the live cache
       // carries the captain flags the fixtures sheet and dashboard render — so
       // without this the old captain stays on screen for the retention window.
-      await clearLiveCache(gwNumber, leagueId);
+      // Non-fatal, as above.
+      try { await clearLiveCache(gwNumber, leagueId); } catch { /* non-fatal */ }
       return NextResponse.json({
         success: true,
         message: `Captain set to ${player.name}`,
