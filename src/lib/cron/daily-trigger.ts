@@ -36,7 +36,6 @@
  * - Only gameweeks FPL has CONCLUDED enter the plan, so it cannot score unfinished football.
  */
 
-import { Redis } from "@upstash/redis";
 import type { LeaguePlanItem, LeagueResult, LeagueGwResult } from "@/lib/cron/process-all";
 import {
   emptyLeagueResult,
@@ -45,6 +44,7 @@ import {
 } from "@/lib/cron/league-result";
 import { isScoringActive, markScoringActive, clearScoringActive } from "@/lib/fpl-cache";
 import { istNow } from "@/lib/cron/ist-clock";
+import { getRedis as getSharedRedis } from "@/lib/redis";
 
 export { istNow };
 
@@ -97,20 +97,22 @@ export interface DailyRunStore {
   lpop<T>(key: string): Promise<T | null>;
 }
 
-let redis: DailyRunStore | null = null;
+let storeOverride: DailyRunStore | null = null;
+
+/**
+ * The shared client (lib/redis.ts), which is null while Redis is absent OR down. Down therefore
+ * reads exactly like absent here — no claim, no queue, no automation — which is the fail-closed
+ * behaviour this module already chose for "no Redis" and wants for an outage too: a run that
+ * cannot record its own progress could double-process, and waiting for Redis to recover costs
+ * nothing but time.
+ */
 function getRedis(): DailyRunStore | null {
-  if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    }) as unknown as DailyRunStore;
-  }
-  return redis;
+  return storeOverride ?? (getSharedRedis() as unknown as DailyRunStore | null);
 }
 
 /** Test seam: run the orchestration against a double instead of a live Redis. */
 export function __setDailyTriggerStore(store: DailyRunStore | null): void {
-  redis = store;
+  storeOverride = store;
 }
 
 const claimKey = (date: string) => `daily-run:claim:${date}`;
@@ -260,7 +262,7 @@ function parseQueueItem(raw: string | QueueItem): QueueItem | null {
   }
 }
 
-/** Test seam: forget the memoised client so a spec can point it at a different Redis. */
+/** Test seam: drop any store double so the shared client is used again. */
 export function __resetDailyTriggerRedis(): void {
-  redis = null;
+  storeOverride = null;
 }

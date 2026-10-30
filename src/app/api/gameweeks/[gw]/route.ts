@@ -5,6 +5,8 @@ import { calculateTVTTeamScore, determineMatchResult } from "@/lib/formats/tvt/s
 import { computeGameweekAwards, type AwardFixtureInput } from "@/lib/formats/tvt/gameweek-awards";
 import { getTop2FromGroup } from "@/lib/formats/tvt/chip-validation";
 import { getAllCachedScores, invalidateLeaguePageCache } from "@/lib/fpl-cache";
+import { redisWritable } from "@/lib/redis";
+import { playerHitsFromStoredScores } from "@/lib/scoring/stored-hits";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { generateId } from "@/lib/id";
 import { leagues, challengerSurvivalEntries } from "@/lib/db/schema";
@@ -288,6 +290,37 @@ async function autoAssignDefaultCaptain(
 }
 
 /**
+ * Every manager's transfer hits in one of this league's gameweeks, from the stored results.
+ *
+ * Null — so the caller falls back to Redis — unless the results can answer for the WHOLE
+ * gameweek: every fixture has a result, and every non-ghost side has a usable breakdown. A
+ * partial answer would silently drop a carry-forward deduction for whoever is missing.
+ */
+async function storedGameweekHits(leagueId: string, gwNumber: number): Promise<Map<string, number> | null> {
+  const gw = await db.query.gameweeks.findFirst({
+    where: and(eq(gameweeks.number, gwNumber), eq(gameweeks.leagueId, leagueId)),
+    with: { fixtures: { with: { result: true, homeTeam: true, awayTeam: true } } },
+  });
+  if (!gw || gw.fixtures.length === 0) return null;
+
+  const hits = new Map<string, number>();
+  for (const f of gw.fixtures) {
+    if (!f.result) return null;
+    const sides: [string | null, Team][] = [
+      [f.result.homePlayerScores, f.homeTeam],
+      [f.result.awayPlayerScores, f.awayTeam],
+    ];
+    for (const [raw, team] of sides) {
+      if (team.isGhost) continue; // bye placeholder: no managers to read
+      const sideHits = playerHitsFromStoredScores(raw);
+      if (!sideHits) return null;
+      for (const [fplId, h] of sideHits) hits.set(fplId, h);
+    }
+  }
+  return hits.size > 0 ? hits : null;
+}
+
+/**
  * POST /api/gameweeks/[gw]
  * Process gameweek - fetch FPL scores and calculate results
  * Query params:
@@ -334,6 +367,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 404 }
       );
     }
+
+    // Scoring fails CLOSED while Redis is configured but refusing. Every format below commits
+    // rows and then invalidates the page caches built from them; an outage would let the first
+    // happen without the second — a half-processed gameweek (TVT invalidates before its
+    // Challenge pass), and pre-outage pages served as current once Redis recovers. Stop here,
+    // before anything is written. Reads elsewhere fail open; writes of results wait.
+    if (!(await redisWritable())) {
+      return NextResponse.json(
+        { error: "Scoring is paused: the cache (Upstash Redis) is not answering. Nothing was written — retry once it recovers." },
+        { status: 503 }
+      );
+    }
+
     const gwWhere = and(eq(gameweeks.number, gameweekNumber), eq(gameweeks.leagueId, leagueId));
 
     const gwList = await db.query.gameweeks.findMany({
@@ -547,14 +593,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // ============================================
     // Any player who took >12 raw FPL transfer hits in GW N-1 has their
     // FULL hit value deducted from their team's match score in GW N.
+    //
+    // GW N-1's hits come from its stored results (lib/scoring/stored-hits.ts). The per-manager
+    // Redis scores this used to SCAN live for 24 hours after they are written; they were only
+    // still there a week later because league-standings recomputes kept refreshing them, and
+    // those recomputes now read the stored results too. Redis remains the fallback for a GW N-1
+    // the results cannot answer for (unscored fixtures, or breakdowns predating the field).
     const carryForwardMap = new Map<string, number>(); // fplId → transferHits to carry forward
     if (gameweekNumber > 1) {
-      const prevGwCache = await getAllCachedScores(gameweekNumber - 1, leagueId);
-      const prevGwSuffix = `_gw${gameweekNumber - 1}`;
-      for (const [key, data] of Object.entries(prevGwCache)) {
-        if (key.endsWith(prevGwSuffix) && data.transferHits > 12) {
-          const fplId = key.slice(0, -prevGwSuffix.length);
-          carryForwardMap.set(fplId, data.transferHits);
+      const prevHits = await storedGameweekHits(leagueId, gameweekNumber - 1);
+      if (prevHits) {
+        for (const [fplId, hits] of prevHits) {
+          if (hits > 12) carryForwardMap.set(fplId, hits);
+        }
+      } else {
+        const prevGwCache = await getAllCachedScores(gameweekNumber - 1, leagueId);
+        const prevGwSuffix = `_gw${gameweekNumber - 1}`;
+        for (const [key, data] of Object.entries(prevGwCache)) {
+          if (key.endsWith(prevGwSuffix) && data.transferHits > 12) {
+            const fplId = key.slice(0, -prevGwSuffix.length);
+            carryForwardMap.set(fplId, data.transferHits);
+          }
         }
       }
     }

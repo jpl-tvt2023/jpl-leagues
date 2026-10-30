@@ -10,23 +10,18 @@
 //   - GET /api/fixtures/live (enriched response — TVT live)
 //   - GET /api/auction/gw-summary (live mode)
 
-import { Redis } from "@upstash/redis";
 import { fetchElementInfo } from "../fpl";
 import { fplRequest, FPL_BASE_URL, FplUnavailableError } from "../fpl/gateway";
-
-let redis: Redis | null = null;
-function getRedis(): Redis | null {
-  if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-  }
-  return redis;
-}
+import { cachedGet, cachedSet } from "../redis";
 
 const ALL_FIXTURES_CACHE_KEY = "fpl:fixtures:all";
 const ALL_FIXTURES_TTL_SECONDS = 60;
+/**
+ * Per-instance read-through (lib/redis.ts). This is the most-read key in the app — event status,
+ * the current-gameweek lookup, every players-left count and Match Center all start here — so
+ * most requests used to pay a GET for it, often several.
+ */
+const ALL_FIXTURES_L1_SECONDS = 30;
 const FPL_FIXTURES_URL = `${FPL_BASE_URL}/fixtures/`;
 
 export interface FplFixture {
@@ -58,12 +53,8 @@ export interface FplFixture {
  * so Vercel logs surface what's happening when the UI shows "—".
  */
 async function loadAllFplFixtures(): Promise<FplFixture[] | null> {
-  const r = getRedis();
-
-  if (r) {
-    const cached = await r.get<FplFixture[]>(ALL_FIXTURES_CACHE_KEY);
-    if (Array.isArray(cached) && cached.length > 0) return cached;
-  }
+  const cached = await cachedGet<FplFixture[]>(ALL_FIXTURES_CACHE_KEY, { l1Seconds: ALL_FIXTURES_L1_SECONDS });
+  if (Array.isArray(cached) && cached.length > 0) return cached;
 
   try {
     // Always the background lane: players-left is a display nicety, never
@@ -83,7 +74,8 @@ async function loadAllFplFixtures(): Promise<FplFixture[] | null> {
       console.warn("[players-left] FPL /fixtures/ returned 0 fixtures");
       return null;
     }
-    if (r) await r.set(ALL_FIXTURES_CACHE_KEY, data, { ex: ALL_FIXTURES_TTL_SECONDS });
+    // Never throws: a failed write must not discard a good response.
+    await cachedSet(ALL_FIXTURES_CACHE_KEY, data, ALL_FIXTURES_TTL_SECONDS, { l1Seconds: ALL_FIXTURES_L1_SECONDS });
     return data;
   } catch (e) {
     if (e instanceof FplUnavailableError) {

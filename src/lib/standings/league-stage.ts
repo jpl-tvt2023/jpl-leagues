@@ -29,6 +29,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { getAllCachedScores, getCachedLeagueStageRows, setCachedLeagueStageRows } from "@/lib/fpl-cache";
 import { calculateTeamGameweekScore } from "@/lib/fpl";
 import { compareTiebreaker } from "@/lib/formats/tvt/tiebreaker";
+import { playerHitsFromStoredScores } from "@/lib/scoring/stored-hits";
 
 type FixtureWithResult = Fixture & { result: Result | null; gameweek: Gameweek };
 type TeamWithRelations = Team & {
@@ -210,9 +211,17 @@ function sumNetPlayerScores(raw: string | null | undefined): number | null {
  * Per-GW, per-player transfer hits, for the -1 league point levied on any gameweek
  * where a player took more than 12 raw hits.
  *
- * Redis first. On a cold cache the FPL fetch is parallel WITHIN a gameweek and
- * sequential ACROSS gameweeks — the per-player sequential version this replaces made
- * ~1900 serial round-trips on a 32-team league and stalled for minutes.
+ * Stored results first: every processed fixture already carries each manager's hits in its
+ * per-player breakdown (lib/scoring/stored-hits.ts), and the rows are loaded anyway — so a normal
+ * league costs no Redis and no FPL here. This used to be a full-keyspace SCAN per processed
+ * gameweek on every recompute, which made it the app's largest Redis consumer, growing with
+ * every gameweek played.
+ *
+ * A gameweek is taken from the results only if every result in it has a usable breakdown for
+ * each of its (non-ghost) sides; otherwise the WHOLE gameweek goes the old way, so a legacy row
+ * can never be read as "nobody took a hit". On that path, on a cold cache the FPL fetch is
+ * parallel WITHIN a gameweek and sequential ACROSS gameweeks — the per-player sequential version
+ * it replaced made ~1900 serial round-trips on a 32-team league and stalled for minutes.
  *
  * Best-effort: any failure yields no deductions rather than a failed request.
  */
@@ -220,6 +229,7 @@ async function loadPlayerGwHits(
   leagueId: string,
   allFplIds: Set<string>,
   processedGws: Set<number>,
+  leagueTeams: TeamWithRelations[],
 ): Promise<Map<string, Map<number, number>>> {
   const playerGwHitsMap = new Map<string, Map<number, number>>();
   const record = (fplId: string, gw: number, hits: number) => {
@@ -227,8 +237,45 @@ async function loadPlayerGwHits(
     playerGwHitsMap.get(fplId)!.set(gw, hits);
   };
 
+  // Each team reads only its OWN side of each result, so ghost (bye) sides — filtered out of
+  // `leagueTeams` — are never parsed, and an empty breakdown on a real side marks the gameweek
+  // unusable rather than vouching for a team with no managers listed.
+  const fromResults = new Map<number, Map<string, number>>();
+  const unusableGws = new Set<number>();
+  for (const team of leagueTeams) {
+    const sides: [FixtureWithResult[], "home" | "away"][] = [
+      [team.homeFixtures, "home"],
+      [team.awayFixtures, "away"],
+    ];
+    for (const [teamFixtures, side] of sides) {
+      for (const f of teamFixtures) {
+        const gw = f.gameweek.number;
+        if (!f.result || !processedGws.has(gw) || unusableGws.has(gw)) continue;
+        const hits = playerHitsFromStoredScores(
+          side === "home" ? f.result.homePlayerScores : f.result.awayPlayerScores,
+        );
+        if (!hits) {
+          unusableGws.add(gw);
+          continue;
+        }
+        const gwHits = fromResults.get(gw) ?? new Map<string, number>();
+        for (const [fplId, h] of hits) gwHits.set(fplId, h);
+        fromResults.set(gw, gwHits);
+      }
+    }
+  }
+  const fallbackGws = new Set<number>();
+  for (const gw of processedGws) {
+    const gwHits = fromResults.get(gw);
+    if (!gwHits || unusableGws.has(gw)) {
+      fallbackGws.add(gw);
+      continue;
+    }
+    for (const [fplId, h] of gwHits) record(fplId, gw, h);
+  }
+
   try {
-    for (const gw of processedGws) {
+    for (const gw of fallbackGws) {
       const gwCache = await getAllCachedScores(gw, leagueId);
       const suffix = `_gw${gw}`;
       if (Object.keys(gwCache).length > 0) {
@@ -337,7 +384,7 @@ export async function computeLeagueStageStandings(
       }
     }
   }
-  const playerGwHitsMap = await loadPlayerGwHits(leagueId, allFplIds, processedGws);
+  const playerGwHitsMap = await loadPlayerGwHits(leagueId, allFplIds, processedGws, allTeams);
 
   // ── Chips ──
   // Scoped to THIS league's gameweeks. The copies this replaces queried the whole

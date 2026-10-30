@@ -6,27 +6,19 @@
  * gameweek's deadline — to seed its own gameweek-numbering, and to bucket settled rows into
  * calendar months — without re-fetching all ~700 elements just for that.
  *
- * Own private Redis client, same pattern as fpl-live/players-left.ts: a new cache key needs no
- * edit to fpl-cache.ts, which this feature otherwise never touches.
+ * Its own key, outside fpl-cache.ts, same pattern as fpl-live/players-left.ts: a new cache key
+ * needs no edit to fpl-cache.ts, which this feature otherwise never touches. The client and its
+ * failure handling are shared (lib/redis.ts).
  */
 
-import { Redis } from "@upstash/redis";
 import { fetchBootstrapData } from "@/lib/fpl";
 import { CACHE_TTL } from "@/lib/fpl-cache";
 import type { FplLane } from "@/lib/fpl/gateway";
-
-let redis: Redis | null = null;
-function getRedis(): Redis | null {
-  if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-  }
-  return redis;
-}
+import { cachedGet, cachedSet } from "@/lib/redis";
 
 const GW_CALENDAR_KEY = "fpl:gw-calendar:v1";
+/** Per-instance read-through (lib/redis.ts). Deadlines move a few times a season at most. */
+const GW_CALENDAR_L1_SECONDS = 300;
 
 export interface GwDeadline {
   gw: number;
@@ -36,11 +28,8 @@ export interface GwDeadline {
 
 /** Every gameweek's deadline, cache-first. Background lane — this is never on the scoring path. */
 export async function fetchGameweekDeadlines(lane: FplLane = "background"): Promise<GwDeadline[]> {
-  const r = getRedis();
-  if (r) {
-    const cached = await r.get<GwDeadline[]>(GW_CALENDAR_KEY);
-    if (cached && Array.isArray(cached) && cached.length > 0) return cached;
-  }
+  const cached = await cachedGet<GwDeadline[]>(GW_CALENDAR_KEY, { l1Seconds: GW_CALENDAR_L1_SECONDS });
+  if (cached && Array.isArray(cached) && cached.length > 0) return cached;
 
   const bootstrap = (await fetchBootstrapData(lane)) as {
     events?: { id: number; deadline_time: string }[];
@@ -50,8 +39,8 @@ export async function fetchGameweekDeadlines(lane: FplLane = "background"): Prom
     deadlineTime: e.deadline_time,
   }));
 
-  if (r && deadlines.length > 0) {
-    await r.set(GW_CALENDAR_KEY, deadlines, { ex: CACHE_TTL });
+  if (deadlines.length > 0) {
+    await cachedSet(GW_CALENDAR_KEY, deadlines, CACHE_TTL, { l1Seconds: GW_CALENDAR_L1_SECONDS });
   }
 
   return deadlines;
