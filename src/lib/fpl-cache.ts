@@ -6,6 +6,8 @@
 // a fake "claimed". What still throws, on purpose, uses the raw client: invalidations (silently
 // skipping one is how stale data gets served) and the scoring-only paths — markScoringActive and
 // getAllCachedScores — because scoring must fail closed, not score against a missing cache.
+// invalidateLeaguePageCache is the exception: it runs after a write has already committed, so a
+// refused sweep is recorded for repair rather than thrown (see repairStalePageCaches).
 
 // Type-only: fpl.ts imports this module at runtime, so a value import here would close a cycle.
 import type { FPLGameweekPicks } from "./fpl";
@@ -21,6 +23,7 @@ import {
   redisClaim,
   redisRelease,
   forgetL1,
+  noteRedisFailure,
 } from "./redis";
 
 /**
@@ -934,10 +937,91 @@ const standingsKey = (leagueId: string, disclosedGwCount: number) =>
 // database, which is cheap and correct, whereas an instance-local copy could outlive an admin
 // write whose invalidation it never saw.
 
+// ── Page caches an outage kept from being invalidated ──
+//
+// invalidateLeaguePageCache records a league when Upstash refuses its sweep, and every page-blob
+// getter first sweeps whatever is recorded, so no blob from before an admin save is served after
+// Upstash recovers. stale-page-caches.ts has the why.
+
+/** The stale-page record (stale-page-caches.ts), behind an interface so unit tests can swap it. */
+export interface StalePageCacheStore {
+  mark(leagueId: string): Promise<void>;
+  list(): Promise<{ leagueId: string; markedAt: string }[]>;
+  clear(leagueId: string, markedAt: string): Promise<void>;
+}
+
+let staleStoreOverride: StalePageCacheStore | null = null;
+
+async function staleStore(): Promise<StalePageCacheStore> {
+  if (staleStoreOverride) return staleStoreOverride;
+  // Imported lazily: this module is otherwise database-free, and the unit tests that load it
+  // (daily-run.test.ts, through cron/daily-trigger.ts) have no database to connect to.
+  const m = await import("./stale-page-caches");
+  return { mark: m.markPageCacheStale, list: m.listStalePageCaches, clear: m.clearPageCacheStale };
+}
+
+/** How often an instance asks the database whether an outage left a league owing a sweep. */
+const STALE_PAGE_CHECK_MS = 60_000;
+let nextStalePageCheck = 0;
+let staleRepair: Promise<void> | null = null;
+
+/**
+ * Sweep every league whose invalidation an outage refused, before a page blob is read.
+ *
+ * Runs from the getters rather than from the instance that took the admin save, because that
+ * instance is usually long gone by the time an outage ends: whichever instance first reads a page
+ * after recovery pays the debt before serving anything. At most one indexed database read a minute
+ * per instance, none while Redis is absent or the breaker is open, and no Redis commands unless a
+ * league is owed. Concurrent readers wait on the pass in flight instead of reading past it.
+ */
+async function repairStalePageCaches(): Promise<void> {
+  if (staleRepair) return staleRepair;
+  if (!getRedis() || Date.now() < nextStalePageCheck) return;
+  nextStalePageCheck = Date.now() + STALE_PAGE_CHECK_MS;
+  staleRepair = sweepOwedPageCaches().finally(() => {
+    staleRepair = null;
+  });
+  return staleRepair;
+}
+
+async function sweepOwedPageCaches(): Promise<void> {
+  let store: StalePageCacheStore;
+  let owed: { leagueId: string; markedAt: string }[];
+  try {
+    store = await staleStore();
+    owed = await store.list();
+  } catch (e) {
+    console.error("[fpl-cache] could not read the stale page-cache record:", e);
+    return;
+  }
+  for (const { leagueId, markedAt } of owed) {
+    try {
+      await sweepLeaguePageCache(leagueId);
+    } catch (e) {
+      noteRedisFailure(`page-cache repair ${leagueId}`, e);
+      return; // the rest stay recorded until Redis answers again
+    }
+    try {
+      await store.clear(leagueId, markedAt);
+    } catch (e) {
+      // Swept already; a row left behind only costs one more sweep on the next pass.
+      console.error(`[fpl-cache] swept league ${leagueId}'s page cache but could not clear its record:`, e);
+    }
+  }
+}
+
+/** Test seam: swap the stale-page record and forget when it was last checked. */
+export function __setStalePageCacheStoreForTests(store: StalePageCacheStore | null): void {
+  staleStoreOverride = store;
+  nextStalePageCheck = 0;
+  staleRepair = null;
+}
+
 export async function getCachedStandings(
   leagueId: string,
   disclosedGwCount: number,
 ): Promise<unknown | null> {
+  await repairStalePageCaches();
   const key = standingsKey(leagueId, disclosedGwCount);
   return redisRead(key, null, (r) => r.get(key));
 }
@@ -976,6 +1060,7 @@ export async function getCachedFixtures(
   leagueId: string,
   disclosedGwCount: number,
 ): Promise<unknown | null> {
+  await repairStalePageCaches();
   const key = fixturesKey(leagueId, disclosedGwCount);
   return redisRead(key, null, (r) => r.get(key));
 }
@@ -998,6 +1083,7 @@ export async function invalidateFixtures(leagueId: string): Promise<void> {
 }
 
 export async function getCachedPlayoffBracket(leagueId: string): Promise<unknown | null> {
+  await repairStalePageCaches();
   const key = `playoffs:${leagueId}`;
   return redisRead(key, null, (r) => r.get(key));
 }
@@ -1011,8 +1097,32 @@ export async function setCachedPlayoffBracket(leagueId: string, data: unknown): 
  * Delete standings, fixtures, and playoffs cache keys for a league.
  * Call this after any admin write that changes displayed data.
  * The next page request will fall back to DB and repopulate the cache.
+ *
+ * Never throws. It runs after the write has committed, so a refused sweep used to turn a save
+ * that had happened into a 500: through the Oct 2026 quota outage, superadmin Activate/Deactivate
+ * said "Failed to update league" while the league changed anyway. Throwing never protected the
+ * cache either — the stale blob stayed, the admin just stopped trusting the save. A refused sweep
+ * is now recorded in the database and repairStalePageCaches runs it once Redis answers again.
  */
 export async function invalidateLeaguePageCache(leagueId: string): Promise<void> {
+  try {
+    await sweepLeaguePageCache(leagueId);
+  } catch (e) {
+    noteRedisFailure(`invalidate page cache ${leagueId}`, e);
+    try {
+      await (await staleStore()).mark(leagueId);
+      console.warn(`[fpl-cache] page cache for league ${leagueId} not invalidated; queued for repair`);
+    } catch (markErr) {
+      console.error(
+        `[fpl-cache] page cache for league ${leagueId} not invalidated, and could not be queued for repair:`,
+        markErr
+      );
+    }
+  }
+}
+
+/** The sweep behind invalidateLeaguePageCache and the repair. Throws when Upstash refuses. */
+async function sweepLeaguePageCache(leagueId: string): Promise<void> {
   const r = getRawRedis();
   if (!r) return;
   // Must match the versioned key getCachedStandings/setCachedStandings actually use — an earlier,
@@ -1059,6 +1169,7 @@ function leagueStageRowsKey(leagueId: string, throughGw: number): string {
 }
 
 export async function getCachedLeagueStageRows(leagueId: string, throughGw: number): Promise<unknown | null> {
+  await repairStalePageCaches();
   const key = leagueStageRowsKey(leagueId, throughGw);
   return redisRead(key, null, async (r) => (await r.get(key)) ?? null);
 }

@@ -37,8 +37,13 @@
  *
  * ## What deliberately bypasses all of this
  *
- * Invalidations use `getRawRedis()` and still throw. They exist to stop stale data being served,
- * and quietly skipping one during an outage would leave a 25h page blob wrong after recovery.
+ * Invalidations use `getRawRedis()`, so an open breaker never skips one silently: they exist to
+ * stop stale data being served, and a quietly skipped one would leave a 25h page blob wrong after
+ * recovery. The page-cache sweep after every admin save (`invalidateLeaguePageCache`) does not
+ * throw, though — the save has committed by then, and a 500 would only tell the admin it had not.
+ * A refused sweep is recorded in the database instead, and run by whichever instance next reads a
+ * page once Upstash answers. The other clears (live, element, gameweek scores) still throw: they
+ * back the admin cache tools and scoring, where a failed clear has to be reported.
  *
  * Scoring fails CLOSED. Pages may read through an outage; nothing may write league results
  * through one (see `redisWritable`, and `markScoringActive` / `getAllCachedScores` in
@@ -128,14 +133,14 @@ export async function safeRedisWrite(
 }
 
 /**
- * Whether a writer that must invalidate caches afterwards may start: true when Redis is absent
- * (nothing to invalidate) or answers a PING right now, false when it is configured but refusing.
+ * Whether a writer that needs Redis to finish may start: true when Redis is absent (nothing to
+ * need) or answers a PING right now, false when it is configured but refusing.
  *
- * For scoring. Reads fail open, writes of results must fail CLOSED: a scoring run commits rows
- * and then invalidates the page blobs built from them, and doing the first without the second
- * leaves a half-processed gameweek plus pre-outage pages that would be served after recovery.
- * Checked with the raw client so a breaker opened by an earlier blip never blocks a run on its
- * own say-so.
+ * For scoring. Reads fail open, writes of results must fail CLOSED: a run keeps its own state in
+ * Redis (the scoring-active flag, the cached FPL scores the carry-forward can fall back to), and
+ * those calls throw rather than score against a missing cache — so an outage has to stop the run
+ * before it writes its first row, not partway through a gameweek. Checked with the raw client so
+ * a breaker opened by an earlier blip never blocks a run on its own say-so.
  */
 export async function redisWritable(): Promise<boolean> {
   const r = getRawRedis();
