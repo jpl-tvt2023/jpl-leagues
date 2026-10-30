@@ -6,6 +6,7 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import type { MatchCenterPayload } from "@/lib/match-center/load";
+import { pollWhileVisible } from "@/lib/poll-while-visible";
 import { PreDeadline } from "../_components/match-center/PreDeadline";
 import { Scoreboard, matchStatus, type CompareChoice } from "../_components/match-center/Scoreboard";
 import { TeamTable } from "../_components/match-center/TeamTable";
@@ -122,8 +123,7 @@ export default function MatchCenterPage() {
 
   useEffect(() => {
     if (status !== "live" || !query) return;
-    const t = setInterval(() => void load(query, true), LIVE_POLL_MS);
-    return () => clearInterval(t);
+    return pollWhileVisible(() => void load(query, true), LIVE_POLL_MS);
   }, [status, query, load]);
 
   // Drives the deadline countdown.

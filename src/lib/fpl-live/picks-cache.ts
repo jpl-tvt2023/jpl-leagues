@@ -20,7 +20,7 @@
  */
 
 import { fetchTeamGameweekPicks, type FPLGameweekPicks } from "@/lib/fpl";
-import { getCachedPicks, setCachedPicks, CACHE_TTL } from "@/lib/fpl-cache";
+import { getCachedPicks, setCachedPicks, CACHE_TTL, type CachedPicks } from "@/lib/fpl-cache";
 import type { FplLane } from "@/lib/fpl/gateway";
 
 /** A copy taken while the gameweek is live. Only `points`/`automatic_subs` can still change. */
@@ -41,13 +41,24 @@ export async function getManagerPicks(
      * `entry_history.points`, which was 0 when that copy was taken.
      */
     settled: boolean;
+    /**
+     * The caller's own batched read of this entry (`getCachedPicksMany`), which replaces the GET
+     * below: null means "looked, not cached". A sweep reads a whole league's picks in one MGET
+     * this way instead of one GET per manager — Upstash bills each.
+     */
+    prefetched?: CachedPicks | null;
   },
 ): Promise<FPLGameweekPicks> {
-  try {
-    const cached = await getCachedPicks(fplId, gameweek);
+  if (opts.prefetched !== undefined) {
+    const cached = opts.prefetched;
     if (cached && (cached.settled || !opts.settled)) return cached.picks;
-  } catch {
-    // A cache read failing must not fail scoring — fall through to FPL.
+  } else {
+    try {
+      const cached = await getCachedPicks(fplId, gameweek);
+      if (cached && (cached.settled || !opts.settled)) return cached.picks;
+    } catch {
+      // A cache read failing must not fail scoring — fall through to FPL.
+    }
   }
 
   // Keyed by lane for the same reason the gateway's in-flight maps are: a background caller

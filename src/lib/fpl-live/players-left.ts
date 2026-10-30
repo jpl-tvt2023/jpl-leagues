@@ -38,6 +38,29 @@ export interface FplFixture {
 }
 
 /**
+ * Just the fields FplFixture declares, which is everything any reader uses.
+ *
+ * FPL's /fixtures/ also carries a `stats` array on every finished match — `bps` alone lists each
+ * player who featured — plus difficulty ratings and ids nothing here reads. It grows all season,
+ * and this key is stored and re-read whole on most requests, so the raw response was paying
+ * Upstash bandwidth for data that was thrown away on every read.
+ */
+function slimFixture(f: FplFixture): FplFixture {
+  return {
+    id: f.id,
+    event: f.event,
+    kickoff_time: f.kickoff_time,
+    team_h: f.team_h,
+    team_a: f.team_a,
+    team_h_score: f.team_h_score,
+    team_a_score: f.team_a_score,
+    started: f.started,
+    finished: f.finished,
+    finished_provisional: f.finished_provisional,
+  };
+}
+
+/**
  * Fetch the full season fixtures list from FPL (with 60s Redis cache).
  *
  * Returns:
@@ -74,9 +97,10 @@ async function loadAllFplFixtures(): Promise<FplFixture[] | null> {
       console.warn("[players-left] FPL /fixtures/ returned 0 fixtures");
       return null;
     }
+    const slim = data.map(slimFixture);
     // Never throws: a failed write must not discard a good response.
-    await cachedSet(ALL_FIXTURES_CACHE_KEY, data, ALL_FIXTURES_TTL_SECONDS, { l1Seconds: ALL_FIXTURES_L1_SECONDS });
-    return data;
+    await cachedSet(ALL_FIXTURES_CACHE_KEY, slim, ALL_FIXTURES_TTL_SECONDS, { l1Seconds: ALL_FIXTURES_L1_SECONDS });
+    return slim;
   } catch (e) {
     if (e instanceof FplUnavailableError) {
       // Breaker open, or a scoring run is in progress. Expected, not an error.

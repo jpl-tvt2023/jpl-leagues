@@ -11,8 +11,8 @@ import { maybeStartDailyRun, advanceDailyRun } from "@/lib/cron/daily-trigger";
 /**
  * Start today's run if it has not started, then take one item off its queue.
  *
- * Both halves are cheap no-ops once the day is done — a couple of Redis reads — which is what
- * makes it safe to attach to every request rather than guessing which one should own it.
+ * Both halves are free once this instance has seen the day finished — no Redis at all — which is
+ * what makes it safe to attach to every request rather than guessing which one should own it.
  */
 export async function dailyTick(baseUrl: string): Promise<void> {
   // Never inside a test run. The Playwright suite has a real Redis and a real database, so an

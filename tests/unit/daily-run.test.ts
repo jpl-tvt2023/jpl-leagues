@@ -287,6 +287,56 @@ test("a finished day stops advancing rather than polling an empty queue", async 
   }
 });
 
+test("once an instance has seen the day finished, later ticks cost no Redis at all", async () => {
+  // This rides on every /api/fixtures and /api/standings request. It used to spend three
+  // commands each time relearning that the day was claimed and done.
+  const { maybeStartDailyRun, advanceDailyRun, __setDailyTriggerStore } = await import(
+    "../../src/lib/cron/daily-trigger"
+  );
+  const store = new FakeStore();
+  store.data.set("daily-run:claim:2026-09-13", "1");
+  store.data.set("daily-run:done:2026-09-13", "1");
+  __setDailyTriggerStore(store);
+  try {
+    const at = new Date("2026-09-13T06:00:00Z");
+    await maybeStartDailyRun(at);
+    await advanceDailyRun("http://localhost", at);
+    assert.ok(store.calls.length > 0, "the first tick still has to ask");
+
+    store.calls = [];
+    assert.equal(await maybeStartDailyRun(at), false);
+    assert.equal(await advanceDailyRun("http://localhost", at), "idle");
+    assert.deepEqual(store.calls, [], "nothing to relearn within the same IST day");
+
+    // A new IST day is a new question.
+    await advanceDailyRun("http://localhost", new Date("2026-09-14T06:00:00Z"));
+    assert.ok(store.calls.length > 0, "the next day is asked about afresh");
+  } finally {
+    __setDailyTriggerStore(null);
+  }
+});
+
+test("a claim seen once is never re-attempted that day", async () => {
+  const { maybeStartDailyRun, __setDailyTriggerStore } = await import(
+    "../../src/lib/cron/daily-trigger"
+  );
+  const store = new FakeStore();
+  store.data.set("daily-run:claim:2026-09-13", "1");
+  __setDailyTriggerStore(store);
+  try {
+    const at = new Date("2026-09-13T06:00:00Z");
+    await maybeStartDailyRun(at);
+    await maybeStartDailyRun(at);
+    assert.equal(
+      store.calls.filter((c) => c.startsWith("set daily-run:claim")).length,
+      1,
+      "the losing SET NX is not repeated on every request",
+    );
+  } finally {
+    __setDailyTriggerStore(null);
+  }
+});
+
 test("a held chunk lock keeps a second concurrent request out", async () => {
   const { advanceDailyRun, __setDailyTriggerStore } = await import(
     "../../src/lib/cron/daily-trigger"

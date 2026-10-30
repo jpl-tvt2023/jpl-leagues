@@ -28,7 +28,7 @@ import { db } from "@/lib/db";
 import { fixtures, gameweeks, gameweekCaptains } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getManagerPicks } from "@/lib/fpl-live/picks-cache";
-import type { LiveFixtureScore } from "@/lib/fpl-cache";
+import { getCachedPicksMany, type CachedPicks, type LiveFixtureScore } from "@/lib/fpl-cache";
 import { resolveJplCaptain } from "@/lib/scoring/jpl-captain";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
 import { managerGameweekPoints, type ManagerPointsContext } from "@/lib/fpl-live/manager-points";
@@ -131,6 +131,13 @@ export async function computeLiveFixtureScores(
   // every fixture 0-0 and caching it is far worse than briefly showing the last numbers.
   const pointsCtx = await buildManagerPointsContext(gwNumber, lane);
 
+  // Every manager's cached picks in one MGET. scoreSide used to GET them one manager at a time:
+  // 64 commands a sweep on a 32-team league, repeated every few minutes for a whole gameweek.
+  const prefetchedPicks = await getCachedPicksMany(
+    [...new Set(gwFixtures.flatMap((f) => [...f.homeTeam.players, ...f.awayTeam.players].map((p) => p.fplId)))],
+    gwNumber
+  );
+
   const results: LiveFixtureScore[] = [];
 
   for (const fixture of gwFixtures) {
@@ -151,7 +158,8 @@ export async function computeLiveFixtureScores(
         gwNumber,
         autoAssignedByTeam.get(fixture.homeTeamId) ?? false,
         pointsCtx,
-        lane
+        lane,
+        prefetchedPicks
       );
       const away = await scoreSide(
         fixture.awayTeam.players,
@@ -160,7 +168,8 @@ export async function computeLiveFixtureScores(
         gwNumber,
         autoAssignedByTeam.get(fixture.awayTeamId) ?? false,
         pointsCtx,
-        lane
+        lane,
+        prefetchedPicks
       );
 
       const [homePlayersLeft, awayPlayersLeft] = await Promise.all([
@@ -238,7 +247,8 @@ async function scoreSide(
   gameweek: number,
   captainWasAutoAssigned: boolean,
   pointsCtx: ManagerPointsContext,
-  lane: FplLane
+  lane: FplLane,
+  prefetchedPicks: Map<string, CachedPicks>
 ): Promise<SideResult> {
   const rawScores: {
     id: string;
@@ -254,7 +264,11 @@ async function scoreSide(
     try {
       // Through the picks cache: picks are fixed after the deadline, so a refresh only needs new
       // element points, and the Match Center and stats sidebar read these same picks back.
-      const picks = await getManagerPicks(player.fplId, gameweek, { lane, settled: pointsCtx.settled });
+      const picks = await getManagerPicks(player.fplId, gameweek, {
+        lane,
+        settled: pointsCtx.settled,
+        prefetched: prefetchedPicks.get(player.fplId) ?? null,
+      });
       const transferHits = picks.entry_history.event_transfers_cost;
 
       // Which elements are actually featuring, for the players-left counter.

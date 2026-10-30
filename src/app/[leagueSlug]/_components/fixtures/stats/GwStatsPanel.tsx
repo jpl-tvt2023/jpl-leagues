@@ -11,6 +11,7 @@ import {
   type StatManagerRef,
 } from "@/lib/fixtures-stats/aggregate";
 import { positionLabel } from "@/lib/fpl/positions";
+import { pollWhileVisible } from "@/lib/poll-while-visible";
 import type { Fixture, LiveFixtureScore } from "../shared";
 import { bonusPointsFor } from "../shared";
 import type { ChipDisplay } from "../ChallengeTip";
@@ -107,11 +108,11 @@ export function GwStatsPanel({
     setPayload(null);
     setState("loading");
     void load();
-    const poll = isLive ? setInterval(() => void load(), LIVE_POLL_MS) : null;
+    const stopPolling = isLive ? pollWhileVisible(() => void load(), LIVE_POLL_MS) : null;
     return () => {
       cancelled = true;
       if (retry) clearTimeout(retry);
-      if (poll) clearInterval(poll);
+      stopPolling?.();
     };
   }, [leagueSlug, gw, isLive, deadlinePassed, activated]);
 
