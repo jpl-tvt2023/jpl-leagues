@@ -1,28 +1,18 @@
 /**
  * FPL Classic — Redis cache and single-flight locks for the live standings block.
  *
- * Own private Redis client (same pattern as fpl-live/players-left.ts and fpl/gw-calendar.ts) so
- * this feature needs zero edits to fpl-cache.ts. The `fplc:` prefix is disjoint from `fpl:`,
- * `live:`, `standings:`, `fixtures:`, `playoffs:`, `rl:` — `invalidateLeaguePageCache` can never
- * touch these keys, and nothing here can touch its.
+ * Its own keys outside fpl-cache.ts (same pattern as fpl-live/players-left.ts and
+ * fpl/gw-calendar.ts) so this feature needs zero edits there; the client and its failure handling
+ * are shared (lib/redis.ts). The `fplc:` prefix is disjoint from `fpl:`, `live:`, `standings:`,
+ * `fixtures:`, `playoffs:`, `rl:` — `invalidateLeaguePageCache` can never touch these keys, and
+ * nothing here can touch its.
  *
  * Only the live (current-gameweek) block is cached here. The gameweek and monthly leaderboards
  * read `fpl_classic_entry_gws`, which is immutable once written and already indexed — caching
  * them would add staleness for no gain.
  */
 
-import { Redis } from "@upstash/redis";
-
-let redis: Redis | null = null;
-function getRedis(): Redis | null {
-  if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-  }
-  return redis;
-}
+import { cachedGet, cachedSet, getRedis, redisClaim, redisRelease } from "@/lib/redis";
 
 /** Fresh window while a gameweek is in flight. */
 export const CLASSIC_LIVE_FRESH_SECONDS = 300; // 5 min
@@ -72,17 +62,15 @@ function settleLockKey(leagueId: string): string {
   return `fplc:settle:lock:${leagueId}`;
 }
 
-/** Generic single-flight claim: true if the caller won and must do the work + release. */
+/**
+ * Generic single-flight claim: true if the caller won and must do the work + release.
+ * No Redis configured → true (nothing to coalesce against); Redis down → held in-process.
+ */
 async function claimLock(key: string, ttlSeconds: number): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return true; // No Redis configured — nothing to coalesce against.
-  const result = await r.set(key, "1", { nx: true, ex: ttlSeconds });
-  return result === "OK";
+  return redisClaim(key, ttlSeconds, async (r) => (await r.set(key, "1", { nx: true, ex: ttlSeconds })) === "OK");
 }
 async function releaseLock(key: string): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await r.del(key);
+  await redisRelease(key, (r) => r.del(key));
 }
 
 export interface ClassicLivePayload {
@@ -94,15 +82,12 @@ export interface ClassicLivePayload {
 }
 
 export async function getCachedClassicLive(leagueId: string, gw: number): Promise<ClassicLivePayload | null> {
-  const r = getRedis();
-  if (!r) return null;
-  return (await r.get<ClassicLivePayload>(liveKey(leagueId, gw))) ?? null;
+  return cachedGet<ClassicLivePayload>(liveKey(leagueId, gw));
 }
 
+/** Never throws — this runs straight after a successful FPL fetch, whose result must survive. */
 export async function setCachedClassicLive(leagueId: string, data: ClassicLivePayload): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await r.set(liveKey(leagueId, data.gw), data, { ex: CLASSIC_RETENTION_SECONDS });
+  await cachedSet(liveKey(leagueId, data.gw), data, CLASSIC_RETENTION_SECONDS, { lastGood: true });
 }
 
 /** True when `data.cachedAt` is within the fresh window for its live/settled state. */

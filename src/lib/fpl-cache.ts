@@ -1,58 +1,52 @@
 // FPL API Cache
 // Caches FPL data in Upstash Redis to avoid hitting rate limits
+//
+// Reads fail soft: a Redis error is a cache miss, never an exception (see redis.ts). Lock/claim
+// helpers go through redisClaim, so an outage degrades them to an in-process lock rather than to
+// a fake "claimed". What still throws, on purpose, uses the raw client: invalidations (silently
+// skipping one is how stale data gets served) and the scoring-only paths — markScoringActive and
+// getAllCachedScores — because scoring must fail closed, not score against a missing cache.
 
-import { Redis } from "@upstash/redis";
 // Type-only: fpl.ts imports this module at runtime, so a value import here would close a cycle.
 import type { FPLGameweekPicks } from "./fpl";
 import type { FplSeasonChip } from "./fpl-league/chips";
-
-let redis: Redis | null = null;
-
-function getRedis(): Redis | null {
-  if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-  }
-  return redis;
-}
+import {
+  getRawRedis,
+  getRedis,
+  redisRead,
+  safeRedisWrite,
+  cachedGet,
+  cachedMget,
+  cachedSet,
+  redisClaim,
+  redisRelease,
+  forgetL1,
+} from "./redis";
 
 /**
- * Whether a cache backend is actually configured.
+ * Whether a cache backend is configured AND answering.
  *
  * Every helper here degrades silently to a no-op without Redis, which is the
  * right default — but a caller that *warms* a cache in batches needs to know,
  * because without somewhere to write to, warming can never make progress and
- * asking the caller to "try again" would loop forever.
+ * asking the caller to "try again" would loop forever. A Redis that is down
+ * counts as no Redis for exactly that reason.
  */
 export function isFplCacheEnabled(): boolean {
   return getRedis() !== null;
 }
 
 /**
- * Run a cache WRITE, swallowing any backend failure.
- *
- * A write-through cache must never fail the read that populated it. These
- * setters are called immediately after an expensive FPL fetch that has already
- * succeeded, so letting Upstash throw discards good data and takes the caller
- * down with it — `fetchElementGameweekStats` writes two keys straight after
- * fetching `/event/{gw}/live/`, and an exception there propagates out through
- * `buildManagerPointsContext` and blanks live scores for an entire league.
- *
- * Deliberately NOT used for the lock/claim helpers below (`claimRefreshSlot`,
- * `setScoringActive`, `shouldSyncDeadlines`) or for the invalidation helpers.
- * Those return a value the caller acts on, or exist to stop stale data being
- * served; silently reporting success when nothing was written would be worse
- * than throwing.
+ * Per-instance read-through windows (redis.ts) for the global FPL keys nearly every request
+ * reads. Each is far shorter than the key's own TTL, so the extra staleness is noise next to
+ * what the key already allows.
  */
-async function safeCacheWrite(label: string, write: () => Promise<unknown>): Promise<void> {
-  try {
-    await write();
-  } catch (e) {
-    console.warn(`[fpl-cache] write failed for ${label}`, e);
-  }
-}
+const L1_EVENT_STATUS_SECONDS = 15;
+const L1_EVENTS_SECONDS = 60;
+const L1_BOOTSTRAP_SECONDS = 300;
+const L1_CLUBS_SECONDS = 300;
+const L1_SEASON_CHIPS_SECONDS = 3600;
+const L1_ENTRY_HISTORY_SECONDS = 60;
 
 export const CACHE_TTL = 60 * 60 * 24; // 24 hours
 /** How long a live payload is considered FRESH. */
@@ -103,10 +97,8 @@ export async function getCachedScore(
   gameweek: number,
   leagueId?: string | null
 ): Promise<CachedScore | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<CachedScore>(getKey(fplId, gameweek, leagueId));
-  return data || null;
+  const key = getKey(fplId, gameweek, leagueId);
+  return redisRead(key, null, async (r) => (await r.get<CachedScore>(key)) || null);
 }
 
 /**
@@ -124,15 +116,12 @@ export async function setCachedScore(
   leagueId?: string | null,
   ttlSeconds: number = CACHE_TTL
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
   const value: CachedScore = {
     ...score,
     cachedAt: new Date().toISOString(),
   };
-  await safeCacheWrite(getKey(fplId, gameweek, leagueId), () =>
-    r.set(getKey(fplId, gameweek, leagueId), value, { ex: ttlSeconds })
-  );
+  const key = getKey(fplId, gameweek, leagueId);
+  await safeRedisWrite(key, (r) => r.set(key, value, { ex: ttlSeconds }));
 }
 
 /**
@@ -143,31 +132,33 @@ export async function isGameweekFullyCached(
   gameweek: number,
   leagueId?: string | null
 ): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return false;
-  if (fplIds.length === 0) return true;
+  if (fplIds.length === 0) return getRedis() !== null;
+  // One EXISTS over every key counts the ones present — one command, not one per manager.
   const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
-  const pipeline = r.pipeline();
-  for (const key of keys) {
-    pipeline.exists(key);
-  }
-  const results = await pipeline.exec<number[]>();
-  return results.every((exists) => exists === 1);
+  return redisRead(`exists gw${gameweek}`, false, async (r) => (await r.exists(...keys)) === keys.length);
 }
 
 /**
  * Get all cached scores for a gameweek (league-scoped)
  * Returns object with keys like "fplId_gwN"
+ *
+ * ⚠️ A full-keyspace SCAN: one command per 100 keys in the WHOLE database, plus a GET per match.
+ * Fine for a scoring run; ruinous on a request path. League standings used to call this once per
+ * processed gameweek on every recompute and were the single largest Redis consumer — they now
+ * read the same hits from the stored results instead (standings/league-stage.ts).
+ *
+ * Unlike the reads around it, this one still THROWS when Redis is refusing. Its callers are the
+ * scoring processors' carry-forward deductions, and an empty answer there is not a miss: it
+ * scores every carried-forward hit as zero and writes that into the league table.
  */
 export async function getAllCachedScores(
   gameweek: number,
   leagueId?: string | null
 ): Promise<Record<string, CachedScore>> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r) return {};
   const prefix = `fpl:${leagueId ?? "global"}:gw${gameweek}:`;
   const result: Record<string, CachedScore> = {};
-
   let cursor = "0";
   do {
     const res = await r.scan(cursor, { match: `${prefix}*`, count: 100 });
@@ -175,11 +166,7 @@ export async function getAllCachedScores(
     const keys = res[1];
 
     if (keys.length > 0) {
-      const pipeline = r.pipeline();
-      for (const key of keys) {
-        pipeline.get(key);
-      }
-      const values = await pipeline.exec<(CachedScore | null)[]>();
+      const values = await r.mget<(CachedScore | null)[]>(...keys);
       for (let i = 0; i < keys.length; i++) {
         if (values[i]) {
           const fplId = keys[i].slice(prefix.length);
@@ -188,7 +175,6 @@ export async function getAllCachedScores(
       }
     }
   } while (cursor !== "0");
-
   return result;
 }
 
@@ -196,7 +182,7 @@ export async function getAllCachedScores(
  * Clear cache for a specific gameweek (league-scoped)
  */
 export async function clearGameweekCache(gameweek: number, leagueId?: string | null): Promise<void> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r) return;
   const prefix = `fpl:${leagueId ?? "global"}:gw${gameweek}:`;
   let cursor = "0";
@@ -218,84 +204,79 @@ export async function clearGameweekCache(gameweek: number, leagueId?: string | n
  * Clear cache for specific FPL IDs in a gameweek (league-scoped)
  */
 export async function clearGameweekCacheForIds(gameweek: number, fplIds: string[], leagueId?: string | null): Promise<void> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r || fplIds.length === 0) return;
   const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
-  const pipeline = r.pipeline();
-  for (const key of keys) pipeline.del(key);
-  await pipeline.exec();
+  await r.del(...keys);
 }
 
 /**
  * Get cache stats scoped to specific FPL IDs (league-scoped)
+ *
+ * One multi-key EXISTS per gameweek (it returns how many of the keys exist), so a 64-manager
+ * league costs 38 commands rather than 38 × 64.
  */
 export async function getCacheStatsForIds(
   fplIds: string[],
   leagueId?: string | null
 ): Promise<{ gameweek: number; entries: number }[]> {
-  const r = getRedis();
-  if (!r || fplIds.length === 0) return [];
-  const stats: { gameweek: number; entries: number }[] = [];
-
-  for (let gw = 1; gw <= 38; gw++) {
-    const keys = fplIds.map((id) => getKey(id, gw, leagueId));
-    const pipeline = r.pipeline();
-    for (const key of keys) pipeline.exists(key);
-    const results = await pipeline.exec<number[]>();
-    const count = results.filter((v) => v === 1).length;
-    if (count > 0) stats.push({ gameweek: gw, entries: count });
-  }
-
-  return stats;
+  if (fplIds.length === 0) return [];
+  return redisRead("cache stats", [], async (r) => {
+    const stats: { gameweek: number; entries: number }[] = [];
+    for (let gw = 1; gw <= 38; gw++) {
+      const count = await r.exists(...fplIds.map((id) => getKey(id, gw, leagueId)));
+      if (count > 0) stats.push({ gameweek: gw, entries: count });
+    }
+    return stats;
+  });
 }
 
 /**
  * Get all cached scores for specific FPL IDs in a gameweek (league-scoped)
+ *
+ * One MGET, not a pipeline of GETs — Upstash bills every command inside a pipeline.
  */
 export async function getAllCachedScoresForIds(
   gameweek: number,
   fplIds: string[],
   leagueId?: string | null
 ): Promise<Record<string, CachedScore>> {
-  const r = getRedis();
-  if (!r || fplIds.length === 0) return {};
+  if (fplIds.length === 0) return {};
   const keys = fplIds.map((id) => getKey(id, gameweek, leagueId));
-  const pipeline = r.pipeline();
-  for (const key of keys) pipeline.get(key);
-  const values = await pipeline.exec<(CachedScore | null)[]>();
-  const result: Record<string, CachedScore> = {};
-  for (let i = 0; i < keys.length; i++) {
-    if (values[i]) {
-      result[`${fplIds[i]}_gw${gameweek}`] = values[i]!;
+  return redisRead(`mget gw${gameweek} scores`, {}, async (r) => {
+    const values = await r.mget<(CachedScore | null)[]>(...keys);
+    const result: Record<string, CachedScore> = {};
+    for (let i = 0; i < keys.length; i++) {
+      if (values[i]) {
+        result[`${fplIds[i]}_gw${gameweek}`] = values[i]!;
+      }
     }
-  }
-  return result;
+    return result;
+  });
 }
 
 /**
  * Get cache stats (league-scoped)
  */
 export async function getCacheStats(leagueId?: string | null): Promise<{ gameweek: number; entries: number }[]> {
-  const r = getRedis();
-  if (!r) return [];
-  const stats: { gameweek: number; entries: number }[] = [];
+  return redisRead("cache stats scan", [], async (r) => {
+    const stats: { gameweek: number; entries: number }[] = [];
+    for (let gw = 1; gw <= 38; gw++) {
+      const prefix = `fpl:${leagueId ?? "global"}:gw${gw}:`;
+      let count = 0;
+      let cursor = "0";
+      do {
+        const res = await r.scan(cursor, { match: `${prefix}*`, count: 100 });
+        cursor = res[0];
+        count += res[1].length;
+      } while (cursor !== "0");
 
-  for (let gw = 1; gw <= 38; gw++) {
-    const prefix = `fpl:${leagueId ?? "global"}:gw${gw}:`;
-    let count = 0;
-    let cursor = "0";
-    do {
-      const res = await r.scan(cursor, { match: `${prefix}*`, count: 100 });
-      cursor = res[0];
-      count += res[1].length;
-    } while (cursor !== "0");
-
-    if (count > 0) {
-      stats.push({ gameweek: gw, entries: count });
+      if (count > 0) {
+        stats.push({ gameweek: gw, entries: count });
+      }
     }
-  }
-
-  return stats;
+    return stats;
+  });
 }
 
 // ============================================
@@ -312,10 +293,7 @@ function getElementPointsKey(gameweek: number): string {
 }
 
 export async function getCachedElementPoints(gameweek: number): Promise<Record<number, number> | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<Record<number, number>>(getElementPointsKey(gameweek));
-  return data || null;
+  return (await cachedGet<Record<number, number>>(getElementPointsKey(gameweek))) || null;
 }
 
 /**
@@ -328,15 +306,12 @@ export async function setCachedElementPoints(
   data: Record<number, number>,
   ttlSeconds: number = CACHE_TTL
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getElementPointsKey(gameweek), () =>
-    r.set(getElementPointsKey(gameweek), data, { ex: ttlSeconds })
-  );
+  await cachedSet(getElementPointsKey(gameweek), data, ttlSeconds, { lastGood: true });
 }
 
 export async function clearCachedElementPoints(gameweek: number): Promise<void> {
-  const r = getRedis();
+  forgetL1(getElementPointsKey(gameweek), getElementStatsKey(gameweek));
+  const r = getRawRedis();
   if (!r) return;
   await r.del(getElementPointsKey(gameweek));
   await r.del(getElementStatsKey(gameweek));
@@ -367,10 +342,7 @@ function getElementStatsKey(gameweek: number): string {
 export async function getCachedElementStats(
   gameweek: number
 ): Promise<Record<number, CachedElementStat> | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<Record<number, CachedElementStat>>(getElementStatsKey(gameweek));
-  return data || null;
+  return (await cachedGet<Record<number, CachedElementStat>>(getElementStatsKey(gameweek))) || null;
 }
 
 /**
@@ -382,11 +354,7 @@ export async function setCachedElementStats(
   data: Record<number, CachedElementStat>,
   ttlSeconds: number = CACHE_TTL
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getElementStatsKey(gameweek), () =>
-    r.set(getElementStatsKey(gameweek), data, { ex: ttlSeconds })
-  );
+  await cachedSet(getElementStatsKey(gameweek), data, ttlSeconds, { lastGood: true });
 }
 
 /**
@@ -420,10 +388,7 @@ function getElementDetailKey(gameweek: number): string {
 export async function getCachedElementDetail(
   gameweek: number
 ): Promise<Record<number, CachedElementDetail> | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<Record<number, CachedElementDetail>>(getElementDetailKey(gameweek));
-  return data || null;
+  return (await cachedGet<Record<number, CachedElementDetail>>(getElementDetailKey(gameweek))) || null;
 }
 
 /**
@@ -445,9 +410,7 @@ export interface LastGoodElementDetail {
 }
 
 export async function getLastGoodElementDetail(gameweek: number): Promise<LastGoodElementDetail | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const entry = await r.get<LastGoodElementDetail>(getLastGoodElementDetailKey(gameweek));
+  const entry = await cachedGet<LastGoodElementDetail>(getLastGoodElementDetailKey(gameweek));
   return entry?.data ? entry : null;
 }
 
@@ -456,16 +419,12 @@ export async function setCachedElementDetail(
   data: Record<number, CachedElementDetail>,
   ttlSeconds: number = CACHE_TTL
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
   const lastGood: LastGoodElementDetail = { data, cachedAt: new Date().toISOString() };
   await Promise.all([
-    safeCacheWrite(getElementDetailKey(gameweek), () =>
-      r.set(getElementDetailKey(gameweek), data, { ex: ttlSeconds })
-    ),
-    safeCacheWrite(getLastGoodElementDetailKey(gameweek), () =>
-      r.set(getLastGoodElementDetailKey(gameweek), lastGood, { ex: Math.max(ttlSeconds, CACHE_TTL) })
-    ),
+    cachedSet(getElementDetailKey(gameweek), data, ttlSeconds, { lastGood: true }),
+    cachedSet(getLastGoodElementDetailKey(gameweek), lastGood, Math.max(ttlSeconds, CACHE_TTL), {
+      lastGood: true,
+    }),
   ]);
 }
 
@@ -474,7 +433,9 @@ export async function clearCachedElementDetail(
   gameweek: number,
   opts: { lastGood?: boolean } = {}
 ): Promise<void> {
-  const r = getRedis();
+  forgetL1(getElementDetailKey(gameweek));
+  if (opts.lastGood) forgetL1(getLastGoodElementDetailKey(gameweek));
+  const r = getRawRedis();
   if (!r) return;
   await r.del(getElementDetailKey(gameweek));
   if (opts.lastGood) await r.del(getLastGoodElementDetailKey(gameweek));
@@ -490,16 +451,11 @@ export interface CachedClubInfo {
 const CLUBS_KEY = "fpl:clubs:latest";
 
 export async function getCachedClubs(): Promise<CachedClubInfo[] | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<CachedClubInfo[]>(CLUBS_KEY);
-  return data || null;
+  return (await cachedGet<CachedClubInfo[]>(CLUBS_KEY, { l1Seconds: L1_CLUBS_SECONDS })) || null;
 }
 
 export async function setCachedClubs(data: CachedClubInfo[]): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(CLUBS_KEY, () => r.set(CLUBS_KEY, data, { ex: CACHE_TTL }));
+  await cachedSet(CLUBS_KEY, data, CACHE_TTL, { l1Seconds: L1_CLUBS_SECONDS });
 }
 
 /**
@@ -523,10 +479,7 @@ function getPicksKey(fplId: string, gameweek: number): string {
 }
 
 export async function getCachedPicks(fplId: string, gameweek: number): Promise<CachedPicks | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<CachedPicks>(getPicksKey(fplId, gameweek));
-  return data || null;
+  return (await cachedGet<CachedPicks>(getPicksKey(fplId, gameweek))) || null;
 }
 
 /** Many managers' picks in one round-trip. Absent from the map = not cached. */
@@ -535,9 +488,8 @@ export async function getCachedPicksMany(
   gameweek: number
 ): Promise<Map<string, CachedPicks>> {
   const out = new Map<string, CachedPicks>();
-  const r = getRedis();
-  if (!r || fplIds.length === 0) return out;
-  const values = await r.mget<(CachedPicks | null)[]>(...fplIds.map((id) => getPicksKey(id, gameweek)));
+  if (fplIds.length === 0) return out;
+  const values = await cachedMget<CachedPicks>(fplIds.map((id) => getPicksKey(id, gameweek)));
   values.forEach((v, i) => {
     if (v && v.picks) out.set(fplIds[i], v);
   });
@@ -550,11 +502,7 @@ export async function setCachedPicks(
   data: CachedPicks,
   ttlSeconds: number
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getPicksKey(fplId, gameweek), () =>
-    r.set(getPicksKey(fplId, gameweek), data, { ex: ttlSeconds })
-  );
+  await cachedSet(getPicksKey(fplId, gameweek), data, ttlSeconds, { lastGood: true });
 }
 
 /**
@@ -577,16 +525,11 @@ export interface CachedElementInfo {
 }
 
 export async function getCachedBootstrap(): Promise<CachedElementInfo[] | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<CachedElementInfo[]>(getBootstrapKey());
-  return data || null;
+  return (await cachedGet<CachedElementInfo[]>(getBootstrapKey(), { l1Seconds: L1_BOOTSTRAP_SECONDS })) || null;
 }
 
 export async function setCachedBootstrap(data: CachedElementInfo[]): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getBootstrapKey(), () => r.set(getBootstrapKey(), data, { ex: CACHE_TTL }));
+  await cachedSet(getBootstrapKey(), data, CACHE_TTL, { l1Seconds: L1_BOOTSTRAP_SECONDS });
 }
 
 /**
@@ -609,18 +552,11 @@ function getEventStatusKey(): string {
 }
 
 export async function getCachedEventStatus(): Promise<FplEventStatus[] | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<FplEventStatus[]>(getEventStatusKey());
-  return data || null;
+  return (await cachedGet<FplEventStatus[]>(getEventStatusKey(), { l1Seconds: L1_EVENTS_SECONDS })) || null;
 }
 
 export async function setCachedEventStatus(data: FplEventStatus[]): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getEventStatusKey(), () =>
-    r.set(getEventStatusKey(), data, { ex: LIVE_CACHE_TTL })
-  );
+  await cachedSet(getEventStatusKey(), data, LIVE_CACHE_TTL, { l1Seconds: L1_EVENTS_SECONDS });
 }
 
 // ============================================
@@ -657,18 +593,14 @@ function getLiveEventStatusKey(): string {
 }
 
 export async function getCachedLiveEventStatus(): Promise<FplEventStatusPayload | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<FplEventStatusPayload>(getLiveEventStatusKey());
-  return data || null;
+  return (
+    (await cachedGet<FplEventStatusPayload>(getLiveEventStatusKey(), { l1Seconds: L1_EVENT_STATUS_SECONDS })) ||
+    null
+  );
 }
 
 export async function setCachedLiveEventStatus(data: FplEventStatusPayload): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getLiveEventStatusKey(), () =>
-    r.set(getLiveEventStatusKey(), data, { ex: EVENT_STATUS_TTL })
-  );
+  await cachedSet(getLiveEventStatusKey(), data, EVENT_STATUS_TTL, { l1Seconds: L1_EVENT_STATUS_SECONDS });
 }
 
 // ============================================
@@ -691,13 +623,15 @@ function getDeadlineSyncKey(leagueId: string): string {
  * Returns true only if no other request has claimed it in the last 30
  * minutes (i.e. this call should proceed with the sync); false otherwise.
  * If Redis isn't configured, falls back to true (today's always-sync
- * behavior) rather than silently disabling the sync.
+ * behavior) rather than silently disabling the sync. If it is configured but
+ * down, the claim is held in-process instead, so an outage does not turn into
+ * a bootstrap-static fetch on every dashboard request.
  */
 export async function shouldSyncDeadlines(leagueId: string): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return true;
-  const claimed = await r.set(getDeadlineSyncKey(leagueId), "1", { ex: DEADLINE_SYNC_TTL, nx: true });
-  return claimed !== null;
+  const key = getDeadlineSyncKey(leagueId);
+  return redisClaim(key, DEADLINE_SYNC_TTL, async (r) =>
+    (await r.set(key, "1", { ex: DEADLINE_SYNC_TTL, nx: true })) !== null
+  );
 }
 
 // ============================================
@@ -730,9 +664,7 @@ function getEntryHistoryKey(fplId: string): string {
 }
 
 export async function getCachedEntryHistory(fplId: string): Promise<CachedEntryHistory | null> {
-  const r = getRedis();
-  if (!r) return null;
-  return (await r.get<CachedEntryHistory>(getEntryHistoryKey(fplId))) ?? null;
+  return cachedGet<CachedEntryHistory>(getEntryHistoryKey(fplId), { l1Seconds: L1_ENTRY_HISTORY_SECONDS });
 }
 
 export async function setCachedEntryHistory(
@@ -740,29 +672,30 @@ export async function setCachedEntryHistory(
   data: Omit<CachedEntryHistory, "cachedAt">,
   ttlSeconds: number
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getEntryHistoryKey(fplId), () =>
-    r.set(
-      getEntryHistoryKey(fplId),
-      { ...data, cachedAt: new Date().toISOString() },
-      { ex: ttlSeconds }
-    )
+  await cachedSet(
+    getEntryHistoryKey(fplId),
+    { ...data, cachedAt: new Date().toISOString() },
+    ttlSeconds,
+    { l1Seconds: L1_ENTRY_HISTORY_SECONDS, lastGood: true }
   );
 }
 
-/** Bulk read, so a page can serve whatever is already warm without N round trips. */
+/**
+ * Bulk read, so a page can serve whatever is already warm without N round trips.
+ *
+ * Every fixtures, Match Center and dashboard request reads a whole league's histories through
+ * this — about 64 sizeable values — which is why it goes through the L1 per id.
+ */
 export async function getCachedEntryHistories(
   fplIds: string[]
 ): Promise<Map<string, CachedEntryHistory>> {
   const out = new Map<string, CachedEntryHistory>();
-  const r = getRedis();
-  if (!r || fplIds.length === 0) return out;
-  const values = await r.mget<(CachedEntryHistory | null)[]>(
-    ...fplIds.map(getEntryHistoryKey)
-  );
+  if (fplIds.length === 0) return out;
+  const values = await cachedMget<CachedEntryHistory>(fplIds.map(getEntryHistoryKey), {
+    l1Seconds: L1_ENTRY_HISTORY_SECONDS,
+  });
   fplIds.forEach((id, i) => {
-    const v = values?.[i];
+    const v = values[i];
     if (v) out.set(id, v);
   });
   return out;
@@ -790,13 +723,10 @@ export async function getCachedEntryHistories(
 const FPL_LEAGUE_WARM_TTL = 10; // seconds
 
 export async function claimFplLeagueWarm(leagueId: string): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return true;
-  const claimed = await r.set(`fpl-league:warm:${leagueId}`, "1", {
-    ex: FPL_LEAGUE_WARM_TTL,
-    nx: true,
-  });
-  return claimed !== null;
+  const key = `fpl-league:warm:${leagueId}`;
+  return redisClaim(key, FPL_LEAGUE_WARM_TTL, async (r) =>
+    (await r.set(key, "1", { ex: FPL_LEAGUE_WARM_TTL, nx: true })) !== null
+  );
 }
 
 // ============================================
@@ -832,19 +762,17 @@ function getRefreshLockKey(gameweek: number, leagueId?: string | null): string {
  * Claim the right to perform a forced refresh. Returns true only for the
  * caller that wins the race; losers should serve cached data instead.
  * Falls back to true when Redis is absent (local dev / tests) so the route
- * still works, just without the stampede guard.
+ * still works, just without the stampede guard; while Redis is down the guard
+ * is held in-process instead.
  */
 export async function claimRefreshSlot(
   gameweek: number,
   leagueId?: string | null
 ): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return true;
-  const claimed = await r.set(getRefreshLockKey(gameweek, leagueId), "1", {
-    ex: REFRESH_LOCK_TTL,
-    nx: true,
-  });
-  return claimed !== null;
+  const key = getRefreshLockKey(gameweek, leagueId);
+  return redisClaim(key, REFRESH_LOCK_TTL, async (r) =>
+    (await r.set(key, "1", { ex: REFRESH_LOCK_TTL, nx: true })) !== null
+  );
 }
 
 /** Release the refresh claim, leaving REFRESH_RESULT_TTL of cooldown behind it. */
@@ -852,9 +780,8 @@ export async function releaseRefreshSlot(
   gameweek: number,
   leagueId?: string | null
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await r.set(getRefreshLockKey(gameweek, leagueId), "1", { ex: REFRESH_RESULT_TTL });
+  const key = getRefreshLockKey(gameweek, leagueId);
+  await redisRelease(key, (r) => r.set(key, "1", { ex: REFRESH_RESULT_TTL }), REFRESH_RESULT_TTL);
 }
 
 // ============================================
@@ -869,28 +796,38 @@ const SCORING_LOCK_KEY = "fpl:scoring-active";
 /** Long enough to outlive a slow batch, short enough to self-heal on crash. */
 const SCORING_LOCK_TTL = 120; // seconds
 
-/** Mark a scoring run as in progress. Safe to call repeatedly to extend. */
+/**
+ * Mark a scoring run as in progress. Safe to call repeatedly to extend.
+ *
+ * Throws when Redis is configured but refusing, on purpose: that stops the run at its first line,
+ * before it writes anything. Scoring fails CLOSED during an outage (see redisWritable).
+ */
 export async function markScoringActive(): Promise<void> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r) return;
   await r.set(SCORING_LOCK_KEY, "1", { ex: SCORING_LOCK_TTL });
 }
 
-/** Clear the scoring lock. Call in a finally block. */
+/**
+ * Clear the scoring lock. Call in a finally block. Never throws: throwing from a `finally` masks
+ * the run's own outcome, and the lock's TTL is the backstop.
+ */
 export async function clearScoringActive(): Promise<void> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r) return;
-  await r.del(SCORING_LOCK_KEY);
+  try {
+    await r.del(SCORING_LOCK_KEY);
+  } catch (e) {
+    console.warn("[fpl-cache] could not clear the scoring lock; it lapses on its TTL", e);
+  }
 }
 
 /**
  * True while a scoring run holds the lock. Returns false when Redis is absent
- * (local dev / tests) so the gateway does not refuse everything by default.
+ * (local dev / tests) or down, so the gateway does not refuse everything by default.
  */
 export async function isScoringActive(): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return false;
-  return (await r.get(SCORING_LOCK_KEY)) !== null;
+  return redisRead(SCORING_LOCK_KEY, false, async (r) => (await r.get(SCORING_LOCK_KEY)) !== null);
 }
 
 // ============================================
@@ -943,10 +880,7 @@ export async function getLiveCachedScores(
   gameweek: number,
   leagueId?: string | null
 ): Promise<LiveGameweekData | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<LiveGameweekData>(getLiveKey(gameweek, leagueId));
-  return data || null;
+  return (await cachedGet<LiveGameweekData>(getLiveKey(gameweek, leagueId))) || null;
 }
 
 /**
@@ -961,18 +895,17 @@ export async function setLiveCachedScores(
   data: LiveGameweekData,
   leagueId?: string | null
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getLiveKey(gameweek, leagueId), () =>
-    r.set(getLiveKey(gameweek, leagueId), data, { ex: LIVE_CACHE_STALE_TTL })
-  );
+  // lastGood: this is the copy an outage serves. Without it every poll during one re-sweeps
+  // the whole gameweek from FPL.
+  await cachedSet(getLiveKey(gameweek, leagueId), data, LIVE_CACHE_STALE_TTL, { lastGood: true });
 }
 
 /**
  * Clear live cache for a specific gameweek
  */
 export async function clearLiveCache(gameweek: number, leagueId?: string | null): Promise<void> {
-  const r = getRedis();
+  forgetL1(getLiveKey(gameweek, leagueId));
+  const r = getRawRedis();
   if (!r) return;
   await r.del(getLiveKey(gameweek, leagueId));
 }
@@ -997,13 +930,16 @@ const STANDINGS_CACHE_VERSION = 3;
 const standingsKey = (leagueId: string, disclosedGwCount: number) =>
   `standings:v${STANDINGS_CACHE_VERSION}:${leagueId}:d${disclosedGwCount}`;
 
+// The page blobs below are read through redisRead, never the L1: a miss recomputes from the
+// database, which is cheap and correct, whereas an instance-local copy could outlive an admin
+// write whose invalidation it never saw.
+
 export async function getCachedStandings(
   leagueId: string,
   disclosedGwCount: number,
 ): Promise<unknown | null> {
-  const r = getRedis();
-  if (!r) return null;
-  return await r.get(standingsKey(leagueId, disclosedGwCount));
+  const key = standingsKey(leagueId, disclosedGwCount);
+  return redisRead(key, null, (r) => r.get(key));
 }
 
 export async function setCachedStandings(
@@ -1011,16 +947,13 @@ export async function setCachedStandings(
   disclosedGwCount: number,
   data: unknown,
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(standingsKey(leagueId, disclosedGwCount), () =>
-    r.set(standingsKey(leagueId, disclosedGwCount), data, { ex: PAGE_CACHE_TTL })
-  );
+  const key = standingsKey(leagueId, disclosedGwCount);
+  await safeRedisWrite(key, (r) => r.set(key, data, { ex: PAGE_CACHE_TTL }));
 }
 
 /** Every epoch of a league's standings payload. Must be swept, not deleted by name. */
 export async function invalidateStandings(leagueId: string): Promise<void> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r) return;
   const keys = await r.keys(`standings:v${STANDINGS_CACHE_VERSION}:${leagueId}:*`);
   if (keys.length > 0) await r.del(...keys);
@@ -1043,9 +976,8 @@ export async function getCachedFixtures(
   leagueId: string,
   disclosedGwCount: number,
 ): Promise<unknown | null> {
-  const r = getRedis();
-  if (!r) return null;
-  return await r.get(fixturesKey(leagueId, disclosedGwCount));
+  const key = fixturesKey(leagueId, disclosedGwCount);
+  return redisRead(key, null, (r) => r.get(key));
 }
 
 export async function setCachedFixtures(
@@ -1053,33 +985,26 @@ export async function setCachedFixtures(
   disclosedGwCount: number,
   data: unknown,
 ): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(fixturesKey(leagueId, disclosedGwCount), () =>
-    r.set(fixturesKey(leagueId, disclosedGwCount), data, { ex: PAGE_CACHE_TTL })
-  );
+  const key = fixturesKey(leagueId, disclosedGwCount);
+  await safeRedisWrite(key, (r) => r.set(key, data, { ex: PAGE_CACHE_TTL }));
 }
 
 /** Every epoch of a league's fixtures payload. Must be swept, not deleted by name. */
 export async function invalidateFixtures(leagueId: string): Promise<void> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r) return;
   const keys = await r.keys(`fixtures:${leagueId}:*`);
   if (keys.length > 0) await r.del(...keys);
 }
 
 export async function getCachedPlayoffBracket(leagueId: string): Promise<unknown | null> {
-  const r = getRedis();
-  if (!r) return null;
-  return await r.get(`playoffs:${leagueId}`);
+  const key = `playoffs:${leagueId}`;
+  return redisRead(key, null, (r) => r.get(key));
 }
 
 export async function setCachedPlayoffBracket(leagueId: string, data: unknown): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(`playoffs:${leagueId}`, () =>
-    r.set(`playoffs:${leagueId}`, data, { ex: PAGE_CACHE_TTL })
-  );
+  const key = `playoffs:${leagueId}`;
+  await safeRedisWrite(key, (r) => r.set(key, data, { ex: PAGE_CACHE_TTL }));
 }
 
 /**
@@ -1088,7 +1013,7 @@ export async function setCachedPlayoffBracket(leagueId: string, data: unknown): 
  * The next page request will fall back to DB and repopulate the cache.
  */
 export async function invalidateLeaguePageCache(leagueId: string): Promise<void> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r) return;
   // Must match the versioned key getCachedStandings/setCachedStandings actually use — an earlier,
   // unversioned `standings:{leagueId}` here silently deleted a key nothing reads or writes, leaving
@@ -1134,21 +1059,17 @@ function leagueStageRowsKey(leagueId: string, throughGw: number): string {
 }
 
 export async function getCachedLeagueStageRows(leagueId: string, throughGw: number): Promise<unknown | null> {
-  const r = getRedis();
-  if (!r) return null;
-  return (await r.get(leagueStageRowsKey(leagueId, throughGw))) ?? null;
+  const key = leagueStageRowsKey(leagueId, throughGw);
+  return redisRead(key, null, async (r) => (await r.get(key)) ?? null);
 }
 
 export async function setCachedLeagueStageRows(leagueId: string, throughGw: number, data: unknown): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(leagueStageRowsKey(leagueId, throughGw), () =>
-    r.set(leagueStageRowsKey(leagueId, throughGw), data, { ex: LEAGUE_STAGE_ROWS_TTL })
-  );
+  const key = leagueStageRowsKey(leagueId, throughGw);
+  await safeRedisWrite(key, (r) => r.set(key, data, { ex: LEAGUE_STAGE_ROWS_TTL }));
 }
 
 export async function invalidateLeagueStageRows(leagueId: string): Promise<void> {
-  const r = getRedis();
+  const r = getRawRedis();
   if (!r) return;
   const keys = await r.keys(`standings:rows:v${LEAGUE_STAGE_ROWS_VERSION}:${leagueId}:*`);
   if (keys.length > 0) await r.del(...keys);
@@ -1185,9 +1106,8 @@ function getTransfersKey(fplId: string): string {
 
 export async function getCachedTransfersMany(fplIds: string[]): Promise<Map<string, CachedTransfers>> {
   const out = new Map<string, CachedTransfers>();
-  const r = getRedis();
-  if (!r || fplIds.length === 0) return out;
-  const values = await r.mget<(CachedTransfers | null)[]>(...fplIds.map(getTransfersKey));
+  if (fplIds.length === 0) return out;
+  const values = await cachedMget<CachedTransfers>(fplIds.map(getTransfersKey));
   values.forEach((v, i) => {
     if (v && Array.isArray(v.transfers)) out.set(fplIds[i], v);
   });
@@ -1195,9 +1115,7 @@ export async function getCachedTransfersMany(fplIds: string[]): Promise<Map<stri
 }
 
 export async function setCachedTransfers(fplId: string, data: CachedTransfers): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getTransfersKey(fplId), () => r.set(getTransfersKey(fplId), data, { ex: TRANSFERS_TTL }));
+  await cachedSet(getTransfersKey(fplId), data, TRANSFERS_TTL, { lastGood: true });
 }
 
 /** The fixtures-page stats payload for one league gameweek. Shape owned by api/fixtures/stats. */
@@ -1206,17 +1124,11 @@ function getGwStatsKey(leagueId: string, gameweek: number): string {
 }
 
 export async function getCachedGwStats<T>(leagueId: string, gameweek: number): Promise<T | null> {
-  const r = getRedis();
-  if (!r) return null;
-  return (await r.get<T>(getGwStatsKey(leagueId, gameweek))) ?? null;
+  return cachedGet<T>(getGwStatsKey(leagueId, gameweek));
 }
 
 export async function setCachedGwStats(leagueId: string, gameweek: number, data: unknown, ttlSeconds: number): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(getGwStatsKey(leagueId, gameweek), () =>
-    r.set(getGwStatsKey(leagueId, gameweek), data, { ex: ttlSeconds })
-  );
+  await cachedSet(getGwStatsKey(leagueId, gameweek), data, ttlSeconds, { lastGood: true });
 }
 
 /**
@@ -1225,16 +1137,13 @@ export async function setCachedGwStats(leagueId: string, gameweek: number, data:
  * Like claimRefreshSlot, true when Redis is absent so local dev still works.
  */
 export async function claimGwStatsBuild(leagueId: string, gameweek: number): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return true;
-  const claimed = await r.set(`fx-stats:lock:${leagueId}:gw${gameweek}`, "1", { ex: 90, nx: true });
-  return claimed !== null;
+  const key = `fx-stats:lock:${leagueId}:gw${gameweek}`;
+  return redisClaim(key, 90, async (r) => (await r.set(key, "1", { ex: 90, nx: true })) !== null);
 }
 
 export async function releaseGwStatsBuild(leagueId: string, gameweek: number): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await r.del(`fx-stats:lock:${leagueId}:gw${gameweek}`);
+  const key = `fx-stats:lock:${leagueId}:gw${gameweek}`;
+  await redisRelease(key, (r) => r.del(key));
 }
 
 // ============================================
@@ -1249,14 +1158,10 @@ export async function releaseGwStatsBuild(leagueId: string, gameweek: number): P
 const SEASON_CHIPS_KEY = "fpl:chips:season";
 
 export async function getCachedSeasonChips(): Promise<FplSeasonChip[] | null> {
-  const r = getRedis();
-  if (!r) return null;
-  const data = await r.get<FplSeasonChip[]>(SEASON_CHIPS_KEY);
+  const data = await cachedGet<FplSeasonChip[]>(SEASON_CHIPS_KEY, { l1Seconds: L1_SEASON_CHIPS_SECONDS });
   return Array.isArray(data) && data.length > 0 ? data : null;
 }
 
 export async function setCachedSeasonChips(data: FplSeasonChip[]): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  await safeCacheWrite(SEASON_CHIPS_KEY, () => r.set(SEASON_CHIPS_KEY, data, { ex: CACHE_TTL * 7 }));
+  await cachedSet(SEASON_CHIPS_KEY, data, CACHE_TTL * 7, { l1Seconds: L1_SEASON_CHIPS_SECONDS });
 }
