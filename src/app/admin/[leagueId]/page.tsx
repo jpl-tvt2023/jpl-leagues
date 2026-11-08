@@ -10,6 +10,8 @@ import { AppNav } from "@/components/AppNav";
 import { formatCurrency } from "@/lib/format/currency";
 import { FeedbackTab } from "./FeedbackTab";
 import { DEFAULT_RELEASE_CYCLE_GWS, formatReleaseCycleGws, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
+import { creditedRefund } from "@/lib/formats/auction/economy";
+import { breakdownFromSnapshot, describeDeadwoodReason, formatRefundBreakdown } from "@/lib/formats/auction/release-refund";
 
 interface Team {
   id: string;
@@ -4747,6 +4749,9 @@ interface AdminMarketplacePendingRelease {
   teamName: string;
   playerName: string;
   purchasePrice: number;
+  releaseRefund: number | null;
+  releaseFmv: number | null;
+  deadwoodReason: string | null;
 }
 
 interface AdminSquadCache {
@@ -4835,6 +4840,9 @@ function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; 
               teamName: t.teamName,
               playerName: p.playerName,
               purchasePrice: p.purchasePrice,
+              releaseRefund: p.releaseRefund ?? null,
+              releaseFmv: p.releaseFmv ?? null,
+              deadwoodReason: p.deadwoodReason ?? null,
             });
           }
         }
@@ -4910,14 +4918,20 @@ function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; 
               </thead>
               <tbody>
                 {pendingReleases.map((p) => {
-                  const refund = Math.floor(p.purchasePrice * 0.5);
+                  const refund = creditedRefund(p);
+                  const breakdown = breakdownFromSnapshot(p);
                   return (
-                    <tr key={p.ownershipId} className="border-b border-white/5">
-                      <td className="py-2 px-2 text-white font-semibold">{p.playerName}</td>
+                    <tr key={p.ownershipId} className="border-b border-white/5" title={breakdown ? formatRefundBreakdown(breakdown) : undefined}>
+                      <td className="py-2 px-2 text-white font-semibold">
+                        {p.playerName}
+                        {breakdown?.deadwoodReason && (
+                          <span className="ml-2 align-middle text-[10px] uppercase tracking-wider text-yellow-400" title={describeDeadwoodReason(breakdown.deadwoodReason)}>Deadwood</span>
+                        )}
+                      </td>
                       <td className="py-2 px-2 text-gray-300">{p.teamName}</td>
                       <td className="py-2 px-2 text-right font-mono text-white">{fmtMoney(p.purchasePrice)}</td>
                       <td className="py-2 px-2 text-right font-mono text-green-300">+{fmtMoney(refund)}</td>
-                      <td className="py-2 px-2 text-right font-mono text-red-300">-{fmtMoney(p.purchasePrice - refund)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-red-300">-{fmtMoney(Math.max(0, p.purchasePrice - refund))}</td>
                     </tr>
                   );
                 })}

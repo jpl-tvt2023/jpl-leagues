@@ -82,10 +82,20 @@ export function calculatePurse(
 }
 
 /**
- * Calculate refund for releasing a player (50% of purchase price).
+ * Legacy release refund (50% of purchase price) — only for rows marked before the refund was
+ * snapshotted. Current releases are priced by priceReleaseRefund in ./release-refund.
  */
 export function calculateRefund(purchasePrice: number): number {
   return Math.floor(purchasePrice * 0.5);
+}
+
+/**
+ * The refund a release actually credits: the amount snapshotted when it was marked, falling back
+ * to the legacy 50%-of-purchase for rows that predate the snapshot. Finalization pays this, so every
+ * ledger, dashboard and table must read it too — otherwise displayed purses drift from real ones.
+ */
+export function creditedRefund(o: { releaseRefund: number | null; purchasePrice: number }): number {
+  return o.releaseRefund ?? calculateRefund(o.purchasePrice);
 }
 
 /**

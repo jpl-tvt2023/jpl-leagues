@@ -116,8 +116,10 @@ export async function GET(request: NextRequest) {
         status: p.status,
         totalPoints,
         fmv,
-        // Snapshotted FMV-based refund (set when marked for release); null for active players.
+        // Release pricing snapshotted when marked for release; null for active players.
         releaseRefund: p.releaseRefund ?? null,
+        releaseFmv: p.releaseFmv ?? null,
+        deadwoodReason: p.deadwoodReason ?? null,
         plTeamId: plTeam?.id ?? null,
         plTeamShort: plTeam?.short ?? null,
       };

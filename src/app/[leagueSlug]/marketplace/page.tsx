@@ -10,6 +10,8 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { isPrimary } from "@/lib/formats/auction/tier";
 import { formatReleaseCycleGws } from "@/lib/formats/auction/cycle";
+import { creditedRefund } from "@/lib/formats/auction/economy";
+import { breakdownFromSnapshot, describeDeadwoodReason, formatRefundBreakdown } from "@/lib/formats/auction/release-refund";
 
 interface TradeProposal {
   id: string;
@@ -31,6 +33,9 @@ interface SquadPlayer {
   fmv: number;
   status: string;
   plTeamShort?: string | null;
+  releaseRefund?: number | null;
+  releaseFmv?: number | null;
+  deadwoodReason?: string | null;
 }
 
 const MARKET_POSITION_LABELS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
@@ -500,7 +505,7 @@ export default function MarketplacePage() {
             ) : tab === "releases" ? (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-xs text-gray-400 mb-3">
-                  Players marked for release across the league. Release finalizes at the next {releaseCadence} boundary — 50% refund is credited then. Player continues scoring for the owning team until then.
+                  Players marked for release across the league. Release finalizes at the next {releaseCadence} boundary — the refund (50% of purchase price, or 80% for deadwood, plus 100% of the FMV gain) is credited then. Player continues scoring for the owning team until then.
                 </p>
                 {pendingReleases.length === 0 ? (
                   <div className="text-center text-gray-400 py-8">No pending releases</div>
@@ -512,18 +517,28 @@ export default function MarketplacePage() {
                           <th className="text-left py-2 px-2 cursor-help" title="The player marked for release.">Player</th>
                           <th className="hidden sm:table-cell text-left py-2 px-2 cursor-help" title="The team currently releasing this player.">Owning Team</th>
                           <th className="hidden sm:table-cell text-right py-2 px-2 cursor-help" title="What the owning team originally paid for the player.">Purchase Price</th>
-                          <th className="text-right py-2 px-2 cursor-help" title="Cash the team gets back when the release finalizes (50% of purchase price).">Projected Refund</th>
-                          <th className="hidden sm:table-cell text-right py-2 px-2 cursor-help" title="The portion of the purchase price not refunded (the other 50%).">Forfeit</th>
+                          <th className="text-right py-2 px-2 cursor-help" title="Cash the team gets back when the release finalizes: 50% of purchase price (80% for deadwood) + 100% of the FMV gain. Hover a row for its breakdown.">Projected Refund</th>
+                          <th className="hidden sm:table-cell text-right py-2 px-2 cursor-help" title="The part of the purchase price not coming back.">Forfeit</th>
                         </tr>
                       </thead>
                       <tbody>
                         {pendingReleases.map((p) => {
-                          const refund = Math.floor(p.purchasePrice * 0.5);
-                          const forfeit = p.purchasePrice - refund;
+                          const snapshot = {
+                            purchasePrice: p.purchasePrice,
+                            releaseRefund: p.releaseRefund ?? null,
+                            releaseFmv: p.releaseFmv ?? null,
+                            deadwoodReason: p.deadwoodReason ?? null,
+                          };
+                          const refund = creditedRefund(snapshot);
+                          const forfeit = Math.max(0, p.purchasePrice - refund);
+                          const breakdown = breakdownFromSnapshot(snapshot);
                           return (
-                            <tr key={p.ownershipId} className="border-b border-white/5">
+                            <tr key={p.ownershipId} className="border-b border-white/5" title={breakdown ? formatRefundBreakdown(breakdown) : undefined}>
                               <td className="py-2 px-2 text-white font-semibold">
                                 {p.playerName}
+                                {breakdown?.deadwoodReason && (
+                                  <span className="ml-2 align-middle text-[10px] uppercase tracking-wider text-yellow-400" title={describeDeadwoodReason(breakdown.deadwoodReason)}>Deadwood</span>
+                                )}
                                 <div className="sm:hidden mt-0.5 text-[10px] font-normal text-gray-400">{teamName(p.teamId)}</div>
                               </td>
                               <td className="hidden sm:table-cell py-2 px-2 text-gray-300">{teamName(p.teamId)}</td>

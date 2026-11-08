@@ -9,6 +9,16 @@ import { SlotStatus, type SlotStatusData } from "@/components/SlotStatus";
 import { HelpTip } from "@/components/HelpTip";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { formatReleaseCycleGws } from "@/lib/formats/auction/cycle";
+import { creditedRefund } from "@/lib/formats/auction/economy";
+import {
+  DEADWOOD_GAMES_WINDOW,
+  breakdownFromSnapshot,
+  describeDeadwoodReason,
+  parseDeadwoodReason,
+  type RefundBreakdown,
+} from "@/lib/formats/auction/release-refund";
+import { Sheet } from "@/components/ui/Sheet";
+import { ReleaseRefundBreakdown } from "@/components/ReleaseRefundBreakdown";
 import { MAX_SQUAD_SIZE, type SquadCounts } from "@/lib/formats/auction/squad-rules";
 import { useWishlist } from "@/hooks/useWishlist";
 import { WishlistList } from "@/components/WishlistList";
@@ -23,6 +33,17 @@ interface SquadPlayer {
   totalPoints: number;
   fmv: number;
   releaseRefund?: number | null;
+  releaseFmv?: number | null;
+  deadwoodReason?: string | null;
+}
+
+/** GET /api/auction/release — what releasing this player would refund, and why. */
+interface ReleasePreview {
+  ownershipId: string;
+  playerName: string;
+  breakdown: RefundBreakdown;
+  fplStatus: string | null;
+  lastGames: { round: number; minutes: number }[];
 }
 
 interface SquadResponse {
@@ -144,6 +165,7 @@ export default function SquadPage() {
   const [session, setSession] = useState<AuctionSession | null>(null);
   const [releasing, setReleasing] = useState<string | null>(null);
   const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [releasePreview, setReleasePreview] = useState<ReleasePreview | null>(null);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"squad" | "wishlist">("squad");
   const [wlSearch, setWlSearch] = useState("");
@@ -256,11 +278,30 @@ export default function SquadPage() {
     window.location.href = "/signin";
   };
 
-  // Release is always available in auction leagues — refund credited at next mini-auction start
+  // Release is always available in auction leagues — refund credited at the next mini-auction or release GW
   const canRelease = true;
 
-  const handleRelease = async (ownershipId: string, playerName: string) => {
-    if (!confirm(`Mark ${playerName} for release? You will receive a 50% refund, credited to your purse at the start of the next mini-auction. You can cancel the release any time before then.`)) return;
+  // Step 1: price the release and open the dialog. Whether he's deadwood depends on live FPL
+  // data, so only the server can say what the refund will be.
+  const handleRelease = async (ownershipId: string) => {
+    setReleasing(ownershipId);
+    setReleaseError(null);
+    try {
+      const res = await fetch(`/api/auction/release?ownershipId=${encodeURIComponent(ownershipId)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't work out the refund");
+      setReleasePreview(data as ReleasePreview);
+    } catch (err) {
+      setReleaseError(err instanceof Error ? err.message : "Couldn't work out the refund");
+    } finally {
+      setReleasing(null);
+    }
+  };
+
+  // Step 2: the team confirmed in the dialog. The server re-prices and locks the amount.
+  const confirmRelease = async () => {
+    if (!releasePreview) return;
+    const { ownershipId } = releasePreview;
     setReleasing(ownershipId);
     setReleaseError(null);
     try {
@@ -275,6 +316,7 @@ export default function SquadPage() {
     } catch (err) {
       setReleaseError(err instanceof Error ? err.message : "Release failed");
     } finally {
+      setReleasePreview(null);
       setReleasing(null);
     }
   };
@@ -656,34 +698,37 @@ export default function SquadPage() {
                           <div className="pt-1 text-[10px] uppercase tracking-wider text-yellow-400 font-bold">Deadwood</div>
                         )}
                         {p.status === "pending_release" && (() => {
-                          const refund = p.releaseRefund ?? Math.floor(p.fmv * 0.5);
+                          const snapshot = {
+                            purchasePrice: p.purchasePrice,
+                            releaseRefund: p.releaseRefund ?? null,
+                            releaseFmv: p.releaseFmv ?? null,
+                            deadwoodReason: p.deadwoodReason ?? null,
+                          };
+                          const breakdown = breakdownFromSnapshot(snapshot);
+                          const deadwood = parseDeadwoodReason(p.deadwoodReason);
                           return (
-                          <div
-                            className="pt-1 text-[10px] uppercase tracking-wider text-orange-400 font-bold"
-                            title={`Finalizes at the next ${releaseCadence} boundary. Projected refund: ${formatCurrency(refund)} (50% of FMV at release). Projected forfeit: ${formatCurrency(p.purchasePrice - refund)}. Player continues scoring for you until finalization.`}
-                          >
-                            Pending Release — projected refund {formatCurrency(refund)}
-                          </div>
+                            <div className="pt-2 space-y-2">
+                              <div className="text-[10px] uppercase tracking-wider text-orange-400 font-bold">
+                                Pending Release{deadwood ? " · Deadwood" : ""} — refund {formatCurrency(creditedRefund(snapshot))}
+                              </div>
+                              {deadwood && (
+                                <div className="text-[11px] text-yellow-300">Deadwood: {describeDeadwoodReason(deadwood)}</div>
+                              )}
+                              {breakdown && <ReleaseRefundBreakdown breakdown={breakdown} />}
+                              <div className="text-[11px] text-gray-400">
+                                Locked when you marked him. Credited at the next mini-auction or {releaseCadence}, whichever comes first — he keeps scoring for you until then.
+                              </div>
+                            </div>
                           );
                         })()}
-                        {canRelease && p.status === "active" && (
+                        {canRelease && (p.status === "active" || p.status === "deadwood") && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
+                            onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId); }}
                             disabled={releasing === p.ownershipId}
-                            title={`50% of current FMV (${formatCurrency(Math.floor(p.fmv * 0.5))}) credited at ${releaseCadence}. Player keeps scoring until then. Cancellable before finalization.`}
+                            title="Works out the refund and shows you exactly how it's calculated before anything is released."
                             className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
                           >
-                            {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.fmv * 0.5))})`}
-                          </button>
-                        )}
-                        {canRelease && p.status === "deadwood" && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, p.playerName); }}
-                            disabled={releasing === p.ownershipId}
-                            title={`Release this deadwood player for 50% of current FMV (${formatCurrency(Math.floor(p.fmv * 0.5))}), credited at the next ${releaseCadence} boundary.`}
-                            className="mt-2 w-full rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
-                          >
-                            {releasing === p.ownershipId ? "..." : `Mark for Release (+${formatCurrency(Math.floor(p.fmv * 0.5))})`}
+                            {releasing === p.ownershipId ? "Checking…" : "Mark for Release"}
                           </button>
                         )}
                         {p.status === "pending_release" && (
@@ -718,6 +763,83 @@ export default function SquadPage() {
           </>
         )}
       </div>
+
+      <Sheet
+        open={releasePreview !== null}
+        onClose={() => { if (!releasing) setReleasePreview(null); }}
+        title={releasePreview ? `Release ${releasePreview.playerName}?` : ""}
+        description="Here's exactly what you'd get back, and how it's worked out."
+        size="md"
+        hideClose
+        footer={releasePreview && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setReleasePreview(null)}
+              disabled={releasing !== null}
+              className="flex-1 rounded-lg border border-white/20 bg-white/10 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20 disabled:opacity-50"
+            >
+              Keep him
+            </button>
+            <button
+              type="button"
+              onClick={confirmRelease}
+              disabled={releasing !== null}
+              className="flex-1 rounded-lg border border-red-500/40 bg-red-500/20 py-2.5 text-sm font-semibold text-red-200 transition hover:bg-red-500/30 disabled:opacity-50"
+            >
+              {releasing ? "Releasing…" : `Confirm release (+${formatCurrency(releasePreview.breakdown.refund)})`}
+            </button>
+          </div>
+        )}
+      >
+        {releasePreview && <ReleaseVerdict preview={releasePreview} releaseCadence={releaseCadence} />}
+      </Sheet>
+    </div>
+  );
+}
+
+/** Body of the release dialog: deadwood verdict (with the evidence), refund breakdown, timing. */
+function ReleaseVerdict({ preview, releaseCadence }: { preview: ReleasePreview; releaseCadence: string }) {
+  const { breakdown, lastGames } = preview;
+  const deadwood = breakdown.deadwoodReason;
+  const minutesPlayed = lastGames.reduce((s, g) => s + g.minutes, 0);
+
+  let verdict: string;
+  if (deadwood) {
+    verdict = `Deadwood — ${describeDeadwoodReason(deadwood)}. You get the 80% rate.`;
+  } else if (lastGames.length < DEADWOOD_GAMES_WINDOW) {
+    verdict = `Standard release — only ${lastGames.length} finished game${lastGames.length === 1 ? "" : "s"} on record, and deadwood needs ${DEADWOOD_GAMES_WINDOW} in a row without minutes.`;
+  } else {
+    verdict = `Standard release — he played ${minutesPlayed} minute${minutesPlayed === 1 ? "" : "s"} in his last ${DEADWOOD_GAMES_WINDOW} games.`;
+  }
+
+  return (
+    <div className="space-y-4 text-sm">
+      <div className={`rounded-xl border p-3 ${deadwood ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-200" : "border-white/10 bg-white/5 text-gray-200"}`}>
+        <p>{verdict}</p>
+        {lastGames.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5" aria-label={`Minutes in his last ${lastGames.length} games, newest first`}>
+            {lastGames.map((g, i) => (
+              <span key={i} className={`rounded px-1.5 py-0.5 font-mono text-[11px] ${g.minutes === 0 ? "bg-white/5 text-gray-400" : "bg-green-500/15 text-green-300"}`}>
+                GW{g.round}: {g.minutes}&apos;
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-[11px] text-gray-400">
+          Deadwood (80% rate) = no minutes in his last {DEADWOOD_GAMES_WINDOW} games, or FPL lists him as unavailable (transferred or loaned out). Otherwise the standard 50% rate applies.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <ReleaseRefundBreakdown breakdown={breakdown} />
+      </div>
+
+      <ul className="list-disc space-y-1 pl-5 text-xs text-gray-400">
+        <li>The refund is locked the moment you confirm.</li>
+        <li>It&apos;s credited at the next mini-auction or {releaseCadence}, whichever comes first. He keeps scoring for you until then.</li>
+        <li>You can cancel the release any time before it finalizes.</li>
+      </ul>
     </div>
   );
 }

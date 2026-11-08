@@ -688,6 +688,33 @@ export async function fetchElementInfo(lane: FplLane = "background"): Promise<Ca
   return elements;
 }
 
+/** One fixture from a player's element-summary history — just the fields readers use. */
+export interface FplElementHistoryEntry {
+  fixture: number;
+  round: number;
+  kickoff_time: string | null;
+  minutes: number;
+}
+
+/**
+ * A player's fixture-by-fixture history this season (element-summary). May include a fixture
+ * still in progress, so callers that need final minutes filter against finished fixtures.
+ *
+ * Uncached: the only caller is auction release pricing, a rare user action that wants current
+ * minutes rather than a cached copy.
+ */
+export async function fetchElementHistory(
+  elementId: number,
+  lane: FplLane = "background"
+): Promise<FplElementHistoryEntry[]> {
+  const res = await fplFetch(`${FPL_BASE_URL}/element-summary/${elementId}/`, lane);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch element-summary for element ${elementId} (HTTP ${res.status})`);
+  }
+  const data = (await res.json()) as { history?: FplElementHistoryEntry[] };
+  return Array.isArray(data.history) ? data.history : [];
+}
+
 /**
  * PL clubs (id, name, short_name) from bootstrap-static, cached for a day.
  *
