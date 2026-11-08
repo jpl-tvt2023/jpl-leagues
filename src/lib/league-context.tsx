@@ -26,9 +26,9 @@ export interface LeagueInfo {
   auctionTier?: "primary" | "complete";
   // Auction-only — first gameweek the league scores. 1 for every other format.
   startGameweek: number;
-  // Auction-only — gameweeks at which pending releases finalize, already parsed from the
-  // stored JSON. Carried here so squad / marketplace / rules copy all name the same
-  // gameweeks instead of each hardcoding "GW 10/20/30".
+  // Auction-only — the gameweeks mini-auctions are planned around, already parsed from the
+  // stored JSON. Carried here so the rules copy names the league's real gameweeks instead
+  // of hardcoding "GW 10/20/30".
   releaseCycleGws: number[];
   // fpl-classic only. Present so the standings/rules pages need no second fetch just to show
   // which official FPL mini-league this page mirrors, and on what terms it is scored.

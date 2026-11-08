@@ -78,7 +78,7 @@ export default function LeagueHelpPage() {
         </div>
 
         {isAuction ? (
-          <AuctionHelp userRole={userRole} leagueSlug={leagueSlug} />
+          <AuctionHelp userRole={userRole} leagueSlug={leagueSlug} tier={league.auctionTier ?? "complete"} />
         ) : isContinentalChampionship ? (
           <ContinentalChampionshipHelp userRole={userRole} />
         ) : (

@@ -11,6 +11,7 @@ import { formatCurrency } from "@/lib/format/currency";
 import { FeedbackTab } from "./FeedbackTab";
 import { DEFAULT_RELEASE_CYCLE_GWS, formatReleaseCycleGws, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
 import { PendingReleasesTable } from "@/components/PendingReleasesTable";
+import { RELEASE_DEADLINE_HOURS, type ReleaseCountdown } from "@/lib/formats/auction/release-deadline";
 
 interface Team {
   id: string;
@@ -3429,7 +3430,7 @@ export default function AdminDashboard() {
                 <h3 className="text-lg font-bold text-white mb-1">Auction Config</h3>
                 <p className="text-xs text-gray-400 mb-4">
                   Starting gameweek locks once any gameweek has been scored — moving it deletes the
-                  gameweeks below it. Release gameweeks stay editable.
+                  gameweeks below it. Mini-auction gameweeks stay editable.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -3440,7 +3441,7 @@ export default function AdminDashboard() {
                       disabled={hasScoredGw}
                       onChange={e => {
                         const nextStart = parseInt(e.target.value) || 1;
-                        // Same self-consistency rule as the creation wizard: drop release
+                        // Same self-consistency rule as the creation wizard: drop mini-auction
                         // gameweeks that would now fall before the league starts, rather
                         // than failing validation on a field the admin didn't touch.
                         const current = auctionCfgForm.releaseCycleGws
@@ -3459,7 +3460,7 @@ export default function AdminDashboard() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-300 mb-1">Release Gameweeks</label>
+                    <label className="block text-sm text-gray-300 mb-1">Mini-Auction Gameweeks</label>
                     <input
                       type="text"
                       value={auctionCfgForm.releaseCycleGws}
@@ -3467,7 +3468,7 @@ export default function AdminDashboard() {
                       onChange={e => setAuctionCfgForm({ ...auctionCfgForm, releaseCycleGws: e.target.value })}
                       className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
                     />
-                    <p className="text-gray-500 text-xs mt-1">Comma-separated. Pending releases finalize here.</p>
+                    <p className="text-gray-500 text-xs mt-1">Comma-separated. When mini-auctions are planned — shown on the rules page. Releases confirm 24h before each scheduled mini-auction.</p>
                   </div>
                 </div>
                 <div className="mt-4 flex items-center gap-3">
@@ -3479,7 +3480,7 @@ export default function AdminDashboard() {
                     {savingAuctionCfg ? "Saving…" : "Save Auction Config"}
                   </button>
                   <span className="text-xs text-gray-500">
-                    Currently GW{leagueConfig.startGameweek}–38 · releases at {formatReleaseCycleGws(leagueConfig.releaseCycleGws)}
+                    Currently GW{leagueConfig.startGameweek}–38 · mini-auctions around {formatReleaseCycleGws(leagueConfig.releaseCycleGws)}
                   </span>
                 </div>
               </div>
@@ -4806,7 +4807,7 @@ function ChipSlotRow({ slot }: { slot: ChipInfo }) {
 function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; releaseCycleGws: number[] }) {
   const [proposals, setProposals] = useState<AdminMarketplaceProposal[]>([]);
   const [pendingReleases, setPendingReleases] = useState<AdminMarketplacePendingRelease[]>([]);
-  const [nextReleaseGw, setNextReleaseGw] = useState<number | null>(null);
+  const [releaseCountdown, setReleaseCountdown] = useState<ReleaseCountdown | null>(null);
   const [squadCache, setSquadCache] = useState<AdminSquadCache>({});
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -4850,7 +4851,7 @@ function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; 
       setSquadCache(cache);
       setPendingReleases(pr);
       // League-wide, so any team's squad response carries it.
-      setNextReleaseGw(squadsArr.find((sq) => sq)?.nextReleaseGw ?? null);
+      setReleaseCountdown(squadsArr.find((sq) => sq)?.releaseCountdown ?? null);
 
       const res = await fetch(`/api/auction/trade?leagueId=${leagueId}`);
       if (res.ok) {
@@ -4904,9 +4905,10 @@ function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
         <h3 className="text-lg font-bold text-white mb-1">Pending Releases ({pendingReleases.length})</h3>
         <p className="text-xs text-gray-500 mb-2">
-          Release gameweeks: {formatReleaseCycleGws(releaseCycleGws)}. Starting the mini-auction confirms every pending release.
+          Confirmed {RELEASE_DEADLINE_HOURS} hours before the next scheduled mini-auction (planned around {formatReleaseCycleGws(releaseCycleGws)}).
+          Starting a mini-auction early, or one with no scheduled time, confirms them at the start.
         </p>
-        <PendingReleasesTable rows={pendingReleases} nextReleaseGw={nextReleaseGw} />
+        <PendingReleasesTable rows={pendingReleases} countdown={releaseCountdown} onDeadline={load} />
       </div>
 
       {/* Trade Proposals */}

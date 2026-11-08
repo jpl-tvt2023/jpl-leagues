@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, leagues, auctionOwnership } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { FplAvailabilityError, priceRelease, type ReleasePricing } from "@/lib/formats/auction/release-pricing";
-import { isAuctionLive } from "@/lib/formats/auction/live-session";
+import { getNextMiniAuction, isAuctionLive } from "@/lib/formats/auction/live-session";
+import { RELEASE_DEADLINE_HOURS, isReleaseWindowClosed } from "@/lib/formats/auction/release-deadline";
+import { confirmDueReleases } from "@/lib/formats/auction/process-gameweek";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
+import { withDbRetry } from "@/lib/db/errors";
 
 /**
  * /api/auction/release — price, mark and cancel player releases.
  *
- * A release only finalizes at the league's configured release-cycle gameweeks (see
- * lib/formats/auction/cycle.ts; default GW 10/20/30) or when the next mini-auction starts. The
+ * A release is confirmed 24 hours before the next mini-auction's scheduled start (see
+ * lib/formats/auction/release-deadline.ts), or when that auction starts if it starts sooner. The
  * player keeps scoring for the team until then. The refund is NOT credited at mark time — it is
  * priced and snapshotted then (lib/formats/auction/release-refund.ts has the 50% / 80% deadwood
- * rule) and credited at finalization.
+ * rule) and credited at confirmation.
  */
 
 type Ownership = typeof auctionOwnership.$inferSelect;
@@ -38,11 +41,10 @@ async function authorizeOwnership(
     return { error: NextResponse.json({ error: "ownershipId is required" }, { status: 400 }) };
   }
 
-  const ownershipRow = await db
-    .select()
-    .from(auctionOwnership)
-    .where(eq(auctionOwnership.id, ownershipId))
-    .limit(1);
+  // Reads only, so a Turso blip (ECONNRESET / socket hang up) is retried rather than surfaced.
+  const ownershipRow = await withDbRetry("release ownership lookup", () =>
+    db.select().from(auctionOwnership).where(eq(auctionOwnership.id, ownershipId)).limit(1)
+  );
 
   if (ownershipRow.length === 0) {
     return { error: NextResponse.json({ error: "Ownership record not found" }, { status: 404 }) };
@@ -54,7 +56,9 @@ async function authorizeOwnership(
     return { error: NextResponse.json({ error: "You don't own this player" }, { status: 403 }) };
   }
 
-  const leagueRow = await db.select().from(leagues).where(eq(leagues.id, ownership.leagueId)).limit(1);
+  const leagueRow = await withDbRetry("release league lookup", () =>
+    db.select().from(leagues).where(eq(leagues.id, ownership.leagueId)).limit(1)
+  );
   if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
     return { error: NextResponse.json({ error: "Not an auction league" }, { status: 400 }) };
   }
@@ -66,6 +70,25 @@ async function authorizeOwnership(
   }
 
   return { ownership };
+}
+
+/**
+ * From the release deadline (24h before the next mini-auction) until that auction is over, releases
+ * can't be marked or cancelled — the player pool is final. This request may be the first one past
+ * the deadline, so confirm what's pending before refusing.
+ */
+async function refuseIfReleasesClosed(leagueId: string): Promise<NextResponse | null> {
+  const nextMini = await getNextMiniAuction(leagueId);
+  if (!nextMini || !isReleaseWindowClosed(nextMini)) return null;
+  await confirmDueReleases(leagueId).catch((err) => console.error("[auction/release] confirmDueReleases failed:", err));
+  return NextResponse.json(
+    {
+      error:
+        `Releases closed ${RELEASE_DEADLINE_HOURS} hours before Mini-Auction #${nextMini.cycleNumber} and pending ones ` +
+        "have been confirmed. You can release players again once that auction is over.",
+    },
+    { status: 409 }
+  );
 }
 
 /** A player already on his way out can't be released (or priced for release) again. */
@@ -133,6 +156,9 @@ export async function POST(request: NextRequest) {
   const blocked = alreadyReleasing(ownership);
   if (blocked) return blocked;
 
+  const closed = await refuseIfReleasesClosed(ownership.leagueId);
+  if (closed) return closed;
+
   // NOTE: A release is allowed to drop the squad below the 1/3/3/1 positional minimum. Teams are
   // free to release and then rebuild during the next mini-auction; the minimum is enforced at the
   // point the *next* auction is completed (see `findCompositionOffenders` / the session-complete
@@ -185,7 +211,12 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Player is not pending release" }, { status: 400 });
   }
 
-  await db
+  const closed = await refuseIfReleasesClosed(ownership.leagueId);
+  if (closed) return closed;
+
+  // Only while still pending: a confirmation landing at the same moment wins, and the refund it
+  // paid can't be followed by the player coming back.
+  const reverted = await db
     .update(auctionOwnership)
     .set({
       status: "active",
@@ -194,7 +225,11 @@ export async function DELETE(request: NextRequest) {
       deadwoodReason: null,
       updatedAt: new Date(),
     })
-    .where(eq(auctionOwnership.id, ownership.id));
+    .where(and(eq(auctionOwnership.id, ownership.id), eq(auctionOwnership.status, "pending_release")))
+    .returning({ id: auctionOwnership.id });
+  if (reverted.length === 0) {
+    return NextResponse.json({ error: "This release has already been confirmed" }, { status: 409 });
+  }
 
   await invalidateLeaguePageCache(ownership.leagueId).catch((err) =>
     console.error("[auction/release] standings cache invalidation failed:", err)

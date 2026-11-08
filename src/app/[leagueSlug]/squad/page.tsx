@@ -13,12 +13,17 @@ import {
   DEADWOOD_GAMES_WINDOW,
   breakdownFromSnapshot,
   describeDeadwoodReason,
-  describeReleaseConfirmation,
   parseDeadwoodReason,
   type RefundBreakdown,
 } from "@/lib/formats/auction/release-refund";
+import {
+  RELEASE_DEADLINE_HOURS,
+  describeReleaseConfirmation,
+  type ReleaseCountdown,
+} from "@/lib/formats/auction/release-deadline";
 import { Sheet } from "@/components/ui/Sheet";
 import { ReleaseRefundBreakdown } from "@/components/ReleaseRefundBreakdown";
+import { ReleaseDeadlineTimer } from "@/components/ReleaseDeadlineTimer";
 import { MAX_SQUAD_SIZE, type SquadCounts } from "@/lib/formats/auction/squad-rules";
 import { useWishlist } from "@/hooks/useWishlist";
 import { WishlistList } from "@/components/WishlistList";
@@ -53,8 +58,10 @@ interface SquadResponse {
   teamId: string;
   teamName: string;
   leagueId: string;
-  /** Next release GW still to be scored; null once only a mini-auction start can confirm releases. */
-  nextReleaseGw: number | null;
+  /** When pending releases are confirmed: the release deadline, or a tentative GW deadline. */
+  releaseCountdown: ReleaseCountdown | null;
+  /** Past the release deadline and the auction not yet over — releases can't be marked or cancelled. */
+  releasesClosed: boolean;
   squad: SquadPlayer[];
   activeCount: number;
   deadwoodCount: number;
@@ -282,8 +289,10 @@ export default function SquadPage() {
     window.location.href = "/signin";
   };
 
-  // Release is always available in auction leagues — refund credited at the next mini-auction or release GW
+  // Release is available until the release deadline, 24h before the next mini-auction; the refund is
+  // credited at that deadline.
   const canRelease = true;
+  const releasesClosed = squadData?.releasesClosed ?? false;
 
   // Step 1 (both buttons): price the release and open the dialog — read-only for "check", with a
   // confirm step for "release". Whether he's deadwood depends on live FPL data, so only the server
@@ -293,8 +302,9 @@ export default function SquadPage() {
     setReleaseError(null);
     try {
       const res = await fetch(`/api/auction/release?ownershipId=${encodeURIComponent(ownershipId)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Couldn't work out the refund");
+      // A crashed route answers 500 with an empty body — fall back to our own message, not a parse error.
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't work out the refund — please try again");
       setReleasePreview({ ...(data as ReleasePreview), mode });
     } catch (err) {
       setReleaseError(err instanceof Error ? err.message : "Couldn't work out the refund");
@@ -315,8 +325,8 @@ export default function SquadPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ownershipId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Release failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Release failed — please try again");
       await loadAll();
     } catch (err) {
       setReleaseError(err instanceof Error ? err.message : "Release failed");
@@ -336,8 +346,8 @@ export default function SquadPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ownershipId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Cancel release failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Cancel release failed — please try again");
       await loadAll();
     } catch (err) {
       setReleaseError(err instanceof Error ? err.message : "Cancel release failed");
@@ -348,6 +358,11 @@ export default function SquadPage() {
 
   const fmvSquadValue = squadData?.squad.reduce((sum, p) => sum + p.fmv, 0) ?? 0;
   const oldSquadValue = squadData?.squad.reduce((sum, p) => sum + p.purchasePrice, 0) ?? 0;
+  const pendingReleases = squadData?.squad.filter((p) => p.status === "pending_release") ?? [];
+  const pendingRefundTotal = pendingReleases.reduce(
+    (sum, p) => sum + creditedRefund({ purchasePrice: p.purchasePrice, releaseRefund: p.releaseRefund ?? null }),
+    0
+  );
 
   const wishlistElementIds = useMemo(() => new Set(wishlist.map((w) => w.fplElementId)), [wishlist]);
 
@@ -435,7 +450,7 @@ export default function SquadPage() {
                       </span>
                     )}
                     <span className="rounded-full bg-blue-500/20 text-blue-300 px-3 py-1 border border-blue-500/30 text-xs">
-                      Releases finalized at next mini-auction
+                      {releasesClosed ? "Releases closed until the mini-auction is over" : `Releases confirmed ${RELEASE_DEADLINE_HOURS}h before the mini-auction`}
                     </span>
                   </div>
                 </div>
@@ -452,6 +467,17 @@ export default function SquadPage() {
                 <div title="Sum of current fair-market values (purchase + point appreciation)"><div className="text-[10px] text-gray-400 uppercase mb-0.5">FMV Squad Value</div><div className="font-mono text-white">{formatCurrency(fmvSquadValue)}</div></div>
               </div>
             </div>
+
+            {pendingReleases.length > 0 && (
+              <div className="mb-6 rounded-2xl border border-orange-500/40 bg-orange-500/5 p-4 backdrop-blur">
+                <div className="mb-3 text-sm text-white">
+                  <span className="text-[10px] uppercase tracking-wider text-orange-400 font-bold mr-2">Pending releases</span>
+                  {pendingReleases.length} player{pendingReleases.length === 1 ? "" : "s"} ·{" "}
+                  <span className="font-mono text-green-300">+{formatCurrency(pendingRefundTotal)}</span> to be paid out
+                </div>
+                <ReleaseDeadlineTimer countdown={squadData.releaseCountdown} onDeadline={loadAll} />
+              </div>
+            )}
 
             {releaseError && (
               <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
@@ -721,7 +747,7 @@ export default function SquadPage() {
                               )}
                               {breakdown && <ReleaseRefundBreakdown breakdown={breakdown} />}
                               <div className="text-[11px] text-gray-400">
-                                Amount locked when you marked him. {describeReleaseConfirmation(squadData.nextReleaseGw)} He keeps scoring for you until then, and you can cancel until it&apos;s confirmed.
+                                Amount locked when you marked him. {describeReleaseConfirmation(squadData.releaseCountdown)} He keeps scoring for you until then, and you can cancel until it&apos;s confirmed.
                               </div>
                             </div>
                           );
@@ -740,8 +766,12 @@ export default function SquadPage() {
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleRelease(p.ownershipId, "release"); }}
-                                disabled={busy}
-                                title="Shows the refund breakdown, then asks you to confirm the release."
+                                disabled={busy || releasesClosed}
+                                title={
+                                  releasesClosed
+                                    ? `Releases closed ${RELEASE_DEADLINE_HOURS} hours before the mini-auction — they reopen once it's over.`
+                                    : "Shows the refund breakdown, then asks you to confirm the release."
+                                }
                                 className="flex-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold py-1.5 hover:bg-red-500/30 transition disabled:opacity-50"
                               >
                                 {busy && checking?.mode === "release" ? "Checking…" : "Release player"}
@@ -830,14 +860,14 @@ export default function SquadPage() {
           )
         )}
       >
-        {releasePreview && <ReleaseVerdict preview={releasePreview} nextReleaseGw={squadData?.nextReleaseGw ?? null} />}
+        {releasePreview && <ReleaseVerdict preview={releasePreview} countdown={squadData?.releaseCountdown ?? null} />}
       </Sheet>
     </div>
   );
 }
 
 /** Body of the release dialog: deadwood verdict (with the evidence), refund breakdown, timing. */
-function ReleaseVerdict({ preview, nextReleaseGw }: { preview: ReleasePreview & { mode: ReleaseMode }; nextReleaseGw: number | null }) {
+function ReleaseVerdict({ preview, countdown }: { preview: ReleasePreview & { mode: ReleaseMode }; countdown: ReleaseCountdown | null }) {
   const { breakdown, lastGames } = preview;
   const deadwood = breakdown.deadwoodReason;
   const minutesPlayed = lastGames.reduce((s, g) => s + g.minutes, 0);
@@ -879,8 +909,8 @@ function ReleaseVerdict({ preview, nextReleaseGw }: { preview: ReleasePreview & 
         ) : (
           <li>The refund is locked the moment you confirm.</li>
         )}
-        <li>{describeReleaseConfirmation(nextReleaseGw)} The refund is credited then and he keeps scoring for you until then.</li>
-        <li>You can mark releases until the mini-auction starts, and cancel one until it&apos;s confirmed.</li>
+        <li>{describeReleaseConfirmation(countdown)} The refund is credited then and he keeps scoring for you until then.</li>
+        <li>You can mark and cancel releases until that deadline. From then until the auction is over, releases are closed so everyone sees the final player pool.</li>
       </ul>
     </div>
   );

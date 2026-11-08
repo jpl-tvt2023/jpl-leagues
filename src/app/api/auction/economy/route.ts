@@ -3,6 +3,7 @@ import { db, teams, leagues, auctionScores, gameweeks, leagueAdmins } from "@/li
 import { eq, and, asc } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculatePurse } from "@/lib/formats/auction/economy";
+import { confirmDueReleases } from "@/lib/formats/auction/process-gameweek";
 
 /**
  * GET /api/auction/economy?teamId=xxx
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Team not found" }, { status: 404 });
   }
 
-  const team = teamRow[0];
+  let team = teamRow[0];
 
   const leagueRow = await db.select().from(leagues).where(eq(leagues.id, team.leagueId)).limit(1);
   if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
@@ -56,6 +57,14 @@ export async function GET(request: NextRequest) {
   } else if (session.type !== "superadmin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  // Past the release deadline this may be the first request to notice. Confirming moves purses, so
+  // read the team again afterwards — the squad page fetches this alongside the squad, which may be
+  // the one that did the confirming.
+  await confirmDueReleases(team.leagueId).catch((err) =>
+    console.error("[auction/economy] confirmDueReleases failed:", err)
+  );
+  team = (await db.select().from(teams).where(eq(teams.id, teamId)).limit(1))[0] ?? team;
 
   // Get GW-by-GW income history
   const scores = await db

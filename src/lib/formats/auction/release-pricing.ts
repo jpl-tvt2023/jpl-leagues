@@ -4,6 +4,7 @@
 
 import { db, auctionOwnership, auctionScores } from "../../db";
 import { and, eq } from "drizzle-orm";
+import { withDbRetry } from "../../db/errors";
 import { calculateFMV } from "./economy";
 import {
   classifyDeadwood,
@@ -59,10 +60,12 @@ export async function priceRelease(ownership: PricedOwnership): Promise<ReleaseP
  * API (synergy never compounds into FMV).
  */
 async function rawPointsForTeam(ownership: PricedOwnership): Promise<number> {
-  const playerScores = await db
-    .select({ playerBreakdown: auctionScores.playerBreakdown })
-    .from(auctionScores)
-    .where(and(eq(auctionScores.leagueId, ownership.leagueId), eq(auctionScores.teamId, ownership.teamId)));
+  const playerScores = await withDbRetry("release points read", () =>
+    db
+      .select({ playerBreakdown: auctionScores.playerBreakdown })
+      .from(auctionScores)
+      .where(and(eq(auctionScores.leagueId, ownership.leagueId), eq(auctionScores.teamId, ownership.teamId)))
+  );
   let totalPoints = 0;
   for (const s of playerScores) {
     try {

@@ -1,10 +1,8 @@
 /**
- * JPL Auction release-cycle gameweeks.
- *
- * These boundaries used to be the hardcoded arithmetic `gameweekNumber % 10 === 0`
- * (GW 10/20/30). They are now a per-league list, so the critical property is that a
- * league on the default list behaves EXACTLY as it did before — every existing league
- * relies on that.
+ * JPL Auction mini-auction gameweeks (stored as release_cycle_gws).
+ * These used to be the hardcoded arithmetic `gameweekNumber % 10 === 0` (GW 10/20/30) and
+ * decided when releases confirmed. They are now a per-league list and purely informational —
+ * releases confirm 24 hours before the mini-auction (see auction-release-deadline.test.ts).
  *
  * Run with: npm run test:unit
  */
@@ -14,31 +12,9 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_RELEASE_CYCLE_GWS,
   formatReleaseCycleGws,
-  isReleaseCycleBoundary,
-  nextReleaseCycleGw,
   parseReleaseCycleGws,
   validateReleaseCycleGws,
 } from "../../src/lib/formats/auction/cycle";
-
-/* ── isReleaseCycleBoundary ─────────────────────────────────────────────── */
-
-test("default list reproduces the legacy gw % 10 === 0 cadence exactly", () => {
-  for (let gw = 1; gw <= 38; gw++) {
-    assert.equal(
-      isReleaseCycleBoundary(gw, DEFAULT_RELEASE_CYCLE_GWS),
-      gw % 10 === 0 && gw <= 30,
-      `GW${gw} disagreed with the legacy cadence`
-    );
-  }
-});
-
-test("a custom list fires only on its own gameweeks", () => {
-  const cycles = [18, 28];
-  assert.equal(isReleaseCycleBoundary(18, cycles), true);
-  assert.equal(isReleaseCycleBoundary(28, cycles), true);
-  assert.equal(isReleaseCycleBoundary(20, cycles), false);
-  assert.equal(isReleaseCycleBoundary(30, cycles), false);
-});
 
 /* ── parseReleaseCycleGws ───────────────────────────────────────────────── */
 
@@ -47,7 +23,7 @@ test("parses a stored list, sorted and de-duplicated", () => {
 });
 
 test("malformed input falls back to the legacy cadence, never to an empty list", () => {
-  // An empty list would silently disable release finalization league-wide.
+  // An empty list would leave the rules page with no gameweeks to name.
   for (const raw of [null, undefined, "", "not json", "{}", "[]", '["a","b"]', "[0,99]"]) {
     assert.deepEqual(parseReleaseCycleGws(raw), DEFAULT_RELEASE_CYCLE_GWS, `raw=${String(raw)}`);
   }
@@ -107,21 +83,3 @@ test("formats the cadence the way the UI copy reads", () => {
   assert.equal(formatReleaseCycleGws([18]), "GW 18");
 });
 
-/* ── nextReleaseCycleGw ─────────────────────────────────────────────────── */
-
-test("next release GW is the first boundary after the last scored GW", () => {
-  assert.equal(nextReleaseCycleGw([10, 20, 30], null), 10);
-  assert.equal(nextReleaseCycleGw([10, 20, 30], 9), 10);
-  // GW10 itself scored → its releases are already confirmed; the next boundary is 20.
-  assert.equal(nextReleaseCycleGw([10, 20, 30], 10), 20);
-  assert.equal(nextReleaseCycleGw([10, 20, 30], 29), 30);
-});
-
-test("no next release GW once every boundary has been scored", () => {
-  assert.equal(nextReleaseCycleGw([10, 20, 30], 30), null);
-  assert.equal(nextReleaseCycleGw([10, 20, 30], 38), null);
-});
-
-test("next release GW doesn't depend on list order", () => {
-  assert.equal(nextReleaseCycleGw([30, 10, 20], 12), 20);
-});

@@ -606,10 +606,10 @@ export async function POST(request: NextRequest) {
     await auditAuctionComposition(sessionId).catch((e) => console.error("[auction composition audit]", e));
   }
 
-  // When starting a mini-auction, finalize any pending player releases first
+  // When starting a mini-auction, confirm whatever is still pending — normally nothing, since the
+  // release deadline 24h earlier already did, but an early or unscheduled start skips that.
   if (newStatus === "active" && action === "start" && sessionRow[0].type === "mini-auction") {
-    const gwNumber = sessionRow[0].cycleNumber ?? 0;
-    await finalizePendingReleasesNow(leagueId, gwNumber);
+    await finalizePendingReleasesNow(leagueId);
     await invalidateLeaguePageCache(leagueId).catch((err) =>
       console.error("[auction/session] standings cache invalidation failed:", err)
     );

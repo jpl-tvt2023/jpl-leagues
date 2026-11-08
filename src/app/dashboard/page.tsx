@@ -18,6 +18,8 @@ import { PlFixtureCard } from "./_components/PlFixtureCard";
 import { EconomyCard } from "@/app/dashboard/_components/EconomyCard";
 import { EligibilitySelect } from "@/app/dashboard/_components/EligibilitySelect";
 import { WishlistManager } from "@/components/WishlistManager";
+import { ReleaseDeadlineTimer } from "@/components/ReleaseDeadlineTimer";
+import type { ReleaseCountdown } from "@/lib/formats/auction/release-deadline";
 import { chipCode, chipName } from "@/lib/formats/tvt/chip-labels";
 
 // Format an ISO timestamp as a short local clock time, e.g. "6:30 PM" — used
@@ -483,6 +485,9 @@ interface AuctionDashboardData {
   lastGwResult: { gameweek: number; points: number; rank: number | null; income: number } | null;
   auctionSession: { id: string; type: string; status: string } | null;
   nextAuction: { id: string; type: string; cycleNumber: number; scheduledAt: string } | null;
+  /** When pending releases are confirmed: the release deadline, or a tentative GW deadline. */
+  releaseCountdown: ReleaseCountdown | null;
+  pendingReleases: { count: number; refund: number };
   deadline: { gameweek: number; timestamp: string | null };
   serverTime: string;
 }
@@ -504,7 +509,7 @@ function PurseRow({ label, amount }: { label: string; amount: number }) {
   );
 }
 
-function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashboardData; leagueSlug: string; onSignOut: () => void }) {
+function AuctionDashboard({ data, leagueSlug, onSignOut, onRefresh }: { data: AuctionDashboardData; leagueSlug: string; onSignOut: () => void; onRefresh: () => void }) {
   const router = useRouter();
 
   // The dashboard header shows the user's own Username (in club-auction leagues the team name is the
@@ -778,6 +783,21 @@ function AuctionDashboard({ data, leagueSlug, onSignOut }: { data: AuctionDashbo
                   <span className="text-yellow-400">⏱</span> Next Deadline
                 </h2>
                 <NextDeadlineContent data={data} />
+              </div>
+            )}
+
+            {/* Release deadline — when pending releases are confirmed and paid (24h before the
+                mini-auction), or a tentative GW deadline while none is scheduled. */}
+            {data.releaseCountdown && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 backdrop-blur">
+                <h2 className="text-lg font-bold text-white mb-3">Release Deadline</h2>
+                {data.pendingReleases?.count > 0 && (
+                  <div className="mb-3 text-sm text-white">
+                    {data.pendingReleases.count} pending release{data.pendingReleases.count === 1 ? "" : "s"} ·{" "}
+                    <span className="font-mono text-green-300">+{formatCurrency(data.pendingReleases.refund)}</span> to be paid out
+                  </div>
+                )}
+                <ReleaseDeadlineTimer countdown={data.releaseCountdown} onDeadline={onRefresh} />
               </div>
             )}
 
@@ -1340,7 +1360,7 @@ export default function DashboardPage() {
 
   // ===== Auction format dashboard — separate layout =====
   if (leagueFormat === "auction") {
-    return <AuctionDashboard data={data as unknown as AuctionDashboardData} leagueSlug={leagueSlug} onSignOut={handleSignOut} />;
+    return <AuctionDashboard data={data as unknown as AuctionDashboardData} leagueSlug={leagueSlug} onSignOut={handleSignOut} onRefresh={() => fetchDashboard()} />;
   }
 
   const currentChipSet = data.chipStatus.currentSet === 1 ? data.chipStatus.set1 : data.chipStatus.set2;
