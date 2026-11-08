@@ -10,8 +10,7 @@ import { AppNav } from "@/components/AppNav";
 import { formatCurrency } from "@/lib/format/currency";
 import { FeedbackTab } from "./FeedbackTab";
 import { DEFAULT_RELEASE_CYCLE_GWS, formatReleaseCycleGws, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
-import { creditedRefund } from "@/lib/formats/auction/economy";
-import { breakdownFromSnapshot, describeDeadwoodReason, formatRefundBreakdown } from "@/lib/formats/auction/release-refund";
+import { PendingReleasesTable } from "@/components/PendingReleasesTable";
 
 interface Team {
   id: string;
@@ -4807,6 +4806,7 @@ function ChipSlotRow({ slot }: { slot: ChipInfo }) {
 function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; releaseCycleGws: number[] }) {
   const [proposals, setProposals] = useState<AdminMarketplaceProposal[]>([]);
   const [pendingReleases, setPendingReleases] = useState<AdminMarketplacePendingRelease[]>([]);
+  const [nextReleaseGw, setNextReleaseGw] = useState<number | null>(null);
   const [squadCache, setSquadCache] = useState<AdminSquadCache>({});
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -4849,6 +4849,8 @@ function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; 
       });
       setSquadCache(cache);
       setPendingReleases(pr);
+      // League-wide, so any team's squad response carries it.
+      setNextReleaseGw(squadsArr.find((sq) => sq)?.nextReleaseGw ?? null);
 
       const res = await fetch(`/api/auction/trade?leagueId=${leagueId}`);
       if (res.ok) {
@@ -4900,45 +4902,11 @@ function AdminMarketplaceTab({ leagueId, releaseCycleGws }: { leagueId: string; 
 
       {/* Pending Releases */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-        <h3 className="text-lg font-bold text-white mb-3">Pending Releases ({pendingReleases.length})</h3>
-        <p className="text-xs text-gray-400 mb-3">Finalize automatically at {formatReleaseCycleGws(releaseCycleGws)}.</p>
-        {pendingReleases.length === 0 ? (
-          <div className="text-center text-gray-500 py-6">None</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/10 text-xs uppercase text-gray-400">
-                  <th className="text-left py-2 px-2">Player</th>
-                  <th className="text-left py-2 px-2">Team</th>
-                  <th className="text-right py-2 px-2">Purchase</th>
-                  <th className="text-right py-2 px-2">Refund</th>
-                  <th className="text-right py-2 px-2">Forfeit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingReleases.map((p) => {
-                  const refund = creditedRefund(p);
-                  const breakdown = breakdownFromSnapshot(p);
-                  return (
-                    <tr key={p.ownershipId} className="border-b border-white/5" title={breakdown ? formatRefundBreakdown(breakdown) : undefined}>
-                      <td className="py-2 px-2 text-white font-semibold">
-                        {p.playerName}
-                        {breakdown?.deadwoodReason && (
-                          <span className="ml-2 align-middle text-[10px] uppercase tracking-wider text-yellow-400" title={describeDeadwoodReason(breakdown.deadwoodReason)}>Deadwood</span>
-                        )}
-                      </td>
-                      <td className="py-2 px-2 text-gray-300">{p.teamName}</td>
-                      <td className="py-2 px-2 text-right font-mono text-white">{fmtMoney(p.purchasePrice)}</td>
-                      <td className="py-2 px-2 text-right font-mono text-green-300">+{fmtMoney(refund)}</td>
-                      <td className="py-2 px-2 text-right font-mono text-red-300">-{fmtMoney(Math.max(0, p.purchasePrice - refund))}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <h3 className="text-lg font-bold text-white mb-1">Pending Releases ({pendingReleases.length})</h3>
+        <p className="text-xs text-gray-500 mb-2">
+          Release gameweeks: {formatReleaseCycleGws(releaseCycleGws)}. Starting the mini-auction confirms every pending release.
+        </p>
+        <PendingReleasesTable rows={pendingReleases} nextReleaseGw={nextReleaseGw} />
       </div>
 
       {/* Trade Proposals */}

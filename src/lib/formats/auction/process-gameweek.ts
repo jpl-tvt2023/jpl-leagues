@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { calculateAuctionTeamScore, loadAuctionGwFplData } from "./scoring";
 import type { FplLane } from "../../fpl/gateway";
 import { assignRanksAndPayouts, creditedRefund, calculateFMV } from "./economy";
+import { formatMoney } from "./release-refund";
 import { createNotification } from "../../notifications";
 import { isReleaseCycleBoundary, parseReleaseCycleGws } from "./cycle";
 import { randomUUID } from "crypto";
@@ -185,7 +186,7 @@ export async function processAuctionGameweek(
   // Notification fan-out happens after the transaction commits. Track refunds
   // per team here so the post-commit loop has the data it needs.
   const refundByTeam = new Map<string, number>();
-  const releaseCountByTeam = new Map<string, number>();
+  const releasedByTeam = new Map<string, ConfirmedRelease[]>();
 
   // Payout already credited for this GW by an earlier run, per team. Populated only on
   // forceReprocess (stays empty on a first pass). Purses are then moved by the delta rather
@@ -331,7 +332,7 @@ export async function processAuctionGameweek(
           })
           .where(eq(auctionOwnership.id, p.id));
         refundByTeam.set(p.teamId, (refundByTeam.get(p.teamId) ?? 0) + refund);
-        releaseCountByTeam.set(p.teamId, (releaseCountByTeam.get(p.teamId) ?? 0) + 1);
+        releasedByTeam.set(p.teamId, [...(releasedByTeam.get(p.teamId) ?? []), { playerName: p.playerName, refund }]);
       }
 
       for (const [teamId, totalRefund] of refundByTeam) {
@@ -389,25 +390,11 @@ export async function processAuctionGameweek(
         console.warn("[processAuctionGameweek] notify gw_processed failed", { teamId: score.teamId, error: e });
       }
     }
-
-    for (const [teamId, totalRefund] of refundByTeam) {
-      const count = releaseCountByTeam.get(teamId) ?? 0;
-      try {
-        await createNotification({
-          teamId,
-          leagueId,
-          type: "release_refund",
-          title: "Release refund credited",
-          body: `£${(totalRefund / 1_000_000).toFixed(2)}M for ${count} released player${count === 1 ? "" : "s"}`,
-          link: slug ? `/${slug}/finance` : undefined,
-        });
-      } catch (e) {
-        console.warn("[processAuctionGameweek] notify release_refund failed", { teamId, error: e });
-      }
-    }
   } catch (e) {
     console.warn("[processAuctionGameweek] notification fan-out skipped", e);
   }
+
+  await notifyReleasesConfirmed(leagueId, releasedByTeam, `at the end of GW${gameweekNumber} scoring`);
 
   return {
     success: true,
@@ -448,6 +435,7 @@ export async function finalizePendingReleasesNow(
   // Aggregate refunds per team — use the refund snapshotted at release; legacy rows fall back to
   // 50% of purchase.
   const refundByTeam = new Map<string, number>();
+  const releasedByTeam = new Map<string, ConfirmedRelease[]>();
   for (const p of pendingReleases) {
     const refund = creditedRefund(p);
     await db
@@ -455,6 +443,7 @@ export async function finalizePendingReleasesNow(
       .set({ status: "released", releasedGw: gwNumber, updatedAt: new Date() })
       .where(eq(auctionOwnership.id, p.id));
     refundByTeam.set(p.teamId, (refundByTeam.get(p.teamId) ?? 0) + refund);
+    releasedByTeam.set(p.teamId, [...(releasedByTeam.get(p.teamId) ?? []), { playerName: p.playerName, refund }]);
   }
 
   // Credit refunds to each team's purse
@@ -471,5 +460,53 @@ export async function finalizePendingReleasesNow(
       .where(eq(teams.id, teamId));
   }
 
+  await notifyReleasesConfirmed(leagueId, releasedByTeam, "as the mini-auction started");
+
   return { finalized: pendingReleases.length };
+}
+
+interface ConfirmedRelease {
+  playerName: string;
+  refund: number;
+}
+
+/**
+ * Tell each team its releases were confirmed, naming every player and amount, and which of the
+ * two confirmation points did it. Shared by GW scoring and mini-auction start so a team hears the
+ * same thing either way. Best-effort: the purse has already moved, so failures are only logged.
+ */
+async function notifyReleasesConfirmed(
+  leagueId: string,
+  releasedByTeam: Map<string, ConfirmedRelease[]>,
+  confirmedWhen: string
+): Promise<void> {
+  if (releasedByTeam.size === 0) return;
+  try {
+    const [leagueRow] = await db
+      .select({ slug: leagues.slug })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+    const slug = leagueRow?.slug ?? "";
+
+    for (const [teamId, released] of releasedByTeam) {
+      const total = released.reduce((s, r) => s + r.refund, 0);
+      try {
+        await createNotification({
+          teamId,
+          leagueId,
+          type: "release_refund",
+          title: `Release refund credited: ${formatMoney(total)}`,
+          body:
+            `${released.map((r) => `${formatMoney(r.refund)} for ${r.playerName}`).join("; ")} — ` +
+            `confirmed ${confirmedWhen}. See Finance for each breakdown.`,
+          link: slug ? `/${slug}/finance` : undefined,
+        });
+      } catch (e) {
+        console.warn("[releases] notify release_refund failed", { teamId, error: e });
+      }
+    }
+  } catch (e) {
+    console.warn("[releases] release notification fan-out skipped", e);
+  }
 }

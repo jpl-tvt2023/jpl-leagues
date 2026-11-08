@@ -93,6 +93,17 @@ export function isReleaseCycleBoundary(gwNumber: number, cycleGws: number[]): bo
 }
 
 /**
+ * The release gameweek whose scoring will next confirm pending releases: the first boundary after
+ * the last gameweek the league has scored. Null once every boundary is behind it — from then on
+ * only a mini-auction start confirms releases.
+ */
+export function nextReleaseCycleGw(cycleGws: number[], lastScoredGw: number | null): number | null {
+  const after = lastScoredGw ?? 0;
+  const upcoming = cycleGws.filter((gw) => gw > after);
+  return upcoming.length > 0 ? Math.min(...upcoming) : null;
+}
+
+/**
  * "GW 10/20/30" — the single source for every user-facing mention of the cadence,
  * so squad, marketplace, admin and rules copy can never drift apart again.
  */
