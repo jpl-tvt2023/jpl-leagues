@@ -10,6 +10,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { useEnforceFormat, useLeague } from "@/lib/league-context";
 import { isPrimary } from "@/lib/formats/auction/tier";
 import { PendingReleasesTable } from "@/components/PendingReleasesTable";
+import type { ReleaseCountdown } from "@/lib/formats/auction/release-deadline";
 
 interface TradeProposal {
   id: string;
@@ -98,7 +99,7 @@ export default function MarketplacePage() {
   const [liveOffers, setLiveOffers] = useState<TradeProposal[]>([]);
   const [teamList, setTeamList] = useState<StandingEntry[]>([]);
   const [ownershipMap, setOwnershipMap] = useState<Map<string, SquadPlayer & { teamId: string }>>(new Map());
-  const [nextReleaseGw, setNextReleaseGw] = useState<number | null>(null);
+  const [releaseCountdown, setReleaseCountdown] = useState<ReleaseCountdown | null>(null);
   const [tab, setTab] = useState<Tab>("incoming");
   const [actionError, setActionError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -183,7 +184,7 @@ export default function MarketplacePage() {
       });
       setOwnershipMap(omap);
       // League-wide, so any team's squad response carries it.
-      setNextReleaseGw(squadResponses.find((sq) => sq)?.nextReleaseGw ?? null);
+      setReleaseCountdown(squadResponses.find((sq) => sq)?.releaseCountdown ?? null);
 
       // My squad
       const mySquadRes = await fetch(`/api/auction/squad?teamId=${me.team.id}`);
@@ -505,7 +506,8 @@ export default function MarketplacePage() {
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-sm text-gray-300 mb-1">Players marked for release across the league.</p>
                 <PendingReleasesTable
-                  nextReleaseGw={nextReleaseGw}
+                  countdown={releaseCountdown}
+                  onDeadline={load}
                   rows={pendingReleases.map((p) => ({
                     ownershipId: p.ownershipId,
                     playerName: p.playerName,

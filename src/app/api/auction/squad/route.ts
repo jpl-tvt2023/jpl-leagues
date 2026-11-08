@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, auctionSessions, teamPenalties, gameweeks } from "@/lib/db";
+import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, auctionSessions, teamPenalties } from "@/lib/db";
 import { eq, and, isNull, desc, or } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculateFMV, calculatePurse } from "@/lib/formats/auction/economy";
-import { nextReleaseCycleGw, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
+import { LIVE_OWNERSHIP_STATUSES } from "@/lib/formats/auction/ownership";
+import { confirmDueReleases } from "@/lib/formats/auction/process-gameweek";
+import { loadReleaseCountdown } from "@/lib/formats/auction/live-session";
+import { isCountdownClosed } from "@/lib/formats/auction/release-deadline";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
 import type { ClubTier } from "@/lib/db/schema";
 import {
@@ -47,6 +50,12 @@ export async function GET(request: NextRequest) {
   if (leagueRow.length === 0 || leagueRow[0].format !== "auction") {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
   }
+
+  // Past the release deadline this may be the first request to notice — confirm before reading, so
+  // the squad and purse below already reflect it.
+  await confirmDueReleases(leagueRow[0].id).catch((err) =>
+    console.error("[auction/squad] confirmDueReleases failed:", err)
+  );
 
   // Get all owned players (active + deadwood)
   const ownedPlayers = await db
@@ -101,8 +110,9 @@ export async function GET(request: NextRequest) {
     // ignore — leave plTeamByElement empty
   }
 
+  // Live rows only: released and traded-away ("transferred") rows are this team's history.
   const squad = ownedPlayers
-    .filter((p) => p.status !== "released")
+    .filter((p) => LIVE_OWNERSHIP_STATUSES.includes(p.status))
     .map((p) => {
       const totalPoints = elementTotalPoints.get(p.fplElementId) ?? 0;
       const fmv = calculateFMV(p.purchasePrice, totalPoints);
@@ -217,25 +227,16 @@ export async function GET(request: NextRequest) {
     canRedeem = redeemableCost != null && availablePurse >= redeemableCost;
   }
 
-  // Pending releases are confirmed when the next release GW is scored or when the mini-auction
-  // starts, whichever comes first. Name that GW so every screen can say which one it is.
-  const [lastScored] = await db
-    .select({ number: gameweeks.number })
-    .from(auctionScores)
-    .innerJoin(gameweeks, eq(auctionScores.gameweekId, gameweeks.id))
-    .where(eq(auctionScores.leagueId, leagueRow[0].id))
-    .orderBy(desc(gameweeks.number))
-    .limit(1);
-  const nextReleaseGw = nextReleaseCycleGw(
-    parseReleaseCycleGws(leagueRow[0].releaseCycleGws),
-    lastScored?.number ?? null,
-  );
+  // When pending releases are confirmed — league-wide, so the marketplace and admin pages read it
+  // from any team's squad.
+  const releaseCountdown = await loadReleaseCountdown(leagueRow[0].id);
 
   return NextResponse.json({
     teamId,
     teamName: displayName,
     leagueId: leagueRow[0].id,
-    nextReleaseGw,
+    releaseCountdown,
+    releasesClosed: isCountdownClosed(releaseCountdown, Date.now()),
     squad,
     activeCount,
     deadwoodCount: squad.filter((p) => p.status === "deadwood").length,

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { MAX_SQUAD_SIZE } from "@/lib/formats/auction/squad-rules";
 import {
   AccordionItem,
   type ActiveTab,
@@ -17,26 +18,34 @@ import {
 interface Props {
   userRole: UserRole;
   leagueSlug: string;
+  tier?: "primary" | "complete";
 }
 
-export function AuctionHelp({ userRole, leagueSlug }: Props) {
+export function AuctionHelp({ userRole, leagueSlug, tier = "complete" }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("faqs");
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  // Primary tier disables trades and slot 16/17/18 expansion — hide the FAQs and scenarios for
+  // those so they aren't shown for a feature the league can't use.
+  const primary = tier === "primary";
 
   const generalFaqs: FaqEntry[] = [
     {
       question: "What is the JPL Auction format?",
       answer: (
         <p>
-          Each manager starts with a <strong className="text-white">purse</strong> and builds a squad of up to <strong className="text-white">14 FPL players</strong> by bidding in live auctions. Every gameweek, your squad scores the combined FPL points of your owned players. Teams are ranked each GW by their score and earn cash payouts that go back into the purse. The season winner is the team with the highest cumulative points across all 38 gameweeks.
+          Each manager starts with a <strong className="text-white">purse</strong> and builds a squad of up to <strong className="text-white">{MAX_SQUAD_SIZE} FPL players</strong> by bidding in live auctions. Every gameweek, your squad scores the combined FPL points of your owned players. Teams are ranked each GW by their score and earn cash payouts that go back into the purse. The season winner is the team with the highest cumulative points across all 38 gameweeks.
         </p>
       ),
     },
     {
-      question: "How do I view standings, players, finance, and trades?",
+      question: primary
+        ? "How do I view standings, players, and finance?"
+        : "How do I view standings, players, finance, and trades?",
       answer: (
         <p>
-          Use the top navigation. <strong className="text-white">Standings</strong> ranks teams by cumulative points. <strong className="text-white">GW Results</strong> shows per-gameweek scores and squad breakdowns. <strong className="text-white">Players</strong> lists every FPL player with prices and current owners. <strong className="text-white">Marketplace</strong> is where trades are proposed and accepted. <strong className="text-white">Finance</strong> shows your purse ledger (auctions, payouts, trades, redemptions). Most pages are publicly viewable; trade actions require sign-in.
+          Use the top navigation. <strong className="text-white">Standings</strong> ranks teams by cumulative points. <strong className="text-white">GW Results</strong> shows per-gameweek scores and squad breakdowns. <strong className="text-white">Players</strong> lists every FPL player with prices and current owners.{" "}
+          {!primary && <><strong className="text-white">Marketplace</strong> is where trades are proposed and accepted.{" "}</>}
+          <strong className="text-white">Finance</strong> shows your purse ledger ({primary ? "auctions, payouts, redemptions" : "auctions, payouts, trades, redemptions"}). Most pages are publicly viewable{primary ? "." : "; trade actions require sign-in."}
         </p>
       ),
     },
@@ -72,7 +81,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
             If a player transfers mid-season, the <strong className="text-white">previous owner keeps synergy</strong> on every GW the player completed at the old club, and the <strong className="text-white">new owner gains synergy</strong> from the transfer GW onward. Example: Mbeumo plays GW1-15 for Brentford then signs for Man Utd before GW16 — the Brentford owner keeps GW1-15 synergy on Mbeumo, the Man Utd owner picks up GW16+.
           </p>
           <p>
-            Synergy applies only to GW scoring; it does <strong className="text-white">not</strong> compound into FMV, squad value, or trade economics.
+            Synergy applies only to GW scoring; it does <strong className="text-white">not</strong> compound into {primary ? "FMV or squad value" : "FMV, squad value, or trade economics"}.
           </p>
         </div>
       ),
@@ -130,7 +139,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
       answer: (
         <div className="space-y-2">
           <p>
-            If your nomination timer expires <strong className="text-white">and</strong> your wishlist has no eligible players to auto-nominate, your maximum squad size shrinks by one — your <strong className="text-red-400">penaltySlots</strong> counter increments and your effective cap drops from <strong className="text-white">14 → 13 → 12 → …</strong>.
+            If your nomination timer expires <strong className="text-white">and</strong> your wishlist has no eligible players to auto-nominate, your maximum squad size shrinks by one — your <strong className="text-red-400">penaltySlots</strong> counter increments and your effective cap drops from <strong className="text-white">{MAX_SQUAD_SIZE} → {MAX_SQUAD_SIZE - 1} → {MAX_SQUAD_SIZE - 2} → …</strong>.
           </p>
           <p>
             You can <strong className="text-white">buy back</strong> a lost slot from the auction interface:
@@ -150,20 +159,26 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
       ),
     },
     {
-      question: "What's the difference between open, locked, and penalty slots?",
+      question: primary
+        ? "What's the difference between open and penalty slots?"
+        : "What's the difference between open, locked, and penalty slots?",
       answer: (
         <div className="space-y-2">
-          <p>The squad-slot indicator on the Auction and Squad pages shows three distinct concepts:</p>
+          <p>The squad-slot indicator on the Auction and Squad pages shows {primary ? "two" : "three"} distinct concepts:</p>
           <ul className="ml-5 list-disc space-y-1">
             <li><strong className="text-green-300">Open slots</strong> — empty spots in your squad you can still fill via auction. <code className="text-gray-200">open = effectiveMax − active</code>.</li>
             <li><strong className="text-red-300">Penalty slots (✕)</strong> — slots you lost to missed nominations. Recovered by redeeming with purse (£2.5M same cycle / £5M later).</li>
-            <li><strong className="text-purple-300">Locked slots (🔒)</strong> — slots 16, 17 and 18 that aren&apos;t yet unlocked. Unlock with purse money (£10M for slot 16, £20M for slot 17, £30M for slot 18) AFTER the initial auction completes.</li>
+            {!primary && (
+              <li><strong className="text-purple-300">Locked slots (🔒)</strong> — slots 16, 17 and 18 that aren&apos;t yet unlocked. Unlock with purse money (£10M for slot 16, £20M for slot 17, £30M for slot 18) AFTER the initial auction completes.</li>
+            )}
           </ul>
-          <p>Penalty (red ✕) and locked (grey 🔒) are visually distinct on screen — different mechanics, different fix paths.</p>
+          {!primary && (
+            <p>Penalty (red ✕) and locked (grey 🔒) are visually distinct on screen — different mechanics, different fix paths.</p>
+          )}
         </div>
       ),
     },
-    {
+    ...(primary ? [] : [{
       question: "How do I unlock slot 16, 17 and 18?",
       answer: (
         <div className="space-y-2">
@@ -180,7 +195,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
           </p>
         </div>
       ),
-    },
+    }]),
     {
       question: "How do I avoid losing a slot? (Wishlist)",
       answer: (
@@ -189,11 +204,19 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
         </p>
       ),
     },
-    {
-      question: "How do trades and releases work?",
+    ...(primary ? [] : [{
+      question: "How do trades work?",
       answer: (
         <p>
-          Trades happen on the <strong className="text-white">Marketplace</strong> — propose a swap of players (and optional cash) with another team. Both sides must accept. Releases drop a player back into the free-agent pool. You get back <strong className="text-white">50% of the purchase price plus 100% of the FMV gain</strong> — or <strong className="text-white">80%</strong> of the purchase price plus the gain for a deadwood player (no minutes in his last 5 games, or transferred / loaned out). Use <strong className="text-white">Check release amount</strong> on the squad page to see the exact breakdown without releasing anyone. A release is confirmed (refund credited, player leaves your squad) at the end of the next release gameweek&apos;s scoring, or once the mini-auction starts — whichever comes first. You can mark releases until the mini-auction starts and cancel until yours is confirmed. Released players become available again at the next mini-auction.
+          Trades happen on the <strong className="text-white">Marketplace</strong> — propose a swap of players (and optional cash) with another team. Both sides must accept.
+        </p>
+      ),
+    }]),
+    {
+      question: "How do releases work?",
+      answer: (
+        <p>
+          Releases drop a player back into the free-agent pool. You get back <strong className="text-white">50% of the purchase price plus 100% of the FMV gain</strong> — or <strong className="text-white">80%</strong> of the purchase price plus the gain for a deadwood player (no minutes in his last 5 games, or transferred / loaned out). Use <strong className="text-white">Check release amount</strong> on the squad page to see the exact breakdown without releasing anyone. A release is confirmed (refund credited, player leaves your squad) 24 hours before the next mini-auction is scheduled to start, so everyone sees the final player pool a day ahead. Your squad page and dashboard count down to it. You can mark and cancel releases until then; from the deadline until the auction is over, releases are closed. Released players become available again at that mini-auction.
         </p>
       ),
     },
@@ -273,9 +296,9 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
     },
   ];
 
-  const teamScenarios: ScenarioEntry[] = [
+  // Numbered after the tier filter so a Primary league doesn't show gaps.
+  const teamScenarios: ScenarioEntry[] = ([
     {
-      number: 1,
       title: "Prepare for an auction cycle",
       steps: [
         "Open Auction and review the snake order — note when your turn comes up.",
@@ -285,7 +308,6 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
       ],
     },
     {
-      number: 2,
       title: "Recover a lost slot",
       steps: [
         "Open Auction — if your penalty slots indicator is above 0, you've lost at least one slot.",
@@ -294,8 +316,16 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
         "Use the recovered slot to bid in the current or next auction.",
       ],
     },
-    {
-      number: 3,
+    ...(primary ? [] : [{
+      title: "Buy a bonus slot",
+      steps: [
+        "Wait for the initial auction to complete — bonus slots can't be bought before then.",
+        "Open Auction or Squad and find the 🔒 locked pill in the squad-slot bar. It shows the price of the next slot.",
+        "Click Unlock £10.0M to buy slot 16 and confirm. The cost comes out of your purse and is non-refundable.",
+        "Your squad cap goes up by 1 immediately — use the new slot to bid in the next mini-auction.",
+        "Slots unlock in order: slot 17 costs £20M and slot 18 costs £30M, each only after the previous one. If there's no Unlock button, the bar says why (e.g. insufficient purse).",
+      ],
+    }, {
       title: "Propose a trade",
       steps: [
         "Open Marketplace and click New Trade Proposal.",
@@ -304,9 +334,8 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
         "Optionally add cash (positive = you pay, negative = you receive). The FMV floor check ensures both sides receive ≥80% of what they give.",
         "Submit. The recipient is notified via the bell icon and can accept, reject, or counter.",
       ],
-    },
+    }]),
     {
-      number: 4,
       title: "Reprocessing a gameweek after a player transferred",
       steps: [
         "Admin clicks Reprocess on a previously-scored GW from the Scoring tab.",
@@ -316,7 +345,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
         "If automatic preservation isn't enough (rare), superadmin can edit per-row synergy / club-result from Superadmin → Score Adjustments. Every change is audit-logged with a reason.",
       ],
     },
-  ];
+  ] as Omit<ScenarioEntry, "number">[]).map((s, i) => ({ ...s, number: i + 1 }));
 
   return (
     <>
@@ -377,7 +406,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
           )}
 
           {userRole === "public" && (
-            <PublicSignInPrompt message="Sign in to see team-specific FAQs about nomination timers, slot deduction, trades, and your wishlist." />
+            <PublicSignInPrompt message={`Sign in to see team-specific FAQs about nomination timers, slot deduction, ${primary ? "" : "trades, "}and your wishlist.`} />
           )}
         </div>
       )}
@@ -416,7 +445,9 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
           )}
 
           {userRole === "public" && (
-            <PublicSignInPrompt message="Sign in to see step-by-step scenarios for auctions, slot redemption, and trades." />
+            <PublicSignInPrompt message={primary
+              ? "Sign in to see step-by-step scenarios for auctions and slot redemption."
+              : "Sign in to see step-by-step scenarios for auctions, slot redemption, bonus slots, and trades."} />
           )}
         </div>
       )}

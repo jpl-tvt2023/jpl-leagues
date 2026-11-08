@@ -36,6 +36,7 @@ import {
   autoNominateClubForTeam,
 } from "./club-auction";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
+import { getStartedGameweekNumber } from "@/lib/gameweeks/current-gw";
 
 const DEFAULT_MIN_BID = 500_000;
 
@@ -70,11 +71,17 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
 
   // Read the intermission length up front so the claim below can open the beat in its own commit.
   const cfg = await db
-    .select({ intermissionSeconds: auctionSessions.intermissionSeconds })
+    .select({ intermissionSeconds: auctionSessions.intermissionSeconds, type: auctionSessions.type })
     .from(auctionSessions)
     .where(eq(auctionSessions.id, bid.sessionId))
     .limit(1);
   const intermissionSecs = cfg[0]?.intermissionSeconds ?? 5;
+
+  // A mid-season buy scores for its new team from the gameweek after the one it happens in — the
+  // same rule that ends a released player's scoring for his old team, so scoring a gameweek late or
+  // reprocessing it never credits a player to his buyer for gameweeks before the sale. Pre-season
+  // auctions (initial, club) stay at 0. Read before the claim so the post-sale path is no longer.
+  const acquiredGw = cfg[0]?.type === "mini-auction" ? await getStartedGameweekNumber(bid.leagueId, now) : 0;
 
   // Atomically mark bid as sold ONLY if still open AND timer genuinely expired,
   // AND open the post-sale intermission in the SAME commit.
@@ -172,7 +179,7 @@ export async function resolveBidToSold(bid: BidRow): Promise<boolean> {
     playerName: fresh.playerName,
     elementType,
     purchasePrice: winAmount,
-    acquiredGw: 0,
+    acquiredGw,
     status: "active",
     createdAt: now,
     updatedAt: now,

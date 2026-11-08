@@ -8,8 +8,27 @@
 
 import { maybeStartDailyRun, advanceDailyRun } from "@/lib/cron/daily-trigger";
 
+/** How often, per instance, the tick looks for release deadlines that have passed. */
+const RELEASE_SWEEP_EVERY_MS = 60_000;
+let lastReleaseSweep = 0;
+
 /**
- * Start today's run if it has not started, then take one item off its queue.
+ * Confirm pending releases in any league whose mini-auction release deadline has passed, so refunds
+ * and their notifications land at the deadline even when nobody has an auction page open. The auction
+ * routes do the same for their own league; this is the catch-all. One query a minute per instance,
+ * and the auction code is only loaded when it runs.
+ */
+async function sweepReleaseDeadlines(): Promise<void> {
+  const now = Date.now();
+  if (now - lastReleaseSweep < RELEASE_SWEEP_EVERY_MS) return;
+  lastReleaseSweep = now;
+  const { confirmAllDueReleases } = await import("@/lib/formats/auction/process-gameweek");
+  await confirmAllDueReleases(new Date(now));
+}
+
+/**
+ * Start today's run if it has not started, then take one item off its queue. Also sweeps release
+ * deadlines (at most once a minute).
  *
  * Both halves are free once this instance has seen the day finished — no Redis at all — which is
  * what makes it safe to attach to every request rather than guessing which one should own it.
@@ -29,5 +48,11 @@ export async function dailyTick(baseUrl: string): Promise<void> {
     await advanceDailyRun(baseUrl);
   } catch (e) {
     console.error("[daily-run] tick failed", e);
+  }
+
+  try {
+    await sweepReleaseDeadlines();
+  } catch (e) {
+    console.error("[releases] deadline sweep failed", e);
   }
 }

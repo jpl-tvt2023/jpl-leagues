@@ -5,6 +5,7 @@ import { eq, and, lt, gte, or, isNull } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME, isSuperAdmin } from "@/lib/auth";
 import { fetchElementInfo, fetchElementGameweekPoints, fetchBootstrapData } from "@/lib/fpl";
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
+import { confirmDueReleases } from "@/lib/formats/auction/process-gameweek";
 
 /**
  * GET /api/auction/players?leagueId=xxx&gameweek=N&page=1&pageSize=50
@@ -49,6 +50,9 @@ export async function GET(request: NextRequest) {
   if (!leagueRow.length || leagueRow[0].format !== "auction") {
     return NextResponse.json({ error: "Not an auction league" }, { status: 400 });
   }
+
+  // Released players join the pool at the release deadline; this may be the first request after it.
+  await confirmDueReleases(leagueId).catch((err) => console.error("[auction/players] confirmDueReleases failed:", err));
 
   try {
     // Fetch FPL data (all cached)

@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer, real, uniqueIndex, primaryKey, index } from "drizzle-orm/sqlite-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // ============================================
 // TVT Fantasy Super League Database Schema
@@ -444,16 +444,22 @@ export const auctionOwnership = sqliteTable("auction_ownership", {
   playerName: text("player_name").notNull(), // Cached web_name from bootstrap
   elementType: integer("element_type"), // 1=GK, 2=DEF, 3=MID, 4=FWD — nullable for legacy records
   purchasePrice: integer("purchase_price").notNull(),
-  acquiredGw: integer("acquired_gw").notNull(), // GW in which player was acquired (0 = pre-season)
-  releasedGw: integer("released_gw"), // GW in which player was released (null if active)
+  acquiredGw: integer("acquired_gw").notNull(), // Last GW before he joined: scores from acquiredGw + 1 (0 = pre-season; a mini-auction buy or trade gets the GW it happened in)
+  releasedGw: integer("released_gw"), // Last GW this row's team scores him — set when released or transferred (null while still owned)
+  acquiredVia: text("acquired_via").notNull().default("auction"), // "auction" (bought — a purchase on the ledger) | "trade" (received in a trade — not a purchase)
   releaseRefund: integer("release_refund"), // Refund snapshotted at mark-for-release time (null = legacy/pre-migration → falls back to 50% of purchase price). See lib/formats/auction/release-refund.ts
   releaseFmv: integer("release_fmv"), // FMV used to price the release, so its breakdown can be re-shown (null = priced before the snapshot existed)
   deadwoodReason: text("deadwood_reason"), // "no_minutes" | "unavailable" when priced as deadwood; null = standard release
-  status: text("status").notNull().default("active"), // "active" | "deadwood" | "pending_release" | "released"
+  status: text("status").notNull().default("active"), // "active" | "deadwood" | "pending_release" | "released" | "transferred" (the seller's closed window after a trade)
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
-  activeOwnerUnique: uniqueIndex("auction_ownership_active_unique").on(table.leagueId, table.fplElementId),
+  // One live owner per player. Released and transferred rows are history (scoring still reads their
+  // windows), so they're excluded — otherwise a released player could never be bought again (0026)
+  // and a trade could never leave the seller his window (0027).
+  activeOwnerUnique: uniqueIndex("auction_ownership_active_unique")
+    .on(table.leagueId, table.fplElementId)
+    .where(sql`status NOT IN ('released', 'transferred')`),
 }));
 
 // Auction scores — per-GW team totals (replaces results for auction format)

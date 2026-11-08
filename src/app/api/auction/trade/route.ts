@@ -184,6 +184,11 @@ export async function POST(request: NextRequest) {
 
   const offered = await buildTradePlayers(offeredPlayerIds ?? []);
   const requested = await buildTradePlayers(requestedPlayerIds ?? []);
+  // buildTradePlayers skips anything that isn't an active squad player; the proposal must not keep
+  // ids it couldn't validate.
+  if (offered.length !== (offeredPlayerIds ?? []).length || requested.length !== (requestedPlayerIds ?? []).length) {
+    return NextResponse.json({ error: "Only active squad players can be traded" }, { status: 400 });
+  }
 
   // Verify ownership: offered must belong to proposer, requested must belong to target
   for (const p of offered) {
@@ -371,6 +376,15 @@ export async function PATCH(request: NextRequest) {
     const o = targetSquadFresh.find((p) => p.id === id);
     return o ? { ownershipId: o.id, fplElementId: o.fplElementId, playerName: o.playerName, purchasePrice: o.purchasePrice, totalPoints: 0, elementType: o.elementType } : null;
   }).filter(Boolean) as TradePlayer[];
+
+  // A player who has since left the squad (traded on, released) sinks the trade rather than being
+  // quietly dropped from it — the approval would refuse it anyway.
+  if (offeredFresh.length !== offeredIds.length || requestedFresh.length !== requestedIds.length) {
+    return NextResponse.json(
+      { error: "Trade is no longer valid — a player in it has left the squad it was offered from" },
+      { status: 400 }
+    );
+  }
 
   const revalidation = validateTradeProposal(
     offeredFresh,

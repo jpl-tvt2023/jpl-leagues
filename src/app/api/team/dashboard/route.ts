@@ -20,6 +20,8 @@ import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
 import { computeCupGroupStandings } from "@/lib/formats/continental-championship/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
 import { calculatePurse, creditedRefund, calculateFMV } from "@/lib/formats/auction/economy";
+import { confirmDueReleases } from "@/lib/formats/auction/process-gameweek";
+import { loadReleaseCountdown } from "@/lib/formats/auction/live-session";
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 import { buildTeamLedger } from "@/lib/formats/auction/finance";
 import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
@@ -1294,6 +1296,10 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     // Get league config (for initialBudget + tier gating + whether the team name is club-derived)
     const leagueRow = await db.select({ initialBudget: leagues.initialBudget, auctionTier: leagues.auctionTier, clubAuctionEnabled: leagues.clubAuctionEnabled }).from(leagues).where(eq(leagues.id, leagueId)).limit(1);
 
+    // Past the release deadline this may be the first request to notice — confirm before the purse
+    // and squad are read below.
+    await confirmDueReleases(leagueId).catch((err) => console.error("[team/dashboard] confirmDueReleases failed:", err));
+
     // Get team info
     const team = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
     if (!team.length) {
@@ -1322,6 +1328,15 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
     });
     const totalForfeit = releases.reduce((sum, r) => sum + r.forfeit, 0);
     const totalRefunds = releases.reduce((sum, r) => sum + r.refund, 0);
+
+    // Releases still waiting for the deadline, and when it is — for the Next Deadline card.
+    const pendingReleaseRows = await db.select().from(auctionOwnership)
+      .where(and(eq(auctionOwnership.teamId, teamId), eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.status, "pending_release")));
+    const pendingReleases = {
+      count: pendingReleaseRows.length,
+      refund: pendingReleaseRows.reduce((sum, p) => sum + creditedRefund(p), 0),
+    };
+    const releaseCountdown = await loadReleaseCountdown(leagueId);
 
     // Get all GW scores for this manager
     const scores = await db.select({
@@ -1538,6 +1553,8 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
         cycleNumber: nextScheduledAuction.cycleNumber,
         scheduledAt: nextScheduledAuction.scheduledAt!.toISOString(),
       } : null,
+      releaseCountdown,
+      pendingReleases,
       deadline: nextGw.length > 0 ? {
         gameweek: nextGw[0].number,
         timestamp: nextGw[0].deadline?.toISOString() ?? null,

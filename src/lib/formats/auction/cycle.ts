@@ -1,10 +1,10 @@
 /**
- * JPL Auction — release cycle gameweeks.
+ * JPL Auction — mini-auction gameweeks.
  *
- * Pending player releases are finalized (refund credited, player returned to the
- * pool) at a set of gameweeks configured per league. This used to be the hardcoded
- * arithmetic `gameweekNumber % 10 === 0` — i.e. GW 10/20/30 — which broke down once
- * leagues could start at a gameweek other than 1, and could not be tuned per league.
+ * The gameweeks a league plans its mini-auctions around, configured per league (stored as
+ * `release_cycle_gws`, default GW 10/20/30). Purely informational now: the rules page names them,
+ * but releases no longer confirm at these gameweeks — they confirm 24 hours before the mini-auction
+ * itself (see release-deadline.ts).
  *
  * An explicit list beats a configurable interval here: it composes with any start
  * gameweek without offset arithmetic, and it lets the UI name the real gameweeks
@@ -24,8 +24,7 @@ export const MAX_RELEASE_CYCLE_GWS = 10;
  * Parse the stored JSON column into an ascending list of gameweek numbers.
  *
  * Falls back to DEFAULT_RELEASE_CYCLE_GWS on anything malformed rather than
- * returning an empty list: an empty list would silently disable release
- * finalization league-wide, which is far worse than the legacy cadence.
+ * returning an empty list, so the rules page always has gameweeks to name.
  */
 export function parseReleaseCycleGws(raw: string | null | undefined): number[] {
   if (!raw) return [...DEFAULT_RELEASE_CYCLE_GWS];
@@ -42,7 +41,7 @@ export function parseReleaseCycleGws(raw: string | null | undefined): number[] {
 }
 
 /**
- * Validate admin input for the release-cycle list: 1..MAX_RELEASE_CYCLE_GWS unique
+ * Validate admin input for the mini-auction gameweek list: 1..MAX_RELEASE_CYCLE_GWS unique
  * integers, each within `startGw`..38. Mirrors validateEnabledChipsArray in
  * formats/tvt/chip-validation.ts so create and edit share one rule.
  *
@@ -56,7 +55,7 @@ export function validateReleaseCycleGws(
   startGw: number
 ): { ok: true; gws: number[] } | { ok: false; error: string } {
   const errorMsg =
-    `Release cycle gameweeks must be 1-${MAX_RELEASE_CYCLE_GWS} unique gameweek numbers between ${startGw} and 38`;
+    `Mini-auction gameweeks must be 1-${MAX_RELEASE_CYCLE_GWS} unique gameweek numbers between ${startGw} and 38`;
 
   let items: unknown[];
   if (typeof value === "string") {
@@ -87,27 +86,11 @@ export function validateReleaseCycleGws(
   return { ok: true, gws: unique.sort((a, b) => a - b) };
 }
 
-/** Does this gameweek finalize pending releases for a league on `cycleGws`? */
-export function isReleaseCycleBoundary(gwNumber: number, cycleGws: number[]): boolean {
-  return cycleGws.includes(gwNumber);
-}
-
-/**
- * The release gameweek whose scoring will next confirm pending releases: the first boundary after
- * the last gameweek the league has scored. Null once every boundary is behind it — from then on
- * only a mini-auction start confirms releases.
- */
-export function nextReleaseCycleGw(cycleGws: number[], lastScoredGw: number | null): number | null {
-  const after = lastScoredGw ?? 0;
-  const upcoming = cycleGws.filter((gw) => gw > after);
-  return upcoming.length > 0 ? Math.min(...upcoming) : null;
-}
-
 /**
  * "GW 10/20/30" — the single source for every user-facing mention of the cadence,
- * so squad, marketplace, admin and rules copy can never drift apart again.
+ * so admin and rules copy can never drift apart again.
  */
 export function formatReleaseCycleGws(cycleGws: number[]): string {
-  if (cycleGws.length === 0) return "the league's release gameweeks";
+  if (cycleGws.length === 0) return "the league's mini-auction gameweeks";
   return `GW ${cycleGws.join("/")}`;
 }

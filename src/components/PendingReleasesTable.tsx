@@ -2,10 +2,11 @@ import { creditedRefund } from "@/lib/formats/auction/economy";
 import {
   breakdownFromSnapshot,
   describeDeadwoodReason,
-  describeReleaseConfirmation,
   formatMoney,
   formatRefundBreakdown,
 } from "@/lib/formats/auction/release-refund";
+import type { ReleaseCountdown } from "@/lib/formats/auction/release-deadline";
+import { ReleaseDeadlineTimer } from "@/components/ReleaseDeadlineTimer";
 
 export interface PendingReleaseRow {
   ownershipId: string;
@@ -19,16 +20,19 @@ export interface PendingReleaseRow {
 
 /**
  * Every pending release in a league with its full refund breakdown —
- * rate × purchase price + 100% of FMV gain = refund — column by column, plus when it confirms.
- * Shared by the admin Marketplace tab and the league Marketplace so both explain refunds the same way.
- * On phones the breakdown columns fold into one line under the refund.
+ * rate × purchase price + 100% of FMV gain = refund — column by column, plus a countdown to when
+ * they confirm. Shared by the admin Marketplace tab and the league Marketplace so both explain
+ * refunds the same way. On phones the breakdown columns fold into one line under the refund.
  */
 export function PendingReleasesTable({
   rows,
-  nextReleaseGw,
+  countdown,
+  onDeadline,
 }: {
   rows: PendingReleaseRow[];
-  nextReleaseGw: number | null;
+  countdown: ReleaseCountdown | null;
+  /** Reload the page's data when the release deadline passes, so confirmed releases drop off. */
+  onDeadline?: () => void;
 }) {
   const priced = rows.map((r) => ({ row: r, refund: creditedRefund(r), breakdown: breakdownFromSnapshot(r) }));
   const totalRefund = priced.reduce((s, p) => s + p.refund, 0);
@@ -36,9 +40,12 @@ export function PendingReleasesTable({
 
   return (
     <div>
+      <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-3">
+        <ReleaseDeadlineTimer countdown={countdown} onDeadline={onDeadline} />
+      </div>
       <p className="text-xs text-gray-400">
-        {describeReleaseConfirmation(nextReleaseGw)} Refund = rate × purchase price + 100% of the FMV gain
-        (50% standard, 80% deadwood). The player keeps scoring for his team until then.
+        Refund = rate × purchase price + 100% of the FMV gain (50% standard, 80% deadwood). The player keeps
+        scoring for his team until it&apos;s confirmed.
       </p>
 
       {rows.length === 0 ? (

@@ -542,6 +542,29 @@ function allFixtures() {
 }
 
 /**
+ * GET /element-summary/{id}/ — a player's game-by-game history, which auction release pricing
+ * reads to decide deadwood. One game per finished GW, on the fixture his club plays in
+ * `allFixtures()` (team_h = 2m+1, team_a = 2m+2), always 90 minutes, so every release in a spec
+ * prices at the standard rate unless the spec makes him unavailable.
+ */
+function elementSummary(elementId: number) {
+  const club = (elementId % PL_TEAM_COUNT) + 1;
+  const m = Math.floor((club - 1) / 2);
+  const history = [];
+  for (let gw = 1; gw <= state.finishedThrough; gw++) {
+    history.push({
+      fixture: gw * 100 + m,
+      round: gw,
+      // Same as allFixtures() for a finished GW, offset by GW so "newest first" is well-defined.
+      kickoff_time: new Date(Date.now() - 2 * 3600 * 1000 - (state.finishedThrough - gw) * WEEK_MS).toISOString(),
+      minutes: 90,
+      total_points: elementPoints(elementId, gw),
+    });
+  }
+  return { fixtures: [], history, history_past: [] };
+}
+
+/**
  * Bucket a request by route SHAPE rather than exact path: entry ids would
  * otherwise make the counter map unbounded and useless to assert against.
  */
@@ -553,6 +576,7 @@ function countKey(segments: string[]): string {
     if (segments.length === 2) return "entry";
   }
   if (segments[0] === "event" && segments[2] === "live") return "event/live";
+  if (segments[0] === "element-summary") return "element-summary";
   // Bucketed by shape, not id — a spec paging through a 120-entrant league makes several calls
   // to different ids/pages, and they must all count as the same "shape" for a call budget assert.
   if (segments[0] === "leagues-classic" && segments[2] === "standings") return "leagues-classic/standings";
@@ -588,6 +612,14 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ path: s
 
   if (segments[0] === "event" && segments[2] === "live") {
     return NextResponse.json(liveGameweek(Number(segments[1])));
+  }
+
+  if (segments[0] === "element-summary") {
+    const elementId = Number(segments[1]);
+    if (!Number.isInteger(elementId) || elementId < 1 || elementId > TOTAL_ELEMENTS) {
+      return NextResponse.json({ detail: "Not found." }, { status: 404 });
+    }
+    return NextResponse.json(elementSummary(elementId));
   }
 
   if (segments[0] === "entry") {

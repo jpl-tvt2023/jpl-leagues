@@ -65,6 +65,8 @@ interface AuctionSquadRow {
   "Acquired GW": number;
   "Released GW": number | null;
   Status: string;
+  /** Absent in backups taken before trades kept history — those rows were all bought. */
+  "Acquired Via"?: string;
 }
 interface AuctionClubRow {
   ID: string;
@@ -402,6 +404,7 @@ export async function POST(request: NextRequest) {
           acquiredGw: Number(s["Acquired GW"]),
           releasedGw: s["Released GW"] != null ? Number(s["Released GW"]) : null,
           status: s.Status ?? "active",
+          acquiredVia: s["Acquired Via"] === "trade" ? "trade" : "auction",
           createdAt: now,
           updatedAt: now,
         })));

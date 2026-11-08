@@ -83,6 +83,7 @@ export type AuctionSquadRow = {
   "Acquired GW": number;
   "Released GW": number | null;
   Status: string;
+  "Acquired Via": string; // "auction" | "trade" — whether the team bought him (a ledger purchase)
 };
 export type AuctionClubRow = {
   ID: string;
@@ -496,6 +497,7 @@ export async function generateBackupRows(leagueId: string): Promise<BackupRows> 
       "Acquired GW": o.acquiredGw,
       "Released GW": o.releasedGw ?? null,
       Status: o.status,
+      "Acquired Via": o.acquiredVia,
     }));
 
     auctionClubs = clubRows.map((c) => ({

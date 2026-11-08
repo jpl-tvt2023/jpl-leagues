@@ -12,9 +12,9 @@ import { parseReleaseCycleGws, validateReleaseCycleGws } from "@/lib/formats/auc
  *   - startGameweek     — first gameweek the league scores. Locked once anything has
  *                         been scored, because gameweek rows below it get deleted and
  *                         existing auctionScores would be orphaned by the move.
- *   - releaseCycleGws   — gameweeks at which pending releases finalize. Editable at any
- *                         time: a boundary that has already been processed cannot be
- *                         retroactively un-processed, so a later edit is harmless.
+ *   - releaseCycleGws   — the gameweeks mini-auctions are planned around, shown on the
+ *                         rules page. Informational only (releases confirm 24h before a
+ *                         scheduled mini-auction), so it is editable at any time.
  *
  * Lives here rather than on /api/superadmin/leagues/[id] so league admins can manage it
  * from their own dashboard — getAuthorizedLeagueId admits both admins and superadmin.

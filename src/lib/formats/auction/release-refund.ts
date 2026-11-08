@@ -110,16 +110,6 @@ export function formatRefundBreakdown(b: RefundBreakdown): string {
   return `${pct} of ${formatMoney(b.purchasePrice)}${gain} = ${formatMoney(b.refund)}`;
 }
 
-/**
- * When pending releases get confirmed (refund credited, player leaves the squad) — the one sentence
- * every screen uses. `nextReleaseGw` is the next release gameweek still to be scored, if any.
- */
-export function describeReleaseConfirmation(nextReleaseGw: number | null): string {
-  return nextReleaseGw != null
-    ? `Confirmed at the end of GW${nextReleaseGw} scoring, or once the mini-auction starts — whichever comes first.`
-    : "Confirmed once the next mini-auction starts.";
-}
-
 /** Short user-facing explanation of a deadwood verdict. */
 export function describeDeadwoodReason(reason: DeadwoodReason): string {
   return reason === "unavailable"
