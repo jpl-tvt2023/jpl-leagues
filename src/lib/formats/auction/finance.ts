@@ -3,7 +3,8 @@
 
 import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, tradeProposals, gameweeks, teamPenalties, teamSlotUnlocks } from "../../db";
 import { eq, and, or, isNotNull } from "drizzle-orm";
-import { calculateRefund } from "./economy";
+import { creditedRefund } from "./economy";
+import { breakdownFromSnapshot, formatRefundBreakdown } from "./release-refund";
 import { getPlTeamFullName } from "../../data/pl-team-full-names";
 
 export type TransactionType =
@@ -180,14 +181,14 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     });
 
     if (o.status === "released") {
-      const refund = calculateRefund(o.purchasePrice);
-      const forfeit = o.purchasePrice - refund;
+      const refund = creditedRefund(o);
+      const forfeit = Math.max(0, o.purchasePrice - refund);
       entries.push({
         id: `refund-${o.id}`,
         type: "release_refund",
         date: o.updatedAt.toISOString(),
         gw: o.releasedGw,
-        description: `Released ${o.playerName} (50% refund, ${formatShort(forfeit)} forfeited)`,
+        description: `Released ${o.playerName} — ${refundBasis(o)}`,
         amount: refund,
         isPending: false,
         metadata: {
@@ -199,14 +200,14 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
         },
       });
     } else if (o.status === "pending_release") {
-      const refund = calculateRefund(o.purchasePrice);
-      const forfeit = o.purchasePrice - refund;
+      const refund = creditedRefund(o);
+      const forfeit = Math.max(0, o.purchasePrice - refund);
       entries.push({
         id: `pending-${o.id}`,
         type: "pending_release",
         date: o.updatedAt.toISOString(),
         gw: null,
-        description: `Pending release: ${o.playerName} (projected refund ${formatShort(refund)}, forfeit ${formatShort(forfeit)})`,
+        description: `Pending release: ${o.playerName} — projected ${refundBasis(o)}`,
         amount: 0,
         isPending: true,
         metadata: {
@@ -458,8 +459,8 @@ export async function buildAllTeamsSummary(leagueId: string): Promise<TeamSummar
     const totalSpent = own.reduce((s, o) => s + o.purchasePrice, 0);
     const totalIncome = sc.reduce((s, x) => s + x.payout, 0);
     const released = own.filter((o) => o.status === "released");
-    const totalRefunds = released.reduce((s, o) => s + calculateRefund(o.purchasePrice), 0);
-    const totalForfeited = released.reduce((s, o) => s + (o.purchasePrice - calculateRefund(o.purchasePrice)), 0);
+    const totalRefunds = released.reduce((s, o) => s + creditedRefund(o), 0);
+    const totalForfeited = released.reduce((s, o) => s + Math.max(0, o.purchasePrice - creditedRefund(o)), 0);
 
     return {
       teamId: t.id,
@@ -475,6 +476,23 @@ export async function buildAllTeamsSummary(leagueId: string): Promise<TeamSummar
       netPnL: initialBudget + totalIncome + totalRefunds - totalSpent,
     };
   });
+}
+
+/**
+ * How a release's refund was worked out, for its ledger line:
+ * "deadwood: 80% of £10.00M + £2.80M FMV gain = £10.80M". Rows priced before the breakdown was
+ * snapshotted say which old rule produced their amount.
+ */
+function refundBasis(o: {
+  purchasePrice: number;
+  releaseRefund: number | null;
+  releaseFmv: number | null;
+  deadwoodReason: string | null;
+}): string {
+  const b = breakdownFromSnapshot(o);
+  if (b) return `${b.deadwoodReason ? "deadwood: " : ""}${formatRefundBreakdown(b)}`;
+  const rule = o.releaseRefund == null ? "50% of purchase price" : "50% of FMV at release";
+  return `refund ${formatShort(creditedRefund(o))} (${rule})`;
 }
 
 function formatShort(amount: number): string {

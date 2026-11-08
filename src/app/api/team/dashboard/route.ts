@@ -19,7 +19,7 @@ import {
 import type { ChallengeMatch } from "@/lib/formats/tvt/challenge-match";
 import { computeCupGroupStandings } from "@/lib/formats/continental-championship/standings";
 import { auctionOwnership, auctionScores, auctionSessions } from "@/lib/db/schema";
-import { calculatePurse, calculateRefund, calculateFMV } from "@/lib/formats/auction/economy";
+import { calculatePurse, creditedRefund, calculateFMV } from "@/lib/formats/auction/economy";
 import { fetchClubOwnershipMap } from "@/lib/teams/rename-rows";
 import { buildTeamLedger } from "@/lib/formats/auction/finance";
 import { computeCaptainCap, computeCaptainCheckLimit } from "@/lib/captains";
@@ -1310,13 +1310,13 @@ async function getAuctionDashboard(teamId: string, leagueId: string, leagueSlug:
       .where(and(eq(auctionOwnership.teamId, teamId), eq(auctionOwnership.leagueId, leagueId), eq(auctionOwnership.status, "released")));
 
     const releases = releasedPlayers.map(p => {
-      const refund = calculateRefund(p.purchasePrice);
+      const refund = creditedRefund(p);
       return {
         id: p.id,
         playerName: p.playerName,
         purchasePrice: p.purchasePrice,
         refund,
-        forfeit: p.purchasePrice - refund,
+        forfeit: Math.max(0, p.purchasePrice - refund),
         releasedGw: p.releasedGw,
       };
     });

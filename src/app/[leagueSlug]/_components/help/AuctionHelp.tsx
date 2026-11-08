@@ -97,7 +97,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
       question: "What happens if I own a player who transfers out of the Premier League mid-season?",
       answer: (
         <p>
-          Their historical points (and synergy) stay on your record for any GWs already scored. Going forward they score 0 (no longer in FPL). You can <strong className="text-white">release</strong> them for a 50% refund just like any other player — see the Releases section in the Rules.
+          Their historical points (and synergy) stay on your record for any GWs already scored. Going forward they score 0. Once FPL lists them as unavailable they count as <strong className="text-white">deadwood</strong>, so releasing them refunds <strong className="text-white">80% of the purchase price plus 100% of any FMV gain</strong> — see the Releases section in the Rules.
         </p>
       ),
     },
@@ -193,7 +193,7 @@ export function AuctionHelp({ userRole, leagueSlug }: Props) {
       question: "How do trades and releases work?",
       answer: (
         <p>
-          Trades happen on the <strong className="text-white">Marketplace</strong> — propose a swap of players (and optional cash) with another team. Both sides must accept. Releases drop a player back into the free-agent pool; you get a <strong className="text-white">50% refund</strong> of their purchase price back to your purse. Released players become available again at the next mini-auction.
+          Trades happen on the <strong className="text-white">Marketplace</strong> — propose a swap of players (and optional cash) with another team. Both sides must accept. Releases drop a player back into the free-agent pool. You get back <strong className="text-white">50% of the purchase price plus 100% of the FMV gain</strong> — or <strong className="text-white">80%</strong> of the purchase price plus the gain for a deadwood player (no minutes in his last 5 games, or transferred / loaned out). The squad page shows the exact breakdown before you confirm. Released players become available again at the next mini-auction.
         </p>
       ),
     },

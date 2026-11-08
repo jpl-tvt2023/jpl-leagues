@@ -5,7 +5,7 @@ import { db, teams, auctionScores, auctionOwnership, leagues } from "../../db";
 import { eq, and } from "drizzle-orm";
 import { calculateAuctionTeamScore, loadAuctionGwFplData } from "./scoring";
 import type { FplLane } from "../../fpl/gateway";
-import { assignRanksAndPayouts, calculateRefund, calculateFMV } from "./economy";
+import { assignRanksAndPayouts, creditedRefund, calculateFMV } from "./economy";
 import { createNotification } from "../../notifications";
 import { isReleaseCycleBoundary, parseReleaseCycleGws } from "./cycle";
 import { randomUUID } from "crypto";
@@ -318,10 +318,10 @@ export async function processAuctionGameweek(
           )
         );
 
-      // Aggregate refunds per team to avoid multiple round-trips. Use the FMV-based refund snapshotted
-      // at mark-for-release time; fall back to 50% of purchase for legacy rows with no snapshot.
+      // Aggregate refunds per team to avoid multiple round-trips. Use the refund snapshotted at
+      // mark-for-release time; legacy rows with no snapshot fall back to 50% of purchase.
       for (const p of pendingReleases) {
-        const refund = p.releaseRefund ?? calculateRefund(p.purchasePrice);
+        const refund = creditedRefund(p);
         await tx
           .update(auctionOwnership)
           .set({
@@ -445,11 +445,11 @@ export async function finalizePendingReleasesNow(
 
   if (pendingReleases.length === 0) return { finalized: 0 };
 
-  // Aggregate refunds per team — use the FMV-based refund snapshotted at release; fall back to 50%
-  // of purchase for legacy rows.
+  // Aggregate refunds per team — use the refund snapshotted at release; legacy rows fall back to
+  // 50% of purchase.
   const refundByTeam = new Map<string, number>();
   for (const p of pendingReleases) {
-    const refund = p.releaseRefund ?? calculateRefund(p.purchasePrice);
+    const refund = creditedRefund(p);
     await db
       .update(auctionOwnership)
       .set({ status: "released", releasedGw: gwNumber, updatedAt: new Date() })

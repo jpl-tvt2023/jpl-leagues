@@ -2,7 +2,22 @@
 
 import { GW_PAYOUTS, MINIMUM_FLOOR_PAYOUT } from "@/lib/formats/auction/economy";
 import { DEFAULT_RELEASE_CYCLE_GWS, formatReleaseCycleGws } from "@/lib/formats/auction/cycle";
+import {
+  DEADWOOD_GAMES_WINDOW,
+  DEADWOOD_RATE,
+  STANDARD_RATE,
+  formatMoney,
+  formatRefundBreakdown,
+  priceReleaseRefund,
+} from "@/lib/formats/auction/release-refund";
 import { RuleItem, SectionHeader, formatPayout } from "./shared";
+
+/** Worked example for the release rules — computed, so it can't drift from the real formula. */
+const EXAMPLE = { purchasePrice: 10_000_000, fmv: 12_800_000 };
+
+function pct(rate: number): string {
+  return `${Math.round(rate * 100)}%`;
+}
 
 export function AuctionRules({
   tier = "complete",
@@ -53,14 +68,13 @@ export function AuctionRules({
           </RuleItem>
           <RuleItem>Effective max squad size = 15 (base) + unlocked bonus slots − penalty slots. Absolute ceiling is 18.</RuleItem>
           <RuleItem>No FPL player can be owned by more than one team in the same league simultaneously.</RuleItem>
-          <RuleItem>Players marked as <strong className="text-yellow-400">deadwood</strong> remain in your squad but do not score. They still count toward your squad size.</RuleItem>
         </ul>
       </section>
 
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
         <SectionHeader letter="D" color="blue" title="Scoring & Payouts" />
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
-          <RuleItem>Each gameweek, your squad score is the <strong className="text-white">sum of all active FPL points</strong> earned by your owned players (deadwood excluded).</RuleItem>
+          <RuleItem>Each gameweek, your squad score is the <strong className="text-white">sum of all active FPL points</strong> earned by your owned players.</RuleItem>
           <RuleItem>Teams are <strong className="text-white">ranked each GW</strong> by their squad score. Top-ranked teams earn the highest payouts.</RuleItem>
           <RuleItem>Payout amounts are credited to your purse at the end of each gameweek.</RuleItem>
           <RuleItem><strong className="text-white">Ties split the pot.</strong> Teams level on GW points <strong className="text-white">share the same rank</strong> and each receive the <strong className="text-white">average</strong> of the payouts for the places they occupy — e.g. two teams tied at the top take {formatPayout(Math.floor((GW_PAYOUTS[1] + GW_PAYOUTS[2]) / 2))} each, and the next team is ranked #3.</RuleItem>
@@ -117,8 +131,17 @@ export function AuctionRules({
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
           <RuleItem>You can <strong className="text-white">request a release</strong> for any active player at any time from your squad page.</RuleItem>
           <RuleItem>The released player continues scoring for your team until the release is finalized.</RuleItem>
-          <RuleItem>Releases are finalized at the <strong className="text-white">start of the next mini-auction</strong>, or at the next release gameweek (<strong className="text-white">{releaseCadence}</strong>) — whichever comes first. Upon finalization, you receive a <strong className="text-white">50% refund</strong> of the player&apos;s purchase price.</RuleItem>
-          <RuleItem>The other 50% is forfeited — releasing is a cost, not a full recovery.</RuleItem>
+          <RuleItem>Releases are finalized at the <strong className="text-white">start of the next mini-auction</strong>, or at the next release gameweek (<strong className="text-white">{releaseCadence}</strong>) — whichever comes first. The refund is credited to your purse then.</RuleItem>
+          <RuleItem>
+            <strong className="text-white">Refund = {pct(STANDARD_RATE)} of the purchase price + 100% of the FMV gain</strong> (FMV − purchase price). You always keep everything the player appreciated while you owned him; the other half of what you paid is forfeited.
+          </RuleItem>
+          <RuleItem>
+            <strong className="text-yellow-400">Deadwood players get {pct(DEADWOOD_RATE)} instead of {pct(STANDARD_RATE)}.</strong> A player is deadwood if, when you mark him for release, he has played <strong className="text-white">no minutes in his last {DEADWOOD_GAMES_WINDOW} games</strong>, or FPL lists him as <strong className="text-white">unavailable</strong> (transferred out, loaned out or otherwise left).
+          </RuleItem>
+          <RuleItem>
+            Example — bought for {formatMoney(EXAMPLE.purchasePrice)}, FMV now {formatMoney(EXAMPLE.fmv)}: a standard release refunds {formatRefundBreakdown(priceReleaseRefund(EXAMPLE.purchasePrice, EXAMPLE.fmv, null))}; as deadwood, {formatRefundBreakdown(priceReleaseRefund(EXAMPLE.purchasePrice, EXAMPLE.fmv, "no_minutes"))}.
+          </RuleItem>
+          <RuleItem>The squad page shows the exact refund and how it&apos;s worked out <strong className="text-white">before you confirm</strong>. The amount — and whether the player counts as deadwood — is <strong className="text-white">locked in when you mark the release</strong>.</RuleItem>
           <RuleItem>You can <strong className="text-white">cancel a pending release</strong> any time before the mini-auction begins.</RuleItem>
           <RuleItem>Released players re-enter the player pool and are available in the next mini-auction.</RuleItem>
         </ul>
