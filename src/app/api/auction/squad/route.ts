@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, auctionSessions, teamPenalties } from "@/lib/db";
+import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnership, auctionSessions, teamPenalties, gameweeks } from "@/lib/db";
 import { eq, and, isNull, desc, or } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculateFMV, calculatePurse } from "@/lib/formats/auction/economy";
+import { nextReleaseCycleGw, parseReleaseCycleGws } from "@/lib/formats/auction/cycle";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
 import type { ClubTier } from "@/lib/db/schema";
 import {
@@ -216,10 +217,25 @@ export async function GET(request: NextRequest) {
     canRedeem = redeemableCost != null && availablePurse >= redeemableCost;
   }
 
+  // Pending releases are confirmed when the next release GW is scored or when the mini-auction
+  // starts, whichever comes first. Name that GW so every screen can say which one it is.
+  const [lastScored] = await db
+    .select({ number: gameweeks.number })
+    .from(auctionScores)
+    .innerJoin(gameweeks, eq(auctionScores.gameweekId, gameweeks.id))
+    .where(eq(auctionScores.leagueId, leagueRow[0].id))
+    .orderBy(desc(gameweeks.number))
+    .limit(1);
+  const nextReleaseGw = nextReleaseCycleGw(
+    parseReleaseCycleGws(leagueRow[0].releaseCycleGws),
+    lastScored?.number ?? null,
+  );
+
   return NextResponse.json({
     teamId,
     teamName: displayName,
     leagueId: leagueRow[0].id,
+    nextReleaseGw,
     squad,
     activeCount,
     deadwoodCount: squad.filter((p) => p.status === "deadwood").length,

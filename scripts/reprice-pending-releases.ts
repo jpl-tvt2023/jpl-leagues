@@ -3,9 +3,13 @@
  *   refund = 50% of purchase price (80% for deadwood) + 100% of the FMV gain.
  *
  * Releases marked before this rule shipped carry a refund snapshotted under the old one (50% of
- * FMV) and no breakdown. They haven't been paid yet, so they're repriced as if marked now — exactly
- * what the team would get by cancelling and re-marking — and each team is notified of the new
- * amount and how it's worked out. Finalized (paid) releases are never touched.
+ * FMV) and no breakdown (release_fmv is null). They haven't been paid yet, so they're repriced as
+ * if marked now — exactly what the team would get by cancelling and re-marking — and each team is
+ * notified of the new amount and how it's worked out. Finalized (paid) releases and releases
+ * already on the new rule are never touched, so the script is safe to re-run.
+ *
+ * It also works BEFORE the new code deploys: the deployed finalization pays release_refund
+ * whenever it is set, so running it early guarantees nobody is paid at the old amount.
  *
  * A row that would come out LOWER is reported and left alone, even with --apply.
  *
@@ -17,7 +21,7 @@
  */
 import { db } from "@/lib/db";
 import { auctionOwnership, leagues, teams } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { creditedRefund } from "@/lib/formats/auction/economy";
 import { priceRelease } from "@/lib/formats/auction/release-pricing";
 import { describeDeadwoodReason, formatMoney, formatRefundBreakdown } from "@/lib/formats/auction/release-refund";
@@ -27,11 +31,16 @@ import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 const APPLY = process.argv.includes("--apply");
 
 async function main() {
+  // Only rows still on the old rule — no FMV snapshot yet. Rows priced by the new code (or by an
+  // earlier run of this script) are left alone, so re-running never re-notifies a team.
   const pending = await db
     .select()
     .from(auctionOwnership)
-    .where(eq(auctionOwnership.status, "pending_release"));
-  console.log(`${pending.length} pending release(s). ${APPLY ? "APPLYING." : "Dry run — pass --apply to write."}\n`);
+    .where(and(eq(auctionOwnership.status, "pending_release"), isNull(auctionOwnership.releaseFmv)));
+  console.log(
+    `${pending.length} pending release(s) still on the old rule. ` +
+      `${APPLY ? "APPLYING." : "Dry run — pass --apply to write."}\n`
+  );
   if (pending.length === 0) return;
 
   const teamName = new Map(
@@ -66,12 +75,16 @@ async function main() {
     if (!APPLY) continue;
 
     // updatedAt is left alone on purpose: the Finance ledger dates a pending release by it, and
-    // the team marked it then, not now. Guarded on status so a release that finalized while this
-    // ran isn't rewritten after it was paid.
+    // the team marked it then, not now. Guarded on status (and on still being old-rule) so a
+    // release that finalized, or was re-marked, while this ran isn't rewritten.
     const updated = await db
       .update(auctionOwnership)
       .set({ releaseRefund: after, releaseFmv: breakdown.fmv, deadwoodReason: breakdown.deadwoodReason })
-      .where(and(eq(auctionOwnership.id, o.id), eq(auctionOwnership.status, "pending_release")))
+      .where(and(
+        eq(auctionOwnership.id, o.id),
+        eq(auctionOwnership.status, "pending_release"),
+        isNull(auctionOwnership.releaseFmv),
+      ))
       .returning({ id: auctionOwnership.id });
     if (updated.length === 0) {
       console.log("  ✗ no longer pending — skipped");

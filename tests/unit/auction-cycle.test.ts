@@ -15,6 +15,7 @@ import {
   DEFAULT_RELEASE_CYCLE_GWS,
   formatReleaseCycleGws,
   isReleaseCycleBoundary,
+  nextReleaseCycleGw,
   parseReleaseCycleGws,
   validateReleaseCycleGws,
 } from "../../src/lib/formats/auction/cycle";
@@ -104,4 +105,23 @@ test("rejects more boundaries than there can be mini-auctions", () => {
 test("formats the cadence the way the UI copy reads", () => {
   assert.equal(formatReleaseCycleGws([10, 20, 30]), "GW 10/20/30");
   assert.equal(formatReleaseCycleGws([18]), "GW 18");
+});
+
+/* ── nextReleaseCycleGw ─────────────────────────────────────────────────── */
+
+test("next release GW is the first boundary after the last scored GW", () => {
+  assert.equal(nextReleaseCycleGw([10, 20, 30], null), 10);
+  assert.equal(nextReleaseCycleGw([10, 20, 30], 9), 10);
+  // GW10 itself scored → its releases are already confirmed; the next boundary is 20.
+  assert.equal(nextReleaseCycleGw([10, 20, 30], 10), 20);
+  assert.equal(nextReleaseCycleGw([10, 20, 30], 29), 30);
+});
+
+test("no next release GW once every boundary has been scored", () => {
+  assert.equal(nextReleaseCycleGw([10, 20, 30], 30), null);
+  assert.equal(nextReleaseCycleGw([10, 20, 30], 38), null);
+});
+
+test("next release GW doesn't depend on list order", () => {
+  assert.equal(nextReleaseCycleGw([30, 10, 20], 12), 20);
 });

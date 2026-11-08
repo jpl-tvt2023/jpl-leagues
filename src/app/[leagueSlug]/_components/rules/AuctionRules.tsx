@@ -47,7 +47,7 @@ export function AuctionRules({
         <SectionHeader letter="B" color="purple" title="Auction Sessions" />
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
           <RuleItem>The <strong className="text-white">Initial Auction</strong> fills all squads before the season begins. Teams nominate players in snake-draft order.</RuleItem>
-          <RuleItem><strong className="text-white">Mini-Auctions</strong> occur at designated points during the season, around the release gameweeks (<strong className="text-white">{releaseCadence}</strong>). Any released players return to the pool.</RuleItem>
+          <RuleItem><strong className="text-white">Mini-Auctions</strong> occur at designated points during the season, around the release gameweeks (<strong className="text-white">{releaseCadence}</strong>). Starting a mini-auction confirms every pending release, so all released players return to the pool for it.</RuleItem>
           <RuleItem>Each nominated player goes to the highest bidder. If only one bid is placed, it wins at the minimum bid price.</RuleItem>
           <RuleItem>You cannot bid more than your remaining purse allows.</RuleItem>
           <RuleItem>The snake order for nominations reverses each round: bottom-ranked teams nominate first in mini-auctions.</RuleItem>
@@ -128,10 +128,21 @@ export function AuctionRules({
 
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
         <SectionHeader letter="F" color="red" title="Player Releases" />
+        <div className="mb-5 rounded-xl border border-orange-500/40 bg-orange-500/10 p-4 text-sm sm:text-base text-gray-200">
+          <p className="font-bold text-white mb-2">When is my release confirmed?</p>
+          <p className="mb-2">Your release is confirmed at two points:</p>
+          <ol className="mb-2 ml-5 list-decimal space-y-1">
+            <li><strong className="text-white">At the end of {releaseCadence} scoring</strong> — for releases you mark before that gameweek is scored.</li>
+            <li><strong className="text-white">Once the mini-auction starts</strong> — for releases you mark after that.</li>
+          </ol>
+          <p>
+            On confirmation the refund is credited to your purse and the player leaves your squad — so either way the money is there before bidding opens.
+            You can mark releases <strong className="text-white">until the mini-auction starts</strong> (not while an auction is live), and <strong className="text-white">cancel any time until your release is confirmed</strong>.
+          </p>
+        </div>
         <ul className="space-y-3 text-gray-300 text-sm sm:text-base">
-          <RuleItem>You can <strong className="text-white">request a release</strong> for any active player at any time from your squad page.</RuleItem>
-          <RuleItem>The released player continues scoring for your team until the release is finalized.</RuleItem>
-          <RuleItem>Releases are finalized at the <strong className="text-white">start of the next mini-auction</strong>, or at the next release gameweek (<strong className="text-white">{releaseCadence}</strong>) — whichever comes first. The refund is credited to your purse then.</RuleItem>
+          <RuleItem>You can <strong className="text-white">request a release</strong> for any active player from your squad page.</RuleItem>
+          <RuleItem>The player keeps scoring for your team up to and including the gameweek his release is confirmed in.</RuleItem>
           <RuleItem>
             <strong className="text-white">Refund = {pct(STANDARD_RATE)} of the purchase price + 100% of the FMV gain</strong> (FMV − purchase price). You always keep everything the player appreciated while you owned him; the other half of what you paid is forfeited.
           </RuleItem>
@@ -141,8 +152,7 @@ export function AuctionRules({
           <RuleItem>
             Example — bought for {formatMoney(EXAMPLE.purchasePrice)}, FMV now {formatMoney(EXAMPLE.fmv)}: a standard release refunds {formatRefundBreakdown(priceReleaseRefund(EXAMPLE.purchasePrice, EXAMPLE.fmv, null))}; as deadwood, {formatRefundBreakdown(priceReleaseRefund(EXAMPLE.purchasePrice, EXAMPLE.fmv, "no_minutes"))}.
           </RuleItem>
-          <RuleItem>The squad page shows the exact refund and how it&apos;s worked out <strong className="text-white">before you confirm</strong>. The amount — and whether the player counts as deadwood — is <strong className="text-white">locked in when you mark the release</strong>.</RuleItem>
-          <RuleItem>You can <strong className="text-white">cancel a pending release</strong> any time before the mini-auction begins.</RuleItem>
+          <RuleItem>On the squad page, <strong className="text-white">Check release amount</strong> shows the exact refund and how it&apos;s worked out without releasing anyone. <strong className="text-white">Release player</strong> shows the same breakdown and asks you to confirm. The amount — and whether the player counts as deadwood — is <strong className="text-white">locked in when you mark the release</strong>.</RuleItem>
           <RuleItem>Released players re-enter the player pool and are available in the next mini-auction.</RuleItem>
         </ul>
       </section>
