@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { gameweeks } from "@/lib/db/schema";
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, desc, eq, lte } from "drizzle-orm";
 import { getConcludedGwNumbers } from "@/lib/fpl/event-status";
 
 /**
@@ -66,4 +66,23 @@ export async function getCurrentGameweekNumberByDeadline(leagueId: string): Prom
     .limit(1);
 
   return upcoming[0]?.number ?? null;
+}
+
+/**
+ * The highest-numbered gameweek whose deadline has passed, or 0 before any has — the gameweek an
+ * auction ownership change happens "in". A player released now keeps scoring for his old team up
+ * to and including it (`releasedGw`), and one bought now scores for his new team from the next one
+ * (`acquiredGw`), so the two sides of a change can never both score the same gameweek.
+ *
+ * Unlike getCurrentGameweekNumberByDeadline this never falls back to the first gameweek: before
+ * GW1's deadline the answer must be 0, or a pre-season buy would miss GW1.
+ */
+export async function getStartedGameweekNumber(leagueId: string, now: Date = new Date()): Promise<number> {
+  const [row] = await db
+    .select({ number: gameweeks.number })
+    .from(gameweeks)
+    .where(and(eq(gameweeks.leagueId, leagueId), lte(gameweeks.deadline, now)))
+    .orderBy(desc(gameweeks.number))
+    .limit(1);
+  return row?.number ?? 0;
 }

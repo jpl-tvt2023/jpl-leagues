@@ -24,7 +24,9 @@ function safeParseIds(raw: string | null | undefined): string[] {
  *
  * Actions:
  * - undo-sale: Revert a sold bid — delete ownership, refund buyer, mark bid cancelled
- * - manual-transfer: Move a player to another team (or to unowned) with purse adjustments
+ * - manual-transfer: Correct who bought a player (or make him unowned) with purse adjustments. This
+ *   rewrites history — the new team is treated as having owned him from the original sale, so
+ *   reprocessing earlier gameweeks credits them. A move from now on is a trade, not this.
  */
 export async function POST(request: NextRequest) {
   const leagueId = await getAuthorizedLeagueId(request);
@@ -65,6 +67,11 @@ export async function POST(request: NextRequest) {
 
       if (ownership.length > 0) {
         const ow = ownership[0];
+        // Undoing the sale refunds the buyer what he paid. If the player has since been traded, the
+        // live row belongs to someone who never paid it — and the buyer's window lives on as history.
+        if (ow.acquiredVia === "trade") {
+          return { error: `${ow.playerName} has been traded since this sale, so it can't be undone`, status: 409 };
+        }
         // Delete ownership
         await tx.delete(auctionOwnership).where(eq(auctionOwnership.id, ow.id));
         // Refund the buyer's purse
@@ -112,6 +119,20 @@ export async function POST(request: NextRequest) {
 
       if (ow.length === 0) return { error: "Ownership not found", status: 404 };
       const ownership = ow[0];
+
+      // A correction: it rewrites ownership as if the original sale had gone this way — refunding
+      // the buyer what he paid — so it only makes sense on a current player he actually bought.
+      // History rows (released, traded away) are past windows; a pending release would be confirmed
+      // with a refund snapshot for the wrong team; a player received in a trade was never paid for.
+      if (ownership.status === "pending_release") {
+        return { error: `${ownership.playerName} is pending release — cancel the release first`, status: 409 };
+      }
+      if (ownership.status !== "active" && ownership.status !== "deadwood") {
+        return { error: `${ownership.playerName} is no longer in a squad (${ownership.status})`, status: 409 };
+      }
+      if (ownership.acquiredVia === "trade") {
+        return { error: `${ownership.playerName} joined this squad by trade, so there is no purchase to correct`, status: 409 };
+      }
 
       if (toTeamId === "unowned") {
         // Remove ownership entirely, full refund to original owner

@@ -14,7 +14,7 @@ import {
   leagues,
   notifications,
 } from "@/lib/db";
-import { eq, and, inArray, ne, sql } from "drizzle-orm";
+import { eq, and, inArray, gte, ne, sql } from "drizzle-orm";
 import { getAuthorizedLeagueId } from "@/lib/league-auth";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
 
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
 
   // Find sessions to delete (cycleNumber >= N)
   const sessionsToDelete = await db
-    .select({ id: auctionSessions.id })
+    .select({ id: auctionSessions.id, createdAt: auctionSessions.createdAt })
     .from(auctionSessions)
     .where(
       and(
@@ -200,14 +200,19 @@ export async function POST(request: NextRequest) {
 
     const fplElementIds = soldBids.map((b) => b.fplElementId);
 
-    // Delete ownerships for players sold in these sessions
+    // Delete ownerships for players sold in these sessions — the rows those sales created, and any
+    // history descending from them (a trade's copy keeps the sale's createdAt). Rows from before the
+    // first reset session stay: a player bought back in a mini-auction also has his previous
+    // owners' released or traded-away rows, which are history to keep.
+    const resetFrom = new Date(Math.min(...sessionsToDelete.map((s) => s.createdAt.getTime())));
     if (fplElementIds.length > 0) {
       await db
         .delete(auctionOwnership)
         .where(
           and(
             eq(auctionOwnership.leagueId, leagueId),
-            inArray(auctionOwnership.fplElementId, fplElementIds)
+            inArray(auctionOwnership.fplElementId, fplElementIds),
+            gte(auctionOwnership.createdAt, resetFrom)
           )
         );
     }

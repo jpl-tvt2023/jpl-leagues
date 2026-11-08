@@ -18,6 +18,13 @@ import { and, eq, inArray } from "drizzle-orm";
 const OWNED_STATUSES = ["active", "pending_release"] as const;
 
 /**
+ * Statuses of a row that is still part of a squad. The others — "released", and "transferred" (the
+ * seller's copy after a trade) — are closed scoring windows kept as history: scoring and reprocessing
+ * read them, squads and actions must not. Mirrors the one-live-owner index in schema.ts.
+ */
+export const LIVE_OWNERSHIP_STATUSES: string[] = ["active", "deadwood", "pending_release"];
+
+/**
  * Returns the team id that currently owns `fplElementId` in `leagueId`, or null if unowned.
  * Matches rows whose status is `active` OR `pending_release` — both mean the player is still in
  * someone's squad.

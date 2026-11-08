@@ -91,13 +91,17 @@ async function refuseIfReleasesClosed(leagueId: string): Promise<NextResponse | 
   );
 }
 
-/** A player already on his way out can't be released (or priced for release) again. */
+/** Only a player still in the squad can be released (or priced for release). */
 function alreadyReleasing(ownership: Ownership): NextResponse | null {
   if (ownership.status === "released") {
     return NextResponse.json({ error: "Player is already released" }, { status: 400 });
   }
   if (ownership.status === "pending_release") {
     return NextResponse.json({ error: "Player is already marked for release" }, { status: 400 });
+  }
+  // A traded-away player's old row is the team's history, not a squad member.
+  if (ownership.status !== "active" && ownership.status !== "deadwood") {
+    return NextResponse.json({ error: "Player is no longer in your squad" }, { status: 400 });
   }
   return null;
 }

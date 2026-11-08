@@ -1130,7 +1130,11 @@ export default function AdminDashboard() {
   // ---- Auction Corrections helpers ----
 
   const handleManualTransfer = async (ownershipId: string, toTeamId: string) => {
-    if (!confirm("Are you sure you want to transfer this player?")) return;
+    if (!confirm(
+      "Manual transfer is a correction: it treats the new team as having bought this player in the original sale " +
+      "(the old team is refunded what it paid) and rewrites his ownership history. Reprocess any gameweeks already " +
+      "scored to move his points. To move a player from now on, use a trade instead.\n\nTransfer this player?"
+    )) return;
     setTransferring(true);
     try {
       const res = await fetch(`/api/admin/${params.leagueId}/auction-corrections`, {

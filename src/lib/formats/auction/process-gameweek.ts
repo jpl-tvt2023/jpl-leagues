@@ -1,8 +1,8 @@
 // JPL Auction Gameweek Processor
 // Scores all teams, ranks them, assigns payouts, updates purses
 
-import { db, teams, auctionScores, auctionOwnership, auctionSessions, leagues, gameweeks } from "../../db";
-import { eq, and, lte, desc, sql } from "drizzle-orm";
+import { db, teams, auctionScores, auctionOwnership, auctionSessions, leagues } from "../../db";
+import { eq, and, lte, sql } from "drizzle-orm";
 import { calculateAuctionTeamScore, loadAuctionGwFplData } from "./scoring";
 import type { FplLane } from "../../fpl/gateway";
 import { assignRanksAndPayouts, creditedRefund, calculateFMV } from "./economy";
@@ -10,6 +10,7 @@ import { formatMoney } from "./release-refund";
 import { createNotification } from "../../notifications";
 import { RELEASE_DEADLINE_HOURS, isReleaseWindowClosed } from "./release-deadline";
 import { getNextMiniAuction } from "./live-session";
+import { getStartedGameweekNumber } from "../../gameweeks/current-gw";
 import { randomUUID } from "crypto";
 
 export interface AuctionProcessResult {
@@ -412,8 +413,8 @@ interface ConfirmedRelease {
  * moment. So it is one atomic batch rather than read-then-write: the credit is summed in SQL from
  * the rows still pending, and the next statement releases exactly those rows. A caller that runs
  * second finds nothing pending and pays nothing; a cancel lands either before (unpaid) or after
- * (refused). An interactive transaction here deadlocked under concurrency — each caller read, then
- * all tried to upgrade to a write lock at once.
+ * (refused). An interactive transaction here failed under concurrency in the release soak: every one
+ * of 22 simultaneous callers got SQLITE_BUSY, and the local driver was then left unable to commit.
  *
  * `releasedGw` is the league's current gameweek (the latest whose deadline has passed), so the
  * player scores for his old team up to and including it and never after — rescoring an earlier
@@ -424,13 +425,8 @@ async function confirmReleases(leagueId: string, confirmedWhen: string): Promise
   const [anyPending] = await db.select({ id: auctionOwnership.id }).from(auctionOwnership).where(pendingInLeague).limit(1);
   if (!anyPending) return 0;
 
-  const [currentGw] = await db
-    .select({ number: gameweeks.number })
-    .from(gameweeks)
-    .where(and(eq(gameweeks.leagueId, leagueId), lte(gameweeks.deadline, new Date())))
-    .orderBy(desc(gameweeks.number))
-    .limit(1);
-  const releasedGw = currentGw?.number ?? 0;
+  // Same rule as a mini-auction buy's acquiredGw, so old and new owner never share a gameweek.
+  const releasedGw = await getStartedGameweekNumber(leagueId);
 
   // Raw SQL with an alias so the correlation to the outer `teams` row can't be mis-rendered.
   const pendingForTeam = sql`FROM auction_ownership ao WHERE ao.team_id = teams.id AND ao.league_id = ${leagueId} AND ao.status = 'pending_release'`;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, tradeProposals, auctionOwnership, teams, leagues, leagueAdmins } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
-import { executeTrade } from "@/lib/formats/auction/trade";
+import { executeTrade, TradeNoLongerValidError } from "@/lib/formats/auction/trade";
 import { validateTradeProposal, buildPositionMap, type TradePlayer } from "@/lib/formats/auction/marketplace";
 import { createNotification, type NotificationType } from "@/lib/notifications";
 import { invalidateLeaguePageCache } from "@/lib/fpl-cache";
@@ -114,6 +114,14 @@ export async function POST(request: NextRequest) {
       return o ? { ownershipId: o.id, fplElementId: o.fplElementId, playerName: o.playerName, purchasePrice: o.purchasePrice, totalPoints: 0, elementType: o.elementType } : null;
     }).filter(Boolean) as TradePlayer[];
 
+    // A player who has since left the squad sinks the trade rather than being quietly dropped.
+    if (offeredFresh.length !== offeredIds.length || requestedFresh.length !== requestedIds.length) {
+      return NextResponse.json(
+        { error: "Trade is no longer valid — a player in it has left the squad it was offered from" },
+        { status: 400 }
+      );
+    }
+
     const revalidation = validateTradeProposal(
       offeredFresh,
       requestedFresh,
@@ -137,15 +145,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await executeTrade({
-      id: proposal.id,
-      leagueId: proposal.leagueId,
-      proposerTeamId: proposal.proposerTeamId,
-      targetTeamId: proposal.targetTeamId,
-      offeredPlayerIds: proposal.offeredPlayerIds,
-      requestedPlayerIds: proposal.requestedPlayerIds,
-      cashOffered: proposal.cashOffered,
-    });
+    try {
+      await executeTrade({
+        id: proposal.id,
+        leagueId: proposal.leagueId,
+        proposerTeamId: proposal.proposerTeamId,
+        targetTeamId: proposal.targetTeamId,
+        offeredPlayerIds: proposal.offeredPlayerIds,
+        requestedPlayerIds: proposal.requestedPlayerIds,
+        cashOffered: proposal.cashOffered,
+      });
+    } catch (err) {
+      // Approved twice, or a squad changed between the checks above and the move — nothing moved.
+      if (err instanceof TradeNoLongerValidError) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
+      throw err;
+    }
 
     await invalidateLeaguePageCache(proposal.leagueId).catch((err) =>
       console.error("[trade/admin] standings cache invalidation failed:", err)

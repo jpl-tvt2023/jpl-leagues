@@ -163,22 +163,26 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
     });
   }
 
-  // 2. Purchases + releases
+  // 2. Purchases + releases. A player received in a trade was never bought by this team — the
+  // trade's own entries below carry its money — so only rows bought at auction are purchases. A
+  // seller keeps his traded-away player's row ("transferred"), and with it his purchase.
   for (const o of ownership) {
-    entries.push({
-      id: `purchase-${o.id}`,
-      type: "purchase",
-      date: o.createdAt.toISOString(),
-      gw: o.acquiredGw,
-      description: `Purchased ${o.playerName}`,
-      amount: -o.purchasePrice,
-      isPending: false,
-      metadata: {
-        playerName: o.playerName,
-        purchasePrice: o.purchasePrice,
-        ownershipId: o.id,
-      },
-    });
+    if (o.acquiredVia !== "trade") {
+      entries.push({
+        id: `purchase-${o.id}`,
+        type: "purchase",
+        date: o.createdAt.toISOString(),
+        gw: o.acquiredGw,
+        description: `Purchased ${o.playerName}`,
+        amount: -o.purchasePrice,
+        isPending: false,
+        metadata: {
+          playerName: o.playerName,
+          purchasePrice: o.purchasePrice,
+          ownershipId: o.id,
+        },
+      });
+    }
 
     if (o.status === "released") {
       const refund = creditedRefund(o);
@@ -306,18 +310,19 @@ export async function buildTeamLedger(leagueId: string, teamId: string): Promise
       grossAmount = t.cashOffered; // target: receives positive, pays if negative
     }
 
-    // For cash-in, the actual amount received is net of the 5% transfer fee
+    // The receiver is credited the gross amount here and the 5% transfer fee comes off as its own
+    // entry below, so the two net to what executeTrade actually paid in. (Crediting the net here as
+    // well took the fee off twice.)
     const isReceiver = grossAmount > 0;
     const feeAmount = isReceiver ? Math.round(grossAmount * TRANSFER_FEE_RATE) : 0;
-    const netAmount = isReceiver ? grossAmount - feeAmount : grossAmount;
 
     entries.push({
       id: `trade-${t.id}`,
-      type: netAmount >= 0 ? "trade_cash_in" : "trade_cash_out",
+      type: grossAmount >= 0 ? "trade_cash_in" : "trade_cash_out",
       date: t.updatedAt.toISOString(),
       gw: null,
-      description: `Trade ${netAmount >= 0 ? "from" : "with"} ${counterpartyName}`,
-      amount: netAmount,
+      description: `Trade ${grossAmount >= 0 ? "from" : "with"} ${counterpartyName}`,
+      amount: grossAmount,
       isPending: false,
       metadata: {
         counterpartyTeam: counterpartyName,
@@ -456,7 +461,8 @@ export async function buildAllTeamsSummary(leagueId: string): Promise<TeamSummar
   return leagueTeams.map((t) => {
     const own = ownByTeam.get(t.id) ?? [];
     const sc = scoreByTeam.get(t.id) ?? [];
-    const totalSpent = own.reduce((s, o) => s + o.purchasePrice, 0);
+    // Only players this team bought — one received in a trade was paid for by its seller.
+    const totalSpent = own.filter((o) => o.acquiredVia !== "trade").reduce((s, o) => s + o.purchasePrice, 0);
     const totalIncome = sc.reduce((s, x) => s + x.payout, 0);
     const released = own.filter((o) => o.status === "released");
     const totalRefunds = released.reduce((s, o) => s + creditedRefund(o), 0);

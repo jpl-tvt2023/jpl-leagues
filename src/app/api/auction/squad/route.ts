@@ -3,6 +3,7 @@ import { db, teams, leagues, auctionOwnership, auctionScores, auctionClubOwnersh
 import { eq, and, isNull, desc, or } from "drizzle-orm";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { calculateFMV, calculatePurse } from "@/lib/formats/auction/economy";
+import { LIVE_OWNERSHIP_STATUSES } from "@/lib/formats/auction/ownership";
 import { confirmDueReleases } from "@/lib/formats/auction/process-gameweek";
 import { loadReleaseCountdown } from "@/lib/formats/auction/live-session";
 import { isCountdownClosed } from "@/lib/formats/auction/release-deadline";
@@ -109,8 +110,9 @@ export async function GET(request: NextRequest) {
     // ignore — leave plTeamByElement empty
   }
 
+  // Live rows only: released and traded-away ("transferred") rows are this team's history.
   const squad = ownedPlayers
-    .filter((p) => p.status !== "released")
+    .filter((p) => LIVE_OWNERSHIP_STATUSES.includes(p.status))
     .map((p) => {
       const totalPoints = elementTotalPoints.get(p.fplElementId) ?? 0;
       const fmv = calculateFMV(p.purchasePrice, totalPoints);

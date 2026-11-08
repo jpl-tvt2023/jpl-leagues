@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auctionScores, auctionOwnership, gameweeks, leagues, teams } from "@/lib/db/schema";
-import { and, eq, lte } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, lte, or } from "drizzle-orm";
 import { calculateAuctionTeamScore } from "@/lib/formats/auction/scoring";
 import { assignRanksAndPayouts } from "@/lib/formats/auction/economy";
 import { countPlayersLeftToPlay } from "@/lib/fpl-live/players-left";
@@ -9,6 +9,15 @@ import { getInFlightGameweekNumber } from "@/lib/gameweeks/in-flight";
 import { fetchElementInfo, fetchBootstrapData } from "@/lib/fpl";
 import { getClubOwnershipsByTeam } from "@/lib/formats/auction/club-auction";
 import { backfillClubSummaries } from "@/lib/formats/auction/club-summary-backfill";
+
+/** Ownership rows whose window covers `gw` — the same predicate calculateAuctionTeamScore uses. */
+function ownedDuring(leagueId: string, gw: number) {
+  return and(
+    eq(auctionOwnership.leagueId, leagueId),
+    lt(auctionOwnership.acquiredGw, gw),
+    or(isNull(auctionOwnership.releasedGw), gte(auctionOwnership.releasedGw, gw)),
+  );
+}
 
 /**
  * GET /api/auction/gw-summary?leagueSlug=xxx&gw=N
@@ -221,15 +230,15 @@ export async function GET(request: NextRequest) {
       playersLeftToPlay: number | null;
     };
 
-    // Active ownership rows for everyone in the league (active during selectedGw).
+    // Ownership rows for everyone in the league that cover selectedGw — the acquisition/release
+    // window calculateAuctionTeamScore scores by, so a released or traded-away player isn't counted.
     const activeOwnership = await db
       .select({
         teamId: auctionOwnership.teamId,
         fplElementId: auctionOwnership.fplElementId,
       })
       .from(auctionOwnership)
-      .where(eq(auctionOwnership.leagueId, league.id));
-    // Filter by selectedGw acquisition/release window (mirrors calculateAuctionTeamScore).
+      .where(ownedDuring(league.id, selectedGw));
     const ownershipByTeam = new Map<string, number[]>();
     for (const o of activeOwnership) {
       const arr = ownershipByTeam.get(o.teamId) ?? [];
@@ -381,7 +390,7 @@ export async function GET(request: NextRequest) {
     const own = await db
       .select({ teamId: auctionOwnership.teamId, fplElementId: auctionOwnership.fplElementId })
       .from(auctionOwnership)
-      .where(eq(auctionOwnership.leagueId, league.id));
+      .where(ownedDuring(league.id, selectedGw));
     for (const o of own) {
       const arr = ownershipByTeamHistorical.get(o.teamId) ?? [];
       arr.push(o.fplElementId);
