@@ -29,6 +29,7 @@ import { resolveSubmissionWindow } from "@/lib/gameweek-window";
 import { getFinishedGwNumbers } from "@/lib/gameweeks/finished-set";
 import { teamFixtureGameweek } from "@/lib/gameweeks/default-gw";
 import { getDoublePointerEligibility } from "@/lib/formats/tvt/double-pointer-eligibility";
+import { matchOutcome } from "@/lib/match-outcome";
 
 import { DOUBLE_HEADER_GWS } from "@/lib/gameweeks/double-headers";
 
@@ -292,17 +293,14 @@ export async function GET(request: NextRequest) {
       const isHome = lastF.homeTeamId === teamId;
       const myScore = isHome ? lastF.result!.homeScore : lastF.result!.awayScore;
       const oppScore = isHome ? lastF.result!.awayScore : lastF.result!.homeScore;
-      const myPoints = isHome ? lastF.result!.homeMatchPoints : lastF.result!.awayMatchPoints;
       const gotBonus = isHome ? lastF.result!.homeGotBonus : lastF.result!.awayGotBonus;
       // Double Pointer doubles the bonus too (gameweek-awards.ts), so the badge must not say +1.
       const usedDoublePointer = isHome ? lastF.result!.homeUsedDoublePointer : lastF.result!.awayUsedDoublePointer;
       const bonusPoints = gotBonus ? (usedDoublePointer ? 2 : 1) : 0;
 
-      let result: "W" | "D" | "L";
-      if (myPoints === 2) result = "W";
-      else if (myPoints === 1) result = "D";
-      else result = "L";
-      
+      // Scores, not the stored match points: those are chip-adjusted (see lib/match-outcome.ts).
+      const result = matchOutcome(myScore, oppScore);
+
       // Get opponent info
       const opponentTeam = isHome
         ? team.homeFixtures.find(f => f.id === lastF.id)?.awayTeam
@@ -441,13 +439,9 @@ export async function GET(request: NextRequest) {
       const isHome = f.homeTeamId === teamId;
       const myScore = isHome ? f.result!.homeScore : f.result!.awayScore;
       const oppScore = isHome ? f.result!.awayScore : f.result!.homeScore;
-      const myPoints = isHome ? f.result!.homeMatchPoints : f.result!.awayMatchPoints;
-      
-      let result: "W" | "D" | "L";
-      if (myPoints === 2) result = "W";
-      else if (myPoints === 1) result = "D";
-      else result = "L";
-      
+      // A Double Pointer win is stored as 4 match points, so `=== 2` showed it as a loss.
+      const result = matchOutcome(myScore, oppScore);
+
       return {
         gameweek: f.gameweek.number,
         result,
@@ -465,13 +459,13 @@ export async function GET(request: NextRequest) {
     
     for (const f of allFixtures) {
       const isHome = f.homeTeamId === teamId;
-      const myPoints = isHome ? f.result!.homeMatchPoints : f.result!.awayMatchPoints;
       const myScore = isHome ? f.result!.homeScore : f.result!.awayScore;
       const oppScore = isHome ? f.result!.awayScore : f.result!.homeScore;
       const gotBonus = isHome ? f.result!.homeGotBonus : f.result!.awayGotBonus;
-      
-      if (myPoints === 2) totalWins++;
-      else if (myPoints === 1) totalDraws++;
+
+      const outcome = matchOutcome(myScore, oppScore);
+      if (outcome === "W") totalWins++;
+      else if (outcome === "D") totalDraws++;
       else totalLosses++;
       
       totalPointsFor += myScore;

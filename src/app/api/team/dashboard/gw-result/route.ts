@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, teams, fixtures, results, gameweeks, gameweekCaptains, leagues } from "@/lib/db";
 import { eq, and, asc, desc } from "drizzle-orm";
 import { fplEntryUrl } from "@/lib/fpl-links";
+import { matchOutcome } from "@/lib/match-outcome";
 
 function inferScores(total: number, players: { name: string }[]) {
   const captainBase = Math.floor((total - 1) / 3);
@@ -198,13 +199,10 @@ export async function GET(request: NextRequest) {
     const isHome = lastF.homeTeamId === teamId;
     const myScore = isHome ? lastF.result!.homeScore : lastF.result!.awayScore;
     const oppScore = isHome ? lastF.result!.awayScore : lastF.result!.homeScore;
-    const myPoints = isHome ? lastF.result!.homeMatchPoints : lastF.result!.awayMatchPoints;
     const gotBonus = isHome ? lastF.result!.homeGotBonus : lastF.result!.awayGotBonus;
 
-    let result: "W" | "D" | "L";
-    if (myPoints === 2) result = "W";
-    else if (myPoints === 1) result = "D";
-    else result = "L";
+    // Scores, not the stored match points: those are chip-adjusted (see lib/match-outcome.ts).
+    const result = matchOutcome(myScore, oppScore);
 
     const opponentTeam = isHome
       ? team.homeFixtures.find(f => f.id === lastF.id)?.awayTeam
