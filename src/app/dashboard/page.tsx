@@ -2511,7 +2511,13 @@ export default function DashboardPage() {
                       data.seasonStats.currentStreak.type === "W" ? "text-green-400" :
                       data.seasonStats.currentStreak.type === "L" ? "text-red-400" : "text-gray-400"
                     }>
-                      {data.seasonStats.currentStreak.count} {data.seasonStats.currentStreak.type === "W" ? "wins" : data.seasonStats.currentStreak.type === "L" ? "losses" : "draws"} in a row
+                      {data.seasonStats.currentStreak.count} {
+                        data.seasonStats.currentStreak.type === "W"
+                          ? (data.seasonStats.currentStreak.count === 1 ? "win" : "wins")
+                          : data.seasonStats.currentStreak.type === "L"
+                            ? (data.seasonStats.currentStreak.count === 1 ? "loss" : "losses")
+                            : (data.seasonStats.currentStreak.count === 1 ? "draw" : "draws")
+                      } in a row
                     </span>
                   </div>
                 )}
